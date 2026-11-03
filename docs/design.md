@@ -73,6 +73,8 @@ Open:
 
 Tasks, configs, experiments, trials and traces. **[Rishi designs]** in SP2.
 
+Interim, not a design decision: until SP2, the API reads finished trial folders from `RUNS_DIR` through a `TrialStore` interface (`apps/api/src/trials/trial-store.ts`), so the trace view and spend chart work now. SP2's database store replaces the file store behind the same interface.
+
 Planned in the spec, not yet designed:
 
 - Configs are versioned by content hash, including the harness SHA and the model pin.

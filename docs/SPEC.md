@@ -147,15 +147,15 @@ Each one has a done-when test. Scope stops growing once that test passes.
 **Needs:** SP0, D4, D5, D6. Start from `docs/hermes-notes.md`.
 
 - [x] **[Rishi designs]** Harness and model adapter interfaces: contract v2, approved as a start (R12), in `docs/adapter-contract.md`
-- [ ] Build the Hermes adapter on the pinned SHA
+- [x] Build the Hermes adapter on the pinned SHA (`workers/hermes`; 9 gate tests against the fake, 4 through LiteLLM)
 - [ ] Audit Hermes and record results in `hermes-notes.md`: background skill and memory writes (R3), memory in the prompt vs the trace, temperature, model-name routing, prompt caching through the proxy, token usage in the result
 - [x] Settle the cross-harness trace format (D12, R4)
 - [x] Before fixing the adapter contract, read each SDK's run, tool and settings APIs on paper (about 1 h), so the contract is not shaped only by Hermes and the own loop
-- [ ] Build the shared adapter library (spec, timeout wrapper, MCP command, conversation loop, end-state mapping, atomic result, span writer), the `new-harness` scaffold and the `probe-harness` command that writes capabilities from evidence (R11)
-- [ ] Build the own plain loop next to Hermes, until one task runs end to end through both
-- [ ] Minimal trace view (one trial's span timeline) and a spend chart per trial and config, in the first end-to-end run (R11)
+- [ ] Build the shared adapter library (spec, timeout wrapper, MCP command, conversation loop, end-state mapping, atomic result, span writer), the `new-harness` scaffold and the `probe-harness` command that writes capabilities from evidence (R11). Library and gate kit done (`workers/adapterlib`, 42 tests); scaffold and probe not yet
+- [x] Build the own plain loop next to Hermes, until one task runs end to end through both (through LiteLLM, fake models only)
+- [x] Minimal trace view (one trial's span timeline) and a spend chart per trial and config, in the first end-to-end run (R11). Reads trial folders until SP2's database
 - [ ] Effect checks per harness and model on Haiku 5.5 and a Gemini Flash, each run signed off with an estimate (D24)
-- [ ] Add the simulated-client helper (D22: reply cache, own key, turn cap) and the conversation loop in Hermes and the own loop, with a simulated gate test
+- [x] Add the simulated-client helper (D22: reply cache, own key, turn cap) and the conversation loop in Hermes and the own loop, with a simulated gate test (fake simulator; prompt `client-sim.v1` is a draft for Rishi)
 - [ ] Then build LangGraph, Google ADK and the OpenAI Agents SDK in parallel (R7), one agent and one folder each, with tool parity through D14. Each passes the settings test and the tool test by Thursday 12:00 or is cut with the reason recorded. Cut order: the two SDKs first, LangGraph last, never the own loop. Rishi reviews each before merge.
 - [x] Settle how task tools reach every harness (D14)
 - [ ] Register models in LiteLLM and smoke-test tool calling on each, with real dev runs on Haiku 5.5 and Gemini Flash, each scoped and signed off first (R8, R9)

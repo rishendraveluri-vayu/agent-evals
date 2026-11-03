@@ -22,6 +22,10 @@ Not required by the brief. It records what was built and by whom, so the next-ro
 - Surprises: LiteLLM v1.99.4's bundled price map has no Haiku 5.5 or Gemini 3.8 Flash, so spend would read $0 and budget caps would never trip; the config check now requires explicit prices. Port 3000 on Rishi's machine is held by sibling-project processes, so host ports are configurable.
 - Four SDK checks (LangGraph, ADK, Agents SDK, Claude Agent SDK) and the finance MCP server (164 tests, 11 tools) landed. Rishi walked through and approved the adapter rules (R10), revising the limits rule, and settled D12, D14's transport and D16 to D21 one question at a time.
 
+- Rishi approved contract v2 as a start without a full read, to iterate on 4 Nov (R12).
+- Claude implemented, against the fake model only (no real calls): the contract v2 JSON Schemas; the shared adapter library (stdlib only: spec, watchdog timeout, spans, conversation loop with the simulated client and its reply cache, step budget across turns, applied-settings sources, integrity hashes, atomic result) and its runner (process group, D23 safety net, leftover sweep, schema check, labels, per-trial LiteLLM keys, spend-log merge into chat spans); the gate kit; the own loop and the Hermes adapter, each passing every gate directly and through LiteLLM; the simulator prompt draft `client-sim.v1`; and the interim trace view and spend chart.
+- Surprises: Hermes repairs malformed tool-call JSON and runs it without telling the model (no switch; recorded under D18). LiteLLM cut stored bodies at about 2,000 characters, which removed the task prompt from Hermes's stored system prompt, and its spend log lagged past the runner's first wait so a fast trial showed 0 calls; both fixed and guarded. A wildcard route priced only in `model_info` logged $0. Hermes at `max_steps=3` made 5 calls and counted 3, which the trace view now shows side by side.
+
 ## Entry template
 
 ```markdown

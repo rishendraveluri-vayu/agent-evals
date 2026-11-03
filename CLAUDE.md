@@ -63,6 +63,15 @@ pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build   # apps/
 cd services/fake-llm && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run pytest -q
 
 uv run --no-project --with pyyaml==6.0.3 python scripts/check_litellm_config.py   # no cache, no dropped params, prices set
+
+cd workers/adapterlib && uv sync --locked && uv run pytest -q     # contract schemas, adapter library, runner
+cd workers/ownloop && uv sync --locked && uv run pytest -q        # own loop gate tests (needs uv sync in services/fake-llm and services/finance-mcp)
+scripts/setup_hermes.sh                                           # Hermes at the pin, from its own lockfile
+cd workers/hermes && uv sync --locked && HERMES_SRC=$PWD/.hermes-agent uv run pytest -q   # Hermes gate tests
+
+# Gates through LiteLLM (compose up first); fake models only, no spend
+EVALS_PROXY_URL=http://127.0.0.1:4000 LITELLM_MASTER_KEY=sk-local-dev-only uv run pytest -q tests/test_proxy.py   # in a worker folder
+scripts/dev_trials.sh                                              # record gate scenarios into runs/ for the trace view
 ```
 
 If a host port is taken, set `UI_PORT`, `API_PORT` or `LITELLM_PORT` (and `SMOKE_API_URL` etc. for the smoke test). On Rishi's machine, port 3000 is held by an older sibling-project process, so use `API_PORT=3001`.
