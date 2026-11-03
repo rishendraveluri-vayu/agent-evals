@@ -1,0 +1,193 @@
+{
+  "$defs": {
+    "Debt": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 60,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        },
+        "lender": {
+          "anyOf": [
+            {
+              "maxLength": 60,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lender"
+        },
+        "balance": {
+          "description": "Rupees, at most 2 decimals.",
+          "maximum": 1000000000000,
+          "minimum": 0,
+          "title": "Balance",
+          "type": "number"
+        },
+        "annual_rate_pct": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Annual Rate Pct",
+          "type": "number"
+        },
+        "minimum_payment": {
+          "description": "Rupees, at most 2 decimals.",
+          "maximum": 1000000000000,
+          "minimum": 0,
+          "title": "Minimum Payment",
+          "type": "number"
+        },
+        "remaining_months": {
+          "anyOf": [
+            {
+              "maximum": 600,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remaining Months"
+        }
+      },
+      "required": [
+        "name",
+        "balance",
+        "annual_rate_pct",
+        "minimum_payment"
+      ],
+      "title": "Debt",
+      "type": "object"
+    },
+    "Profile": {
+      "additionalProperties": true,
+      "description": "Free-form: the task decides what a client looks like. Only `name` is required.",
+      "properties": {
+        "name": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Profile",
+      "type": "object"
+    },
+    "Transaction": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "date": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "title": "Date",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 200,
+          "title": "Description",
+          "type": "string"
+        },
+        "category": {
+          "maxLength": 40,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Category",
+          "type": "string"
+        },
+        "direction": {
+          "enum": [
+            "debit",
+            "credit"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "amount": {
+          "description": "Rupees, at most 2 decimals.",
+          "maximum": 1000000000000,
+          "minimum": 0.01,
+          "title": "Amount",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "date",
+        "description",
+        "category",
+        "direction",
+        "amount"
+      ],
+      "title": "Transaction",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Top level of client.json.",
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "synthetic": {
+      "default": false,
+      "title": "Synthetic",
+      "type": "boolean"
+    },
+    "profile": {
+      "$ref": "#/$defs/Profile"
+    },
+    "debts": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Debt"
+      },
+      "title": "Debts",
+      "type": "array"
+    },
+    "transactions": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Transaction"
+      },
+      "title": "Transactions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "profile"
+  ],
+  "title": "finance-mcp client.json",
+  "type": "object"
+}

@@ -43,6 +43,12 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 - It does not model `max_tokens` (so it never returns `finish_reason: length`), `tool_choice`, `n`, auth, or whether a tool call matches the request's `tools`. Tests that pass against it say nothing about those behaviours; real dev runs (R9) cover them.
 - It speaks only the OpenAI Chat Completions format. A harness that needs the Anthropic Messages format (for example the Claude Agent SDK) reaches it only through LiteLLM's translation, which is untested.
 
+## Finance tools (`services/finance-mcp`)
+
+- Loans that cannot be scheduled in whole paise are rejected rather than approximated: an EMI that rounds to ₹0, an EMI below the first month's interest, a loan that would clear early, or a final payment above twice the EMI. Tasks must avoid such inputs.
+- Tool schemas leave the server identical for every client, but harnesses rewrite them before the model sees them (LangGraph strips titles and inlines references; ADK wraps descriptions). The schemas are kept flat to minimise this, and the tool test compares what actually reaches the model.
+- The MCP SDK orders `inputSchema` keys differently under protocol 2026-07-28 than under 2025-11-25. Content is identical; every known harness negotiates 2025-11-25.
+
 ## To check before submission
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted

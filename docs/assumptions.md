@@ -8,3 +8,6 @@ The brief says to document every assumption. One line each: the assumption, why,
 | A2 | One machine: no multi-node workers | Local one-command run, scope cut | Workers need remote claim support |
 | A3 | Configs and tasks live as files in git, plus a simple form | Versioning comes free, scope cut | Add editors |
 | A4 | Polling is enough for run progress | The brief doesn't require live updates | Add SSE or WebSocket |
+| A5 | Finance tool conventions: reducing-balance EMI with monthly rate = annual/12; the last EMI absorbs rounding so loans close at exactly ₹0.00; SIP contributions at the start of each month; FDs compound quarterly by default; money rounded half-up to paise | The usual Indian bank and calculator conventions; graders need one exact answer | Expected values in task graders change |
+| A6 | Snowball debt payoff orders by starting balance, fixed at the start, ties in input order | The brief and the tool spec left it open | Payoff order in snowball tasks changes |
+

@@ -1,0 +1,470 @@
+[
+  {
+    "name": "calculate_emi",
+    "description": "Monthly EMI on a reducing-balance loan, with total interest and total payable. Rupees, percent per year and months; the last payment absorbs paise rounding so the loan closes at exactly ₹0.00.",
+    "inputSchema": {
+      "properties": {
+        "principal": {
+          "type": "number",
+          "description": "Loan amount in rupees.",
+          "minimum": 1,
+          "maximum": 1000000000000
+        },
+        "annual_rate_pct": {
+          "type": "number",
+          "description": "Interest rate in percent per year (9 means 9%).",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "tenure_months": {
+          "type": "integer",
+          "description": "Loan tenure in months.",
+          "minimum": 1,
+          "maximum": 600
+        }
+      },
+      "required": [
+        "principal",
+        "annual_rate_pct",
+        "tenure_months"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "amortization_schedule",
+    "description": "Loan amortisation schedule: opening balance, principal paid, interest paid and closing balance per year (default) or per month. Rupees, percent per year and months; at most 60 rows per call, so page with start_period.",
+    "inputSchema": {
+      "properties": {
+        "principal": {
+          "type": "number",
+          "description": "Loan amount in rupees.",
+          "minimum": 1,
+          "maximum": 1000000000000
+        },
+        "annual_rate_pct": {
+          "type": "number",
+          "description": "Interest rate in percent per year (9 means 9%).",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "tenure_months": {
+          "type": "integer",
+          "description": "Loan tenure in months.",
+          "minimum": 1,
+          "maximum": 600
+        },
+        "granularity": {
+          "type": "string",
+          "description": "Row size: 'yearly' (12 months per row) or 'monthly'.",
+          "enum": [
+            "yearly",
+            "monthly"
+          ],
+          "default": "yearly"
+        },
+        "start_period": {
+          "type": "integer",
+          "description": "First row to return: year or month number, from 1.",
+          "minimum": 1,
+          "maximum": 600,
+          "default": 1
+        }
+      },
+      "required": [
+        "principal",
+        "annual_rate_pct",
+        "tenure_months"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "prepayment_impact",
+    "description": "Effect of a one-time part-prepayment on a reducing-balance loan: the new EMI or new tenure, and the interest saved. Rupees, percent per year and months.",
+    "inputSchema": {
+      "properties": {
+        "outstanding_principal": {
+          "type": "number",
+          "description": "Loan balance outstanding today, in rupees.",
+          "minimum": 1,
+          "maximum": 1000000000000
+        },
+        "annual_rate_pct": {
+          "type": "number",
+          "description": "Interest rate in percent per year (9 means 9%).",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "remaining_months": {
+          "type": "integer",
+          "description": "Months left on the loan.",
+          "minimum": 1,
+          "maximum": 600
+        },
+        "prepayment_amount": {
+          "type": "number",
+          "description": "One-time part-prepayment in rupees, less than the outstanding amount.",
+          "minimum": 1,
+          "maximum": 1000000000000
+        },
+        "mode": {
+          "type": "string",
+          "description": "'reduce_tenure' keeps the EMI; 'reduce_emi' keeps the tenure.",
+          "enum": [
+            "reduce_tenure",
+            "reduce_emi"
+          ],
+          "default": "reduce_tenure"
+        }
+      },
+      "required": [
+        "outstanding_principal",
+        "annual_rate_pct",
+        "remaining_months",
+        "prepayment_amount"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "debt_payoff_plan",
+    "description": "Pay off several debts from one fixed monthly budget, simulated month by month: payoff order, the month each debt clears, months to debt-free and total interest. Each month interest accrues at annual/12 on the opening balance, minimums are paid, and the rest goes to the target debt; stops at 600 months.",
+    "inputSchema": {
+      "properties": {
+        "debts": {
+          "type": "array",
+          "description": "The debts to pay off, 1 to 20.",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Label for this debt, unique in the list.",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "balance": {
+                "type": "number",
+                "description": "Outstanding balance in rupees.",
+                "minimum": 1,
+                "maximum": 1000000000000
+              },
+              "annual_rate_pct": {
+                "type": "number",
+                "description": "Interest rate in percent per year (9 means 9%).",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "minimum_payment": {
+                "type": "number",
+                "description": "Minimum monthly payment in rupees.",
+                "minimum": 0,
+                "maximum": 1000000000000
+              }
+            },
+            "required": [
+              "name",
+              "balance",
+              "annual_rate_pct",
+              "minimum_payment"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "monthly_budget": {
+          "type": "number",
+          "description": "Total paid towards all debts each month, in rupees.",
+          "minimum": 1,
+          "maximum": 1000000000000
+        },
+        "strategy": {
+          "type": "string",
+          "description": "'avalanche' (highest rate first) or 'snowball' (smallest balance first).",
+          "enum": [
+            "avalanche",
+            "snowball"
+          ],
+          "default": "avalanche"
+        }
+      },
+      "required": [
+        "debts",
+        "monthly_budget"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "sip_future_value",
+    "description": "Future value of a monthly SIP, with total invested and gains. Contributions at the start of each month (annuity due), returns compounded monthly at annual/12, and the monthly amount stepped up every 12 months.",
+    "inputSchema": {
+      "properties": {
+        "monthly_investment": {
+          "type": "number",
+          "description": "Monthly SIP amount in rupees.",
+          "minimum": 1,
+          "maximum": 1000000000000
+        },
+        "expected_annual_return_pct": {
+          "type": "number",
+          "description": "Expected return in percent per year.",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "years": {
+          "type": "integer",
+          "description": "Investment period in whole years.",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "annual_step_up_pct": {
+          "type": "number",
+          "description": "Increase in the monthly amount every 12 months, in percent.",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 0
+        }
+      },
+      "required": [
+        "monthly_investment",
+        "expected_annual_return_pct",
+        "years"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "fd_maturity",
+    "description": "Maturity amount and interest earned on a cumulative fixed deposit. Rupees and percent per year; a part period at the end earns simple interest.",
+    "inputSchema": {
+      "properties": {
+        "principal": {
+          "type": "number",
+          "description": "Deposit amount in rupees.",
+          "minimum": 1,
+          "maximum": 1000000000000
+        },
+        "annual_rate_pct": {
+          "type": "number",
+          "description": "Interest rate in percent per year (9 means 9%).",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "years": {
+          "type": "number",
+          "description": "Deposit tenure in years; 1.5 means 18 months.",
+          "minimum": 0.01,
+          "maximum": 50
+        },
+        "compounding": {
+          "type": "string",
+          "description": "How often interest compounds.",
+          "enum": [
+            "quarterly",
+            "monthly",
+            "annually"
+          ],
+          "default": "quarterly"
+        }
+      },
+      "required": [
+        "principal",
+        "annual_rate_pct",
+        "years"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "inflation_adjusted_value",
+    "description": "Future cost of an amount today after inflation, or the present value of a future amount. Rupees, percent per year and whole years, compounded yearly.",
+    "inputSchema": {
+      "properties": {
+        "amount": {
+          "type": "number",
+          "description": "Amount in rupees.",
+          "minimum": 1,
+          "maximum": 1000000000000
+        },
+        "annual_inflation_pct": {
+          "type": "number",
+          "description": "Inflation in percent per year.",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "years": {
+          "type": "integer",
+          "description": "Number of whole years.",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "direction": {
+          "type": "string",
+          "description": "'future_cost': what today's amount will cost later; 'present_value': what a future amount is worth today.",
+          "enum": [
+            "future_cost",
+            "present_value"
+          ],
+          "default": "future_cost"
+        }
+      },
+      "required": [
+        "amount",
+        "annual_inflation_pct",
+        "years"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "loan_affordability",
+    "description": "Largest new EMI that keeps total EMIs within the FOIR limit of monthly net income, and the largest loan that EMI supports. Rupees, percent per year and months; zero if existing EMIs already reach the limit.",
+    "inputSchema": {
+      "properties": {
+        "monthly_net_income": {
+          "type": "number",
+          "description": "Take-home income per month in rupees.",
+          "minimum": 1,
+          "maximum": 1000000000000
+        },
+        "existing_monthly_emis": {
+          "type": "number",
+          "description": "EMIs already paid each month, in rupees.",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "annual_rate_pct": {
+          "type": "number",
+          "description": "Interest rate in percent per year (9 means 9%).",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "tenure_months": {
+          "type": "integer",
+          "description": "Loan tenure in months.",
+          "minimum": 1,
+          "maximum": 600
+        },
+        "max_foir_pct": {
+          "type": "number",
+          "description": "FOIR limit: maximum total EMIs as a percent of net income.",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 50
+        }
+      },
+      "required": [
+        "monthly_net_income",
+        "existing_monthly_emis",
+        "annual_rate_pct",
+        "tenure_months"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "get_client_profile",
+    "description": "The current client's profile as recorded (for example name, age, city, dependents, income in rupees, notes). Says client_on_file false if there is no client.",
+    "inputSchema": {
+      "properties": {},
+      "required": [],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "list_debts",
+    "description": "The current client's debts: balance in rupees, interest rate in percent per year and minimum monthly payment in rupees. Says client_on_file false if there is no client.",
+    "inputSchema": {
+      "properties": {},
+      "required": [],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "list_transactions",
+    "description": "The current client's transactions, oldest first, filtered by category and an inclusive date range, with debit and credit totals over all matches. Amounts in rupees; says client_on_file false if there is no client.",
+    "inputSchema": {
+      "properties": {
+        "category": {
+          "type": "string",
+          "description": "Category to match exactly, case-insensitive. Omit for all."
+        },
+        "from_date": {
+          "type": "string",
+          "description": "Earliest date to include, YYYY-MM-DD. Omit for no limit."
+        },
+        "to_date": {
+          "type": "string",
+          "description": "Latest date to include, YYYY-MM-DD. Omit for no limit."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Most transactions to list; totals still cover every match.",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 50
+        }
+      },
+      "required": [],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  }
+]

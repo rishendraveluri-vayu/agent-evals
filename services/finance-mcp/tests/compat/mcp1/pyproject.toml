@@ -1,0 +1,11 @@
+[project]
+name = "finance-mcp-compat-mcp1"
+version = "0.0.0"
+description = "Test-only client environment: an mcp 1.x client (the version langchain-mcp-adapters 0.3.2 resolves) talking to finance-mcp."
+requires-python = ">=3.14"
+dependencies = [
+    "mcp==1.30.0",
+]
+
+[tool.uv]
+package = false

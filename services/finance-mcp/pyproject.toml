@@ -1,0 +1,26 @@
+[project]
+name = "finance-mcp"
+version = "0.1.0"
+description = "MCP tool server for Indian personal finance: deterministic calculators and read-only client data, shared by every agent harness."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "mcp==2.3.0",
+]
+
+[project.scripts]
+finance-mcp = "finance_mcp.__main__:main"
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+]
