@@ -76,6 +76,11 @@ services:
     environment:
       PORT: "3000"
       DATABASE_URL: postgresql://evals:${POSTGRES_PASSWORD:-evals-local}@postgres:5432/evals
+      # Interim (SP1): finished trial folders are read from here for the trace view and the
+      # spend chart, until SP2 stores them in the database.
+      RUNS_DIR: /runs
+    volumes:
+      - ./runs:/runs:ro
     depends_on:
       postgres:
         condition: service_healthy

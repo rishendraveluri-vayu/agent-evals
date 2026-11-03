@@ -26,3 +26,7 @@ dist/
 
 # Hermes checkout for the adapter tests (scripts/setup_hermes.sh)
 workers/hermes/.hermes-agent/
+
+# Trial folders from local runs (read by the API's interim trace view)
+runs/*
+!runs/.gitkeep

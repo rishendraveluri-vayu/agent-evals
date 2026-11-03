@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { fetchHealth, type DbState, type HealthResult } from './health';
+import TrialView from './views/TrialView.vue';
+import TrialsView from './views/TrialsView.vue';
 
 const result = ref<HealthResult | null>(null);
+const hash = ref(typeof window === 'undefined' ? '' : window.location.hash);
 
 const dbLabels: Record<DbState, string> = {
   up: 'up',
@@ -10,86 +13,116 @@ const dbLabels: Record<DbState, string> = {
   not_configured: 'not configured',
 };
 
+/** #/trials/<id> shows one trial; anything else shows the list. */
+const trialId = computed(() => {
+  const m = /^#\/trials\/(.+)$/.exec(hash.value);
+  return m ? decodeURIComponent(m[1]) : null;
+});
+
+const onHash = () => {
+  hash.value = window.location.hash;
+};
+
 onMounted(async () => {
+  window.addEventListener('hashchange', onHash);
   result.value = await fetchHealth();
 });
+
+onBeforeUnmount(() => window.removeEventListener('hashchange', onHash));
 </script>
 
 <template>
   <main class="page">
-    <h1>Agent Evals Platform</h1>
-
-    <section
-      class="health"
-      aria-labelledby="health-heading"
-    >
-      <h2 id="health-heading">
-        API health
-      </h2>
-
-      <p
-        v-if="result === null"
-        class="state"
-        data-test="health-loading"
-        role="status"
+    <header class="top">
+      <h1>Agent Evals Platform</h1>
+      <section
+        class="health"
+        aria-labelledby="health-heading"
       >
-        Checking the API…
-      </p>
-
-      <p
-        v-else-if="result.kind === 'unreachable'"
-        class="state state--error"
-        data-test="health-unreachable"
-        role="alert"
-      >
-        API unreachable ({{ result.reason }})
-      </p>
-
-      <dl
-        v-else
-        class="facts"
-        data-test="health-ok"
-      >
-        <dt>Status</dt>
-        <dd data-test="health-status">
-          {{ result.health.status }}
-        </dd>
-        <dt>Database</dt>
-        <dd
-          data-test="health-db"
-          :class="{ 'state--error': result.health.db === 'down' }"
+        <h2
+          id="health-heading"
+          class="visually-hidden"
         >
-          {{ dbLabels[result.health.db] }}
-        </dd>
-      </dl>
-    </section>
+          API health
+        </h2>
+        <p
+          v-if="result === null"
+          class="state"
+          data-test="health-loading"
+          role="status"
+        >
+          Checking the API…
+        </p>
+        <p
+          v-else-if="result.kind === 'unreachable'"
+          class="state state--error"
+          data-test="health-unreachable"
+          role="alert"
+        >
+          API unreachable ({{ result.reason }})
+        </p>
+        <dl
+          v-else
+          class="facts"
+          data-test="health-ok"
+        >
+          <dt>API</dt>
+          <dd data-test="health-status">
+            {{ result.health.status }}
+          </dd>
+          <dt>Database</dt>
+          <dd
+            data-test="health-db"
+            :class="{ 'state--error': result.health.db === 'down' }"
+          >
+            {{ dbLabels[result.health.db] }}
+          </dd>
+        </dl>
+      </section>
+    </header>
+
+    <TrialView
+      v-if="trialId"
+      :key="trialId"
+      :trial-id="trialId"
+    />
+    <TrialsView v-else />
   </main>
 </template>
 
 <style scoped>
 .page {
-  max-width: 40rem;
-  margin: 3rem auto;
+  max-width: 72rem;
+  margin: 1.5rem auto;
   padding: 0 1rem;
-  font-family: system-ui, sans-serif;
-  line-height: 1.5;
+}
+
+.top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0;
 }
 
 .health {
-  border: 1px solid #d0d4da;
-  border-radius: 6px;
-  padding: 1rem 1.25rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
 }
 
-h2 {
-  margin-top: 0;
-  font-size: 1.1rem;
+.health p {
+  margin: 0;
 }
 
 .facts {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 0.25rem 1rem;
+  display: flex;
+  gap: 0.4rem;
   margin: 0;
 }
 
@@ -98,10 +131,18 @@ h2 {
 }
 
 .facts dd {
-  margin: 0;
+  margin: 0 0.75rem 0 0;
 }
 
 .state--error {
-  color: #b42318;
+  color: var(--critical);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }
 </style>
