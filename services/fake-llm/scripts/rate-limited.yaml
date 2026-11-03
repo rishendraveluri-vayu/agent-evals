@@ -1,0 +1,5 @@
+# The first two identical attempts get 429 with Retry-After: 1; the third succeeds.
+description: 429 twice, then success.
+steps:
+  - text: "Succeeded after two rate-limited attempts."
+    fault: {kind: "429", times: 2, retry_after: 1}

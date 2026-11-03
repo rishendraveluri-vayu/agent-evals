@@ -1,0 +1,6 @@
+# The first attempt's stream breaks halfway (no finish_reason, no [DONE]); the retry is clean.
+# Non-stream requests get a truncated body on the first attempt instead.
+description: Broken stream once, then success.
+steps:
+  - text: "This reply streams cleanly on the second attempt, after the first stream breaks."
+    fault: {kind: broken_stream, times: 1}

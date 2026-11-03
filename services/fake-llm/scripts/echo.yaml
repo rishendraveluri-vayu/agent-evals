@@ -1,0 +1,4 @@
+# Replies with the text of the last user message, on every turn (one step, served again).
+description: Echoes the last user message back as plain text.
+steps:
+  - text: "echo: {{last_user_message}}"

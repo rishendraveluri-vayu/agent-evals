@@ -1,0 +1,10 @@
+# Two tool-call steps, then a final answer. Step = number of assistant messages in the request.
+description: Calls search_docs, then read_file, then answers in text.
+steps:
+  - tool_calls:
+      - name: search_docs
+        arguments: {query: "refund policy", limit: 3}
+  - tool_calls:
+      - name: read_file
+        arguments: {path: "docs/refunds.md"}
+  - text: "Refunds are accepted within 30 days of purchase."
