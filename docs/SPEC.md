@@ -146,11 +146,11 @@ Each one has a done-when test. Scope stops growing once that test passes.
 **Done when:** one task runs through every harness that passed its gate (Hermes and the own loop at minimum) behind the same interface, and a new model is a config line.
 **Needs:** SP0, D4, D5, D6. Start from `docs/hermes-notes.md`.
 
-- [ ] **[Rishi designs]** Harness and model adapter interfaces
+- [x] **[Rishi designs]** Harness and model adapter interfaces: contract v2, approved as a start (R12), in `docs/adapter-contract.md`
 - [ ] Build the Hermes adapter on the pinned SHA
 - [ ] Audit Hermes and record results in `hermes-notes.md`: background skill and memory writes (R3), memory in the prompt vs the trace, temperature, model-name routing, prompt caching through the proxy, token usage in the result
 - [x] Settle the cross-harness trace format (D12, R4)
-- [ ] Before fixing the adapter contract, read each SDK's run, tool and settings APIs on paper (about 1 h), so the contract is not shaped only by Hermes and the own loop
+- [x] Before fixing the adapter contract, read each SDK's run, tool and settings APIs on paper (about 1 h), so the contract is not shaped only by Hermes and the own loop
 - [ ] Build the shared adapter library (spec, timeout wrapper, MCP command, conversation loop, end-state mapping, atomic result, span writer), the `new-harness` scaffold and the `probe-harness` command that writes capabilities from evidence (R11)
 - [ ] Build the own plain loop next to Hermes, until one task runs end to end through both
 - [ ] Minimal trace view (one trial's span timeline) and a spend chart per trial and config, in the first end-to-end run (R11)

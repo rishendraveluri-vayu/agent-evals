@@ -1,6 +1,6 @@
-# Adapter contract v2: proposal
+# Adapter contract v2
 
-**Status: proposal for Rishi, 3 Nov 2026. v1 reviewed on paper by Rishi; v2 folds in his notes. Not yet approved.** Once approved it moves into `docs/design.md` section 2 and becomes JSON Schemas shared by the API and the workers (SP2).
+**Status: approved as a starting point by Rishi on 3 Nov 2026 (R12), to be iterated on 4 Nov.** v1 was reviewed on paper by Rishi and v2 folds in his notes. `docs/design.md` section 2 points here. The machine-readable form is the JSON Schemas in `contract/v2/`, shared by the API and the workers (SP2). A change to this file changes those schemas in the same commit.
 
 It turns the agreed rules into fields: R10 (adapter rules), R11 (Rishi's review notes), D3 (isolation), D12 (traces, now OpenTelemetry spans), D14 (MCP per trial over stdio), D16 to D24.
 
@@ -15,6 +15,21 @@ It turns the agreed rules into fields: R10 (adapter rules), R11 (Rishi's review 
 7. **Traces are OpenTelemetry spans** (section 6). The minimal trace view and spend chart come in the first end-to-end run.
 8. **Effect checks** prove that a setting changes behaviour, not just that it reaches the request (section 8).
 9. **The simulated client** gets settings, guards against a yes-man client, and a proof plan (section 9).
+
+## Changed while building it (3 Nov evening, for Rishi's read)
+
+Building the schemas and the shared library turned up these gaps. Each is small, and each is reflected in the sections below and in `contract/v2/`.
+
+1. **`settings_sources` in the spec.** The spec carries resolved values, so it also has to say whether each came from the config or a platform default. Otherwise `applied_settings` could not show the source (section 3).
+2. **The simulator's prompt is a versioned text object** (id, version, sha256, text) like the system prompt, and its `base_url` is in the spec. This replaces the bare `prompt_version` (section 9).
+3. **`result.conversation` also holds `agent_turns` and the visible `transcript`**, so graders read the whole conversation from one place. `ended_by` is one of `null`, `client`, `turn_cap` or `agent_end_state` (section 5).
+4. **Two more trial-folder files for the reply cache:** `/trial/sim_cache.json` (written by the runner, read-only) and `/trial/out/sim_replies.jsonl` (new replies, for the runner to store). The cache has to outlive the wiped folder (section 2).
+5. **`runner-report.json`** is the runner's half of the record: label, exit status, proxy usage, log hashes and the file manifest (sections 5 and 7).
+6. **`max_client_turns` counts simulated messages after the opening one**, and the client ends by writing `[[END_CONVERSATION]]` (section 9).
+7. **`experiment_id` and `task_split` may be null**, for gate tests and dev runs outside an experiment.
+8. **Hermes's `extra_calls_at_limit` is 2, not 1:** when the summary request itself gets a tool call, Hermes retries it once (`docs/research/hermes/sp1_probes.md`).
+9. **Each trial key only allows the spec's model**, so a harness cannot quietly call a different one.
+10. **LiteLLM facts are now checked** (section 6): spend logs per key, failures included, bodies stored, rows about 1 s after the call.
 
 ## 1. The shape in one paragraph
 
@@ -46,6 +61,9 @@ The path is the same in every trial, because Hermes puts paths into its prompt.
 | `/trial/out/result.json` | adapter | Written once at the end, atomically (section 5). |
 | `/trial/out/artifacts/` | adapter | Raw harness files worth keeping, such as Hermes's session JSON. |
 | `/trial/out/stdout.log`, `stderr.log` | runner | The adapter's full output, captured by the runner. |
+| `/trial/sim_cache.json` | runner | Known simulated-client replies for this task and simulator (D22). Read-only. |
+| `/trial/out/sim_replies.jsonl` | adapter | New client replies from this trial, for the runner to store. |
+| `/trial/out/runner-report.json` | runner | The runner's additions: label, exit status, proxy usage, log hashes, file manifest. |
 
 Everything else is read-only. Nothing in `/trial` survives to the next trial; everything that matters has been uploaded first (section 10).
 
@@ -95,6 +113,7 @@ Everything else is read-only. Nothing in `/trial` survives to the next trial; ev
 }
 ```
 
+- **`settings_sources`** says, for each setting, `config`, `platform_default` or `unsupported`. The adapter library copies it into `applied_settings`.
 - **`settings` is the full, resolved set** (R10.4), filled by the API from the config and the platform defaults. **A platform default is applied only to settings the harness supports.** For an unsupported setting the field is `null`, and the harness's own behaviour is recorded and shown (section 5). A config that explicitly sets an unsupported setting is rejected at submission.
 - **`max_steps` counts the agent's model calls** across the whole trial, conversation included (D17). **`timeout_s`** is enforced by the adapter library's wrapper (R10.6). The runner's safety net is `timeout_s × 1.5 + 30 s` (D23).
 - **`parallel_tool_calls`** defaults to false where supported (D19).
@@ -115,7 +134,7 @@ Everything else is read-only. Nothing in `/trial` survives to the next trial; ev
   "settings": {
     "temperature":         {"supported": true,  "native": "request_overrides.temperature", "default": null, "evidence": "probe 2026-11-04"},
     "max_output_tokens":   {"supported": true,  "native": "request_overrides.max_tokens",  "default": null, "evidence": "probe 2026-11-04"},
-    "max_steps":           {"supported": true,  "native": "max_iterations", "extra_calls_at_limit": 1},
+    "max_steps":           {"supported": true,  "native": "max_iterations", "extra_calls_at_limit": 2},
     "timeout_s":           {"supported": true,  "native": "wrapper"},
     "parallel_tool_calls": {"supported": true,  "native": "request_overrides.parallel_tool_calls"},
     "memory":              {"supported": true},
@@ -157,7 +176,7 @@ Uses of the file:
   "end_state": "answered",
   "end_detail": {"harness_stop_reason": "stop", "exception_type": null, "exception_message": null, "last_message_excerpt": "..."},
   "final_answer": "Your EMI is ₹8,997.26 ...",
-  "conversation": {"client_turns": 0, "ended_by": null},
+  "conversation": {"agent_turns": 1, "client_turns": 0, "ended_by": null, "transcript": [{"role": "user", "content": "...", "source": "task"}, {"role": "assistant", "content": "...", "source": "agent"}]},
   "harness": {"name": "hermes", "version": "6112c2a", "extra": {}},
   "applied_settings": {
     "temperature":         {"value": 0.2,  "source": "config"},
@@ -201,7 +220,7 @@ Standard tools can read it directly. Our own UI renders it as the trial timeline
 - **Model-call spans come from LiteLLM** for every harness (R10.9), so hidden retries appear as extra `chat` spans with `evals.attempt` above 1. An adapter may also emit its own view of a call (`evals.source=adapter`), kept for comparison.
 - **Spend is a span attribute**, so it can be plotted per trial, config, task and experiment straight from stored spans.
 - Full request and response bodies are stored by reference (section 10). The first request feeds the invariance diff.
-- **To verify in SP1:** that LiteLLM can store request and response bodies (`store_prompts_in_spend_logs`) and that the runner can match them to a trial by key.
+- **Checked on 3 Nov** against LiteLLM v1.99.4 and the fake model. `GET /spend/logs?api_key=<token>` returns one row per call, failures included (`status: failure`, with `error_information.error_code`). With `store_prompts_in_spend_logs: true` the bodies are in `proxy_server_request` and `response`, and the stored headers carry no key. With `proxy_batch_write_at: 1` rows land about 1 s after the call. A wildcard route (`fake/*`) priced only in `model_info` logged $0, so prices are also set in `litellm_params`.
 
 ## 7. Exit codes and failure mapping
 
@@ -252,7 +271,8 @@ A task with no `client_sim` block is a single prompt. With one, a second model p
   "goal": "Understand whether she can keep the house and what to do first",
   "opening_message": "I don't really know where to start. My husband handled all of this.",
   "max_client_turns": 3,
-  "model": {"name": "claude-haiku-5-5", "api_key_env": "EVALS_SIM_API_KEY", "temperature": 0, "max_output_tokens": 300, "prompt_version": "sim-v1"}
+  "model": {"name": "claude-haiku-5-5", "base_url": "http://litellm:4000/v1", "api_key_env": "EVALS_SIM_API_KEY", "temperature": 0, "max_output_tokens": 300,
+            "prompt": {"id": "client-sim", "version": "sim-v1", "sha256": "...", "text": "..."}}
 }
 ```
 
@@ -268,7 +288,7 @@ A task with no `client_sim` block is a single prompt. With one, a second model p
   - Simulated tasks stay a small share of the set, about 5 to 8, because each needs a persona and this review.
 - **Simulator settings** (model, temperature, token cap, prompt version) are configurable, recorded in every trial, and identical across all configs in an experiment, which the invariance check enforces.
 - **One set of responses where the conversation is the same.** Client replies are cached by task, simulator settings and exact visible transcript. The agent's calls are never cached.
-- **Ending.** The conversation ends when the client's concerns are covered or at `max_client_turns`. The agent's last reply is graded, and `max_steps` and `timeout_s` cover the whole conversation.
+- **Ending.** The client ends by writing `[[END_CONVERSATION]]`; `max_client_turns` counts simulated messages after the opening one. The conversation ends when the client's concerns are covered or at `max_client_turns`. The agent's last reply is graded, and `max_steps` and `timeout_s` cover the whole conversation.
 
 ## 10. Storage and traceability (R11)
 

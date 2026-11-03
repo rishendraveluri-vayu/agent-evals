@@ -60,10 +60,13 @@ Decided, the adapter rules (R10, 3 Nov):
 - **Traces:** OpenTelemetry spans in OTLP JSON, one trace per trial, with `gen_ai.*` attributes and our own `evals.*` events for memory, skills and errors; model-call spans from LiteLLM's records, tool and turn spans from each adapter (D12, amended 3 Nov).
 - **Thin adapters, no hidden retries.** One folder per harness; every harness's built-in retries set to zero so retrying happens in one place.
 
+Decided, the field-by-field contract (R12, 3 Nov; to be iterated on 4 Nov):
+
+- **`docs/adapter-contract.md` v2** defines the trial folder, `spec.json`, `capabilities.json`, `result.json`, the span names, exit codes, gate tests, effect checks, the simulated client and what is stored. The JSON Schemas in `contract/v2/` are its machine-readable form.
+- **The config shape** is a common `settings` block (temperature, max output tokens, max steps, timeout, parallel tool calls, memory, skills, compression) plus `harness_options` validated against each adapter's own schema (D23).
+
 Open:
 
-- The field-by-field contract: what `spec.json`, `result.json` and `trace.jsonl` contain, and the capabilities file format. **[Rishi designs]**, written from R10.
-- The config shape: a common block plus per-harness options.
 - D15: the remaining Hermes settings that are design calls (compression, `skill_manage` writes).
 
 ## 3. Data model
