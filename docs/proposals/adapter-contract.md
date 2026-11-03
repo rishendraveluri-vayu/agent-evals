@@ -40,7 +40,7 @@ Everything else is read-only (D3). Nothing in `/trial` survives to the next tria
   "model": {
     "name": "claude-haiku-5-5",
     "base_url": "http://litellm:4000/v1",
-    "api_key": "sk-trial-...",
+    "api_key_env": "EVALS_MODEL_API_KEY",
     "api_format": "openai_chat"
   },
   "settings": {
@@ -69,15 +69,15 @@ Everything else is read-only (D3). Nothing in `/trial` survives to the next tria
 How each part follows from the rules:
 
 - **`settings` is the full, resolved set** (R10.4). The API fills every platform setting before the trial starts, so an adapter never falls back silently on its own default. `null` means "not set by the config": the adapter then leaves the harness default and records it in `applied_settings`. A config that sets something the harness does not support never reaches a spec, because the API rejects it at submission.
-- **`max_steps` counts model calls** (D17). **`timeout_s`** is enforced by the adapter's wrapper (R10.6). The runner's safety net is `timeout_s × 1.5 + 30 s` **(choice)**.
+- **`max_steps` counts the agent's model calls** across the whole trial (D17). **`timeout_s`** is enforced by the adapter's wrapper (R10.6). The runner's safety net is `timeout_s × 1.5 + 30 s` (Rishi, 3 Nov).
 - **`parallel_tool_calls`** defaults to false (D19).
-- **`memory`, `skills` and `compression`** are common settings, because R3 and R10.8 need them visible on every config. Harness-specific detail, such as Hermes's nudge intervals, lives in `harness_options` **(choice: config shape)**.
+- **`memory`, `skills` and `compression`** are common settings, because R3 and R10.8 need them visible on every config (Rishi, 3 Nov). Harness-specific detail, such as Hermes's nudge intervals, lives in `harness_options`.
 - **`harness_options`** is opaque to the platform. Each adapter validates it against a schema in its capabilities file. This is the "small common block plus per-harness options" shape from the pre-mortem.
 - **`model`** points only at LiteLLM, with a per-trial key (R10.3). `api_format` is `openai_chat` for every harness today. The Claude Agent SDK would need `anthropic_messages`, which is why the field exists.
 - **`tools`**: the finance MCP server, started per trial over stdio (D14), with an explicit tool timeout, because ADK and the Agents SDK default to 5 s. `enabled_builtins` is empty unless a config turns a built-in on (R10.7). That is also where the parked "tools beyond MCP" idea would plug in.
 - **`seed`** is state the config gives the agent at the start, in harness-neutral form: memory as a list of text entries, skills as files. The adapter writes it in its harness's native format. It is never learned state (R10.8).
-- **`task.messages`** is a list, so a task can supply earlier turns. v1 has no simulated user who answers the agent's questions mid-run **(choice; task design is SP4)**.
-- The key sits in the spec rather than an environment variable **(choice)**. The trial folder is private (mode 0700) and the agent has no file tools (R10.7).
+- **`task.messages`** is a list, so a task can supply earlier turns. A task may also carry a `client_sim` block, which turns it into a conversation with a simulated client (section 9; Rishi chose this on 3 Nov).
+- **The per-trial key travels as an environment variable** (Rishi, 3 Nov). The spec carries only its name, `EVALS_MODEL_API_KEY`, never `OPENAI_API_KEY`, which would switch on the Agents SDK's tracing export. The adapter passes the key explicitly to its model client and, where the harness allows, starts child processes (the MCP server, CLIs) with a minimal environment that leaves it out.
 
 ## 4. `capabilities.json` (one per adapter, fixed)
 
@@ -195,9 +195,34 @@ All run through LiteLLM against the fake model server, with no real calls.
 
 A harness counts once these pass, by its R7 deadline of Thursday 12:00.
 
-## 9. Choices in this draft for Rishi to confirm
+## 9. Simulated client (draft; open points marked **(choice)**)
 
-1. The config shape: memory, skills and compression as common settings, with harness detail in `harness_options`.
-2. The safety-net timeout of `timeout_s × 1.5 + 30 s`.
-3. No simulated user in v1, so tasks are one prompt, optionally with prior turns.
-4. The per-trial key carried in `spec.json`.
+Rishi chose on 3 Nov to support a simulated client: a second model plays the client and answers the agent mid-run. A task with no `client_sim` block stays a single prompt.
+
+```json
+"client_sim": {
+  "persona": "Meera, 41, Pune. Widowed in March; her husband's ₹18 lakh home loan is now in her name ...",
+  "hidden_facts": ["Monthly take-home ₹92,000", "₹6 lakh in an FD she has not touched"],
+  "goal": "Understand whether she can keep the house and what to do first",
+  "opening_message": "I don't really know where to start. My husband handled all of this.",
+  "max_client_turns": 3,
+  "model": {"name": "claude-haiku-5-5", "api_key_env": "EVALS_SIM_API_KEY", "temperature": 0}
+}
+```
+
+(The persona above is an invented illustration, not a task.)
+
+- **The adapter runs the conversation** inside one trial, using its harness's own multi-turn session, because R10.1 keeps one process per trial. Between agent turns it calls a shared, harness-neutral simulator helper shipped in the worker image (like the finance MCP server). The helper takes the visible transcript and returns the next client message or a stop signal, so the simulator is byte-identical across harnesses.
+- **What the simulated client sees:** only the agent's visible replies, not tool calls or results. It knows the persona and hidden facts, and reveals a fact only when the agent asks for it **(choice)**.
+- **The simulator model** is fixed per experiment and the same for every config, and its calls use their own key, so the agent's call counts, spend and step limit stay clean **(choice)**.
+- **The conversation ends** when the simulator signals it is done, or after `max_client_turns`; the agent's last reply is the final answer **(choice)**.
+- **Simulated and single-prompt tasks can coexist** in one task set; which tasks the experiment uses is part of D9 **(choice)**.
+- **Trace:** `user_message` events with `source: simulator`, and simulator model calls recorded from the proxy under their own key, tagged `role: simulator`.
+- **Gate tests:** one simulated task per adapter, with the simulator routed to a scripted fake model.
+
+## 10. Decided on 3 Nov
+
+1. Config shape: memory, skills and compression are common settings, with harness detail in `harness_options`.
+2. Safety-net timeout: `timeout_s × 1.5 + 30 s`.
+3. Simulated client: supported (section 9; open points still to settle).
+4. Per-trial key: an environment variable, named in the spec.
