@@ -15,6 +15,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | Harness set (was D6) | Hermes, plus LangGraph, Google ADK, OpenAI Agents SDK and an own plain tool-calling loop. Each is an adapter. | Rishi | 3 Nov |
 | Agents ADK (was D11) | Both: Google ADK and OpenAI Agents SDK, "both are most common" | Rishi | 3 Nov |
 | Task domain (was D13) | Personal-finance assistant: calculation tools plus context-sensitive advice | Rishi | 3 Nov |
+| Second provider (was D4) | Gemini, next to Claude | Rishi | 3 Nov |
 
 ## Open
 
@@ -23,7 +24,6 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D1 | Where graders and stats live | Python or TypeScript | Python | Tue |
 | D2 | Worker boundary | HTTP claim and report, or direct DB access | HTTP | Tue |
 | D3 | Trial isolation | Container per trial, or process per trial | Container | Tue |
-| D4 | Second provider | Gemini or OpenAI | Gemini, because its price was the one found | Tue |
 | D5 | Open-weight model | Hosted through OpenRouter, or local | Hosted, gpt-oss-120b if tool calling holds up | Wed |
 | D7 | Tasks using the judge | Any share of the 20+ | About 6 to 8 | Thu |
 | D8 | Judge threshold and what happens below it | Set before seeing results | Below threshold leaves the headline score | Thu |
@@ -71,7 +71,9 @@ Dated statements from Rishi that constrain the design. Not option-choices, so th
 - **R5 (3 Nov). Five harnesses.** D11 settled as both SDKs, so R1 now reads Hermes plus LangGraph, Google ADK, OpenAI Agents SDK and the own loop.
 - **Pre-mortem note (3 Nov), not a ruling.** Three of five pre-mortem reviewers challenged R5 with evidence, and a dependency check confirmed the harnesses cannot share one Python environment. Options are in `docs/premortem/summary.md`. Resolved by R7.
 - **R6 (3 Nov). Tool call and judgment at the crux.** The domain must need both a correct tool call and a context-sensitive response. Rishi's example: debt taken to cover a spouse's death should get a different answer from a loan for the latest phone because friends bought one. "Anything with tool call and intelligence at the crux."
-- **R7 (3 Nov). Five harnesses, built in parallel and gated one by one.** Pre-mortem option C. R5's five harnesses stand. Hermes and the own loop come first, until one task runs end to end through both. Then LangGraph, Google ADK and the OpenAI Agents SDK are built in parallel, each by its own agent in its own folder. Each counts only once it passes two tests: temperature and the token and step limits actually reach the model request, and it sees the same tools and tool results as Hermes. A harness that misses its deadline is cut on its own, with the reason recorded. Cut order: the two SDKs first, LangGraph last, never the own loop. Rishi reviews each adapter before it merges. Rishi's reasoning: "adapters are generic code that require less of my time and can happen in parallel." Deadline per harness: not set yet (Wed 18:00 or Thu 12:00 proposed).
+- **R7 (3 Nov). Five harnesses, built in parallel and gated one by one.** Pre-mortem option C. R5's five harnesses stand. Hermes and the own loop come first, until one task runs end to end through both. Then LangGraph, Google ADK and the OpenAI Agents SDK are built in parallel, each by its own agent in its own folder. Each counts only once it passes two tests: temperature and the token and step limits actually reach the model request, and it sees the same tools and tool results as Hermes. A harness that misses its deadline is cut on its own, with the reason recorded. Cut order: the two SDKs first, LangGraph last, never the own loop. Rishi reviews each adapter before it merges. Rishi's reasoning: "adapters are generic code that require less of my time and can happen in parallel." Deadline per harness: Thursday 5 Nov, 12:00.
+- **R8 (3 Nov). Every real run is signed off, whatever it costs.** No standing budget for now. Before any real LLM call, Claude scopes the run (trials, models, estimated cost) and Rishi signs off explicitly, "even if it is a dollar or less". Budget must not block development: "lets not let budget stop dev". The pre-mortem's standing spending envelope is declined for now; revisit when real runs start.
+- **R9 (3 Nov). Fake model server plus real models.** Tests and CI use a fake OpenAI-compatible server with scripted replies, streaming, and forced faults: 429, timeout, 500 and a broken stream. Real dev runs on Haiku 5.5 and Gemini Flash cover what a fake cannot: real latency, real rate limits and provider quirks through LiteLLM. They run locally, never in CI, each signed off under R8. Rishi's reason for adding real models: the fake "doesnt time out hit rate limits which are classic issues we hit".
 
 ## Settled entries
 
@@ -93,6 +95,12 @@ Options: coding sandbox; terminal and data ops; business-ops CRM sandbox; person
 Choice: personal-finance assistant. Tools do the arithmetic (loan amortisation, payoff schedules, budgets, interest), and the response has to fit the person's circumstances.
 Why: it needs a tool call and judgment in the same task, which is what the harness-times-model question is about. Rishi has built a finance agent before, so he can write and label these tasks credibly. No code from that project is reused; the domain tools are written fresh for this platform. Calculations give exact-match and state-check graders; the advice gives judge tasks a real reason to exist; client circumstances in memory give the D9 memory axis natural tasks. It also goes beyond the coding domains everyone uses.
 What would change it: if the judge cannot be validated to threshold on the empathy rubric in SP5, the judge-graded tasks fall back per D8 and the experiment leans on the deterministic tasks.
+
+### D4: Second provider (3 Nov)
+Options: Gemini or OpenAI.
+Choice: Gemini, next to Claude.
+Why: Rishi's call. The planning lean was Gemini because its price was the one found, and Gemini Flash is one of the two cheap models for real dev runs (R9).
+What would change it: not stated.
 
 ## Entry template
 

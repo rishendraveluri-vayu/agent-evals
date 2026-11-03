@@ -26,7 +26,7 @@ You implement what he has agreed. You do not make design calls for him.
 ## Never
 
 - **Never make real LLM calls in tests or CI.** Tests use the fake LLM server. Real calls cost money and need Rishi to ask for them.
-- **Never start a real run without Rishi's go-ahead,** including pilots. State the expected trials and cost first.
+- **Never start a real run without Rishi's explicit go-ahead,** including pilots and dev or smoke runs on cheap models, even for a dollar or less (R8). State the expected trials, models and cost first.
 - **Never write or infer human labels.** Files under `labels/` hold Rishi's own judgments only. Synthetic examples go in a separate file and are marked synthetic.
 - **Never tune a rubric on held-out labels,** or change the analysis plan after seeing experiment results without recording it in `docs/experiment.md` as a deviation.
 - **Never delete or overwrite trial results,** and never drop failed trials from analysis silently. Infra failures are labelled and reported.

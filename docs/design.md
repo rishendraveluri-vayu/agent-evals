@@ -17,6 +17,7 @@ Decided:
 - The control plane is a NestJS API and a Vue 3 UI, in TypeScript (brief).
 - Harness workers may be Python (spec).
 - Every model call from every harness goes through LiteLLM (Rishi, 3 Nov). This one choke point is where settings, spend and usage are checked, whichever harness made the call.
+- The model providers are Claude and Gemini (D4). The open-weight model is still open (D5).
 - LiteLLM's response cache is never on for trials. It would replay answers, so repeated trials would stop being independent samples (`CLAUDE.md`).
 
 Open:
@@ -34,7 +35,7 @@ Decided:
   - Hermes and the own loop come first, until one task runs end to end through both.
   - The other three are then built in parallel.
   - Each one counts only after it passes the settings test and the tool test.
-  - A harness that misses its deadline is cut on its own. Cut order: the two SDKs first, LangGraph last, never the own loop.
+  - The deadline for each one is Thursday 5 Nov, 12:00. A harness that misses it is cut on its own. Cut order: the two SDKs first, LangGraph last, never the own loop.
 - **Adding a harness is an adapter, not a core change** (R2). The test cases are adding a GitHub coding agent or the Claude Agent SDK tomorrow.
 - **A new model is one config line**, because all model access goes through LiteLLM (SP1 done-when).
 - **Self-improvement is explicit** (R3). Anything that lets an agent change its own prompt, skills or memory in the background is a config setting, off unless a config turns it on.
@@ -54,7 +55,6 @@ Open:
 - D12: the trace format across harnesses.
 - D14: how task tools reach every harness.
 - D15: the Hermes settings that are design calls.
-- The deadline for each extra harness (R7).
 
 ## 3. Data model
 

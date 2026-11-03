@@ -127,7 +127,7 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [ ] Set up the monorepo with pnpm and uv
 - [ ] Write the compose skeleton and `.env.example`
 - [ ] Add LiteLLM: official image `ghcr.io/berriai/litellm`, v1.83.0 or later, pinned by digest
-- [ ] Build a fake OpenAI-compatible server for tests
+- [ ] Build a fake OpenAI-compatible server for tests and CI: scripted replies, streaming, and forced faults (429, timeout, 500, broken stream) (R9)
 - [ ] Add CI: lint, tests, compose smoke test
 - [ ] Rishi checks API rate-limit tiers on each provider
 - [ ] Fill in the Commands section of `CLAUDE.md`
@@ -143,9 +143,9 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [ ] Settle the cross-harness trace format (D12, R4)
 - [ ] Before fixing the adapter contract, read each SDK's run, tool and settings APIs on paper (about 1 h), so the contract is not shaped only by Hermes and the own loop
 - [ ] Build the own plain loop next to Hermes, until one task runs end to end through both
-- [ ] Then build LangGraph, Google ADK and the OpenAI Agents SDK in parallel (R7), one agent and one folder each, with tool parity through D14. Each passes the settings test and the tool test by its deadline or is cut with the reason recorded. Cut order: the two SDKs first, LangGraph last, never the own loop. Rishi reviews each before merge.
+- [ ] Then build LangGraph, Google ADK and the OpenAI Agents SDK in parallel (R7), one agent and one folder each, with tool parity through D14. Each passes the settings test and the tool test by Thursday 12:00 or is cut with the reason recorded. Cut order: the two SDKs first, LangGraph last, never the own loop. Rishi reviews each before merge.
 - [ ] Settle how task tools reach every harness (D14)
-- [ ] Register models in LiteLLM and smoke-test tool calling on each
+- [ ] Register models in LiteLLM and smoke-test tool calling on each, with real dev runs on Haiku 5.5 and Gemini Flash, each scoped and signed off first (R8, R9)
 - [ ] Build the invariance diff: the first request of two configs should differ only on the axis
 
 ### SP2 Data model and configs (Tue to Wed)
@@ -167,7 +167,7 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [ ] Run tasks × configs × N trials
 - [ ] Implement isolation per D3, with a test proving no state leaks between trials
 - [ ] Use a fixed `HERMES_HOME` path per trial, because the path appears in the system prompt
-- [ ] Handle timeouts, rate limits and retries
+- [ ] Handle timeouts, rate limits and retries: tested with the fake's forced faults, then seen on a signed-off real dev run (R9)
 - [ ] Separate infra failures from agent failures, including budget stops
 - [ ] Make trial claiming idempotent and runs resumable
 - [ ] Add a hard budget cap per experiment through LiteLLM `max_budget`

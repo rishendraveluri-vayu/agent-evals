@@ -15,6 +15,8 @@ Not required by the brief. It records what was built and by whom, so the next-ro
 - Rishi ruled R7: five harnesses stay, built in parallel once Hermes and the own loop run one task end to end, each gated on the settings and tool tests. Deadline per harness still to set.
 - Environment fixed with Rishi's sudo: Docker group, compose and buildx, `gh` login. Claude: Hermes installed at the pin on Python 3.14 and imports cleanly; pnpm 10.34.9; git repo initialised and the first commits made.
 - Surprises: pnpm 12 does not run under Node 22.14's corepack; a bare `import run_agent` builds a whole Hermes home folder, so `HERMES_HOME` must be set per process before import.
+- Rishi settled D4 (Gemini is the second provider), set R7's deadline (Thursday 12:00 per extra harness), ruled R8 (every real run is scoped and signed off, even under a dollar; no standing budget) and R9 (fake model server for tests and CI, plus real dev runs on Haiku 5.5 and Gemini Flash).
+- Claude started `docs/design.md`: decided entries and verified constraints only, open items pointing at `decisions.md`.
 
 ## Entry template
 
