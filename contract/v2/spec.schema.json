@@ -1,0 +1,590 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-evals.local/contract/v2/spec.schema.json",
+  "title": "Trial spec (contract v2)",
+  "description": "Written by the runner to /trial/spec.json before the adapter starts. The adapter must not change it. See docs/adapter-contract.md section 3.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "trial",
+    "task",
+    "system_prompt",
+    "model",
+    "settings",
+    "settings_sources",
+    "harness_options",
+    "tools",
+    "seed"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "2"
+    },
+    "trial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "experiment_id",
+        "config_id",
+        "config_hash",
+        "task_id",
+        "task_version",
+        "task_split",
+        "repeat_index",
+        "attempt"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "experiment_id": {
+          "description": "Null for gate tests and dev runs outside an experiment.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "config_id": {
+          "$ref": "#/$defs/id"
+        },
+        "config_hash": {
+          "$ref": "#/$defs/sha256_ref"
+        },
+        "task_id": {
+          "$ref": "#/$defs/id"
+        },
+        "task_version": {
+          "$ref": "#/$defs/sha256_ref"
+        },
+        "task_split": {
+          "description": "D9. Null outside an experiment.",
+          "enum": [
+            "discovery",
+            "held_out",
+            null
+          ]
+        },
+        "repeat_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "attempt": {
+          "description": "1 for the first attempt; a re-queued trial (D16) gets the next number.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messages",
+        "client_sim"
+      ],
+      "properties": {
+        "messages": {
+          "description": "The conversation so far. The last message is the user's and the agent answers it. With client_sim, this holds only the opening message.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/message"
+          }
+        },
+        "client_sim": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/client_sim"
+            }
+          ]
+        }
+      }
+    },
+    "system_prompt": {
+      "$ref": "#/$defs/versioned_text"
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "base_url",
+        "api_key_env",
+        "api_format"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base_url": {
+          "type": "string",
+          "pattern": "^https?://"
+        },
+        "api_key_env": {
+          "$ref": "#/$defs/env_name"
+        },
+        "api_format": {
+          "enum": [
+            "openai_chat",
+            "anthropic_messages"
+          ]
+        }
+      }
+    },
+    "settings": {
+      "description": "The full resolved set (R10.4). A setting the harness does not support is null.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "temperature",
+        "max_output_tokens",
+        "max_steps",
+        "timeout_s",
+        "parallel_tool_calls",
+        "memory",
+        "skills",
+        "compression"
+      ],
+      "properties": {
+        "temperature": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 2
+        },
+        "max_output_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "max_steps": {
+          "description": "Agent model calls across the whole trial, conversation included (D17).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "timeout_s": {
+          "description": "Whole-trial wall clock, enforced by the adapter library (R10.6).",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "parallel_tool_calls": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "memory": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/toggle"
+            }
+          ]
+        },
+        "skills": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/toggle"
+            }
+          ]
+        },
+        "compression": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/toggle"
+            }
+          ]
+        }
+      }
+    },
+    "settings_sources": {
+      "description": "Where each resolved setting came from, copied into result.applied_settings (R11). unsupported means the harness cannot take it and the setting is null.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "temperature",
+        "max_output_tokens",
+        "max_steps",
+        "timeout_s",
+        "parallel_tool_calls",
+        "memory",
+        "skills",
+        "compression"
+      ],
+      "properties": {
+        "temperature": {
+          "enum": [
+            "config",
+            "platform_default",
+            "unsupported"
+          ]
+        },
+        "max_output_tokens": {
+          "enum": [
+            "config",
+            "platform_default",
+            "unsupported"
+          ]
+        },
+        "max_steps": {
+          "enum": [
+            "config",
+            "platform_default",
+            "unsupported"
+          ]
+        },
+        "timeout_s": {
+          "enum": [
+            "config",
+            "platform_default",
+            "unsupported"
+          ]
+        },
+        "parallel_tool_calls": {
+          "enum": [
+            "config",
+            "platform_default",
+            "unsupported"
+          ]
+        },
+        "memory": {
+          "enum": [
+            "config",
+            "platform_default",
+            "unsupported"
+          ]
+        },
+        "skills": {
+          "enum": [
+            "config",
+            "platform_default",
+            "unsupported"
+          ]
+        },
+        "compression": {
+          "enum": [
+            "config",
+            "platform_default",
+            "unsupported"
+          ]
+        }
+      }
+    },
+    "harness_options": {
+      "description": "Validated against the adapter's harness_options_schema in capabilities.json.",
+      "type": "object"
+    },
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "toolset",
+        "mcp_servers",
+        "enabled_builtins"
+      ],
+      "properties": {
+        "toolset": {
+          "$ref": "#/$defs/version_ref"
+        },
+        "mcp_servers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "command",
+              "allowed_tools",
+              "tool_timeout_s"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "command": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "allowed_tools": {
+                "description": "The tools this toolset version exposes. A tool the server has but this list leaves out is a missing tool.",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              },
+              "tool_timeout_s": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            }
+          }
+        },
+        "enabled_builtins": {
+          "description": "Harness built-in tools the config explicitly enables (R10.7). Empty by default.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "seed": {
+      "description": "Config-given starting state, written natively by the adapter. Never learned state (R10.8).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "memory",
+        "skills"
+      ],
+      "properties": {
+        "memory": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "description",
+              "body"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*$"
+              },
+              "description": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+      "maxLength": 128
+    },
+    "sha256_ref": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "sha256_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "env_name": {
+      "type": "string",
+      "pattern": "^[A-Z_][A-Z0-9_]*$"
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "content"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "user",
+            "assistant"
+          ]
+        },
+        "content": {
+          "type": "string"
+        }
+      }
+    },
+    "toggle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "version_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256_hex"
+        }
+      }
+    },
+    "versioned_text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "sha256",
+        "text"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "description": "sha256 of text, UTF-8.",
+          "$ref": "#/$defs/sha256_hex"
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    "client_sim": {
+      "description": "D22. A second model plays the client. See docs/adapter-contract.md section 9.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "persona",
+        "hidden_facts",
+        "concerns",
+        "goal",
+        "opening_message",
+        "max_client_turns",
+        "model"
+      ],
+      "properties": {
+        "persona": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hidden_facts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "concerns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "goal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "opening_message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "max_client_turns": {
+          "description": "Simulated client messages after the opening one.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "base_url",
+            "api_key_env",
+            "temperature",
+            "max_output_tokens",
+            "prompt"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "base_url": {
+              "type": "string",
+              "pattern": "^https?://"
+            },
+            "api_key_env": {
+              "$ref": "#/$defs/env_name"
+            },
+            "temperature": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2
+            },
+            "max_output_tokens": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "prompt": {
+              "$ref": "#/$defs/versioned_text"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+[project]
+name = "evals-adapter"
+version = "0.1.0"
+description = "Shared adapter library for agent-evals harness workers (contract v2): spec in, result and OpenTelemetry spans out, timeout, conversation loop, runner."
+readme = "README.md"
+# Every harness environment installs this, and they run different Pythons, so it uses the
+# standard library only and supports 3.11 and up.
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+evals-run-trial = "evals_adapter.runner:main"
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[dependency-groups]
+dev = [
+    "jsonschema>=4.25.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+]

@@ -1,0 +1,21 @@
+{
+  "contract_version": "2",
+  "harness": "hermes",
+  "version": {"package": "hermes-agent", "ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a"},
+  "model_api_formats": ["openai_chat"],
+  "settings": {
+    "temperature": {"supported": true, "native": "request_overrides.temperature", "default": null, "evidence": "probe:2026-11-03", "observed": "sent only when set"},
+    "max_output_tokens": {"supported": true, "native": "request_overrides.max_tokens", "default": null, "evidence": "probe:2026-11-03"},
+    "max_steps": {"supported": true, "native": "max_iterations", "extra_calls_at_limit": 2, "evidence": "probe:2026-11-03", "observed": "N tool-calling requests plus one or two summary requests"},
+    "timeout_s": {"supported": true, "native": "wrapper", "evidence": "declared:the adapter library's watchdog"},
+    "parallel_tool_calls": {"supported": true, "native": "request_overrides.parallel_tool_calls", "default": null, "evidence": "probe:2026-11-03"},
+    "memory": {"supported": true, "native": "memory toolset and config memory.*", "evidence": "declared:a request cannot show memory being off"},
+    "skills": {"supported": true, "native": "skills toolset and config skills.*", "evidence": "declared:a request cannot show skills being off"},
+    "compression": {"supported": true, "native": "config compression.enabled", "default": true, "evidence": "declared:Hermes code default"}
+  },
+  "harness_options_schema": {"type": "object", "additionalProperties": false, "properties": {}},
+  "known_differences": [
+    "Tool results are wrapped in <untrusted_tool_result> with a preamble (D20)",
+    "Tool names are prefixed mcp__finance__"
+  ]
+}

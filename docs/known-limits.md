@@ -44,6 +44,17 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 
 - LiteLLM v1.99.4's bundled price map has no entry for Haiku 5.5 or Gemini 3.8 Flash (checked 3 Nov inside the pinned image). Spend on a model the map does not know counts as $0, so a per-trial `max_budget` would never trip. Every model in `services/litellm/config.yaml` must therefore state its prices in `model_info`, and `scripts/check_litellm_config.py` fails CI otherwise. Those prices are copied by hand from the provider pages, so they can go stale.
 
+## LiteLLM records (checked 3 Nov, v1.99.4)
+
+- A wildcard route priced only in `model_info` logged every call at $0, because LiteLLM prices the resolved model name (`openai/<script>`). The fake route now also sets prices in `litellm_params`. A real model added later under a wildcard would hit the same gap, so real models are listed one by one.
+- Spend-log rows are written in batches, every second with `proxy_batch_write_at: 1`. The runner waits until the row count has been stable for 1.5 s, at most 15 s. A call still unwritten after that would be missing from the trial's spans and counts, and nothing flags it yet.
+- The proxy merge puts a model call under the agent turn whose time window holds its start. The clocks are the adapter's and LiteLLM's container clocks; skew between them larger than the gap between turns would misplace a call.
+
+## Simulated client (D22)
+
+- The reply cache is filled per trial and stored by the runner afterwards. Two trials running at the same time that reach the same new conversation state both call the simulator, and can get different replies; the first stored wins for later trials. At temperature 0 the replies should match, but that is not guaranteed.
+- The simulator's own calls go through a separate key, so they are not in the agent's spans or counts. Their cost is not yet added to the trial's spend.
+
 ## Fake model server (tests and CI only)
 
 - It does not model `max_tokens` (so it never returns `finish_reason: length`), `tool_choice`, `n`, auth, or whether a tool call matches the request's `tools`. Tests that pass against it say nothing about those behaviours; real dev runs (R9) cover them.

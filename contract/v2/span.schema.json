@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-evals.local/contract/v2/span.schema.json",
+  "title": "One trace.jsonl line: an OpenTelemetry span in OTLP JSON shape (contract v2)",
+  "description": "One trial is one trace. Each line of /trial/out/trace.jsonl is one span, written when it closes. Field names and encodings follow the OTLP/JSON mapping of opentelemetry.proto.trace.v1.Span: ids are lowercase hex, 64-bit integers are decimal strings, kind and status code are integers. See docs/adapter-contract.md section 6.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["traceId", "spanId", "name", "kind", "startTimeUnixNano", "endTimeUnixNano", "attributes", "status"],
+  "properties": {
+    "traceId": {"description": "Derived from the trial id: the first 32 hex characters of sha256(trial id).", "type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "spanId": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+    "parentSpanId": {"description": "Absent or empty on the root span.", "type": "string", "pattern": "^([0-9a-f]{16})?$"},
+    "name": {"type": "string", "minLength": 1},
+    "kind": {"description": "1 INTERNAL, 2 SERVER, 3 CLIENT, 4 PRODUCER, 5 CONSUMER.", "type": "integer", "minimum": 1, "maximum": 5},
+    "startTimeUnixNano": {"$ref": "#/$defs/uint64"},
+    "endTimeUnixNano": {"$ref": "#/$defs/uint64"},
+    "attributes": {"$ref": "#/$defs/attributes"},
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["timeUnixNano", "name"],
+        "properties": {
+          "timeUnixNano": {"$ref": "#/$defs/uint64"},
+          "name": {"type": "string", "minLength": 1},
+          "attributes": {"$ref": "#/$defs/attributes"}
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": {"description": "0 UNSET, 1 OK, 2 ERROR.", "enum": [0, 1, 2]},
+        "message": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "uint64": {"type": "string", "pattern": "^(0|[1-9][0-9]{0,19})$"},
+    "attributes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "value"],
+        "properties": {
+          "key": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$"},
+          "value": {"$ref": "#/$defs/any_value"}
+        }
+      }
+    },
+    "any_value": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "properties": {
+        "stringValue": {"type": "string"},
+        "boolValue": {"type": "boolean"},
+        "intValue": {"type": "string", "pattern": "^-?(0|[1-9][0-9]{0,18})$"},
+        "doubleValue": {"type": "number"},
+        "arrayValue": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["values"],
+          "properties": {"values": {"type": "array", "items": {"$ref": "#/$defs/any_value"}}}
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

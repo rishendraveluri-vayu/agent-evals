@@ -1,0 +1,94 @@
+{
+  "contract_version": "2",
+  "trial": {
+    "id": "t_01JEXAMPLE0001",
+    "experiment_id": "e_prompt_v1_v2",
+    "config_id": "c_test",
+    "config_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "task_id": "emi-basic-01",
+    "task_version": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "task_split": "discovery",
+    "repeat_index": 3,
+    "attempt": 1
+  },
+  "task": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is my EMI on Rs 10 lakh at 9% for 20 years?"
+      }
+    ],
+    "client_sim": null
+  },
+  "system_prompt": {
+    "id": "finance-advisor",
+    "version": "v1",
+    "sha256": "5499befb38dbf3fcc08107141cb2a9e7f42a6aae403361dc3601b8296d7967ea",
+    "text": "Be kind."
+  },
+  "model": {
+    "name": "claude-haiku-5-5",
+    "base_url": "http://litellm:4000/v1",
+    "api_key_env": "EVALS_MODEL_API_KEY",
+    "api_format": "openai_chat"
+  },
+  "settings": {
+    "temperature": 0.2,
+    "max_output_tokens": 1024,
+    "max_steps": 15,
+    "timeout_s": 20,
+    "parallel_tool_calls": false,
+    "memory": {
+      "enabled": false
+    },
+    "skills": {
+      "enabled": false
+    },
+    "compression": {
+      "enabled": false
+    }
+  },
+  "settings_sources": {
+    "temperature": "config",
+    "max_output_tokens": "platform_default",
+    "max_steps": "platform_default",
+    "timeout_s": "platform_default",
+    "parallel_tool_calls": "platform_default",
+    "memory": "platform_default",
+    "skills": "platform_default",
+    "compression": "config"
+  },
+  "harness_options": {},
+  "tools": {
+    "toolset": {
+      "id": "finance",
+      "version": "v1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "mcp_servers": [
+      {
+        "name": "finance",
+        "command": [
+          "/opt/finance-mcp/bin/finance-mcp",
+          "--transport",
+          "stdio",
+          "--state-dir",
+          "/trial/state"
+        ],
+        "allowed_tools": [
+          "calculate_emi",
+          "amortization_schedule",
+          "prepayment_impact",
+          "get_client_profile",
+          "list_debts"
+        ],
+        "tool_timeout_s": 30
+      }
+    ],
+    "enabled_builtins": []
+  },
+  "seed": {
+    "memory": [],
+    "skills": []
+  }
+}

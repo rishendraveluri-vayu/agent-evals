@@ -1,0 +1,99 @@
+{
+  "contract_version": "2",
+  "trial_id": "t_01JEXAMPLE0001",
+  "end_state": "answered",
+  "end_detail": {
+    "harness_stop_reason": "stop",
+    "exception_type": null,
+    "exception_message": null,
+    "last_message_excerpt": "Your EMI is Rs 8,997.26."
+  },
+  "final_answer": "Your EMI is Rs 8,997.26.",
+  "conversation": {
+    "agent_turns": 1,
+    "client_turns": 0,
+    "ended_by": null,
+    "transcript": [
+      {
+        "role": "user",
+        "content": "What is my EMI on Rs 10 lakh at 9% for 20 years?",
+        "source": "task"
+      },
+      {
+        "role": "assistant",
+        "content": "Your EMI is Rs 8,997.26.",
+        "source": "agent"
+      }
+    ]
+  },
+  "harness": {
+    "name": "scripted",
+    "version": "0.0.1",
+    "extra": {}
+  },
+  "applied_settings": {
+    "temperature": {
+      "value": 0.2,
+      "source": "config"
+    },
+    "max_output_tokens": {
+      "value": 1024,
+      "source": "platform_default"
+    },
+    "max_steps": {
+      "value": 15,
+      "source": "platform_default"
+    },
+    "timeout_s": {
+      "value": 20,
+      "source": "platform_default"
+    },
+    "parallel_tool_calls": {
+      "value": null,
+      "source": "unsupported",
+      "observed": "always parallel"
+    },
+    "memory": {
+      "value": null,
+      "source": "unsupported"
+    },
+    "skills": {
+      "value": null,
+      "source": "unsupported"
+    },
+    "compression": {
+      "value": null,
+      "source": "unsupported"
+    },
+    "top_p": {
+      "value": 1.0,
+      "source": "harness_default"
+    }
+  },
+  "harness_usage": {
+    "model_calls": 2,
+    "input_tokens": 10,
+    "output_tokens": 5,
+    "cost_usd": null
+  },
+  "counts": {
+    "model_calls": 2,
+    "tool_calls": 1,
+    "tool_errors": 0,
+    "malformed_tool_calls": 0
+  },
+  "integrity": {
+    "before": {
+      "config.txt": "sha256:9c45da1b799a603c167323bd7ed4f52034ec28ea5e04373045a9c11f1ddc5446"
+    },
+    "after": {
+      "config.txt": "sha256:9c45da1b799a603c167323bd7ed4f52034ec28ea5e04373045a9c11f1ddc5446"
+    }
+  },
+  "timing": {
+    "started_at": "2026-11-03T16:19:01.192871Z",
+    "ended_at": "2026-11-03T16:19:01.194098Z",
+    "wall_s": 0.001
+  },
+  "artifacts": []
+}

@@ -1,0 +1,18 @@
+{
+  "contract_version": "2",
+  "harness": "scripted",
+  "version": {"package": "evals-adapter-tests", "ref": "0"},
+  "model_api_formats": ["openai_chat"],
+  "settings": {
+    "temperature": {"supported": true, "native": "test", "default": null, "evidence": "declared:test fixture"},
+    "max_output_tokens": {"supported": true, "native": "test", "default": null, "evidence": "declared:test fixture"},
+    "max_steps": {"supported": true, "native": "test", "extra_calls_at_limit": 0, "evidence": "declared:test fixture"},
+    "timeout_s": {"supported": true, "native": "wrapper", "evidence": "declared:test fixture"},
+    "parallel_tool_calls": {"supported": false, "default": "parallel", "observed": "always parallel", "evidence": "declared:test fixture"},
+    "memory": {"supported": false, "evidence": "declared:test fixture"},
+    "skills": {"supported": false, "evidence": "declared:test fixture"},
+    "compression": {"supported": false, "evidence": "declared:test fixture"}
+  },
+  "harness_options_schema": {"type": "object"},
+  "known_differences": []
+}

@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-evals.local/contract/v2/result.schema.json",
+  "title": "Trial result (contract v2)",
+  "description": "Written once by the adapter to /trial/out/result.json, atomically. The adapter reports and never judges (R10.2). See docs/adapter-contract.md section 5.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "trial_id", "end_state", "end_detail", "final_answer", "conversation", "harness", "applied_settings", "harness_usage", "counts", "integrity", "timing", "artifacts"],
+  "properties": {
+    "contract_version": {"const": "2"},
+    "trial_id": {"type": "string", "minLength": 1},
+    "end_state": {
+      "description": "Provisional and extensible (R10.2, R11). New states may be added; old results stay valid.",
+      "enum": ["answered", "step_limit", "token_limit", "timeout", "agent_error", "harness_error"]
+    },
+    "end_detail": {
+      "description": "Raw signals, kept so trials can be relabelled without re-running.",
+      "type": "object",
+      "required": ["harness_stop_reason", "exception_type", "exception_message", "last_message_excerpt"],
+      "properties": {
+        "harness_stop_reason": {"type": ["string", "null"]},
+        "exception_type": {"type": ["string", "null"]},
+        "exception_message": {"type": ["string", "null"]},
+        "last_message_excerpt": {"type": ["string", "null"], "maxLength": 2000}
+      }
+    },
+    "final_answer": {"description": "The agent's last visible reply. Null when there is none, never an apology the harness wrote for itself.", "type": ["string", "null"]},
+    "conversation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent_turns", "client_turns", "ended_by", "transcript"],
+      "properties": {
+        "agent_turns": {"type": "integer", "minimum": 0},
+        "client_turns": {"description": "Simulated client messages after the opening one.", "type": "integer", "minimum": 0},
+        "ended_by": {
+          "description": "null for a single-prompt task. client: the simulated client said it was done. turn_cap: max_client_turns reached. agent_end_state: an agent turn ended in anything but answered.",
+          "enum": [null, "client", "turn_cap", "agent_end_state"]
+        },
+        "transcript": {
+          "description": "The visible conversation: user messages and the agent's visible replies, no tool calls.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role", "content"],
+            "properties": {
+              "role": {"enum": ["user", "assistant"]},
+              "content": {"type": "string"},
+              "source": {"enum": ["task", "client_sim", "agent"]}
+            }
+          }
+        }
+      }
+    },
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "extra"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "extra": {"type": "object"}
+      }
+    },
+    "applied_settings": {
+      "description": "Every setting with its value and where the value came from (R11).",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["value", "source"],
+        "properties": {
+          "value": {},
+          "source": {"enum": ["config", "platform_default", "harness_default", "unsupported"]},
+          "observed": {"type": "string"}
+        }
+      }
+    },
+    "harness_usage": {
+      "description": "The harness's own view, kept for comparison. The proxy is the truth (R10.9). Unknown is null, never zero.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_calls", "input_tokens", "output_tokens", "cost_usd"],
+      "properties": {
+        "model_calls": {"type": ["integer", "null"], "minimum": 0},
+        "input_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "output_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "cost_usd": {"type": ["number", "null"], "minimum": 0}
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_calls", "tool_calls", "tool_errors", "malformed_tool_calls"],
+      "properties": {
+        "model_calls": {"type": "integer", "minimum": 0},
+        "tool_calls": {"type": "integer", "minimum": 0},
+        "tool_errors": {"type": "integer", "minimum": 0},
+        "malformed_tool_calls": {"type": "integer", "minimum": 0}
+      }
+    },
+    "integrity": {
+      "description": "Hashes of files the harness can edit with no switch to stop it (R10.8). Empty maps when the harness has none.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["before", "after"],
+      "properties": {
+        "before": {"$ref": "#/$defs/hash_map"},
+        "after": {"$ref": "#/$defs/hash_map"}
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["started_at", "ended_at", "wall_s"],
+      "properties": {
+        "started_at": {"type": "string", "format": "date-time"},
+        "ended_at": {"type": "string", "format": "date-time"},
+        "wall_s": {"type": "number", "minimum": 0}
+      }
+    },
+    "artifacts": {
+      "description": "Paths relative to /trial/out.",
+      "type": "array",
+      "items": {"type": "string", "pattern": "^artifacts/[^/].*$"},
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "hash_map": {
+      "type": "object",
+      "additionalProperties": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}
+    }
+  }
+}
