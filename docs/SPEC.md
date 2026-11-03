@@ -152,6 +152,7 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [x] Settle the cross-harness trace format (D12, R4)
 - [ ] Before fixing the adapter contract, read each SDK's run, tool and settings APIs on paper (about 1 h), so the contract is not shaped only by Hermes and the own loop
 - [ ] Build the own plain loop next to Hermes, until one task runs end to end through both
+- [ ] Add the simulated-client helper (D22: reply cache, own key, turn cap) and the conversation loop in Hermes and the own loop, with a simulated gate test
 - [ ] Then build LangGraph, Google ADK and the OpenAI Agents SDK in parallel (R7), one agent and one folder each, with tool parity through D14. Each passes the settings test and the tool test by Thursday 12:00 or is cut with the reason recorded. Cut order: the two SDKs first, LangGraph last, never the own loop. Rishi reviews each before merge.
 - [x] Settle how task tools reach every harness (D14)
 - [ ] Register models in LiteLLM and smoke-test tool calling on each, with real dev runs on Haiku 5.5 and Gemini Flash, each scoped and signed off first (R8, R9)

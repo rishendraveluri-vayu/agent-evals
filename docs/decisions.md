@@ -27,6 +27,8 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D19 Parallel tool calls | A config setting, off by default | Rishi | 3 Nov |
 | D20 Harness-added prompt text | Keep it and record it in the invariance diff; adapters never strip it | Rishi | 3 Nov |
 | D21 Finance tool conventions | Accept the server's conventions (A5, A6) | Rishi | 3 Nov |
+| D22 Simulated client | Supported per task; sees only visible replies and reveals hidden facts when asked; configurable model held identical across an experiment, temperature 0, own key, replies cached by exact conversation state; ends when done or at the turn cap; coexists with single-prompt tasks | Rishi | 3 Nov |
+| D23 Contract choices | Memory, skills, compression as common settings; safety-net timeout at 1.5x plus 30 s; per-trial key as a named environment variable | Rishi | 3 Nov |
 
 ## Open
 
@@ -162,6 +164,16 @@ Why: R10.10 forbids adapter prompt edits, and stripping would be uneven because 
 
 ### D21: Finance tool conventions (3 Nov)
 Choice: accept the finance server's conventions: amortisation schedules paged at 60 rows, loans close at exactly ₹0.00 with the last EMI absorbing rounding, unschedulable loans rejected, snowball by starting balance, part-year FD simple interest, whole-year inflation, paise rounding, debit or credit transactions. Recorded as A5 and A6 and in `known-limits.md`.
+
+### D22: Simulated client (3 Nov)
+Options offered: one prompt with no simulated user (Claude's recommendation); a simulated client; scripted follow-ups. Rishi chose the simulated client.
+Choices, one question at a time: the client sees only the agent's visible replies and reveals hidden facts only when asked. The client model is configurable but identical across every config in an experiment (Rishi: "Make it configurable, but does the harness change based on that is the real question, we use one set of responses to re run right"), at temperature 0 with a versioned prompt and its own key. Replies are cached by task, simulator config and exact visible transcript, so identical conversation states get identical replies across harnesses and re-runs. The conversation ends when the client is done or at `max_client_turns` (default 3). Simulated and single-prompt tasks coexist.
+Why: realistic advisor conversations, where the agent has to draw facts out, without letting the client become a source of noise or a confound. The agent's calls are never cached, so trials stay independent samples.
+Cost: a second model in every simulated trial, and every adapter needs a conversation loop. Build order moves the extra harnesses' start a few hours later; the Thursday 12:00 deadline is unchanged.
+What would change it: the simulator proving unstable at temperature 0, or the cost or variance swamping the experiment, in which case D9 can keep the experiment to single-prompt tasks.
+
+### D23: Adapter contract choices (3 Nov)
+Choices: memory, skills and compression are common config settings, with harness-specific detail in per-harness options; the runner's safety-net timeout fires at `timeout_s × 1.5 + 30 s`; the per-trial key travels as an environment variable named in the spec (Rishi chose this over Claude's recommendation of the spec file). Recorded in `docs/proposals/adapter-contract.md`.
 
 ## Entry template
 

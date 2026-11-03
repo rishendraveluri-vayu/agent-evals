@@ -30,7 +30,7 @@ You implement what he has agreed. You do not make design calls for him.
 - **Never write or infer human labels.** Files under `labels/` hold Rishi's own judgments only. Synthetic examples go in a separate file and are marked synthetic.
 - **Never tune a rubric on held-out labels,** or change the analysis plan after seeing experiment results without recording it in `docs/experiment.md` as a deviation.
 - **Never delete or overwrite trial results,** and never drop failed trials from analysis silently. Infra failures are labelled and reported.
-- **Never turn on LiteLLM's response cache for trials.** It would replay answers, so repeated trials stop being independent samples.
+- **Never turn on LiteLLM's response cache for trials.** It would replay answers, so repeated trials stop being independent samples. The simulated client's reply cache (D22) is different and allowed: it makes the environment repeatable, and it never touches the agent's calls.
 - **Never modify Hermes source.** Pin the SHA and wrap it. Quirks go in `docs/hermes-notes.md` and `docs/known-limits.md`.
 - **Never commit secrets.** Keys live in a local `.env`, with names only in `.env.example`.
 - **Never present an unrun or unverified result as fact.** Say what you ran and what you did not.

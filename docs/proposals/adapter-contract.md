@@ -195,7 +195,7 @@ All run through LiteLLM against the fake model server, with no real calls.
 
 A harness counts once these pass, by its R7 deadline of Thursday 12:00.
 
-## 9. Simulated client (draft; open points marked **(choice)**)
+## 9. Simulated client (decided 3 Nov)
 
 Rishi chose on 3 Nov to support a simulated client: a second model plays the client and answers the agent mid-run. A task with no `client_sim` block stays a single prompt.
 
@@ -206,17 +206,18 @@ Rishi chose on 3 Nov to support a simulated client: a second model plays the cli
   "goal": "Understand whether she can keep the house and what to do first",
   "opening_message": "I don't really know where to start. My husband handled all of this.",
   "max_client_turns": 3,
-  "model": {"name": "claude-haiku-5-5", "api_key_env": "EVALS_SIM_API_KEY", "temperature": 0}
+  "model": {"name": "claude-haiku-5-5", "api_key_env": "EVALS_SIM_API_KEY", "temperature": 0, "prompt_version": "sim-v1"}
 }
 ```
 
 (The persona above is an invented illustration, not a task.)
 
 - **The adapter runs the conversation** inside one trial, using its harness's own multi-turn session, because R10.1 keeps one process per trial. Between agent turns it calls a shared, harness-neutral simulator helper shipped in the worker image (like the finance MCP server). The helper takes the visible transcript and returns the next client message or a stop signal, so the simulator is byte-identical across harnesses.
-- **What the simulated client sees:** only the agent's visible replies, not tool calls or results. It knows the persona and hidden facts, and reveals a fact only when the agent asks for it **(choice)**.
-- **The simulator model** is fixed per experiment and the same for every config, and its calls use their own key, so the agent's call counts, spend and step limit stay clean **(choice)**.
-- **The conversation ends** when the simulator signals it is done, or after `max_client_turns`; the agent's last reply is the final answer **(choice)**.
-- **Simulated and single-prompt tasks can coexist** in one task set; which tasks the experiment uses is part of D9 **(choice)**.
+- **What the simulated client sees:** only the agent's visible replies, not tool calls or results. It knows the persona and hidden facts, and reveals a fact only when the agent asks for it. Graders know every hidden fact.
+- **The simulator model is configurable** (default Haiku 5.5 at temperature 0, with a versioned simulator prompt), but must be identical across every config in one experiment; the invariance check enforces it. Its calls use their own key, so the agent's call counts, spend and step limit stay clean.
+- **One set of responses where the conversation is the same.** The helper caches each client reply by task, simulator config and the exact visible transcript so far, so identical conversation states get identical replies across harnesses and re-runs. This is the environment being made repeatable; the agent's own calls are never cached (CLAUDE.md).
+- **The conversation ends** when the simulator signals it is done, or after `max_client_turns` (default 3, set per task). The agent's last reply is the graded final answer; `max_steps` and `timeout_s` cover the whole conversation.
+- **Simulated and single-prompt tasks coexist** in one task set; which tasks the experiment uses is part of D9. Build order: the walking skeleton runs a single-prompt task first, then the simulator helper and the conversation loops are added before the three extra harnesses start.
 - **Trace:** `user_message` events with `source: simulator`, and simulator model calls recorded from the proxy under their own key, tagged `role: simulator`.
 - **Gate tests:** one simulated task per adapter, with the simulator routed to a scripted fake model.
 
@@ -224,5 +225,5 @@ Rishi chose on 3 Nov to support a simulated client: a second model plays the cli
 
 1. Config shape: memory, skills and compression are common settings, with harness detail in `harness_options`.
 2. Safety-net timeout: `timeout_s × 1.5 + 30 s`.
-3. Simulated client: supported (section 9; open points still to settle).
+3. Simulated client: supported, as section 9 describes.
 4. Per-trial key: an environment variable, named in the spec.
