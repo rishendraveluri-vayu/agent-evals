@@ -159,7 +159,7 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [ ] Then build LangGraph, Google ADK and the OpenAI Agents SDK in parallel (R7), one agent and one folder each, with tool parity through D14. Each passes the settings test and the tool test by Thursday 12:00 or is cut with the reason recorded. Cut order: the two SDKs first, LangGraph last, never the own loop. Rishi reviews each before merge.
 - [x] Settle how task tools reach every harness (D14)
 - [ ] Register models in LiteLLM and smoke-test tool calling on each, with real dev runs on Haiku 5.5 and Gemini Flash, each scoped and signed off first (R8, R9)
-- [ ] Build the invariance diff: the first request of two configs should differ only on the axis
+- [x] Build the invariance diff: the first request of two configs should differ only on the axis (`evals-invariance A B --axis ...`; checked on Hermes and the own loop through LiteLLM: prompt v1 vs v2 differs only in the prompt lines)
 
 ### SP2 Data model and configs (Tue to Wed)
 
