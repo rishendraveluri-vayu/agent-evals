@@ -73,7 +73,7 @@ Every requirement in the brief, and the sub-project that answers for it.
 | Brief item | SP | Evidence |
 | --- | --- | --- |
 | Hermes as required harness | SP1 | Adapter and trace |
-| Second harness proving the abstraction | SP1 | Four adapters: own loop, LangGraph, Google ADK, OpenAI Agents SDK (R1, R5) |
+| Second harness proving the abstraction | SP1 | Four adapters: own loop, LangGraph, Google ADK, OpenAI Agents SDK (R1, R5, R7) |
 | Two models from different providers, or one open-weight, via a common interface | SP1 | LiteLLM config, smoke test |
 | New harness or model means an adapter, not a core change | SP1 | Design doc, README steps |
 | Deterministic graders: exact match, unit tests, state checks | SP4 | Grader tests |
@@ -134,14 +134,16 @@ Each one has a done-when test. Scope stops growing once that test passes.
 
 ### SP1 Harness and model adapters (Tue to Wed)
 
-**Done when:** one task runs through every harness behind the same interface, and a new model is a config line.
+**Done when:** one task runs through every harness that passed its gate (Hermes and the own loop at minimum) behind the same interface, and a new model is a config line.
 **Needs:** SP0, D4, D5, D6. Start from `docs/hermes-notes.md`.
 
 - [ ] **[Rishi designs]** Harness and model adapter interfaces
 - [ ] Build the Hermes adapter on the pinned SHA
 - [ ] Audit Hermes and record results in `hermes-notes.md`: background skill and memory writes (R3), memory in the prompt vs the trace, temperature, model-name routing, prompt caching through the proxy, token usage in the result
 - [ ] Settle the cross-harness trace format (D12, R4)
-- [ ] Build the own plain loop first, then LangGraph, Google ADK and the OpenAI Agents SDK (D11), with tool parity through D14. Cut order if time slips: the two SDKs first, LangGraph last, never the own loop.
+- [ ] Before fixing the adapter contract, read each SDK's run, tool and settings APIs on paper (about 1 h), so the contract is not shaped only by Hermes and the own loop
+- [ ] Build the own plain loop next to Hermes, until one task runs end to end through both
+- [ ] Then build LangGraph, Google ADK and the OpenAI Agents SDK in parallel (R7), one agent and one folder each, with tool parity through D14. Each passes the settings test and the tool test by its deadline or is cut with the reason recorded. Cut order: the two SDKs first, LangGraph last, never the own loop. Rishi reviews each before merge.
 - [ ] Settle how task tools reach every harness (D14)
 - [ ] Register models in LiteLLM and smoke-test tool calling on each
 - [ ] Build the invariance diff: the first request of two configs should differ only on the axis

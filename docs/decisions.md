@@ -69,8 +69,9 @@ Dated statements from Rishi that constrain the design. Not option-choices, so th
 - **R3 (3 Nov). Self-improvement must be explicit.** Any behaviour where the agent changes its own prompt, skills or memory in the background has to be a configurable setting, off unless a config turns it on. An implicit change mid-experiment means the comparison is not a proper test.
 - **R4 (3 Nov). Investigate a trace standard.** Check whether OpenTelemetry or OpenInference can carry traces from all harnesses before designing our own format. Feeds D12.
 - **R5 (3 Nov). Five harnesses.** D11 settled as both SDKs, so R1 now reads Hermes plus LangGraph, Google ADK, OpenAI Agents SDK and the own loop.
-- **Pre-mortem note (3 Nov), not a ruling.** Three of five pre-mortem reviewers challenged R5 with evidence, and a dependency check confirmed the harnesses cannot share one Python environment. Options are in `docs/premortem/summary.md`. R5 stands until Rishi says otherwise.
+- **Pre-mortem note (3 Nov), not a ruling.** Three of five pre-mortem reviewers challenged R5 with evidence, and a dependency check confirmed the harnesses cannot share one Python environment. Options are in `docs/premortem/summary.md`. Resolved by R7.
 - **R6 (3 Nov). Tool call and judgment at the crux.** The domain must need both a correct tool call and a context-sensitive response. Rishi's example: debt taken to cover a spouse's death should get a different answer from a loan for the latest phone because friends bought one. "Anything with tool call and intelligence at the crux."
+- **R7 (3 Nov). Five harnesses, built in parallel and gated one by one.** Pre-mortem option C. R5's five harnesses stand. Hermes and the own loop come first, until one task runs end to end through both. Then LangGraph, Google ADK and the OpenAI Agents SDK are built in parallel, each by its own agent in its own folder. Each counts only once it passes two tests: temperature and the token and step limits actually reach the model request, and it sees the same tools and tool results as Hermes. A harness that misses its deadline is cut on its own, with the reason recorded. Cut order: the two SDKs first, LangGraph last, never the own loop. Rishi reviews each adapter before it merges. Rishi's reasoning: "adapters are generic code that require less of my time and can happen in parallel." Deadline per harness: not set yet (Wed 18:00 or Thu 12:00 proposed).
 
 ## Settled entries
 
@@ -78,7 +79,7 @@ Dated statements from Rishi that constrain the design. Not option-choices, so th
 Options: own plain loop only; one existing framework; several frameworks plus an own loop.
 Choice: Hermes plus three more: LangGraph, one agents ADK (D11), and an own plain tool-calling loop.
 Why: the brief grades abstraction on whether a new harness is a small change. One extra harness shows an adapter exists; three show the interface holds across frameworks that model loops, tools and traces differently. The own loop stays as the clean control.
-What would change it: a slip past Wednesday on the Hermes adapter. Then the order of cuts is ADK first, LangGraph second, never the own loop, since the brief requires at least one second harness.
+What would change it: a slip past Wednesday on the Hermes adapter. Then the order of cuts is ADK first, LangGraph second, never the own loop, since the brief requires at least one second harness. Superseded by R7: the two SDKs are cut first, LangGraph last, each on its own deadline.
 Cost: if harnesses are compared, each needs equivalent file and terminal tools, or the comparison measures the tool gap.
 
 ### D11: Which agents SDK (3 Nov)
