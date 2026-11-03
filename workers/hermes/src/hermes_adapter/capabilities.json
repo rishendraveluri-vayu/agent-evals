@@ -13,20 +13,22 @@
       "supported": true,
       "native": "request_overrides.temperature",
       "default": null,
-      "evidence": "declared:sp1_probes s2, until the probe command runs"
+      "evidence": "probe:2026-11-03",
+      "observed": "unset: not sent; set to 0.37: sent as temperature"
     },
     "max_output_tokens": {
       "supported": true,
       "native": "request_overrides.max_tokens",
       "default": null,
-      "evidence": "declared:sp1_probes s2, until the probe command runs"
+      "evidence": "probe:2026-11-03",
+      "observed": "unset: not sent; set to 777: sent as max_tokens"
     },
     "max_steps": {
       "supported": true,
       "native": "max_iterations, set per turn",
       "extra_calls_at_limit": 2,
-      "observed": "N tool-calling requests plus one or two summary requests",
-      "evidence": "declared:sp1_probes max_iterations section"
+      "observed": "max_steps 3: 5 model calls, end_state step_limit, harness counted 3",
+      "evidence": "probe:2026-11-03"
     },
     "timeout_s": {
       "supported": true,
@@ -37,7 +39,8 @@
       "supported": true,
       "native": "request_overrides.parallel_tool_calls",
       "default": null,
-      "evidence": "declared:sp1_probes s2, until the probe command runs"
+      "evidence": "probe:2026-11-03",
+      "observed": "unset: not sent; set to False: sent as parallel_tool_calls"
     },
     "memory": {
       "supported": true,

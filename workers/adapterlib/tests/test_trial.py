@@ -8,8 +8,6 @@ import time
 from pathlib import Path
 
 import pytest
-from evals_adapter import runner
-from evals_adapter.runner import TrialInputs, run_trial
 from support import (
     SCRIPTED_CMD,
     SimServer,
@@ -19,6 +17,9 @@ from support import (
     make_spec,
     read_jsonl,
 )
+
+from evals_adapter import runner
+from evals_adapter.runner import TrialInputs, run_trial
 
 KEY_ENV = {"EVALS_MODEL_API_KEY": "sk-test-not-a-key"}
 

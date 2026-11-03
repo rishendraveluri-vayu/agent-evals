@@ -41,6 +41,7 @@ from evals_adapter.spec import (
 from evals_adapter.trace import KIND_INTERNAL, Span, Tracer
 
 TURN_STOPS = ("answered", "step_limit", "token_limit", "agent_error", "harness_error")
+CAPABILITIES_ENV = "EVALS_CAPABILITIES_PATH"
 EXIT_OK = 0
 EXIT_SPEC = 2
 EXIT_INTERNAL = 3
@@ -277,9 +278,12 @@ class Adapter:
         return "unknown"
 
     def load_capabilities(self) -> dict[str, Any]:
-        if self.capabilities_path is None or not Path(self.capabilities_path).exists():
-            raise SpecError(f"{self.name}: capabilities.json not found at {self.capabilities_path}")
-        caps = json.loads(Path(self.capabilities_path).read_text(encoding="utf-8"))
+        # The probe command points this at a temporary file that marks every probed setting
+        # supported, so it can see what the adapter really sends. Never set in a real trial.
+        path = os.environ.get(CAPABILITIES_ENV) or self.capabilities_path
+        if path is None or not Path(path).exists():
+            raise SpecError(f"{self.name}: capabilities.json not found at {path}")
+        caps = json.loads(Path(path).read_text(encoding="utf-8"))
         if caps.get("contract_version") != CONTRACT_VERSION:
             raise SpecError(
                 f"{self.name}: capabilities speak contract {caps.get('contract_version')}"

@@ -21,7 +21,8 @@ PINNED = "6112c2adb9e11f69734a29be9d2696f345ffa06a"
 
 pytestmark = pytest.mark.skipif(not HERMES_PY.exists(), reason=f"no Hermes env at {HERMES_SRC}")
 
-CAPS = json.loads((HERE / "src" / "hermes_adapter" / "capabilities.json").read_text())
+CAPS_FILE = HERE / "src" / "hermes_adapter" / "capabilities.json"
+CAPS = json.loads(CAPS_FILE.read_text())
 GATE = Gate(
     harness="hermes",
     adapter_cmd=[str(HERMES_PY), "-m", "hermes_adapter.adapter"],

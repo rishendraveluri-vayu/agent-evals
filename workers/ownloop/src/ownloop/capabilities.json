@@ -1,18 +1,67 @@
 {
   "contract_version": "2",
   "harness": "ownloop",
-  "version": {"package": "ownloop", "ref": "0.1.0"},
-  "model_api_formats": ["openai_chat"],
-  "settings": {
-    "temperature": {"supported": true, "native": "request.temperature", "default": null, "evidence": "declared:until the probe runs"},
-    "max_output_tokens": {"supported": true, "native": "request.max_tokens", "default": null, "evidence": "declared:until the probe runs"},
-    "max_steps": {"supported": true, "native": "loop counter", "extra_calls_at_limit": 0, "evidence": "declared:until the probe runs"},
-    "timeout_s": {"supported": true, "native": "wrapper", "evidence": "declared:the adapter library's watchdog"},
-    "parallel_tool_calls": {"supported": true, "native": "request.parallel_tool_calls", "default": null, "evidence": "declared:until the probe runs"},
-    "memory": {"supported": false, "observed": "the loop has no memory", "evidence": "declared:no such feature"},
-    "skills": {"supported": false, "observed": "the loop has no skills", "evidence": "declared:no such feature"},
-    "compression": {"supported": false, "observed": "the loop never compresses; the full history is sent", "evidence": "declared:no such feature"}
+  "version": {
+    "package": "ownloop",
+    "ref": "0.1.0"
   },
-  "harness_options_schema": {"type": "object", "additionalProperties": false, "properties": {}},
+  "model_api_formats": [
+    "openai_chat"
+  ],
+  "settings": {
+    "temperature": {
+      "supported": true,
+      "native": "request.temperature",
+      "default": null,
+      "evidence": "probe:2026-11-03",
+      "observed": "unset: not sent; set to 0.37: sent as temperature"
+    },
+    "max_output_tokens": {
+      "supported": true,
+      "native": "request.max_tokens",
+      "default": null,
+      "evidence": "probe:2026-11-03",
+      "observed": "unset: not sent; set to 777: sent as max_tokens"
+    },
+    "max_steps": {
+      "supported": true,
+      "native": "loop counter",
+      "extra_calls_at_limit": 0,
+      "evidence": "probe:2026-11-03",
+      "observed": "max_steps 3: 3 model calls, end_state step_limit, harness counted 3"
+    },
+    "timeout_s": {
+      "supported": true,
+      "native": "wrapper",
+      "evidence": "declared:the adapter library's watchdog"
+    },
+    "parallel_tool_calls": {
+      "supported": true,
+      "native": "request.parallel_tool_calls",
+      "default": null,
+      "evidence": "probe:2026-11-03",
+      "observed": "unset: not sent; set to False: sent as parallel_tool_calls"
+    },
+    "memory": {
+      "supported": false,
+      "observed": "the loop has no memory",
+      "evidence": "declared:no such feature"
+    },
+    "skills": {
+      "supported": false,
+      "observed": "the loop has no skills",
+      "evidence": "declared:no such feature"
+    },
+    "compression": {
+      "supported": false,
+      "observed": "the loop never compresses; the full history is sent",
+      "evidence": "declared:no such feature"
+    }
+  },
+  "harness_options_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
   "known_differences": []
 }

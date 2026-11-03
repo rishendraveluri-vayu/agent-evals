@@ -3,11 +3,12 @@
 
 import json
 
+from support import attrs, errors, read_jsonl
+
 from evals_adapter.proxy import ProxyClient, call_status, merge_proxy_spans
 from evals_adapter.runner import label
 from evals_adapter.spec import TrialPaths
 from evals_adapter.trace import Tracer, trace_id_for
-from support import attrs, errors, read_jsonl
 
 
 def row(n, start, end, status="success", code=None, messages=None, spend=0.000034):

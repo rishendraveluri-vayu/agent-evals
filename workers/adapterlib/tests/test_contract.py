@@ -5,8 +5,9 @@ import json
 
 import jsonschema
 import pytest
-from evals_adapter.spec import SpecError, check_spec
 from support import CONTRACT, FIXTURES, errors, make_spec, validator
+
+from evals_adapter.spec import SpecError, check_spec
 
 EXAMPLES = CONTRACT / "examples"
 

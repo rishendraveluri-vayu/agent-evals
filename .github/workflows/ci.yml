@@ -47,6 +47,9 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest -q
+      - name: The adapter library on Python 3.11 too, since every harness imports it
+        if: matrix.project == 'workers/adapterlib'
+        run: uvx --python 3.11 --with jsonschema --with-editable . pytest -q
 
   harness-gates:
     # Contract v2 gate tests for each harness against the fake model server (R7, R10.5).

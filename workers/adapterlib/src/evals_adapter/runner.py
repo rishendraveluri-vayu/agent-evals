@@ -251,7 +251,7 @@ def _harness_calls(paths: TrialPaths) -> int:
     try:
         result = json.loads(paths.result.read_text(encoding="utf-8"))
         return int(result["counts"]["model_calls"])
-    except OSError, ValueError, KeyError, TypeError:
+    except (OSError, ValueError, KeyError, TypeError):
         return 0
 
 

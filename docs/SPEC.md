@@ -151,7 +151,7 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [ ] Audit Hermes and record results in `hermes-notes.md`: background skill and memory writes (R3), memory in the prompt vs the trace, temperature, model-name routing, prompt caching through the proxy, token usage in the result
 - [x] Settle the cross-harness trace format (D12, R4)
 - [x] Before fixing the adapter contract, read each SDK's run, tool and settings APIs on paper (about 1 h), so the contract is not shaped only by Hermes and the own loop
-- [ ] Build the shared adapter library (spec, timeout wrapper, MCP command, conversation loop, end-state mapping, atomic result, span writer), the `new-harness` scaffold and the `probe-harness` command that writes capabilities from evidence (R11). Library and gate kit done (`workers/adapterlib`, 42 tests); scaffold and probe not yet
+- [x] Build the shared adapter library (spec, timeout wrapper, MCP command, conversation loop, end-state mapping, atomic result, span writer), the `new-harness` scaffold and the `probe-harness` command that writes capabilities from evidence (R11). `workers/adapterlib`, 44 tests on Python 3.11 and 3.14; `make new-harness NAME=`, `make probe-harness NAME=`
 - [x] Build the own plain loop next to Hermes, until one task runs end to end through both (through LiteLLM, fake models only)
 - [x] Minimal trace view (one trial's span timeline) and a spend chart per trial and config, in the first end-to-end run (R11). Reads trial folders until SP2's database
 - [ ] Effect checks per harness and model on Haiku 5.5 and a Gemini Flash, each run signed off with an estimate (D24)

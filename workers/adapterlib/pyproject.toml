@@ -10,6 +10,8 @@ dependencies = []
 
 [project.scripts]
 evals-run-trial = "evals_adapter.runner:main"
+evals-probe-harness = "evals_adapter.probe:main"
+evals-new-harness = "evals_adapter.scaffold:main"
 
 [build-system]
 requires = ["uv_build>=0.13.6,<0.14"]
@@ -25,3 +27,9 @@ dev = [
     "pytest>=9.2.0",
     "ruff>=0.17.3",
 ]
+
+[tool.ruff]
+# Every harness environment imports this library, some on Python 3.11, so lint and format for
+# 3.11 (the shared config targets 3.14, whose `except A, B:` form is a syntax error on 3.11).
+extend = "../../ruff.toml"
+target-version = "py311"
