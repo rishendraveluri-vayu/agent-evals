@@ -50,7 +50,7 @@ These are the documents we need so nothing gets lost. **Required** means the bri
 | Doc | Holds | Why it matters | Update when | Status |
 | --- | --- | --- | --- | --- |
 | `README.md` | Setup, add a task, add a harness, add a model | **Required** | SP0 onward, finished in SP9 | Not started |
-| `docs/design.md` | Architecture, adapter interfaces, data model, isolation and reproducibility, grader design and validation, stats and choice of N | **Required** | Any design change | Stub |
+| `docs/design.md` | Architecture, adapter interfaces, data model, isolation and reproducibility, grader design and validation, stats and choice of N | **Required** | Any design change | Started |
 | `docs/assumptions.md` | Every assumption made | **Required** | As soon as one is made | Stub |
 | `docs/known-limits.md` | Where conclusions should not be trusted | **Required** | As soon as one is found | Seeded |
 | `docs/cost.md` | Cost formula, actual spend, how to reduce cost | **Required** | Prices, pilot, final run | Seeded |
