@@ -11,6 +11,11 @@ model_list:
       model: openai/*
       api_base: http://fake-llm:8080/v1
       api_key: fake-key-not-secret
+      # Prices here as well as in model_info: for a wildcard route LiteLLM prices
+      # the resolved model (openai/<script>) and ignores model_info, so without
+      # these the fake's spend was logged as $0 (seen 3 Nov on v1.99.4).
+      input_cost_per_token: 0.000001
+      output_cost_per_token: 0.000002
     # Made-up prices, so spend accrues on fake calls and per-trial budget caps
     # (LiteLLM max_budget) can be tested without real money.
     model_info:
@@ -34,3 +39,10 @@ general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   # The database holds virtual keys and their budgets (one key per trial).
   database_url: os.environ/DATABASE_URL
+  # Keep full request and response bodies in the spend log, so the runner can
+  # store them per trial and the invariance diff can read the first request
+  # (contract v2, sections 6 and 10).
+  store_prompts_in_spend_logs: true
+  # Write spend logs every second instead of every 10, so the runner can merge
+  # a trial's model calls soon after the adapter exits.
+  proxy_batch_write_at: 1
