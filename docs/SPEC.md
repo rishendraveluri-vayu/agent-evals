@@ -149,11 +149,11 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [ ] **[Rishi designs]** Harness and model adapter interfaces
 - [ ] Build the Hermes adapter on the pinned SHA
 - [ ] Audit Hermes and record results in `hermes-notes.md`: background skill and memory writes (R3), memory in the prompt vs the trace, temperature, model-name routing, prompt caching through the proxy, token usage in the result
-- [ ] Settle the cross-harness trace format (D12, R4)
+- [x] Settle the cross-harness trace format (D12, R4)
 - [ ] Before fixing the adapter contract, read each SDK's run, tool and settings APIs on paper (about 1 h), so the contract is not shaped only by Hermes and the own loop
 - [ ] Build the own plain loop next to Hermes, until one task runs end to end through both
 - [ ] Then build LangGraph, Google ADK and the OpenAI Agents SDK in parallel (R7), one agent and one folder each, with tool parity through D14. Each passes the settings test and the tool test by Thursday 12:00 or is cut with the reason recorded. Cut order: the two SDKs first, LangGraph last, never the own loop. Rishi reviews each before merge.
-- [ ] Settle how task tools reach every harness (D14)
+- [x] Settle how task tools reach every harness (D14)
 - [ ] Register models in LiteLLM and smoke-test tool calling on each, with real dev runs on Haiku 5.5 and Gemini Flash, each scoped and signed off first (R8, R9)
 - [ ] Build the invariance diff: the first request of two configs should differ only on the axis
 
@@ -176,6 +176,7 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [ ] Run tasks × configs × N trials
 - [ ] Implement isolation per D3: one trial folder at a fixed path, leftover-process sweep, wipe and empty check between trials, with a test proving no state leaks from one trial to the next in the same container
 - [ ] Use a fixed `HERMES_HOME` path per trial, because the path appears in the system prompt
+- [ ] Set LiteLLM per-call retries with backoff and a capped trial re-queue (D16), tested against the fake's forced 429s; update the config check
 - [ ] Handle timeouts, rate limits and retries: tested with the fake's forced faults, then seen on a signed-off real dev run (R9)
 - [ ] Separate infra failures from agent failures, including budget stops
 - [ ] Make trial claiming idempotent and runs resumable

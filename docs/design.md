@@ -36,7 +36,7 @@ Decided:
   - The deadline for each one is Thursday 5 Nov, 12:00. A harness that misses it is cut on its own. Cut order: the two SDKs first, LangGraph last, never the own loop.
 - **Adding a harness is an adapter, not a core change** (R2). The test cases are adding a GitHub coding agent or the Claude Agent SDK tomorrow.
 - **A new model is one config line**, because all model access goes through LiteLLM (SP1 done-when).
-- **Task tools come from one MCP server shared by every harness** (D14), so every harness sees the same tool names, descriptions and schemas. Whether it runs over stdio per trial or as one HTTP service is still open.
+- **Task tools come from one MCP server shared by every harness** (D14), so every harness sees the same tool names, descriptions and schemas. It is started per trial over stdio inside the harness container, so its state lives in the trial folder.
 - **Self-improvement is explicit** (R3). Anything that lets an agent change its own prompt, skills or memory in the background is a config setting, off unless a config turns it on.
 
 Constraints:
@@ -56,14 +56,15 @@ Decided, the adapter rules (R10, 3 Nov):
 - **Native limits, sized runs, safety nets.** Limits go into each harness natively (the wrapper adds what is missing, such as a whole-trial timeout). Runs are sized upfront from the cost, time and N estimate. The runner's process-group kill and the proxy's spend cap are safety nets only.
 - **Only the task's tools,** plus anything the config enables. **Nothing learns** unless the config says so (R3).
 - **The proxy is the source of truth** for tokens, cost, latency and call counts.
+- **Retries:** LiteLLM retries failed model calls with backoff; a trial that still fails is re-run by the runner, capped (D16). **One step is one model call** (D17). **Tool errors go back to the model** wherever the framework allows (D18). **Parallel tool calls** are a setting, off by default (D19). **Harness-added prompt text is kept and recorded** (D20).
+- **Traces:** one event per line in `trace.jsonl`, own schema with `gen_ai.*` names; model calls from LiteLLM's records, tool and agent events from each adapter (D12).
 - **Thin adapters, no hidden retries.** One folder per harness; every harness's built-in retries set to zero so retrying happens in one place.
 
 Open:
 
 - The field-by-field contract: what `spec.json`, `result.json` and `trace.jsonl` contain, and the capabilities file format. **[Rishi designs]**, written from R10.
 - The config shape: a common block plus per-harness options.
-- D12: the trace format across harnesses.
-- D15: the Hermes settings that are design calls.
+- D15: the remaining Hermes settings that are design calls (compression, `skill_manage` writes).
 
 ## 3. Data model
 

@@ -20,6 +20,7 @@ Not required by the brief. It records what was built and by whom, so the next-ro
 - Rishi settled D1 (graders and stats in Python) and D2 (HTTP through the API; workers never touch the database), and delegated D3 to "simpler and more robust". Claude chose one long-lived container per harness with a fresh process per trial, and logged the tradeoff.
 - SP0 done: `docker compose up` starts Postgres, LiteLLM v1.99.4, the fake model server, the API and the UI, all healthy, and CI is green on the first run (lint, typecheck, tests, LiteLLM config check, compose smoke, worker isolation check) with no provider keys. Claude built the compose stack, LiteLLM config, worker base, CI and docs; two agents built the fake model server (73 tests) and the API and UI skeletons (21 tests). Rishi created the repo, chose MCP for D14, and still owns the rate-limit tier check.
 - Surprises: LiteLLM v1.99.4's bundled price map has no Haiku 5.5 or Gemini 3.8 Flash, so spend would read $0 and budget caps would never trip; the config check now requires explicit prices. Port 3000 on Rishi's machine is held by sibling-project processes, so host ports are configurable.
+- Four SDK checks (LangGraph, ADK, Agents SDK, Claude Agent SDK) and the finance MCP server (164 tests, 11 tools) landed. Rishi walked through and approved the adapter rules (R10), revising the limits rule, and settled D12, D14's transport and D16 to D21 one question at a time.
 
 ## Entry template
 

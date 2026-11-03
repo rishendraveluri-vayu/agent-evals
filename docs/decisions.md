@@ -19,7 +19,14 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | Graders and stats (was D1) | Python | Rishi | 3 Nov |
 | Worker boundary (was D2) | HTTP claim and report; workers never touch the database | Rishi | 3 Nov |
 | Trial isolation (was D3) | One long-lived container per harness, a fresh process per trial, one trial at a time per container | Rishi delegated ("simpler and more robust"); Claude's recommendation | 3 Nov |
-| Tool delivery (was D14) | One MCP server for the finance tools, shared by every harness | Rishi | 3 Nov |
+| Tool delivery (was D14) | One MCP server for the finance tools, shared by every harness, started per trial over stdio | Rishi | 3 Nov |
+| Trace format (was D12) | Own event schema with `gen_ai.*` names; model calls from LiteLLM's records, tool and agent events from adapters | Rishi | 3 Nov |
+| D16 Retry layer | LiteLLM retries failed model calls with backoff; a trial that still fails is labelled infra and re-run by the runner, capped | Rishi | 3 Nov |
+| D17 Step unit | One step is one model call | Rishi | 3 Nov |
+| D18 Harness-side tool errors | Send them back to the model wherever the framework allows, never crash the run; record where it can't | Rishi | 3 Nov |
+| D19 Parallel tool calls | A config setting, off by default | Rishi | 3 Nov |
+| D20 Harness-added prompt text | Keep it and record it in the invariance diff; adapters never strip it | Rishi | 3 Nov |
+| D21 Finance tool conventions | Accept the server's conventions (A5, A6) | Rishi | 3 Nov |
 
 ## Open
 
@@ -30,8 +37,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D8 | Judge threshold and what happens below it | Set before seeing results | Below threshold leaves the headline score | Thu |
 | D9 | Experiment axis and N | Model, harness, memory or skills; N from the pilot | Memory empty vs seeded, if memory is the axis | Fri |
 | D10 | Unit of analysis for the stats | Task, trial, or trials nested in tasks | Resample tasks, then trials within them | Thu |
-| D12 | Trace format across harnesses | OpenTelemetry GenAI conventions, OpenInference, or an own schema | Research first, see R4 | Wed |
-| D15 | Hermes settings that are design calls | Compression on or off; Tool Search off or on; in skills-on configs allow `skill_manage` writes or stage them; accept the untrusted MCP wrapper or not | None yet. Evidence in `docs/research/hermes/context_and_self_improvement.md` | Wed |
+| D15 | Hermes settings that are design calls | Compression on or off; Tool Search off or on (must be off for MCP tools, R10.7); in skills-on configs allow `skill_manage` writes or stage them; ~~accept the untrusted MCP wrapper or not~~ (settled by D20: accept) | None yet. Evidence in `docs/research/hermes/context_and_self_improvement.md` | Wed |
 
 ## Notes behind the open calls
 
@@ -47,7 +53,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 
 Original note: Five harnesses must expose the same finance tools or a harness comparison measures the tool gap. One MCP server gives byte-identical tool schemas to every harness, and LangGraph, Google ADK and the OpenAI Agents SDK all consume MCP natively. It hinges on whether Hermes can load an MCP server from config without a source change. A CLI through the terminal tool is the fallback: parity is guaranteed but tool calls become shell strings, which weakens trace quality and failure analysis. Native functions per adapter are the most work and the easiest to drift.
 
-**D12.** Evidence from 3 Nov in `docs/research/trace-standards.md`: OpenTelemetry GenAI is all "Development" stability with memory and skill attributes in no release; OpenInference is stable but has no memory or skills. Options: pure OpenTelemetry GenAI, OpenInference plus Phoenix on our Postgres, or our own small schema on an OTLP-shaped envelope with `gen_ai.*` names. The brief says the evidence favours the third. Hermes needs a trace plugin under any option.
+**D12.** Settled on 3 Nov, see the entry below. Evidence from 3 Nov in `docs/research/trace-standards.md`: OpenTelemetry GenAI is all "Development" stability with memory and skill attributes in no release; OpenInference is stable but has no memory or skills. Options: pure OpenTelemetry GenAI, OpenInference plus Phoenix on our Postgres, or our own small schema on an OTLP-shaped envelope with `gen_ai.*` names. The brief says the evidence favours the third. Hermes needs a trace plugin under any option.
 
 Original note: Four harnesses each emit traces differently. A shared trace schema is what lets one trial view and one failure analysis work for all of them. OpenTelemetry GenAI semantic conventions and OpenInference are the two candidate standards. Decide after the research in R4.
 
@@ -124,6 +130,38 @@ Choice: one MCP server, `services/finance-mcp/`. Rishi: "start coding the basic 
 Why: one server gives every harness byte-identical tool names, descriptions and schemas, and every framework in R5 consumes MCP natively, so the tool test can diff what each harness actually sends. Known costs, recorded on 3 Nov: Hermes prefixes names (`mcp__<server>__<tool>`), Tool Search must be off, results are wrapped as untrusted with no switch (D15), and a 3-error circuit breaker.
 Still open: the transport. Stdio, spawned per trial inside the harness container, keeps all tool state in the trial folder (D3); one streamable-HTTP service needs per-trial state keyed by trial. The server supports both, so this can be settled in SP1 without code changes.
 What would change it: a harness that cannot load an MCP server unmodified.
+
+### D12: Trace format across harnesses (3 Nov)
+Options: OpenTelemetry GenAI conventions; OpenInference with Phoenix; our own small schema with `gen_ai.*` names.
+Choice: our own schema. `trace.jsonl` has one event per line (model call, tool call, tool result, error, memory read, skill load, final answer). Model-call events come from LiteLLM's records for the trial key, the same for every harness; tool and agent events come from each adapter's hooks.
+Why: OpenTelemetry GenAI is all at Development stability and, like OpenInference, has no memory or skills concepts, which the memory experiment needs; both add a service. Recording model calls at the proxy fits R10.9 and covers harnesses that expose no raw requests (the Claude Agent SDK). The `gen_ai.*` names keep an OpenTelemetry export possible later.
+What would change it: a reviewer requirement for OTLP traces, which an exporter could meet.
+
+### D14 transport (3 Nov)
+Choice: the finance MCP server is started per trial over stdio inside the harness container. It dies with the trial's process group, and its state lives in the wiped trial folder (D3). Adapters set MCP tool timeouts explicitly, because ADK and the Agents SDK default to 5 s.
+Rejected: one shared HTTP service, because concurrent trials would share a server and state would need keying by trial (pre-mortem break 8).
+
+### D16: Retry layer (3 Nov)
+Options: LiteLLM per-call retries plus trial re-queue; LiteLLM only; trial re-runs only.
+Choice: LiteLLM retries a failed model call (429, 500, timeout) a few times with backoff, logged per trial key; harness retries are off (R10.11). A trial that still fails is labelled infra and re-run from scratch by the runner a capped number of times; failed attempts are reported and never counted in quality.
+Why: one retry layer inside a trial, identical for every harness and visible at the proxy; trial re-runs recover what still dies without paying again for every rate-limit blip.
+To do: set `num_retries` and backoff in LiteLLM in SP3, test it against the fake server's forced 429s, and update `scripts/check_litellm_config.py`.
+
+### D17: Step unit (3 Nov)
+Choice: one step is one model call. Adapters map it to `max_llm_calls` (ADK), `max_turns` (Agents SDK, Claude SDK), `max_iterations` (Hermes) and LangGraph's model-call limit in error mode. The proxy's call count per key checks it. Hermes's extra summary call at its limit is recorded, not hidden. Tool calls are counted in the trace but not limited.
+
+### D18: Harness-side tool errors (3 Nov)
+Choice: when the model sends broken tool arguments or calls an unknown tool, adapters use each framework's option to return the error to the model so it can recover, and never crash the run. Where a framework cannot (ADK ends the run on a malformed call), its behaviour is kept and recorded as a known harness difference. Adapters detect and label every case (R10.2), including LangGraph's apparent success with an empty answer.
+
+### D19: Parallel tool calls (3 Nov)
+Choice: `parallel_tool_calls` is a config setting, off by default, so every harness runs one tool call per model turn unless a config says otherwise. To check on the first real run: that Gemini accepts the setting through LiteLLM.
+
+### D20: Harness-added prompt text (3 Nov)
+Choice: keep what harnesses add (ADK's identity line and untrusted markers on tool descriptions, Hermes's untrusted wrapper on tool results) and record it in the invariance diff. Adapters never strip it.
+Why: R10.10 forbids adapter prompt edits, and stripping would be uneven because Hermes's wrapper has no switch. Settles D15's wrapper question as accept.
+
+### D21: Finance tool conventions (3 Nov)
+Choice: accept the finance server's conventions: amortisation schedules paged at 60 rows, loans close at exactly ₹0.00 with the last EMI absorbing rounding, unschedulable loans rejected, snowball by starting balance, part-year FD simple interest, whole-year inflation, paise rounding, debit or credit transactions. Recorded as A5 and A6 and in `known-limits.md`.
 
 ## Entry template
 
