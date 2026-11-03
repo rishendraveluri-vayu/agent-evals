@@ -1,0 +1,25 @@
+[project]
+name = "hermes-worker"
+version = "0.1.0"
+description = "Test environment for the Hermes adapter. The adapter itself runs on Hermes's own environment (Python 3.14, Hermes's uv.lock) with src/ and the adapter library on PYTHONPATH."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "evals-adapter",
+    "jsonschema>=4.25.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+evals-adapter = { path = "../adapterlib", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

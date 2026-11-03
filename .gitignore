@@ -23,3 +23,6 @@ dist/
 
 # Claude Code personal settings (not shared)
 .claude/settings.local.json
+
+# Hermes checkout for the adapter tests (scripts/setup_hermes.sh)
+workers/hermes/.hermes-agent/

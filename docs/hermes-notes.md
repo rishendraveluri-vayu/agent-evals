@@ -106,3 +106,14 @@ Script: `scripts/measure_hermes_overhead.py`. Fresh `HERMES_HOME`, sizes estimat
 - **A failed run returns an apology in `final_response`**, with `failed=True` and no token keys. The apology says "3 attempts" even after 18. The adapter must map `failed=True` to `harness_error` and never pass the apology on as an answer.
 - **Prompt-cache markers** appear for `claude` model names on the hostname `litellm` (three `cache_control` markers, string content turned into part lists), as the audit predicted. `prompt_caching.cache_ttl: "off"` removes them.
 - Tool-call arguments replayed on the wire are re-serialised with sorted keys.
+
+## Found while building the adapter (3 Nov, gate tests against the fake)
+
+All nine gate tests pass at the pin (`workers/hermes/tests/test_gate.py`), against the fake model server only.
+
+- **Malformed tool-call JSON is repaired, not returned.** `agent/message_sanitization.py:_repair_tool_call_arguments` closes unclosed braces, strips trailing commas and fixes control characters, then runs the repaired call. If it cannot repair the arguments it runs the tool with `{}`. The model is never told its call was malformed. No switch was found, so D18 records this as a harness difference. Each repair is logged at WARNING in `logs/agent.log`, and the adapter counts it from there as a `malformed_tool_call` event.
+- **The task system prompt goes in as `run_conversation(system_message=...)`.** Hermes puts it in the context tier of its own system prompt, after its identity and tool guidance, which D20 keeps.
+- **Hermes's own retries are a config key:** `agent.api_max_retries` (minimum 1, meaning a single attempt) with `agent.auto_recovery_cycles: 0`. With both, a permanent 429 got exactly one request.
+- **The step budget resets every turn** from `agent.max_iterations` (`agent/turn_context.py:664`), so the adapter sets it to the trial's remaining steps before each turn of a conversation. At `max_steps=3` the fake saw 5 requests: 3 counted by Hermes and 2 summary requests it does not count.
+- **Start-up takes several seconds** (import, then MCP connect and discovery) before the first model call. It counts toward `timeout_s`.
+- **MCP tool filtering** uses `mcp_servers.<name>.tools.include`, so a toolset version that leaves a tool out reaches Hermes as a smaller tool list.

@@ -36,6 +36,11 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 - Hermes's own hooks miss its hidden unmask-probe retry and its max-iterations summary calls, so any Hermes-side trace under-reports model calls. The proxy's records are authoritative (R10.9); the two are kept side by side.
 - Whether `reasoning_effort` would be translated into extended thinking on a real Claude or Gemini route behind LiteLLM was not tested; the adapter keeps it off the wire.
 
+## Hermes, from the adapter's gate tests (3 Nov)
+
+- Hermes repairs malformed tool-call JSON and runs the repaired call, or runs the tool with `{}` when it cannot repair it, without telling the model. The other harnesses send the error back. A model that often emits broken JSON will look better on Hermes for this reason alone; the `malformed_tool_calls` count on each trial shows where it happened.
+- Hermes start-up (import and MCP discovery) takes several seconds of the trial's `timeout_s`, which the other harnesses do not spend. Wall-clock comparisons across harnesses include it.
+
 ## Trial isolation (D3)
 
 - Consecutive trials in one harness container are separated by a process sweep, a folder wipe and a read-only root filesystem, not by a fresh container. A harness that writes somewhere we did not anticipate, such as a writable mount outside the trial folder, could carry state from one trial to the next. The SP3 leak test checks the known paths only.

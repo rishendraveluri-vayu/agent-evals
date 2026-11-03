@@ -346,7 +346,10 @@ class Gate:
             assert sent[name].get("parameters") == tool["inputSchema"], name
         return run
 
-    def test_timeout(self, tmp_path: Path, fake: FakeServer, timeout_s: float = 4.0) -> GateRun:
+    def test_timeout(self, tmp_path: Path, fake: FakeServer, timeout_s: float = 15.0) -> GateRun:
+        """The first model call hangs for 60 s. timeout_s must exceed the harness's start-up
+        (Hermes takes several seconds to import and connect MCP), so the hung call is in
+        flight when the deadline passes: that is what this test is for."""
         run = self.run(
             tmp_path,
             fake,
@@ -355,6 +358,8 @@ class Gate:
         self.check_schemas(run)
         assert run.report["label"] == "agent", run.explain()
         assert run.result["end_state"] == "timeout", run.explain()
+        hung = [r for r in self.agent_requests(run) if r.get("fault") == "timeout"]
+        assert hung, "the deadline passed before the hung model call was sent"
         assert run.wall_s < timeout_s + 10, run.wall_s
         return run
 
