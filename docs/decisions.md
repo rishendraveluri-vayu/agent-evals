@@ -29,6 +29,8 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D21 Finance tool conventions | Accept the server's conventions (A5, A6) | Rishi | 3 Nov |
 | D22 Simulated client | Supported per task; sees only visible replies and reveals hidden facts when asked; configurable model held identical across an experiment, temperature 0, own key, replies cached by exact conversation state; ends when done or at the turn cap; coexists with single-prompt tasks | Rishi | 3 Nov |
 | D23 Contract choices | Memory, skills, compression as common settings; safety-net timeout at 1.5x plus 30 s; per-trial key as a named environment variable | Rishi | 3 Nov |
+| D24 Effect checks | Each setting is checked once per harness and model on a cheap real model to prove it changes behaviour; inert settings are flagged | Rishi | 3 Nov |
+| Headline experiment (was D9) | Prompt v1 vs v2: failures found on discovery tasks, v2 and the analysis plan committed, then measured on held-out tasks | Rishi | 3 Nov |
 
 ## Open
 
@@ -37,7 +39,6 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D5 | Open-weight model | Hosted through OpenRouter, or local | Hosted, gpt-oss-120b if tool calling holds up | Wed |
 | D7 | Tasks using the judge | Any share of the 20+ | About 6 to 8 | Thu |
 | D8 | Judge threshold and what happens below it | Set before seeing results | Below threshold leaves the headline score | Thu |
-| D9 | Experiment axis and N | Model, harness, memory or skills; N from the pilot | Memory empty vs seeded, if memory is the axis | Fri |
 | D10 | Unit of analysis for the stats | Task, trial, or trials nested in tasks | Resample tasks, then trials within them | Thu |
 | D15 | Hermes settings that are design calls | Compression on or off; Tool Search off or on (must be off for MCP tools, R10.7); in skills-on configs allow `skill_manage` writes or stage them; ~~accept the untrusted MCP wrapper or not~~ (settled by D20: accept) | None yet. Evidence in `docs/research/hermes/context_and_self_improvement.md` | Wed |
 
@@ -59,7 +60,7 @@ Original note: Five harnesses must expose the same finance tools or a harness co
 
 Original note: Four harnesses each emit traces differently. A shared trace schema is what lets one trial view and one failure analysis work for all of them. OpenTelemetry GenAI semantic conventions and OpenInference are the two candidate standards. Decide after the research in R4.
 
-**D9.** Memory on vs off isn't one axis: enabling it changes the tools and the prompt even with nothing stored. Memory on and empty vs on and seeded is cleaner.
+**D9.** Settled on 3 Nov as prompt v1 vs v2, see the entry below. Earlier note: memory on vs off isn't one axis: enabling it changes the tools and the prompt even with nothing stored. Memory on and empty vs on and seeded is cleaner.
 
 **D10.** Trials of one task are not independent samples, so treating 400 trials as n = 400 overstates confidence. With 20 tasks, the task count may limit power more than N does, so raising N eventually stops helping. McNemar also needs a defined pairing unit, so settle that first.
 
@@ -78,6 +79,7 @@ Dated statements from Rishi that constrain the design. Not option-choices, so th
 - **R8 (3 Nov). Every real run is signed off, whatever it costs.** No standing budget for now. Before any real LLM call, Claude scopes the run (trials, models, estimated cost) and Rishi signs off explicitly, "even if it is a dollar or less". Budget must not block development: "lets not let budget stop dev". The pre-mortem's standing spending envelope is declined for now; revisit when real runs start.
 - **R9 (3 Nov). Fake model server plus real models.** Tests and CI use a fake OpenAI-compatible server with scripted replies, streaming, and forced faults: 429, timeout, 500 and a broken stream. Real dev runs on Haiku 5.5 and Gemini Flash cover what a fake cannot: real latency, real rate limits and provider quirks through LiteLLM. They run locally, never in CI, each signed off under R8. Rishi's reason for adding real models: the fake "doesnt time out hit rate limits which are classic issues we hit".
 - **R10 (3 Nov). Adapter rules.** Rishi approved each, walked through one at a time. (1) One fresh process per trial reads `spec.json` and writes `result.json` and `trace.jsonl`; nothing else crosses the boundary. (2) The adapter reports how the run ended and never judges; graders score; the runner labels agent outcomes versus infra failures, which are reported, never silently dropped. Rishi: the end-state list "may change and the granularity of this maybe more than what we think right now", so it is provisional and every result also stores the harness's raw stop signals for later relabelling without re-running. (3) Every model call goes through LiteLLM with a per-trial key; workers hold no provider keys and have no internet route. (4) Each adapter declares the settings it supports from the platform's full set; a config asking for anything else is rejected before the run. (5) A claimed setting counts only once the settings test shows it in the captured request, and tools must pass the tool test. (6, revised by Rishi) Adapters push every limit into the harness's native mechanism, with the wrapper adding one where the harness has none (e.g. a whole-trial timeout), so trials end cleanly with a result. Runs are sized upfront from the cost, time and N estimate and only started if they can finish; Rishi: "no point running 15 out of 100 its better to say that upfront". The runner's timeout and the proxy's spend cap stay only as safety nets set well above the estimate; one tripping is an infra event to investigate. (7) Built-in harness tools are off; the agent sees exactly the task's tools plus anything the config explicitly enables. (8) Memory, skills, background review, sessions, self-edits and compression are off unless the config turns them on; every trial starts from a wiped folder; Hermes's `config.yaml`, `SOUL.md` and `AGENTS.md` are hashed before and after each trial. (9) LiteLLM's records are the source of truth for tokens, cost, latency and call counts; harness-reported counts are kept for comparison. (10) Adapters only translate: no task logic, no grading, no prompt edits; a new harness is one folder with its Dockerfile, adapter, capabilities file and two gate tests. (11) Every harness's built-in retries are set to zero, so retrying happens in exactly one place. (12) On a safety-net timeout the runner kills the adapter's whole process group.
+- **R11 (3 Nov). Rishi's paper review of contract v1.** (a) Runs, results, spans and logs are stored and indexed in the database and shown in the UI; the trial folder is transport only. (b) Harness defaults must be shown. (c) Prompts are first-class, versioned config: "majority of agent changes would be prompt driven"; tool sets likewise. (d) Adding a harness or ADK must be low effort, not "a long coding effort". (e) Full logs, no 200-line tail: "we need full accountability and traceability". (f) Traces must be built and visualised quickly; spend must be easy to plot. (g) Closer to industry standard: traces as OpenTelemetry spans (D12 amended). (h) Settings must be shown to change behaviour, not just to arrive: "I have temperature but nothing changes when I move the value" (D24). (i) The simulated client is needed for real conversations, but the yes-man client is the problem; the adapter-driven conversation must be proven ("not sure this works"). (j) "We are being graded about the way we evaluate an agent. Main priority is always the eval", but the agent must be competent, not stupid; spend a little time making it feel good without overdoing it. The showcase: find missing tools, make a prompt change, improve the bot in the video.
 
 ## Settled entries
 
@@ -174,6 +176,19 @@ What would change it: the simulator proving unstable at temperature 0, or the co
 
 ### D23: Adapter contract choices (3 Nov)
 Choices: memory, skills and compression are common config settings, with harness-specific detail in per-harness options; the runner's safety-net timeout fires at `timeout_s × 1.5 + 30 s`; the per-trial key travels as an environment variable named in the spec (Rishi chose this over Claude's recommendation of the spec file). Recorded in `docs/proposals/adapter-contract.md`.
+
+### D9: Headline experiment (3 Nov)
+Options: prompt v1 vs v2 with a discovery and held-out split; memory empty vs seeded (the earlier lean) with the find-and-fix loop shown as a demo; both.
+Choice: prompt v1 vs v2. v1 runs on discovery tasks; trace analysis finds the failures (for example arithmetic without a tool, missed empathy); v2 and the analysis plan are committed before the re-run; v1 and v2 are compared on held-out tasks not used to find the problems. A missing tool found on the way is shown as a finding and added in the next iteration, so the experiment changes one thing.
+Why: Rishi's showcase ("find missing tools, make prompt change, improve the bot in the video"), the most common real agent change, and the held-out split answers the "true by construction" criticism the pre-mortem raised against the memory design.
+Still open, for the analysis plan in `docs/experiment.md`: the harness and model (default Hermes and one model), N, the split sizes, D10 (unit of analysis) and D8 (judge threshold).
+
+### D12 amendment: OpenTelemetry spans (3 Nov)
+Rishi: "Need to scale the code much closer to industry standard." Traces become OpenTelemetry spans in OTLP JSON: one trace per trial, spans for the agent run, each turn, each model call (from LiteLLM) and each tool call, with memory, skill and error events as span events using our own `evals.*` attributes. Standard tools can read them; our UI renders them.
+
+### D24: Effect checks (3 Nov)
+Choice: once per harness and model at gate time, on Haiku 5.5 and a Gemini Flash, each run signed off with an estimate (R8): temperature changes output variety, a small token cap truncates, parallel tool calls arrive together when on, seeded memory is used when on. A setting that arrives but changes nothing is recorded as inert for that harness and model.
+Why: Rishi: "I have temperature but nothing changes when I move the value." The gate tests only prove a setting reaches the request.
 
 ## Entry template
 

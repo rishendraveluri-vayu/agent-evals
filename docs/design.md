@@ -57,7 +57,7 @@ Decided, the adapter rules (R10, 3 Nov):
 - **Only the task's tools,** plus anything the config enables. **Nothing learns** unless the config says so (R3).
 - **The proxy is the source of truth** for tokens, cost, latency and call counts.
 - **Retries:** LiteLLM retries failed model calls with backoff; a trial that still fails is re-run by the runner, capped (D16). **One step is one model call** (D17). **Tool errors go back to the model** wherever the framework allows (D18). **Parallel tool calls** are a setting, off by default (D19). **Harness-added prompt text is kept and recorded** (D20).
-- **Traces:** one event per line in `trace.jsonl`, own schema with `gen_ai.*` names; model calls from LiteLLM's records, tool and agent events from each adapter (D12).
+- **Traces:** OpenTelemetry spans in OTLP JSON, one trace per trial, with `gen_ai.*` attributes and our own `evals.*` events for memory, skills and errors; model-call spans from LiteLLM's records, tool and turn spans from each adapter (D12, amended 3 Nov).
 - **Thin adapters, no hidden retries.** One folder per harness; every harness's built-in retries set to zero so retrying happens in one place.
 
 Open:
@@ -118,5 +118,5 @@ Constraints:
 
 Open:
 
-- D9: the experiment axis and N.
+- N, split sizes, harness and model for the headline experiment, which is prompt v1 versus v2 on discovery and held-out tasks (D9, decided 3 Nov).
 - D10: the unit of analysis.

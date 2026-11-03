@@ -151,7 +151,10 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [ ] Audit Hermes and record results in `hermes-notes.md`: background skill and memory writes (R3), memory in the prompt vs the trace, temperature, model-name routing, prompt caching through the proxy, token usage in the result
 - [x] Settle the cross-harness trace format (D12, R4)
 - [ ] Before fixing the adapter contract, read each SDK's run, tool and settings APIs on paper (about 1 h), so the contract is not shaped only by Hermes and the own loop
+- [ ] Build the shared adapter library (spec, timeout wrapper, MCP command, conversation loop, end-state mapping, atomic result, span writer), the `new-harness` scaffold and the `probe-harness` command that writes capabilities from evidence (R11)
 - [ ] Build the own plain loop next to Hermes, until one task runs end to end through both
+- [ ] Minimal trace view (one trial's span timeline) and a spend chart per trial and config, in the first end-to-end run (R11)
+- [ ] Effect checks per harness and model on Haiku 5.5 and a Gemini Flash, each run signed off with an estimate (D24)
 - [ ] Add the simulated-client helper (D22: reply cache, own key, turn cap) and the conversation loop in Hermes and the own loop, with a simulated gate test
 - [ ] Then build LangGraph, Google ADK and the OpenAI Agents SDK in parallel (R7), one agent and one folder each, with tool parity through D14. Each passes the settings test and the tool test by Thursday 12:00 or is cut with the reason recorded. Cut order: the two SDKs first, LangGraph last, never the own loop. Rishi reviews each before merge.
 - [x] Settle how task tools reach every harness (D14)
@@ -191,6 +194,8 @@ Each one has a done-when test. Scope stops growing once that test passes.
 **Needs:** SP1, D7.
 
 - [ ] **[Rishi designs]** Task format and task set. Domain: personal-finance assistant (D13, R6)
+- [ ] Split tasks into discovery and held-out sets for the prompt experiment (D9); keep simulated-client tasks to about 5 to 8 (D22)
+- [ ] Rishi reviews about 10 simulated-client transcripts and the simulator prompt is versioned before the experiment (D22, R11)
 - [ ] Build deterministic graders: exact match, unit tests, state checks
 - [ ] **[Rishi designs]** Judge rubric format. Judge is blind to harness and model, with a pinned model and a verdict and quoted evidence per criterion
 - [ ] Write tasks where skills or memory should help

@@ -8,7 +8,7 @@ Rishi to write.
 
 ## Setup
 
-Two configs differing on one axis (D9), with config hashes, task set version, harness SHA, model pins, N and how N was chosen.
+Axis (D9, 3 Nov): the system prompt, v1 versus v2. v1 runs first on the discovery tasks; trace analysis finds its failures; v2 and this analysis plan are committed before the re-run; v1 and v2 are then compared on held-out tasks not used to find the problems. Everything else is fixed: harness, model, settings, toolset version, simulator settings. To fill in before the run: config hashes, task set version and split sizes, harness SHA, model pins, N and how N was chosen.
 
 ## Analysis plan
 

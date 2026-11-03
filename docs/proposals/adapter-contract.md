@@ -1,12 +1,36 @@
-# Adapter contract v1: proposal
+# Adapter contract v2: proposal
 
-**Status: proposal for Rishi, 3 Nov 2026. Not approved.** Once approved it moves into `docs/design.md` section 2 and becomes JSON Schemas shared by the API and the workers (SP2).
+**Status: proposal for Rishi, 3 Nov 2026. v1 reviewed on paper by Rishi; v2 folds in his notes. Not yet approved.** Once approved it moves into `docs/design.md` section 2 and becomes JSON Schemas shared by the API and the workers (SP2).
 
-It turns the agreed rules into fields: R10 (adapter rules), D3 (isolation), D12 (traces), D14 (MCP per trial over stdio), D16 to D20. Every field below traces to one of them. Anything not traced is marked **(choice)** for review.
+It turns the agreed rules into fields: R10 (adapter rules), R11 (Rishi's review notes), D3 (isolation), D12 (traces, now OpenTelemetry spans), D14 (MCP per trial over stdio), D16 to D24.
+
+## What changed from v1 (Rishi's review, 3 Nov)
+
+1. **Everything is stored and indexed.** The trial folder is only transport. The runner uploads everything to the API before wiping the folder (section 10).
+2. **Harness defaults are shown.** Every applied setting records its value and where it came from (sections 4 and 5).
+3. **Platform defaults apply only to settings a harness supports.** A harness that cannot honour `parallel_tool_calls` declares it, and its native behaviour is recorded rather than forced (section 3).
+4. **Prompts and tool sets are versioned config objects** in the database, so the UI can diff them and an experiment can use them as its axis (section 3, D9).
+5. **Adding a harness is cheap.** A shared adapter library does the plumbing, a scaffold command creates the folder, and a probe command writes the "supported" list from evidence (section 4).
+6. **Full stdout and stderr are kept**, not a 200-line tail (sections 5 and 10).
+7. **Traces are OpenTelemetry spans** (section 6). The minimal trace view and spend chart come in the first end-to-end run.
+8. **Effect checks** prove that a setting changes behaviour, not just that it reaches the request (section 8).
+9. **The simulated client** gets settings, guards against a yes-man client, and a proof plan (section 9).
 
 ## 1. The shape in one paragraph
 
-For each trial the runner wipes `/trial`, writes `/trial/spec.json` and any seeded state, and starts the adapter as a new process group. The adapter configures its harness from the spec, starts the finance MCP server over stdio, runs the agent, appends events to `/trial/out/trace.jsonl` as they happen, writes `/trial/out/result.json`, and exits. The runner then merges in LiteLLM's records of every model call for the trial's key, reports to the API, revokes the key, kills leftover processes and wipes the folder.
+For each trial the runner wipes `/trial`, writes `/trial/spec.json` and any seeded state, and starts the adapter as a new process group, with the model key in an environment variable. The adapter, built on the shared adapter library:
+
+- configures its harness from the spec;
+- starts the finance MCP server over stdio;
+- runs the agent, and the simulated client if the task has one;
+- writes spans to `/trial/out/trace.jsonl` as they happen;
+- writes `/trial/out/result.json`, and exits.
+
+The runner then:
+
+- merges in LiteLLM's records of every model call for the trial's keys;
+- uploads the result, trace, full logs and bodies to the API, which stores and indexes them;
+- revokes the keys, kills leftover processes, and wipes the folder.
 
 ## 2. Trial folder (D3)
 
@@ -16,25 +40,28 @@ The path is the same in every trial, because Hermes puts paths into its prompt.
 | --- | --- | --- |
 | `/trial/spec.json` | runner | The trial spec (section 3). The adapter must not change it. |
 | `/trial/state/` | runner | Task state for the finance MCP server, such as `client.json`. |
-| `/trial/harness/` | adapter | The harness's own home, for example `HERMES_HOME=/trial/harness/hermes`, or `CLAUDE_CONFIG_DIR`. |
-| `/trial/home/`, `/trial/tmp/` | runner creates, harness uses | `HOME` and `TMPDIR`. |
-| `/trial/out/trace.jsonl` | adapter | Events, appended and flushed as they happen (section 6). |
-| `/trial/out/result.json` | adapter | Written once at the end, atomically: temp file, then rename (section 5). |
-| `/trial/out/artifacts/` | adapter, optional | Raw harness files worth keeping, such as Hermes's session JSON. |
+| `/trial/harness/` | adapter | The harness's own home, for example `HERMES_HOME=/trial/harness/hermes`. |
+| `/trial/home/`, `/trial/tmp/` | runner creates | `HOME` and `TMPDIR`. |
+| `/trial/out/trace.jsonl` | adapter | OpenTelemetry spans, one per line, flushed as they close (section 6). |
+| `/trial/out/result.json` | adapter | Written once at the end, atomically (section 5). |
+| `/trial/out/artifacts/` | adapter | Raw harness files worth keeping, such as Hermes's session JSON. |
+| `/trial/out/stdout.log`, `stderr.log` | runner | The adapter's full output, captured by the runner. |
 
-Everything else is read-only (D3). Nothing in `/trial` survives to the next trial.
+Everything else is read-only. Nothing in `/trial` survives to the next trial; everything that matters has been uploaded first (section 10).
 
 ## 3. `spec.json`
 
 ```json
 {
-  "contract_version": "1",
+  "contract_version": "2",
   "trial": {
     "id": "t_01J...", "experiment_id": "e_...", "config_id": "c_...", "config_hash": "sha256:...",
-    "task_id": "emi-basic-01", "task_version": "sha256:...", "repeat_index": 3, "attempt": 1
+    "task_id": "emi-basic-01", "task_version": "sha256:...", "task_split": "discovery",
+    "repeat_index": 3, "attempt": 1
   },
   "task": {
-    "messages": [{"role": "user", "content": "I took a ₹10 lakh loan at 9% for 20 years ..."}]
+    "messages": [{"role": "user", "content": "I took a ₹10 lakh loan at 9% for 20 years ..."}],
+    "client_sim": null
   },
   "system_prompt": {"id": "finance-advisor", "version": "v1", "sha256": "...", "text": "..."},
   "model": {
@@ -55,9 +82,11 @@ Everything else is read-only (D3). Nothing in `/trial` survives to the next tria
   },
   "harness_options": {},
   "tools": {
+    "toolset": {"id": "finance", "version": "v1", "sha256": "..."},
     "mcp_servers": [{
       "name": "finance",
       "command": ["/opt/finance-mcp/bin/finance-mcp", "--transport", "stdio", "--state-dir", "/trial/state"],
+      "allowed_tools": ["calculate_emi", "amortization_schedule", "..."],
       "tool_timeout_s": 30
     }],
     "enabled_builtins": []
@@ -66,69 +95,75 @@ Everything else is read-only (D3). Nothing in `/trial` survives to the next tria
 }
 ```
 
-How each part follows from the rules:
+- **`settings` is the full, resolved set** (R10.4), filled by the API from the config and the platform defaults. **A platform default is applied only to settings the harness supports.** For an unsupported setting the field is `null`, and the harness's own behaviour is recorded and shown (section 5). A config that explicitly sets an unsupported setting is rejected at submission.
+- **`max_steps` counts the agent's model calls** across the whole trial, conversation included (D17). **`timeout_s`** is enforced by the adapter library's wrapper (R10.6). The runner's safety net is `timeout_s × 1.5 + 30 s` (D23).
+- **`parallel_tool_calls`** defaults to false where supported (D19).
+- **`memory`, `skills` and `compression`** are common settings (D23). Harness detail lives in `harness_options`, validated against the adapter's schema.
+- **`system_prompt` and `tools.toolset`** reference versioned config objects stored in the database, with text or manifest, hash, author and date (R11). The UI diffs two versions, and an experiment can vary exactly one of them (D9: prompt v1 versus v2). `allowed_tools` lets a toolset version expose a subset of the finance server's tools, which is how a "missing tool" is represented and later added.
+- **`model`**: LiteLLM only (R10.3). The per-trial key is in the environment variable named by `api_key_env`, never `OPENAI_API_KEY` (D23). The adapter passes it explicitly to its model client and starts child processes with a minimal environment that leaves it out.
+- **`task.task_split`**: `discovery` or `held_out`, so the prompt experiment can show that the fix works on tasks not used to find the problem (D9).
+- **`seed`**: config-given state in harness-neutral form, written natively by the adapter. It is never learned state (R10.8).
 
-- **`settings` is the full, resolved set** (R10.4). The API fills every platform setting before the trial starts, so an adapter never falls back silently on its own default. `null` means "not set by the config": the adapter then leaves the harness default and records it in `applied_settings`. A config that sets something the harness does not support never reaches a spec, because the API rejects it at submission.
-- **`max_steps` counts the agent's model calls** across the whole trial (D17). **`timeout_s`** is enforced by the adapter's wrapper (R10.6). The runner's safety net is `timeout_s × 1.5 + 30 s` (Rishi, 3 Nov).
-- **`parallel_tool_calls`** defaults to false (D19).
-- **`memory`, `skills` and `compression`** are common settings, because R3 and R10.8 need them visible on every config (Rishi, 3 Nov). Harness-specific detail, such as Hermes's nudge intervals, lives in `harness_options`.
-- **`harness_options`** is opaque to the platform. Each adapter validates it against a schema in its capabilities file. This is the "small common block plus per-harness options" shape from the pre-mortem.
-- **`model`** points only at LiteLLM, with a per-trial key (R10.3). `api_format` is `openai_chat` for every harness today. The Claude Agent SDK would need `anthropic_messages`, which is why the field exists.
-- **`tools`**: the finance MCP server, started per trial over stdio (D14), with an explicit tool timeout, because ADK and the Agents SDK default to 5 s. `enabled_builtins` is empty unless a config turns a built-in on (R10.7). That is also where the parked "tools beyond MCP" idea would plug in.
-- **`seed`** is state the config gives the agent at the start, in harness-neutral form: memory as a list of text entries, skills as files. The adapter writes it in its harness's native format. It is never learned state (R10.8).
-- **`task.messages`** is a list, so a task can supply earlier turns. A task may also carry a `client_sim` block, which turns it into a conversation with a simulated client (section 9; Rishi chose this on 3 Nov).
-- **The per-trial key travels as an environment variable** (Rishi, 3 Nov). The spec carries only its name, `EVALS_MODEL_API_KEY`, never `OPENAI_API_KEY`, which would switch on the Agents SDK's tracing export. The adapter passes the key explicitly to its model client and, where the harness allows, starts child processes (the MCP server, CLIs) with a minimal environment that leaves it out.
-
-## 4. `capabilities.json` (one per adapter, fixed)
+## 4. `capabilities.json` and how a new harness is added
 
 ```json
 {
-  "contract_version": "1",
+  "contract_version": "2",
   "harness": "hermes",
   "version": {"package": "hermes-agent", "ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a"},
   "model_api_formats": ["openai_chat"],
   "settings": {
-    "temperature":         {"supported": true, "native": "request_overrides.temperature"},
-    "max_output_tokens":   {"supported": true, "native": "request_overrides.max_tokens"},
-    "max_steps":           {"supported": true, "native": "max_iterations", "note": "one extra summary call at the limit"},
-    "timeout_s":           {"supported": true, "native": "wrapper"},
-    "parallel_tool_calls": {"supported": true, "native": "request_overrides.parallel_tool_calls"},
+    "temperature":         {"supported": true,  "native": "request_overrides.temperature", "default": null, "evidence": "probe 2026-11-04"},
+    "max_output_tokens":   {"supported": true,  "native": "request_overrides.max_tokens",  "default": null, "evidence": "probe 2026-11-04"},
+    "max_steps":           {"supported": true,  "native": "max_iterations", "extra_calls_at_limit": 1},
+    "timeout_s":           {"supported": true,  "native": "wrapper"},
+    "parallel_tool_calls": {"supported": true,  "native": "request_overrides.parallel_tool_calls"},
     "memory":              {"supported": true},
     "skills":              {"supported": true},
     "compression":         {"supported": true}
   },
   "harness_options_schema": {"type": "object", "additionalProperties": false, "properties": {}},
-  "known_differences": [
-    "Tool results wrapped in <untrusted_tool_result> (D20)",
-    "Tool names prefixed mcp__finance__"
-  ]
+  "known_differences": ["Tool results wrapped in <untrusted_tool_result> (D20)", "Tool names prefixed mcp__finance__"]
 }
 ```
 
-(The Hermes values above are illustrative until SP1 confirms them.)
+(The Hermes values are illustrative until the adapter's probes write them.)
 
-- **The API validates every config against this file** (R10.4).
-- **The gate tests are generated from it** (R10.5): one settings test per supported setting, plus the tool test.
-- **`known_differences`** lists the prompt and tool changes the harness makes. It feeds the invariance diff (D20) and the tool test's allowed rewrites.
+**How a new harness is added (R2):**
+
+1. **Scaffold.** `make new-harness NAME=<name>` creates `workers/<name>/` with a Dockerfile, an adapter stub, a capabilities template and the gate tests.
+2. **Write two functions** on top of the shared adapter library:
+   - `apply_settings(spec)`: map our settings to the harness's native ones.
+   - `run_turn(history)`: run one agent turn and report what happened through the library's span helpers.
+
+   The library does everything else: reading the spec, the timeout wrapper, the MCP command, the conversation loop with the simulated client, error and end-state mapping, writing the result atomically and writing spans. The expected size is 100 to 200 lines per harness. Hermes will be larger, because of what it has to have neutralised (`docs/hermes-notes.md`).
+
+3. **Probe.** `make probe-harness NAME=<name>` runs each setting against the fake model server and writes the `supported`, `default` and `evidence` fields from what it actually captured. The file is generated from evidence and committed. Only things a request cannot show, such as memory, are declared by hand.
+4. **Gate tests and effect checks** (section 8). Then the harness counts.
+
+Uses of the file:
+
+- The API validates every config against it (R10.4).
+- The UI shows each harness's defaults from it (R11).
+- `known_differences` feeds the invariance diff (D20).
 - The runner refuses an adapter whose `contract_version` does not match.
 
 ## 5. `result.json`
 
 ```json
 {
-  "contract_version": "1",
+  "contract_version": "2",
   "trial_id": "t_01J...",
   "end_state": "answered",
-  "end_detail": {
-    "harness_stop_reason": "stop",
-    "exception_type": null,
-    "exception_message": null,
-    "last_message_excerpt": "..."
-  },
+  "end_detail": {"harness_stop_reason": "stop", "exception_type": null, "exception_message": null, "last_message_excerpt": "..."},
   "final_answer": "Your EMI is ₹8,997.26 ...",
+  "conversation": {"client_turns": 0, "ended_by": null},
   "harness": {"name": "hermes", "version": "6112c2a", "extra": {}},
-  "applied_settings": {"temperature": 0.2, "max_output_tokens": 1024, "max_steps": 15, "...": "..."},
-  "harness_defaults_used": ["top_p"],
+  "applied_settings": {
+    "temperature":         {"value": 0.2,  "source": "config"},
+    "top_p":               {"value": 1.0,  "source": "harness_default"},
+    "parallel_tool_calls": {"value": null, "source": "unsupported", "observed": "parallel calls executed in order"}
+  },
   "harness_usage": {"model_calls": 6, "input_tokens": 41230, "output_tokens": 1880, "cost_usd": null},
   "counts": {"model_calls": 6, "tool_calls": 4, "tool_errors": 1, "malformed_tool_calls": 0},
   "integrity": {"before": {"config.yaml": "sha256:..."}, "after": {"config.yaml": "sha256:..."}},
@@ -137,38 +172,36 @@ How each part follows from the rules:
 }
 ```
 
-- **`end_state`** is one of `answered`, `step_limit`, `token_limit`, `timeout`, `agent_error` or `harness_error`. **Provisional** (R10.2): the list is expected to grow finer.
-- **`end_detail`** keeps the raw harness signals, so finer labels can be derived later without re-running.
-- The adapter never says pass or fail (R10.2).
-- **`harness_usage` and `counts`** are the harness's own view, kept only for comparison. The truth comes from the proxy (R10.9).
-- **`integrity`** holds the before and after hashes of files the harness can edit with no switch: Hermes's `config.yaml`, `SOUL.md` and `AGENTS.md` (R10.8). It is empty for harnesses with none.
-- **`harness_defaults_used`** lists settings the harness applied that the config left unset.
+- **`end_state`** is one of `answered`, `step_limit`, `token_limit`, `timeout`, `agent_error` or `harness_error`. It is **provisional and extensible** (R10.2, R11): new states can be added without breaking old results. `end_detail` keeps the raw signals, so trials can be relabelled later without re-running.
+- **`applied_settings`** records every setting with its value and **source**: `config`, `platform_default`, `harness_default` or `unsupported`, plus what was observed. The UI shows this (R11).
+- **`harness_usage` and `counts`** are the harness's own view, kept for comparison. The truth comes from the proxy (R10.9).
+- **`integrity`**: before and after hashes of files the harness can edit with no switch (R10.8).
+- **The runner adds, never the adapter:** `proxy_usage` from LiteLLM, the infra or agent label, the attempt history (D16), and full `stdout.log` and `stderr.log` as artifacts.
 
-**What the runner adds, never the adapter:**
-- `proxy_usage`, taken from LiteLLM;
-- the infra or agent label;
-- the attempt history (D16);
-- the last 200 lines of stderr.
+## 6. `trace.jsonl`: OpenTelemetry spans (D12, amended 3 Nov)
 
-## 6. `trace.jsonl` (D12)
+**One trial is one trace.** Each line is one span in the OpenTelemetry (OTLP JSON) span shape:
 
-One JSON object per line. The common fields are `seq`, `ts`, `trial_id`, `source` (`adapter` or `proxy`), `type`, `id` and `parent_id`. Field names follow OpenTelemetry's `gen_ai.*` names where one exists. Our own concepts use `evals.*`.
+- `traceId` (derived from the trial id), `spanId`, `parentSpanId`, `name`, `kind`;
+- `startTimeUnixNano`, `endTimeUnixNano`;
+- `status` (`OK` or `ERROR`);
+- `attributes`, and `events`.
 
-| `type` | Source | Key fields |
-| --- | --- | --- |
-| `run_start`, `run_end` | adapter | `end_state` on `run_end` |
-| `model_call` | **proxy**, merged by the runner | `gen_ai.request.model`, `gen_ai.request.temperature`, `gen_ai.request.max_tokens`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.response.finish_reasons`, `latency_ms`, `status`, `attempt`, `request_ref`, `response_ref` |
-| `model_output` | adapter | What the harness received: text and tool calls (`gen_ai.tool.call.id`, `gen_ai.tool.name`, arguments) |
-| `tool_call` | adapter | `gen_ai.tool.name`, `gen_ai.tool.call.id`, `arguments` |
-| `tool_result` | adapter | `gen_ai.tool.call.id`, `is_error`, `content`, `duration_ms` |
-| `error` | adapter | `kind` (for example `malformed_tool_call` or `unknown_tool`, D18), `message`, `recovered` |
-| `memory_read`, `memory_write`, `skill_load`, `skill_write`, `compression` | adapter | `evals.*` fields. These are why D12 chose our own schema. |
-| `final` | adapter | `final_answer` |
+Standard tools can read it directly. Our own UI renders it as the trial timeline.
 
-- **Model calls come from LiteLLM** for every harness (D12, R10.9), so hidden retries show up as extra `model_call` rows with `attempt` above 1.
-- An adapter may also emit its own `model_call` with `source: adapter` when its hooks expose one. Both are kept for comparison.
-- Full request and response bodies are stored by reference, not inline, because they are large. The first request's body feeds the invariance diff.
-- **To verify in SP1:** that LiteLLM can store request and response bodies in its spend logs (`store_prompts_in_spend_logs`), and that the runner can match them to a trial by key.
+| Span name | Parent | Source | Key attributes |
+| --- | --- | --- | --- |
+| `invoke_agent <harness>` | none (root) | adapter | `evals.trial.id`, `evals.config.hash`, `evals.task.id`, `evals.end_state` |
+| `agent.turn` | root | adapter | turn index. One per agent turn; just one for a single-prompt task. |
+| `chat <model>` | turn | **proxy**, merged by the runner | `gen_ai.operation.name=chat`, `gen_ai.request.model`, `gen_ai.request.temperature`, `gen_ai.request.max_tokens`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.response.finish_reasons`, `evals.attempt`, `evals.cost_usd`, `evals.request_ref`, `evals.response_ref` |
+| `execute_tool <name>` | turn | adapter | `gen_ai.operation.name=execute_tool`, `gen_ai.tool.name`, `gen_ai.tool.call.id`, `evals.tool.arguments`, `evals.tool.is_error`, `evals.tool.result_ref` |
+| `client_sim.turn` | root | simulator helper | `evals.sim.model`, `evals.sim.cache_hit`, the client's message |
+
+- **Span events** on the turn or root carry `evals.memory.read`, `evals.memory.write`, `evals.skill.load`, `evals.skill.write`, `evals.compression`, and errors with `evals.error.kind` (for example `malformed_tool_call` or `unknown_tool`, D18). These are our extensions, and the reason D12 kept its own attributes.
+- **Model-call spans come from LiteLLM** for every harness (R10.9), so hidden retries appear as extra `chat` spans with `evals.attempt` above 1. An adapter may also emit its own view of a call (`evals.source=adapter`), kept for comparison.
+- **Spend is a span attribute**, so it can be plotted per trial, config, task and experiment straight from stored spans.
+- Full request and response bodies are stored by reference (section 10). The first request feeds the invariance diff.
+- **To verify in SP1:** that LiteLLM can store request and response bodies (`store_prompts_in_spend_logs`) and that the runner can match them to a trial by key.
 
 ## 7. Exit codes and failure mapping
 
@@ -177,53 +210,84 @@ One JSON object per line. The common fields are `seq`, `ts`, `trial_id`, `source
 | A run ended in any way the adapter understood | exit 0, valid `result.json` | agent outcome by `end_state`. Graded, except as the analysis plan says for `timeout`. |
 | An error persisted after LiteLLM's retries (D16) | exit 0, `harness_error` with exception detail | `infra:provider_error` if the proxy's last status was 429 or 5xx. Re-queued, capped. |
 | A spend safety net tripped | exit 0, `harness_error` | `infra:budget_net`. Investigate, never routine (R10.6). |
-| The adapter crashed, or the result is missing or invalid | non-zero exit | `infra:adapter_crash`. The trace so far and stderr are kept. |
+| The adapter crashed, or the result is missing or invalid | non-zero exit | `infra:adapter_crash`. The trace so far and full logs are kept. |
 | A safety-net timeout fired | killed (process group, R10.12) | `infra:timeout_kill` |
 
-stdout is ignored, because ADK and LiteLLM print banners there. stderr's tail goes into the report for debugging.
+Nothing is truncated or dropped. Every trial, including infra failures, keeps its spans, result (if any) and full logs (R11).
 
-## 8. Gate tests every adapter must pass (R7, R10.5)
+## 8. Gate tests and effect checks (R7, R10.5, D24)
 
-All run through LiteLLM against the fake model server, with no real calls.
+**Gate tests.** All run through LiteLLM against the fake model server, with no real calls:
 
-1. **Settings test.** For each supported setting, check that the captured request carries the value: `temperature`; `max_tokens` or `max_completion_tokens`; `parallel_tool_calls`.
-2. **Step test.** A script that keeps calling tools must end with `end_state: step_limit`, and the proxy's call count must be no more than `max_steps` plus any declared extra.
-3. **Tool test.** The first request's `tools` array, normalised, must equal the finance manifest snapshot apart from the rewrites the capabilities file declares.
-4. **Timeout test.** A `timeout` fault must give `end_state: timeout` within `timeout_s` plus a small margin.
-5. **Error test.** A `malformed_tool_call` fault must be handled as D18 says. A 429 fault must be retried at LiteLLM and invisible to the harness.
-6. **Schema test.** `result.json` and every trace line must validate against the v1 schemas.
+1. **Settings test.** Each supported setting appears in the captured request.
+2. **Step test.** A script that keeps calling tools ends in `step_limit`, and the proxy's call count is no more than `max_steps` plus the declared extra.
+3. **Tool test.** The first request's `tools` array, normalised, equals the toolset snapshot apart from the declared rewrites.
+4. **Timeout test.** A `timeout` fault gives `end_state: timeout` within `timeout_s` plus a small margin.
+5. **Error test.** A malformed tool call is handled as D18 says. A 429 is retried at LiteLLM and invisible to the harness.
+6. **Conversation test.** A simulated task runs a three-turn conversation with the simulator routed to a scripted fake model.
+7. **Schema test.** `result.json` and every span validate against the v2 schemas.
 
-A harness counts once these pass, by its R7 deadline of Thursday 12:00.
+**Effect checks (D24).** These prove that a setting *changes behaviour*, not just that it arrives. They use a cheap real model (Haiku 5.5 and a Gemini Flash), run once per harness and model at gate time, and each run is signed off with a cost estimate first (R8):
 
-## 9. Simulated client (decided 3 Nov)
+| Setting | Check |
+| --- | --- |
+| `temperature` | 5 samples at 0 and 5 at 1 on a prompt with room for variety. Outputs should differ only at 1. |
+| `max_output_tokens` | A small cap ends the reply with `finish_reason: length`. |
+| `parallel_tool_calls` | When on, a task needing two independent calculations gets both calls in one turn. When off, one per turn. |
+| `memory` | A seeded fact the task needs is used when memory is on, and not when off. |
 
-Rishi chose on 3 Nov to support a simulated client: a second model plays the client and answers the agent mid-run. A task with no `client_sim` block stays a single prompt.
+A setting that reaches the request but changes nothing is recorded as **inert** for that harness and model. The capabilities file and the UI say so.
+
+A harness counts once the gate tests pass and its effect checks have run, by its R7 deadline of Thursday 12:00.
+
+## 9. Simulated client (D22)
+
+A task with no `client_sim` block is a single prompt. With one, a second model plays the client:
 
 ```json
 "client_sim": {
   "persona": "Meera, 41, Pune. Widowed in March; her husband's ₹18 lakh home loan is now in her name ...",
   "hidden_facts": ["Monthly take-home ₹92,000", "₹6 lakh in an FD she has not touched"],
+  "concerns": ["Can I keep the house?", "Should I use the FD to prepay?"],
   "goal": "Understand whether she can keep the house and what to do first",
   "opening_message": "I don't really know where to start. My husband handled all of this.",
   "max_client_turns": 3,
-  "model": {"name": "claude-haiku-5-5", "api_key_env": "EVALS_SIM_API_KEY", "temperature": 0, "prompt_version": "sim-v1"}
+  "model": {"name": "claude-haiku-5-5", "api_key_env": "EVALS_SIM_API_KEY", "temperature": 0, "max_output_tokens": 300, "prompt_version": "sim-v1"}
 }
 ```
 
-(The persona above is an invented illustration, not a task.)
+(The persona is an invented illustration, not a task.)
 
-- **The adapter runs the conversation** inside one trial, using its harness's own multi-turn session, because R10.1 keeps one process per trial. Between agent turns it calls a shared, harness-neutral simulator helper shipped in the worker image (like the finance MCP server). The helper takes the visible transcript and returns the next client message or a stop signal, so the simulator is byte-identical across harnesses.
-- **What the simulated client sees:** only the agent's visible replies, not tool calls or results. It knows the persona and hidden facts, and reveals a fact only when the agent asks for it. Graders know every hidden fact.
-- **The simulator model is configurable** (default Haiku 5.5 at temperature 0, with a versioned simulator prompt), but must be identical across every config in one experiment; the invariance check enforces it. Its calls use their own key, so the agent's call counts, spend and step limit stay clean.
-- **One set of responses where the conversation is the same.** The helper caches each client reply by task, simulator config and the exact visible transcript so far, so identical conversation states get identical replies across harnesses and re-runs. This is the environment being made repeatable; the agent's own calls are never cached (CLAUDE.md).
-- **The conversation ends** when the simulator signals it is done, or after `max_client_turns` (default 3, set per task). The agent's last reply is the graded final answer; `max_steps` and `timeout_s` cover the whole conversation.
-- **Simulated and single-prompt tasks coexist** in one task set; which tasks the experiment uses is part of D9. Build order: the walking skeleton runs a single-prompt task first, then the simulator helper and the conversation loops are added before the three extra harnesses start.
-- **Trace:** `user_message` events with `source: simulator`, and simulator model calls recorded from the proxy under their own key, tagged `role: simulator`.
-- **Gate tests:** one simulated task per adapter, with the simulator routed to a scripted fake model.
+- **The conversation loop lives once, in the shared adapter library.** Each harness only implements `run_turn(history)` within one process, using its native session: Hermes passes the history back in, ADK keeps one session id, the Agents SDK carries the input list, LangGraph appends messages, and the Claude SDK uses a multi-turn client. **Not yet run** (R11: "not sure this works"), so it is proven first on Hermes and the own loop in the conversation test. The fallback for any harness that fails is to re-send the full transcript each turn as fresh input.
+- **What the client sees:** only the agent's visible replies, not tool calls or results. It reveals a hidden fact only when the agent asks for it. Graders know every fact.
+- **Guarding against a yes-man client** (R11: "the problem is yes man"):
+  - The simulator prompt sets behaviour rules: stay in the emotional state, never volunteer facts, push back on generic or irrelevant advice, ask again if confused, never praise advice that misses the concerns.
+  - The client may end only when every listed `concern` has been addressed, or at the turn cap.
+  - If Haiku proves too agreeable, the simulator model can be changed in config.
+  - **Rishi reviews about 10 simulator transcripts** before the experiment, like a small judge validation, and the simulator prompt is versioned.
+  - Simulated tasks stay a small share of the set, about 5 to 8, because each needs a persona and this review.
+- **Simulator settings** (model, temperature, token cap, prompt version) are configurable, recorded in every trial, and identical across all configs in an experiment, which the invariance check enforces.
+- **One set of responses where the conversation is the same.** Client replies are cached by task, simulator settings and exact visible transcript. The agent's calls are never cached.
+- **Ending.** The conversation ends when the client's concerns are covered or at `max_client_turns`. The agent's last reply is graded, and `max_steps` and `timeout_s` cover the whole conversation.
 
-## 10. Decided on 3 Nov
+## 10. Storage and traceability (R11)
 
-1. Config shape: memory, skills and compression are common settings, with harness detail in `harness_options`.
-2. Safety-net timeout: `timeout_s × 1.5 + 30 s`.
-3. Simulated client: supported, as section 9 describes.
-4. Per-trial key: an environment variable, named in the spec.
+The trial folder is transport only. Before wiping it, the runner uploads everything to the API, and the folder is wiped only after the API confirms. The API keeps:
+
+- **one trial row**, indexed by experiment, config hash, prompt version, toolset version, task, split, harness, model, end state and infra label;
+- **`result.json`** as structured data;
+- **every span**, indexed by trial, span name, tool name and status, so the UI can draw the timeline and plot spend and latency without re-reading files;
+- **artifacts:** full stdout and stderr, request and response bodies, and harness files, stored by content hash and referenced from spans. Logs are capped at 50 MB, and anything cut is flagged as truncated.
+- **Nothing is ever deleted or overwritten** (CLAUDE.md). A re-run is a new attempt row.
+
+The exact tables are SP2's data model, **[Rishi designs]**.
+
+## 11. Decided on 3 Nov
+
+1. Config shape: memory, skills and compression are common settings, with harness detail in `harness_options` (D23).
+2. Safety-net timeout: `timeout_s × 1.5 + 30 s` (D23).
+3. Simulated client: supported (D22), with the guards in section 9.
+4. Per-trial key: an environment variable, named in the spec (D23).
+5. Traces: OpenTelemetry spans (D12, amended).
+6. Effect checks at gate time (D24).
+7. Headline experiment: prompt v1 versus v2 on discovery and held-out tasks (D9).
