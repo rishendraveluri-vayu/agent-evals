@@ -1,0 +1,117 @@
+# One command: `docker compose up`. Defaults below work without a .env for
+# local runs; real provider keys are only needed for signed-off real runs (R8).
+# The project name is fixed so network and volume names do not depend on the
+# folder the repo was cloned into.
+name: agent-evals
+
+x-worker-runtime: &worker-runtime
+  # D3: every harness worker runs like this. Read-only root, one writable
+  # trial folder, no extra privileges, and only the internal trials network.
+  read_only: true
+  tmpfs:
+    - /trial:size=512m,uid=10001,gid=10001,mode=0700
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  networks: [trials]
+
+services:
+  postgres:
+    image: postgres:17@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
+    environment:
+      POSTGRES_USER: evals
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evals-local}
+      POSTGRES_DB: evals
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./services/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evals -d evals"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks: [control]
+
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.99.4@sha256:475f4ae80a09d769d84c92202e70502abe52a62a760c97e598261c9c8cf8244f
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local-dev-only}
+      DATABASE_URL: postgresql://evals:${POSTGRES_PASSWORD:-evals-local}@postgres:5432/litellm
+      # Use the price map bundled with this pinned image, not one fetched at
+      # startup, so cost numbers do not change between runs.
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    volumes:
+      - ./services/litellm/config.yaml:/app/config.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    ports:
+      - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
+    # control: reaches Postgres. trials: workers reach it. egress: reaches providers.
+    networks: [control, trials, egress]
+
+  fake-llm:
+    build: ./services/fake-llm
+    image: agent-evals/fake-llm:dev
+    networks: [trials]
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: agent-evals/api:dev
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgresql://evals:${POSTGRES_PASSWORD:-evals-local}@postgres:5432/evals
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${API_PORT:-3000}:3000"
+    networks: [control, trials]
+
+  ui:
+    build:
+      context: .
+      dockerfile: apps/ui/Dockerfile
+    image: agent-evals/ui:dev
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${UI_PORT:-8080}:8080"
+    networks: [control]
+
+  # Smoke check only: proves the worker runtime settings give exactly the
+  # access D3 allows. Run with `docker compose --profile smoke run --rm netcheck`.
+  netcheck:
+    <<: *worker-runtime
+    build: ./workers/base
+    image: agent-evals/worker-base:dev
+    profiles: [smoke]
+    depends_on:
+      api:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+      fake-llm:
+        condition: service_healthy
+
+networks:
+  control: {}
+  # internal: no route to the internet. Workers live only here.
+  trials:
+    internal: true
+  egress: {}
+
+volumes:
+  pgdata: {}

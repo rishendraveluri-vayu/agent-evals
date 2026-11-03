@@ -1,0 +1,36 @@
+# LiteLLM proxy config. Every model call from every harness goes through here.
+#
+# SP0 registers only the fake models. Real models (Haiku 5.5, Gemini Flash)
+# are added in SP1, and any real call needs Rishi's sign-off first (R8).
+
+model_list:
+  # Any "fake/<script>" model goes to the fake server, which picks the
+  # script from the part after the slash.
+  - model_name: fake/*
+    litellm_params:
+      model: openai/*
+      api_base: http://fake-llm:8080/v1
+      api_key: fake-key-not-secret
+    # Made-up prices, so spend accrues on fake calls and per-trial budget caps
+    # (LiteLLM max_budget) can be tested without real money.
+    model_info:
+      input_cost_per_token: 0.000001
+      output_cost_per_token: 0.000002
+
+litellm_settings:
+  # Never on for trials: a cached reply would make repeated trials stop being
+  # independent samples (CLAUDE.md). Checked in CI by scripts/check_litellm_config.py.
+  cache: false
+  # Fail loudly on a parameter a provider does not support, instead of
+  # silently dropping it. A dropped temperature would break the settings test.
+  drop_params: false
+
+router_settings:
+  # No silent retries inside the proxy, so every fault reaches the caller and
+  # can be counted. SP3 decides the retry policy.
+  num_retries: 0
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # The database holds virtual keys and their budgets (one key per trial).
+  database_url: os.environ/DATABASE_URL
