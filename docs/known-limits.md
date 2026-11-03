@@ -30,6 +30,10 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 - **With about 20 tasks, task count limits power more than trials do.** Effects smaller than roughly 6 to 25 points will not be detectable whatever N is. That range is a calculation from Miller's formula under assumed variances, not a measured figure.
 - **LiteLLM spend logs** price missing models at zero, skip cached-token pricing below provider minimums, and do not document how retries are billed.
 
+## Trial isolation (D3)
+
+- Consecutive trials in one harness container are separated by a process sweep, a folder wipe and a read-only root filesystem, not by a fresh container. A harness that writes somewhere we did not anticipate, such as a writable mount outside the trial folder, could carry state from one trial to the next. The SP3 leak test checks the known paths only.
+
 ## To check before submission
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted

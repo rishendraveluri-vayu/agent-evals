@@ -20,11 +20,9 @@ Decided:
 - The model providers are Claude and Gemini (D4). The open-weight model is still open (D5).
 - LiteLLM's response cache is never on for trials. It would replay answers, so repeated trials would stop being independent samples (`CLAUDE.md`).
 
-Open:
-
-- D1: whether graders and stats live in Python or TypeScript.
-- D2: the worker boundary, either HTTP claim-and-report or direct DB access.
-- D3: trial isolation, either a container per trial or a process per trial.
+- Graders and stats are Python (D1).
+- Workers talk only to the NestJS API, over HTTP: they claim a trial, then report its result. They never hold database credentials, so the API is the one owner of the schema and the one place that logs and checks what workers do (D2).
+- Each harness runs as its own long-lived compose service, with a fresh process per trial (D3, section 4).
 
 ## 2. Harness and model adapter interfaces
 
@@ -74,10 +72,16 @@ Constraints:
 - **The Hermes home path appears in the system prompt**, so its path must be the same in every trial. Otherwise two configs differ by more than their axis.
 - **Hermes can edit its own `config.yaml`, `SOUL.md` and `AGENTS.md` with no switch to stop it.** Those files need a hash check before and after every trial (R3).
 
-Open:
+Decided (D3; Rishi delegated the call to "simpler and more robust"):
 
-- D3: container or process per trial. The 3 Nov evidence favours a container per trial; see `docs/research/reports/Hermes architecture and traces.md`, section 6.
-- How concurrent trials keep separate tool state, such as one finance ledger per trial. Raised by the pre-mortem.
+- **One long-lived container per harness, a fresh process per trial, one trial at a time per container.** Each harness is a compose service with its own image. Parallelism comes from running more replicas of a service.
+- **Every writable path lives in one trial folder at a fixed path.** That covers the Hermes home, `HOME`, `TMPDIR` and tool state such as the finance ledger. Because only one trial runs in a container at a time, the paths are the same in every trial, so prompts that carry them stay identical.
+- **Between trials, the runner kills every leftover process, wipes the folder and checks it is empty.** Hermes's scratch-prune child deliberately outlives its parent, which is why the sweep is needed.
+- **The root filesystem is read-only**, so nothing can persist outside the trial folder.
+- **A worker crash kills its own trial.** The trial's claim then lapses and it is re-run once, never twice.
+- **Each trial gets its own LiteLLM virtual key and budget**, since the key is readable inside the container.
+
+Given up: consecutive trials in one container are separated by the sweep, the wipe and the read-only root, not by a fresh container. The SP3 leak test checks this. See the D3 entry in `docs/decisions.md` for the full tradeoff.
 
 ## 5. Grader design and validation
 

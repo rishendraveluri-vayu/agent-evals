@@ -16,14 +16,14 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | Agents ADK (was D11) | Both: Google ADK and OpenAI Agents SDK, "both are most common" | Rishi | 3 Nov |
 | Task domain (was D13) | Personal-finance assistant: calculation tools plus context-sensitive advice | Rishi | 3 Nov |
 | Second provider (was D4) | Gemini, next to Claude | Rishi | 3 Nov |
+| Graders and stats (was D1) | Python | Rishi | 3 Nov |
+| Worker boundary (was D2) | HTTP claim and report; workers never touch the database | Rishi | 3 Nov |
+| Trial isolation (was D3) | One long-lived container per harness, a fresh process per trial, one trial at a time per container | Rishi delegated ("simpler and more robust"); Claude's recommendation | 3 Nov |
 
 ## Open
 
 | # | Call | Options | Lean | Needed by |
 | --- | --- | --- | --- | --- |
-| D1 | Where graders and stats live | Python or TypeScript | Python | Tue |
-| D2 | Worker boundary | HTTP claim and report, or direct DB access | HTTP | Tue |
-| D3 | Trial isolation | Container per trial, or process per trial | Container | Tue |
 | D5 | Open-weight model | Hosted through OpenRouter, or local | Hosted, gpt-oss-120b if tool calling holds up | Wed |
 | D7 | Tasks using the judge | Any share of the 20+ | About 6 to 8 | Thu |
 | D8 | Judge threshold and what happens below it | Set before seeing results | Below threshold leaves the headline score | Thu |
@@ -35,12 +35,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 
 ## Notes behind the open calls
 
-**D1.** Python puts graders next to the sandbox and gives proven stats libraries. The risk is that Nest looks thin.
-
-**D2.** HTTP lets Nest own the DB and keeps workers stateless. Direct DB access is simpler, but two languages then share one schema. Either way, Postgres can be the queue, with no Redis.
-
-**D3.** A container per trial is properly isolated and harness-neutral, and startup is small next to LLM latency, but the worker needs the Docker socket. A process with a temp home is simpler, but an agent with a terminal tool can reach the worker's filesystem and possibly its keys. Hermes also puts the `HERMES_HOME` path in its system prompt, which favours a fixed path.
-Evidence from the 3 Nov Hermes audit: several agents in one process are ruled out. The prompt also carries home, cwd, kernel and scratch paths, so concurrent trials only get identical prompts in containers. The local shell is unsandboxed and auto-approves dangerous commands headless. The key is readable inside a container too, so per-trial virtual keys are needed either way. Every research harness surveyed uses a container per trial. Comparison table: `docs/research/reports/Hermes architecture and traces.md`, section 6.
+**D1, D2, D3.** Settled on 3 Nov, see the entries below.
 
 **D6.** Settled on 3 Nov, see the entry below.
 
@@ -101,6 +96,26 @@ Options: Gemini or OpenAI.
 Choice: Gemini, next to Claude.
 Why: Rishi's call. The planning lean was Gemini because its price was the one found, and Gemini Flash is one of the two cheap models for real dev runs (R9).
 What would change it: not stated.
+
+### D1: Where graders and stats live (3 Nov)
+Options: Python or TypeScript.
+Choice: Python.
+Why: Rishi's call. Python puts graders next to the harness workers and gives proven stats libraries. The cost noted at planning: the NestJS side does less, so it must earn its place as the control plane.
+What would change it: not stated.
+
+### D2: Worker boundary (3 Nov)
+Options: HTTP claim and report through the API, or direct database access from workers.
+Choice: HTTP. Workers claim trials and report results through the NestJS API and never hold database credentials.
+Why: Rishi: logging and the like work better through the API, and giving workers direct database access is risky; the API controls it. It also keeps one owner of the schema instead of two languages sharing it.
+What would change it: not stated.
+
+### D3: Trial isolation (3 Nov)
+Options: a container per trial; a process per trial on a shared host; one long-lived container per harness running a fresh process per trial, one trial at a time.
+Choice: the third. Each harness is a compose service with its own image. Its runner claims one trial, starts a fresh process for it with every writable path (Hermes home, `HOME`, `TMPDIR`, tool state) in one trial folder at a fixed path, then kills every leftover process, wipes the folder and checks it is empty before claiming the next. The root filesystem is read-only. Parallelism comes from running more replicas of a service.
+Why: Rishi delegated the call: "which is simpler and more robust do that." Simpler: no Docker socket in the worker, no sibling containers to reap after a crash, no host-path bind mounts, and every image is built by `docker compose up` (pre-mortem break 13). More robust: a worker crash kills its own trial, so resume cannot double-run it (break 9); tool state lives in the trial folder, so trials never share a ledger (break 8); one trial per container means fixed paths, so prompts that carry home, cwd and scratch paths stay identical across trials; agent shell commands stay inside the container. Each harness keeps its own dependencies, which the verified conflicts require.
+Given up: consecutive trials in one container are separated by the process sweep, the wipe and the read-only root, not by a fresh container. Every research harness surveyed uses a container per trial, but those run coding tasks that mutate a whole environment; finance tasks touch only the trial folder. Hermes's scratch-prune child deliberately outlives its parent (`hermes_constants_scratch_detach.py`), which is why the runner sweeps leftover processes. The SP3 leak test checks the separation.
+Still needed either way: the LiteLLM key is readable inside the container, so each trial gets its own virtual key with its own budget.
+What would change it: the leak test failing, or a harness that must write outside the trial folder.
 
 ## Entry template
 
