@@ -179,7 +179,8 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [ ] Handle timeouts, rate limits and retries: tested with the fake's forced faults, then seen on a signed-off real dev run (R9)
 - [ ] Separate infra failures from agent failures, including budget stops
 - [ ] Make trial claiming idempotent and runs resumable
-- [ ] Add a hard budget cap per experiment through LiteLLM `max_budget`
+- [ ] Show trials, estimated cost, time and whether N is enough before every run, and start only runs that can finish (R10.6)
+- [ ] Add a LiteLLM `max_budget` safety net per experiment and per trial, set well above the estimate; a trip is an infra event (R10.6)
 - [ ] Capture the full trace for every trial, including the rendered system prompt
 
 ### SP4 Tasks and graders (Wed to Thu)
@@ -270,3 +271,4 @@ Only if the frozen plan has slack.
 
 - [ ] Failure analysis: rule-based categories over traces (wrong tool, hallucinated tool args, gave up early, loop or step exhaustion, grader disagreement)
 - [ ] A third harness on an existing framework
+- [ ] Tools beyond MCP, to show the tools axis is more than "which MCP server" (Rishi, 3 Nov): e.g. a harness built-in such as Hermes code execution as a config setting, one tool delivered natively per adapter, or a plain HTTP API tool. Revisit after the first end-to-end run.

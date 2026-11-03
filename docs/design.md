@@ -47,9 +47,20 @@ Constraints:
 - **Hermes must be configured per process, before it is imported.** A bare `import run_agent` builds a full home folder under `HERMES_HOME`, so the home cannot be switched inside one process. Measured 3 Nov.
 - **Hermes changes requests in ways the adapter has to neutralise.** `gpt-5*` model names route to the Responses API. Temperature only reaches the request through `request_overrides`. A `max_iterations` stop makes one extra, uncounted summary call. Details are in `docs/hermes-notes.md`.
 
+Decided, the adapter rules (R10, 3 Nov):
+
+- **One process, one file in, two files out.** A fresh adapter process per trial reads `spec.json` and writes `result.json` and `trace.jsonl`. Any language can implement it.
+- **Adapters translate, graders judge, the runner labels.** The end-state list is provisional; raw harness stop signals are stored so trials can be relabelled later without re-running.
+- **Models only through LiteLLM**, with a per-trial key; no provider keys and no internet in workers.
+- **Declared and proven settings.** Each adapter declares the settings it supports; anything else is rejected before the run. A setting counts only once the settings test sees it in the captured request; tools must pass the tool test.
+- **Native limits, sized runs, safety nets.** Limits go into each harness natively (the wrapper adds what is missing, such as a whole-trial timeout). Runs are sized upfront from the cost, time and N estimate. The runner's process-group kill and the proxy's spend cap are safety nets only.
+- **Only the task's tools,** plus anything the config enables. **Nothing learns** unless the config says so (R3).
+- **The proxy is the source of truth** for tokens, cost, latency and call counts.
+- **Thin adapters, no hidden retries.** One folder per harness; every harness's built-in retries set to zero so retrying happens in one place.
+
 Open:
 
-- The adapter contract: what goes in, what comes out, and how capabilities are declared. **[Rishi designs]**
+- The field-by-field contract: what `spec.json`, `result.json` and `trace.jsonl` contain, and the capabilities file format. **[Rishi designs]**, written from R10.
 - The config shape: a common block plus per-harness options.
 - D12: the trace format across harnesses.
 - D15: the Hermes settings that are design calls.
