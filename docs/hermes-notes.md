@@ -84,14 +84,25 @@ Script: `scripts/measure_hermes_overhead.py`. Fresh `HERMES_HOME`, sizes estimat
 | `file`, `terminal`, `memory`, `skills` | 12 | ~4.5k tok | ~1.3k tok | ~5.8k tok |
 | Default (none passed) | 20 | ~10.1k tok | ~1.3k tok | ~11.4k tok |
 
-## Still to confirm in SP1, against the fake LLM server
+## Confirmed in SP1 against the fake LLM server (3 Nov)
 
-- [ ] Rendered prompt for frozen, memory-seeded and skills-seeded homes
-- [ ] `request_overrides` puts `temperature` in the request body
-- [ ] Pinning `model.context_length` stops every non-chat probe to the proxy
-- [ ] Retry count, backoff and result shape on a failing endpoint
-- [ ] Whether any request body carries a per-trial `session_id`, `user`, `metadata` or cache key
-- [ ] Message and hook sequence for one MCP tool call
-- [ ] Whether a headless run creates `state.db` or edits `config.yaml` with `session_db=None`
-- [ ] Whether the OpenRouter catalog is fetched on a custom route, the only possible third-party call
-- [ ] Whether the community OpenTelemetry plugins work at the pin
+37 Hermes processes at the pin, only against the fake model server, directly or through the compose LiteLLM. No real LLM calls. Method, evidence and source lines: `docs/research/hermes/sp1_probes.md`.
+
+- [x] **Rendered prompt.** Memory adds a guidance paragraph, a `MEMORY` block with a usage meter and a `USER PROFILE` block. Skills add a `skill_manage` nudge and a `## Skills` block telling the model it "MUST" load matching skills. An injection-shaped seed entry becomes `[BLOCKED: …]` and is logged at WARNING in `logs/errors.log`, so seeding can be checked for it.
+- [x] **`request_overrides`** puts `temperature`, `top_p`, `seed` and `parallel_tool_calls` top-level in the body. Constructor `max_tokens` is sent as `max_tokens`; `request_overrides.max_tokens` wins over it.
+- [x] **Pinning `model.context_length` does not stop every non-chat request (refuted).** It removes only the context-length lookups. Ollama `num_ctx` detection still sends five GETs to any "local" host, including `litellm`, unless `model.ollama_num_ctx` is set. After the first response the cost estimator fetches `{base_url}/models` and reruns those probes, with no switch found. They are harmless 404s inside our network, but they show up in proxy logs and must be excluded from call counts.
+- [x] **Retries.** A 429 gets 3 attempts about 1 s apart (Retry-After honoured). A 500 gets 3 attempts with roughly 2 s and 5 s backoff. Default auto-recovery (`agent.auto_recovery_cycles: 5`) kept an always-500 trial going for 284 s and 23 requests; with `0` it ended in 9 s. Per R10.11 and D16 the adapter sets client retries and auto-recovery to 0.
+- [x] **No per-trial `session_id`, `user`, `metadata` or cache key** in bodies or headers. Two trials' bodies were byte-identical once paths were normalised.
+- [x] **MCP sequence.** Tool names are `mcp__finance__*`. Tool Search hides them by default; `tools.tool_search.enabled: "off"` fixes that. Results are wrapped in `<untrusted_tool_result>` with a preamble, and there is no switch (D20 keeps it). Hooks see the unwrapped result. The finance server advertises resources and prompts, so `mcp_servers.finance.tools: {resources: false, prompts: false}` is needed to avoid four extra utility tools. With that, `enabled_toolsets=["finance"]` and Tool Search off, exactly the 11 finance tools reach the model.
+- [x] **Headless run with `session_db=None`** creates no `state.db` and never changes `config.yaml`. Nothing is written outside `HERMES_HOME`. Failed runs add `sessions/request_dump_*.json` (no key inside).
+- [x] **No third-party calls** from the Hermes process on a custom route (an in-process audit hook saw only loopback). Child processes were not covered: `finance-mcp`, seven local `git` commands at MCP connect, scratch-prune and `uname -p`. The container's internal network covers them.
+- [ ] **Community OpenTelemetry plugins:** not verified; they need the OTel SDK and exporter, which are not installed. Not needed under D12.
+
+**Corrections to the 3 Nov code audit, found by running it:**
+
+- **Hermes sends `reasoning_effort: "medium"` on every request.** At this pin `provider="custom"` has a provider profile with a default effort (`plugins/model-providers/custom/__init__.py:46-54`). Through our LiteLLM (`drop_params: false`) the first request then gets a 400, and Hermes retries without the field. `agent.reasoning_effort` in config is ignored by `AIAgent`. Keep it off the wire with `model_overrides.custom.<model>.supports_reasoning: false`; `reasoning_config={"enabled": False}` sends `"none"` instead.
+- **`max_iterations=N` makes N+1 requests**: N tool-calling requests plus a non-streaming summary request that still carries `tools`. If the model answers it with a tool call, Hermes retries the summary once, then returns a canned "couldn't generate a summary" string. `api_calls`, token totals and hooks exclude the summary calls.
+- **Hermes's hooks and counters miss requests the proxy sees.** A streaming 5xx triggers a hidden non-streaming "unmask probe" whose success looks like one clean call. Summary calls fire no API hooks, and `on_session_end` does not fire on failure. Request counts and infra labels must come from LiteLLM (R10.9).
+- **A failed run returns an apology in `final_response`**, with `failed=True` and no token keys. The apology says "3 attempts" even after 18. The adapter must map `failed=True` to `harness_error` and never pass the apology on as an answer.
+- **Prompt-cache markers** appear for `claude` model names on the hostname `litellm` (three `cache_control` markers, string content turned into part lists), as the audit predicted. `prompt_caching.cache_ttl: "off"` removes them.
+- Tool-call arguments replayed on the wire are re-serialised with sorted keys.
