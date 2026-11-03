@@ -1,0 +1,6 @@
+# Keeps calling a tool and never answers, for the step test.
+description: Calls list_debts on every step, forever.
+steps:
+  - tool_calls:
+      - name: list_debts
+        arguments: {}

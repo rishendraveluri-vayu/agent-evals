@@ -188,3 +188,30 @@ def test_unknown_route_is_json_404(client):
     response = client.get("/v1/nope")
     assert response.status_code == 404
     assert response.json()["error"]["message"] == "Not Found"
+
+
+def _tool(name):
+    return {"type": "function", "function": {"name": name, "parameters": {"type": "object"}}}
+
+
+def test_scripted_tool_name_matches_a_prefixed_tool(client):
+    register(client, "one-tool", [{"tool_calls": [{"name": "calculate_emi", "arguments": {}}]}])
+    names = {
+        "bare": ["calculate_emi", "list_debts"],
+        "hermes": ["mcp__finance__calculate_emi", "mcp__finance__list_debts"],
+        "none": [],
+        "ambiguous": ["mcp__a__calculate_emi", "mcp__b__calculate_emi"],
+        "unrelated": ["search_docs"],
+    }
+    expected = {
+        "bare": "calculate_emi",
+        "hermes": "mcp__finance__calculate_emi",
+        "none": "calculate_emi",
+        "ambiguous": "calculate_emi",
+        "unrelated": "calculate_emi",
+    }
+    for case, tool_names in names.items():
+        tools = [_tool(n) for n in tool_names]
+        body = post(client, chat_body("one-tool", tools=tools) if tools else chat_body("one-tool"))
+        call = body["choices"][0]["message"]["tool_calls"][0]
+        assert call["function"]["name"] == expected[case], case

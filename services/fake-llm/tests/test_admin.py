@@ -10,7 +10,15 @@ from fake_llm.scripts import ScriptError
 from fake_llm.state import RequestLog
 from support import chat_body, register
 
-EXAMPLES = {"default", "echo", "two-tools", "rate-limited", "flaky-stream"}
+EXAMPLES = {
+    "default",
+    "echo",
+    "two-tools",
+    "rate-limited",
+    "flaky-stream",
+    "finance-emi",
+    "finance-loop",
+}
 
 
 def test_health(client):

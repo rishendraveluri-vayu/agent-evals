@@ -92,6 +92,10 @@ steps:
 - **What a step contains.** A step has `text`, `tool_calls`, or both. With both, the content
   comes first, then the tool calls, and `finish_reason` is `tool_calls`. Inside `text`, the
   placeholder `{{last_user_message}}` is replaced by the last user message's text.
+- **Tool names.** A scripted name that is not in the request's `tools` is matched to the one
+  tool whose name ends with `__<name>`, so `calculate_emi` becomes Hermes's
+  `mcp__finance__calculate_emi` and one script serves every harness. With no match, or more
+  than one, the name is sent as scripted.
 - **Tool-call ids.** They are deterministic: `call_` plus 24 hex characters of
   sha256(script, step, position). The same step always gets the same ids.
 - **Token counts.** Usage is deterministic: `ceil(chars / 4)`. Prompt tokens count the
@@ -100,7 +104,7 @@ steps:
 - **Fields that change on every response.** The completion `id` and `created` are different
   each time, so anything keyed on the response id never collides.
 
-Example scripts: `echo`, `two-tools`, `rate-limited` and `flaky-stream`.
+Example scripts: `echo`, `two-tools`, `rate-limited` and `flaky-stream`. For the harness gate tests: `finance-emi` (one finance tool call, then an answer) and `finance-loop` (a tool call on every step, never an answer).
 
 ## Faults
 

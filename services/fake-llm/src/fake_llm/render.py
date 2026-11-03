@@ -51,6 +51,25 @@ def malform(arguments: str) -> str:
     return "{" + arguments
 
 
+def resolve_tool_name(name: str, body: dict[str, Any]) -> str:
+    """Match a scripted tool name to the request's tools, so one script serves every harness.
+
+    Harnesses name the same MCP tool differently: Hermes sends `mcp__finance__calculate_emi`,
+    others send `calculate_emi`. An exact match wins. Otherwise, if exactly one tool in the
+    request ends with `__<name>`, that name is used. Anything else is sent as scripted, which is
+    how a test calls an unknown tool on purpose.
+    """
+    names = [
+        t.get("function", {}).get("name")
+        for t in body.get("tools") or []
+        if isinstance(t, dict) and isinstance(t.get("function"), dict)
+    ]
+    if name in names:
+        return name
+    matches = [n for n in names if isinstance(n, str) and n.endswith("__" + name)]
+    return matches[0] if len(matches) == 1 else name
+
+
 def last_user_text(messages: list[Any]) -> str:
     for message in reversed(messages):
         if isinstance(message, dict) and message.get("role") == "user":
@@ -89,7 +108,7 @@ def render_step(
             {
                 "id": tool_call_id(script, step_index, position),
                 "type": "function",
-                "function": {"name": call.name, "arguments": arguments},
+                "function": {"name": resolve_tool_name(call.name, body), "arguments": arguments},
             }
         )
     output = (content or "") + "".join(
