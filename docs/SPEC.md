@@ -58,7 +58,7 @@ These are the documents we need so nothing gets lost. **Required** means the bri
 
 | Doc | Holds | Why it matters | Update when | Status |
 | --- | --- | --- | --- | --- |
-| `README.md` | Setup, add a task, add a harness, add a model | **Required** | SP0 onward, finished in SP9 | Not started |
+| `README.md` | Setup, add a task, add a harness, add a model | **Required** | SP0 onward, finished in SP9 | Started |
 | `docs/design.md` | Architecture, adapter interfaces, data model, isolation and reproducibility, grader design and validation, stats and choice of N | **Required** | Any design change | Started |
 | `docs/assumptions.md` | Every assumption made | **Required** | As soon as one is made | Stub |
 | `docs/known-limits.md` | Where conclusions should not be trusted | **Required** | As soon as one is found | Seeded |
@@ -72,7 +72,7 @@ These are the documents we need so nothing gets lost. **Required** means the bri
 | `docs/decisions.md` | Each call: options, choice, why, what would change it | Not required, but it's how Rishi explains the system | Each decision | Seeded |
 | `docs/hermes-notes.md` | Measured and unverified Hermes behaviour | Feeds limits and design | Each finding | Seeded |
 | `docs/worklog.md` | What was built each day, by whom, and what surprised us | Not required, for clarity on what was built | Each SP | Stub |
-| `.env.example` | Key names, never values | Part of one-command setup | Each new key | Not started |
+| `.env.example` | Key names, never values | Part of one-command setup | Each new key | Done for SP0 |
 | `CLAUDE.md`, `docs/SPEC.md` | Working rules and this plan | Keeps Claude Code on track | Task or rule changes | Done |
 
 ## Brief traceability
@@ -131,15 +131,15 @@ Each one has a done-when test. Scope stops growing once that test passes.
 **Done when:** `docker compose up` starts every service and CI is green with no LLM spend.
 **Needs:** D1, D2 and D3 for the service layout.
 
-- [ ] Rishi creates the GitHub repo, private until submission
-- [ ] Add `CLAUDE.md` and the `docs/` files to the repo
-- [ ] Set up the monorepo with pnpm and uv
-- [ ] Write the compose skeleton and `.env.example`: one service per harness with a read-only root (D3), workers reaching only the API and LiteLLM
-- [ ] Add LiteLLM: official image `ghcr.io/berriai/litellm`, v1.83.0 or later, pinned by digest
-- [ ] Build a fake OpenAI-compatible server for tests and CI: scripted replies, streaming, and forced faults (429, timeout, 500, broken stream) (R9)
-- [ ] Add CI: lint, tests, compose smoke test
+- [x] Rishi creates the GitHub repo, private until submission
+- [x] Add `CLAUDE.md` and the `docs/` files to the repo
+- [x] Set up the monorepo with pnpm and uv
+- [x] Write the compose skeleton and `.env.example`: one service per harness with a read-only root (D3), workers reaching only the API and LiteLLM
+- [x] Add LiteLLM: official image `ghcr.io/berriai/litellm`, v1.83.0 or later, pinned by digest
+- [x] Build a fake OpenAI-compatible server for tests and CI: scripted replies, streaming, and forced faults (429, timeout, 500, broken stream) (R9)
+- [x] Add CI: lint, tests, compose smoke test
 - [ ] Rishi checks API rate-limit tiers on each provider
-- [ ] Fill in the Commands section of `CLAUDE.md`
+- [x] Fill in the Commands section of `CLAUDE.md`
 
 ### SP1 Harness and model adapters (Tue to Wed)
 
