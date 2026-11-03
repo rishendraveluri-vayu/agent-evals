@@ -1,0 +1,6 @@
+# For the retry gate test: always rate-limited. With harness retries off (R10.11) a harness sends
+# exactly one request; LiteLLM's retries (D16) are the only ones.
+description: Always 429.
+steps:
+  - text: "Never served."
+    fault: {kind: "429", retry_after: 1}

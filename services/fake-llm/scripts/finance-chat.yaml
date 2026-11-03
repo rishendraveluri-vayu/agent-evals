@@ -1,0 +1,10 @@
+# For the conversation gate test: a tool call, then one answer per client turn. The step is the
+# number of assistant messages in the request, so it keeps counting across turns.
+description: Calls calculate_emi, then answers each client message in turn.
+steps:
+  - tool_calls:
+      - name: calculate_emi
+        arguments: {principal: 1000000, annual_rate_pct: 9, tenure_months: 240}
+  - text: "Your EMI would be about Rs 8,997 a month. What worries you most about it?"
+  - text: "That makes sense. You said: {{last_user_message}} Let us look at your budget first."
+  - text: "Then the next step is to keep three months of EMIs aside before any prepayment."

@@ -1,0 +1,5 @@
+# For the timeout gate test: the first model call takes 60 s.
+description: Sleeps 60 s before answering.
+steps:
+  - text: "Too late."
+    fault: {kind: timeout, seconds: 60}

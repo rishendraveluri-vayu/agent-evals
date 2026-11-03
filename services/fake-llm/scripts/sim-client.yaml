@@ -1,0 +1,8 @@
+# The simulated client for the conversation gate test. The client's own messages are the
+# assistant messages in its request, and the opening message is the first, so step 0 is unused.
+description: Two client replies, then the client ends the conversation.
+steps:
+  - text: "(unused: the opening message is step 0)"
+  - text: "I am scared I will lose the house. Can I keep paying this?"
+  - text: "OK. What should I do first?"
+  - text: "Thank you, that helps. [[END_CONVERSATION]]"

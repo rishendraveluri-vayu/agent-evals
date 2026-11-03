@@ -1,0 +1,12 @@
+# For the error gate test (D18): the first tool call has invalid JSON arguments. A harness that
+# returns the error to the model gets a good call next, then an answer.
+description: A malformed calculate_emi call, then a good one, then an answer.
+steps:
+  - tool_calls:
+      - name: calculate_emi
+        arguments: {principal: 1000000, annual_rate_pct: 9, tenure_months: 240}
+    fault: {kind: malformed_tool_call}
+  - tool_calls:
+      - name: calculate_emi
+        arguments: {principal: 1000000, annual_rate_pct: 9, tenure_months: 240}
+  - text: "Your EMI would be about Rs 8,997 a month."

@@ -18,6 +18,11 @@ EXAMPLES = {
     "flaky-stream",
     "finance-emi",
     "finance-loop",
+    "finance-chat",
+    "finance-malformed",
+    "finance-timeout",
+    "finance-429",
+    "sim-client",
 }
 
 
