@@ -56,6 +56,11 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 - LiteLLM cuts long strings out of the bodies it stores in the spend log (about 2,000 characters by default, with a note naming `MAX_STRING_LENGTH_PROMPT_IN_DB`). It cut the task prompt out of Hermes's system prompt on 3 Nov. Compose now sets the limit to 2,000,000 characters, and the merge flags any body that still carries the note (`evals.request.truncated`), which fails the proxy gate.
 - The proxy merge puts a model call under the agent turn whose time window holds its start. The clocks are the adapter's and LiteLLM's container clocks; skew between them larger than the gap between turns would misplace a call.
 
+## Invariance diff
+
+- It normalises only the trial folder path and Hermes's "Conversation started:" date line. Other per-run text in Hermes's prompt (kernel release, host, user name) is constant on one machine, so trials compared across machines will show it as unexpected differences. Real runs happen in one container image, which keeps them constant.
+- It compares the first request only. A difference that appears later in a trial (for example a tool result wrapped differently) is not caught here; the trace shows it.
+
 ## Simulated client (D22)
 
 - The reply cache is filled per trial and stored by the runner afterwards. Two trials running at the same time that reach the same new conversation state both call the simulator, and can get different replies; the first stored wins for later trials. At temperature 0 the replies should match, but that is not guaranteed.
