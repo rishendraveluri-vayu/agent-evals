@@ -36,6 +36,7 @@ Decided:
   - The deadline for each one is Thursday 5 Nov, 12:00. A harness that misses it is cut on its own. Cut order: the two SDKs first, LangGraph last, never the own loop.
 - **Adding a harness is an adapter, not a core change** (R2). The test cases are adding a GitHub coding agent or the Claude Agent SDK tomorrow.
 - **A new model is one config line**, because all model access goes through LiteLLM (SP1 done-when).
+- **Task tools come from one MCP server shared by every harness** (D14), so every harness sees the same tool names, descriptions and schemas. Whether it runs over stdio per trial or as one HTTP service is still open.
 - **Self-improvement is explicit** (R3). Anything that lets an agent change its own prompt, skills or memory in the background is a config setting, off unless a config turns it on.
 
 Constraints:
@@ -51,7 +52,6 @@ Open:
 - The adapter contract: what goes in, what comes out, and how capabilities are declared. **[Rishi designs]**
 - The config shape: a common block plus per-harness options.
 - D12: the trace format across harnesses.
-- D14: how task tools reach every harness.
 - D15: the Hermes settings that are design calls.
 
 ## 3. Data model

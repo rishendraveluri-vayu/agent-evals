@@ -19,6 +19,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | Graders and stats (was D1) | Python | Rishi | 3 Nov |
 | Worker boundary (was D2) | HTTP claim and report; workers never touch the database | Rishi | 3 Nov |
 | Trial isolation (was D3) | One long-lived container per harness, a fresh process per trial, one trial at a time per container | Rishi delegated ("simpler and more robust"); Claude's recommendation | 3 Nov |
+| Tool delivery (was D14) | One MCP server for the finance tools, shared by every harness | Rishi | 3 Nov |
 
 ## Open
 
@@ -31,7 +32,6 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D10 | Unit of analysis for the stats | Task, trial, or trials nested in tasks | Resample tasks, then trials within them | Thu |
 | D12 | Trace format across harnesses | OpenTelemetry GenAI conventions, OpenInference, or an own schema | Research first, see R4 | Wed |
 | D15 | Hermes settings that are design calls | Compression on or off; Tool Search off or on; in skills-on configs allow `skill_manage` writes or stage them; accept the untrusted MCP wrapper or not | None yet. Evidence in `docs/research/hermes/context_and_self_improvement.md` | Wed |
-| D14 | How task tools reach every harness | One MCP server shared by all; a CLI driven through each harness's terminal tool; or native tool functions written per adapter | MCP if Hermes takes an MCP server unmodified, else CLI | Wed |
 
 ## Notes behind the open calls
 
@@ -43,7 +43,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 
 **D13.** Settled on 3 Nov, see the entry below. The three-tier rule for memory tasks still applies: fact only in memory, fact also discoverable with extra work, memory irrelevant. Otherwise the experiment is true by construction.
 
-**D14.** Evidence from 3 Nov in `docs/research/hermes/custom_tools.md`: Hermes takes an MCP server unmodified. Costs: prefixed names, Tool Search must be turned off, results wrapped as untrusted with no switch, a 3-error circuit breaker, and discovery is the caller's job. A Hermes plugin is the alternative: bare names, no wrapper, duplicated schemas.
+**D14.** Settled on 3 Nov as MCP, see the entry below. Evidence from 3 Nov in `docs/research/hermes/custom_tools.md`: Hermes takes an MCP server unmodified. Costs: prefixed names, Tool Search must be turned off, results wrapped as untrusted with no switch, a 3-error circuit breaker, and discovery is the caller's job. A Hermes plugin is the alternative: bare names, no wrapper, duplicated schemas.
 
 Original note: Five harnesses must expose the same finance tools or a harness comparison measures the tool gap. One MCP server gives byte-identical tool schemas to every harness, and LangGraph, Google ADK and the OpenAI Agents SDK all consume MCP natively. It hinges on whether Hermes can load an MCP server from config without a source change. A CLI through the terminal tool is the fallback: parity is guaranteed but tool calls become shell strings, which weakens trace quality and failure analysis. Native functions per adapter are the most work and the easiest to drift.
 
@@ -116,6 +116,13 @@ Why: Rishi delegated the call: "which is simpler and more robust do that." Simpl
 Given up: consecutive trials in one container are separated by the process sweep, the wipe and the read-only root, not by a fresh container. Every research harness surveyed uses a container per trial, but those run coding tasks that mutate a whole environment; finance tasks touch only the trial folder. Hermes's scratch-prune child deliberately outlives its parent (`hermes_constants_scratch_detach.py`), which is why the runner sweeps leftover processes. The SP3 leak test checks the separation.
 Still needed either way: the LiteLLM key is readable inside the container, so each trial gets its own virtual key with its own budget.
 What would change it: the leak test failing, or a harness that must write outside the trial folder.
+
+### D14: How task tools reach every harness (3 Nov)
+Options: one MCP server shared by all; a CLI driven through each harness's terminal tool; native tool functions written per adapter.
+Choice: one MCP server, `services/finance-mcp/`. Rishi: "start coding the basic mcp for finance stuff, like bare minimum for indian finance."
+Why: one server gives every harness byte-identical tool names, descriptions and schemas, and every framework in R5 consumes MCP natively, so the tool test can diff what each harness actually sends. Known costs, recorded on 3 Nov: Hermes prefixes names (`mcp__<server>__<tool>`), Tool Search must be off, results are wrapped as untrusted with no switch (D15), and a 3-error circuit breaker.
+Still open: the transport. Stdio, spawned per trial inside the harness container, keeps all tool state in the trial folder (D3); one streamable-HTTP service needs per-trial state keyed by trial. The server supports both, so this can be settled in SP1 without code changes.
+What would change it: a harness that cannot load an MCP server unmodified.
 
 ## Entry template
 
