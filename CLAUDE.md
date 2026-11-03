@@ -50,4 +50,21 @@ Update these in the same commit as the change that caused the update. The full r
 
 ## Commands
 
-Fill this in during SP0 with the real commands: start, test, lint, run an experiment, export results.
+Run from the repo root unless noted. None of these make real LLM calls.
+
+```bash
+docker compose up -d --build --wait                  # start everything (UI on 127.0.0.1:8080)
+python3 scripts/smoke.py                             # UI, API, LiteLLM -> fake model
+docker compose --profile smoke run --rm netcheck     # worker isolation (D3)
+docker compose --profile smoke down -v               # stop and wipe local data
+
+pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build   # apps/api, apps/ui
+
+cd services/fake-llm && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run pytest -q
+
+uv run --no-project --with pyyaml==6.0.3 python scripts/check_litellm_config.py   # no cache, no dropped params, prices set
+```
+
+If a host port is taken, set `UI_PORT`, `API_PORT` or `LITELLM_PORT` (and `SMOKE_API_URL` etc. for the smoke test). On Rishi's machine, port 3000 is held by an older sibling-project process, so use `API_PORT=3001`.
+
+Run an experiment and export results: not built yet (SP3, SP2).

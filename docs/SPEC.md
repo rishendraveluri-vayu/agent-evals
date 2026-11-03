@@ -26,22 +26,31 @@ Auth, multi-user, multi-node workers, live streaming (polling is fine), and rich
 
 ## Proposed repo layout
 
-To confirm in SP0. It may change with D1 and D2.
+Confirmed in SP0, after D1 to D3. Folders marked *later* do not exist yet.
 
 ```text
 CLAUDE.md
 README.md
-docker-compose.yml
+docker-compose.yml       One command: docker compose up
 .env.example
-apps/api/          NestJS control plane
-apps/ui/           Vue 3 UI
-workers/           Python harness workers and adapters
-tasks/             Task set, one folder per task
-configs/           Versioned configs
-labels/            Rishi's hand labels only
-experiments/       Exported results for the real experiment
-docs/              See the docs register
+package.json             pnpm workspace root (apps/*)
+ruff.toml                Shared Python lint settings
+apps/api/                NestJS control plane
+apps/ui/                 Vue 3 UI
+services/fake-llm/       Scripted fake model server for tests and CI (R9)
+services/litellm/        LiteLLM proxy config
+services/postgres/       Database init
+workers/base/            Worker base image and the D3 isolation check
+workers/<harness>/       One Python project and image per harness (later, SP1)
+scripts/                 Smoke test, config check, probes
+tasks/                   Task set, one folder per task (later, SP4)
+configs/                 Versioned configs (later, SP2)
+labels/                  Rishi's hand labels only (later, SP5)
+experiments/             Exported results for the real experiment (later, SP8)
+docs/                    See the docs register
 ```
+
+Graders and stats are Python (D1); where their project lives is set in SP4.
 
 ## Docs register
 

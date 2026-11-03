@@ -34,6 +34,15 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 
 - Consecutive trials in one harness container are separated by a process sweep, a folder wipe and a read-only root filesystem, not by a fresh container. A harness that writes somewhere we did not anticipate, such as a writable mount outside the trial folder, could carry state from one trial to the next. The SP3 leak test checks the known paths only.
 
+## Cost tracking
+
+- LiteLLM v1.99.4's bundled price map has no entry for Haiku 5.5 or Gemini 3.8 Flash (checked 3 Nov inside the pinned image). Spend on a model the map does not know counts as $0, so a per-trial `max_budget` would never trip. Every model in `services/litellm/config.yaml` must therefore state its prices in `model_info`, and `scripts/check_litellm_config.py` fails CI otherwise. Those prices are copied by hand from the provider pages, so they can go stale.
+
+## Fake model server (tests and CI only)
+
+- It does not model `max_tokens` (so it never returns `finish_reason: length`), `tool_choice`, `n`, auth, or whether a tool call matches the request's `tools`. Tests that pass against it say nothing about those behaviours; real dev runs (R9) cover them.
+- It speaks only the OpenAI Chat Completions format. A harness that needs the Anthropic Messages format (for example the Claude Agent SDK) reaches it only through LiteLLM's translation, which is untested.
+
 ## To check before submission
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted
