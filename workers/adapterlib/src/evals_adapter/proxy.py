@@ -87,29 +87,43 @@ class ProxyClient:
             self._request("POST", "/key/delete", {"keys": [k.token for k in keys]})
 
     def call_records(
-        self, token: str, settle_s: float = 1.5, max_wait_s: float = 15.0
-    ) -> list[dict]:
-        """Every logged call for the key, oldest first. Polls until the count has not changed
-        for `settle_s`, because LiteLLM writes the spend log in batches."""
+        self,
+        token: str,
+        expect_at_least: int = 0,
+        settle_s: float = 1.5,
+        min_wait_s: float = 2.0,
+        max_wait_s: float = 30.0,
+    ) -> tuple[list[dict], bool]:
+        """Every logged call for the key, oldest first, and whether the log looks complete.
+
+        LiteLLM writes the spend log in batches and can lag by seconds under load, so the runner
+        waits until it holds at least `expect_at_least` calls (the harness's own count: the
+        proxy should see at least what the harness says it made), the count has not changed
+        for `settle_s`, and `min_wait_s` has passed. If `max_wait_s` runs out first, the
+        records are returned with complete=False and the trial is flagged, never trusted."""
         start = time.time()
         last_n, stable_since = -1, time.time()
         rows: list[dict] = []
         while True:
             rows = self._request("GET", f"/spend/logs?api_key={token}") or []
+            now = time.time()
             if len(rows) != last_n:
-                last_n, stable_since = len(rows), time.time()
-            elif time.time() - stable_since >= settle_s:
+                last_n, stable_since = len(rows), now
+            enough = len(rows) >= expect_at_least
+            if enough and now - stable_since >= settle_s and now - start >= min_wait_s:
                 break
-            if time.time() - start > max_wait_s:
+            if now - start > max_wait_s:
                 break
             time.sleep(0.3)
-        return sorted(rows, key=lambda r: (r.get("startTime") or "", r.get("request_id") or ""))
+        rows = sorted(rows, key=lambda r: (r.get("startTime") or "", r.get("request_id") or ""))
+        return rows, len(rows) >= expect_at_least
 
     @staticmethod
-    def usage(records: list[dict]) -> dict[str, Any]:
+    def usage(records: list[dict], complete: bool = True) -> dict[str, Any]:
         failed = [r for r in records if r.get("status") != "success"]
         last = records[-1] if records else None
         return {
+            "complete": complete,
             "model_calls": len(records),
             "failed_calls": len(failed),
             "input_tokens": sum(int(r.get("prompt_tokens") or 0) for r in records),
@@ -129,6 +143,10 @@ def call_status(row: dict) -> str:
     return str(info.get("error_code") or "unknown")
 
 
+# LiteLLM's note inside a stored string it has cut short (v1.99.4).
+TRUNCATION_NOTE = "MAX_STRING_LENGTH_PROMPT_IN_DB"
+
+
 def iso_to_ns(value: str | None) -> int:
     if not value:
         return 0
@@ -145,9 +163,15 @@ def _request_body(row: dict) -> dict[str, Any]:
     return body
 
 
-def merge_proxy_spans(paths: TrialPaths, records: list[dict], trial_id: str) -> int:
-    """Append one `chat <model>` span per logged call to trace.jsonl, parented to the agent turn
-    whose time window holds the call's start, and store the bodies. Returns spans written."""
+def merge_proxy_spans(
+    paths: TrialPaths, records: list[dict], trial_id: str, role: str = "agent"
+) -> int:
+    """Append one `chat <model>` span per logged call to trace.jsonl and store the bodies.
+    Returns spans written.
+
+    role "agent": the agent's calls, parented to the agent turn whose time window holds the
+    call's start. role "sim": the simulated client's calls (its own key), parented to the
+    client_sim.turn span they belong to, so the simulator's cost is visible but separate."""
     from evals_adapter.trace import read_spans
 
     spans = read_spans(paths.trace)
@@ -155,8 +179,9 @@ def merge_proxy_spans(paths: TrialPaths, records: list[dict], trial_id: str) -> 
         return 0
     trial_trace = trace_id_for(trial_id)
     root = next((s for s in spans if not s.get("parentSpanId")), None)
+    parent_name = "agent.turn" if role == "agent" else "client_sim.turn"
     turns = sorted(
-        (s for s in spans if s["name"] == "agent.turn"), key=lambda s: int(s["startTimeUnixNano"])
+        (s for s in spans if s["name"] == parent_name), key=lambda s: int(s["startTimeUnixNano"])
     )
     body_dir = paths.artifacts / "proxy"
     body_dir.mkdir(parents=True, exist_ok=True)
@@ -175,7 +200,7 @@ def merge_proxy_spans(paths: TrialPaths, records: list[dict], trial_id: str) -> 
         ).hexdigest()
         attempt = attempt + 1 if msg_hash == previous_hash else 1
         previous_hash = msg_hash
-        stem = f"{n:04d}"
+        stem = f"{n:04d}" if role == "agent" else f"{role}-{n:04d}"
         (body_dir / f"{stem}.request.json").write_text(
             json.dumps(req, ensure_ascii=False, indent=1)
         )
@@ -198,6 +223,7 @@ def merge_proxy_spans(paths: TrialPaths, records: list[dict], trial_id: str) -> 
             "gen_ai.usage.output_tokens": int(row.get("completion_tokens") or 0),
             "gen_ai.response.finish_reasons": [f for f in finish if f] or None,
             "evals.source": "proxy",
+            "evals.role": role,
             "evals.attempt": attempt,
             "evals.proxy.status": status,
             "evals.proxy.request_id": row.get("request_id"),
@@ -205,6 +231,8 @@ def merge_proxy_spans(paths: TrialPaths, records: list[dict], trial_id: str) -> 
             "evals.request_ref": f"artifacts/proxy/{stem}.request.json",
             "evals.response_ref": f"artifacts/proxy/{stem}.response.json",
             "evals.request.stream": req.get("stream"),
+            # A cut-short body cannot feed the invariance diff; flag it rather than trust it.
+            "evals.request.truncated": TRUNCATION_NOTE in json.dumps(req),
             "evals.request.tool_count": len(req.get("tools") or []),
         }
         span: dict[str, Any] = {

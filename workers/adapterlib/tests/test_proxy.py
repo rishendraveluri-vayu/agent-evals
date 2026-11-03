@@ -135,3 +135,28 @@ def test_status_and_labels():
         label({"signal": "SIGKILL", "exit_code": None}, {"result": None}, None)
         == "infra:timeout_kill"
     )
+
+
+def test_runner_waits_for_lagging_spend_logs():
+    """LiteLLM can lag by seconds; the runner must wait for at least the harness's count."""
+    client = ProxyClient("http://unused", "sk-unused")
+    polls = {"n": 0}
+
+    def lagging(method, path, body=None):
+        polls["n"] += 1
+        return [] if polls["n"] < 8 else [row(1, "a", "b"), row(2, "c", "d")]
+
+    client._request = lagging
+    rows, complete = client.call_records("tok", expect_at_least=2, settle_s=0.1, min_wait_s=0.1)
+    assert len(rows) == 2 and complete
+    assert polls["n"] >= 8
+
+
+def test_runner_flags_spend_logs_that_never_catch_up():
+    client = ProxyClient("http://unused", "sk-unused")
+    client._request = lambda method, path, body=None: [row(1, "a", "b")]
+    rows, complete = client.call_records(
+        "tok", expect_at_least=3, settle_s=0.1, min_wait_s=0.1, max_wait_s=0.5
+    )
+    assert len(rows) == 1 and not complete
+    assert ProxyClient.usage(rows, complete)["complete"] is False

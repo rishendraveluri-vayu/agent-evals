@@ -52,7 +52,8 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 ## LiteLLM records (checked 3 Nov, v1.99.4)
 
 - A wildcard route priced only in `model_info` logged every call at $0, because LiteLLM prices the resolved model name (`openai/<script>`). The fake route now also sets prices in `litellm_params`. A real model added later under a wildcard would hit the same gap, so real models are listed one by one.
-- Spend-log rows are written in batches, every second with `proxy_batch_write_at: 1`. The runner waits until the row count has been stable for 1.5 s, at most 15 s. A call still unwritten after that would be missing from the trial's spans and counts, and nothing flags it yet.
+- Spend-log rows are written in batches, every second with `proxy_batch_write_at: 1`, and lagged by more than 1.5 s for a fast trial on 3 Nov. The runner now waits until LiteLLM holds at least as many calls as the harness reported, then 1.5 s of no change, at most 30 s. If the log never catches up, `proxy_usage.complete` is false and the trial's counts and cost are not trusted. A harness that under-reports its own calls could still let the wait end early; the floor is the harness's count, not the true one.
+- LiteLLM cuts long strings out of the bodies it stores in the spend log (about 2,000 characters by default, with a note naming `MAX_STRING_LENGTH_PROMPT_IN_DB`). It cut the task prompt out of Hermes's system prompt on 3 Nov. Compose now sets the limit to 2,000,000 characters, and the merge flags any body that still carries the note (`evals.request.truncated`), which fails the proxy gate.
 - The proxy merge puts a model call under the agent turn whose time window holds its start. The clocks are the adapter's and LiteLLM's container clocks; skew between them larger than the gap between turns would misplace a call.
 
 ## Simulated client (D22)

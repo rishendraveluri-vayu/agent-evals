@@ -41,6 +41,10 @@ services:
       # Use the price map bundled with this pinned image, not one fetched at
       # startup, so cost numbers do not change between runs.
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # LiteLLM cuts long strings out of the bodies it stores in the spend log (about 2,000
+      # characters by default), which cut the task prompt out of Hermes's system prompt.
+      # The stored bodies feed the trace and the invariance diff, so keep them whole.
+      MAX_STRING_LENGTH_PROMPT_IN_DB: "2000000"
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     volumes:

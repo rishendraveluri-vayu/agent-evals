@@ -246,6 +246,15 @@ def validate(paths: TrialPaths) -> dict[str, Any]:
     }
 
 
+def _harness_calls(paths: TrialPaths) -> int:
+    """The adapter's own count of model calls, as the floor for the proxy's (0 if unknown)."""
+    try:
+        result = json.loads(paths.result.read_text(encoding="utf-8"))
+        return int(result["counts"]["model_calls"])
+    except OSError, ValueError, KeyError, TypeError:
+        return 0
+
+
 def label(launch_info: dict[str, Any], checked: dict[str, Any], proxy_usage: dict | None) -> str:
     """Contract section 7."""
     if launch_info["signal"] is not None:
@@ -315,7 +324,7 @@ def run_trial(
     trial_id = spec["trial"]["id"]
     paths = TrialPaths(trial_dir)
     keys: list[TrialKey] = []
-    agent_key = None
+    agent_key = sim_key = None
     if proxy is not None:
         agent_key = proxy.client.create_key(
             trial_id, "agent", proxy.budget_usd, [spec["model"]["name"]]
@@ -335,9 +344,13 @@ def run_trial(
         info = launch(paths, inputs, net)
         proxy_usage = None
         if proxy is not None and agent_key is not None:
-            records = proxy.client.call_records(agent_key.token)
-            proxy_usage = proxy.client.usage(records)
+            claimed = _harness_calls(paths)
+            records, complete = proxy.client.call_records(agent_key.token, expect_at_least=claimed)
+            proxy_usage = proxy.client.usage(records, complete)
             merge_proxy_spans(paths, records, trial_id)
+            if sim_key is not None:
+                sim_records, _ = proxy.client.call_records(sim_key.token, min_wait_s=0.5)
+                merge_proxy_spans(paths, sim_records, trial_id, role="sim")
     finally:
         if proxy is not None:
             try:

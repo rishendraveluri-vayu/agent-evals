@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from evals_adapter.runner import TrialInputs, run_trial
+from evals_adapter.runner import ProxySettings, TrialInputs, run_trial
 from evals_adapter.trace import attr_dict
 
 REPO = Path(os.environ.get("EVALS_REPO_ROOT", Path(__file__).resolve().parents[4]))
@@ -150,6 +150,17 @@ class Gate:
     tool_name: Callable[[str], str] = lambda name: name
     env: dict[str, str] = field(default_factory=dict)
     cwd: Path | None = None
+    # Proxy mode: route every call through LiteLLM (which routes fake/* to the compose fake),
+    # let the runner make the trial keys, and read the requests from LiteLLM's records.
+    proxy: ProxySettings | None = None
+    proxy_base_url: str | None = None
+
+    def base_url(self, fake: FakeServer | None) -> str:
+        if self.proxy is not None:
+            assert self.proxy_base_url, "proxy mode needs proxy_base_url"
+            return self.proxy_base_url
+        assert fake is not None, "direct mode needs the fake server"
+        return fake.url
 
     def spec(
         self, trial_dir: Path, script: str, fake: FakeServer, **settings: Any
@@ -207,7 +218,7 @@ class Gate:
             },
             "model": {
                 "name": f"fake/{script}",
-                "base_url": fake.url,
+                "base_url": self.base_url(fake),
                 "api_key_env": MODEL_KEY_ENV,
                 "api_format": "openai_chat",
             },
@@ -233,8 +244,9 @@ class Gate:
             "seed": {"memory": [], "skills": []},
         }
 
-    def run(self, tmp_path: Path, fake: FakeServer, spec: dict[str, Any]) -> GateRun:
-        fake.reset()
+    def run(self, tmp_path: Path, fake: FakeServer | None, spec: dict[str, Any]) -> GateRun:
+        if fake is not None and self.proxy is None:
+            fake.reset()
         trial_dir = tmp_path / "trial"
         env = {MODEL_KEY_ENV: "sk-fake-gate", SIM_KEY_ENV: "sk-fake-sim"}
         env.update(self.env)
@@ -245,9 +257,10 @@ class Gate:
                 spec=spec,
                 adapter_cmd=self.adapter_cmd,
                 state_files={"client.json": CLIENT_EXAMPLE.read_bytes()},
-                env=env,
+                env=env if self.proxy is None else dict(self.env),
                 cwd=self.cwd,
             ),
+            self.proxy,
         )
         wall = time.time() - started
         out = trial_dir / "out"
@@ -259,12 +272,32 @@ class Gate:
             spans = [
                 json.loads(line) for line in (out / "trace.jsonl").read_text().splitlines() if line
             ]
-        return GateRun(report, result, spans, fake.requests(), trial_dir, wall)
+        requests = proxy_requests(trial_dir, spans) if self.proxy is not None else fake.requests()
+        return GateRun(report, result, spans, requests, trial_dir, wall)
 
     def agent_requests(self, run: GateRun) -> list[dict[str, Any]]:
         return [r for r in run.requests if not r["script"].startswith("sim-")]
 
     # ---- the gate tests ------------------------------------------------------------------
+
+    def check_proxy_records(self, run: GateRun) -> None:
+        """Proxy mode: LiteLLM logged every agent call, priced, with its bodies (R10.9)."""
+        usage = run.report["proxy_usage"]
+        assert usage is not None, "no proxy records"
+        agent_chats = [
+            s for s in run.spans_named("chat ") if attr_dict(s).get("evals.role") == "agent"
+        ]
+        assert usage["model_calls"] == len(agent_chats) >= 1, (usage, len(agent_chats))
+        assert usage["cost_usd"] > 0, usage
+        turn_ids = {s["spanId"] for s in run.spans_named("agent.turn")}
+        assert all(s.get("parentSpanId") in turn_ids for s in agent_chats), (
+            "chat span outside a turn"
+        )
+        assert usage["complete"], "LiteLLM's log had fewer calls than the harness reported"
+        cut = [
+            s["name"] for s in run.spans_named("chat ") if attr_dict(s)["evals.request.truncated"]
+        ]
+        assert not cut, "LiteLLM stored cut-short bodies: set MAX_STRING_LENGTH_PROMPT_IN_DB"
 
     def check_schemas(self, run: GateRun) -> None:
         adapter = run.report["adapter"]
@@ -397,7 +430,7 @@ class Gate:
             "max_client_turns": 3,
             "model": {
                 "name": "fake/sim-client",
-                "base_url": fake.url,
+                "base_url": self.base_url(fake),
                 "api_key_env": SIM_KEY_ENV,
                 "temperature": 0,
                 "max_output_tokens": 300,
@@ -435,9 +468,49 @@ class Gate:
         return run
 
 
+def proxy_requests(trial_dir: Path, spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The requests LiteLLM logged for the trial, in the fake capture's shape."""
+    rows = []
+    chats = sorted(
+        (s for s in spans if s["name"].startswith("chat ")),
+        key=lambda s: int(s["startTimeUnixNano"]),
+    )
+    for span in chats:
+        a = attr_dict(span)
+        body = json.loads((trial_dir / "out" / a["evals.request_ref"]).read_text())
+        rows.append(
+            {
+                "body": body,
+                "script": str(a.get("gen_ai.request.model", "")).split("/")[-1],
+                "fault": None,
+                "status": a.get("evals.proxy.status"),
+                "role": a.get("evals.role"),
+            }
+        )
+    return rows
+
+
 def _text(content: Any) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
         return "".join(p.get("text", "") for p in content if isinstance(p, dict))
     return ""
+
+
+def proxy_gate(gate: Gate, budget_usd: float = 0.05) -> Gate | None:
+    """The same gate routed through LiteLLM, or None unless EVALS_PROXY_URL (for example
+    http://127.0.0.1:4000) and LITELLM_MASTER_KEY are set. Only fake/* models are used, so the
+    budget is a test of the cap, not real money."""
+    import dataclasses
+
+    from evals_adapter.proxy import ProxyClient
+
+    url = os.environ.get("EVALS_PROXY_URL")
+    master = os.environ.get("LITELLM_MASTER_KEY")
+    if not url or not master:
+        return None
+    settings = ProxySettings(
+        ProxyClient(url, master), budget_usd=budget_usd, sim_budget_usd=budget_usd
+    )
+    return dataclasses.replace(gate, proxy=settings, proxy_base_url=url.rstrip("/") + "/v1")
