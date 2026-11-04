@@ -32,7 +32,7 @@ const FACTS: Record<string, HarnessFacts> = {
   ownloop: {
     tagline: 'Our plain loop. Adds nothing: the vanilla baseline.',
     what: 'Our own plain loop on the OpenAI client.',
-    loop: 'Model, then each tool call in order, until a reply has no tool calls. No retries.',
+    loop: 'Model, then each tool call in order, until a reply has no tool calls or the steps run out.',
     prompt: 'Nothing: your prompt is the whole system prompt.',
     pick: 'As the baseline: a change here is that change alone.',
   },
@@ -57,8 +57,8 @@ const FACTS: Record<string, HarnessFacts> = {
     tagline: "OpenAI's agent framework. Adds nothing to your prompt.",
     what: "OpenAI's Agents SDK, on Chat Completions.",
     loop: 'Model, then tools at the same time, until an answer or the turn limit.',
-    prompt: 'Nothing. A failed tool call comes back as one fixed "please try again".',
-    pick: 'Close to the own loop, but the model is never told why a tool call failed.',
+    prompt: 'Nothing. A tool call with broken arguments gets one fixed "please try again".',
+    pick: 'Close to the own loop, but the model is not told when its tool arguments were broken.',
   },
 };
 
