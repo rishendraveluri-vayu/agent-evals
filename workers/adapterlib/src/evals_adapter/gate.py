@@ -8,8 +8,9 @@ A harness counts only once these pass against the fake model server, with no rea
 3. tools: the first request's tools equal the finance server's manifest, apart from the
    harness's declared name rewrite;
 4. timeout: a hung model call ends the trial as timeout within timeout_s plus a margin;
-5. errors: a malformed tool call goes back to the model (D18), and a 429 is not retried by the
-   harness (R10.11);
+5. errors: a malformed tool call goes back to the model (D18), or, for a harness that declares it
+   cannot, ends the run in the declared end state; and a 429 is not retried by the harness
+   (R10.11);
 6. conversation: a simulated client holds a three-turn conversation;
 7. schemas: every output validates (the runner checks this on every gate run).
 
@@ -150,6 +151,10 @@ class Gate:
     tool_name: Callable[[str], str] = lambda name: name
     env: dict[str, str] = field(default_factory=dict)
     cwd: Path | None = None
+    # D18: None means a malformed tool call's error goes back to the model. A harness that cannot
+    # do that (LangGraph's router ends the run when no valid tool call is left) declares the end
+    # state its adapter labels the run with, and lists the behaviour in known_differences.
+    malformed_ends_in: str | None = None
     # Proxy mode: route every call through LiteLLM (which routes fake/* to the compose fake),
     # let the runner make the trial keys, and read the requests from LiteLLM's records.
     proxy: ProxySettings | None = None
@@ -399,6 +404,13 @@ class Gate:
     def test_malformed_tool_call(self, tmp_path: Path, fake: FakeServer) -> GateRun:
         run = self.run(tmp_path, fake, self.spec(tmp_path / "trial", "finance-malformed", fake))
         self.check_schemas(run)
+        if self.malformed_ends_in is not None:
+            # The harness cannot send the error back: the run ends there, labelled, unanswered.
+            assert run.result["end_state"] == self.malformed_ends_in, run.explain()
+            assert run.result["counts"]["malformed_tool_calls"] >= 1, run.result["counts"]
+            assert run.result["final_answer"] is None, run.result["final_answer"]
+            assert len(self.agent_requests(run)) == 1, "the harness made calls after the run ended"
+            return run
         assert run.result["end_state"] == "answered", run.explain()
         assert run.result["counts"]["malformed_tool_calls"] >= 1, run.result["counts"]
         second = self.agent_requests(run)[1]["body"]["messages"]

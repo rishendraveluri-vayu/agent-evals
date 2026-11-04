@@ -1,0 +1,77 @@
+{
+  "contract_version": "2",
+  "harness": "langgraph",
+  "version": {
+    "package": "langgraph",
+    "ref": "1.2.16"
+  },
+  "model_api_formats": [
+    "openai_chat"
+  ],
+  "settings": {
+    "temperature": {
+      "supported": true,
+      "native": "ChatOpenAI(temperature=)",
+      "evidence": "probe:2026-11-04",
+      "default": null,
+      "observed": "unset: not sent; set to 0.37: sent as temperature"
+    },
+    "max_output_tokens": {
+      "supported": true,
+      "native": "ChatOpenAI(max_tokens=), sent as max_completion_tokens",
+      "evidence": "probe:2026-11-04",
+      "default": null,
+      "observed": "unset: not sent; set to 777: sent as max_tokens"
+    },
+    "max_steps": {
+      "supported": true,
+      "native": "ModelCallLimitMiddleware(thread_limit=max_steps, exit_behavior=\"error\")",
+      "evidence": "probe:2026-11-04",
+      "extra_calls_at_limit": 0,
+      "observed": "max_steps 3: 3 model calls, end_state step_limit, harness counted 3"
+    },
+    "timeout_s": {
+      "supported": true,
+      "native": "wrapper",
+      "evidence": "declared:the adapter library's watchdog"
+    },
+    "parallel_tool_calls": {
+      "supported": true,
+      "native": "ModelRequest.model_settings, to ChatOpenAI.bind_tools(parallel_tool_calls=)",
+      "evidence": "probe:2026-11-04",
+      "default": null,
+      "observed": "unset: not sent; set to False: sent as parallel_tool_calls"
+    },
+    "memory": {
+      "supported": false,
+      "observed": "create_agent has no memory unless a store and memory tools are added; the adapter adds neither",
+      "evidence": "declared:no store, no memory middleware"
+    },
+    "skills": {
+      "supported": false,
+      "observed": "LangGraph has no skills",
+      "evidence": "declared:no such feature"
+    },
+    "compression": {
+      "supported": false,
+      "observed": "nothing compresses unless SummarizationMiddleware is added; the full history is sent",
+      "evidence": "declared:no summarization middleware"
+    }
+  },
+  "harness_options_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "known_differences": [
+    "A reply whose only tool calls are malformed ends the run: the router exits when no valid tool call is left, so the error never reaches the model. The adapter labels the trial agent_error (D18)",
+    "A malformed call next to a valid one is answered by LangChain's own error result, 'Tool call <name> with id <id> could not be executed - arguments were malformed or truncated.', at the next model call",
+    "An unknown tool name gets ToolNode's error result, 'Error: <name> is not a valid tool, try one of [...]'",
+    "A tool that raises (an MCP timeout or transport failure) would end the run; the adapter's ToolErrorMiddleware sends 'Error: the tool call failed: <type>: <message>' back instead (D18)",
+    "Tool results are sent as a list of text content parts, not a string",
+    "max_output_tokens is sent as max_completion_tokens, not max_tokens",
+    "Several tool calls in one reply run concurrently (one graph task each), not in order",
+    "Tool schemas pass through convert_to_openai_tool, which strips every title and inlines $ref; the finance schemas have neither, so they arrive unchanged",
+    "Model names starting gpt-5 drop any temperature other than 1, o1 names send temperature 1 when none is set, and o<digit> names send the system prompt as developer (langchain-openai name rules, no switch); LiteLLM aliases for LangGraph must avoid them"
+  ]
+}
