@@ -34,13 +34,27 @@ describe('clientSummary (D27)', () => {
     expect(lines).toContain(
       '- Personal loan (personal loan, Sahyadri Finance (fictional)): balance ₹3,10,000.00 at 14.5% a year, minimum payment ₹10,670.00 a month, 36 months left',
     );
-    // Transactions are not part of it.
-    expect(summary).not.toContain('Salary credit');
-    expect(summary).not.toContain('transactions');
+    // D30: the latest month's transactions, the figures the v2 simulator still questioned.
+    expect(lines).toContain('Transactions in October 2026 (16; money in ₹93,799.00, money out ₹89,869.15):');
+    expect(lines).toContain('- 1 Oct: Salary credit, in ₹92,500.00');
+    expect(lines).toContain('- 2 Oct: Flat rent, October, out ₹22,000.00');
+  });
+
+  it('lists only the latest month when the file holds several', () => {
+    const file = JSON.stringify({
+      profile: { name: 'Test (synthetic)' },
+      transactions: [
+        { date: '2026-09-30', description: 'Old', direction: 'debit', amount: 10 },
+        { date: '2026-10-05', description: 'New', direction: 'credit', amount: 25 },
+      ],
+    });
+    const summary = clientSummary(file)!;
+    expect(summary).toContain('Transactions in October 2026 (1; money in ₹25.00, money out ₹0.00):');
+    expect(summary).not.toContain('Old');
   });
 
   it('says when no debts are recorded, and is null without a usable client file', () => {
-    expect(clientSummary('{"schema_version": 1, "profile": {"name": "Test (synthetic)"}}')).toBe('Profile:\n- name: Test (synthetic)\nDebts: none recorded');
+    expect(clientSummary('{"schema_version": 1, "profile": {"name": "Test (synthetic)"}}')).toBe('Profile:\n- name: Test (synthetic)\nDebts: none recorded\nTransactions: none recorded');
     expect(clientSummary(null)).toBeNull();
     expect(clientSummary(undefined)).toBeNull();
     expect(clientSummary('not json')).toBeNull();

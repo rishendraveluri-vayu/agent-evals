@@ -1,8 +1,9 @@
 /**
  * D27: a short summary of a task's client file (the finance MCP server's client.json), for the
- * simulated client's prompt. It holds the profile, as recorded, and the debts with their totals,
- * which is what get_client_profile and list_debts show the agent, so the simulator knows what
- * the advisor can read and never contradicts it. Transactions are left out.
+ * simulated client's prompt. It holds the profile, as recorded, the debts with their totals, and
+ * (D30) every transaction of the latest month in the file with that month's totals, which is what
+ * get_client_profile, list_debts and list_transactions show the agent, so the simulator knows
+ * what the advisor can read and never contradicts it.
  *
  * Money in the debts is written as the tools write it (₹ with Indian digit grouping and paise);
  * profile values are written as recorded, since the profile is free-form.
@@ -64,5 +65,32 @@ export function clientSummary(state: Buffer | string | null | undefined): string
   } else {
     lines.push('Debts: none recorded');
   }
+  lines.push(...transactionLines(data.transactions));
   return lines.join('\n');
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** D30: the latest month's transactions, oldest first, with money in and out for that month. */
+function transactionLines(raw: unknown): string[] {
+  const rows = (Array.isArray(raw) ? raw.filter(isObj) : []).filter(
+    (r) => typeof r.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date) && num(r.amount) !== null,
+  );
+  if (!rows.length) return ['Transactions: none recorded'];
+  const month = rows.map((r) => (r.date as string).slice(0, 7)).sort().at(-1)!;
+  const inMonth = rows.filter((r) => (r.date as string).startsWith(month)).sort((a, b) => (a.date as string).localeCompare(b.date as string));
+  const cents = (r: Obj): number => Math.round((num(r.amount) ?? 0) * 100);
+  const credit = (r: Obj): boolean => r.direction === 'credit';
+  const moneyIn = inMonth.filter(credit).reduce((s, r) => s + cents(r), 0) / 100;
+  const moneyOut = inMonth.filter((r) => !credit(r)).reduce((s, r) => s + cents(r), 0) / 100;
+  const [year, mm] = month.split('-');
+  const name = `${MONTHS[Number(mm) - 1]} ${year}`;
+  return [
+    `Transactions in ${name} (${inMonth.length}; money in ${formatInr(moneyIn)}, money out ${formatInr(moneyOut)}):`,
+    ...inMonth.map((r) => {
+      const day = Number((r.date as string).slice(8, 10));
+      const what = typeof r.description === 'string' && r.description ? r.description : typeof r.category === 'string' ? words(r.category) : 'transaction';
+      return `- ${day} ${MONTHS[Number(mm) - 1].slice(0, 3)}: ${what}, ${credit(r) ? 'in' : 'out'} ${formatInr(num(r.amount)!)}`;
+    }),
+  ];
 }

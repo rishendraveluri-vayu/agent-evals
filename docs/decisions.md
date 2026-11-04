@@ -36,6 +36,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D27 Simulator v2 | `client-sim.v2`: the simulator sees a short summary of the task's client file, never narrates or writes stage directions, and sends the end marker once its concern is answered (turn cap as backstop). It runs on Haiku 5.5 at the model's default temperature, the reply cache giving repeatability; this amends D22's temperature 0 | Rishi | 4 Nov |
 | D28 Harness-added tool text | D20 also covers tool descriptions: ADK's untrusted-description wrappers, identity line and fencing preamble are kept as it ships and recorded; the tool-parity gate removes only that declared wrapper before comparing | Rishi | 4 Nov |
 | D29 Malformed tool calls | Adapters follow D18 only through the framework's own documented opt-in switches (ADK's ReflectAndRetryModelPlugin, the Agents SDK's unknown-tool switch); no middleware of our own. LangGraph's malformed-only reply stays `agent_error`, the SDK keeps its default error text, and each difference is in `known_differences` | Rishi | 4 Nov |
+| D30 Simulator v3 | `client-sim.v3`: the client summary adds the latest month's transactions, and a concrete end rule: once the advisor has directly answered the main concern, even with a hedge, the client may ask one follow-up and then ends. Hidden facts must agree with the task's client file | Rishi | 4 Nov |
 
 ## Open
 
