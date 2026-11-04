@@ -22,7 +22,7 @@ Building the schemas and the shared library turned up these gaps. Each is small,
 
 1. **`settings_sources` in the spec.** The spec carries resolved values, so it also has to say whether each came from the config or a platform default. Otherwise `applied_settings` could not show the source (section 3).
 2. **The simulator's prompt is a versioned text object** (id, version, sha256, text) like the system prompt, and its `base_url` is in the spec. This replaces the bare `prompt_version` (section 9).
-3. **`result.conversation` also holds `agent_turns` and the visible `transcript`**, so graders read the whole conversation from one place. `ended_by` is one of `null`, `client`, `turn_cap` or `agent_end_state` (section 5).
+3. **`result.conversation` also holds `agent_turns` and the visible `transcript`**, so graders read the whole conversation from one place. `ended_by` is one of `null`, `client`, `turn_cap` or `agent_end_state` (section 5), and since 4 Nov `sim_error` (section 9).
 4. **Two more trial-folder files for the reply cache:** `/trial/sim_cache.json` (written by the runner, read-only) and `/trial/out/sim_replies.jsonl` (new replies, for the runner to store). The cache has to outlive the wiped folder (section 2).
 5. **`runner-report.json`** is the runner's half of the record: label, exit status, proxy usage, log hashes and the file manifest (sections 5 and 7).
 6. **`max_client_turns` counts simulated messages after the opening one**, and the client ends by writing `[[END_CONVERSATION]]` (section 9).
@@ -62,7 +62,7 @@ The path is the same in every trial, because Hermes puts paths into its prompt.
 | `/trial/out/artifacts/` | adapter | Raw harness files worth keeping, such as Hermes's session JSON. |
 | `/trial/out/stdout.log`, `stderr.log` | runner | The adapter's full output, captured by the runner. |
 | `/trial/sim_cache.json` | runner | Known simulated-client replies for this task and simulator (D22). Read-only. |
-| `/trial/out/sim_replies.jsonl` | adapter | New client replies from this trial, for the runner to store. |
+| `/trial/out/sim_replies.jsonl` | adapter | New client replies from this trial, for the runner to store: `{key, reply, model, usage}` per line, plus `error` on an empty reply, which is kept for the record and never cached (section 9). |
 | `/trial/out/runner-report.json` | runner | The runner's additions: label, exit status, proxy usage, log hashes, file manifest. |
 
 Everything else is read-only. Nothing in `/trial` survives to the next trial; everything that matters has been uploaded first (section 10).
@@ -215,7 +215,7 @@ Standard tools can read it directly. Our own UI renders it as the trial timeline
 | `agent.turn` | root | adapter | turn index. One per agent turn; just one for a single-prompt task. |
 | `chat <model>` | turn | **proxy**, merged by the runner | `gen_ai.operation.name=chat`, `gen_ai.request.model`, `gen_ai.request.temperature`, `gen_ai.request.max_tokens`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.response.finish_reasons`, `evals.attempt`, `evals.cost_usd`, `evals.request_ref`, `evals.response_ref` |
 | `execute_tool <name>` | turn | adapter | `gen_ai.operation.name=execute_tool`, `gen_ai.tool.name`, `gen_ai.tool.call.id`, `evals.tool.arguments`, `evals.tool.is_error`, `evals.tool.result_ref` |
-| `client_sim.turn` | root | simulator helper | `evals.sim.model`, `evals.sim.cache_hit`, the client's message |
+| `client_sim.turn` | root | simulator helper | `evals.sim.model`, `evals.sim.cache_hit`, the client's message; on a simulator failure, status `ERROR` and an `evals.error` event (`sim_empty_reply` or `sim_call_failed`, section 9) |
 
 - **Span events** on the turn or root carry `evals.memory.read`, `evals.memory.write`, `evals.skill.load`, `evals.skill.write`, `evals.compression`, and errors with `evals.error.kind` (for example `malformed_tool_call` or `unknown_tool`, D18). These are our extensions, and the reason D12 kept its own attributes.
 - **Model-call spans come from LiteLLM** for every harness (R10.9), so hidden retries appear as extra `chat` spans with `evals.attempt` above 1. An adapter may also emit its own view of a call (`evals.source=adapter`), kept for comparison.
@@ -234,10 +234,13 @@ Standard tools can read it directly. Our own UI renders it as the trial timeline
 | A spend safety net tripped | exit 0, `harness_error` | `infra:budget_net`. Never re-queued (D26). Investigate, never routine (R10.6). |
 | The adapter crashed, or the result is missing or invalid | non-zero exit | `infra:adapter_crash`. The trace so far and full logs are kept. |
 | A safety-net timeout fired | killed (process group, R10.12) | `infra:timeout_kill` |
+| The simulated client failed (D26): its call failed, or its reply had no text (section 9) | exit 0, `harness_error`, `conversation.ended_by: sim_error`, the reason in `end_detail` and in an `evals.error` event on the `client_sim.turn` span | `infra:sim_error`, whatever the agent key's status: the agent did not cause it. Re-queued once. |
 
 Nothing is truncated or dropped. Every trial, including infra failures, keeps its spans, result (if any) and full logs (R11).
 
-**How a provider error is labelled (D26).** `evals_adapter.runner.provider_label` reads LiteLLM's last status for the **agent** key (`proxy_usage.last_status`) and the error the adapter reported (`end_detail.harness_stop_reason` and `exception_message`). The status decides first: a budget stop is `infra:budget_net`, 429 or 5xx `infra:provider_error`, 401, 403 or 404 `infra:config_error`. For a 400, the message is checked for a context-too-long error first (`agent`), then for a setup error (`infra:config_error`); both pattern lists are in `runner.py`. With no LiteLLM record the label stays `agent`. The tests use the exact 4 Nov messages: the unscoped-key 400 ("This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header ...") and the temperature 400 ("`temperature` is deprecated for this model"), as the own loop, Hermes and the Agents SDK reported them.
+**How a provider error is labelled (D26).** `evals_adapter.runner.provider_label` reads LiteLLM's last status for the **agent** key (`proxy_usage.last_status`) and the error the adapter reported (`end_detail.harness_stop_reason` and `exception_message`). The status decides first: a budget stop is `infra:budget_net`, 429 or 5xx `infra:provider_error`, 401, 403 or 404 `infra:config_error`. For a 400, the message is checked for a context-too-long error first (`agent`), then for a setup error (`infra:config_error`); both pattern lists are in `runner.py`. With no LiteLLM record the label stays `agent`.
+
+**The order the runner labels in** (`evals_adapter.runner.label`): a kill is `infra:timeout_kill`; a non-zero exit or a missing or invalid result is `infra:adapter_crash`; a result with `conversation.ended_by: sim_error` is `infra:sim_error`; then a `harness_error` gets D26's provider labels above; anything else is `agent`. The tests use the exact 4 Nov messages: the unscoped-key 400 ("This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header ...") and the temperature 400 ("`temperature` is deprecated for this model"), as the own loop, Hermes and the Agents SDK reported them.
 
 ## 8. Gate tests and effect checks (R7, R10.5, D24)
 
@@ -299,7 +302,13 @@ A task with no `client_sim` block is a single prompt. With one, a second model p
   - Simulated tasks stay a small share of the set, about 5 to 8, because each needs a persona and this review.
 - **Simulator settings** (model, temperature, token cap, prompt version) are configurable, recorded in every trial, and identical across all configs in an experiment, which the invariance check enforces.
 - **One set of responses where the conversation is the same.** Client replies are cached by task, simulator settings and exact visible transcript. The agent's calls are never cached.
-- **Ending.** The client ends by writing `[[END_CONVERSATION]]`; `max_client_turns` counts simulated messages after the opening one. The conversation ends when the client sends the marker (its concerns answered, or it has what it came for) or at `max_client_turns`. The agent's last reply is graded, and `max_steps` and `timeout_s` cover the whole conversation.
+- **Ending.** The client ends by writing `[[END_CONVERSATION]]`; `max_client_turns` counts simulated messages after the opening one. The conversation ends when the client sends the marker (its concerns answered, or it has what it came for), at `max_client_turns`, or when the simulator fails (below). The agent's last reply is graded, and `max_steps` and `timeout_s` cover the whole conversation.
+- **A failed or empty simulator turn is a simulator failure, never a client ending (D26, 4 Nov).** On 4 Nov Haiku 5.5 spent the simulator's whole 300-token cap on reasoning (`reasoning_tokens: 300, text_tokens: 0`) and returned an empty reply; the library took that as the client ending, so three conversations stopped after one agent turn and were labelled `agent`. Now (`evals_adapter.sim.empty_reply`):
+  - A turn is a **simulator failure** when the call fails (no connection, an HTTP error, a response with no message or not JSON) or the reply has no text once the marker is taken out, with or without the marker.
+  - The one exception: **the marker alone, once the client has already sent a message of its own** in this conversation, is a normal client ending (its goodbye came in that earlier message). The library cannot tell whether that earlier message really was a goodbye (`docs/assumptions.md` A10).
+  - A failure ends the conversation with `ended_by: sim_error` and `end_state: harness_error`. `end_detail` has `harness_stop_reason: simulator_error`, `exception_type: SimulatorError` and the reason in `exception_message`, with the finish reason and the output and reasoning token counts when the response gives them. The `client_sim.turn` span ends in `ERROR` with an `evals.error` event whose `evals.error.kind` is `sim_empty_reply` or `sim_call_failed`. The runner labels the trial `infra:sim_error` (section 7), and the API re-queues it once.
+  - An empty reply is still written to `sim_replies.jsonl`, raw and with its usage, so a reply that went entirely to reasoning stays visible. Its row carries `error`, and it is never cached, by the library or by the API, so the re-queued attempt asks the simulator again. A cached reply that is empty (from before this rule) is a failure too.
+  - Examples: `contract/v2/examples/result-sim-error.json` and `runner-report-sim-error.json`. Tests: `workers/adapterlib/tests/test_sim_error.py`, with the fake model server's `sim-empty` and `sim-client` scripts.
 
 ## 10. Storage and traceability (R11)
 

@@ -147,8 +147,9 @@ Workers mount nothing from the host, so a trial cannot read another trial's stor
 | `infra:budget_net` | `harness_error` and the key's budget was exceeded. Never re-queued (D26) |
 | `infra:adapter_crash` | Non-zero exit, or a missing or invalid result |
 | `infra:timeout_kill` | The safety net killed the process group |
+| `infra:sim_error` | `conversation.ended_by` is `sim_error`: the simulated client's call failed or its reply had no text (D26). Re-queued once |
 
-A simulator failure ends as `harness_error` with label `agent`, because only the agent key is checked [src]. `conversation.ended_by` is `null` (single prompt), `client` (end marker), `turn_cap` or `agent_end_state` (an agent turn ended in anything but `answered`).
+A simulator failure ends as `harness_error` with `ended_by: sim_error` and label `infra:sim_error`, whatever the agent key's status [src, ran: fake `sim-empty`]. Until 4 Nov an empty simulator reply counted as the client ending and was labelled `agent`; that is how the 4 Nov Haiku run lost its conversations after one agent turn (section 2.9). `conversation.ended_by` is `null` (single prompt), `client` (end marker), `turn_cap`, `agent_end_state` (an agent turn ended in anything but `answered`) or `sim_error`.
 
 ### 2.3 What is recorded per trial, and where
 
@@ -187,7 +188,7 @@ Span events carry `evals.error` (kinds `malformed_tool_call`, `unknown_tool`, `t
 - Its prompt is now `configs/prompts/client-sim.v2.md` (D27, a draft for your review; the API's default as the highest version), with persona, client summary, hidden facts, concerns, goal and end marker filled in. v2 adds the client file, chat text only (no narration or stage directions) and ending once the concerns are answered; it keeps v1's guards. It is a plain non-streaming call to LiteLLM with its own key, budget, model, token cap and, unless it is null, temperature, and no tools. The 4 Nov run used `client-sim.v1.md` and Haiku 5.5 at temperature 1, because Haiku rejects 0, with a 1,500-token cap that its own thinking also uses [unverified: Claude docs]. Engine runs on Haiku now send no simulator temperature (D27).
 - **End marker.** The client ends by writing `[[END_CONVERSATION]]`. Any text left with it (the goodbye) is added as a client turn and the conversation ends. **The agent never answers the goodbye.**
 - **Turn cap.** `max_client_turns` counts client messages after the opening one, so a cap of 3 allows up to 4 agent turns.
-- **Failures.** A simulator error ends the trial as `harness_error`, stop reason `simulator_error`.
+- **Failures.** A failed simulator call, or a reply with no text (with or without the marker), ends the trial as `harness_error`, stop reason `simulator_error`, `ended_by: sim_error`, label `infra:sim_error`; the API re-queues it once. The marker alone after the client's own earlier message is still a normal ending. The empty reply stays in `sim_replies.jsonl` with its usage and an `error` field, and is never cached [src, ran: fake `sim-empty`].
 
 **Reply cache** [src]. Keyed by task, simulator model, temperature, token cap, prompt hash and the exact visible transcript. The cross-trial store now exists: the API adds the replies each trial reports (`sim_replies.jsonl`) to the cache for that task and simulator setup, and every later claim of the same scope carries them as `sim_cache`; the first reply stored for a key wins. A hit needs every agent reply before it to be byte-identical, so with the agent above temperature 0 most calls will miss. All 15 simulator calls on 4 Nov missed [ran, 4 Nov], as expected: each harness ran once and the agents' replies differed. Two trials reaching the same new state at the same time can store different replies, and a trial could forge a reply under a future key (`docs/known-limits.md`).
 

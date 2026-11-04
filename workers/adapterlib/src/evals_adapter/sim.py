@@ -27,8 +27,22 @@ CACHE_VERSION = "sim-cache-1"
 
 
 class SimulatorError(RuntimeError):
-    """The simulator call failed. The trial ends as harness_error: it is infrastructure, not
-    the agent."""
+    """A simulator failure: its call failed (`sim_call_failed`), or its reply gave the client
+    nothing to say (`sim_empty_reply`). D26: a failure the agent did not cause is
+    infrastructure, so the conversation ends with ended_by sim_error and the runner labels the
+    trial infra:sim_error. It is never the client ending the conversation."""
+
+    def __init__(
+        self,
+        message: str,
+        kind: str = "sim_call_failed",
+        key: str | None = None,
+        cache_hit: bool | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.key = key
+        self.cache_hit = cache_hit
 
 
 @dataclass
@@ -104,6 +118,37 @@ def parse_reply(text: str) -> tuple[str | None, bool]:
     return (message or None), done
 
 
+def empty_reply(message: str | None, done: bool, client_has_spoken: bool) -> str | None:
+    """Why a parsed reply is a simulator failure, or None when it is usable.
+
+    A reply with no text is a failure, with or without the end marker. The one exception is the
+    end marker alone once the client has already sent a message of its own in this conversation:
+    its goodbye came in that earlier message, so this is a normal client ending. The library
+    cannot tell whether that earlier message really was a goodbye (docs/assumptions.md A10)."""
+    if message is not None:
+        return None
+    if done and client_has_spoken:
+        return None
+    if done:
+        return "reply holds only the end marker, before the client has said anything"
+    return "reply has no text"
+
+
+def _usage_note(usage: Any, finish_reason: Any) -> str:
+    """Why a reply may be empty, from the response: '(finish_reason length; 300 output tokens,
+    300 of them reasoning)'. Empty when the response says neither."""
+    parts = []
+    if finish_reason:
+        parts.append(f"finish_reason {finish_reason}")
+    if isinstance(usage, dict) and usage.get("completion_tokens") is not None:
+        note = f"{usage['completion_tokens']} output tokens"
+        details = usage.get("completion_tokens_details")
+        if isinstance(details, dict) and details.get("reasoning_tokens") is not None:
+            note += f", {details['reasoning_tokens']} of them reasoning"
+        parts.append(note)
+    return f" ({'; '.join(parts)})" if parts else ""
+
+
 class ClientSimulator:
     def __init__(
         self,
@@ -126,21 +171,48 @@ class ClientSimulator:
             data = json.loads(cache_path.read_text(encoding="utf-8"))
             self.cache = dict(data.get("replies", {}))
 
-    def next(self, transcript: list[dict[str, str]]) -> ClientReply:
+    def next(
+        self, transcript: list[dict[str, str]], client_has_spoken: bool = False
+    ) -> ClientReply:
+        """The client's next reply. `client_has_spoken` says whether the simulator has already
+        sent a message of its own in this conversation (see `empty_reply`).
+
+        Raises SimulatorError when the call fails or the reply is empty. An empty reply is still
+        written to sim_replies.jsonl, raw and with its usage, so a reply that went entirely to
+        reasoning stays visible; its row carries `error`, and it is never cached, here or by the
+        API, so a re-queued attempt asks the simulator again."""
         key = cache_key(self.spec, transcript)
         if key in self.cache:
             message, done = parse_reply(self.cache[key])
+            problem = empty_reply(message, done, client_has_spoken)
+            if problem is not None:
+                raise SimulatorError(f"cached simulator {problem}", "sim_empty_reply", key, True)
             return ClientReply(message, done, True, key, None)
-        raw, usage = self._call(transcript)
-        with self._lock:
-            self.cache[key] = raw
-            with open(self.replies_path, "a", encoding="utf-8") as fh:
-                row = {"key": key, "reply": raw, "model": self.model["name"], "usage": usage}
-                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        raw, usage, finish_reason = self._call(transcript, key)
         message, done = parse_reply(raw)
+        problem = empty_reply(message, done, client_has_spoken)
+        with self._lock:
+            row: dict[str, Any] = {
+                "key": key,
+                "reply": raw,
+                "model": self.model["name"],
+                "usage": usage,
+            }
+            if problem is None:
+                self.cache[key] = raw
+            else:
+                row["error"] = problem
+            with open(self.replies_path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        if problem is not None:
+            note = _usage_note(usage, finish_reason)
+            raise SimulatorError(f"simulator {problem}{note}", "sim_empty_reply", key, False)
         return ClientReply(message, done, False, key, usage)
 
-    def _call(self, transcript: list[dict[str, str]]) -> tuple[str, dict[str, Any] | None]:
+    def _call(
+        self, transcript: list[dict[str, str]], key: str | None = None
+    ) -> tuple[str, dict[str, Any] | None, str | None]:
+        """The raw reply text, the response's usage and its finish_reason."""
         body: dict[str, Any] = {
             "model": self.model["name"],
             "messages": [{"role": "system", "content": self.system_prompt}]
@@ -162,16 +234,23 @@ class ClientSimulator:
             },
             method="POST",
         )
+        failed = "sim_call_failed"
         try:
             with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:  # noqa: S310
                 payload = json.loads(resp.read().decode())
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode(errors="replace")[:500]
-            raise SimulatorError(f"simulator call failed: HTTP {exc.code}: {detail}") from exc
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise SimulatorError(f"simulator call failed: {exc}") from exc
+            message = f"simulator call failed: HTTP {exc.code}: {detail}"
+            raise SimulatorError(message, failed, key, False) from exc
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            raise SimulatorError(f"simulator call failed: {exc}", failed, key, False) from exc
         try:
-            content = payload["choices"][0]["message"]["content"] or ""
+            choice = payload["choices"][0]
+            content = choice["message"]["content"] or ""
         except (KeyError, IndexError, TypeError) as exc:
-            raise SimulatorError(f"simulator reply has no message: {str(payload)[:300]}") from exc
-        return content, payload.get("usage")
+            message = f"simulator reply has no message: {str(payload)[:300]}"
+            raise SimulatorError(message, failed, key, False) from exc
+        if not isinstance(content, str):
+            message = f"simulator reply content is not text: {str(content)[:300]}"
+            raise SimulatorError(message, failed, key, False)
+        return content, payload.get("usage"), choice.get("finish_reason")
