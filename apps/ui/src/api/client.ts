@@ -10,7 +10,9 @@ import type {
   ConfigDiffEntry,
   ConfigView,
   ConflictCheckView,
+  CreatedPrompt,
   CreateConfigRequest,
+  CreatePromptRequest,
   CreateExperimentRequest,
   CreateLabelRequest,
   EstimateRequest,
@@ -216,6 +218,8 @@ const post = <T>(path: string, body?: unknown) => call<T>('POST', path, body);
 export const api = {
   harnesses: () => call<Harness[]>('GET', '/harnesses'),
   prompts: () => call<PromptView[]>('GET', '/prompts'),
+  /** Writes the next version of an existing prompt; never overwrites one (201 new, 200 same text). */
+  createPrompt: (body: CreatePromptRequest) => post<CreatedPrompt>('/prompts', body),
   toolsets: () => call<ToolsetView[]>('GET', '/toolsets'),
   tasks: () => call<TaskView[]>('GET', '/tasks'),
   models: () => call<ModelView[]>('GET', '/models'),

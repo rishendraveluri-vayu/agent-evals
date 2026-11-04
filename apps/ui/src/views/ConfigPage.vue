@@ -306,6 +306,52 @@ async function refreshSpend() {
         </div>
       </section>
 
+      <section
+        aria-labelledby="seed-title"
+        class="panel panel--pad seed-panel"
+        data-test="config-seed"
+      >
+        <h2
+          id="seed-title"
+          class="section-title"
+        >
+          Seeds
+        </h2>
+        <p
+          v-if="!data.config.seed?.memory?.length && !data.config.seed?.skills?.length"
+          class="small secondary"
+        >
+          Nothing seeded: every trial starts with empty memory and no skills of its own.
+        </p>
+        <template v-else>
+          <p class="small secondary">
+            Every trial starts with these (D39), given by the config, never learned.
+          </p>
+          <ol
+            v-if="data.config.seed.memory.length"
+            class="small seed-list"
+            aria-label="Memory entries"
+          >
+            <li
+              v-for="(m, mi) in data.config.seed.memory"
+              :key="mi"
+            >
+              {{ m }}
+            </li>
+          </ol>
+          <details
+            v-for="k in data.config.seed.skills"
+            :key="k.name"
+            class="disclosure"
+          >
+            <summary>
+              <span class="summary-text"><span class="mono strong">{{ k.name }}</span> <span class="secondary small">{{ k.description }}</span></span>
+            </summary>
+            <pre class="code-block">{{ k.body }}</pre>
+          </details>
+        </template>
+      </section>
+
       <div class="checks">
         <RenderedPrompt
           :config-hash="data.config.hash"
@@ -326,6 +372,11 @@ async function refreshSpend() {
 </template>
 
 <style scoped>
+.seed-list {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
 .meta {
   margin-top: 6px;
 }
@@ -363,7 +414,8 @@ async function refreshSpend() {
 }
 
 .lineage,
-.settings-panel {
+.settings-panel,
+.seed-panel {
   margin-bottom: 20px;
 }
 
