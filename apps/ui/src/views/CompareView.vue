@@ -10,7 +10,7 @@ import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
 import { agreementWords, armIndexOf, armLetter, armsOf, differingShort, excludesZero, intervalText, judgeCaveat, methodName, NBSP, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
-import { identParts, money, percent, plural, seconds, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
+import { identParts, money, percent, plainText, plural, seconds, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
 import { alsoGradedBy, gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
 import { href } from '../router';
@@ -78,13 +78,13 @@ function cell(task: string, arm: 0 | 1): CompareRow | undefined {
 }
 
 /** D37: no comparison until every arm is complete; the API says why, and how each arm stands. */
-const incomplete = computed(() => (data.value?.compare.status === 'incomplete' ? (data.value.compare.reason ?? 'not every arm is complete yet') : null));
+const incomplete = computed(() => (data.value?.compare.status === 'incomplete' ? plainText(data.value.compare.reason ?? 'not every arm is complete yet') : null));
 const armProgress = computed(() =>
   (data.value?.compare.arms ?? []).map((a) => {
     const c = a.counts;
     const total = c.queued + c.running + c.done + c.infra_failed + c.abandoned + c.cancelled;
     const words: Record<string, string> = { not_started: 'not started', active: 'running', paused: 'paused', stopped: 'stopped', complete: 'complete' };
-    return { key: a.arm.toLowerCase(), letter: a.arm, name: a.config_name, status: words[a.status] ?? a.status, done: c.done, total, reason: a.status === 'paused' ? a.paused_reason : null };
+    return { key: a.arm.toLowerCase(), letter: a.arm, name: a.config_name, status: words[a.status] ?? a.status, done: c.done, total, reason: a.status === 'paused' && a.paused_reason ? plainText(a.paused_reason) : null };
   }),
 );
 
@@ -106,7 +106,7 @@ const noVerdictText = computed(() => {
   const t = totals.value;
   if (!t) return '';
   const b = arms.value[1] ? `, B passed ${t.b.passed} of ${t.b.graded}` : '';
-  const more = arms.value.length > 2 ? ` This experiment has ${arms.value.length} configs, made before experiments had two arms (D35): only A and B are compared here; the run page shows every arm.` : '';
+  const more = arms.value.length > 2 ? ` This experiment has ${arms.value.length} configs, made before experiments had two arms: only A and B are compared here; the run page shows every arm.` : '';
   if (!t.a.graded && !t.b.graded) {
     const ran = (letter: 'A' | 'B') => (data.value?.compare.rows ?? []).filter((r) => r.arm === letter).reduce((sum, r) => sum + r.trials, 0);
     return `Not graded yet: A has ${ran('A')} finished ${ran('A') === 1 ? 'trial' : 'trials'}${arms.value[1] ? ` and B ${ran('B')}` : ''}, and grading runs as its own step. The interval and the verdict come after it.${more}`;

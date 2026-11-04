@@ -329,7 +329,7 @@ async function refreshSpend() {
         </p>
         <template v-else>
           <p class="small secondary">
-            Every trial starts with these (D39), given by the config, never learned.
+            Every trial starts with these, given by the config, never learned.
           </p>
           <ol
             v-if="data.config.seed.memory.length"

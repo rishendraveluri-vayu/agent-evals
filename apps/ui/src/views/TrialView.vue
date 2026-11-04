@@ -986,7 +986,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             role="note"
             data-test="trial-problems"
           >
-            <strong>The API flagged this trial:</strong> {{ [...vm.problems, ...vm.badFiles].join('; ') }}
+            <strong>The API flagged this trial:</strong> {{ plainText([...vm.problems, ...vm.badFiles].join('; ')) }}
           </p>
         </aside>
 

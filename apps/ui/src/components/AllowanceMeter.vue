@@ -32,7 +32,7 @@ const words = computed(() => {
     <span
       v-if="allowance.half_reached && !compact"
       class="allowance-half"
-    >Past half: Rishi is told (D38)</span>
+    >More than half used</span>
   </span>
 </template>
 

@@ -181,7 +181,7 @@ onMounted(async () => {
           label="Conflict checks"
           compact
           class="wide-only header-allowance"
-          :title="`Conflict-check allowance (D38): ${money(allowance.used_usd)} of ${wholeMoney(allowance.limit_usd)} used, ${money(allowance.remaining_usd)} left`"
+          :title="`Conflict-check allowance: ${money(allowance.used_usd)} of ${wholeMoney(allowance.limit_usd)} used, ${money(allowance.remaining_usd)} left`"
         />
       </span>
       <span

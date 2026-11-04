@@ -1,5 +1,8 @@
 <script setup lang="ts">
-/** Loading and error states for a screen: a status while waiting, an alert on failure. */
+/** Loading and error states for a screen: a status while waiting, an alert on failure, in plain
+ *  words (the API's references to its own decision log are left out). */
+import { plainText } from '../lib/format';
+
 defineProps<{ loading: boolean; error: string | null; what: string }>();
 </script>
 
@@ -10,7 +13,7 @@ defineProps<{ loading: boolean; error: string | null; what: string }>();
     role="alert"
     data-test="load-error"
   >
-    Could not load {{ what }}: {{ error }}
+    Could not load {{ what }}: {{ plainText(error) }}
   </p>
   <p
     v-else-if="loading"

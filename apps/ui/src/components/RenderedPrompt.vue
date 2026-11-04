@@ -127,7 +127,7 @@ const statusWords = computed(() => {
       >sha <span class="mono">{{ shortHash(view.rendered.sha256) }}</span>, rendered {{ relative(view.rendered.created_at).toLowerCase() }}</span>
     </div>
     <p class="secondary small intro">
-      The whole system prompt the model sees: {{ who }}'s own text, with ours ({{ promptName }}) marked inside it. It comes from the first request of a probe trial that runs this config once on the fake model, so rendering it costs nothing.
+      A free preview of exactly what the model receives: {{ who }}'s own text, with our prompt ({{ promptName }}) marked inside it. It is the first request of one practice run of this config, which calls no real model, so it costs nothing.
     </p>
 
     <p
@@ -170,7 +170,7 @@ const statusWords = computed(() => {
         >
           {{ view.status === 'failed' ? 'Try the probe again' : 'Render the prompt' }}
         </button>
-        <span class="secondary smaller">One probe trial on <span class="mono">fake/finance-emi</span>: no real model, no real spend.</span>
+        <span class="secondary smaller">Free: no real model is called.</span>
       </div>
       <p
         v-if="postError"

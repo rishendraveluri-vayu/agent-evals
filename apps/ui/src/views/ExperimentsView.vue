@@ -8,7 +8,7 @@ import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
 import { armsOf, axisWords, checksToGo, doneCount, excludesZero, headline, intervalText, judgeCaveat, NBSP, pointsWithInterval, setupOf, timeLeft, totalTrials, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
-import { capitalise, identParts, minutes, money, percent, plural, relative, signed } from '../lib/format';
+import { capitalise, identParts, minutes, money, percent, plainText, plural, relative, signed } from '../lib/format';
 import { pauseCause } from '../lib/runs';
 import { alsoGradedBy, harnessShort, isJudged, modelName, settingLabel, splitName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
@@ -129,7 +129,7 @@ const attention = computed<Attention[]>(() => {
         icon: 'alert',
         infra: false,
         title: `${e.name} is paused`,
-        detail: `${capitalise(pauseCause(reason))}. Review it, then resume or stop.`,
+        detail: `${capitalise(plainText(pauseCause(reason)))}. Review it, then resume or stop.`,
       });
     }
     for (const a of detail?.arms ?? []) {
@@ -140,7 +140,7 @@ const attention = computed<Attention[]>(() => {
         icon: 'alert',
         infra: false,
         title: `Arm ${a.arm} of ${e.name} is paused`,
-        detail: `${capitalise(pauseCause(a.paused_reason ?? 'paused'))}. ${a.fix ? 'The run page says how to fix it.' : 'Resume it on the run page.'}`,
+        detail: `${capitalise(plainText(pauseCause(a.paused_reason ?? 'paused')))}. ${a.fix ? 'The run page says how to fix it.' : 'Resume it on the run page.'}`,
       });
     }
     // A config error pauses its arm (listed above) and is never re-queued, so it is not counted here.
@@ -235,7 +235,7 @@ const rows = computed<Row[]>(() => {
         detail = left !== null ? `About ${minutes(left)} left` : `${done} of ${total} done`;
       } else if (e.status === 'paused') {
         status = 'Paused';
-        detail = `${done} of ${total} done. ${capitalise(pauseCause(d.live.get(e.id)?.paused_reason ?? 'paused'))}`;
+        detail = `${done} of ${total} done. ${capitalise(plainText(pauseCause(d.live.get(e.id)?.paused_reason ?? 'paused')))}`;
       } else if (e.status === 'created') {
         status = 'Not started';
         detail = 'Waiting for you to start it';
@@ -247,7 +247,7 @@ const rows = computed<Row[]>(() => {
         detail = 'Nothing to compare';
       } else if (e.config_hashes.length > 2) {
         status = 'Finished';
-        detail = `${e.config_hashes.length} configs, made before experiments had two arms (D35)`;
+        detail = `${e.config_hashes.length} configs, made before experiments had two arms`;
       } else if (stats) {
         verdict = stats.verdict === 'better' ? 'better' : stats.verdict === 'worse' ? 'worse' : 'none';
         detail = `${pointsWithInterval(stats.diff)}${sameTwice && !excludesZero(stats.diff) ? ', as expected' : ''}`;

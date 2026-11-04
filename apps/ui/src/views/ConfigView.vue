@@ -9,7 +9,7 @@ import { useLoad } from '../lib/async';
 import { coverageText } from '../lib/capabilities';
 import { changedLineCount, lineChanges, sentenceChanges } from '../lib/diff';
 import { mdBlocks } from '../lib/markdown';
-import { shortHash, shortRef } from '../lib/format';
+import { plainText, shortHash, shortRef } from '../lib/format';
 import { BOOLEAN_SETTINGS, harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
 import { agentModels, fakeDoes, isFake } from '../lib/models';
 import { NAME_MAX, settingProblem } from '../lib/limits';
@@ -199,7 +199,7 @@ async function savePrompt() {
     promptSaved.value = { created, existed: known.has(created.sha256) };
     editingPrompt.value = false;
   } catch (err) {
-    promptRefusal.value = errorWithFix(err);
+    promptRefusal.value = plainText(errorWithFix(err));
   } finally {
     promptSaving.value = false;
   }
@@ -404,13 +404,13 @@ async function save(thenRun: boolean) {
   } catch (err) {
     if (err instanceof ApiError) {
       const field = fieldOf(err);
-      refusal.value = { field, code: err.code, message: err.message, fix: err.fix };
+      refusal.value = { field, code: err.code, message: plainText(err.message), fix: err.fix ? plainText(err.fix) : null };
       // A model's refusal holds for every config on that model: grey the field from now on.
       if (err.code === 'unsupported_setting' && field && supported(field as SettingName) && err.message.includes(form.model)) {
         learnt[form.model] = { ...(learnt[form.model] ?? {}), [field]: err.fix ?? err.message };
       }
     } else {
-      refusal.value = { field: null, code: 'error', message: errorText(err), fix: null };
+      refusal.value = { field: null, code: 'error', message: plainText(errorText(err)), fix: null };
     }
   } finally {
     saving.value = false;
@@ -912,7 +912,7 @@ watch(
               Seeds
             </h3>
             <p class="hint">
-              What every trial of this config starts with: memory entries and skills given by the config, never learned ones (D39). A seed changes the hash.
+              What every trial of this config starts with: memory entries and skills given by the config, never learned ones. A seed changes the hash.
             </p>
             <template v-if="supported('memory') && !isIgnored('memory')">
               <label

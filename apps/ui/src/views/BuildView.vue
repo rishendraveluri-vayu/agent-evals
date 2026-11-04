@@ -15,7 +15,7 @@ import InfoTip from '../components/InfoTip.vue';
 import LoadState from '../components/LoadState.vue';
 import { useLoad } from '../lib/async';
 import { axisFromDiff, axisPhrase } from '../lib/checks';
-import { shortHash, shortRef } from '../lib/format';
+import { plainText, shortHash, shortRef } from '../lib/format';
 import { harnessFacts, harnessTagline, memoryLine } from '../lib/harnessInfo';
 import { mdBlocks } from '../lib/markdown';
 import { isFake } from '../lib/models';
@@ -169,7 +169,7 @@ async function savePrompt() {
     promptMode.value = 'saved';
     draftBase.value = null;
   } catch (err) {
-    promptError.value = errorWithFix(err);
+    promptError.value = plainText(errorWithFix(err));
   } finally {
     promptSaving.value = false;
   }
@@ -229,7 +229,7 @@ async function save() {
     // first saved with; the name typed here is not used.
     saved.value = { config, existed: known.has(config.hash) || config.name !== form.name.trim() };
   } catch (err) {
-    saveError.value = errorWithFix(err);
+    saveError.value = plainText(errorWithFix(err));
   } finally {
     saving.value = false;
   }

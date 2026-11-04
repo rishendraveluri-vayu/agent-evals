@@ -193,7 +193,7 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
         Not measured yet
       </h2>
       <p class="secondary not-yet">
-        The judge's agreement with your held-out labels is computed by the judge validation step (SP5), which has not reported yet. Until then, judge-graded results carry no measured trust.
+        The judge's agreement with the held-out human labels comes from the judge validation step, which has not reported yet. Until it does, judge-graded results carry no measured trust.
       </p>
     </section>
     <template v-else-if="answer">
