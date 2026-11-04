@@ -5,16 +5,17 @@ import { isFixtureMode } from '../api/mode';
 import type { ConfigView, ConfigDiffEntry, Estimate, ExperimentDetail, TrialRowSummary, Harness, ModelView, PromptView, TaskView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
-import { armIndexOf, armsOf, timeLeft, totalTrials } from '../lib/arms';
+import { ApiError } from '../api/errors';
+import { armIndexOf, armsOf, namedByHash, timeLeft, totalTrials } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
-import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, contentDiff, planCheck, splitCheck, type Check } from '../lib/checks';
+import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, contentDiff, diffWords, keysCheck, planCheck, splitCheck, type Check } from '../lib/checks';
 import { changedLineCount, lineChanges, sentenceChanges, type LineChange } from '../lib/diff';
 import { capitalise, clock, minutes, money, plainText, plural, shortHash, wholeMoney } from '../lib/format';
 import { infraReason, modelName, splitName } from '../lib/names';
 import { href, navigate } from '../router';
 import { eventView, pauseCause } from '../lib/runs';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
-import { armPauseHelp, defaultArms, defaultBudget, isEngineTest, plainRunError, taskSetWords, validateN, type ArmDefaults } from '../lib/runSetup';
+import { armPauseHelp, defaultArms, defaultBudget, isEngineTest, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, type ArmDefaults } from '../lib/runSetup';
 import { FAKE_SIM_MODEL, isFake, simModels } from '../lib/models';
 import { text } from '../trials';
 
@@ -32,11 +33,22 @@ interface Loaded {
   trials: TrialRowSummary[];
 }
 
+/** The address names a run that does not exist (a mistyped or stale link). */
+const missing = ref(false);
+async function experimentOrMissing(id: string) {
+  try {
+    return await api.experiment(id);
+  } catch (err) {
+    if (err instanceof ApiError && (err.code === 'unknown_experiment' || err.status === 404)) missing.value = true;
+    throw err;
+  }
+}
+
 const { data, error, loading, reload } = useLoad<Loaded>(async () => {
   const [harnesses, prompts] = await Promise.all([optional(api.harnesses(), [] as Harness[]), optional(api.prompts(), [] as PromptView[])]);
   if (props.experimentId) {
     const [experiment, trials, allTasks, models] = await Promise.all([
-      api.experiment(props.experimentId),
+      experimentOrMissing(props.experimentId),
       optional(api.experimentTrials(props.experimentId), [] as TrialRowSummary[]),
       optional(api.tasks(), [] as TaskView[]),
       // Only to name each arm's provider when a config error pauses it.
@@ -85,7 +97,12 @@ watch(data, (d) => {
 const hashes = computed<string[]>(() => (draft ? [setup.a, setup.b].filter(Boolean) : (data.value?.experiment?.config_hashes ?? [])));
 /** Every arm on a fake model: the run tries the platform out, and the simulated client defaults to the fake one. */
 const allFake = computed(() => hashes.value.length > 0 && hashes.value.every((h) => isFake(data.value?.configs.find((c) => c.hash === h)?.model)));
-const defaultSim = computed(() => (allFake.value ? FAKE_SIM_MODEL : (data.value?.models[0]?.name ?? FAKE_SIM_MODEL)));
+/** A real run's simulated client: the first real model whose key is set, else the first one. */
+const defaultSim = computed(() => {
+  if (allFake.value) return FAKE_SIM_MODEL;
+  const models = data.value?.models ?? [];
+  return (models.find((m) => !missingKey(m.name, models)) ?? models[0])?.name ?? FAKE_SIM_MODEL;
+});
 watch(defaultSim, (v) => {
   if (draft && !touched.sim && setup.simModel) setup.simModel = v;
 });
@@ -103,6 +120,18 @@ const runModels = computed(() => {
 });
 /** What this run calls that costs money, for the start panel. */
 const realModels = computed(() => [...new Set(runModels.value.map((m) => m.model).filter((m) => !isFake(m)))]);
+/** Every model this run calls whose provider key is not set in .env (GET /models' key_set). */
+const keysMissing = computed(() =>
+  runModels.value.flatMap((m) => {
+    const key = missingKey(m.model, data.value?.models ?? []);
+    return key ? [{ ...m, key }] : [];
+  }),
+);
+/** The arm pickers: your own configs, and a shipped example's only when the address names it. */
+const pickable = computed(() => {
+  const all = data.value?.configs ?? [];
+  return { own: ownConfigs(all), example: all.filter((c) => c.example_only && (c.hash === setup.a || c.hash === setup.b)) };
+});
 /** No model costs anything real: the estimate is at made-up test prices, and no spending limit is needed. */
 const fakeOnly = computed(() => hashes.value.length > 0 && realModels.value.length === 0);
 const configOf = (h: string) => data.value?.configs.find((c) => c.hash === h);
@@ -183,7 +212,9 @@ const suggestedName = computed(() => {
   const [a, b] = arms.value;
   if (!a) return '';
   const set = taskSetWords(tasks.value, data.value?.allTasks ?? [], setup.split);
-  return b ? `${a.label} vs ${b.short}, ${set}` : `${a.label}, ${set}`;
+  // Arms that differ in more than one thing are named by their configs, never by bare hashes.
+  const named = (arm: (typeof arms.value)[number], short: boolean) => (namedByHash(arm) && arm.config ? arm.config.name : short ? arm.short : arm.label);
+  return b ? `${named(a, false)} vs ${named(b, true)}, ${set}` : `${named(a, false)}, ${set}`;
 });
 watch(suggestedName, (v) => {
   if (!touched.name) setup.name = v;
@@ -202,12 +233,18 @@ const checks = computed<Check[]>(() => {
   const configs = hashes.value.map(configOf).filter((c): c is ConfigView => !!c);
   // An A/A run (the same config on both arms) is not offered: the API refuses it, and whether
   // to run one as a calibration is a separate question.
-  const armRow = sameConfig.value
+  const arms = armsCheck(diff.value, false);
+  const armRow: Check = sameConfig.value
     ? { ok: false, title: 'Arm A and arm B are the same agent', detail: 'Pick a different agent for one of the arms, or set arm B to None to run this agent on its own.' }
-    : armsCheck(diff.value, false);
+    : arms.ok || !hashes.value[1]
+      ? arms
+      : { ...arms, link: { href: href.fork(hashes.value[1]), text: 'Fork arm B’s agent to change one thing' } };
+  // A model whose key is not set would fail every call: the run stays off until it is added.
+  const keys = started.value ? null : keysCheck(keysMissing.value);
   const list: Check[] = [
     ...(draft && nCheck.value.error ? [{ ok: false, title: 'The number of trials is not valid', detail: nCheck.value.error }] : []),
     ...(hashes.value.length === 2 ? [armRow] : []),
+    ...(keys ? [keys] : []),
     capabilityCheck(configs, d.harnesses),
     // A plan is committed before a run that measures something; a run on fake models only tries the platform out.
     allFake.value ? { ok: true, title: 'No analysis plan needed: every arm runs on a fake model', detail: 'A fake run tries the platform out; it measures nothing about a real agent.' } : planCheck(planCommit.value),
@@ -232,24 +269,29 @@ const startHelper = computed(() => {
   return `${n} check${n === 1 ? ' is' : 's are'} not passing: ${failing.map((c) => c.title).join('; ')}.`;
 });
 
-/** How the arms differ: the prompt's changed lines, or each differing field. */
-const armDiff = computed<{ summary: string; lines: LineChange[] }>(() => {
+/** A diff value in the panel: a content hash in its short form, anything else as text. */
+const diffValue = (v: unknown): string => (typeof v === 'string' && /^sha256:[0-9a-f]{7,}$/.test(v) ? shortHash(v) : text(v));
+
+/** How the arms differ: the prompt's changed lines, or, in words, what differs, with each field
+ *  and its values (`fields`) for a Details disclosure. */
+const armDiff = computed<{ summary: string; lines: LineChange[]; fields: LineChange[] }>(() => {
   const content = contentDiff(diff.value);
-  if (sameConfig.value) return { summary: 'The same config on both arms. Nothing differs.', lines: [] };
-  if (!content.length) return { summary: 'Nothing differs.', lines: [] };
+  if (sameConfig.value) return { summary: 'The same config on both arms. Nothing differs.', lines: [], fields: [] };
+  if (!content.length) return { summary: 'Nothing differs.', lines: [], fields: [] };
   const [ca, cb] = hashes.value.map(configOf);
   const pa = data.value?.prompts.find((p) => p.sha256 === ca?.prompt.sha256);
   const pb = data.value?.prompts.find((p) => p.sha256 === cb?.prompt.sha256);
   const promptOnly = content.every((d) => d.path.startsWith('prompt'));
   if (promptOnly && pa && pb) {
     const changed = changedLineCount(lineChanges(pa.text, pb.text));
-    return { summary: `The system prompt, ${changed} ${changed === 1 ? 'line' : 'lines'} changed. Nothing else differs.`, lines: sentenceChanges(pa.text, pb.text) };
+    return { summary: `The system prompt, ${changed} ${changed === 1 ? 'line' : 'lines'} changed. Nothing else differs.`, lines: sentenceChanges(pa.text, pb.text), fields: [] };
   }
   return {
-    summary: `${content.length} ${content.length === 1 ? 'field differs' : 'fields differ'}.`,
-    lines: content.flatMap((d) => [
-      { side: 'a' as const, text: `${d.path}: ${text(d.a)}` },
-      { side: 'b' as const, text: `${d.path}: ${text(d.b)}` },
+    summary: `${content.length} ${content.length === 1 ? 'field differs' : 'fields differ'}: ${diffWords(content)}.`,
+    lines: [],
+    fields: content.flatMap((d) => [
+      { side: 'a' as const, text: `${d.path}: ${diffValue(d.a)}` },
+      { side: 'b' as const, text: `${d.path}: ${diffValue(d.b)}` },
     ]),
   };
 });
@@ -594,7 +636,8 @@ const armCards = computed(() =>
       shownStatus: runPaused ? 'paused' : a.status,
       counts: `${parts.filter(Boolean).join(', ')} of ${plural(total, 'trial row')}`,
       reused: a.reused_from ? `Reuses ${plural(a.reused_trials, 'finished trial')} of ${a.reused_from}` : '',
-      canPause: a.status === 'active' || a.status === 'not_started',
+      // While the whole run is paused the arm already claims nothing: the run's Resume is what to press.
+      canPause: !runPaused && (a.status === 'active' || a.status === 'not_started'),
       canResume: a.status === 'paused',
       help: a.status === 'paused' ? armPauseHelp(a, configOf(a.config_hash)?.model ?? null, data.value?.models ?? []) : null,
     };
@@ -606,6 +649,16 @@ const rerunHref = computed(() => {
   return a ? href.runNew(a, b ?? '') : href.runNew();
 });
 const pausedArms = computed(() => armCards.value.filter((a) => a.view.status === 'paused'));
+
+/** "A: Prompt v2, config 7f3a9c2", or "A: Prompt v1 on Hermes, config 3b81e04" when the arm would
+ *  otherwise be named by its hash alone, so the hash is never said twice. */
+const armLine = (arm: (typeof arms.value)[number]): string => {
+  if (!namedByHash(arm)) return `${arm.label}, config`;
+  return arm.config?.name ? `${arm.config.name}, config` : 'config';
+};
+
+/** The run's name: a shipped example's own title, else the name it was given. */
+const runTitle = computed(() => data.value?.experiment?.example?.title ?? data.value?.experiment?.name ?? null);
 
 /** The simulated client's model, which every conversation in both arms runs against. */
 const simClient = computed(() => (data.value?.experiment?.sim_model ? modelName(data.value.experiment.sim_model) : null));
@@ -689,9 +742,11 @@ const heading = computed(() => {
 });
 
 const checksSummary = computed(() => {
-  const passed = checks.value.filter((c) => c.ok).length;
+  // A plan commit is recorded as given, not checked: it is not counted as a check that passed.
+  const checked = checks.value.filter((c) => !c.recorded);
+  const passed = checked.filter((c) => c.ok).length;
   const plan = data.value?.experiment?.plan_commit;
-  return `Checked before the start: ${passed} of ${checks.value.length} passed${plan ? `, plan ${plan.slice(0, 7)}` : ''}`;
+  return `Checked before the start: ${passed} of ${checked.length} passed${plan ? `; plan commit ${plan.slice(0, 7)}, as given` : ''}`;
 });
 
 const diffSummary = computed(() => {
@@ -762,13 +817,34 @@ onBeforeUnmount(() => taskObserver?.disconnect());
 </script>
 
 <template>
-  <div class="head-row">
+  <div
+    v-if="missing"
+    class="page-head"
+    data-test="run-missing"
+  >
+    <nav
+      aria-label="Breadcrumb"
+      class="crumbs"
+    >
+      <a :href="href.experiments()">Experiments</a> / Not found
+    </nav>
+    <h1 tabindex="-1">
+      No run with that id
+    </h1>
+    <p class="lede">
+      Nothing is saved as <span class="mono">{{ experimentId }}</span>: the link may be mistyped, or from another database. <a :href="href.experiments()">Experiments</a> lists every run, and <a :href="href.runNew()">Set up a run</a> starts a new one.
+    </p>
+  </div>
+  <div
+    v-else
+    class="head-row"
+  >
     <div class="page-head">
       <nav
         aria-label="Breadcrumb"
         class="crumbs"
       >
-        <a :href="href.experiments()">Experiments</a> / {{ data?.experiment?.name ?? (setup.name || 'New experiment') }}
+        <a :href="href.experiments()">Experiments</a> / {{ runTitle ?? (draft ? setup.name || 'New experiment' : 'Run') }}
       </nav>
       <h1
         tabindex="-1"
@@ -879,6 +955,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
   </div>
 
   <LoadState
+    v-if="!missing"
     :loading="loading && !data"
     :error="error"
     what="the run"
@@ -935,12 +1012,23 @@ onBeforeUnmount(() => taskObserver?.disconnect());
               class="arm-note small"
               data-test="arm-note"
             >
-              <template v-if="armNote === 'only_one'">
-                A comparison needs a second agent to compare against, and there is only one so far, so this run tests it on its own.
-                <a :href="href.build()">Build a second agent</a> to compare the two.
+              <template v-if="armNote === 'only_one' || armNote === 'no_baseline'">
+                <template v-if="armNote === 'only_one'">
+                  A comparison needs a baseline: a second agent that differs from this one in one thing. There is only one agent so far, so this run tests it on its own (a pilot).
+                </template>
+                <template v-else>
+                  A comparison needs a baseline: an agent that differs from {{ configOf(setup.a)?.name ?? 'this one' }} in just one thing, and no saved agent does, so this run tests it on its own (a pilot).
+                </template>
+                <a
+                  v-if="setup.a"
+                  :href="href.fork(setup.a)"
+                  data-test="arm-note-fork"
+                >Fork this agent</a><template v-else>
+                  Fork an agent
+                </template> to make one: change one setting, the prompt or the model, save, and set up the run again.
               </template>
               <template v-else>
-                There are no agents to run yet. <a :href="href.build()">Build an agent</a> first.
+                There are no agents of your own to run yet{{ data.configs.some((c) => c.example_only) ? "; the shipped example's are kept as they were run, not run again" : '' }}. <a :href="href.build()">Build an agent</a> first.
               </template>
             </p>
             <div class="setup-grid">
@@ -951,10 +1039,20 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                   data-test="arm-a"
                 >
                   <option
-                    v-for="c in data.configs"
+                    v-for="c in pickable.own"
                     :key="c.hash"
                     :value="c.hash"
                   >{{ c.name }} · {{ shortHash(c.hash) }}</option>
+                  <optgroup
+                    v-if="pickable.example.length"
+                    label="From the shipped example"
+                  >
+                    <option
+                      v-for="c in pickable.example"
+                      :key="c.hash"
+                      :value="c.hash"
+                    >{{ c.name }} · {{ shortHash(c.hash) }}</option>
+                  </optgroup>
                 </select>
               </label>
               <label class="field">
@@ -967,12 +1065,29 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                     None: one arm, a pilot
                   </option>
                   <option
-                    v-for="c in data.configs"
+                    v-for="c in pickable.own"
                     :key="c.hash"
                     :value="c.hash"
                   >{{ c.name }} · {{ shortHash(c.hash) }}</option>
+                  <optgroup
+                    v-if="pickable.example.length"
+                    label="From the shipped example"
+                  >
+                    <option
+                      v-for="c in pickable.example"
+                      :key="c.hash"
+                      :value="c.hash"
+                    >{{ c.name }} · {{ shortHash(c.hash) }}</option>
+                  </optgroup>
                 </select>
               </label>
+              <p
+                v-if="pickable.example.length"
+                class="secondary smaller example-arms"
+                data-test="example-arms"
+              >
+                A shipped example's agent was made elsewhere, with the files of its day: its tools or prompt may differ from today's. To run it again, fork it on its page; the fork gets today's files.
+              </p>
               <p
                 v-if="sameConfig"
                 class="error small same-config"
@@ -1020,7 +1135,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                       v-for="m in simGroups.real"
                       :key="m.name"
                       :value="m.name"
-                    >{{ modelName(m.name) }}</option>
+                    >{{ modelName(m.name) }}{{ needsKeyWords(m.name, data.models) ? ` (${needsKeyWords(m.name, data.models)})` : '' }}</option>
                   </optgroup>
                 </select>
                 <span class="secondary smaller">Plays the client in conversation tasks only.</span>
@@ -1119,15 +1234,29 @@ onBeforeUnmount(() => taskObserver?.disconnect());
               :key="c.title"
               class="check-row"
               data-test="check"
+              :data-state="c.recorded ? 'recorded' : c.ok ? 'pass' : 'fail'"
             >
               <AppIcon
-                :name="c.ok ? 'pass-badge' : 'fail-badge'"
+                :name="c.recorded ? 'info' : c.ok ? 'pass-badge' : 'fail-badge'"
                 :size="22"
               />
               <span>
                 <strong>{{ c.title }}</strong>
-                <span class="visually-hidden">{{ c.ok ? 'Check passed.' : 'Check failed.' }}</span>
-                <span class="secondary small block">{{ c.detail }}</span>
+                <span class="visually-hidden">{{ c.recorded ? 'Recorded, not checked.' : c.ok ? 'Check passed.' : 'Check failed.' }}</span>
+                <span class="secondary small block">{{ c.detail }}<template v-if="c.link">
+                  {{ ' ' }}<a
+                    :href="c.link.href"
+                    data-test="check-link"
+                  >{{ c.link.text }}</a>.
+                </template></span>
+                <details
+                  v-if="c.raw"
+                  class="check-details smaller"
+                  data-test="check-details"
+                >
+                  <summary>Details</summary>
+                  <pre class="mono check-raw">{{ c.raw }}</pre>
+                </details>
               </span>
             </div>
           </section>
@@ -1143,17 +1272,34 @@ onBeforeUnmount(() => taskObserver?.disconnect());
             >
               How the two arms differ
             </h3>
-            <div class="mono diff-body">
-              <div class="secondary">
+            <div class="diff-body">
+              <div
+                class="secondary"
+                data-test="arm-diff-summary"
+              >
                 {{ armDiff.summary }}
               </div>
               <div
                 v-for="(l, i) in armDiff.lines"
                 :key="i"
-                :class="`line line--${l.side}`"
+                :class="`mono line line--${l.side}`"
               >
                 <span class="side">{{ l.side.toUpperCase() }}</span>&nbsp; {{ l.text }}
               </div>
+              <details
+                v-if="armDiff.fields.length"
+                class="check-details smaller"
+                data-test="arm-diff-details"
+              >
+                <summary>Details: each field and its value</summary>
+                <div
+                  v-for="(l, i) in armDiff.fields"
+                  :key="i"
+                  :class="`mono line line--${l.side}`"
+                >
+                  <span class="side">{{ l.side.toUpperCase() }}</span>&nbsp; {{ l.text }}
+                </div>
+              </details>
             </div>
           </section>
         </div>
@@ -1168,12 +1314,15 @@ onBeforeUnmount(() => taskObserver?.disconnect());
           >
             Start the run
           </h2>
-          <div class="stack arm-list">
+          <div
+            class="stack arm-list"
+            data-test="start-arms"
+          >
             <span
               v-for="arm in arms"
               :key="arm.key"
               class="arm"
-            ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ arm.label }}, config <span class="mono">{{ shortHash(arm.hash) }}</span></span></span>
+            ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ armLine(arm) }} <span class="mono">{{ shortHash(arm.hash) }}</span></span></span>
           </div>
           <template v-if="draft">
             <div class="n-field">
@@ -1725,7 +1874,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                   v-for="arm in arms"
                   :key="arm.key"
                   class="arm"
-                ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ arm.label }}, config <span class="mono">{{ shortHash(arm.hash) }}</span></span></span>
+                ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ armLine(arm) }} <span class="mono">{{ shortHash(arm.hash) }}</span></span></span>
                 <span
                   v-if="simClient"
                   class="sim-client"
@@ -1847,15 +1996,20 @@ onBeforeUnmount(() => taskObserver?.disconnect());
             :key="c.title"
             class="check-row"
             data-test="check"
+            :data-state="c.recorded ? 'recorded' : c.ok ? 'pass' : 'fail'"
           >
             <AppIcon
-              :name="c.ok ? 'pass-badge' : 'fail-badge'"
+              :name="c.recorded ? 'info' : c.ok ? 'pass-badge' : 'fail-badge'"
               :size="22"
             />
             <span>
               <strong>{{ c.title }}</strong>
-              <span class="visually-hidden">{{ c.ok ? 'Check passed.' : 'Check failed.' }}</span>
+              <span class="visually-hidden">{{ c.recorded ? 'Recorded, not checked.' : c.ok ? 'Check passed.' : 'Check failed.' }}</span>
               <span class="secondary small block">{{ c.detail }}</span>
+              <pre
+                v-if="c.raw"
+                class="mono check-raw smaller"
+              >{{ c.raw }}</pre>
             </span>
           </div>
         </div>
@@ -1874,7 +2028,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
             {{ armDiff.summary }}
           </div>
           <div
-            v-for="(l, i) in armDiff.lines"
+            v-for="(l, i) in [...armDiff.lines, ...armDiff.fields]"
             :key="i"
             :class="`line line--${l.side}`"
           >
@@ -2306,6 +2460,31 @@ onBeforeUnmount(() => taskObserver?.disconnect());
 
 .diff-body--inside {
   padding-bottom: 16px;
+}
+
+/* The API's own terms (field paths, short hashes), kept behind a Details disclosure. */
+.check-details {
+  margin-top: 6px;
+  display: grid;
+  gap: 4px;
+}
+
+.check-details summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+
+.check-raw {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.example-arms {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
 .grid-wrap {

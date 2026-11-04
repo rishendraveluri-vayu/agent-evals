@@ -2,12 +2,41 @@
  *  capabilities and the chosen tasks. Each is pass or fail, with the evidence in words. */
 import { SETTING_NAMES, type ConfigView, type ConfigDiffEntry, type Estimate, type Harness, type TaskView } from '../api/types';
 import { money, wholeMoney } from './format';
-import { harnessName, harnessShort, settingLabel, splitName } from './names';
+import { harnessName, harnessShort, modelName, settingLabel, splitName } from './names';
 
 export interface Check {
   ok: boolean;
   title: string;
   detail: string;
+  /** Not checked, only recorded as given: the page shows it apart from a check that passed. */
+  recorded?: boolean;
+  /** The evidence in the API's own terms (field paths, hashes), for a Details disclosure. */
+  raw?: string;
+  /** A link that fixes it, in words. */
+  link?: { href: string; text: string };
+}
+
+/** What a config diff path is about, in words: "the harness version", "max steps", "the toolset". */
+function areaWords(path: string, harnessChanged: boolean): string | null {
+  const [head, sub] = path.split('.');
+  if (head === 'harness') return 'the harness';
+  if (head === 'harness_ref' || head === 'adapter_version' || head === 'capabilities_sha256') return harnessChanged ? 'the harness' : 'the harness version';
+  if (head === 'settings' && sub) return settingLabel(sub).toLowerCase();
+  if (head === 'model') return 'the model';
+  if (head === 'prompt') return 'the system prompt';
+  if (head === 'toolset') return 'the toolset';
+  if (head === 'harness_options') return 'a harness option';
+  if (head === 'seed') return 'the seeds';
+  return null;
+}
+
+/** Every area two configs differ in, in words and once each: "the harness version, max steps and the toolset". */
+export function diffWords(diff: ConfigDiffEntry[]): string {
+  const content = contentDiff(diff);
+  const harnessChanged = content.some((d) => d.path === 'harness');
+  const words = [...new Set(content.map((d) => areaWords(d.path, harnessChanged)).filter((w): w is string => !!w))];
+  if (words.length <= 1) return words[0] ?? '';
+  return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
 }
 
 /** Diff paths that are bookkeeping, not content: a name or a timestamp changes no result. */
@@ -54,7 +83,20 @@ export function armsCheck(fullDiff: ConfigDiffEntry[], sameConfig: boolean): Che
     };
   }
   if (!diff.length) return { ok: false, title: 'The two configs do not differ', detail: 'They differ only in name, so the run would compare an agent with itself. Pick two configs that differ in the one thing to compare.' };
-  return { ok: false, title: 'The arms differ in more than one thing', detail: `They differ in ${diff.map((d) => d.path).join(', ')}, so a difference in results could not be pinned on one change.` };
+  return {
+    ok: false,
+    title: 'The arms differ in more than one thing',
+    detail: `They differ in ${diffWords(diff)}, so a difference in results could not be pinned on one change. Pick a baseline for arm A that differs from arm B in one thing, or fork arm B's agent and change one setting, the prompt or the model.`,
+    raw: diff.map((d) => `${d.path}: ${shortValue(d.a)} to ${shortValue(d.b)}`).join('\n'),
+  };
+}
+
+/** A diff value for the Details disclosure: hashes shortened, objects as JSON. */
+function shortValue(v: unknown): string {
+  if (v === null || v === undefined) return 'none';
+  if (typeof v === 'string') return /^sha256:[0-9a-f]{12,}$/.test(v) ? v.slice(0, 19) : v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return JSON.stringify(v);
 }
 
 export function capabilityCheck(configs: ConfigView[], harnesses: Harness[]): Check {
@@ -78,9 +120,40 @@ export function capabilityCheck(configs: ConfigView[], harnesses: Harness[]): Ch
   return { ok: true, title: `${who} ${names.length === 1 ? 'supports' : 'support'} every setting in ${configs.length === 1 ? 'the config' : 'both configs'}`, detail: 'Nothing will be silently ignored.' };
 }
 
+/** A git commit hash, short or full, as the API takes it (`PLAN_COMMIT` in apps/api/src/experiments/experiments.service.ts). */
+export const PLAN_COMMIT = /^[0-9a-f]{7,40}$/i;
+
+/**
+ * The analysis plan commit. Only its form is checked: the platform cannot see git history, so a
+ * commit in the right form is recorded as given, never reported as a check that passed.
+ */
 export function planCheck(commit: string | null | undefined): Check {
-  if (commit?.trim()) return { ok: true, title: 'The analysis plan was committed before the run', detail: `docs/experiment.md at commit ${commit.trim()}.` };
-  return { ok: false, title: 'No analysis plan commit yet', detail: 'Commit the hypothesis and analysis plan in docs/experiment.md first, then give its commit here.' };
+  const given = commit?.trim() ?? '';
+  if (!given) return { ok: false, title: 'No analysis plan commit yet', detail: 'Commit the hypothesis and analysis plan in docs/experiment.md first, then give its commit here.' };
+  if (!PLAN_COMMIT.test(given)) {
+    return { ok: false, title: 'The analysis plan commit is not a commit hash', detail: `“${given}” is not a git commit: give 7 to 40 characters, each 0-9 or a-f, as git rev-parse --short HEAD prints it.` };
+  }
+  return {
+    ok: true,
+    recorded: true,
+    title: `Analysis plan commit recorded as given: ${given.toLowerCase()}`,
+    detail: 'The platform cannot see git history, so it does not check that this commit exists or that it holds the plan in docs/experiment.md.',
+  };
+}
+
+/**
+ * Every model the run calls whose provider key is not set in .env (GET /models' `key_set`). Each
+ * would fail its first call; the run stays off until the key is added and the stack restarted.
+ */
+export function keysCheck(missing: { role: string; model: string; key: string }[]): Check | null {
+  if (!missing.length) return null;
+  const keys = [...new Set(missing.map((m) => m.key))];
+  const who = missing.map((m) => `${m.role} (${modelName(m.model)})`);
+  return {
+    ok: false,
+    title: `${keys.join(' and ')} ${keys.length === 1 ? 'is' : 'are'} not set`,
+    detail: `${who.join(' and ')} ${who.length === 1 ? 'needs' : 'need'} ${keys.join(' and ')} in .env, so every call would fail. Add ${keys.length === 1 ? 'it' : 'them'} to .env, then run docker compose up -d and reload this page.`,
+  };
 }
 
 export function splitCheck(tasks: TaskView[], all: TaskView[]): Check {
