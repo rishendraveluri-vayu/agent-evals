@@ -1,6 +1,7 @@
 import { promises as fs, readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import type { HarnessView, Json, JsonObject, PromptView, TaskSplit, ToolsetView } from '../contract';
+import { GRADER_SEVERITIES } from '../contract';
 import { hashCanonical, sha256Ref } from '../common/hashing';
 
 /**
@@ -293,6 +294,15 @@ export function checkTask(task: unknown): string[] {
     problems.push('client_state must be a file name next to task.json');
   }
   if (task.graders !== undefined && !Array.isArray(task.graders)) problems.push('graders must be a list');
+  // D10: a grader's severity feeds the comparison's critical-failure guardrail, so a misspelt one
+  // must not quietly leave a critical check unrated. The grader framework checks the rest of a spec.
+  if (Array.isArray(task.graders)) {
+    task.graders.forEach((g, i) => {
+      if (isObject(g) && g.severity !== undefined && !(GRADER_SEVERITIES as readonly unknown[]).includes(g.severity)) {
+        problems.push(`graders[${i}].severity must be one of ${GRADER_SEVERITIES.join(', ')}`);
+      }
+    });
+  }
   const required = task.required_tools;
   if (required !== undefined) {
     const known: readonly string[] = FINANCE_TOOLS;

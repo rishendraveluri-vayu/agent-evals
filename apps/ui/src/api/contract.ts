@@ -682,6 +682,10 @@ export interface StoredFile {
 
 /** SP4 (docs/proposals/grader-format.md, a draft for Rishi). */
 export type GradeVerdict = 'pass' | 'fail' | 'not_applicable' | 'error' | 'not_implemented';
+/** D10: a grader spec's optional `severity`, set by the task's author. It never changes a verdict;
+ *  the comparison reads it (the critical-failure guardrail, the regression list's order). */
+export const GRADER_SEVERITIES = ['critical', 'major', 'minor'] as const;
+export type GraderSeverity = (typeof GRADER_SEVERITIES)[number];
 /** The data model's coarse family: exact (number, regex), state (tool calls, end state,
  *  provenance, required_tools), unit (unit_test), judge; invalid for a spec naming no known type. */
 export type GradeKind = 'exact' | 'unit' | 'state' | 'judge' | 'invalid';

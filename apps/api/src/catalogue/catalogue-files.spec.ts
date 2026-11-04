@@ -150,6 +150,11 @@ describe('task files', () => {
     expect(checkTask(good)).toEqual([]);
   });
 
+  it('accepts a grader severity of critical, major or minor (D10), or none', () => {
+    const graders = ['critical', 'major', 'minor'].map((severity, i) => ({ id: `g${i}`, type: 'end_state', states: ['answered'], severity }));
+    expect(checkTask({ ...good, graders: [...graders, { id: 'plain', type: 'end_state', states: ['answered'] }] })).toEqual([]);
+  });
+
   it('accepts required_tools naming finance tools (a grader primitive)', () => {
     expect(checkTask({ ...good, required_tools: ['calculate_emi', 'list_debts'] })).toEqual([]);
   });
@@ -164,6 +169,7 @@ describe('task files', () => {
     ['an unknown required tool', { required_tools: ['calculate_emi', 'mcp__finance__list_debts'] }, 'required_tools'],
     ['required tools that are not a list', { required_tools: 'calculate_emi' }, 'required_tools'],
     ['a repeated required tool', { required_tools: ['calculate_emi', 'calculate_emi'] }, 'repeat'],
+    ['an unknown grader severity', { graders: [{ id: 'emi', type: 'number', expected: 1, severity: 'blocker' }] }, 'graders[0].severity'],
   ])('flags %s', (_what, change, word) => {
     expect(checkTask({ ...good, ...change }).join(' ')).toContain(word);
   });

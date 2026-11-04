@@ -593,3 +593,43 @@ def test_required_defaults_to_true(tmp_path):
     )
     assert [g["required"] for g in report["grades"]] == [True, False]
     assert report["passed"] is True
+
+
+# ---- severity (D10) ----
+
+
+def test_every_grader_type_accepts_a_severity():
+    from evals_graders.spec import schema
+
+    typed = [d for d in schema()["$defs"].values() if "id" in d.get("properties", {})]
+    assert len(typed) == 9  # regex_present and regex_absent share one definition
+    assert all(d["properties"].get("severity") is True for d in typed)
+    assert schema()["properties"]["severity"]["enum"] == ["critical", "major", "minor"]
+
+
+def test_severity_never_changes_a_verdict(tmp_path):
+    """Severity is read only by the comparison (the critical-failure guardrail): the same grader
+    with and without it gives the same verdict, score and reason."""
+    from evals_graders.spec import SEVERITIES, prepare, problems
+
+    out = make_trial(tmp_path, EMI_ANSWER)
+    for expected in (8997.26, 9500):
+        plain = {"id": "emi", "type": "number", "expected": expected}
+        for level in SEVERITIES:
+            rated = {**plain, "severity": level}
+            assert problems(rated) == []
+            assert prepare([rated], None)[0].severity == level
+            a, b = one(out, plain), one(out, rated)
+            for field in ("verdict", "score", "reason"):
+                assert a[field] == b[field]
+        assert prepare([plain], None)[0].severity is None
+
+
+def test_an_unknown_severity_is_refused(tmp_path):
+    from evals_graders.spec import problems
+
+    spec = {"id": "emi", "type": "number", "expected": 1, "severity": "blocker"}
+    found = problems(spec)
+    assert found and found[0].startswith("severity:")
+    g = one(make_trial(tmp_path, EMI_ANSWER), spec)
+    assert g["verdict"] == "error" and "severity" in g["reason"]

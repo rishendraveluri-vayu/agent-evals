@@ -23,6 +23,7 @@ trials is SP6's job; the framework records each grade and the task's outcome per
 | `id` | Unique within the task: lowercase letters, digits, `_.-`. |
 | `type` | One of the ten types below. |
 | `required` | Counts towards the task's pass. **Default `true`**, so leaving it out is the strict choice. |
+| `severity` | Optional: `critical`, `major` or `minor`, how bad a failure of this check is (D10), set by the task's author. It never changes a verdict or the task's outcome. The comparison reads it: B is not called better while its critical failures rose, and the regression list puts critical checks first. Left out, the check is unrated. Adding or changing it changes the spec's hash, so the grader gets a new version and a regrade re-runs it. |
 | `description` | Optional words for the UI. |
 
 Unknown fields are refused, so a typo (`tolerence`) is an `error` grade instead of a silently

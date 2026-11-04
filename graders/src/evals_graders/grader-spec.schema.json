@@ -9,6 +9,10 @@
     "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$"},
     "type": {"enum": ["number", "tool_called", "tool_not_called", "regex_present", "regex_absent", "end_state", "provenance", "required_tools", "unit_test", "judge"]},
     "required": {"type": "boolean", "default": true},
+    "severity": {
+      "enum": ["critical", "major", "minor"],
+      "description": "How bad a failure of this check is (D10), set by the task's author. It never changes a verdict: the comparison reads it for its critical-failure guardrail (B is not called better while its critical failures rose) and orders the regression list by it. Absent means not rated."
+    },
     "description": {"type": "string", "maxLength": 500}
   },
   "allOf": [
@@ -45,7 +49,7 @@
       "additionalProperties": false,
       "required": ["expected"],
       "properties": {
-        "id": true, "type": true, "required": true, "description": true,
+        "id": true, "type": true, "required": true, "severity": true, "description": true,
         "expected": {
           "oneOf": [
             {"type": "number"},
@@ -71,7 +75,7 @@
       "additionalProperties": false,
       "required": ["tool"],
       "properties": {
-        "id": true, "type": true, "required": true, "description": true,
+        "id": true, "type": true, "required": true, "severity": true, "description": true,
         "tool": {"$ref": "#/$defs/tool_name"},
         "args": {"type": "object", "description": "A subset of the call's arguments that must match: numbers within tolerance, strings equal ignoring case and surrounding spaces, lists item by item."},
         "tolerance": {"$ref": "#/$defs/tolerance"},
@@ -85,7 +89,7 @@
       "additionalProperties": false,
       "required": ["tool"],
       "properties": {
-        "id": true, "type": true, "required": true, "description": true,
+        "id": true, "type": true, "required": true, "severity": true, "description": true,
         "tool": {"$ref": "#/$defs/tool_name"},
         "args": {"type": "object", "description": "When set, only a call matching these arguments fails the grader."},
         "tolerance": {"$ref": "#/$defs/tolerance"}
@@ -96,7 +100,7 @@
       "additionalProperties": false,
       "required": ["pattern"],
       "properties": {
-        "id": true, "type": true, "required": true, "description": true,
+        "id": true, "type": true, "required": true, "severity": true, "description": true,
         "pattern": {"type": "string", "minLength": 1, "description": "A Python regular expression."},
         "target": {"$ref": "#/$defs/target"},
         "case_sensitive": {"type": "boolean", "default": false}
@@ -107,7 +111,7 @@
       "additionalProperties": false,
       "required": ["states"],
       "properties": {
-        "id": true, "type": true, "required": true, "description": true,
+        "id": true, "type": true, "required": true, "severity": true, "description": true,
         "states": {
           "type": "array",
           "minItems": 1,
@@ -121,7 +125,7 @@
       "additionalProperties": false,
       "description": "Reads checks.json (contract/v2/checks.schema.json), the runner's number-provenance check: money amounts the agent wrote with no tool result, client-file number or user message behind them.",
       "properties": {
-        "id": true, "type": true, "required": true, "description": true,
+        "id": true, "type": true, "required": true, "severity": true, "description": true,
         "max_unsupported": {"type": "integer", "minimum": 0, "default": 0},
         "target": {"enum": ["agent_messages", "final_answer"], "default": "agent_messages", "description": "agent_messages: every visible reply, as checks.json counts. final_answer: only the last reply's amounts."}
       }
@@ -131,7 +135,7 @@
       "additionalProperties": false,
       "description": "Reads checks.json's required_tools, which the runner fills from the task's own required_tools field: passes when every required tool was called. The task lists the tools once, in task.json; this grader takes no tool list.",
       "properties": {
-        "id": true, "type": true, "required": true, "description": true,
+        "id": true, "type": true, "required": true, "severity": true, "description": true,
         "successful": {"type": "boolean", "default": false, "description": "A required tool whose every call returned an error counts as not called."}
       }
     },
@@ -139,7 +143,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "id": true, "type": true, "required": true, "description": true,
+        "id": true, "type": true, "required": true, "severity": true, "description": true,
         "file": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*\\.py$", "default": "grader.py", "description": "Next to task.json."},
         "function": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$", "default": "grade"},
         "timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 120, "default": 10}
@@ -151,7 +155,7 @@
       "required": ["rubric", "criteria"],
       "description": "An LLM judge, blind to harness and model, with a verdict and a quote per criterion (evals_graders.judge). It calls a model only once the experiment's judging is approved with a model and budget; until then not_implemented. The rubric file is part of the grader version.",
       "properties": {
-        "id": true, "type": true, "required": true, "description": true,
+        "id": true, "type": true, "required": true, "severity": true, "description": true,
         "rubric": {
           "description": "The rubric, versioned like prompts: {id, version} of configs/rubrics/<id>.<version>.md, or that path as a string.",
           "oneOf": [

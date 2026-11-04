@@ -18,6 +18,9 @@ from evals_graders.canonical import grader_version, spec_sha256
 from evals_graders.judge import rubric_path
 
 DEFAULT_UNIT_FILE = "grader.py"
+# D10: how bad a failure of a check is. Only the comparison reads it; no verdict depends on it,
+# so adding it did not change FRAMEWORK_VERSION.
+SEVERITIES = ("critical", "major", "minor")
 
 
 @cache
@@ -77,6 +80,13 @@ class Prepared:
     @property
     def required(self) -> bool:
         return not isinstance(self.spec, dict) or self.spec.get("required", True) is not False
+
+    @property
+    def severity(self) -> str | None:
+        """critical, major or minor (D10), or None when the author did not rate it. Read by the
+        comparison only (the critical-failure guardrail, the regression list); never by a grade."""
+        value = self.spec.get("severity") if isinstance(self.spec, dict) else None
+        return value if value in SEVERITIES else None
 
 
 def prepare(
