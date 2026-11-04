@@ -526,7 +526,7 @@ export interface StoredFile {
 /** SP4 (docs/proposals/grader-format.md, a draft for Rishi). */
 export type GradeVerdict = 'pass' | 'fail' | 'not_applicable' | 'error' | 'not_implemented';
 /** The data model's coarse family: exact (number, regex), state (tool calls, end state,
- *  provenance), unit (unit_test), judge; invalid for a spec naming no known type. */
+ *  provenance, required_tools), unit (unit_test), judge; invalid for a spec naming no known type. */
 export type GradeKind = 'exact' | 'unit' | 'state' | 'judge' | 'invalid';
 export type GradingOutcome = 'pass' | 'fail' | 'incomplete';
 export type GradingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'superseded' | 'no_graders';

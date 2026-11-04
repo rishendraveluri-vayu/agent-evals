@@ -1,0 +1,44 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-ownloop-emi",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "Rs 8,997",
+   "value": 8997,
+   "supported_by": "tool",
+   "match": {
+    "value": 8997.26,
+    "where": "tool:calculate_emi",
+    "how": "rounded",
+    "precision": 1
+   }
+  },
+  {
+   "turn": 0,
+   "text": "Rs 11.59 lakh",
+   "value": 1159000,
+   "supported_by": "tool",
+   "match": {
+    "value": 1159000,
+    "where": "tool:calculate_emi",
+    "how": "exact",
+    "precision": 1000
+   }
+  }
+ ],
+ "unsupported": 0,
+ "tools_called": [
+  "calculate_emi"
+ ],
+ "required_tools": {
+  "required": [
+   "calculate_emi"
+  ],
+  "called": [
+   "calculate_emi"
+  ],
+  "missing": [],
+  "only_errors": []
+ }
+}

@@ -28,6 +28,7 @@ EXAMPLES = {
     "finance-400",
     "finance-length",
     "finance-length-always",
+    "finance-emi-unsupported",
     "sim-client",
     "sim-empty",
 }

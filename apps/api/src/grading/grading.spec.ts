@@ -38,9 +38,10 @@ describe('grader versions', () => {
   });
 
   it('maps types to the data model kinds', () => {
-    expect(['number', 'regex_absent', 'tool_called', 'end_state', 'provenance', 'unit_test', 'judge', 'nonsense', undefined].map(kindOf)).toEqual([
+    expect(['number', 'regex_absent', 'tool_called', 'end_state', 'provenance', 'required_tools', 'unit_test', 'judge', 'nonsense', undefined].map(kindOf)).toEqual([
       'exact',
       'exact',
+      'state',
       'state',
       'state',
       'state',

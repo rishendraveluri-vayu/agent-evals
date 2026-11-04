@@ -116,7 +116,7 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 - **`from_tool` needs the tool result in the trace.** Span attributes over 16,000 characters are cut (`evals_adapter.trace`), and a cut JSON result cannot be read, so the grade is an `error` (not a fail) naming the truncation. The finance tools' results are far below that; a long `list_transactions` could reach it.
 - **The unit_test sandbox is a Python audit hook, not an OS sandbox.** It refuses sockets and child processes from Python code, and the subprocess gets a timeout, an empty folder and an empty environment, but native code (ctypes) could get round it. Task graders are our own code in git, so this guards against mistakes, not attacks; in compose the grader container is also limited to the internal trials network and a read-only root.
 - **Grade evidence is verbatim for the built-in types only.** A `unit_test` may return any quote; its evidence is checked for shape, not checked against the text.
-- **`provenance` reads a `checks.json` shape assumed before the check landed** (assumption A14). The 4 Nov trials have no `checks.json`, so `provenance` is `not_applicable` on all of them.
+- **`provenance` and `required_tools` need a `checks.json`**, which the runner writes after every trial since 4 Nov (contract v2 section 12). The 4 Nov real trials predate it, so both are `not_applicable` on them; re-running the checks on an old trial folder (`python -m evals_adapter.checks`) needs the whole trial folder (`spec.json`, `state/`, `out/`); the uploaded `out/` files alone give no client-file numbers and no `required_tools`. Their verdicts inherit the check's own limits (see Platform checks above).
 
 ## Labelling UI (SP7)
 

@@ -7,7 +7,7 @@
   "required": ["id", "type"],
   "properties": {
     "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$"},
-    "type": {"enum": ["number", "tool_called", "tool_not_called", "regex_present", "regex_absent", "end_state", "provenance", "unit_test", "judge"]},
+    "type": {"enum": ["number", "tool_called", "tool_not_called", "regex_present", "regex_absent", "end_state", "provenance", "required_tools", "unit_test", "judge"]},
     "required": {"type": "boolean", "default": true},
     "description": {"type": "string", "maxLength": 500}
   },
@@ -19,6 +19,7 @@
     {"if": {"properties": {"type": {"const": "regex_absent"}}}, "then": {"$ref": "#/$defs/regex"}},
     {"if": {"properties": {"type": {"const": "end_state"}}}, "then": {"$ref": "#/$defs/end_state"}},
     {"if": {"properties": {"type": {"const": "provenance"}}}, "then": {"$ref": "#/$defs/provenance"}},
+    {"if": {"properties": {"type": {"const": "required_tools"}}}, "then": {"$ref": "#/$defs/required_tools"}},
     {"if": {"properties": {"type": {"const": "unit_test"}}}, "then": {"$ref": "#/$defs/unit_test"}},
     {"if": {"properties": {"type": {"const": "judge"}}}, "then": {"$ref": "#/$defs/judge"}}
   ],
@@ -118,9 +119,20 @@
     "provenance": {
       "type": "object",
       "additionalProperties": false,
+      "description": "Reads checks.json (contract/v2/checks.schema.json), the runner's number-provenance check: money amounts the agent wrote with no tool result, client-file number or user message behind them.",
       "properties": {
         "id": true, "type": true, "required": true, "description": true,
-        "max_unsupported": {"type": "integer", "minimum": 0, "default": 0}
+        "max_unsupported": {"type": "integer", "minimum": 0, "default": 0},
+        "target": {"enum": ["agent_messages", "final_answer"], "default": "agent_messages", "description": "agent_messages: every visible reply, as checks.json counts. final_answer: only the last reply's amounts."}
+      }
+    },
+    "required_tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Reads checks.json's required_tools, which the runner fills from the task's own required_tools field: passes when every required tool was called. The task lists the tools once, in task.json; this grader takes no tool list.",
+      "properties": {
+        "id": true, "type": true, "required": true, "description": true,
+        "successful": {"type": "boolean", "default": false, "description": "A required tool whose every call returned an error counts as not called."}
       }
     },
     "unit_test": {

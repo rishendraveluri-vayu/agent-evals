@@ -9,6 +9,6 @@ The grader spec format is a draft for Rishi: docs/proposals/grader-format.md.
 
 # Part of every grader version: bump it when a change to this framework can change a verdict,
 # so the new grades are stored next to the old ones instead of looking like the same grader.
-FRAMEWORK_VERSION = "0.1.0"
+FRAMEWORK_VERSION = "0.2.0"  # 0.2.0: provenance reads the real checks.json; required_tools
 
 __all__ = ["FRAMEWORK_VERSION"]

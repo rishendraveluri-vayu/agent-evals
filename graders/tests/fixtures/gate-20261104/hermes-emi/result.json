@@ -1,0 +1,157 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-hermes-emi",
+ "end_state": "answered",
+ "end_detail": {
+  "harness_stop_reason": "text_response(finish_reason=stop)",
+  "exception_type": null,
+  "exception_message": null,
+  "last_message_excerpt": "Your EMI would be about Rs 8,997 a month for 20 years, and the total interest is about Rs 11.59 lakh."
+ },
+ "final_answer": "Your EMI would be about Rs 8,997 a month for 20 years, and the total interest is about Rs 11.59 lakh.",
+ "conversation": {
+  "agent_turns": 1,
+  "client_turns": 0,
+  "ended_by": null,
+  "transcript": [
+   {
+    "role": "user",
+    "content": "What is my EMI on Rs 10 lakh at 9% for 20 years?",
+    "source": "task"
+   },
+   {
+    "role": "assistant",
+    "content": "Your EMI would be about Rs 8,997 a month for 20 years, and the total interest is about Rs 11.59 lakh.",
+    "source": "agent"
+   }
+  ]
+ },
+ "harness": {
+  "name": "hermes",
+  "version": "6112c2adb9e1",
+  "extra": {
+   "mcp_tools_registered": [
+    "mcp__finance__amortization_schedule",
+    "mcp__finance__calculate_emi",
+    "mcp__finance__debt_payoff_plan",
+    "mcp__finance__fd_maturity",
+    "mcp__finance__get_client_profile",
+    "mcp__finance__inflation_adjusted_value",
+    "mcp__finance__list_debts",
+    "mcp__finance__list_transactions",
+    "mcp__finance__loan_affordability",
+    "mcp__finance__prepayment_impact",
+    "mcp__finance__sip_future_value"
+   ],
+   "tool_names": [
+    "mcp__finance__amortization_schedule",
+    "mcp__finance__calculate_emi",
+    "mcp__finance__debt_payoff_plan",
+    "mcp__finance__fd_maturity",
+    "mcp__finance__get_client_profile",
+    "mcp__finance__inflation_adjusted_value",
+    "mcp__finance__list_debts",
+    "mcp__finance__list_transactions",
+    "mcp__finance__loan_affordability",
+    "mcp__finance__prepayment_impact",
+    "mcp__finance__sip_future_value"
+   ],
+   "prompt_cache_markers": false
+  }
+ },
+ "applied_settings": {
+  "temperature": {
+   "value": 0.2,
+   "source": "platform_default"
+  },
+  "max_output_tokens": {
+   "value": 1024,
+   "source": "platform_default"
+  },
+  "max_steps": {
+   "value": 10,
+   "source": "platform_default"
+  },
+  "timeout_s": {
+   "value": 60,
+   "source": "platform_default"
+  },
+  "parallel_tool_calls": {
+   "value": false,
+   "source": "platform_default"
+  },
+  "memory": {
+   "value": {
+    "enabled": false
+   },
+   "source": "platform_default"
+  },
+  "skills": {
+   "value": {
+    "enabled": false
+   },
+   "source": "platform_default"
+  },
+  "compression": {
+   "value": {
+    "enabled": false
+   },
+   "source": "platform_default"
+  },
+  "prompt_cache_markers": {
+   "value": false,
+   "source": "platform_default",
+   "observed": "D31: off unless the harness option turns it on (prompt_caching.cache_ttl off); when on, Hermes adds cache_control markers for claude models on a host named litellm"
+  },
+  "parallel_tool_call_guidance": {
+   "value": false,
+   "source": "platform_default",
+   "observed": "D33: the 'Parallel tool calls' prompt section off (parallel_tool_calls false); config agent.parallel_tool_call_guidance"
+  },
+  "api_max_retries": {
+   "value": 1,
+   "source": "platform_default",
+   "observed": "R10.11: one attempt"
+  },
+  "reasoning_effort": {
+   "value": null,
+   "source": "platform_default",
+   "observed": "kept off the wire"
+  }
+ },
+ "harness_usage": {
+  "model_calls": 2,
+  "input_tokens": 7170,
+  "output_tokens": 50,
+  "cost_usd": null
+ },
+ "counts": {
+  "model_calls": 2,
+  "tool_calls": 1,
+  "tool_errors": 0,
+  "malformed_tool_calls": 0
+ },
+ "integrity": {
+  "before": {
+   "config.yaml": "sha256:8597accfe238ea087dd71876ed4e5ba0640fd2ad30039b37e9679562df7b299a",
+   "SOUL.md": "sha256:36c1f5a2e92cd1d018311eaf4c8f1e8886672eae78212e033c681d0e3d5d506f",
+   "AGENTS.md": null
+  },
+  "after": {
+   "config.yaml": "sha256:8597accfe238ea087dd71876ed4e5ba0640fd2ad30039b37e9679562df7b299a",
+   "SOUL.md": "sha256:36c1f5a2e92cd1d018311eaf4c8f1e8886672eae78212e033c681d0e3d5d506f",
+   "AGENTS.md": null
+  }
+ },
+ "timing": {
+  "started_at": "2026-11-04T14:21:26.321926Z",
+  "ended_at": "2026-11-04T14:21:32.797163Z",
+  "wall_s": 6.475
+ },
+ "artifacts": [
+  "artifacts/hermes-config.yaml",
+  "artifacts/hermes-logs",
+  "artifacts/hermes-messages.json",
+  "artifacts/hermes-system-prompt.txt"
+ ]
+}
