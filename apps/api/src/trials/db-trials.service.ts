@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { promises as fs } from 'node:fs';
-import type { Grade, Json, StoredFile, TaskSplit, TrialStatus, TrialView } from '../contract';
+import type { Json, StoredFile, TaskSplit, TrialStatus, TrialView } from '../contract';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { Db } from '../database/db.service';
+import { trialGrading } from '../grading/trial-grading';
 import { locate } from './trial-files';
 
 interface Row {
@@ -94,11 +95,7 @@ export class DbTrialsService {
       [id],
     );
     if (!r) return null;
-    const grades = await this.db.query<Omit<Grade, 'created_at'> & { created_at: Date }>(
-      `SELECT id::int AS id, grader_id, grader_version, kind, verdict, score, evidence, judge_model, run_index, created_at
-       FROM grades WHERE trial_id = $1 ORDER BY id`,
-      [id],
-    );
+    const { grades, grading } = await trialGrading(this.db, id);
     return {
       id: r.id,
       experiment_id: r.experiment_id,
@@ -143,7 +140,8 @@ export class DbTrialsService {
       },
       worker_id: r.worker_id,
       files: r.files ?? [],
-      grades: grades.map((g) => ({ ...g, created_at: g.created_at.toISOString() })),
+      grades,
+      grading,
       problems: r.problems,
     };
   }
