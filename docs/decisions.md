@@ -44,7 +44,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D35 Arms per experiment | Two arms, A vs B. Multi-arm questions run as several A/B experiments against the same parent | Rishi | 4 Nov |
 | D36 Own loop on a cut-off reply | Re-send once with the cap doubled (up to 8,192), recording a `token_cap_raised` event and both calls; cut off again ends as `token_limit`. `max_output_tokens` means the first attempt's cap, as on Hermes | Rishi | 4 Nov |
 | D37 Config error mid-run | Only the failing arm pauses; the other keeps running; the UI says which arm, why and how to fix it; resuming continues it; no verdict until both arms are complete. Amends D26 | Rishi | 4 Nov |
-| D38 Prompt conflict checks | A standing $2 allowance for pre-run conflict checks on Claude Sonnet 5.5 (pinned, temperature not sent), each logged with its cost in `docs/cost.md`, with a note to Rishi at half. Anything else still needs a sign-off (R8) | Rishi | 4 Nov |
+| D38 Prompt conflict checks | A standing $2 allowance for pre-run conflict checks on Claude Sonnet 5.5 (pinned, temperature not sent), each logged with its cost in `docs/cost.md`, with a note to Rishi at half. The UI shows it to the platform's user too: the Config screen shows each check's findings, its cost and the allowance used, and platform-made calls appear as their own line in the spend total, separate from trial spend. Anything else still needs a sign-off (R8) | Rishi ("we have to show this to the user somehow") | 4 Nov |
 | D39 Hermes verification run | 30 trials first on Hermes with Haiku 5.5 (10 each: memory off, on and empty, on and seeded), about $0.60, cap $2, after the simulator empty-reply fix; the other 70 decided from what they show | Rishi | 4 Nov |
 
 ## Open
