@@ -125,6 +125,14 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 - **A quote is checked as a substring, whitespace aside.** A quote the judge stitched from two places with "..." is reported as not found even when both parts are real; a short quote such as "yes" can be found by chance. The verdict is not changed either way (choice 10 in `docs/proposals/grader-format.md`).
 - **All criteria are judged in one call,** so one criterion's verdict can influence another's. Per-criterion calls would cost about one call per criterion (choice 13).
 - **The fake judge (`fake/judge`) always answers "yes" on `overall`** and never reads the trial. It tests the path, not judgment.
+## LLM judge approval (SP4, R8)
+
+- **The judge's key is stored in Postgres as plain text**, because every grading claim for the experiment hands it out again. Anyone who can read the database can use it until it is revoked; the damage is capped by its budget (at most $20) and its one model. A revoked row keeps the dead key's text.
+- **Every grading job of an approved experiment carries the key**, also one with no judge grader (as the contract asks). It reaches the grader worker's memory, not its unit tests: a `unit_test` runs in a subprocess with an empty environment.
+- **A revoked approval's spend relies on LiteLLM keeping a deleted key's spend-log rows** (assumption A19, not checked on v1.99.4). The figure read at revoke is the floor and the fallback, so at worst `GET /spend` under-counts calls whose rows landed after the revoke.
+- **`GET /spend` reads LiteLLM's spend log once per approval ever made**, on every request, in parallel. With LiteLLM down each read waits for its timeout (15 s) and the judge line is null while any approval is active.
+- **The header's visible spend split shows trials and platform calls only.** `total_usd`, and so the header's bar and its spoken summary, include judge spend; a Judge figure in the visible split is a UI follow-up.
+
 
 ## Labelling UI (SP7)
 

@@ -84,6 +84,7 @@
         "reused_trials": 0
       }
     ],
+    "judge": null,
     "id": "exp_model",
     "name": "Model: Haiku 5.5 vs Gemini 3.8 Flash, discovery",
     "axis": "model",
@@ -448,6 +449,7 @@
         "reused_trials": 0
       }
     ],
+    "judge": null,
     "id": "exp_futility",
     "name": "Prompt v1 vs v2, discovery batch 3",
     "axis": "prompt",
@@ -809,6 +811,7 @@
         "reused_trials": 0
       }
     ],
+    "judge": null,
     "id": "exp_harness",
     "name": "Harness: own loop vs Hermes",
     "axis": "harness",
@@ -1314,6 +1317,7 @@
         "reused_trials": 0
       }
     ],
+    "judge": null,
     "id": "exp_heldout",
     "name": "Prompt v1 vs v2, held-out",
     "axis": "prompt",
@@ -1816,6 +1820,7 @@
         "reused_trials": 0
       }
     ],
+    "judge": null,
     "id": "exp_discovery",
     "name": "Prompt v1 vs v2, discovery",
     "axis": "prompt",
@@ -2227,6 +2232,7 @@
         "reused_trials": 0
       }
     ],
+    "judge": null,
     "id": "exp_aa",
     "name": "A/A check, Hermes",
     "axis": "none",
@@ -2589,6 +2595,7 @@
         "reused_trials": 0
       }
     ],
+    "judge": null,
     "id": "exp_pilot",
     "name": "Pilot on Haiku 5.5",
     "axis": "none",

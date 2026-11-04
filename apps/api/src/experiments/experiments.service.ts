@@ -25,6 +25,7 @@ import { newId } from '../common/ids';
 import { CatalogueService, type StoredPrompt, type StoredTask, taskView } from '../catalogue/catalogue.service';
 import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.service';
 import { Db, type Queryable } from '../database/db.service';
+import { JudgeService } from '../judge/judge.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
 import { SIM_MAX_OUTPUT_TOKENS, simTemperature } from '../worker/spec-builder';
 import { type CellInput, type History, LIVE_WORKER_S, type Price, estimate } from './estimate';
@@ -99,6 +100,7 @@ export class ExperimentsService {
     private readonly db: Db,
     private readonly catalogue: CatalogueService,
     private readonly litellm: LiteLlmClient,
+    private readonly judge: JudgeService,
   ) {}
 
   // ---- planning ----
@@ -580,6 +582,7 @@ export class ExperimentsService {
       tasks: r.task_sha256s.map((s) => tasks.find((t) => t.sha256 === s)).filter((t): t is StoredTask => !!t).map((t) => taskView(t)),
       configs: r.config_hashes.map((h) => configs.find((c) => c.hash === h)).filter((c): c is ConfigRow => !!c).map(configView),
       events: await this.events(r),
+      judge: await this.judge.view(r.id),
     };
   }
 

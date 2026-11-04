@@ -20,7 +20,7 @@ const FIELDS = {
   summary: ['id', 'name', 'axis', 'status', 'config_hashes', 'task_sha256s', 'n', 'counts', 'spend_usd', 'estimate', 'budget_usd', 'created_at'],
   detailExtra: [
     'sim_model', 'sim', 'platform_commit', 'plan_commit', 'budgets', 'started_at', 'finished_at', 'order_seed', 'futility', 'parent_experiment_id',
-    'baseline', 'actual', 'paused_at', 'paused_reason', 'arms', 'tasks', 'configs', 'events',
+    'baseline', 'actual', 'paused_at', 'paused_reason', 'arms', 'tasks', 'configs', 'events', 'judge',
   ],
   counts: ['queued', 'running', 'done', 'infra_failed', 'abandoned', 'cancelled', 'by_label', 'done_by_end_state'],
   arm: ['arm', 'config_hash', 'config_name', 'status', 'paused_at', 'paused_reason', 'fix', 'counts', 'reused_from', 'reused_trials'],
@@ -40,7 +40,7 @@ const FIELDS = {
   rendered: ['config_hash', 'status', 'probe', 'cached', 'error', 'rendered'],
   conflict: ['config_hash', 'rendered_sha256', 'input_sha256', 'checker', 'model', 'conflicts', 'notes', 'cost_usd', 'cached', 'skipped', 'spend_id', 'checked_at', 'allowance'],
   allowance: ['kind', 'limit_usd', 'used_usd', 'remaining_usd', 'calls', 'half_reached'],
-  spend: ['trials_usd', 'system_usd', 'total_usd', 'system_by_kind', 'allowances'],
+  spend: ['trials_usd', 'system_usd', 'judge_usd', 'judge_approvals', 'total_usd', 'system_by_kind', 'allowances'],
   blind: ['item_id', 'task_id', 'task_summary', 'transcript', 'tool_calls', 'criteria'],
 };
 

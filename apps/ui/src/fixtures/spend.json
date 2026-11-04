@@ -1,6 +1,8 @@
 {
   "trials_usd": 55.8818,
   "system_usd": 0.018282,
+  "judge_usd": 0,
+  "judge_approvals": 0,
   "total_usd": 55.900082,
   "system_by_kind": {
     "conflict_check": {

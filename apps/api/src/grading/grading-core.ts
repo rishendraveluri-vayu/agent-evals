@@ -41,6 +41,22 @@ export function graderFileOf(spec: Json): string | null {
   return typeof name === 'string' && GRADER_FILE.test(name) ? name : null;
 }
 
+/** A judge's rubric, as a repo-relative path: one file directly under configs/rubrics/, nothing else. */
+export const RUBRIC_PATH = /^configs\/rubrics\/[A-Za-z0-9._-]+\.md$/;
+
+/**
+ * The rubric file a judge grader reads, as a repo-relative path, or null for every other type
+ * and for a rubric that is not a file under configs/rubrics/ (like an invalid unit_test file
+ * name: no file, so nothing outside that folder is ever read). A string `rubric` is the path;
+ * `{id, version}` is `configs/rubrics/<id>.<version>.md`, as prompts are named.
+ */
+export function rubricPathOf(spec: Json): string | null {
+  if (!isObject(spec) || spec.type !== 'judge') return null;
+  const r = spec.rubric;
+  const rel = typeof r === 'string' ? r : isObject(r) && typeof r.id === 'string' && typeof r.version === 'string' ? `configs/rubrics/${r.id}.${r.version}.md` : null;
+  return rel !== null && RUBRIC_PATH.test(rel) ? rel : null;
+}
+
 /** The spec plus the sha256 of each file it runs. Equal to evals_graders.canonical.spec_sha256. */
 export function specSha256(spec: Json, files: Record<string, string | null>): string {
   return hashCanonical({ spec, files });
@@ -72,22 +88,35 @@ export interface GraderFile {
   base64: string;
 }
 
-/** The frozen grader set of one job. `readFile` returns a grader file's bytes, or null. */
+type Reader = ((name: string) => Promise<Buffer | null>) | null;
+
+/**
+ * The frozen grader set of one job. `readFile` returns a file next to task.json (a unit_test's
+ * grader file), `readRepoFile` a repo file by its repo-relative path (a judge's rubric under
+ * configs/rubrics/); each gives the bytes, or null. A grader's files are keyed in `files` and in
+ * its spec hash by that name or path, so editing a grader.py or a rubric gives new versions.
+ */
 export async function graderSet(
   specs: Json[],
-  readFile: ((name: string) => Promise<Buffer | null>) | null,
+  readFile: Reader,
+  readRepoFile: Reader = null,
 ): Promise<{ graders: GraderEntry[]; files: Record<string, GraderFile | null> }> {
   const files: Record<string, GraderFile | null> = {};
   const graders: GraderEntry[] = [];
   for (const spec of specs) {
-    const name = graderFileOf(spec);
     const hashes: Record<string, string | null> = {};
-    if (name) {
-      if (!(name in files)) {
-        const data = readFile ? await readFile(name) : null;
-        files[name] = data && data.length <= MAX_GRADER_FILE_BYTES ? { sha256: sha256Ref(data), base64: data.toString('base64') } : null;
+    const name = graderFileOf(spec);
+    const rubric = rubricPathOf(spec);
+    for (const [key, read] of [
+      [name, readFile],
+      [rubric, readRepoFile],
+    ] as const) {
+      if (!key) continue;
+      if (!(key in files)) {
+        const data = read ? await read(key) : null;
+        files[key] = data && data.length <= MAX_GRADER_FILE_BYTES ? { sha256: sha256Ref(data), base64: data.toString('base64') } : null;
       }
-      hashes[name] = files[name]?.sha256 ?? null;
+      hashes[key] = files[key]?.sha256 ?? null;
     }
     graders.push({ spec, spec_sha256: specSha256(spec, hashes) });
   }

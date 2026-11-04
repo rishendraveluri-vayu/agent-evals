@@ -17,12 +17,14 @@ import { canonicalJson } from '../common/hashing';
 import { newId } from '../common/ids';
 import { type TaskFile, readTasks } from '../catalogue/catalogue-files';
 import { Db, type Queryable } from '../database/db.service';
+import { LiteLlmClient } from '../litellm/litellm.client';
 import {
   GRADING_LEASE_S,
   type GraderEntry,
   type GraderFile,
   MAX_GRADER_FILE_BYTES,
   MAX_GRADING_CLAIMS,
+  RUBRIC_PATH,
   graderSet,
   outcomeOf,
   parseGradesReport,
@@ -70,6 +72,30 @@ const one = async <T>(q: Queryable, sql: string, params: unknown[]): Promise<T |
 
 const specsOf = (body: JsonObject): Json[] => (Array.isArray(body.graders) ? body.graders : []);
 
+/** A regular file of at most the grader file cap, never through a symlink; else null. */
+async function readCapped(file: string): Promise<Buffer | null> {
+  try {
+    const st = await fs.lstat(file);
+    if (!st.isFile() || st.size > MAX_GRADER_FILE_BYTES) return null;
+    return await fs.readFile(file);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A judge's rubric by its repo path (`configs/rubrics/<name>.md`), read from the API's configs
+ * folder (CONFIGS_DIR, the repo's configs/ by default), or null. Anything that is not one file
+ * directly in configs/rubrics/ is never read, whatever the path says.
+ */
+export async function readRubricFile(configsDir: string, repoPath: string): Promise<Buffer | null> {
+  if (!RUBRIC_PATH.test(repoPath)) return null;
+  const folder = path.resolve(configsDir, 'rubrics');
+  const file = path.resolve(configsDir, repoPath.slice('configs/'.length));
+  if (path.dirname(file) !== folder) return null;
+  return readCapped(file);
+}
+
 /**
  * Grading as its own step after the trial (R14). A grading job freezes which graders grade one
  * trial; the grader worker claims it over HTTP (D2), downloads the trial's stored files, grades
@@ -81,6 +107,7 @@ export class GradingService {
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly db: Db,
+    private readonly litellm: LiteLlmClient,
   ) {}
 
   // ---- which graders ----
@@ -110,22 +137,20 @@ export class GradingService {
     return { source: 'trial_task', taskSha256: task.task_sha256, specs: specsOf(task.body), folder: null, note: why };
   }
 
-  private async readGraderFile(folder: string, name: string): Promise<Buffer | null> {
-    const file = path.join(folder, name);
-    try {
-      const st = await fs.lstat(file);
-      if (!st.isFile() || st.size > MAX_GRADER_FILE_BYTES) return null;
-      return await fs.readFile(file);
-    } catch {
-      return null;
-    }
+  private readGraderFile(folder: string, name: string): Promise<Buffer | null> {
+    return readCapped(path.join(folder, name));
   }
 
   /** Inserts one job for the trial; returns its status and where its graders came from. */
   private async queueJob(q: Queryable, task: TrialTaskRow, catalogue: TaskFile[], reason: 'trial_done' | 'regrade'): Promise<{ status: GradingJobStatus; source: Choice['source'] }> {
     const choice = this.choose(task, catalogue);
     const folder = choice.folder;
-    const set = await graderSet(choice.specs, folder ? (name) => this.readGraderFile(folder, name) : null);
+    // A rubric is not part of the task, so it is read as it is now whichever task the graders come from.
+    const set = await graderSet(
+      choice.specs,
+      folder ? (name) => this.readGraderFile(folder, name) : null,
+      (repoPath) => readRubricFile(this.config.configsDir, repoPath),
+    );
     const status: GradingJobStatus = set.graders.length ? 'queued' : 'no_graders';
     await q.query(
       `INSERT INTO grading_jobs (id, trial_id, reason, status, task_id, task_sha256, grader_source, source_note, graders, grader_files)
@@ -186,9 +211,15 @@ export class GradingService {
         [workerId, GRADING_LEASE_S],
       );
       if (!job) return null;
-      const trial = (await one<{ files: StoredFile[] | null; end_state: string | null; label: string | null }>(
+      // The task summary as the blind labelling screen shows it (the trial's own task), and the
+      // judge's key if judging is approved for the trial's experiment now (SP4, R8).
+      const trial = (await one<{ files: StoredFile[] | null; end_state: string | null; label: string | null; summary: string | null; judge_model: string | null; judge_key: string | null }>(
         client,
-        'SELECT files, end_state, label FROM trials WHERE id = $1',
+        `SELECT t.files, t.end_state, t.label, k.summary, a.model AS judge_model, a.key AS judge_key
+         FROM trials t
+         LEFT JOIN tasks k ON k.sha256 = t.task_sha256
+         LEFT JOIN judge_approvals a ON a.experiment_id = t.experiment_id AND a.revoked_at IS NULL
+         WHERE t.id = $1`,
         [job.trial_id],
       ))!;
       return {
@@ -196,10 +227,12 @@ export class GradingService {
         attempt: job.claims,
         trial_id: job.trial_id,
         lease_s: GRADING_LEASE_S,
-        task: { id: job.task_id, sha256: job.task_sha256, grader_source: job.grader_source, note: job.source_note },
+        task: { id: job.task_id, sha256: job.task_sha256, grader_source: job.grader_source, note: job.source_note, summary: trial.summary },
         graders: job.graders,
         grader_files: job.grader_files,
         trial: { files: trial.files ?? [], end_state: trial.end_state, label: trial.label },
+        // The same LiteLLM URL a trial spec gives workers; it throws (and the claim rolls back) only if LiteLLM is not configured.
+        judge: trial.judge_key && trial.judge_model ? { base_url: this.litellm.workerBaseUrl, api_key: trial.judge_key, model: trial.judge_model } : null,
       };
     });
   }

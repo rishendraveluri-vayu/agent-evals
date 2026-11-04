@@ -319,7 +319,7 @@ const exp = (o) => ({
   sim: { prompt: { id: 'client-sim', version: 'v3', sha256: named('44ac8b0') }, temperature: null, max_output_tokens: 2048 },
   platform_commit: 'c4d2e19', plan_commit: '3e1a9f0', budgets: { trial_usd: 0.5, sim_usd: 0.1 },
   started_at: null, finished_at: null, paused_at: null, paused_reason: null,
-  order_seed: null, futility: FUTILITY, parent_experiment_id: null, baseline: null, actual: null, arms: [], ...o,
+  order_seed: null, futility: FUTILITY, parent_experiment_id: null, baseline: null, actual: null, arms: [], judge: null, ...o,
 });
 const ev = (minutesAgo, kind, detail, extra = {}) => ({ at: at(minutesAgo), kind, trial_id: null, attempt: null, arm: null, config_hash: null, detail, ...extra });
 const where = (t) => `${t.task_id} on ${t.config_name}, attempt ${t.attempt}`;
@@ -893,8 +893,9 @@ const conflictChecks = {
   },
 };
 const trialsUsd = Number(experiments.reduce((sum, e) => sum + e.spend_usd, 0).toFixed(6));
+// No judge approved in the sample data (SP4, R8): the judge line is 0.
 const spend = {
-  trials_usd: trialsUsd, system_usd: hermesCheck.cost_usd, total_usd: Number((trialsUsd + hermesCheck.cost_usd).toFixed(6)),
+  trials_usd: trialsUsd, system_usd: hermesCheck.cost_usd, judge_usd: 0, judge_approvals: 0, total_usd: Number((trialsUsd + hermesCheck.cost_usd).toFixed(6)),
   system_by_kind: { conflict_check: { usd: hermesCheck.cost_usd, calls: 1 } }, allowances: [allowance],
 };
 const systemSpend = [{
