@@ -137,3 +137,39 @@ def test_the_runner_report_schema_takes_config_error():
     assert errors("runner-report", example) == []
     example["label"] = "infra:made_up"
     assert errors("runner-report", example) != []
+
+
+def sim_error(stop_reason: str = "simulator_error") -> dict:
+    checked = harness_error("simulator reply has no text (finish_reason length)", stop_reason)
+    checked["result"]["conversation"] = {"ended_by": "sim_error"}
+    return checked
+
+
+@pytest.mark.parametrize("status", [None, "200", "400", "429", "budget_exceeded"])
+def test_a_simulator_failure_is_sim_error_whatever_the_agent_keys_status(status):
+    """D26: the agent did not cause it, and the agent key's status is not the simulator's."""
+    usage = None if status is None else {"last_status": status}
+    assert label(OK, sim_error(), usage) == "infra:sim_error"
+
+
+def test_sim_error_does_not_hide_a_kill_or_a_crash():
+    killed = {"signal": "SIGKILL", "exit_code": None}
+    assert label(killed, sim_error(), None) == "infra:timeout_kill"
+    assert label({"signal": None, "exit_code": 3}, sim_error(), None) == "infra:adapter_crash"
+
+
+def test_a_conversation_that_ended_any_other_way_is_not_sim_error():
+    for ended_by in (None, "client", "turn_cap", "agent_end_state"):
+        checked = harness_error(None, "adapter_exception")
+        checked["result"]["conversation"] = {"ended_by": ended_by}
+        assert label(OK, checked, {"last_status": "200"}) == "agent"
+
+
+def test_the_runner_report_schema_takes_sim_error():
+    example = json.loads((CONTRACT / "examples" / "runner-report-sim-error.json").read_text())
+    assert example["label"] == "infra:sim_error"
+    assert errors("runner-report", example) == []
+    result = json.loads((CONTRACT / "examples" / "result-sim-error.json").read_text())
+    assert result["conversation"]["ended_by"] == "sim_error"
+    assert errors("result", result) == []
+    assert label(OK, {"result": result}, example["proxy_usage"]) == "infra:sim_error"

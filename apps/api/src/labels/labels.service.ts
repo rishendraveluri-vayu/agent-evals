@@ -102,7 +102,7 @@ export class LabelsService {
     const set = labelSet(setInput);
     await this.importFile(set);
     const params: unknown[] = [set];
-    let where = `t.status = 'done' AND t.label = 'agent' AND t.result IS NOT NULL`;
+    let where = `t.status = 'done' AND NOT t.probe AND t.label = 'agent' AND t.result IS NOT NULL`;
     if (experimentId) {
       params.push(experimentId);
       where += ` AND t.experiment_id = $${params.length}`;

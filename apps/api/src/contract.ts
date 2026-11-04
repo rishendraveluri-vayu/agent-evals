@@ -15,10 +15,11 @@ export type JsonObject = { [key: string]: Json };
 /** `sha256:<64 hex>`. Inputs also accept the bare hex. */
 export type Sha256 = string;
 
-/** Every 4xx/5xx body. */
+/** Every 4xx/5xx body. `fix`, when present, says what to change so the request succeeds. */
 export interface ApiErrorBody {
   error: string;
   message: string;
+  fix?: string;
 }
 
 // ---- Settings (contract v2 section 3) ------------------------------------------------
@@ -129,12 +130,22 @@ export interface CreateConfigRequest {
   toolset_sha256: Sha256;
   settings?: Partial<Record<SettingName, Json>>;
   harness_options?: JsonObject;
+  /** D34: the config this one was forked from. Not part of the hash; the first post records it. */
+  parent_hash?: Sha256 | null;
 }
 
 export interface VersionRef {
   id: string;
   version: string;
   sha256: Sha256;
+}
+
+/** A valid but risky config: the API stores it and says what will happen and how to avoid it. */
+export interface ConfigWarning {
+  /** `langgraph_model_name_rewrite`: langchain-openai changes the request by the model's name. */
+  code: string;
+  message: string;
+  fix: string;
 }
 
 /** GET /configs, GET /configs/:hash, and POST /configs (201 new, 200 already stored). */
@@ -150,8 +161,21 @@ export interface ConfigView {
   toolset: VersionRef;
   settings: Settings;
   settings_sources: SettingsSources;
+  /**
+   * Settings this harness or model ignores, each with a reason to show by the greyed-out field:
+   * the harness's own words (capabilities.json), or the model's refusal (D25).
+   */
+  unsupported: Partial<Record<SettingName, string>>;
+  warnings: ConfigWarning[];
   harness_options: JsonObject;
+  /** D34: the config this one was forked from, or null. */
+  parent_hash: Sha256 | null;
   created_at: string;
+}
+
+/** GET /configs/:hash: the config and the configs forked from it (D34), oldest first. */
+export interface ConfigDetail extends ConfigView {
+  children: { hash: Sha256; name: string; created_at: string }[];
 }
 
 /** GET /configs/:a/diff/:b */
@@ -169,6 +193,12 @@ export interface EstimateRequest {
   task_sha256s: Sha256[];
   n: number;
   sim_model?: string | null;
+  /** Optional; defaults to the highest version of the `client-sim` prompt. */
+  sim_prompt_sha256?: Sha256 | null;
+  /** D34: the experiment this one follows from. */
+  parent_experiment_id?: string | null;
+  /** D34: reuse the parent's arm-A trials when nothing that matters differs (see BaselineDecision). */
+  reuse_baseline?: boolean | null;
 }
 
 export interface CostRange {
@@ -181,8 +211,11 @@ export interface EstimateCell {
   config: Sha256;
   task: Sha256;
   model: string;
-  /** `history`: the mean of earlier finished trials of this config and task. */
-  source: 'history' | 'assumption';
+  /**
+   * Where the per-trial tokens, cost and time came from (item 8): earlier finished trials of the same
+   * config and task, else of the same harness and model, else the docs/cost.md assumptions.
+   */
+  source: 'config_task' | 'harness_model' | 'assumption';
   trials_seen: number;
   input_tokens: number;
   output_tokens: number;
@@ -209,9 +242,22 @@ export interface Estimate {
       low_factor: number;
       high_factor: number;
     };
+    /** Per harness: live workers seen in the last 60 s, and how many the time assumes (at least 1). */
+    workers?: Record<string, { live: number; used: number }>;
   };
   /** Per-trial LiteLLM key budgets this estimate implies (safety nets, R10.6). */
   budgets: { trial_usd: number; sim_usd: number };
+}
+
+/**
+ * D32's futility check, once per arm: when an arm has `after` finished trials (status `done`), it
+ * pauses the experiment if fewer than `min_passed` of them passed. Until graders exist (SP4),
+ * "passed" means label `agent` and end state `answered`.
+ */
+export interface FutilityRule {
+  enabled: boolean;
+  after: number;
+  min_passed: number;
 }
 
 /** POST /experiments */
@@ -226,6 +272,22 @@ export interface CreateExperimentRequest {
   plan_commit?: string | null;
   /** Optional; defaults to the highest version of the `client-sim` prompt (v2 since D27). */
   sim_prompt_sha256?: Sha256 | null;
+  /**
+   * D32: the seed of the claim-order shuffle, 0 to 2^32 - 1. Optional: a random one is drawn and
+   * recorded. The same seed, tasks, configs and N give the same order.
+   */
+  order_seed?: number | null;
+  /** D32: left out (or null) for `{enabled: true, after: 3, min_passed: 1}`; `{enabled: false}` turns it off. */
+  futility?: Partial<FutilityRule> | null;
+  /** D34: the experiment this one follows from. */
+  parent_experiment_id?: string | null;
+  /** D34: reuse the parent's arm-A trials as arm A when nothing that matters differs. */
+  reuse_baseline?: boolean | null;
+}
+
+/** POST /experiments/estimate: the estimate of what would run, and the baseline decision (D34). */
+export interface EstimateResponse extends Estimate {
+  baseline: BaselineDecision | null;
 }
 
 export const TRIAL_STATUSES = [
@@ -239,7 +301,7 @@ export const TRIAL_STATUSES = [
 ] as const;
 export type TrialStatus = (typeof TRIAL_STATUSES)[number];
 
-/** `paused` (D26): an `infra:config_error` report stopped new claims; `POST .../start` resumes. */
+/** `paused` (D32): by hand, the futility check or a guard; `POST .../resume` (or `.../start`) resumes. */
 export type ExperimentStatus = 'created' | 'running' | 'paused' | 'done' | 'cancelled';
 
 /** Counts are trial rows (one row per attempt). `running` includes claimed rows. */
@@ -285,14 +347,75 @@ export type ExperimentEventKind =
   | 'config_error'
   | 'paused'
   | 'resumed'
-  | 'file_problem';
+  | 'file_problem'
+  // D37: an arm paused (its config error, or by hand) and resumed.
+  | 'arm_paused'
+  | 'arm_resumed'
+  // D32: the experiment paused by the futility check or a guard.
+  | 'futility_pause'
+  | 'infra_guard_pause'
+  | 'spend_guard_pause'
+  // D34: whether arm A reuses the parent's trials, and why.
+  | 'baseline';
 
 export interface ExperimentEvent {
   at: string;
   kind: ExperimentEventKind;
   trial_id: string | null;
   attempt: number | null;
+  /** The arm the event is about (`A` or `B`), or null for the whole experiment. */
+  arm: string | null;
+  config_hash: Sha256 | null;
   detail: string;
+}
+
+/**
+ * One arm of an experiment (D35, D37). `status`:
+ * - `not_started`: the experiment has not been started;
+ * - `active`: trials still queued or running (claims also wait while the whole experiment is paused);
+ * - `paused`: this arm claims nothing until it is resumed (`paused_reason`, `fix`);
+ * - `stopped`: the experiment was stopped, so some of this arm's trials were cancelled;
+ * - `complete`: every slot has a final attempt (done, or an infra failure that is not re-queued).
+ */
+export interface ArmView {
+  arm: string;
+  config_hash: Sha256;
+  config_name: string;
+  status: 'not_started' | 'active' | 'paused' | 'stopped' | 'complete';
+  paused_at: string | null;
+  paused_reason: string | null;
+  /** How to fix what paused the arm (D37), for the UI to show next to the reason. */
+  fix: string | null;
+  /**
+   * Trial rows of this arm, by status (`running` includes claimed): this experiment's, or for an
+   * arm reused from the parent (D34), the parent's trials it took.
+   */
+  counts: { queued: number; running: number; done: number; infra_failed: number; abandoned: number; cancelled: number };
+  /** D34: the parent experiment whose finished trials this arm reuses, or null if it runs its own. */
+  reused_from: string | null;
+  reused_trials: number;
+}
+
+/** Item 8: actual spend and time of an experiment's trials so far (reused trials are the parent's, not counted). */
+export interface ActualSoFar {
+  /** Trials that ended: done, infra_failed or abandoned. */
+  finished_trials: number;
+  spend_usd: number;
+  /** Mean agent plus simulator cost of the trials with a recorded cost. */
+  cost_per_trial_usd: number | null;
+  wall_s_per_trial: number | null;
+  /** From the start to the finish (or now). */
+  elapsed_minutes: number | null;
+  /** Spend so far plus the queued and running trials at their arm's cost so far (the spend guard's number). */
+  projected_spend_usd: number;
+}
+
+/** D34: whether arm A reuses the parent's trials, and why; null when reuse was not asked for. */
+export interface BaselineDecision {
+  applied: boolean;
+  /** "arm A reuses 6 finished trials of e_... " or "arm A runs again: the platform commit differs (...)". */
+  reason: string;
+  reused_trials: number;
 }
 
 /** GET /experiments/:id (and the POST /experiments response). */
@@ -302,12 +425,26 @@ export interface ExperimentDetail extends ExperimentSummary {
   sim: { prompt: VersionRef; temperature: number | null; max_output_tokens: number } | null;
   platform_commit: string | null;
   plan_commit: string | null;
+  /** D32: the seed the claim order was shuffled from; null for experiments made before it. */
+  order_seed: number | null;
+  /** D32: the futility rule as resolved at creation; null for experiments made before it (no check). */
+  futility: FutilityRule | null;
+  /** D34: the parent experiment, or null. */
+  parent_experiment_id: string | null;
+  baseline: BaselineDecision | null;
+  /** Item 8: what the run actually cost and took so far, to read next to `estimate`; null until a trial finishes. */
+  actual: ActualSoFar | null;
   budgets: { trial_usd: number; sim_usd: number };
   started_at: string | null;
   finished_at: string | null;
-  /** D26: when and why an `infra:config_error` last paused the experiment; null if never. */
+  /**
+   * When and why the whole experiment last paused (by hand, the futility check or a guard, D32);
+   * null if never. A config error pauses only its arm (D37): see `arms`.
+   */
   paused_at: string | null;
   paused_reason: string | null;
+  /** Arm A, then arm B (one arm for a pilot). */
+  arms: ArmView[];
   tasks: TaskView[];
   configs: ConfigView[];
   /** Newest first. */
@@ -325,6 +462,8 @@ export interface TrialRowSummary {
   harness: string;
   model: string;
   repeat_index: number;
+  /** D32: the trial's place in the claim order (a re-queued attempt keeps its slot's). */
+  order_index: number;
   attempt: number;
   status: TrialStatus;
   label: string | null;
@@ -343,6 +482,8 @@ export interface TrialRowSummary {
 export interface CompareRow {
   task: Sha256;
   task_id: string;
+  /** `A` or `B`. */
+  arm: string;
   config: Sha256;
   config_name: string;
   /** Agent-labelled trials whose every grade passed. */
@@ -355,8 +496,16 @@ export interface CompareRow {
   abandoned: number;
 }
 
+/**
+ * D37, D32: no comparison until every arm is complete. While `status` is `incomplete`, `reason`
+ * says why (an arm paused, trials left, a stop) and `rows` is empty, so nobody reads a verdict off
+ * a partial run; `arms` shows each arm's progress either way.
+ */
 export interface CompareResponse {
   experiment_id: string;
+  status: 'complete' | 'incomplete';
+  reason: string | null;
+  arms: ArmView[];
   rows: CompareRow[];
   /** SP6. Null until the stats exist. */
   stats: null;
@@ -387,10 +536,12 @@ export interface Grade {
   created_at: string;
 }
 
-/** GET /trials/:id for a trial made in an experiment. */
+/** GET /trials/:id for a trial made in an experiment, or a probe trial (D33: `experiment_id` null, `probe` true). */
 export interface TrialView {
   id: string;
-  experiment_id: string;
+  experiment_id: string | null;
+  /** A probe trial renders a config's prompt on the fake model; it is never counted in experiment results. */
+  probe: boolean;
   task: { sha256: Sha256; id: string; version: string; split: TaskSplit; kind: string; summary: string };
   config: {
     hash: Sha256;
@@ -498,7 +649,8 @@ export interface ClaimRequest {
 export interface ClaimResponse {
   trial_id: string;
   attempt: number;
-  experiment_id: string;
+  /** Null for a probe trial (D33), which belongs to no experiment. */
+  experiment_id: string | null;
   /** A complete contract v2 spec; `model.base_url` is LiteLLM as seen from the worker. */
   spec: JsonObject;
   /** File name in /trial/state to base64 content. */
@@ -604,4 +756,113 @@ export interface LabelLine {
   value: LabelValue;
   note: string | null;
   labelled_at: string;
+}
+
+// ---- Pre-run checks and spend (D33, D38) -----------------------------------------------
+
+/**
+ * POST /configs/:hash/rendered-prompt starts a probe trial when there is no rendered prompt and
+ * no live probe (or the last probe failed); GET only reads. `none` is GET's answer before any
+ * probe; `queued` and `running` come with 202 from POST.
+ */
+export type RenderedPromptStatus = 'none' | 'queued' | 'running' | 'ready' | 'failed';
+
+export interface RenderedPrompt {
+  /** sha256 of `system_text`. */
+  sha256: Sha256;
+  /** The system message(s) of the first request, with the date line and the probe model normalised. */
+  system_text: string;
+  /** Tool names in the request's order. */
+  tools: string[];
+  /** Our task prompt's place in `system_text`: UTF-16 offsets (JavaScript string indices), end exclusive. Null if not found verbatim. */
+  ours: { start: number; end: number } | null;
+  /** `system_text` with our task prompt replaced by `<<OUR TASK PROMPT>>`. */
+  harness_text: string;
+  normalised: string[];
+  /** Why the text may differ from what the real model will get. */
+  caveats: string[];
+  /** The probe trial it was read from (GET /trials/:id shows its trace). */
+  trial_id: string;
+  created_at: string;
+}
+
+export interface RenderedPromptView {
+  config_hash: Sha256;
+  status: RenderedPromptStatus;
+  probe: { trial_id: string; status: TrialStatus; label: string | null; model: string } | null;
+  /** True when the rendered prompt was already stored for this config, so nothing ran. */
+  cached: boolean;
+  /** Why the last probe gave no rendered prompt (status `failed`). */
+  error: string | null;
+  rendered: RenderedPrompt | null;
+}
+
+export type ConflictSeverity = 'high' | 'medium' | 'low';
+
+export interface ConflictFinding {
+  harness_says: string;
+  we_say: string;
+  why_it_matters: string;
+  severity: ConflictSeverity;
+}
+
+export interface AllowanceView {
+  kind: string;
+  limit_usd: number;
+  /** Settled costs plus the worst-case reservation of any call not settled yet. */
+  used_usd: number;
+  remaining_usd: number;
+  calls: number;
+  /** D38: past half, Claude tells Rishi. */
+  half_reached: boolean;
+}
+
+/** POST /configs/:hash/conflict-check, and GET for the stored result without a call. */
+export interface ConflictCheckView {
+  config_hash: Sha256;
+  rendered_sha256: Sha256;
+  /** Hash of everything the checker is given: the rendered prompt, our prompt and the settings. */
+  input_sha256: Sha256;
+  checker: VersionRef;
+  model: string;
+  conflicts: ConflictFinding[];
+  notes: string;
+  /** What the check cost when it ran (null if LiteLLM never reported it); 0 when skipped. */
+  cost_usd: number | null;
+  /** True when this request returned a stored result and made no call. */
+  cached: boolean;
+  /** `no_harness_text`: the harness adds no system text of its own, so no call was made. */
+  skipped: 'no_harness_text' | null;
+  spend_id: string | null;
+  checked_at: string;
+  allowance: AllowanceView;
+}
+
+/** GET /spend: trial spend and the platform's own calls, separately (D38). */
+export interface SpendView {
+  /** Experiment trials, agent and simulator calls. Probe trials (fake model) are not counted. */
+  trials_usd: number;
+  /** Platform-made calls with a known cost. */
+  system_usd: number;
+  total_usd: number;
+  system_by_kind: Record<string, { usd: number; calls: number }>;
+  allowances: AllowanceView[];
+}
+
+/** GET /spend/system: one row per platform-made call, newest first. */
+export interface SystemSpendRow {
+  id: string;
+  kind: string;
+  model: string;
+  status: 'pending' | 'done' | 'failed';
+  reserved_usd: number;
+  cost_usd: number | null;
+  /** Where `cost_usd` came from; `no_call` means the key was never minted, so nothing was sent. Null while pending. */
+  cost_source: 'spend_log' | 'response_header' | 'unknown' | 'no_call' | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  ref: string;
+  error: string | null;
+  created_at: string;
+  settled_at: string | null;
 }

@@ -35,11 +35,12 @@
       "minLength": 1
     },
     "label": {
-      "description": "agent: graded by end_state. infra:*: not a quality outcome; reported, never silently dropped. infra:config_error (D26): a harness_error whose LiteLLM status was 401, 403 or 404, or a 400 about the request setup (auth, an unknown model, a rejected parameter); never re-queued, and the experiment pauses. infra:provider_error: 429 or 5xx, re-queued once. infra:budget_net: a budget stop, never re-queued.",
+      "description": "agent: graded by end_state. infra:*: not a quality outcome; reported, never silently dropped. infra:config_error (D26): a harness_error whose LiteLLM status was 401, 403 or 404, or a 400 about the request setup (auth, an unknown model, a rejected parameter); never re-queued, and the experiment pauses. infra:provider_error: 429 or 5xx, re-queued once. infra:budget_net: a budget stop, never re-queued. infra:sim_error: the simulated client failed (result conversation.ended_by sim_error: its call failed, or its reply had no text), re-queued once.",
       "enum": [
         "agent",
         "infra:provider_error",
         "infra:config_error",
+        "infra:sim_error",
         "infra:budget_net",
         "infra:adapter_crash",
         "infra:timeout_kill"

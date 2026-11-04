@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 import type {
   CompareResponse,
   CreateExperimentRequest,
-  Estimate,
+  EstimateResponse,
   EstimateRequest,
   ExperimentDetail,
   ExperimentSummary,
@@ -23,7 +23,7 @@ export class ExperimentsController {
   /** Trials, cost and time for a planned run, before anything is created (R10.6). */
   @Post('estimate')
   @HttpCode(200)
-  estimate(@Body() body: EstimateRequest): Promise<Estimate> {
+  estimate(@Body() body: EstimateRequest): Promise<EstimateResponse> {
     return this.experiments.estimate(body);
   }
 
@@ -49,10 +49,43 @@ export class ExperimentsController {
     return this.experiments.start(id);
   }
 
+  /** D32: no new claims; running trials finish. */
+  @Post(':id/pause')
+  @HttpCode(200)
+  pause(@Param('id') id: string): Promise<ExperimentDetail> {
+    return this.experiments.pause(id);
+  }
+
+  @Post(':id/resume')
+  @HttpCode(200)
+  resume(@Param('id') id: string): Promise<ExperimentDetail> {
+    return this.experiments.resume(id);
+  }
+
+  /** D32: queued trials are cancelled; running ones finish. `cancel` is the older name. */
+  @Post(':id/stop')
+  @HttpCode(200)
+  stop(@Param('id') id: string): Promise<ExperimentDetail> {
+    return this.experiments.cancel(id);
+  }
+
   @Post(':id/cancel')
   @HttpCode(200)
   cancel(@Param('id') id: string): Promise<ExperimentDetail> {
     return this.experiments.cancel(id);
+  }
+
+  /** D37: one arm stops claiming; the other keeps running. `:config` is the arm's config hash, or A or B. */
+  @Post(':id/arms/:config/pause')
+  @HttpCode(200)
+  pauseArm(@Param('id') id: string, @Param('config') config: string): Promise<ExperimentDetail> {
+    return this.experiments.pauseArm(id, config);
+  }
+
+  @Post(':id/arms/:config/resume')
+  @HttpCode(200)
+  resumeArm(@Param('id') id: string, @Param('config') config: string): Promise<ExperimentDetail> {
+    return this.experiments.resumeArm(id, config);
   }
 
   @Get(':id/trials')

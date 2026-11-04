@@ -95,28 +95,66 @@ export class LiteLlmClient {
     }
   }
 
-  /** One key for one trial and role, limited to one model and given a budget. */
+  /** One key for one trial and role, limited to one model and given a budget. A probe trial has no experiment. */
   async generateKey(opts: {
     trialId: string;
     role: 'agent' | 'sim';
     model: string;
     maxBudgetUsd: number;
     teamId: string | null;
-    experimentId: string;
+    experimentId: string | null;
+    probe?: boolean;
   }): Promise<MintedKey> {
-    const data = obj(
-      await this.request('POST', '/key/generate', {
-        key_alias: `${opts.trialId}:${opts.role}`,
-        models: [opts.model],
-        max_budget: opts.maxBudgetUsd,
-        ...(opts.teamId ? { team_id: opts.teamId } : {}),
-        metadata: { trial_id: opts.trialId, role: opts.role, experiment_id: opts.experimentId },
-      }),
-    );
+    return this.mint({
+      key_alias: `${opts.trialId}:${opts.role}`,
+      models: [opts.model],
+      max_budget: opts.maxBudgetUsd,
+      ...(opts.teamId ? { team_id: opts.teamId } : {}),
+      metadata: { trial_id: opts.trialId, role: opts.role, experiment_id: opts.experimentId, ...(opts.probe ? { probe: true } : {}) },
+    });
+  }
+
+  /** A key for one call the platform makes itself (D38), limited to one model and given a budget. */
+  async generateSystemKey(opts: { alias: string; model: string; maxBudgetUsd: number; metadata: Record<string, string> }): Promise<MintedKey> {
+    return this.mint({ key_alias: opts.alias, models: [opts.model], max_budget: opts.maxBudgetUsd, metadata: { ...opts.metadata, system: 'true' } });
+  }
+
+  private async mint(body: Record<string, unknown>): Promise<MintedKey> {
+    const data = obj(await this.request('POST', '/key/generate', body));
     if (typeof data.key !== 'string' || typeof data.token !== 'string') {
       throw new ApiError(502, 'litellm_error', 'POST /key/generate: no key or token in the reply');
     }
     return { key: data.key, token: data.token };
+  }
+
+  /**
+   * One chat completion with a minted key (never the master key), through LiteLLM's
+   * OpenAI-compatible endpoint. An error status is returned, not thrown, so the caller can still
+   * record what the call cost. `responseCostUsd` is LiteLLM's `x-litellm-response-cost` header.
+   */
+  async chat(key: string, body: Record<string, unknown>, timeoutMs: number): Promise<{ status: number; body: unknown; text: string; responseCostUsd: number | null }> {
+    const url = `${this.base()}/v1/chat/completions`;
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      throw new ApiError(502, 'litellm_unavailable', `POST /v1/chat/completions: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const text = await res.text();
+    let parsed: unknown;
+    try {
+      parsed = text ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      parsed = null;
+    }
+    const header = res.headers.get('x-litellm-response-cost');
+    const cost = header === null || header.trim() === '' ? null : Number(header);
+    return { status: res.status, body: parsed, text, responseCostUsd: cost !== null && Number.isFinite(cost) ? cost : null };
   }
 
   async deleteKeys(tokens: string[]): Promise<void> {

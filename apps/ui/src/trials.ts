@@ -1,4 +1,6 @@
 /** Trials as the API serves them (apps/api/src/trials), plus the pure helpers the views use. */
+import { api } from './api/client';
+import { harnessShort } from './lib/names';
 
 export interface TrialSummary {
   trialId: string;
@@ -45,20 +47,9 @@ export interface TrialDetail {
   report: Record<string, unknown> | null;
 }
 
-async function getJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
-  return (await response.json()) as T;
-}
-
-export async function fetchTrials(): Promise<TrialSummary[]> {
-  const body = await getJson<unknown>('/api/trials');
-  return Array.isArray(body) ? (body as TrialSummary[]) : [];
-}
-
-export const fetchTrial = (id: string) => getJson<TrialDetail>(`/api/trials/${encodeURIComponent(id)}`);
-export const fetchSpans = (id: string) => getJson<SpanView[]>(`/api/trials/${encodeURIComponent(id)}/spans`);
-export const fileUrl = (id: string, rel: string) => `/api/trials/${encodeURIComponent(id)}/files/${rel}`;
+/** Gate and smoke runs from the folder store (`GET /trials`), through the typed client so
+ *  fixture mode serves them too. */
+export const fetchTrials = (): Promise<TrialSummary[]> => api.recordedTrials();
 
 /** Harness colours follow the harness, never its rank (categorical slots in a fixed order). */
 export const HARNESS_ORDER = ['hermes', 'ownloop', 'langgraph', 'adk', 'openai-agents'];
@@ -169,7 +160,83 @@ export function usd(value: number | null | undefined): string {
 }
 
 export function duration(ms: number): string {
-  return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`;
+  return ms >= 100 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms)} ms`;
+}
+
+/** One bar of the trial timeline: a span, or the harness's own start-up and shut-down, which
+ *  are the gaps between the trial span's edges and its first and last child. */
+export interface SpanBar {
+  id: string;
+  /** The row's name: "Agent call 2", "tool fd_maturity". */
+  label: string;
+  /** The same with what the name leaves out, for the row's tooltip and screen readers: the model
+   *  of an agent call. */
+  title: string;
+  /** A tool bar's tool name, a literal identifier the row sets in mono: "get_client_profile". */
+  ident?: string;
+  role: 'agent' | 'tool' | 'client' | 'harness';
+  startMs: number;
+  durationMs: number;
+  derived: boolean;
+  error: boolean;
+  span: SpanView | null;
+}
+
+export function spanBars(spans: SpanView[], harness?: string): { bars: SpanBar[]; totalMs: number } {
+  const { rows, totalMs } = timelineRows(spans);
+  if (!rows.length) return { bars: [], totalMs: 0 };
+  const clientTurns = new Set(rows.filter((r) => r.role === 'client').map((r) => r.span.spanId));
+  const shown = rows.filter((r) => r.role !== 'trial' && r.role !== 'turn' && !(r.role === 'chat-sim' && clientTurns.has(r.span.parentSpanId ?? '')));
+  const agentChats = shown.filter((r) => r.role === 'chat');
+  const lastChat = agentChats[agentChats.length - 1]?.span.spanId;
+  const bars: SpanBar[] = shown.map((r) => {
+    const a = r.span.attributes;
+    const model = typeof a['gen_ai.request.model'] === 'string' ? a['gen_ai.request.model'] : r.span.name.replace(/^chat /, '');
+    let label = r.span.name;
+    let title = '';
+    let ident: string | undefined;
+    let role: SpanBar['role'] = 'harness';
+    if (r.role === 'chat') {
+      // Numbered, so each call fits its row; the model id is in the tooltip and the details.
+      const n = agentChats.findIndex((c) => c.span.spanId === r.span.spanId) + 1;
+      label = `Agent call ${n}${r.span.spanId === lastChat && agentChats.length > 1 ? ', final reply' : ''}`;
+      title = `${label}: chat ${model}`;
+      role = 'agent';
+    } else if (r.role === 'chat-sim') {
+      label = 'chat simulated client';
+      role = 'client';
+    } else if (r.role === 'client') {
+      label = 'Simulated client';
+      role = 'client';
+    } else if (r.role === 'tool') {
+      ident = text(a['gen_ai.tool.name'] ?? r.span.name.replace(/^execute_tool /, ''));
+      label = `tool ${ident}`;
+      role = 'tool';
+    }
+    return {
+      id: r.span.spanId,
+      label,
+      title: title || label,
+      ...(ident !== undefined ? { ident } : {}),
+      role,
+      startMs: r.startMs,
+      durationMs: r.durationMs,
+      derived: false,
+      error: r.span.statusCode === 2 || a['evals.tool.is_error'] === true,
+      span: r.span,
+    };
+  });
+  const children = rows.filter((r) => r.depth > 0);
+  if (children.length) {
+    const first = Math.min(...children.map((r) => r.startMs));
+    const last = Math.max(...children.map((r) => r.startMs + r.durationMs));
+    const who = harness ? harnessShort(harness) : 'Harness';
+    const startup = `${who} start-up`;
+    const shutdown = 'Shut down and collect files';
+    if (first >= 1) bars.unshift({ id: 'derived:startup', label: startup, title: startup, role: 'harness', startMs: 0, durationMs: first, derived: true, error: false, span: null });
+    if (totalMs - last >= 1) bars.push({ id: 'derived:shutdown', label: shutdown, title: shutdown, role: 'harness', startMs: last, durationMs: totalMs - last, derived: true, error: false, span: null });
+  }
+  return { bars, totalMs };
 }
 
 /** Any attribute value as display text: primitives as they are, everything else as JSON. */

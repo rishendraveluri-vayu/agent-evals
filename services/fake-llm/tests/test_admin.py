@@ -27,6 +27,7 @@ EXAMPLES = {
     "finance-503-twice",
     "finance-400",
     "sim-client",
+    "sim-empty",
 }
 
 

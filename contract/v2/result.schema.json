@@ -33,8 +33,8 @@
         "agent_turns": {"type": "integer", "minimum": 0},
         "client_turns": {"description": "Simulated client messages after the opening one.", "type": "integer", "minimum": 0},
         "ended_by": {
-          "description": "null for a single-prompt task. client: the simulated client said it was done. turn_cap: max_client_turns reached. agent_end_state: an agent turn ended in anything but answered.",
-          "enum": [null, "client", "turn_cap", "agent_end_state"]
+          "description": "null for a single-prompt task. client: the simulated client said it was done. turn_cap: max_client_turns reached. agent_end_state: an agent turn ended in anything but answered. sim_error: the simulator failed (its call failed, or its reply had no text); end_state is harness_error, the reason is in end_detail, and the runner labels the trial infra:sim_error (D26).",
+          "enum": [null, "client", "turn_cap", "agent_end_state", "sim_error"]
         },
         "transcript": {
           "description": "The visible conversation: user messages and the agent's visible replies, no tool calls.",

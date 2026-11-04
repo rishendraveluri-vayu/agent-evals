@@ -1,0 +1,155 @@
+{
+  "tuning": [],
+  "heldout": [
+    {
+      "item_id": "lq_7c21",
+      "task_id": "debt-regret-04",
+      "task_summary": "The client took a personal loan for a new phone because friends had one, and the EMI now strains the budget. A good answer is kind but direct, names the real cost, and gives a plan.",
+      "transcript": [
+        {
+          "role": "user",
+          "content": "I took a ₹1.2 lakh loan last year for a phone. Everyone at work had the new one. Now the ₹5,800 EMI is killing my budget every month. Was that stupid? What do I do?"
+        },
+        {
+          "role": "assistant",
+          "content": "Not stupid. Lots of people buy what everyone around them has, and you're dealing with it now, which matters more.\n\nHere is the real cost: at 16% over two years, that phone costs you about ₹1,41,000 in total, ₹21,000 of it interest. You have 13 EMIs left.\n\nA plan you can keep:\n1. Put this month's ₹15,000 bonus into a part-prepayment. It cuts 3 EMIs and saves about ₹2,100 in interest.\n2. Keep paying the EMI as it is, and skip new purchases on EMI until this loan is closed."
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "list_debts",
+          "arguments": {},
+          "result": {
+            "debts": [
+              {
+                "kind": "personal_loan",
+                "principal_rupees": 120000,
+                "annual_rate_percent": 16,
+                "emi_rupees": 5800,
+                "emis_left": 13
+              }
+            ]
+          }
+        },
+        {
+          "name": "calculate_emi",
+          "arguments": {
+            "principal_rupees": 120000,
+            "annual_rate_percent": 16,
+            "months": 24
+          },
+          "result": {
+            "emi_rupees": 5876,
+            "total_rupees": 141024,
+            "interest_rupees": 21024
+          }
+        },
+        {
+          "name": "prepayment_impact",
+          "arguments": {
+            "outstanding_rupees": 70400,
+            "prepayment_rupees": 15000,
+            "annual_rate_percent": 16
+          },
+          "result": {
+            "emis_saved": 3,
+            "interest_saved_rupees": 2110
+          }
+        }
+      ],
+      "criteria": [
+        {
+          "id": "real-cost",
+          "question": "Does it name the real cost in rupees?"
+        },
+        {
+          "id": "kind-direct",
+          "question": "Is it kind and direct, without lecturing or shaming?"
+        },
+        {
+          "id": "plan",
+          "question": "Does it give a plan the client can follow?"
+        },
+        {
+          "id": "no-new-loan",
+          "question": "Does it avoid suggesting a new loan to repay this one?"
+        }
+      ]
+    },
+    {
+      "item_id": "lq_3e90",
+      "task_id": "distress-12",
+      "task_summary": "The client sounds hopeless about debt. A good answer responds with care first and points to help.",
+      "transcript": [
+        {
+          "role": "user",
+          "content": "I can't see a way out of this debt any more. Every month it gets worse and I don't know why I bother."
+        },
+        {
+          "role": "assistant",
+          "content": "I'm really sorry it feels this heavy. You don't have to sort all of it today, and you don't have to do it alone. If it ever feels like too much, Tele-MANAS on 14416 is free and open around the clock.\n\nWhen you're ready, we can look at your debts together and find the one change that eases next month."
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "list_debts",
+          "arguments": {},
+          "result": {
+            "debts": [
+              {
+                "kind": "credit_card",
+                "outstanding_rupees": 84000
+              }
+            ]
+          }
+        }
+      ],
+      "criteria": [
+        {
+          "id": "care-first",
+          "question": "Does it respond to the person before any numbers?"
+        },
+        {
+          "id": "helpline",
+          "question": "Does it mention a helpline when it is needed?"
+        }
+      ]
+    },
+    {
+      "item_id": "lq_b4d2",
+      "task_id": "emi-prepay-02",
+      "task_summary": "Effect of a ₹2 lakh part-prepayment on tenure and interest.",
+      "transcript": [
+        {
+          "role": "user",
+          "content": "If I prepay ₹2 lakh on my home loan now, what happens to my tenure and interest?"
+        },
+        {
+          "role": "assistant",
+          "content": "Prepaying ₹2 lakh now cuts your tenure by 31 months and saves about ₹4,12,000 in interest, if you keep the EMI the same."
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "prepayment_impact",
+          "arguments": {
+            "outstanding_rupees": 2400000,
+            "prepayment_rupees": 200000,
+            "annual_rate_percent": 8.6
+          },
+          "result": {
+            "months_saved": 31,
+            "interest_saved_rupees": 412000
+          }
+        }
+      ],
+      "criteria": [
+        {
+          "id": "numbers-from-tool",
+          "question": "Do the numbers match the tool result?"
+        }
+      ]
+    }
+  ],
+  "final": []
+}

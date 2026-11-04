@@ -53,8 +53,8 @@ export function statusForLabel(label: string): 'done' | 'infra_failed' {
  */
 export const NEVER_REQUEUED: readonly string[] = ['infra:config_error', 'infra:budget_net'];
 
-/** D26: the label that pauses the experiment, so nothing more is claimed until it is fixed. */
-export const PAUSES_EXPERIMENT = 'infra:config_error';
+/** D26, amended by D37: the label that pauses its arm, so that arm claims nothing more until it is fixed. */
+export const PAUSES_ARM = 'infra:config_error';
 
 /**
  * Whether a failed attempt (an infra label, or a lapsed lease with `label` null) gets a next

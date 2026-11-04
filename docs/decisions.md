@@ -51,7 +51,6 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 
 | # | Call | Options | Lean | Needed by |
 | --- | --- | --- | --- | --- |
-| D5 | Open-weight model | Hosted through OpenRouter, or local | Hosted, gpt-oss-120b if tool calling holds up | Wed |
 | D7 | Tasks using the judge | Any share of the 20+ | About 6 to 8 | Thu |
 | D8 | Judge threshold and what happens below it | Set before seeing results | Below threshold leaves the headline score | Thu |
 | D10 | Unit of analysis for the stats | Task, trial, or trials nested in tasks | Resample tasks, then trials within them | Thu |
@@ -100,6 +99,7 @@ Dated statements from Rishi that constrain the design. Not option-choices, so th
 - **R14 (4 Nov). SP2 data model approved as proposed.** Rishi approved `docs/proposals/data-model.md` without changes, including its four recommended choices: the config hash also covers the adapter's capabilities file; result and runner report as JSONB on the trial row, spans in their own table, everything else as files under `runs/`; labels stay files in `labels/`, imported read-only, with the labelling view writing the file through the API; grading is its own step after the trial, so a grader fix re-grades without re-running. Trials are claimed with `FOR UPDATE SKIP LOCKED`, heartbeat every 10 s, lapse after 60 s and are re-queued once.
 - **R15 (4 Nov). Merge and push without a code review first.** Asked how to handle R7's "Rishi reviews each adapter before merge" for branch `sp1-harnesses` (three adapters, the API, the worker engine and images), Rishi chose to merge to main and push now and review later from the harness guide and the code. Claude recommended an independent code review first; that review is still owed.
 - **R16 (4 Nov evening). Platform feature freeze after the in-flight work.** Claude's assessment: the platform is ahead, the evals (tasks, graders, judge, labels, stats, pilot, experiment) are behind, and the brief rewards evaluation design over feature count. Agreed by Rishi ("Okay"): once the work already started lands (run controls and lineage, the conflict check, the harness-side changes, the UI polish), no new platform features unless an eval needs one. From Thursday morning Rishi's time goes to the tasks and the judge rubric; Claude builds the graders, judge runner, labelling flow and stats around his design. Pilot Thursday evening; labels and the experiment Friday; write-up and video Saturday.
+- **D5 settled (4 Nov evening). Open-weight model: a local demo only.** Rishi chose a small pinned model run locally (6 CPU cores, 46 GB RAM, no GPU: a few minutes per trial), registered as one more LiteLLM entry and run for 3 trials on the own loop, to show that a new model is one config line at no API cost. Not an experiment arm; Claude Haiku 5.5 and Gemini 3.8 Flash cover the brief's two-provider requirement. Installing it is asked first.
 
 ## Settled entries
 

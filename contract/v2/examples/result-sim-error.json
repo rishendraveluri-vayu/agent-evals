@@ -1,0 +1,99 @@
+{
+  "contract_version": "2",
+  "trial_id": "t_example_sim_error",
+  "end_state": "harness_error",
+  "end_detail": {
+    "harness_stop_reason": "simulator_error",
+    "exception_type": "SimulatorError",
+    "exception_message": "simulator reply has no text (finish_reason stop; 0 output tokens, 0 of them reasoning)",
+    "last_message_excerpt": "Tell me about your loans first."
+  },
+  "final_answer": "Tell me about your loans first.",
+  "conversation": {
+    "agent_turns": 1,
+    "client_turns": 0,
+    "ended_by": "sim_error",
+    "transcript": [
+      {
+        "role": "user",
+        "content": "I don't know where to start.",
+        "source": "task"
+      },
+      {
+        "role": "assistant",
+        "content": "Tell me about your loans first.",
+        "source": "agent"
+      }
+    ]
+  },
+  "harness": {
+    "name": "scripted",
+    "version": "0.0.1",
+    "extra": {}
+  },
+  "applied_settings": {
+    "temperature": {
+      "value": 0.2,
+      "source": "config"
+    },
+    "max_output_tokens": {
+      "value": 1024,
+      "source": "platform_default"
+    },
+    "max_steps": {
+      "value": 15,
+      "source": "platform_default"
+    },
+    "timeout_s": {
+      "value": 20,
+      "source": "platform_default"
+    },
+    "parallel_tool_calls": {
+      "value": null,
+      "source": "unsupported",
+      "observed": "always parallel"
+    },
+    "memory": {
+      "value": null,
+      "source": "unsupported"
+    },
+    "skills": {
+      "value": null,
+      "source": "unsupported"
+    },
+    "compression": {
+      "value": null,
+      "source": "unsupported"
+    },
+    "top_p": {
+      "value": 1.0,
+      "source": "harness_default"
+    }
+  },
+  "harness_usage": {
+    "model_calls": 1,
+    "input_tokens": 10,
+    "output_tokens": 5,
+    "cost_usd": null
+  },
+  "counts": {
+    "model_calls": 1,
+    "tool_calls": 0,
+    "tool_errors": 0,
+    "malformed_tool_calls": 0
+  },
+  "integrity": {
+    "before": {
+      "config.txt": "sha256:9c45da1b799a603c167323bd7ed4f52034ec28ea5e04373045a9c11f1ddc5446"
+    },
+    "after": {
+      "config.txt": "sha256:9c45da1b799a603c167323bd7ed4f52034ec28ea5e04373045a9c11f1ddc5446"
+    }
+  },
+  "timing": {
+    "started_at": "2026-11-04T12:35:31.280358Z",
+    "ended_at": "2026-11-04T12:35:31.286666Z",
+    "wall_s": 0.006
+  },
+  "artifacts": []
+}

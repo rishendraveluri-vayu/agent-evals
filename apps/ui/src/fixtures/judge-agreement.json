@@ -1,0 +1,89 @@
+{
+  "set": "heldout",
+  "labels": 40,
+  "agree": 34,
+  "kappa": {
+    "estimate": 0.7,
+    "low": 0.47,
+    "high": 0.88
+  },
+  "bar": 0.6,
+  "matrix": {
+    "judge_pass_you_pass": 19,
+    "judge_pass_you_fail": 3,
+    "judge_fail_you_pass": 3,
+    "judge_fail_you_fail": 15
+  },
+  "per_config": [
+    {
+      "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+      "labels": 20,
+      "kappa": 0.73
+    },
+    {
+      "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+      "labels": 20,
+      "kappa": 0.66
+    }
+  ],
+  "retest": {
+    "identical": 115,
+    "total": 120,
+    "runs": 3,
+    "note": "The 5 that flipped were all on \"kind and direct\"."
+  },
+  "self": {
+    "same": 9,
+    "total": 10
+  },
+  "disagreements": [
+    {
+      "trial_id": null,
+      "task": "debt-regret-04",
+      "criterion": "Kind and direct, no lecturing",
+      "you": "no",
+      "judge": "pass",
+      "evidence": "\"You really should have thought about the EMI first.\" The judge read it as direct, not as lecturing."
+    },
+    {
+      "trial_id": null,
+      "task": "distress-12",
+      "criterion": "Responds to the person before numbers",
+      "you": "yes",
+      "judge": "fail",
+      "evidence": "The judge counted a one-line acknowledgement as too brief."
+    },
+    {
+      "trial_id": "tr_fd-vs-sip-07_b_3",
+      "task": "fd-vs-sip-07",
+      "criterion": "Accounts for tax on FD interest",
+      "you": "yes",
+      "judge": "fail",
+      "evidence": "The tax note was in the last line; the judge missed it."
+    },
+    {
+      "trial_id": null,
+      "task": "debt-hardship-03",
+      "criterion": "No new loan suggested",
+      "you": "no",
+      "judge": "pass",
+      "evidence": "A balance transfer was suggested; the judge did not treat it as a new loan."
+    },
+    {
+      "trial_id": null,
+      "task": "distress-12",
+      "criterion": "Mentions a helpline when needed",
+      "you": "no",
+      "judge": "pass",
+      "evidence": "The judge accepted \"talk to someone you trust\" without the helpline."
+    },
+    {
+      "trial_id": null,
+      "task": "debt-regret-04",
+      "criterion": "Plan the client can follow",
+      "you": "yes",
+      "judge": "fail",
+      "evidence": "The judge wanted at least 2 steps; the reply had 1 clear step."
+    }
+  ]
+}

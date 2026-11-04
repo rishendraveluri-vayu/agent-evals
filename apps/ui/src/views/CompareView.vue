@@ -1,0 +1,1401 @@
+<script setup lang="ts">
+import { computed } from 'vue';
+import { api } from '../api/client';
+import { isFixtureMode } from '../api/mode';
+import type { BlindItem, Compare, CompareRow, ExperimentDetail, ExperimentTrial, Interval, JudgeAgreement, TaskInfo } from '../api/types';
+import AppIcon from '../components/AppIcon.vue';
+import IntervalStrip from '../components/IntervalStrip.vue';
+import LoadState from '../components/LoadState.vue';
+import VerdictTag from '../components/VerdictTag.vue';
+import { agreementWords, armsOf, differingShort, excludesZero, intervalText, judgeCaveat, methodName, NBSP, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
+import { optional, useLoad } from '../lib/async';
+import { identParts, money, percent, plural, seconds, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
+import { alsoGradedBy, gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
+import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
+import { href } from '../router';
+
+const props = defineProps<{ experimentId: string }>();
+const fixtures = isFixtureMode();
+
+interface Loaded {
+  detail: ExperimentDetail;
+  compare: Compare;
+  trials: ExperimentTrial[];
+  judge: JudgeAgreement | null;
+  /** Held-out items still to label: while any remain, the judge's agreement is provisional. */
+  queue: BlindItem[];
+}
+
+const { data, error, loading } = useLoad<Loaded>(async () => {
+  const [detail, compare, trials, judge, queue] = await Promise.all([
+    api.experiment(props.experimentId),
+    api.compare(props.experimentId),
+    optional(api.experimentTrials(props.experimentId), [] as ExperimentTrial[]),
+    optional(api.judgeAgreement('heldout'), null),
+    optional(api.labelQueue('heldout'), [] as BlindItem[]),
+  ]);
+  return { detail, compare, trials, judge, queue };
+});
+
+const arms = computed(() => (data.value ? armsOf(data.value.detail, data.value.detail.configs) : []));
+const stats = computed(() => data.value?.compare.stats ?? null);
+const taskOf = (key: string): TaskInfo | undefined => data.value?.detail.tasks.find((t) => t.sha256 === key || t.id === key);
+const taskName = (key: string) => taskOf(key)?.id ?? key.replace(/^sha256:/, '').slice(0, 12);
+
+function cell(task: string, arm: 0 | 1): CompareRow | undefined {
+  const hash = data.value?.detail.config_hashes[arm];
+  const rows = data.value?.compare.rows.filter((r) => r.task === task && r.config === hash) ?? [];
+  // An A/A run has the same hash twice: the rows come in arm order.
+  if (data.value && data.value.detail.config_hashes[0] === data.value.detail.config_hashes[1]) return rows[arm];
+  return rows[0];
+}
+
+const totals = computed(() => {
+  const d = data.value;
+  if (!d) return null;
+  const sum = (arm: 0 | 1) =>
+    d.detail.tasks.reduce(
+      (acc, t) => {
+        const c = cell(t.sha256, arm);
+        return { passed: acc.passed + (c?.passed ?? 0), graded: acc.graded + (c?.graded ?? 0) };
+      },
+      { passed: 0, graded: 0 },
+    );
+  return { a: sum(0), b: sum(1) };
+});
+
+const noVerdictText = computed(() => {
+  const t = totals.value;
+  if (!t) return '';
+  const b = arms.value[1] ? `, B passed ${t.b.passed} of ${t.b.graded}` : '';
+  return `A passed ${t.a.passed} of ${t.a.graded} graded trials${b}. The interval and the verdict come from the statistics step, which has not reported on this experiment yet.`;
+});
+
+/** Trials stopped on infra failures: listed, never dropped. When the trial list did not load,
+ *  the experiment's counts still say how many there were. */
+const infraTrials = computed(() => data.value?.trials.filter((t) => t.status === 'infra_failed' || t.status === 'abandoned') ?? []);
+const infraCount = computed(() => {
+  const d = data.value;
+  if (!d) return 0;
+  return infraTrials.value.length || d.detail.counts.infra_failed + d.detail.counts.abandoned;
+});
+
+/** Which arm a trial ran in. An A/A run has one hash twice: its second arm's repeats come after
+ *  the first arm's. */
+function armOfTrial(t: ExperimentTrial): ArmKey {
+  const d = data.value;
+  if (!d) return 'a';
+  const [ha, hb] = d.detail.config_hashes;
+  if (ha === hb) return t.repeat_index >= d.detail.n ? 'b' : 'a';
+  return t.config === hb ? 'b' : 'a';
+}
+
+/** The attempt that re-ran an infra-stopped trial: same task, config and repeat, one attempt on. */
+function rerunWords(t: ExperimentTrial): string {
+  if (t.status === 'abandoned') return 'gave up, not re-run';
+  const next = data.value?.trials.find((x) => x.task === t.task && x.config === t.config && x.repeat_index === t.repeat_index && x.attempt === t.attempt + 1);
+  if (!next || next.status === 'queued' || next.status === 'claimed' || next.status === 'running') return 'not re-run yet';
+  if (next.status === 'infra_failed' || next.status === 'abandoned') return 're-run also an infra failure';
+  if (next.passed === true) return 're-run passed';
+  if (next.passed === false) return 're-run failed';
+  return 're-run not graded yet';
+}
+
+const infraRows = computed(() =>
+  infraTrials.value.map((t) => {
+    const reason = infraReason(t.label);
+    return { trial: t, arm: armOfTrial(t), task: taskName(t.task), cause: `infra failure${reason ? `: ${reason}` : ''}`, rerun: rerunWords(t) };
+  }),
+);
+
+/** "Both were in arm B." when every listed infra failure is in one arm. */
+const infraArmNote = computed(() => {
+  const rows = infraRows.value;
+  const armsHit = new Set(rows.map((r) => r.arm));
+  if (!rows.length || armsHit.size !== 1) return '';
+  const arm = rows[0].arm.toUpperCase();
+  if (rows.length === 1) return `It was in arm ${arm}.`;
+  return rows.length === 2 ? `Both were in arm ${arm}.` : `All ${rows.length} were in arm ${arm}.`;
+});
+
+/** "2 trials stopped on infra failures were re-run and are listed, not dropped. Both were in arm
+ *  B." It says re-run only when every listed stop was, and the counts say so when the list did not
+ *  load. */
+const infraSentence = computed(() => {
+  const n = infraCount.value;
+  const rows = infraRows.value;
+  const rerun = !rows.length || rows.every((r) => r.rerun === 're-run passed' || r.rerun === 're-run failed' || r.rerun === 're-run not graded yet');
+  const one = n === 1;
+  const done = rerun ? `${one ? 'was' : 'were'} re-run and ${one ? 'is' : 'are'}` : one ? 'is' : 'are';
+  return `${n} ${one ? 'trial' : 'trials'} stopped on infra failures ${done} listed, not dropped.${infraArmNote.value ? ` ${infraArmNote.value}` : ''}`;
+});
+
+const commits = computed(() => {
+  const d = data.value?.detail;
+  return { plan: d?.plan_commit ? d.plan_commit.slice(0, 7) : null, platform: d?.platform_commit ? d.platform_commit.slice(0, 7) : null };
+});
+
+/** The harness pin from the configs: "Hermes 6112c2a" on line 2 when both arms share it, or each
+ *  pin in its arm on line 1 when they differ. */
+const pinOf = (arm: Arm | undefined) => (arm?.config ? shortRef(arm.config.harness_ref) : null);
+const meta = computed(() => {
+  const d = data.value;
+  const [a, b] = arms.value;
+  const ca = a?.config;
+  const cb = (b ?? a)?.config;
+  if (!d || !ca) return { perArm: false, harness: '', pin: null as string | null, rest: setupOf(d?.detail ?? { axis: 'none' }, arms.value) };
+  const shared = !!cb && ca.harness === cb.harness && ca.harness_ref === cb.harness_ref;
+  if (!shared) return { perArm: true, harness: '', pin: null, rest: setupOf(d.detail, arms.value) };
+  const rest = d.detail.axis === 'model' ? `, prompt ${ca.prompt.version}` : ` with ${modelName(ca.model)}`;
+  return { perArm: false, harness: harnessShort(ca.harness), pin: pinOf(a), rest };
+});
+
+/** The simulated client's model, which shapes every conversation in both arms: null when the
+ *  experiment has none. */
+const simClient = computed(() => (data.value?.detail.sim_model ? modelName(data.value.detail.sim_model) : null));
+
+const hero = computed(() => {
+  const s = stats.value;
+  if (!s) return null;
+  const values = [s.diff.low, s.diff.high, ...(s.aa ? [s.aa.diff.low, s.aa.diff.high] : [])];
+  const [min, max] = domainFor(values, -20, 30);
+  const level = Math.round(s.level * 100);
+  const [a, b] = arms.value;
+  const name = a && b && a.short !== b.short ? `${b.short} minus ${a.short}` : 'B minus A';
+  // Arm colour only when the result holds up; a result with no clear difference is grey.
+  const rows: StripRow[] = [{ estimate: s.diff.estimate, low: s.diff.low, high: s.diff.high, tone: verdictTone(s.verdict), label: `${name}, ${s.tasks.length} tasks` }];
+  const aa: StripRow[] = s.aa ? [{ estimate: s.aa.diff.estimate, low: s.aa.diff.low, high: s.aa.diff.high, tone: 'neutral', size: 'sm', label: 'A/A run, same config twice' }] : [];
+  return {
+    level,
+    min,
+    max,
+    ticks: ticksFor(min, max, 10),
+    rows: [...rows, ...aa],
+    aria: `Difference ${signed(s.diff.estimate)} points, interval ${intervalText(s.diff)}.${s.aa ? ` The A/A run gave ${signed(s.aa.diff.estimate)}, interval ${intervalText(s.aa.diff)}.` : ''}`,
+  };
+});
+
+/** The hero's sentence under the verdict: "+15 points of pass rate: v1 58%, v2 73%. The 95%
+ *  interval runs from +7 to +23 points." Each arm's rate is named; "X to Y" is only an interval.
+ *  Numbers stay on the line with their unit. */
+const heroText = computed(() => {
+  const s = stats.value;
+  const h = hero.value;
+  if (!s || !h) return null;
+  const [a, b] = arms.value;
+  const unit = (v: number) => (Math.abs(Math.round(v)) === 1 ? 'point' : 'points');
+  return {
+    big: `${signed(s.diff.estimate)}${NBSP}${unit(s.diff.estimate)}`,
+    rest: ` of pass rate: ${a?.short ?? 'A'} ${percent(s.a.rate)}, ${b?.short ?? 'B'} ${percent(s.b.rate)}. The ${h.level}% interval runs from ${signed(s.diff.low)} to ${signed(s.diff.high)}${NBSP}points.`,
+  };
+});
+
+/** Why the result is or is not noise: the interval, the check on the method (an A/A run), and
+ *  the method itself, named only as the statistics step names it. */
+const why = computed(() => {
+  const s = stats.value;
+  if (!s) return [];
+  const side = s.diff.low > 0 ? 'above' : 'below';
+  const interval = excludesZero(s.diff)
+    ? `The interval stays ${side} zero.`
+    : 'The interval crosses zero, so these trials cannot rule out no difference at all.';
+  let aa = 'No A/A run on this setup yet, so the method has not been checked on a run where nothing changed.';
+  if (s.aa) {
+    aa = excludesZero(s.aa.diff)
+      ? `Check on the method: the same config run twice gave ${pointsWithInterval(s.aa.diff)}, a difference where there is none. Treat this result with caution.`
+      : `Check on the method: the same config run twice gave ${pointsWithInterval(s.aa.diff)}, which includes zero, so the method did not invent a difference when nothing changed.`;
+  }
+  const p = s.p_value !== null ? `, p${NBSP}=${NBSP}${s.p_value}` : '';
+  const method = s.method === 'paired_task_bootstrap'
+    ? `Paired by task: each task is compared with itself across the two arms. ${methodName(s.method)}${p}.`
+    : `${methodName(s.method)}${p}.`;
+  return [interval, aa, method];
+});
+
+interface Metric {
+  name: string;
+  delta: string;
+  interval: string;
+  a: number;
+  b: number;
+  aText: string;
+  bText: string;
+  max: number;
+}
+
+function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const s = [...values].sort((x, y) => x - y);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+const mean = (values: number[]) => (values.length ? values.reduce((x, y) => x + y, 0) / values.length : null);
+
+const metrics = computed<Metric[]>(() => {
+  const d = data.value;
+  const t = totals.value;
+  if (!d || !t) return [];
+  const s = stats.value;
+  const out: Metric[] = [];
+  const rel = (i: Interval | null, abs: string) => (i ? `${signed(i.estimate)}%, interval ${signed(i.low)}% to ${signed(i.high)}%` : abs);
+  if (s) {
+    out.push({ name: 'Pass rate', delta: `${signed(s.diff.estimate)} points`, interval: `interval ${intervalText(s.diff)} points`, a: s.a.rate, b: s.b.rate, aText: percent(s.a.rate), bText: percent(s.b.rate), max: 1 });
+  } else if (t.a.graded && t.b.graded) {
+    const ra = t.a.passed / t.a.graded;
+    const rb = t.b.passed / t.b.graded;
+    out.push({ name: 'Pass rate', delta: `${signed((rb - ra) * 100)} points`, interval: `${t.a.passed} of ${t.a.graded} and ${t.b.passed} of ${t.b.graded}; no interval yet`, a: ra, b: rb, aText: percent(ra), bText: percent(rb), max: 1 });
+  }
+  const costs = s?.costs ?? [];
+  if (costs.length) {
+    for (const c of costs) {
+      if (c.metric === 'cost_usd') out.push({ name: 'Cost per trial', delta: signedMoney(c.diff.estimate), interval: rel(c.relative, `interval ${signedMoney(c.diff.low)} to ${signedMoney(c.diff.high)}`), a: c.a, b: c.b, aText: money(c.a), bText: money(c.b), max: Math.max(c.a, c.b) });
+      if (c.metric === 'wall_s') out.push({ name: 'Time per trial, median', delta: `${signed(c.diff.estimate)} s`, interval: rel(c.relative, `interval ${signed(c.diff.low)} to ${signed(c.diff.high)} s`), a: c.a, b: c.b, aText: `${Math.round(c.a)} s`, bText: `${Math.round(c.b)} s`, max: Math.max(c.a, c.b) });
+      if (c.metric === 'tokens') out.push({ name: 'Tokens per trial', delta: signed(c.diff.estimate), interval: rel(c.relative, `interval ${signed(c.diff.low)} to ${signed(c.diff.high)}`), a: c.a, b: c.b, aText: thousands(c.a), bText: thousands(c.b), max: Math.max(c.a, c.b) });
+    }
+    return out;
+  }
+  // Until the statistics step reports costs, show the arm means from the trials, with their N.
+  const [ha, hb] = d.detail.config_hashes;
+  const done = d.trials.filter((x) => x.status === 'done');
+  const byArm = (h: string) => done.filter((x) => x.config === h);
+  const ta = byArm(ha);
+  const tb = ha === hb ? [] : byArm(hb);
+  const n = `N = ${ta.length} and ${tb.length} trials; no interval yet`;
+  const pairs: [string, (x: ExperimentTrial) => number | null | undefined, 'mean' | 'median', (v: number) => string, (v: number) => string][] = [
+    ['Cost per trial', (x) => x.cost_usd, 'mean', money, signedMoney],
+    ['Time per trial, median', (x) => x.wall_s, 'median', (v) => seconds(v), (v) => `${signed(v, 1)} s`],
+    ['Tokens per trial', (x) => (x.input_tokens ?? 0) + (x.output_tokens ?? 0) || null, 'mean', thousands, (v) => signed(v)],
+  ];
+  for (const [name, pick, how, fmt, fmtDelta] of pairs) {
+    const va = ta.map(pick).filter((v): v is number => typeof v === 'number');
+    const vb = tb.map(pick).filter((v): v is number => typeof v === 'number');
+    const a = how === 'mean' ? mean(va) : median(va);
+    const b = how === 'mean' ? mean(vb) : median(vb);
+    if (a === null || b === null) continue;
+    out.push({ name, delta: fmtDelta(b - a), interval: n, a, b, aText: fmt(a), bText: fmt(b), max: Math.max(a, b) });
+  }
+  return out;
+});
+
+/** A bar's share of its rail: the rail runs from 0 to 100% for pass rate, and from 0 to the
+ *  larger arm's value for the rest. */
+const barShare = (v: number, max: number) => `${Math.max(0, Math.min(100, (v / (max || 1)) * 100))}%`;
+
+interface TaskRow {
+  key: string;
+  name: string;
+  grader: string;
+  a: CompareRow | undefined;
+  b: CompareRow | undefined;
+  diff: Interval | null;
+  significant: boolean;
+  link: string | null;
+  linkTitle: string;
+}
+
+function failedTrial(task: string, prefer: 0 | 1): ExperimentTrial | undefined {
+  const d = data.value;
+  if (!d) return undefined;
+  const of = (arm: 0 | 1) => d.trials.find((t) => t.task === task && t.config === d.detail.config_hashes[arm] && t.passed === false);
+  return of(prefer) ?? of(prefer === 1 ? 0 : 1) ?? d.trials.find((t) => t.task === task && t.status === 'done');
+}
+
+const taskRows = computed<TaskRow[]>(() => {
+  const d = data.value;
+  if (!d) return [];
+  const s = stats.value;
+  const base = s
+    ? s.tasks.map((t) => ({ key: t.task, diff: t.diff, significant: t.significant }))
+    : d.detail.tasks.map((t) => {
+        const a = cell(t.sha256, 0);
+        const b = cell(t.sha256, 1);
+        const est = a?.graded && b?.graded ? (b.passed / b.graded - a.passed / a.graded) * 100 : null;
+        return { key: t.sha256, diff: est === null ? null : { estimate: est, low: est, high: est }, significant: false };
+      });
+  return base
+    .map((r) => {
+      // The same trial the "Worth a look" button opens: a failure your label does not dispute.
+      const look = lookTrial(r.key);
+      const name = taskName(r.key);
+      const what = look && look.trial.passed === false ? 'a failed trial' : 'a trial';
+      const linkTitle = look ? `Open ${what} of ${name}, arm ${armOfTrial(look.trial).toUpperCase()}${look.disputed && labelsDone.value ? ' (your label disagrees with the judge)' : ''}` : '';
+      return {
+        key: r.key,
+        name,
+        grader: gradedBy(taskOf(r.key)),
+        a: cell(r.key, 0),
+        b: cell(r.key, 1),
+        diff: r.diff,
+        significant: r.significant,
+        link: look ? href.trial(look.trial.id) : null,
+        linkTitle,
+      };
+    })
+    .sort((x, y) => (y.diff?.estimate ?? -999) - (x.diff?.estimate ?? -999));
+});
+
+/** The task plot's x for a difference: ±100 land at 18 and 382, so a round cap at either end
+ *  stays inside the cell and sits under the centre of its axis label. */
+const fx = (v: number) => 200 + Math.max(-100, Math.min(100, v)) * 1.82;
+/** The axis labels, each centred on its tick at the same x the intervals use. */
+const AXIS_TICKS = [-100, -50, 0, 50, 100].map((v) => ({ value: v, x: fx(v), label: tick(v) }));
+/** Arm colour only for a task whose difference holds up after correction; every other row is grey. */
+const lean = (r: TaskRow) => (!r.diff || !r.significant ? 'neutral' : r.diff.estimate >= 0 ? 'b' : 'a');
+function verdictOf(r: TaskRow): { kind: Verdict; label?: string } {
+  if (!r.diff || !stats.value) return { kind: 'pending' };
+  if (r.significant) return { kind: r.diff.estimate >= 0 ? 'better' : 'worse' };
+  // Clear of zero on its own, but not once the other comparisons are accounted for.
+  if (excludesZero(r.diff)) return { kind: 'none', label: 'No clear difference after correction' };
+  return { kind: 'none' };
+}
+const labelOf = (r: TaskRow) => (!r.diff ? 'Not graded yet' : stats.value ? `${signed(r.diff.estimate)} (${intervalText(r.diff)})` : `${signed(r.diff.estimate)}, no interval`);
+const passedText = (c: CompareRow | undefined) => (c ? `${c.passed} of ${c.graded}` : '–');
+
+const differing = computed(() => taskRows.value.filter((r) => r.significant).length);
+
+/** While held-out outputs remain to label, nothing on the page says where your labels and the
+ *  judge part ways, so labelling stays blind. */
+const labelsDone = computed(() => (data.value?.queue.length ?? 0) === 0);
+
+/** How many tasks differ, and how wide the rest's intervals are: no clear difference at this N is
+ *  an absence of evidence, not a finding of no change. */
+const taskSummary = computed(() => {
+  const d = data.value;
+  if (!d || !stats.value) return '';
+  const total = taskRows.value.length;
+  const n = differing.value;
+  const first = `${n} ${n === 1 ? 'task differs' : 'tasks differ'} ${correctionWords.value ? `after ${correctionWords.value} for ${total} comparisons` : 'before any correction for many comparisons'}.`;
+  const other = total - n;
+  if (!other) return first;
+  let line = `${first} The other ${other} ${other === 1 ? 'shows' : 'show'} no clear difference.`;
+  const widths = taskRows.value.filter((r) => !r.significant && r.diff).map((r) => Math.round((r.diff?.high ?? 0) - (r.diff?.low ?? 0)));
+  if (widths.length) {
+    const lo = Math.min(...widths);
+    const hi = Math.max(...widths);
+    const range = lo === hi ? `${lo}` : `${lo} to ${hi}`;
+    const per = `At ${plural(d.detail.n, 'trial')} per arm`;
+    line += widths.length === 1
+      ? ` ${per} its interval is ${range} points wide, so a real change on that task can hide here.`
+      : ` ${per} their intervals are ${range} points wide, so a real change on one task can hide here.`;
+  }
+  return line;
+});
+
+const correctionWords = computed(() => {
+  const c = stats.value?.correction;
+  if (!c) return null;
+  if (c.toLowerCase() === 'holm') return "Holm's correction";
+  if (c.toLowerCase() === 'bonferroni') return 'the Bonferroni correction';
+  return `the ${c} correction`;
+});
+
+/** What it rests on: how much the judge graded. When the caveat under the figure shows, it already
+ *  gives kappa, the bar and whether it is provisional, so this line does not repeat them. */
+const judgeLine = computed(() => {
+  const j = stats.value?.judge;
+  const d = data.value;
+  if (!j || !d) return null;
+  const scored = `The judge scored ${d.detail.tasks.filter(isJudged).length} of the ${d.detail.tasks.length} tasks`;
+  if (caveat.value) return `${scored}, including ${differingShort(differing.value)}.`;
+  return `${scored}. Its agreement with you${agreementWords(j, d.queue.length)}`;
+});
+
+/** Under the figure: when every task that differs needs the judge's pass, the verdict rests on the judge. */
+const caveat = computed(() => {
+  const s = stats.value;
+  const d = data.value;
+  if (!s || !d) return null;
+  return judgeCaveat({ differing: taskRows.value.filter((r) => r.significant).map((r) => taskOf(r.key)), isJudged, judge: s.judge, toGo: d.queue.length, alsoGraded: alsoGradedBy });
+});
+
+/** On a phone the column heads are hidden, so the shared axis says what its intervals are. */
+const axisCaption = computed(() => {
+  const level = stats.value ? Math.round(stats.value.level * 100) : 95;
+  const verdicts = correctionWords.value ? `verdicts after ${correctionWords.value} for ${taskRows.value.length} tasks.` : 'verdicts not corrected either.';
+  return `B minus A, in points. ${level}% intervals, not corrected; ${verdicts}`;
+});
+
+/** The failed trial to open for a task: arm B first, then arm A, skipping any trial whose judge
+ *  verdict your held-out label disputes, since that failure may not be the agent's. When every
+ *  failure is disputed, the disputed one is still offered, and the button says so. */
+function lookTrial(task: string): { trial: ExperimentTrial; disputed: boolean } | null {
+  const d = data.value;
+  if (!d) return null;
+  const disputed = new Set((d.judge?.disagreements ?? []).map((x) => x.trial_id).filter((id): id is string => !!id));
+  const failedIn = (arm: 0 | 1) => d.trials.filter((t) => t.task === task && t.config === d.detail.config_hashes[arm] && t.passed === false);
+  const failed = [...failedIn(1), ...failedIn(0)];
+  const clean = failed.find((t) => !disputed.has(t.id));
+  if (clean) return { trial: clean, disputed: false };
+  if (failed[0]) return { trial: failed[0], disputed: true };
+  const any = failedTrial(task, 1);
+  return any ? { trial: any, disputed: false } : null;
+}
+
+const worthALook = computed(() => {
+  const s = stats.value;
+  const candidates = taskRows.value.filter((r) => r.diff && r.diff.estimate < 0);
+  const worst = candidates.sort((x, y) => (x.diff?.estimate ?? 0) - (y.diff?.estimate ?? 0))[0];
+  if (!worst || !worst.diff || !s) return null;
+  // The heading claims no more than the statistics: "got worse" only when it holds up.
+  const title = worst.significant ? `Worth a look: ${worst.name} got worse` : `Worth a look: ${worst.name} fell from ${passedText(worst.a)} to ${passedText(worst.b)}`;
+  const numbers = `(${signed(worst.diff.estimate)}, interval ${intervalText(worst.diff)})`;
+  const finding = worst.significant
+    ? `B passed ${passedText(worst.b)}, A passed ${passedText(worst.a)}. This difference holds up ${numbers}.`
+    : excludesZero(worst.diff)
+      ? `No clear difference after correcting for ${s.tasks.length} tasks ${numbers}.`
+      : `No clear difference: its interval includes zero even before correcting for ${s.tasks.length} tasks ${numbers}.`;
+  const look = lookTrial(worst.key);
+  return {
+    row: worst,
+    title,
+    text: `${finding} Open the failed trials to see whether the agent or the grader is behind it.`,
+    link: look ? href.trial(look.trial.id) : null,
+    button: look?.disputed && labelsDone.value ? 'Open a failed trial (your label disagrees with the judge)' : 'Open a failed trial',
+  };
+});
+</script>
+
+<template>
+  <LoadState
+    :loading="loading"
+    :error="error"
+    what="this comparison"
+  >
+    <template v-if="data">
+      <div class="head-row">
+        <div class="page-head">
+          <nav
+            aria-label="Breadcrumb"
+            class="crumbs"
+          >
+            <a :href="href.experiments()">Experiments</a> / {{ data.detail.name }}
+          </nav>
+          <h1 tabindex="-1">
+            {{ data.detail.name }}
+          </h1>
+          <div
+            class="arms-line small"
+            data-test="arms-line"
+          >
+            <span
+              v-for="arm in arms"
+              :key="arm.key"
+              class="arm"
+            ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ arm.label }}<template v-if="meta.perArm && pinOf(arm)">{{ ' ' }}<span
+              class="mono"
+              data-test="arm-pin"
+            >{{ pinOf(arm) }}</span></template> (config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span>)</span></span>
+          </div>
+          <!-- Line 2: what the arms share, then the run's size and commits. Each group stays whole;
+               the line breaks only between groups. -->
+          <p
+            class="meta-line small secondary"
+            data-test="meta-line"
+          >
+            <span
+              class="nowrap"
+              data-test="setup"
+            >{{ meta.harness }}<template v-if="meta.pin">{{ ' ' }}<span class="mono">{{ meta.pin }}</span></template>{{ meta.rest }}</span><template v-if="simClient">
+              · <span
+                class="nowrap"
+                data-test="sim-client"
+              >simulated client {{ simClient }}</span>
+            </template> · <span class="nowrap">{{ totalTrials(data.detail) }} trials</span><template v-if="commits.plan">
+              · <a
+                :href="href.run(data.detail.id)"
+                class="secondary nowrap"
+                data-test="plan-commit"
+              >plan <span class="mono">{{ commits.plan }}</span>, committed before the run</a>
+            </template><template v-if="commits.platform">
+              · <span
+                class="nowrap"
+                data-test="platform-commit"
+              >platform <span class="mono">{{ commits.platform }}</span></span>
+            </template>
+          </p>
+        </div>
+        <div class="actions">
+          <div class="action-buttons">
+            <a
+              v-if="data.detail.status === 'running' || data.detail.status === 'created'"
+              :href="href.run(data.detail.id)"
+              class="btn btn--quiet"
+            >See the run</a>
+            <template v-if="!fixtures">
+              <a
+                :href="api.exportUrl(data.detail.id, 'csv')"
+                class="btn btn--quiet"
+                download
+              >Export CSV</a>
+              <a
+                :href="api.exportUrl(data.detail.id, 'json')"
+                class="btn btn--quiet"
+                download
+              >Export JSON</a>
+            </template>
+            <button
+              v-else
+              type="button"
+              class="btn btn--quiet"
+              disabled
+              title="Export needs the API; sample data has nothing to export"
+            >
+              Export CSV
+            </button>
+          </div>
+          <p
+            v-if="fixtures"
+            class="secondary smaller export-note"
+            data-test="export-note"
+          >
+            Export needs the API
+          </p>
+        </div>
+      </div>
+
+      <section
+        aria-labelledby="verdict"
+        class="panel verdict"
+        data-test="verdict"
+      >
+        <div class="verdict-main">
+          <template v-if="stats && hero">
+            <h2
+              id="verdict"
+              class="verdict-title"
+              data-test="verdict-title"
+            >
+              {{ verdictTitle(stats, arms) }}
+            </h2>
+            <p class="verdict-text">
+              <strong class="num">{{ heroText?.big }}</strong>{{ heroText?.rest }}
+            </p>
+            <IntervalStrip
+              :min="hero.min"
+              :max="hero.max"
+              :ticks="hero.ticks"
+              :rows="hero.rows"
+              :reference="{ value: 0, dashed: true }"
+              :summary="hero.aria"
+            />
+            <p
+              v-if="caveat"
+              class="caveat"
+              data-test="judge-caveat"
+            >
+              <AppIcon
+                name="alert"
+                :size="14"
+              />
+              <span><strong class="caveat-lead">{{ caveat.lead }}:</strong> <template
+                v-for="(part, pi) in identParts(caveat.before, caveat.idents)"
+                :key="pi"
+              ><span
+                v-if="part.ident"
+                class="mono"
+              >{{ part.text }}</span><template v-else>{{ part.text }}</template></template><a :href="href.judge()">{{ caveat.link }}</a>{{ caveat.after }}</span>
+            </p>
+          </template>
+          <template v-else>
+            <h2
+              id="verdict"
+              class="verdict-title"
+              data-test="verdict-title"
+            >
+              No verdict yet
+            </h2>
+            <p
+              v-if="totals"
+              class="verdict-text"
+            >
+              {{ noVerdictText }}
+            </p>
+          </template>
+          <template v-if="worthALook">
+            <!-- Takes the free height, so the next step sits at the foot of the answer column. -->
+            <div
+              class="push"
+              aria-hidden="true"
+            />
+            <div
+              class="look"
+              data-test="worth-a-look"
+            >
+              <h3
+                id="look"
+                class="look-title"
+              >
+                {{ worthALook.title }}
+              </h3>
+              <p class="look-body">
+                {{ worthALook.text }}
+              </p>
+              <a
+                v-if="worthALook.link"
+                :href="worthALook.link"
+                class="btn look-btn"
+                data-test="look-link"
+              >{{ worthALook.button }}</a>
+            </div>
+          </template>
+        </div>
+        <div
+          v-if="stats"
+          class="verdict-why small"
+        >
+          <h3
+            class="why-title"
+            data-test="why-title"
+          >
+            {{ excludesZero(stats.diff) ? 'Why this is unlikely to be noise' : 'Why this could be noise' }}
+          </h3>
+          <p
+            v-for="(line, i) in why"
+            :key="i"
+            data-test="why-line"
+          >
+            {{ line }}
+          </p>
+          <h3
+            class="why-title rests-title"
+            data-test="why-title"
+          >
+            What it rests on
+          </h3>
+          <p
+            v-if="judgeLine"
+            data-test="judge-line"
+          >
+            {{ judgeLine }} <a :href="href.judge()">See judge agreement</a>
+          </p>
+          <div class="infra">
+            <p
+              class="secondary"
+              data-test="infra-sentence"
+            >
+              <template v-if="infraCount">
+                {{ infraSentence }}<template v-if="!infraTrials.length">
+                  {{ ' ' }}<a :href="href.run(data.detail.id)">See them on the run page</a>
+                </template>
+              </template>
+              <template v-else>
+                No trial stopped on an infra failure.
+              </template>
+            </p>
+            <ul
+              v-if="infraTrials.length"
+              class="infra-list"
+              data-test="infra-list"
+            >
+              <li
+                v-for="r in infraRows"
+                :key="r.trial.id"
+                data-test="infra-row"
+              >
+                <a
+                  :href="href.trial(r.trial.id)"
+                  class="infra-link"
+                ><span
+                  :class="`dot dot--${r.arm}`"
+                  aria-hidden="true"
+                /><span class="infra-text">{{ r.arm.toUpperCase() }} · <span class="mono infra-task">{{ r.task }}</span> · attempt {{ r.trial.attempt }} · <span class="secondary nowrap">{{ r.cause }}</span> · {{ r.rerun }}</span></a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section
+        v-if="metrics.length"
+        aria-labelledby="costs"
+        class="stack"
+      >
+        <h2
+          id="costs"
+          class="section-title"
+        >
+          Pass rate and what it costs
+        </h2>
+        <div class="stat-strip metrics">
+          <div
+            v-for="m in metrics"
+            :key="m.name"
+          >
+            <span class="stat-label">{{ m.name }}</span>
+            <span class="metric-delta num">{{ m.delta }}</span>
+            <span class="secondary smaller num block">{{ m.interval }}</span>
+            <!-- Each bar sits on a rail that is the tile's scale: 0 to 100% for pass rate, 0 to the
+                 larger arm's value for the rest. -->
+            <div
+              class="bars"
+              role="img"
+              :aria-label="`${m.name}: A ${m.aText}, B ${m.bText}`"
+            >
+              <span class="bar-label num">A {{ m.aText }}</span>
+              <span class="rail"><span
+                class="bar bar--a"
+                data-test="bar-a"
+                :style="{ width: barShare(m.a, m.max) }"
+              /></span>
+              <span class="bar-label num">B {{ m.bText }}</span>
+              <span class="rail"><span
+                class="bar bar--b"
+                data-test="bar-b"
+                :style="{ width: barShare(m.b, m.max) }"
+              /></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        aria-labelledby="tasks"
+        class="stack"
+      >
+        <div class="head-row head-row--baseline">
+          <h2
+            id="tasks"
+            class="section-title"
+          >
+            Task by task
+          </h2>
+          <p
+            v-if="stats"
+            class="secondary small task-summary"
+            data-test="task-summary"
+          >
+            {{ taskSummary }}
+          </p>
+        </div>
+        <div class="table-wrap">
+          <table
+            class="table forest"
+            data-test="forest"
+          >
+            <thead>
+              <tr class="col-heads">
+                <th scope="col">
+                  Task
+                </th>
+                <th scope="col">
+                  Graded by
+                </th>
+                <th
+                  scope="col"
+                  class="right"
+                >
+                  A passed
+                </th>
+                <th
+                  scope="col"
+                  class="right"
+                >
+                  B passed
+                </th>
+                <th
+                  scope="col"
+                  class="plot-col"
+                >
+                  Difference in points, B minus A, {{ stats ? Math.round(stats.level * 100) : 95 }}% interval (not corrected)
+                </th>
+                <th scope="col">
+                  Verdict
+                </th>
+              </tr>
+              <tr
+                aria-hidden="true"
+                class="axis-row"
+              >
+                <td colspan="4" />
+                <td class="axis-cell">
+                  <span
+                    class="axis-caption"
+                    data-test="axis-caption"
+                  >{{ axisCaption }}</span>
+                  <svg
+                    viewBox="0 0 400 18"
+                    width="100%"
+                    data-test="axis"
+                  >
+                    <template
+                      v-for="t in AXIS_TICKS"
+                      :key="t.value"
+                    >
+                      <text
+                        :x="t.x"
+                        y="13"
+                        :class="t.value === 0 ? 'axis-label axis-label--zero' : 'axis-label'"
+                        text-anchor="middle"
+                        data-test="axis-label"
+                      >{{ t.label }}</text>
+                      <!-- A stub under each label; at zero it is the top of the zero line, which the
+                           cells below carry on. -->
+                      <line
+                        :x1="t.x"
+                        :x2="t.x"
+                        y1="15"
+                        y2="18"
+                        :class="t.value === 0 ? 'zero-stub' : 'tick-stub'"
+                        data-test="axis-stub"
+                      />
+                    </template>
+                  </svg>
+                </td>
+                <td />
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="r in taskRows"
+                :key="r.key"
+                data-test="forest-row"
+              >
+                <th
+                  scope="row"
+                  class="c-task"
+                >
+                  <a
+                    v-if="r.link"
+                    :href="r.link"
+                    :title="r.linkTitle"
+                    :aria-label="r.linkTitle"
+                    class="mono task-link"
+                  >{{ r.name }}</a>
+                  <span
+                    v-else
+                    class="mono"
+                  >{{ r.name }}</span>
+                </th>
+                <td class="secondary c-grader">
+                  {{ r.grader }}
+                </td>
+                <td class="right num c-a">
+                  <span class="phone-only">A </span>{{ passedText(r.a) }}
+                </td>
+                <td class="right num c-b">
+                  <span class="phone-only">B </span>{{ passedText(r.b) }}
+                </td>
+                <td class="plot-cell">
+                  <svg
+                    v-if="r.diff"
+                    viewBox="0 0 400 26"
+                    width="100%"
+                    role="img"
+                    :aria-label="`${r.name}: ${signed(r.diff.estimate)} points${stats ? `, interval ${intervalText(r.diff)}` : ''}`"
+                  >
+                    <line
+                      :x1="fx(r.diff.low)"
+                      :x2="fx(r.diff.high)"
+                      y1="13"
+                      y2="13"
+                      :class="`ci ci--${lean(r)}`"
+                    />
+                    <circle
+                      :cx="fx(r.diff.estimate)"
+                      cy="13"
+                      r="6"
+                      :class="`pt pt--${lean(r)}`"
+                    />
+                  </svg>
+                </td>
+                <td
+                  class="c-verdict"
+                  data-test="task-verdict"
+                >
+                  <VerdictTag
+                    :verdict="verdictOf(r).kind"
+                    :label="verdictOf(r).label"
+                  />
+                  <span class="result-detail">{{ labelOf(r) }}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </template>
+  </LoadState>
+</template>
+
+<style scoped>
+.arms-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin-top: 10px;
+}
+
+.meta-line {
+  margin-top: 6px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+/* The export controls sit top right, level with the h1. */
+.page-head {
+  flex: 1 1 560px;
+  min-width: 0;
+}
+
+.actions {
+  flex: none;
+  margin-left: auto;
+  margin-top: 26px;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.export-note {
+  text-align: right;
+}
+
+.verdict {
+  display: flex;
+  flex-wrap: wrap;
+  border-radius: 14px;
+}
+
+.verdict-main {
+  flex: 999 1 620px;
+  min-width: 0;
+  padding: 30px 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.verdict-title {
+  font-size: 40px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.verdict-text {
+  font-size: 18px;
+  max-width: 60ch;
+}
+
+.verdict-text strong {
+  font-weight: 600;
+}
+
+.verdict-why {
+  flex: 1 1 400px;
+  min-width: 0;
+  padding: 30px;
+  border-left: 1px solid var(--rule-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.why-title {
+  font-size: 15px;
+}
+
+.rests-title {
+  margin-top: 20px;
+}
+
+.push {
+  flex: 1 0 0;
+}
+
+/* The next step, at the foot of the answer column. */
+.look {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  border-top: 1px solid var(--rule);
+  padding-top: 16px;
+}
+
+.look-title {
+  font-size: 15px;
+}
+
+.look-body {
+  max-width: 72ch;
+  font-size: 15px;
+}
+
+.look-btn {
+  margin-top: 8px;
+}
+
+.metrics {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+
+.metric-delta {
+  display: block;
+  margin-top: 2px;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.block {
+  display: block;
+}
+
+.bars {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.rail {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+}
+
+.bar--a {
+  background: var(--arm-a);
+}
+
+.bar--b {
+  background: var(--arm-b);
+}
+
+.bar-label {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.axis-caption {
+  display: none;
+}
+
+.head-row--baseline {
+  align-items: baseline;
+}
+
+/* No single word left on a line of its own. */
+.task-summary {
+  text-wrap: pretty;
+}
+
+.forest {
+  min-width: 980px;
+}
+
+.forest th,
+.forest td {
+  vertical-align: middle;
+}
+
+.plot-col {
+  width: 420px;
+}
+
+/* One dashed zero line down the whole plot column. Each cell draws its piece at the SVG's x = 200,
+   which is the cell's centre because its left and right padding are equal, and reaches over the
+   row rule below it. The SVG sits above the line, so dots and intervals cover it. */
+.axis-cell,
+.plot-cell {
+  position: relative;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.axis-cell::before,
+.plot-cell::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  bottom: -1px;
+  left: 50%;
+  border-left: 1px dashed var(--ink-2);
+  pointer-events: none;
+}
+
+/* In the axis row the line starts under the zero label, at the foot of the axis. */
+.axis-cell::before {
+  top: auto;
+  height: 5px;
+}
+
+.axis-cell svg {
+  display: block;
+}
+
+.axis-cell svg,
+.plot-cell svg {
+  position: relative;
+  z-index: 1;
+}
+
+.zero-stub {
+  stroke: var(--ink-2);
+  stroke-dasharray: 3 3;
+}
+
+.tick-stub {
+  stroke: var(--ink-2);
+}
+
+.axis-label {
+  font-size: 12px;
+  fill: var(--ink-2);
+}
+
+.axis-label--zero {
+  fill: var(--ink);
+}
+
+.task-link {
+  color: var(--ink);
+}
+
+.ci {
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.ci--a {
+  stroke: var(--arm-a);
+}
+
+.ci--b {
+  stroke: var(--arm-b);
+}
+
+.ci--neutral {
+  stroke: var(--neutral-line);
+}
+
+.pt {
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.pt--a {
+  fill: var(--arm-a);
+}
+
+.pt--b {
+  fill: var(--arm-b);
+}
+
+.pt--neutral {
+  fill: var(--neutral-dot);
+}
+
+.infra {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.infra-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* One underline, on the task id: the arm, attempt, cause and re-run read as plain text beside it. */
+.infra-link {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 32px;
+  padding: 5px 0;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.infra-link .dot {
+  /* Level with the first line of a row that wraps. */
+  margin-top: 0.45em;
+  margin-top: calc((1lh - 10px) / 2);
+}
+
+.infra-task {
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+
+.infra-link:hover .infra-task {
+  text-decoration-color: var(--ink);
+}
+
+.phone-only {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .verdict-main {
+    padding: 22px 20px;
+  }
+
+  .verdict-why {
+    padding: 20px;
+    border-left: 0;
+    border-top: 1px solid var(--rule-soft);
+  }
+
+  .verdict-title {
+    font-size: 32px;
+  }
+
+  .verdict-text {
+    font-size: 16px;
+  }
+
+  .actions {
+    margin-top: 0;
+  }
+
+  .table.forest .axis-caption {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+
+  /* Task by task stacks: the shared axis once at the top, then for each task its name and
+     verdict, its interval across the full width, and the counts with the grader underneath. */
+  .table.forest,
+  .table.forest thead,
+  .table.forest tbody {
+    display: block;
+    min-width: 0;
+  }
+
+  .table.forest .col-heads {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .table.forest .axis-row {
+    display: block;
+  }
+
+  .table.forest .axis-row > td {
+    display: none;
+  }
+
+  .table.forest .axis-row > td.axis-cell {
+    display: block;
+    padding: 10px 16px 4px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .table.forest tbody tr {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 0;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  /* On a phone each task is a block of three lines; its piece of the zero line runs the whole
+     block, so the line stays unbroken from the axis to the last task. The row's padding is the
+     same on both sides, so 50% is still the SVG's x = 200. Text sits on the surface over it. */
+  .table.forest .plot-cell {
+    position: static;
+  }
+
+  .table.forest .c-task > *,
+  .table.forest .c-verdict,
+  .table.forest .c-a,
+  .table.forest .c-b,
+  .table.forest .c-grader {
+    position: relative;
+    z-index: 1;
+    background: var(--surface);
+  }
+
+  .table.forest tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .table.forest tbody tr > * {
+    padding: 0;
+    border: 0;
+    text-align: left;
+  }
+
+  .table.forest .c-task {
+    order: 1;
+    flex: 1 1 0;
+    min-width: 0;
+    padding-right: 12px;
+  }
+
+  .table.forest .c-verdict {
+    order: 2;
+    flex: none;
+    text-align: right;
+  }
+
+  .table.forest .plot-cell {
+    order: 3;
+    flex: 0 0 100%;
+  }
+
+  .table.forest .c-a,
+  .table.forest .c-b,
+  .table.forest .c-grader {
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+
+  .table.forest .c-a {
+    order: 4;
+  }
+
+  .table.forest .c-b {
+    order: 5;
+  }
+
+  .table.forest .c-grader {
+    order: 6;
+  }
+
+  .table.forest .c-b::before,
+  .table.forest .c-grader::before {
+    content: '·';
+    padding: 0 6px;
+  }
+
+  .phone-only {
+    display: inline;
+  }
+}
+</style>
