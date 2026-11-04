@@ -63,5 +63,13 @@
     "additionalProperties": false,
     "properties": {}
   },
-  "known_differences": []
+  "known_differences": [
+    "Each tool definition carries \"strict\": false, added by the SDK; name, description and parameters are the server's, unchanged (convert_schemas_to_strict off)",
+    "MCP tool results go back as a list of content parts ([{\"type\": \"text\", \"text\": ...}]), not a string; error results the SDK writes itself are plain strings",
+    "Malformed tool-call arguments: the model gets the SDK's fixed text 'An error occurred while running the tool. Please try again.' and is not told the JSON was invalid (D18; the SDK default is kept, which text to expose is open)",
+    "A tool call that raises (an MCP timeout or a broken session) gets the same fixed text (read from the SDK source; not run)",
+    "Unknown tool: the model gets \"Tool '<name>' not found.\", with no list of the available tools (tool_not_found_behavior=return_error_to_model; the SDK default raises and ends the run)",
+    "All tool calls of one model turn run concurrently (ToolExecutionConfig.max_function_tool_concurrency is left at the SDK default). With parallel_tool_calls false the model should send one call per turn",
+    "Requests carry a User-Agent: Agents/Python 0.24.0 header (models/chatcmpl_helpers.py; headers are not captured by the gate)"
+  ]
 }
