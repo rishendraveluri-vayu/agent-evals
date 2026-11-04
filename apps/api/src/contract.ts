@@ -266,6 +266,8 @@ export interface CreateExperimentRequest {
    * recorded. The same seed, tasks, configs and N give the same order.
    */
   order_seed?: number | null;
+  /** D32: left out (or null) for `{enabled: true, after: 3, min_passed: 1}`; `{enabled: false}` turns it off. */
+  futility?: Partial<FutilityRule> | null;
 }
 
 export const TRIAL_STATUSES = [
@@ -377,6 +379,8 @@ export interface ExperimentDetail extends ExperimentSummary {
   plan_commit: string | null;
   /** D32: the seed the claim order was shuffled from; null for experiments made before it. */
   order_seed: number | null;
+  /** D32: the futility rule as resolved at creation; null for experiments made before it (no check). */
+  futility: FutilityRule | null;
   budgets: { trial_usd: number; sim_usd: number };
   started_at: string | null;
   finished_at: string | null;

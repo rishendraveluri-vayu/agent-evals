@@ -632,13 +632,17 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
 
   it('compares per task and arm with stats null until SP6, and lists experiments with counts and spend', async () => {
     const exp = await experiment({ configs: [configA, configB] });
-    await report((await claim('w-cmp'))!, 'w-cmp', 'agent');
+    const ok = (await claim('w-cmp'))!;
+    await report(ok, 'w-cmp', 'agent');
     await report((await claim('w-cmp'))!, 'w-cmp', 'infra:budget_net');
+    // Claims follow the seeded order (D32), so either arm may have gone first.
+    const okConfig = (ok.spec as { trial: { config_hash: string } }).trial.config_hash;
+    const okName = okConfig === configA ? 'arm A' : 'arm B';
     const cmp = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as { stats: unknown; rows: { config: string; trials: number; infra_failed: number; graded: number }[] };
     expect(cmp.stats).toBeNull();
     expect(cmp.rows.map((r) => [r.config, r.trials, r.infra_failed, r.graded])).toEqual([
-      [configA, 1, 0, 0],
-      [configB, 0, 1, 0],
+      [configA, okConfig === configA ? 1 : 0, okConfig === configA ? 0 : 1, 0],
+      [configB, okConfig === configB ? 1 : 0, okConfig === configB ? 0 : 1, 0],
     ]);
     const list = (await request(env.http).get('/api/experiments').expect(200)).body as { id: string; spend_usd: number; counts: { done: number; queued: number } }[];
     const mine = list.find((e) => e.id === exp.id)!;
@@ -649,7 +653,7 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     expect(detail.events.some((e) => e.kind === 'budget_trip')).toBe(true);
     expect(detail.events.some((e) => e.kind === 'requeue')).toBe(false);
     const trials = (await request(env.http).get(`/api/experiments/${exp.id}/trials?status=done`).expect(200)).body as { config_name: string }[];
-    expect(trials.map((t) => t.config_name)).toEqual(['arm A']);
+    expect(trials.map((t) => t.config_name)).toEqual([okName]);
     await request(env.http).get(`/api/experiments/${exp.id}/trials?status=bogus`).expect(400);
   });
 

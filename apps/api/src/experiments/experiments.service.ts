@@ -27,6 +27,7 @@ import { LiteLlmClient } from '../litellm/litellm.client';
 import { SIM_MAX_OUTPUT_TOKENS, simTemperature } from '../worker/spec-builder';
 import { type CellInput, type Price, estimate } from './estimate';
 import { claimOrder, isSeed, newSeed } from './order';
+import { resolveFutility } from './rules';
 import { type ArmRow, addEvent, pauseArm, pauseExperiment } from './run-state';
 
 /** D35: arm A and arm B, or one config for a pilot. */
@@ -220,6 +221,7 @@ export class ExperimentsService {
       throw badRequest('invalid_experiment', 'order_seed must be an integer from 0 to 4294967295', 'Leave order_seed out for a random one, or give the seed of the order to repeat.');
     }
     const seed = isSeed(body.order_seed) ? body.order_seed : newSeed();
+    const futility = resolveFutility(body.futility);
 
     const id = newId('e');
     const slots: { id: string; task: string; config: string; harness: string; repeat: number; seq: number; order: number }[] = [];
@@ -240,8 +242,8 @@ export class ExperimentsService {
       await client.query(
         `INSERT INTO experiments (id, name, axis, config_hashes, task_sha256s, n, sim_model, sim_prompt_sha256,
                                   sim_temperature, sim_max_output_tokens, budget_usd, trial_budget_usd, sim_budget_usd,
-                                  platform_commit, plan_commit, estimate, status, order_seed)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'created', $17)`,
+                                  platform_commit, plan_commit, estimate, status, order_seed, futility)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'created', $17, $18)`,
         [
           id,
           name,
@@ -260,6 +262,7 @@ export class ExperimentsService {
           body.plan_commit ?? null,
           JSON.stringify(plan.estimate),
           seed,
+          JSON.stringify(futility),
         ],
       );
       await client.query(
@@ -456,6 +459,7 @@ export class ExperimentsService {
       platform_commit: r.platform_commit,
       plan_commit: r.plan_commit,
       order_seed: r.order_seed === null ? null : Number(r.order_seed),
+      futility: r.futility,
       budgets: { trial_usd: r.trial_budget_usd, sim_usd: r.sim_budget_usd },
       started_at: iso(r.started_at),
       finished_at: iso(r.finished_at),

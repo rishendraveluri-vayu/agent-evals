@@ -14,6 +14,7 @@ import { LiteLlmClient, LiteLlmHttpError, type MintedKey } from '../litellm/lite
 import { FINISHED, HELD, LEASE_S, PAUSES_ARM, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
 import { MAX_FILE_BYTES, checkFiles, locate, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
 import { configErrorFix, configErrorReason, parseReport, spanRows, usageOf } from './report';
+import { applyRunRules } from '../experiments/rules';
 import { pauseArm } from '../experiments/run-state';
 import { SIM_REPLIES_FILE, type SimReplyRow, type SimScope, parseSimReplies, simScope } from './sim-cache';
 import { clientSummary } from './client-summary';
@@ -414,6 +415,8 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
         await pauseArm(client, locked.experiment_id, locked.config_hash, reason, configErrorFix(body.runner_report), { id, attempt: locked.attempt });
       }
       await finishIfDone(client, locked.experiment_id);
+      // D32: the futility check and the guards, which may pause the experiment for review.
+      await applyRunRules(client, locked.experiment_id);
       return { stored, requeued, simStored };
     });
     if (!outcome) return this.duplicate((await this.db.query<TrialRow>('SELECT * FROM trials WHERE id = $1', [id]))[0]);
@@ -497,7 +500,10 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
         const next = await requeue(client, r.id, r.attempt, r.status, null);
         if (next) requeued.push(next);
       }
-      for (const exp of new Set(rows.map((r) => r.experiment_id))) await finishIfDone(client, exp);
+      for (const exp of new Set(rows.map((r) => r.experiment_id))) {
+        await finishIfDone(client, exp);
+        await applyRunRules(client, exp); // D32: an abandoned attempt counts for the infra guard
+      }
       return { abandoned: rows.map((r) => r.id), requeued };
     });
     if (changed.abandoned.length) this.logger.warn(`abandoned lapsed trials: ${changed.abandoned.join(', ')}`);

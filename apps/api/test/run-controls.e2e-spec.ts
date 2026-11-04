@@ -177,6 +177,103 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
     expect((await request(env.http).post(`/api/experiments/${exp.id}/arms/C/pause`).expect(404)).body).toMatchObject({ error: 'unknown_arm', fix: expect.any(String) as string });
   });
 
+  // ---- D32: futility and guards ----
+
+  /** Claims and reports until nothing is claimable; `outcome` picks each report's label and end state. */
+  async function drain(worker: string, outcome: (config: string, i: number) => { label?: string; end_state?: string; cost_usd?: number }): Promise<number> {
+    let i = 0;
+    for (let c = await e.claim(worker); c; c = await e.claim(worker)) {
+      const o = outcome(e.configOf(c), i++);
+      await e.report(c, worker, o.label ?? 'agent', { end_state: o.end_state, cost_usd: o.cost_usd });
+    }
+    return i;
+  }
+
+  it('pauses after 3 finished trials per arm when an arm passed none, once per arm, never on the A/B difference (D32)', async () => {
+    const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 4, order_seed: 3 });
+    expect(exp.futility).toEqual({ enabled: true, after: 3, min_passed: 1 });
+    // Arm A answers every time; arm B always hits the step limit, so it passes nothing.
+    const ran = await drain('w-fut', (config) => (config === B ? { end_state: 'step_limit' } : {}));
+    let d = await e.detail(exp.id);
+    expect(d.status).toBe('paused');
+    expect(ran).toBeLessThan(8);
+    expect(d.arms.find((a) => a.config_hash === B)!.counts.done).toBe(3);
+    const pause = d.events.find((x) => x.kind === 'futility_pause')!;
+    expect(pause.detail).toBe(d.paused_reason);
+    expect(pause.detail).toContain('futility check (D32): arm B passed 0 of its first 3 finished trials');
+    expect(pause.detail).toContain('passed means label agent and end state answered until graders exist (SP4)');
+    expect(pause.detail).not.toContain('arm A');
+
+    // After review, resuming runs the rest; the check does not fire again for arm B.
+    await request(env.http).post(`/api/experiments/${exp.id}/resume`).expect(200);
+    await drain('w-fut', (config) => (config === B ? { end_state: 'step_limit' } : {}));
+    d = await e.detail(exp.id);
+    expect(d.status).toBe('done');
+    expect(d.events.filter((x) => x.kind === 'futility_pause')).toHaveLength(1);
+  });
+
+  it('takes a stricter futility rule, or none', async () => {
+    const off = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 3, futility: { enabled: false } });
+    await drain('w-fut-off', () => ({ end_state: 'step_limit' }));
+    expect((await e.detail(off.id)).status).toBe('done');
+
+    const strict = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 4, futility: { after: 2, min_passed: 2 } });
+    await drain('w-fut-strict', (_c, i) => (i === 0 ? {} : { end_state: 'timeout' }));
+    const d = await e.detail(strict.id);
+    expect(d.status).toBe('paused');
+    expect(d.paused_reason).toContain('arm A passed 1 of its first 2 finished trials, fewer than the 2 the rule asks for');
+
+    const bad = await request(env.http)
+      .post('/api/experiments')
+      .send({ name: 'x', axis: 'x', config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 1, budget_usd: 5, futility: { after: 0 } })
+      .expect(400);
+    expect(bad.body).toMatchObject({ error: 'invalid_experiment', fix: expect.stringContaining('"after"') as string });
+  });
+
+  it('pauses when infra failures pass 30% after at least 5 finished trials, and counts again from the resume (D32)', async () => {
+    const exp = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 8, futility: { enabled: false } });
+    // budget_net is never re-queued, so each failure is one finished slot.
+    const plan = ['agent', 'agent', 'infra:budget_net', 'infra:budget_net', 'agent', 'agent', 'agent', 'agent'];
+    for (let i = 0; i < 4; i += 1) await e.report((await e.claim('w-infra'))!, 'w-infra', plan[i]);
+    expect((await e.detail(exp.id)).status).toBe('running'); // 2 of 4: too few finished to judge
+    await e.report((await e.claim('w-infra'))!, 'w-infra', plan[4]);
+    const d = await e.detail(exp.id);
+    expect(d.status).toBe('paused');
+    expect(d.events.find((x) => x.kind === 'infra_guard_pause')?.detail).toBe(
+      'infra guard (D32): 2 of the 5 trials finished since the run started or last resumed were infra failures (40%, above 30%: infra:budget_net x2). ' +
+        'Fix the cause, then resume (the count starts again), or stop',
+    );
+    expect(await e.claim('w-infra')).toBeNull();
+    await request(env.http).post(`/api/experiments/${exp.id}/resume`).expect(200);
+    await drain('w-infra', () => ({}));
+    expect((await e.detail(exp.id)).status).toBe('done');
+  });
+
+  it('counts an abandoned lease toward the infra guard', async () => {
+    const exp = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 8, futility: { enabled: false } });
+    for (let i = 0; i < 3; i += 1) await e.report((await e.claim('w-ab'))!, 'w-ab', 'agent');
+    const lost = [(await e.claim('w-ab'))!, (await e.claim('w-ab2'))!];
+    await env.pool.query(`UPDATE trials SET heartbeat_at = now() - interval '61 seconds' WHERE id = ANY($1)`, [lost.map((c) => c.trial_id)]);
+    await env.worker.sweep();
+    const d = await e.detail(exp.id);
+    expect(d.status).toBe('paused');
+    expect(d.paused_reason).toContain('2 of the 5 trials finished');
+    expect(d.paused_reason).toContain('abandoned x2');
+  });
+
+  it('pauses once when the projected spend passes the budget (D32)', async () => {
+    // The estimate for 4 trials is well under $0.60; the first trial costs $0.30, projecting $1.20.
+    const exp = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 4, budget_usd: 0.6 });
+    await e.report((await e.claim('w-spend'))!, 'w-spend', 'agent', { cost_usd: 0.3 });
+    const d = await e.detail(exp.id);
+    expect(d.status).toBe('paused');
+    const pause = d.events.find((x) => x.kind === 'spend_guard_pause')!;
+    expect(pause.detail).toMatch(/^spend guard \(D32\): \$0\.3000 spent; the 3 trials left, at the cost of the trials finished so far, project \$1\.2000, above the experiment budget of \$0\.6000/);
+    await request(env.http).post(`/api/experiments/${exp.id}/resume`).expect(200);
+    await e.report((await e.claim('w-spend'))!, 'w-spend', 'agent', { cost_usd: 0.3 });
+    expect((await e.detail(exp.id)).status).toBe('running'); // acknowledged: it does not fire again
+  });
+
   it('keeps a re-queued attempt in its slot’s place, so it is claimed next', async () => {
     const exp: ExperimentDetail = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 3, order_seed: 7 });
     const first = (await e.claim('w-rq'))!;

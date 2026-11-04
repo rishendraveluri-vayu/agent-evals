@@ -161,6 +161,26 @@ simulated-client task the API also summarises that file (profile and debts) into
 - An experiment's `status` is `created`, `running`, `paused`, `done` or `cancelled`. `paused` is
   the whole experiment, by hand or by D32's futility check and guards (below); `paused_at` and
   `paused_reason` are the latest. A re-queued attempt made while paused waits, queued.
+- **Automatic pauses (D32).** Checked after every report and every lapsed lease, only while the
+  experiment is `running`. Each pauses the whole experiment with an event whose `detail` is the
+  `paused_reason`; resume or stop after review. None of them looks at the difference between the
+  arms: the verdict uses the full planned N, so nothing stops or decides on an apparent win.
+  - **Futility**, `futility: {enabled, after, min_passed}` on `POST /experiments` (left out:
+    `{enabled: true, after: 3, min_passed: 1}`; `{"enabled": false}` turns it off; shown resolved
+    as `futility` in the detail). Once per arm: when the arm has `after` finished (`done`) trials,
+    it pauses the run if fewer than `min_passed` of them passed. Event `futility_pause`, for
+    example "futility check (D32): arm B passed 0 of its first 3 finished trials, fewer than the 1
+    the rule asks for (passed means label agent and end state answered until graders exist
+    (SP4)) ...". Until graders exist (SP4), **passed means label `agent` and end state
+    `answered`**. The first batch is a random sample because of the claim order. An arm whose
+    trials are reused from the parent is not checked.
+  - **Infra guard**: more than 30% infra failures (`infra_failed` or `abandoned`) among at least 5
+    trials finished since the run started or was last resumed. Event `infra_guard_pause`, naming
+    the failure labels. The count starts again at each resume.
+  - **Spend guard**, once per experiment: spend so far plus every queued or running trial at its
+    arm's mean cost so far (the estimate's per-trial cost for an arm with none finished) passes
+    `budget_usd`. Event `spend_guard_pause`. After a resume it does not fire again; LiteLLM's
+    experiment budget still stops spend at the cap.
 - **A config error pauses only its arm (D37, amending D26).** A report labelled
   `infra:config_error` pauses that trial's arm, not the experiment: claims skip the arm's trials,
   its running trials finish, and the other arm keeps claiming. The arm's `paused_reason` names the
