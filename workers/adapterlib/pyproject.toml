@@ -13,6 +13,7 @@ evals-run-trial = "evals_adapter.runner:main"
 evals-probe-harness = "evals_adapter.probe:main"
 evals-new-harness = "evals_adapter.scaffold:main"
 evals-invariance = "evals_adapter.invariance:main"
+evals-worker = "evals_adapter.worker:main"
 
 [build-system]
 requires = ["uv_build>=0.13.6,<0.14"]

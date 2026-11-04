@@ -15,6 +15,31 @@ x-worker-runtime: &worker-runtime
     - no-new-privileges:true
   networks: [trials]
 
+x-harness-worker: &harness-worker
+  # SP3: one long-lived worker per harness, one trial at a time (D3). Scale a harness with
+  # `--scale worker-<harness>=N`; each replica's id defaults to its hostname. No init: the worker
+  # is PID 1, reaps the trial's orphans itself, and makes itself non-dumpable so a trial cannot
+  # read the worker token from its environment (an init would hold a readable copy).
+  <<: *worker-runtime
+  restart: unless-stopped
+  environment:
+    # Only the worker token. The trial's LiteLLM keys arrive in each claim; the master key and
+    # provider keys never reach a worker (D2, R10.3).
+    EVALS_API_URL: http://api:3000/api
+    EVALS_WORKER_TOKEN: ${EVALS_WORKER_TOKEN:-wt-local-dev-only}
+  volumes:
+    # Trial folders are stored at runs/<experiment>/<trial>/attempt-<n>/, which the API reads.
+    # The worker runs as uid 10001, so runs/ must be writable by it: RUNS_GID is a group that
+    # can write runs/ on the host (for example `stat -c %g runs`, with runs/ group-writable).
+    - ./runs:/runs
+  group_add:
+    - "${RUNS_GID:-1000}"
+  depends_on:
+    api:
+      condition: service_healthy
+    litellm:
+      condition: service_healthy
+
 services:
   postgres:
     image: postgres:17@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
@@ -117,6 +142,41 @@ services:
     ports:
       - "127.0.0.1:${UI_PORT:-8080}:8080"
     networks: [control]
+
+  worker-ownloop:
+    <<: *harness-worker
+    build:
+      context: .
+      dockerfile: workers/ownloop/Dockerfile
+    image: agent-evals/worker-ownloop:dev
+
+  worker-hermes:
+    <<: *harness-worker
+    build:
+      context: .
+      dockerfile: workers/hermes/Dockerfile
+    image: agent-evals/worker-hermes:dev
+
+  worker-langgraph:
+    <<: *harness-worker
+    build:
+      context: .
+      dockerfile: workers/langgraph/Dockerfile
+    image: agent-evals/worker-langgraph:dev
+
+  worker-adk:
+    <<: *harness-worker
+    build:
+      context: .
+      dockerfile: workers/adk/Dockerfile
+    image: agent-evals/worker-adk:dev
+
+  worker-openai-agents:
+    <<: *harness-worker
+    build:
+      context: .
+      dockerfile: workers/openai-agents/Dockerfile
+    image: agent-evals/worker-openai-agents:dev
 
   # Smoke check only: proves the worker runtime settings give exactly the
   # access D3 allows. Run with `docker compose --profile smoke run --rm netcheck`.

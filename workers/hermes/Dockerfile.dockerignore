@@ -1,0 +1,14 @@
+# Build context for workers/hermes/Dockerfile (the repo root): only what the image copies.
+# BuildKit reads this file instead of the root .dockerignore for this Dockerfile.
+*
+!services/finance-mcp/
+!workers/adapterlib/
+!workers/hermes/
+!workers/base/netcheck.py
+!scripts/setup_hermes.sh
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.hermes-agent
+**/tests

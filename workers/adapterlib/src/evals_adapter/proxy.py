@@ -86,6 +86,11 @@ class ProxyClient:
         if keys:
             self._request("POST", "/key/delete", {"keys": [k.token for k in keys]})
 
+    def _spend_rows(self, token: str) -> list[dict]:
+        """One read of LiteLLM's spend log for a key. The SP3 worker reads it through the API
+        instead (`evals_adapter.worker.ApiProxyClient`), with the same wait and settle logic."""
+        return self._request("GET", f"/spend/logs?api_key={token}") or []
+
     def call_records(
         self,
         token: str,
@@ -105,7 +110,7 @@ class ProxyClient:
         last_n, stable_since = -1, time.time()
         rows: list[dict] = []
         while True:
-            rows = self._request("GET", f"/spend/logs?api_key={token}") or []
+            rows = self._spend_rows(token)
             now = time.time()
             if len(rows) != last_n:
                 last_n, stable_since = len(rows), now
