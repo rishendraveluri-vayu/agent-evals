@@ -11,9 +11,11 @@ import { CONFIG_SELECT, type ConfigRow, configId } from '../configs/configs.serv
 import { Db, type Queryable } from '../database/db.service';
 import { type ExperimentRow, finishIfDone, isSimTask } from '../experiments/experiments.service';
 import { LiteLlmClient, LiteLlmHttpError, type MintedKey } from '../litellm/litellm.client';
-import { FINISHED, HELD, LEASE_S, PAUSES_EXPERIMENT, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
+import { FINISHED, HELD, LEASE_S, PAUSES_ARM, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
 import { MAX_FILE_BYTES, checkFiles, locate, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
-import { configErrorReason, parseReport, spanRows, usageOf } from './report';
+import { configErrorFix, configErrorReason, parseReport, spanRows, usageOf } from './report';
+import { applyRunRules } from '../experiments/rules';
+import { pauseArm } from '../experiments/run-state';
 import { SIM_REPLIES_FILE, type SimReplyRow, type SimScope, parseSimReplies, simScope } from './sim-cache';
 import { clientSummary } from './client-summary';
 import { CLIENT_STATE_FILE, SIM_MAX_OUTPUT_TOKENS, buildSpec } from './spec-builder';
@@ -80,8 +82,8 @@ async function requeue(q: Queryable, trialId: string, attempt: number, experimen
   if (!shouldRequeue(attempt, experimentStatus, label)) return null;
   const next = await one<{ id: string }>(
     q,
-    `INSERT INTO trials (id, experiment_id, task_sha256, config_hash, repeat_index, attempt, seq, harness, status)
-     SELECT $2, experiment_id, task_sha256, config_hash, repeat_index, attempt + 1, seq, harness, 'queued'
+    `INSERT INTO trials (id, experiment_id, task_sha256, config_hash, repeat_index, attempt, seq, order_index, harness, status)
+     SELECT $2, experiment_id, task_sha256, config_hash, repeat_index, attempt + 1, seq, order_index, harness, 'queued'
      FROM trials WHERE id = $1
      ON CONFLICT (experiment_id, task_sha256, config_hash, repeat_index, attempt) DO NOTHING
      RETURNING id`,
@@ -143,6 +145,8 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     const workerId = b.worker_id;
     const harness = b.harness;
     const modelBaseUrl = this.litellm.workerBaseUrl; // fails early when LiteLLM is not configured
+    // Item 8: a worker that asks for work is live, whether or not it gets any.
+    await this.seen(workerId, harness);
     return this.db.tx(async (client) => {
       // A probe trial (D33) has no experiment and goes first: it is a short pre-run check.
       const t = await one<TrialRow>(
@@ -151,7 +155,11 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
          WHERE id = (
            SELECT t.id FROM trials t LEFT JOIN experiments e ON e.id = t.experiment_id
            WHERE t.status = 'queued' AND t.harness = $1 AND (t.probe OR e.status = 'running')
-           ORDER BY t.probe DESC, e.started_at, e.id, t.seq, t.attempt, t.created_at
+             -- D37: a paused arm's trials wait; the other arm keeps claiming. A probe has no arm.
+             AND NOT EXISTS (SELECT 1 FROM experiment_arms a
+                             WHERE a.experiment_id = t.experiment_id AND a.config_hash = t.config_hash AND a.paused_at IS NOT NULL)
+           -- Probes first (D33), then each experiment in its seeded claim order (D32).
+           ORDER BY t.probe DESC, e.started_at, e.id, t.order_index, t.attempt, t.created_at
            LIMIT 1
            FOR UPDATE OF t SKIP LOCKED)
          RETURNING id, experiment_id, probe, task_sha256, config_hash, repeat_index, attempt`,
@@ -255,6 +263,15 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     });
   }
 
+  /** Records that a worker of this harness is alive now (the estimate's live workers, item 8). */
+  private async seen(workerId: string, harness: string): Promise<void> {
+    await this.db.query(
+      `INSERT INTO workers (worker_id, harness, last_seen_at) VALUES ($1, $2, now())
+       ON CONFLICT (worker_id) DO UPDATE SET harness = EXCLUDED.harness, last_seen_at = now()`,
+      [workerId, harness],
+    );
+  }
+
   // ---- heartbeat ----
 
   async heartbeat(id: string, body: unknown): Promise<HeartbeatResponse> {
@@ -262,12 +279,15 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     if (typeof b.worker_id !== 'string' || typeof b.attempt !== 'number') {
       throw badRequest('invalid_heartbeat', 'worker_id and attempt are required');
     }
-    const kept = await this.db.query(
+    const kept = await this.db.query<{ harness: string }>(
       `UPDATE trials SET heartbeat_at = now(), status = 'running'
-       WHERE id = $1 AND attempt = $2 AND worker_id = $3 AND status IN ('claimed', 'running') RETURNING id`,
+       WHERE id = $1 AND attempt = $2 AND worker_id = $3 AND status IN ('claimed', 'running') RETURNING harness`,
       [id, b.attempt, b.worker_id],
     );
-    if (kept.length) return { lease_s: LEASE_S };
+    if (kept.length) {
+      await this.seen(b.worker_id, kept[0].harness);
+      return { lease_s: LEASE_S };
+    }
     const [exists] = await this.db.query('SELECT 1 FROM trials WHERE id = $1', [id]);
     if (!exists) throw notFound('unknown_trial', `no trial ${id}`);
     throw conflict('claim_lost', `trial ${id} attempt ${b.attempt} is no longer held by ${b.worker_id}; stop it and report nothing`);
@@ -417,21 +437,21 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
         const exp = (await one<{ status: ExperimentRow['status'] }>(client, 'SELECT status FROM experiments WHERE id = $1', [experimentId]))!;
         requeued = await requeue(client, id, locked.attempt, exp.status, label);
       }
-      if (label === PAUSES_EXPERIMENT) {
-        // D26: the setup is wrong (a key, the model, a refused setting), so every later trial
-        // would fail the same way. Stop new claims until someone fixes it and resumes.
+      if (label === PAUSES_ARM) {
+        // D26, amended by D37: the setup is wrong (a key, the model, a refused setting), so every
+        // later trial of this config would fail the same way. Its arm stops claiming until someone
+        // fixes it and resumes the arm; the other arm keeps running.
         const where = await one<{ task_id: string; config_name: string }>(
           client,
           'SELECT k.id AS task_id, c.name AS config_name FROM tasks k, configs c WHERE k.sha256 = $1 AND c.hash = $2',
           [locked.task_sha256, locked.config_hash],
         );
         const reason = `${where?.task_id ?? locked.task_sha256} on ${where?.config_name ?? locked.config_hash}, attempt ${locked.attempt}: ${configErrorReason(body.result, body.runner_report)}`;
-        await client.query(
-          `UPDATE experiments SET status = 'paused', paused_at = now(), paused_reason = $2 WHERE id = $1 AND status = 'running'`,
-          [experimentId, reason],
-        );
+        await pauseArm(client, experimentId, locked.config_hash, reason, configErrorFix(body.runner_report), { id, attempt: locked.attempt });
       }
       await finishIfDone(client, experimentId);
+      // D32: the futility check and the guards, which may pause the experiment for review.
+      await applyRunRules(client, experimentId);
       return { stored, requeued, simStored };
     });
     if (!outcome) return this.duplicate((await this.db.query<TrialRow>('SELECT * FROM trials WHERE id = $1', [id]))[0]);
@@ -516,7 +536,11 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
         const next = r.status === null ? null : await requeue(client, r.id, r.attempt, r.status, null);
         if (next) requeued.push(next);
       }
-      for (const exp of new Set(rows.map((r) => r.experiment_id))) if (exp !== null) await finishIfDone(client, exp);
+      for (const exp of new Set(rows.map((r) => r.experiment_id))) {
+        if (exp === null) continue; // a probe
+        await finishIfDone(client, exp);
+        await applyRunRules(client, exp); // D32: an abandoned attempt counts for the infra guard
+      }
       return { abandoned: rows.map((r) => r.id), requeued };
     });
     if (changed.abandoned.length) this.logger.warn(`abandoned lapsed trials: ${changed.abandoned.join(', ')}`);

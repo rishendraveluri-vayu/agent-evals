@@ -63,3 +63,18 @@ database keeps their paths and hashes.
    imports them read-only; the labelling view writes the file through the API.
 4. **Grades.** Recommended: grading runs after the trial, as its own step, so a grader fix
    re-grades old trials without re-running them.
+
+## Changes since approval
+
+Each is a migration under `apps/api/migrations/`; `docs/design.md` section 3 says what each is for.
+
+- `002_sim_replies.sql` (D22): the simulator reply cache.
+- `003_experiment_pause.sql` (D26): the `paused` experiment status.
+- `004_sim_temperature_optional.sql` (D27): a simulator may send no temperature.
+- `005_run_controls.sql` (D32, D34, D35, D37, review item 8): lineage (`configs.parent_hash`,
+  `experiments.parent_experiment_id`, `reuse_baseline`, `baseline_decision`); an
+  `experiment_arms` table for per-arm pauses and reused trials; `trials.order_index` with
+  `experiments.order_seed` for the seeded claim order; `experiments.futility` and
+  `spend_guard_at`; an `experiment_events` table for pauses, resumes, stops and the baseline
+  decision; and a `workers` table of when each worker was last seen. The trial status machine is
+  unchanged: a paused arm's trials stay `queued`, and a stop cancels the queued ones.

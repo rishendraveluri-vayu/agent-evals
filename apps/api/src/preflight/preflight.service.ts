@@ -175,8 +175,8 @@ export class PreflightService {
       [PROBE_TASK_SHA256, PROBE_TASK_BODY.id, PROBE_TASK_BODY.version, PROBE_TASK_BODY.split, PROBE_TASK_BODY.kind, PROBE_TASK_BODY.summary, JSON.stringify(PROBE_TASK_BODY), PROBE_TASK_SOURCE],
     );
     const [inserted] = await this.db.query<ProbeRow>(
-      `INSERT INTO trials (id, experiment_id, probe, task_sha256, config_hash, repeat_index, attempt, seq, harness, status)
-       VALUES ($1, NULL, true, $2, $3, 0, 1, 0, $4, 'queued')
+      `INSERT INTO trials (id, experiment_id, probe, task_sha256, config_hash, repeat_index, attempt, seq, order_index, harness, status)
+       VALUES ($1, NULL, true, $2, $3, 0, 1, 0, 0, $4, 'queued')
        ON CONFLICT (config_hash) WHERE probe AND status IN ('queued', 'claimed', 'running') DO NOTHING
        RETURNING id, status, label, end_state, folder, files`,
       [newId('t'), PROBE_TASK_SHA256, cfg.hash, cfg.harness],

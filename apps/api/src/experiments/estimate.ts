@@ -1,10 +1,15 @@
 import type { Estimate, EstimateCell } from '../contract';
 
 /**
- * The run estimate (SP3, R10.6): trials, cost and time before anything runs.
+ * The run estimate (SP3, R10.6; Rishi's guide review, item 8): trials, cost and time before
+ * anything runs.
  *
- * Per-trial tokens are the mean of earlier finished trials of the same config and task when
- * there are any, otherwise the docs/cost.md planning assumptions. Prices come from LiteLLM.
+ * Each config x task cell takes the mean tokens, cost and wall time of earlier finished trials,
+ * from the closest history there is: the same config and task, else the same harness and model
+ * (any config or task). Only with no history at all does it fall back to the docs/cost.md planning
+ * assumptions, with LiteLLM's prices. The simulator's cost per trial comes from earlier trials of
+ * the same task and simulator model, else from the assumptions. Time divides each harness's work
+ * by its live workers (seen in the last minute), harnesses in parallel.
  * The numbers below that docs/cost.md does not give are marked; they are not Rishi's yet.
  */
 export const ASSUMPTIONS = {
@@ -28,9 +33,21 @@ export const BUDGET_RULE = {
   min_sim_usd: 0.1,
 } as const;
 
+/** A worker counts as live for the time estimate if it claimed or heartbeat this recently. */
+export const LIVE_WORKER_S = 60;
+
 export interface Price {
   inputPerToken: number;
   outputPerToken: number;
+}
+
+/** Means over earlier finished trials. `costUsd` is LiteLLM's recorded agent cost (R10.9), when known. */
+export interface History {
+  trials: number;
+  inputTokens: number;
+  outputTokens: number;
+  wallS: number | null;
+  costUsd: number | null;
 }
 
 export interface CellInput {
@@ -40,13 +57,12 @@ export interface CellInput {
   harness: string;
   /** max_client_turns when the task has a simulated client, else null. */
   simTurns: number | null;
-  history: {
-    trials: number;
-    inputTokens: number;
-    outputTokens: number;
-    wallS: number | null;
-    simCostUsd: number | null;
-  } | null;
+  /** Earlier finished trials of this config on this task. */
+  history: History | null;
+  /** Earlier finished trials of this harness and model, any config or task. */
+  harnessModel?: History | null;
+  /** Mean simulator cost per trial of earlier finished trials of this task with this simulator model. */
+  simCostUsd?: number | null;
 }
 
 export interface EstimateInput {
@@ -54,6 +70,8 @@ export interface EstimateInput {
   n: number;
   prices: Map<string, Price>;
   simModel: string | null;
+  /** Live workers per harness; a harness with none seen is taken as one worker. */
+  workers?: Map<string, number>;
 }
 
 const money = (v: number): number => Math.round(v * 1e6) / 1e6;
@@ -68,19 +86,23 @@ export function estimate(input: EstimateInput): Estimate {
   const cells: EstimateCell[] = [];
   let expected = 0;
   const wallByHarness = new Map<string, number>();
-  let fromHistory = 0;
+  const sources = { config_task: 0, harness_model: 0, assumption: 0 };
   for (const c of input.cells) {
-    const h = c.history && c.history.trials > 0 ? c.history : null;
-    if (h) fromHistory += 1;
+    const own = c.history && c.history.trials > 0 ? c.history : null;
+    const near = !own && c.harnessModel && c.harnessModel.trials > 0 ? c.harnessModel : null;
+    const h = own ?? near;
+    const source: EstimateCell['source'] = own ? 'config_task' : near ? 'harness_model' : 'assumption';
+    sources[source] += 1;
     const inTok = h ? h.inputTokens : ASSUMPTIONS.input_tokens_per_trial;
     const outTok = h ? h.outputTokens : ASSUMPTIONS.output_tokens_per_trial;
     const wall = h?.wallS ?? ASSUMPTIONS.wall_s_per_trial;
     const p = price(c.model);
-    const agent = inTok * p.inputPerToken + outTok * p.outputPerToken;
+    // LiteLLM's recorded cost when the history has it; tokens at today's price otherwise.
+    const agent = h && h.costUsd !== null ? h.costUsd : inTok * p.inputPerToken + outTok * p.outputPerToken;
     let sim = 0;
     if (c.simTurns !== null) {
-      if (h && h.simCostUsd !== null) {
-        sim = h.simCostUsd;
+      if (c.simCostUsd !== undefined && c.simCostUsd !== null) {
+        sim = c.simCostUsd;
       } else if (simModel) {
         const sp = price(simModel);
         sim = c.simTurns * (ASSUMPTIONS.sim_input_tokens_per_call * sp.inputPerToken + ASSUMPTIONS.sim_output_tokens_per_call * sp.outputPerToken);
@@ -92,7 +114,7 @@ export function estimate(input: EstimateInput): Estimate {
       config: c.config,
       task: c.task,
       model: c.model,
-      source: h ? 'history' : 'assumption',
+      source,
       trials_seen: h?.trials ?? 0,
       input_tokens: Math.round(inTok),
       output_tokens: Math.round(outTok),
@@ -102,14 +124,23 @@ export function estimate(input: EstimateInput): Estimate {
     });
   }
   const total = cells.length;
-  const tokensFrom =
-    total === 0
-      ? 'no config x task cells'
-      : fromHistory === total
-        ? `the mean of earlier finished trials for all ${total} config x task cells`
-        : fromHistory === 0
-          ? `the docs/cost.md assumptions (64k input, 2.4k output per trial) for all ${total} config x task cells`
-          : `earlier finished trials for ${fromHistory} of ${total} config x task cells, the docs/cost.md assumptions for the rest`;
+  const parts = [
+    sources.config_task ? `${sources.config_task} from earlier finished trials of the same config and task` : '',
+    sources.harness_model ? `${sources.harness_model} from earlier finished trials of the same harness and model` : '',
+    sources.assumption ? `${sources.assumption} from the docs/cost.md assumptions (64k input, 2.4k output per trial)` : '',
+  ].filter(Boolean);
+  const tokensFrom = total === 0 ? 'no config x task cells' : `of ${total} config x task cells, ${parts.join('; ')}`;
+  const workers: Record<string, { live: number; used: number }> = {};
+  let slowest = 0;
+  for (const [harness, wall] of wallByHarness) {
+    const live = input.workers?.get(harness) ?? 0;
+    const used = Math.max(1, live);
+    workers[harness] = { live, used };
+    slowest = Math.max(slowest, wall / used);
+  }
+  const workerWords = Object.entries(workers)
+    .map(([h, w]) => (w.live ? `${h} ${w.live} live` : `${h} none seen in the last ${LIVE_WORKER_S} s, taken as 1`))
+    .join(', ');
   const maxAgent = Math.max(0, ...cells.map((c) => c.agent_usd_per_trial));
   const maxSim = Math.max(0, ...cells.map((c) => c.sim_usd_per_trial));
   const usedPrices = new Set([...input.cells.map((c) => c.model), ...(simModel ? [simModel] : [])]);
@@ -120,11 +151,11 @@ export function estimate(input: EstimateInput): Estimate {
       low: money(expected * ASSUMPTIONS.low_factor),
       high: money(expected * ASSUMPTIONS.high_factor),
     },
-    // One worker per harness, harnesses in parallel: the slowest harness sets the time.
-    minutes: Math.round((Math.max(0, ...wallByHarness.values()) / 60) * 10) / 10,
+    minutes: Math.round((slowest / 60) * 10) / 10,
     basis:
-      `Tokens per trial: ${tokensFrom}. Prices: LiteLLM /model/info. Range: ${ASSUMPTIONS.low_factor}x to ` +
-      `${ASSUMPTIONS.high_factor}x the expected cost. Time: one worker per harness, harnesses in parallel.`,
+      `Tokens, cost and time per trial: ${tokensFrom}. Cost: LiteLLM's recorded cost where there is history, else tokens at LiteLLM's prices. ` +
+      `Range: ${ASSUMPTIONS.low_factor}x to ${ASSUMPTIONS.high_factor}x the expected cost. ` +
+      `Time: each harness's trials over its live workers (${workerWords || 'none'}), harnesses in parallel.`,
     basis_detail: {
       cells,
       prices: Object.fromEntries(
@@ -134,6 +165,7 @@ export function estimate(input: EstimateInput): Estimate {
         }),
       ),
       assumptions: { ...ASSUMPTIONS },
+      workers,
     },
     budgets: {
       trial_usd: money(Math.max(BUDGET_RULE.min_trial_usd, BUDGET_RULE.multiple * maxAgent)),
