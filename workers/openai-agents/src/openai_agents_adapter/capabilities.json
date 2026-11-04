@@ -1,0 +1,75 @@
+{
+  "contract_version": "2",
+  "harness": "openai-agents",
+  "version": {
+    "package": "openai-agents",
+    "ref": "0.24.0"
+  },
+  "model_api_formats": [
+    "openai_chat"
+  ],
+  "settings": {
+    "temperature": {
+      "supported": true,
+      "native": "ModelSettings.temperature",
+      "evidence": "probe:2026-11-04",
+      "default": null,
+      "observed": "unset: not sent; set to 0.37: sent as temperature"
+    },
+    "max_output_tokens": {
+      "supported": true,
+      "native": "ModelSettings.max_tokens",
+      "evidence": "probe:2026-11-04",
+      "default": null,
+      "observed": "unset: not sent; set to 777: sent as max_tokens"
+    },
+    "max_steps": {
+      "supported": true,
+      "native": "Runner.run max_turns, set per turn to the steps left",
+      "evidence": "probe:2026-11-04",
+      "extra_calls_at_limit": 0,
+      "observed": "max_steps 3: 3 model calls, end_state step_limit, harness counted 3"
+    },
+    "timeout_s": {
+      "supported": true,
+      "native": "wrapper",
+      "evidence": "declared:the adapter library's watchdog"
+    },
+    "parallel_tool_calls": {
+      "supported": true,
+      "native": "ModelSettings.parallel_tool_calls",
+      "evidence": "probe:2026-11-04",
+      "default": null,
+      "observed": "unset: not sent; set to False: sent as parallel_tool_calls"
+    },
+    "memory": {
+      "supported": false,
+      "observed": "a plain Agent has no memory; SDK sessions are opt-in and not used (earlier turns are carried in process as the input list)",
+      "evidence": "declared:no session, no SandboxAgent"
+    },
+    "skills": {
+      "supported": false,
+      "observed": "a plain Agent has no skills; they live in the opt-in SandboxAgent, which is not used",
+      "evidence": "declared:no such feature on Agent"
+    },
+    "compression": {
+      "supported": false,
+      "observed": "the SDK never compresses; the full input list is sent on every call",
+      "evidence": "declared:no such feature on Agent"
+    }
+  },
+  "harness_options_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "known_differences": [
+    "Each tool definition carries \"strict\": false, added by the SDK; name, description and parameters are the server's, unchanged (convert_schemas_to_strict off)",
+    "MCP tool results go back as a list of content parts ([{\"type\": \"text\", \"text\": ...}]), not a string; error results the SDK writes itself are plain strings",
+    "Malformed tool-call arguments: the model gets the SDK's fixed text 'An error occurred while running the tool. Please try again.' and is not told the JSON was invalid (D18; the SDK default is kept, which text to expose is open)",
+    "A tool call that raises (an MCP timeout or a broken session) gets the same fixed text (read from the SDK source; not run)",
+    "Unknown tool: the model gets \"Tool '<name>' not found.\", with no list of the available tools (tool_not_found_behavior=return_error_to_model; the SDK default raises and ends the run)",
+    "All tool calls of one model turn run concurrently (ToolExecutionConfig.max_function_tool_concurrency is left at the SDK default). With parallel_tool_calls false the model should send one call per turn",
+    "Requests carry a User-Agent: Agents/Python 0.24.0 header (models/chatcmpl_helpers.py; headers are not captured by the gate)"
+  ]
+}
