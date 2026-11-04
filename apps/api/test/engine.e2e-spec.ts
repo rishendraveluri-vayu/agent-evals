@@ -210,12 +210,12 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
   it('gives a simulated-client task the experiment simulator and its own key', async () => {
     const exp = await experiment({ tasks: [cat.tasks['widow-loan']], sim: 'claude-haiku-5-5' });
     // D27: the default simulator prompt is the highest version (v3 since D30), and Haiku 5.5 gets no temperature.
-    expect(exp.sim).toMatchObject({ prompt: { id: 'client-sim', version: 'v3' }, temperature: null });
+    expect(exp.sim).toMatchObject({ prompt: { id: 'client-sim', version: 'v3' }, temperature: null, max_output_tokens: 2048 });
     const c = (await claim('w-sim'))!;
     expect(validateSpec(c.spec)).toBe(true);
     const sim = (c.spec as { task: { client_sim: { client_summary?: string; model: { name: string; api_key_env: string; temperature: number | null; prompt: { text: string; version: string } } } } }).task
       .client_sim;
-    expect(sim.model).toMatchObject({ name: 'claude-haiku-5-5', api_key_env: 'EVALS_SIM_API_KEY', temperature: null });
+    expect(sim.model).toMatchObject({ name: 'claude-haiku-5-5', api_key_env: 'EVALS_SIM_API_KEY', temperature: null, max_output_tokens: 2048 });
     expect(sim.model.prompt.version).toBe('v3');
     expect(sim.model.prompt.text.startsWith('<!--')).toBe(false);
     expect(sim.model.prompt.text).toContain('{{client_summary}}');
@@ -329,6 +329,59 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     expect(detail.events.filter((e) => e.kind === 'requeue')).toHaveLength(1);
     // Newest first.
     expect([...detail.events].sort((a, b) => b.at.localeCompare(a.at))).toEqual(detail.events);
+  });
+
+  it('re-queues a simulator failure once (infra:sim_error, D26) and never caches its empty reply', async () => {
+    // Earlier tests' experiments must not hold queued ownloop trials that would be claimed first.
+    for (const { id } of (await env.pool.query("SELECT id FROM experiments WHERE status = 'running'")).rows as { id: string }[]) await cancel(id);
+    const widow = cat.tasks['widow-loan'];
+    const exp = await experiment({ tasks: [widow], sim: 'claude-haiku-5-5' });
+    const emptyKey = `sha256:${'e'.repeat(64)}`;
+    const oldKey = `sha256:${'f'.repeat(64)}`;
+    // What the adapter writes for the 4 Nov case: the reply had no text, all its tokens were reasoning.
+    const usage = { completion_tokens: 2048, completion_tokens_details: { reasoning_tokens: 2048, text_tokens: 0 } };
+    const simFile = JSON.stringify({ key: emptyKey, reply: '', model: 'claude-haiku-5-5', usage, error: 'reply has no text' }) + '\n';
+
+    const first = (await claim('w-simerr'))!;
+    expect(first.sim_cache).toEqual({});
+    const r1 = await report(first, 'w-simerr', 'infra:sim_error', 200, { 'sim_replies.jsonl': simFile });
+    expect(r1).toMatchObject({ status: 'infra_failed', duplicate: false, sim_replies_stored: 0 });
+    expect(r1.problems.filter((p) => p.includes('sim_replies'))).toEqual([]);
+    expect(r1.requeued_trial_id).toEqual(expect.any(String));
+    // The raw reply stays in the attempt's stored file, for the record.
+    const stored = await request(env.http).get(`/api/trials/${first.trial_id}/files/sim_replies.jsonl`).expect(200);
+    expect(stored.text).toBe(simFile);
+
+    // An empty reply stored before this rule (the 4 Nov Haiku replies) is not handed out either.
+    const model = (first.spec as { task: { client_sim: { model: { max_output_tokens: number; prompt: { sha256: string } } } } }).task.client_sim.model;
+    await env.pool.query(
+      `INSERT INTO sim_replies (key, task_sha256, sim_model, temperature, max_output_tokens, prompt_sha256, reply, usage, trial_id)
+       VALUES ($1, $2, 'claude-haiku-5-5', NULL, $3, $4, '', $5, $6)`,
+      [oldKey, widow, model.max_output_tokens, `sha256:${model.prompt.sha256.replace(/^sha256:/, '')}`, JSON.stringify(usage), first.trial_id],
+    );
+
+    const second = (await claim('w-simerr'))!;
+    expect(second).toMatchObject({ trial_id: r1.requeued_trial_id, attempt: 2 });
+    expect(second.sim_cache).toEqual({});
+    const r2 = await report(second, 'w-simerr', 'infra:sim_error', 200, { 'sim_replies.jsonl': simFile });
+    expect(r2).toMatchObject({ status: 'infra_failed', requeued_trial_id: null, sim_replies_stored: 0 });
+
+    expect((await rows(exp.id)).map((r) => [r.attempt, r.status, r.label])).toEqual([
+      [1, 'infra_failed', 'infra:sim_error'],
+      [2, 'infra_failed', 'infra:sim_error'],
+    ]);
+    expect(await claim('w-simerr')).toBeNull();
+    const detail = (await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body as ExperimentDetail;
+    expect(detail.status).toBe('done');
+    expect(detail.counts).toMatchObject({ infra_failed: 2, by_label: { 'infra:sim_error': 2 } });
+    expect(detail.events.filter((e) => e.kind === 'infra_failure').map((e) => [e.attempt, e.detail])).toEqual([
+      [2, expect.stringContaining('attempt 2: infra:sim_error') as string],
+      [1, expect.stringContaining('attempt 1: infra:sim_error') as string],
+    ]);
+    expect(detail.events.filter((e) => e.kind === 'requeue').map((e) => e.trial_id)).toEqual([second.trial_id]);
+    const cached = (await env.pool.query('SELECT key FROM sim_replies WHERE task_sha256 = $1 AND key = ANY($2)', [widow, [emptyKey, oldKey]])).rows;
+    expect(cached).toEqual([{ key: oldKey }]); // the reported empty reply was never stored
+    await env.pool.query('DELETE FROM sim_replies WHERE key = $1', [oldKey]); // later tests count the widow task's replies
   });
 
   it('re-queues a lapsed lease once, and not after that', async () => {

@@ -38,12 +38,16 @@ interface TrialRow {
 const one = async <T>(q: Queryable, sql: string, params: unknown[]): Promise<T | undefined> =>
   ((await q.query(sql, params)).rows as T[])[0];
 
-/** Every stored simulator reply for this task, simulator model, settings and prompt (D22). */
+/**
+ * Every stored simulator reply for this task, simulator model, settings and prompt (D22). An empty
+ * reply stored before D26's simulator-failure rule (the 4 Nov Haiku replies) is left out, so a
+ * trial reaching that state asks the simulator again instead of failing the same way.
+ */
 async function simCache(q: Queryable, scope: SimScope): Promise<Record<string, string>> {
   const { rows } = await q.query<{ key: string; reply: string }>(
     `SELECT key, reply FROM sim_replies
      WHERE task_sha256 = $1 AND sim_model = $2 AND temperature IS NOT DISTINCT FROM $3::double precision
-       AND max_output_tokens = $4 AND prompt_sha256 = $5
+       AND max_output_tokens = $4 AND prompt_sha256 = $5 AND reply ~ '\\S'
      ORDER BY created_at, key`,
     [scope.task_sha256, scope.sim_model, scope.temperature, scope.max_output_tokens, scope.prompt_sha256],
   );

@@ -358,7 +358,10 @@ def test_agent_failure_mid_conversation_ends_it(tmp_path):
 
 
 def test_simulator_failure_is_harness_error(tmp_path):
+    """More cases, empty replies among them, in test_sim_error.py."""
     spec = make_spec(**{"task.client_sim": client_sim("http://127.0.0.1:9/v1")})
-    _, result, _ = run(tmp_path, spec, env={"EVALS_SIM_API_KEY": "sk-sim"})
+    report, result, _ = run(tmp_path, spec, env={"EVALS_SIM_API_KEY": "sk-sim"})
     assert result["end_state"] == "harness_error"
     assert result["end_detail"]["harness_stop_reason"] == "simulator_error"
+    assert result["conversation"]["ended_by"] == "sim_error"
+    assert report["label"] == "infra:sim_error"

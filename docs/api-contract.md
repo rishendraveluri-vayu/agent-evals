@@ -93,8 +93,9 @@ simulated-client task the API also summarises that file (profile and debts) into
   for the whole experiment. It returns the experiment. Nothing runs until it is started. The
   simulator prompt defaults to the highest version of `client-sim` (v2 since D27). The simulator
   runs at D22's temperature 0, except on a model that refuses temperature (Haiku 5.5), where its
-  temperature is `null` and not sent (D27); the token cap is 300. `sim` in the experiment shows
-  all three.
+  temperature is `null` and not sent (D27); the token cap is 2048, because Haiku 5.5's reasoning
+  counts towards it (at 300 on 4 Nov it took the whole cap and the reply was empty). An
+  experiment keeps the cap it was created with. `sim` in the experiment shows all three.
 - `POST /experiments/:id/start` starts a `created` experiment or resumes a `paused` one (and
   marks it `done` if nothing is left to claim); `POST /experiments/:id/cancel` (queued trials
   become `cancelled`; running ones finish), from `created`, `running` or `paused`.
@@ -141,8 +142,8 @@ trial cannot read or change another trial's stored files (D3).
    does not use it. The claim is one `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP
    LOCKED)`, so two workers never get the same trial.
 
-   `sim_cache` (D22) is `{<cache key>: <reply>}`: every simulator reply stored so far for the
-   same task (sha256), simulator model, temperature (a `null` one, not sent, is its own scope),
+   `sim_cache` (D22) is `{<cache key>: <reply>}`: every non-empty simulator reply stored so far
+   for the same task (sha256), simulator model, temperature (a `null` one, not sent, is its own scope),
    token cap and simulator prompt, from any earlier trial, experiment or harness. Keys are
    `evals_adapter.sim.cache_key`, which hashes those same values, the client summary when there
    is one, and the visible transcript, so one key is one conversation state. It is
@@ -187,14 +188,20 @@ trial cannot read or change another trial's stored files (D3).
    the API then reads the uploaded `sim_replies.jsonl` (`{key, reply, model, usage}` per line)
    and adds its replies to the cache, scoped by the trial's spec; the first reply stored for a
    key is kept, and a line that is not a `sha256:<hex>` key with a string reply, or is from
-   another model, is left out and noted in `problems`. The response's `sim_replies_stored`
+   another model, is left out and noted in `problems`. A line with an `error` field (an empty
+   simulator reply, a simulator failure under D26) stays in the stored file but is never
+   cached, so the re-queued attempt asks the simulator again; an unmarked reply that is empty
+   or only spaces (from an adapter before that rule) is left out and noted. The end marker
+   alone, unmarked, is cached. The response's `sim_replies_stored`
    counts the replies added. Reporting the same attempt twice
    is a no-op 200. The API revokes the trial's keys, stores the report, and sets the status:
    `done` for an `agent` label; for an `infra:*` label, `infra_failed` and, if this was
    attempt 1, a new `queued` attempt 2 (D16: re-queued once, never twice), except for the two
    labels that are never re-queued (D26): `infra:config_error`, which also pauses the
-   experiment, and `infra:budget_net`. `infra:provider_error`, `infra:adapter_crash` and
-   `infra:timeout_kill` are re-queued once.
+   experiment, and `infra:budget_net`. `infra:provider_error`, `infra:sim_error` (the simulated
+   client's call failed or its reply had no text, D26), `infra:adapter_crash` and
+   `infra:timeout_kill` are re-queued once. Each infra attempt is an `infra_failure` event
+   naming its label, and each re-queued attempt a `requeue` event.
 6. A lease with no heartbeat for 60 s lapses: the API marks the attempt `abandoned`, revokes
    its keys, and queues the next attempt under the same cap (also while the experiment is
    paused; the attempt waits for the resume).

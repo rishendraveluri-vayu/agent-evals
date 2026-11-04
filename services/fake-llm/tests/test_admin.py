@@ -23,6 +23,7 @@ EXAMPLES = {
     "finance-timeout",
     "finance-429",
     "sim-client",
+    "sim-empty",
 }
 
 
