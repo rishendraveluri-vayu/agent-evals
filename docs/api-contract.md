@@ -456,6 +456,18 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   SP6 exists, the intervals and verdict. Until then `stats` is `null`.
 - `GET /experiments/:id/export?format=json|csv` streams trials joined with configs, tasks,
   grades and spend.
+- `GET /experiments/:id/bundle` (SP7) returns every row needed to recreate the experiment in
+  another database, read in one read-only snapshot: `{format: "agent-evals-bundle",
+  format_version: 1, schema_version, exported_at, experiment_id, tables}` (`ExperimentBundle`).
+  `tables` holds, in insert order, `prompts`, `toolsets`, `tasks`, `configs` (the experiment's
+  and the configs they were forked from), `experiments`, `experiment_arms`, `experiment_events`,
+  `trials`, `spans`, `grading_jobs` and `grades` (every version). Each row is the table's own
+  columns as Postgres's `to_jsonb` writes them (so `tasks.client_state` is hex, `\x...`), except:
+  `spans` rows are `{trial_id, raw}` (the other columns are read from `raw` again on load),
+  `experiment_events` rows have no `id`, and a trial's `agent_key_token` and `sim_key_token` and
+  the experiment's `litellm_team_id` are never included. `schema_version` is the latest migration
+  applied. The trials' files are not inline: fetch each with `GET /trials/:id/files/<path>`, as
+  listed in the trial's `files`. 404 `unknown_experiment`. `scripts/export_example.py` reads this.
 
 ## Trials
 

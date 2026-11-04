@@ -716,6 +716,44 @@ export interface RegradeResponse {
   from_trial_task: number;
 }
 
+// ---- experiment bundles (SP7) ----
+
+/** The tables an experiment bundle carries, in the order they are inserted. */
+export const BUNDLE_TABLES = [
+  'prompts',
+  'toolsets',
+  'tasks',
+  'configs',
+  'experiments',
+  'experiment_arms',
+  'experiment_events',
+  'trials',
+  'spans',
+  'grading_jobs',
+  'grades',
+] as const;
+export type BundleTable = (typeof BUNDLE_TABLES)[number];
+
+/**
+ * GET /experiments/:id/bundle: every row needed to recreate one experiment elsewhere, read-only
+ * (scripts/export_example.py writes it to examples/<name>/). Rows are the tables' own columns as
+ * Postgres's to_jsonb writes them (`tasks.client_state` is hex: a backslash, `x`, hex digits),
+ * except: `spans` rows are `{trial_id, raw}`, since the other columns are read from `raw`;
+ * `experiment_events` rows have no `id`; and a trial's LiteLLM key tokens and the experiment's
+ * LiteLLM team are left out. `configs` holds the experiment's configs and the configs they were
+ * forked from. The trials' files are fetched one by one with GET /trials/:id/files/<path>, as
+ * listed in `trials[].files`.
+ */
+export interface ExperimentBundle {
+  format: 'agent-evals-bundle';
+  format_version: 1;
+  /** The latest migration this database has applied, e.g. `011_examples`. */
+  schema_version: string;
+  exported_at: string;
+  experiment_id: string;
+  tables: Record<BundleTable, JsonObject[]>;
+}
+
 /** GET /trials/:id for a trial made in an experiment, or a probe trial (D33: `experiment_id` null, `probe` true). */
 export interface TrialView {
   id: string;
