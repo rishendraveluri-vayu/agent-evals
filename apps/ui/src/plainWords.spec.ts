@@ -202,8 +202,67 @@ describe('plain words with the example loaded and no keys set', () => {
     'run setup, the example named and no keys': `#/run?a=${encodeURIComponent(example.hash)}&b=${encodeURIComponent(mine.hash)}`,
     'run setup, no baseline': `#/run?b=${encodeURIComponent(mine.hash)}`,
     'a run that does not exist': '#/experiments/e_nope/run',
+    'a comparison that does not exist': '#/experiments/e_doesnotexist',
+    'a trial that does not exist': '#/trials/t_nope',
   };
   for (const [name, hash] of Object.entries(STATES)) {
     it(`the ${name} screen names no decision-log entry and no raw API path`, () => expectPlain(hash));
+  }
+
+  it("the judge's approval form, on a model whose key is not set, names no decision-log entry and no raw API path", async () => {
+    open('#/experiments/exp_heldout?panel=judge');
+    const w = mount(App, { attachTo: document.body });
+    await settle();
+    await w.get('[data-test="judge-approve-open"]').trigger('click');
+    await settle();
+    await w.get('[data-test="judge-model-select"]').setValue('claude-haiku-5-5');
+    await w.get('[data-test="judge-budget-input"]').setValue('2');
+    expect(w.get('[data-test="judge-key-problem"]').text()).toContain('needs ANTHROPIC_API_KEY in .env');
+    const text = readable(document.body);
+    w.unmount();
+    expect(text.split('\n').filter((line) => INTERNAL.test(line))).toEqual([]);
+  });
+});
+
+/**
+ * The comparison states QA round 3 reached (5 Nov): two configs with one name that differ in a
+ * setting, a run on fake models, and a stopped run whose reason cites the decision log.
+ */
+describe('plain words on the comparison of a fake run, and of a stopped one', () => {
+  type Detail = Record<string, unknown> & { configs: (ConfigView & Record<string, unknown>)[] };
+  const detail = (details as unknown as Record<string, Detail>).exp_heldout;
+  const name = 'Prompt v1 on Own loop, Fake model finance-emi';
+  const [c1, c2] = detail.configs;
+  const fake: Detail = {
+    ...detail,
+    axis: 'max_steps',
+    configs: [
+      { ...c1, name, model: 'fake/finance-emi', settings: { ...c1.settings, max_steps: 10 } },
+      { ...c2, name, model: 'fake/finance-emi', prompt: c1.prompt, settings: { ...c1.settings, max_steps: 12 } },
+    ],
+  };
+  const stopped = {
+    experiment_id: 'exp_heldout',
+    status: 'incomplete',
+    reason: "the experiment was stopped before every trial ran (40 of arm A's trials cancelled, 41 of arm B's trials cancelled); a verdict needs the full planned N (D32)",
+    arms: [],
+    rows: [],
+    stats: null,
+  };
+
+  afterEach(() => vi.restoreAllMocks());
+
+  for (const [state, compare] of [
+    ['finished', null],
+    ['stopped', stopped],
+  ] as const) {
+    it(`the ${state} fake run's comparison names no decision-log entry and no raw API path`, async () => {
+      vi.spyOn(api, 'experiment').mockResolvedValue(fake as never);
+      if (compare) vi.spyOn(api, 'compare').mockResolvedValue(compare as never);
+      const text = await screenText('#/experiments/exp_heldout');
+      expect(text).toContain('Max steps: 10 in A, 12 in B');
+      expect(text).toContain('Scripted test outputs');
+      expect(text.split('\n').filter((line) => INTERNAL.test(line))).toEqual([]);
+    });
   }
 });
