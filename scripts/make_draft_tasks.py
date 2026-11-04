@@ -232,13 +232,18 @@ def main() -> None:
         notes="Judgment: 24% is cheaper than 42%, so consolidation can help, but only if the card stops being used; the prompt forbids suggesting a new loan unless a tool shows it lowers the cost.",
     )
 
-    # 10. Missing information: ask one clear question instead of guessing.
+    # 10. Missing information: ask one clear question instead of guessing. 5 Nov: the regex for a
+    # literal "?" failed both label-batch answers, which asked for four facts as a list after
+    # "I need:" / "could you share:"; tasks/draft-mba-loan-missing-info/grader.py accepts a
+    # request in any form that names at least two of the missing facts.
     write(
         "mba-loan-missing-info",
         "An MBA loan question with no income or rate given and no client file.",
         "Should I take a ₹15 lakh education loan for an MBA?",
         [
-            {"id": "asks-a-question", "type": "regex_present", "required": True, "target": "final_answer", "pattern": r"\?"},
+            {"id": "asks-for-missing-facts", "type": "unit_test", "required": True,
+             "description": "The final answer asks, as a question or a request such as 'I need:' or 'could you share:', for at least two of the facts the client left out (rate, tenure, income or salary, course cost, existing EMIs, savings or support).",
+             "file": "grader.py", "function": "grade"},
             provenance(),
         ],
         client=False,
