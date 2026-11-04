@@ -159,19 +159,37 @@ export interface ProvenanceView {
   unsupportedCount: number;
 }
 
+/** Where a contract v2 amount was found, in words: `supported_by` and the match's `where`
+ *  (`tool:<name>`, `client:<file>`, `<source>:<transcript index>`). */
+function sourceOf(by: string, match: Json): string {
+  const where = isObj(match) ? str(match.where) : null;
+  if (by === 'tool') return where?.startsWith('tool:') ? `${where.slice(5)}'s result` : 'a tool result';
+  if (by === 'client') return 'the client file';
+  if (by === 'user') return where?.startsWith('client_sim:') ? "the simulated client's message" : "the client's message";
+  return by;
+}
+
 function amount(x: Json, supported: boolean | null): AmountCheck[] {
   if (typeof x === 'string') return x.trim() ? [{ text: x, supported: supported ?? false, source: null, start: null, end: null }] : [];
   if (!isObj(x)) return [];
-  const text = firstString(x, ['text', 'raw', 'match', 'amount']);
-  const ok = typeof x.supported === 'boolean' ? x.supported : typeof x.grounded === 'boolean' ? x.grounded : typeof x.found === 'boolean' ? x.found : supported;
+  // Contract v2 (contract/v2/checks.schema.json): `supported_by` is tool, client, user or null.
+  const v2 = 'supported_by' in x;
+  const text = v2 ? str(x.text) : firstString(x, ['text', 'raw', 'match', 'amount']);
+  const ok = v2 ? x.supported_by !== null : typeof x.supported === 'boolean' ? x.supported : typeof x.grounded === 'boolean' ? x.grounded : typeof x.found === 'boolean' ? x.found : supported;
   if (!text || ok === null) return [];
-  const source = firstString(x, ['source', 'tool', 'from']) ?? (Array.isArray(x.sources) ? x.sources.filter((s): s is string => typeof s === 'string').join(', ') || null : null);
+  const source = v2
+    ? typeof x.supported_by === 'string'
+      ? sourceOf(x.supported_by, x.match ?? null)
+      : null
+    : (firstString(x, ['source', 'tool', 'from']) ?? (Array.isArray(x.sources) ? x.sources.filter((s): s is string => typeof s === 'string').join(', ') || null : null));
   return [{ text, supported: ok, source, start: typeof x.start === 'number' ? x.start : null, end: typeof x.end === 'number' ? x.end : null }];
 }
 
-/** The provenance entry of a checks.json, in any of the shapes the grader reads. */
+/** The provenance entry of a checks.json: the file itself in contract v2, which the runner
+ *  writes after every trial (`amounts` at the top), or an entry in the older shapes. */
 function provenanceNode(json: Json): Obj | null {
   if (!isObj(json)) return null;
+  if (json.contract_version === '2' && Array.isArray(json.amounts)) return json;
   for (const key of ['number_provenance', 'provenance']) if (isObj(json[key])) return json[key];
   if (Array.isArray(json.checks)) {
     const found = json.checks.find((c) => isObj(c) && (c.id === 'number_provenance' || c.id === 'provenance'));
@@ -191,10 +209,13 @@ export function provenanceOf(raw: unknown): ProvenanceView | null {
     ...(Array.isArray(node.unsupported) ? node.unsupported.flatMap((x) => amount(x, false)) : []),
   ];
   const unsupported = listed.filter((a) => !a.supported);
-  const count = typeof node.unsupported_count === 'number' ? node.unsupported_count : unsupported.length;
+  // Contract v2 gives the count as `unsupported`; older shapes as `unsupported_count`.
+  const count = typeof node.unsupported_count === 'number' ? node.unsupported_count : typeof node.unsupported === 'number' ? node.unsupported : unsupported.length;
   // An empty list is an answer (nothing without a source); no list and no count is not.
   if (!listed.length && typeof node.unsupported_count !== 'number' && !Array.isArray(node.unsupported) && !Array.isArray(node.amounts)) return null;
-  return { amounts: listed, unsupported, total: typeof node.total === 'number' ? node.total : listed.length || null, unsupportedCount: count };
+  // Contract v2 lists every amount, so its list's length is the total, even when it is 0.
+  const total = typeof node.total === 'number' ? node.total : node.contract_version === '2' ? listed.length : listed.length || null;
+  return { amounts: listed, unsupported, total, unsupportedCount: count };
 }
 
 export interface AnswerPart {

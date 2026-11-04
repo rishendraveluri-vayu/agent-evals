@@ -5,12 +5,14 @@ import { isFixtureMode } from '../api/mode';
 import type { BlindItem, ExperimentDetail, TrialRowSummary, JudgeAgreement, PromptView, TrialResult, VersionRef } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
+import ReplyText from '../components/ReplyText.vue';
 import SpanTimeline from '../components/SpanTimeline.vue';
 import { armIndexOf, armLetter, armsOf, namedByHash } from '../lib/arms';
 import { gradeView, markAmounts, outcomeOf, provenanceOf, type AmountCheck, type GradeView, type ProvenanceView } from '../lib/grading';
 import { optional, useLoad } from '../lib/async';
 import { capitalise, count, harnessVersion, money, plainText, seconds, shortVersion } from '../lib/format';
-import { endStateName, graderName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
+import { inlineParts, inlineStyles, type InlinePart } from '../lib/markdown';
+import { endStateName, experimentName, graderName, harnessName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
 import { href } from '../router';
 import { text, timelineRows, type SpanView } from '../trials';
 
@@ -161,6 +163,14 @@ const arm = computed(() => {
   return arms.find((a) => a.hash === v.configHash) ?? null;
 });
 
+/** The arm is named by its harness (a harness experiment), so the subtitle gives the harness once,
+ *  with its pinned version: "Own loop 0.1.0, config 90a6761", not "Own loop, config 90a6761, Own
+ *  loop 0.1.0". */
+const armIsHarness = computed(() => !!arm.value?.config && arm.value.label === harnessName(arm.value.config.harness));
+
+/** A shipped example: read-only, never judged or regraded here, so its grades point nowhere else. */
+const isExample = computed(() => !!data.value?.experiment?.example);
+
 const title = computed(() => {
   const v = vm.value;
   if (!v) return '';
@@ -254,6 +264,8 @@ interface ToolItem {
 }
 interface Segment {
   text: string;
+  /** The text as shown: an agent's Markdown (bold, italics, bullets) as styled text runs. */
+  parts: InlinePart[];
   /** The failed check that quoted this passage: its index in the grades and its name. */
   quote: { index: number; name: string } | null;
   /** An amount the number check found no source for. */
@@ -307,9 +319,11 @@ function summarise(args: unknown): string {
 }
 
 /** Splits a reply into paragraphs and marks the passages a failed check quoted, each tied to the
- *  check that quoted it, then the amounts the number check could not trace to a source. */
-function segments(body: string, quotes: Quote[], amounts: AmountCheck[]): Segment[][] {
-  const plain = (text: string): Segment[] => markAmounts(text, amounts).map((p) => ({ text: p.text, quote: null, amount: p.amount }));
+ *  check that quoted it, then the amounts the number check could not trace to a source. With
+ *  `markdown` (an agent's reply), each passage also carries its Markdown styles, worked out on
+ *  the whole paragraph so a highlight inside bold text stays bold. */
+function segments(body: string, quotes: Quote[], amounts: AmountCheck[], markdown: boolean): Segment[][] {
+  const plain = (text: string): Segment[] => markAmounts(text, amounts).map((p) => ({ text: p.text, parts: [], quote: null, amount: p.amount }));
   return body.split(/\n{2,}/).map((para) => {
     const hits = quotes
       .map((q) => ({ q, at: para.indexOf(q.text) }))
@@ -320,10 +334,17 @@ function segments(body: string, quotes: Quote[], amounts: AmountCheck[]): Segmen
     for (const h of hits) {
       if (h.at < pos) continue;
       if (h.at > pos) out.push(...plain(para.slice(pos, h.at)));
-      out.push({ text: h.q.text, quote: { index: h.q.index, name: h.q.name }, amount: null });
+      out.push({ text: h.q.text, parts: [], quote: { index: h.q.index, name: h.q.name }, amount: null });
       pos = h.at + h.q.text.length;
     }
     if (pos < para.length) out.push(...plain(para.slice(pos)));
+    // The segments run through the paragraph in order, so each one's offset is the sum before it.
+    const styles = markdown ? inlineStyles(para) : null;
+    let at = 0;
+    for (const seg of out) {
+      seg.parts = styles ? inlineParts(para, styles, at, at + seg.text.length) : [{ text: seg.text, bold: false, italic: false }];
+      at += seg.text.length;
+    }
     return out;
   });
 }
@@ -365,7 +386,7 @@ const conversation = computed<(ToolItem | MessageItem)[]>(() => {
       out.push(...toolsOf(turnId));
       agentIndex += 1;
     }
-    const paragraphs = segments(m.content, isAgent ? failedQuotes.value : [], isAgent ? unsupportedAmounts.value : []);
+    const paragraphs = segments(m.content, isAgent ? failedQuotes.value : [], isAgent ? unsupportedAmounts.value : [], isAgent);
     out.push({
       kind: 'message',
       id: `m${i}`,
@@ -415,13 +436,24 @@ function toggleOf(value: unknown): boolean | null {
 const applied = computed(() =>
   Object.entries(vm.value?.result.applied_settings ?? {}).map(([k, s]) => {
     const toggle = toggleOf(s.value);
-    const value = s.value === true || toggle === true ? 'On' : s.value === false || toggle === false ? 'Off' : s.value === null || s.value === undefined ? 'Not sent' : text(s.value);
+    const value =
+      s.value === true || toggle === true
+        ? 'On'
+        : s.value === false || toggle === false
+          ? 'Off'
+          : s.value === null || s.value === undefined
+            ? 'Not sent'
+            : k === 'timeout_s' && typeof s.value === 'number'
+              ? `${s.value} s`
+              : text(s.value);
     const who = vm.value?.harness ? harnessShort(vm.value.harness) : 'Harness';
     const source =
       s.source === 'config' ? 'Config' : s.source === 'platform_default' ? 'Platform default' : s.source === 'harness_default' ? `${who} default` : s.source === 'unsupported' ? 'Not supported' : s.source;
     // Cache markers change what a call costs and how long it takes, never what the model replies.
     const note = k === 'prompt_cache_markers' ? 'Affects cost and time, not the reply.' : '';
-    return { key: k, k: settingLabel(k), v: value, src: s.observed ? `${source}, ${s.observed}` : source, note };
+    // What the adapter observed comes from result.json, which may carry the authors' references.
+    const observed = s.observed ? plainText(s.observed) : '';
+    return { key: k, k: settingLabel(k), v: value, src: observed ? `${source}, ${observed}` : source, note };
   }),
 );
 
@@ -442,7 +474,7 @@ const isJudge = (g: GradeView) => g.kind === 'judge' || !!g.judgeModel;
 /** A judge check that was never judged: judging was not approved when the trial was graded. */
 const notJudged = (g: GradeView) => isJudge(g) && g.rawVerdict === 'not_implemented';
 /** Where to approve judging, or to regrade once it is: the comparison page's judge panel. */
-const judgePanelHref = computed(() => (data.value?.experiment ? href.compareJudge(data.value.experiment.id) : null));
+const judgePanelHref = computed(() => (data.value?.experiment && !isExample.value ? href.compareJudge(data.value.experiment.id) : null));
 const verdictWord = (g: GradeView) => g.verdictWord;
 const sourceWords = (source: string | null, tool: string | null) =>
   ({ tool_result: `${tool ?? 'a tool'}'s result`, span: `${tool ?? 'a tool'} call`, result: 'result.json', checks: 'the number check' })[source ?? ''] ?? source ?? 'the trial';
@@ -454,8 +486,10 @@ const numberCheck = computed(() => {
   const n = c.unsupportedCount;
   const of = c.total !== null ? ` of ${c.total}` : '';
   return {
-    summary: n
-      ? `${n}${of} ${n === 1 ? 'amount' : 'amounts'} in the answer ${n === 1 ? 'comes' : 'come'} from no tool result and not from the client's own words.`
+    summary: c.total === 0
+      ? "The agent's replies give no money amount, so there is nothing to trace."
+      : n
+      ? `${n}${of} ${n === 1 && !of ? 'amount' : 'amounts'} in the answer ${n === 1 ? 'comes' : 'come'} from no tool result and not from the client's own words.`
       : `Every amount${of ? ` (${c.total})` : ''} in the answer comes from a tool result or the client's own words.`,
     unsupported: c.unsupported,
     supported: c.amounts.filter((a) => a.supported),
@@ -548,7 +582,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
           >
             <a :href="vm.probe ? href.config() : href.experiments()">{{ vm.probe ? 'Configs' : 'Experiments' }}</a> /
             <template v-if="data.experiment">
-              <a :href="href.compare(data.experiment.id)">{{ data.experiment.name }}</a> /
+              <a :href="href.compare(data.experiment.id)">{{ experimentName(data.experiment) }}</a> /
             </template>
             <template v-else-if="vm.probe && vm.configHash">
               <a :href="href.configPage(vm.configHash)">{{ vm.configName ?? 'Config' }}</a> /
@@ -587,7 +621,10 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             <span
               v-if="arm"
               :class="`dot dot--${arm.key}`"
-            /><span><template v-if="arm && namedByHash(arm)">Config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span></template><template v-else-if="arm">{{ arm.label }}, config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span></template><template v-if="arm && harnessRef">, </template><template v-if="harnessRef">{{ harnessRef.name }} <span
+            /><span v-if="arm && harnessRef && armIsHarness">{{ arm.label }} <span
+              class="mono"
+              :title="harnessRef.full"
+            >{{ harnessRef.ref }}</span>, config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span></span><span v-else><template v-if="arm && namedByHash(arm)">Config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span></template><template v-else-if="arm">{{ arm.label }}, config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span></template><template v-if="arm && harnessRef">, </template><template v-if="harnessRef">{{ harnessRef.name }} <span
               class="mono"
               :title="harnessRef.full"
             >{{ harnessRef.ref }}</span></template></span>
@@ -726,16 +763,17 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                       class="quote-link"
                       data-test="quote-link"
                       @click.prevent="jumpToGrade(seg.quote.index)"
-                    ><span class="visually-hidden">Quoted by the judge for {{ seg.quote.name }}: </span><mark>{{ seg.text }}</mark></a>
+                    ><span class="visually-hidden">Quoted by the judge for {{ seg.quote.name }}: </span><mark><ReplyText :parts="seg.parts" /></mark></a>
                     <mark
                       v-else-if="seg.amount"
                       class="amount-mark"
                       data-test="unsupported-amount"
                       :title="'No tool result or client message gives this amount'"
-                    ><span class="visually-hidden">Amount with no source found: </span>{{ seg.text }}</mark>
-                    <template v-else>
-                      {{ seg.text }}
-                    </template>
+                    ><span class="visually-hidden">Amount with no source found: </span><ReplyText :parts="seg.parts" /></mark>
+                    <ReplyText
+                      v-else
+                      :parts="seg.parts"
+                    />
                   </template>
                 </p>
               </article>
@@ -917,6 +955,13 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               {{ hiddenReasons }}
             </p>
             <p
+              v-else-if="notJudged(g) && isExample"
+              class="small"
+              data-test="not-judged"
+            >
+              Not judged: judging was not approved when this example was run, and judging does not apply to a shipped example, which is read-only here. The check counts as undecided.
+            </p>
+            <p
               v-else-if="notJudged(g) && judgePanelHref"
               class="small"
               data-test="not-judged"
@@ -1024,7 +1069,11 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             class="secondary smaller"
             data-test="no-number-check"
           >
-            No number check for this trial yet: it comes with grading (checks.json).
+            {{
+              vm.files.includes('checks.json')
+                ? 'No number check shown: this trial’s checks.json could not be read.'
+                : 'No number check: this trial has no checks.json. The runner writes one after each trial; trials from before it did, and any whose check failed, have none.'
+            }}
           </p>
           <p
             v-if="vm.problems.length || vm.badFiles.length"

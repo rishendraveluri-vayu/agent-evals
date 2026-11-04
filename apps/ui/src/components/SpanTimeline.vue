@@ -44,6 +44,10 @@ const ticks = computed(() => {
   return out;
 });
 
+/** A tool name in pieces that each end at an underscore, so it can wrap there:
+ *  mcp__finance__list_debts → mcp_ _ finance_ _ list_ debts. */
+const identPieces = (name: string) => name.split(/(?<=_)(?!_)/);
+
 const LEGEND: [SpanBar['role'], string][] = [
   ['agent', 'Agent model call'],
   ['tool', 'Tool call'],
@@ -126,6 +130,7 @@ const LEGEND: [SpanBar['role'], string][] = [
           >
             <span
               class="label"
+              :class="{ 'label--wrap': b.ident !== undefined }"
               :title="b.title"
             ><AppIcon
               v-if="b.error"
@@ -133,9 +138,12 @@ const LEGEND: [SpanBar['role'], string][] = [
               :size="14"
               class="err"
             /><template v-if="b.ident !== undefined">tool <span
-              class="mono"
+              class="mono ident"
               data-test="span-ident"
-            >{{ b.ident }}</span></template><template v-else>{{ b.label }}</template></span>
+            ><template
+              v-for="(piece, pi) in identPieces(b.ident)"
+              :key="pi"
+            ><wbr v-if="pi">{{ piece }}</template></span></template><template v-else>{{ b.label }}</template></span>
             <span class="track"><span
               v-for="t in ticks"
               :key="t.label"
@@ -260,6 +268,16 @@ const LEGEND: [SpanBar['role'], string][] = [
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* A tool's name wraps at its underscores rather than being cut off: Hermes's mcp__finance__list_debts
+   is wider than the column. Other labels stay on one line. */
+.label--wrap {
+  white-space: normal;
+}
+
+.ident {
+  overflow-wrap: anywhere;
 }
 
 .label .err {

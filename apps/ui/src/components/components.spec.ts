@@ -222,6 +222,17 @@ describe('SpanTimeline', () => {
     expect(row?.get('.label').attributes('title')).toBe('tool get_client_profile');
     expect(row?.attributes('aria-label')).toBe('tool get_client_profile, 0.4 s. Show its details');
   });
+
+  it("lets a long tool name wrap at its underscores instead of cutting it off, as Hermes's prefixed names need", () => {
+    const long = [...spans.slice(0, 3), span('d', 'u', 'execute_tool mcp__finance__list_debts', 9_000, 9_400, { 'gen_ai.tool.name': 'mcp__finance__list_debts' }), spans[4]];
+    const w = mount(SpanTimeline, { props: { spans: long, selected: null, harness: 'hermes' } });
+    const row = w.findAll('[data-test="span-row"]').find((r) => r.text().includes('list_debts'));
+    const label = row?.get('.label');
+    // The whole name is there, with a break opportunity after each run of underscores.
+    expect(label?.text()).toBe('tool mcp__finance__list_debts');
+    expect(label?.classes()).toContain('label--wrap');
+    expect(label?.findAll('wbr')).toHaveLength(3);
+  });
 });
 
 describe('VerdictTag', () => {

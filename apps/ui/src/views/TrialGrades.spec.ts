@@ -12,17 +12,24 @@ import { routeFetch, settle } from '../test/helpers';
 import TrialView from './TrialView.vue';
 
 const ID = 'tr_fd-vs-sip-07_b_3';
-type Over = { grades?: unknown[]; grading?: unknown; checks?: unknown; files?: { path: string; bytes: number; sha256: string; ok: boolean }[] };
+type Over = {
+  grades?: unknown[];
+  grading?: unknown;
+  checks?: unknown;
+  files?: { path: string; bytes: number; sha256: string; ok: boolean }[];
+  result?: Record<string, unknown>;
+  experiment?: Record<string, unknown>;
+};
 function mountWith(over: Over = {}) {
   const files = over.files ?? trial.files;
   routeFetch({
-    [`/api/trials/${ID}`]: { ...trial, grades: over.grades ?? trial.grades, grading: over.grading ?? trial.grading, files },
+    [`/api/trials/${ID}`]: { ...trial, grades: over.grades ?? trial.grades, grading: over.grading ?? trial.grading, files, result: over.result ?? trial.result },
     [`/api/trials/${ID}/spans`]: trialSpans,
     [`/api/trials/${ID}/files/checks.json`]: over.checks ?? checks,
     '/api/judge/agreement?set=heldout': null,
     // Nothing still to label, so the judge's reasons show.
     '/api/labels/queue?set=heldout': [],
-    '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+    '/api/experiments/exp_heldout': over.experiment ?? (details as Record<string, unknown>).exp_heldout,
     '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
     '/api/prompts': prompts,
   });
@@ -128,11 +135,44 @@ describe('TrialView number check', () => {
     expect(w.find('[data-test="unsupported-amount"]').exists()).toBe(false);
   });
 
-  it('says there is no number check yet when the trial has no checks.json', async () => {
+  it('says there is no number check when the trial has no checks.json, and why, never that grading brings one', async () => {
     const w = mountWith({ files: trial.files.filter((f) => f.path !== 'checks.json') });
     await settle();
     expect(w.find('[data-test="number-check"]').exists()).toBe(false);
-    expect(w.get('[data-test="no-number-check"]').text()).toBe('No number check for this trial yet: it comes with grading (checks.json).');
+    expect(w.get('[data-test="no-number-check"]').text()).toBe(
+      'No number check: this trial has no checks.json. The runner writes one after each trial; trials from before it did, and any whose check failed, have none.',
+    );
+  });
+
+  it("reads the runner's checks.json (contract v2), as every trial since 4 Nov has it", async () => {
+    // As evals_adapter.checks writes it: every amount with where it was found, and the count.
+    const v2 = {
+      contract_version: '2',
+      trial_id: ID,
+      amounts: [
+        { turn: 0, text: '₹7,10,870', value: 710870, supported_by: 'tool', match: { value: 710870.12, where: 'tool:fd_maturity', how: 'rounded', precision: 1 } },
+        { turn: 0, text: '₹5 lakh', value: 500000, supported_by: 'user', match: { value: 500000, where: 'task:0', how: 'exact', precision: 100000 } },
+        { turn: 0, text: '₹4 lakh', value: 400000, supported_by: null, match: null },
+      ],
+      unsupported: 1,
+      tools_called: ['get_client_profile', 'fd_maturity'],
+      required_tools: null,
+    };
+    const w = mountWith({ checks: v2 });
+    await settle();
+    expect(w.find('[data-test="no-number-check"]').exists()).toBe(false);
+    const check = w.get('[data-test="number-check"]');
+    expect(check.text()).toContain("1 of 3 amounts in the answer comes from no tool result and not from the client's own words.");
+    expect(check.findAll('[data-test="unsupported-list"] li').map((li) => li.text())).toEqual(['₹4 lakh no source found']);
+    expect(check.text()).toContain("₹7,10,870 from fd_maturity's result");
+    expect(check.text()).toContain("₹5 lakh from the client's message");
+    expect(w.findAll('[data-test="unsupported-amount"]').map((m) => m.text())).toEqual(['Amount with no source found: ₹4 lakh']);
+  });
+
+  it('says when checks.json is there but cannot be read', async () => {
+    const w = mountWith({ checks: { contract_version: '3', something: 'else' } });
+    await settle();
+    expect(w.get('[data-test="no-number-check"]').text()).toBe('No number check shown: this trial’s checks.json could not be read.');
   });
 
   it('reads each checks.json shape the provenance grader reads (A14)', () => {
@@ -140,5 +180,77 @@ describe('TrialView number check', () => {
     expect(provenanceOf({ checks: [{ id: 'number_provenance', unsupported: ['₹11.59 lakh'] }] })?.unsupportedCount).toBe(1);
     expect(provenanceOf({ number_provenance: { unsupported_count: 0 } })).toMatchObject({ unsupportedCount: 0, amounts: [] });
     expect(provenanceOf({ something_else: true })).toBeNull();
+    // Contract v2: no amounts at all is an answer too, with a total of 0.
+    expect(provenanceOf({ contract_version: '2', trial_id: 't', amounts: [], unsupported: 0, tools_called: [], required_tools: null })).toMatchObject({ total: 0, unsupportedCount: 0 });
+  });
+});
+
+describe('TrialView: an agent reply as the model wrote it', () => {
+  const reply = (content: string) => ({
+    ...trial.result,
+    conversation: { ...trial.result.conversation, transcript: [trial.result.conversation.transcript[0], { role: 'assistant', content, source: 'agent' }] },
+  });
+
+  it('shows its Markdown as bold, italics and bullets, never the asterisks', async () => {
+    const w = mountWith({ grades: [], checks: {}, result: reply('To run the numbers, could you share:\n\n1. **Loan terms:** the rate and *tenure*.\n- **Monthly income**, and any EMIs.\n\nUse mcp__finance__list_debts and 5 * 3 as written.') });
+    await settle();
+    const agent = w.findAll('[data-test="message"]')[1];
+    expect(agent.text()).not.toContain('**');
+    expect(agent.findAll('strong').map((b) => b.text())).toEqual(['Loan terms:', 'Monthly income']);
+    expect(agent.get('em').text()).toBe('tenure');
+    expect(agent.text()).toContain('• Monthly income, and any EMIs.');
+    expect(agent.text()).toContain('1. Loan terms: the rate and tenure.');
+    // Underscores inside a name and a lone asterisk are left as written.
+    expect(agent.text()).toContain('Use mcp__finance__list_debts and 5 * 3 as written.');
+  });
+
+  it('keeps any markup in a reply as text: nothing it holds becomes an element', async () => {
+    const evil = '**<script>alert(1)</script>** and <img src=x onerror="alert(2)"> and *<b>bold?</b>*';
+    const w = mountWith({ grades: [], checks: {}, result: reply(evil) });
+    await settle();
+    const agent = w.findAll('[data-test="message"]')[1];
+    expect(agent.find('script').exists()).toBe(false);
+    expect(agent.find('img').exists()).toBe(false);
+    expect(agent.find('b').exists()).toBe(false);
+    expect(agent.get('strong').text()).toBe('<script>alert(1)</script>');
+    expect(agent.get('em').text()).toBe('<b>bold?</b>');
+    expect(agent.text()).toContain('<img src=x onerror="alert(2)">');
+  });
+});
+
+describe('TrialView: the facts around a trial, as the live API gives them', () => {
+  it('gives the timeout its unit, and drops a decision-log label from what the adapter observed', async () => {
+    const applied = { ...trial.result.applied_settings, timeout_s: { value: 420, source: 'config' }, api_max_retries: { value: 1, source: 'platform_default', observed: 'R10.11: one attempt' } };
+    const w = mountWith({ result: { ...trial.result, applied_settings: applied } });
+    await settle();
+    const rows = w.findAll('[data-test="applied"] tr').map((r) => r.text());
+    expect(rows.find((r) => r.startsWith('Timeout'))).toContain('420 s');
+    const retries = w.get('[data-test="applied-source-api_max_retries"]').text();
+    expect(retries).toBe('Platform default, one attempt');
+  });
+
+  it('names a harness arm once, with its pinned version', async () => {
+    const detail = (details as Record<string, Record<string, unknown>>).exp_heldout;
+    const w = mountWith({ experiment: { ...detail, axis: 'harness' } });
+    await settle();
+    expect(w.get('[data-test="trial-meta"]').text()).toBe('Hermes Agent 6112c2a, config 7f3a9c2');
+  });
+
+  it('names a shipped example by its title, and sends no one to a judge panel it does not have', async () => {
+    const detail = (details as Record<string, Record<string, unknown>>).exp_heldout;
+    const example = { name: 'harness-ownloop-vs-hermes-haiku', title: 'Draft stand-in: own loop vs Hermes on Claude Haiku 5.5 (15 draft tasks, one trial each)', loaded_at: '2026-11-05T08:00:00.000Z' };
+    const [first, second] = trial.grades;
+    const reason = 'judging is not approved for this experiment (R8), so the judge was not called and nothing was spent';
+    const w = mountWith({
+      experiment: { ...detail, name: 'Label batch 1: open coding (R8, approved: 30 trials, cap $2)', example },
+      grades: [{ ...first, verdict: 'pass' }, { ...second, verdict: 'not_implemented', score: null, reason, evidence: [] }],
+    });
+    await settle();
+    expect(w.get('nav.crumbs').text()).toContain(example.title);
+    expect(w.text()).not.toContain('Label batch 1');
+    const words = w.get('[data-test="not-judged"]');
+    expect(words.text()).toContain('judging does not apply to a shipped example');
+    expect(words.find('a').exists()).toBe(false);
+    expect(w.find('a[href*="panel=judge"]').exists()).toBe(false);
   });
 });
