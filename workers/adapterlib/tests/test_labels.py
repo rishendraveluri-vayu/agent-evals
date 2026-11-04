@@ -152,6 +152,22 @@ def test_a_simulator_failure_is_sim_error_whatever_the_agent_keys_status(status)
     assert label(OK, sim_error(), usage) == "infra:sim_error"
 
 
+def test_the_simulators_own_budget_stop_is_budget_net_not_sim_error():
+    """D26: budget stops are never re-queued; sim_error is re-queued once, so the simulator's
+    key running out must not be labelled sim_error. Seen either in LiteLLM's record for the
+    simulator key or in the refusal the simulator got back."""
+    assert label(OK, sim_error(), None, sim_last_status="budget_exceeded") == "infra:budget_net"
+    refused = harness_error(
+        'simulator call failed: HTTP 400: {"error": {"message": "Budget has been'
+        ' exceeded! Current cost: 0.1002, Max budget: 0.1"}}',
+        "simulator_error",
+    )
+    refused["result"]["conversation"] = {"ended_by": "sim_error"}
+    assert label(OK, refused, {"last_status": "200"}) == "infra:budget_net"
+    for status in (None, "200", "429", "500"):
+        assert label(OK, sim_error(), None, sim_last_status=status) == "infra:sim_error"
+
+
 def test_sim_error_does_not_hide_a_kill_or_a_crash():
     killed = {"signal": "SIGKILL", "exit_code": None}
     assert label(killed, sim_error(), None) == "infra:timeout_kill"

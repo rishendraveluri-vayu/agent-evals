@@ -368,16 +368,29 @@ def provider_label(last_status: str | None, result: dict[str, Any]) -> str | Non
     return None
 
 
-def label(launch_info: dict[str, Any], checked: dict[str, Any], proxy_usage: dict | None) -> str:
+# LiteLLM v1.99.4's refusal when a key's max_budget is spent, as the simulator sees it.
+BUDGET_TEXT = re.compile(r"budget has been exceeded|ExceededBudget|budget_exceeded", re.I)
+
+
+def label(
+    launch_info: dict[str, Any],
+    checked: dict[str, Any],
+    proxy_usage: dict | None,
+    sim_last_status: str | None = None,
+) -> str:
     """Contract section 7, with D26's provider-error labels. A conversation the simulated
     client's failure ended (ended_by sim_error: its call failed or its reply had no text) is
-    infra:sim_error whatever the agent key's status, because the agent did not cause it (D26)."""
+    infra:sim_error whatever the agent key's status, because the agent did not cause it (D26),
+    except when the simulator's own key ran out of budget: that is a budget stop,
+    infra:budget_net, which D26 says is never re-queued."""
     if launch_info["signal"] is not None:
         return "infra:timeout_kill"
     result = checked["result"]
     if launch_info["exit_code"] != 0 or result is None:
         return "infra:adapter_crash"
     if (result.get("conversation") or {}).get("ended_by") == "sim_error":
+        if sim_last_status == "budget_exceeded" or BUDGET_TEXT.search(_error_text(result)):
+            return "infra:budget_net"
         return "infra:sim_error"
     if result["end_state"] == "harness_error":
         infra = provider_label((proxy_usage or {}).get("last_status"), result)
@@ -461,14 +474,16 @@ def run_trial(
         net = safety_net_s(float(spec["settings"]["timeout_s"]))
         info = launch(paths, inputs, net, on_spawn)
         proxy_usage = None
+        sim_last_status = None
         if proxy is not None and agent_key is not None:
             claimed = _harness_calls(paths)
             records, complete = proxy.client.call_records(agent_key.token, expect_at_least=claimed)
             proxy_usage = proxy.client.usage(records, complete)
             merge_proxy_spans(paths, records, trial_id)
             if sim_key is not None:
-                sim_records, _ = proxy.client.call_records(sim_key.token, min_wait_s=0.5)
+                sim_records, sim_complete = proxy.client.call_records(sim_key.token, min_wait_s=0.5)
                 merge_proxy_spans(paths, sim_records, trial_id, role="sim")
+                sim_last_status = proxy.client.usage(sim_records, sim_complete).get("last_status")
     finally:
         if proxy is not None:
             try:
@@ -481,7 +496,7 @@ def run_trial(
         "trial_id": inputs.spec["trial"]["id"],
         "attempt": inputs.spec["trial"].get("attempt", 1),
         "harness": (checked["raw_result"] or {}).get("harness", {}).get("name", "unknown"),
-        "label": label(info, checked, proxy_usage),
+        "label": label(info, checked, proxy_usage, sim_last_status),
         "end_state": (checked["result"] or {}).get("end_state"),
         "adapter": {
             "exit_code": info["exit_code"],
