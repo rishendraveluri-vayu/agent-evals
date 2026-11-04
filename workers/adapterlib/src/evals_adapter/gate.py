@@ -6,7 +6,7 @@ A harness counts only once these pass against the fake model server, with no rea
 2. steps: a model that never stops calling tools ends in step_limit, within max_steps plus the
    declared extra calls;
 3. tools: the first request's tools equal the finance server's manifest, apart from the
-   harness's declared name rewrite;
+   harness's declared name rewrite and description wrapper;
 4. timeout: a hung model call ends the trial as timeout within timeout_s plus a margin;
 5. errors: a malformed tool call goes back to the model (D18), and a 429 is not retried by the
    harness (R10.11);
@@ -139,15 +139,48 @@ class GateRun:
         return f"report={adapter} end={self.result.get('end_state')} stderr=...{stderr}"
 
 
+def unwrap_description(text: Any, wrapper: tuple[str, str] | None) -> Any:
+    """`text` without the declared (prefix, suffix) around it. Anything not wrapped in exactly
+    that text is returned unchanged, so it still has to match the server's text as sent."""
+    if wrapper is None or not isinstance(text, str):
+        return text
+    prefix, suffix = wrapper
+    if len(text) >= len(prefix) + len(suffix) and text.startswith(prefix) and text.endswith(suffix):
+        return text[len(prefix) : len(text) - len(suffix)]
+    return text
+
+
+def unwrap_schema_descriptions(schema: Any, wrapper: tuple[str, str] | None) -> Any:
+    """A copy of a parameter schema with the declared wrapper taken off every `description`
+    string. Every other key and value is left exactly as sent."""
+    if isinstance(schema, dict):
+        return {
+            k: unwrap_description(v, wrapper)
+            if k == "description" and isinstance(v, str)
+            else unwrap_schema_descriptions(v, wrapper)
+            for k, v in schema.items()
+        }
+    if isinstance(schema, list):
+        return [unwrap_schema_descriptions(v, wrapper) for v in schema]
+    return schema
+
+
 @dataclass
 class Gate:
     """One harness's gate. `tool_name` maps a finance tool name to what the harness sends
-    (Hermes: mcp__finance__<name>). `env` adds variables for the adapter process."""
+    (Hermes: mcp__finance__<name>). `env` adds variables for the adapter process.
+
+    `description_wrapper` declares the exact (prefix, suffix) a harness puts around every tool
+    and parameter description it sends (ADK's untrusted-description markers). D20 keeps that
+    text in the request, so the tool test takes off exactly this wrapper before comparing; every
+    tool-level description must carry it, and names and schemas must otherwise match exactly.
+    Declare it in capabilities.json `known_differences` too."""
 
     harness: str
     adapter_cmd: list[str]
     capabilities: dict[str, Any]
     tool_name: Callable[[str], str] = lambda name: name
+    description_wrapper: tuple[str, str] | None = None
     env: dict[str, str] = field(default_factory=dict)
     cwd: Path | None = None
     # Proxy mode: route every call through LiteLLM (which routes fake/* to the compose fake),
@@ -374,9 +407,16 @@ class Gate:
         assert set(sent) == set(expected), (
             f"extra {set(sent) - set(expected)}, missing {set(expected) - set(sent)}"
         )
+        wrapper = self.description_wrapper
         for name, tool in expected.items():
-            assert sent[name].get("description") == tool.get("description"), name
-            assert sent[name].get("parameters") == tool["inputSchema"], name
+            description = sent[name].get("description")
+            if wrapper is not None and tool.get("description"):
+                assert unwrap_description(description, wrapper) != description, (
+                    f"{name}: the declared description wrapper is missing"
+                )
+            assert unwrap_description(description, wrapper) == tool.get("description"), name
+            parameters = unwrap_schema_descriptions(sent[name].get("parameters"), wrapper)
+            assert parameters == tool["inputSchema"], name
         return run
 
     def test_timeout(self, tmp_path: Path, fake: FakeServer, timeout_s: float = 15.0) -> GateRun:
