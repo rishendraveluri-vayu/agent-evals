@@ -240,8 +240,8 @@ export const api = {
   renderedPrompt: (hash: string) => call<RenderedPromptView>('GET', `/configs/${enc(hash)}/rendered-prompt`),
   /** Queues a probe trial on the fake model when there is no rendered prompt yet (free, D33). */
   renderPrompt: (hash: string) => post<RenderedPromptView>(`/configs/${enc(hash)}/rendered-prompt`),
-  /** The stored conflict check for the config as it is now; makes no call. */
-  conflictCheck: (hash: string) => call<ConflictCheckView>('GET', `/configs/${enc(hash)}/conflict-check`),
+  /** The stored conflict check for the config as it is now, or null when none is stored; makes no call. */
+  conflictCheck: (hash: string) => call<ConflictCheckView | null>('GET', `/configs/${enc(hash)}/conflict-check`),
   /** A REAL, PAID model call (D38), unless the same input was checked before. Only a person's click
    *  calls this. */
   runConflictCheck: (hash: string) => post<ConflictCheckView>(`/configs/${enc(hash)}/conflict-check`),

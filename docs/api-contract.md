@@ -284,7 +284,8 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
     `x-litellm-response-cost` header (`cost_source` says which). A cost never reported stays
     null and its reservation keeps counting against the allowance.
 - `GET /configs/:hash/conflict-check` returns the stored result for the config as it is now,
-  without a call; 404 `no_conflict_check` before any.
+  without a call; 200 `null` before any (since 5 Nov; it was a 404, which logged an error on
+  every visit to an unchecked config's page). 409 `rendered_prompt_required` as for the POST.
 - Body: `{config_hash, rendered_sha256, input_sha256, checker: {id, version, sha256}, model,
   conflicts, notes, cost_usd, cached, skipped, spend_id, checked_at, allowance}`. `cost_usd` is
   what the check cost when it ran (also on a cached answer; `cached: true` means this request

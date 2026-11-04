@@ -454,9 +454,9 @@ function renderedPrompt(hash: string): RenderedPromptView {
   return renderedPrompts[hash] ?? { config_hash: hash, status: 'none', probe: null, cached: false, error: null, rendered: null };
 }
 
-/** GET returns the stored check; POST in sample mode never calls a model either, so it answers
- *  with the stored check (cached) or says, as the API would after a call, that there is none. */
-function conflictCheck(hash: string, post: boolean): ConflictCheckView {
+/** GET returns the stored check, or null when there is none (as the API does); POST in sample
+ *  mode never calls a model either, so it answers with the stored check (cached) or refuses. */
+function conflictCheck(hash: string, post: boolean): ConflictCheckView | null {
   const rendered = renderedPrompt(hash);
   if (rendered.status !== 'ready') {
     throw new ApiError(409, 'rendered_prompt_required', `config ${hash} has no rendered prompt yet`, 'Render the prompt first; the check reads it.');
@@ -464,7 +464,7 @@ function conflictCheck(hash: string, post: boolean): ConflictCheckView {
   const stored = conflictChecks[hash];
   if (stored) return { ...stored, cached: true };
   if (post) throw new ApiError(409, 'sample_data', 'Sample mode makes no model calls, so this check cannot run here.', 'Run the UI against the API to check a config; each check is a real, paid call.');
-  throw new ApiError(404, 'no_conflict_check', `no conflict check for config ${hash} yet`);
+  return null;
 }
 
 /** Sample mode's shipped example: one of the sample experiments, already in place, so "See a

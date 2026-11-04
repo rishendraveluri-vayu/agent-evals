@@ -33,7 +33,9 @@ let loaded = false;
 async function load() {
   loaded = true;
   try {
-    state.value = { kind: 'ready', check: await api.conflictCheck(props.configHash) };
+    // null: none stored yet (an API from before 5 Nov answered 404 no_conflict_check instead).
+    const check = await api.conflictCheck(props.configHash);
+    state.value = check ? { kind: 'ready', check } : { kind: 'none' };
   } catch (err) {
     if (err instanceof ApiError && err.code === 'no_conflict_check') state.value = { kind: 'none' };
     else if (err instanceof ApiError && err.code === 'rendered_prompt_required') state.value = { kind: 'needs-render' };

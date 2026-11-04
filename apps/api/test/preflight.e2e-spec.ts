@@ -212,7 +212,8 @@ describeWithDb('pre-run rendered prompt, conflict check and spend (e2e, real Pos
 
   it('calls the checker once through a minted key, records the cost from the spend log, and serves the cache without a second call', async () => {
     env.stub.chatReply = JSON.stringify(FINDINGS);
-    await check(hermes, 'get').expect(404);
+    // Nothing stored yet: 200 with null, not a 404, so a page that asks on every visit logs no error.
+    expect((await check(hermes, 'get').expect(200)).text).toBe('null');
     const res = (await check(hermes).expect(200)).body as ConflictCheckView;
     expect(res).toMatchObject({
       config_hash: hermes,
@@ -265,7 +266,7 @@ describeWithDb('pre-run rendered prompt, conflict check and spend (e2e, real Pos
     const [failed] = await spendRows();
     expect(failed).toMatchObject({ status: 'failed', cost_usd: 0.0123, cost_source: 'spend_log', ref: `config:${cfg}` });
     expect(failed.error).toContain('not a JSON object');
-    await check(cfg, 'get').expect(404);
+    expect((await check(cfg, 'get').expect(200)).text).toBe('null');
 
     env.stub.chatReply = JSON.stringify(FINDINGS);
     const [a, b] = await Promise.all([check(cfg), check(cfg)]);

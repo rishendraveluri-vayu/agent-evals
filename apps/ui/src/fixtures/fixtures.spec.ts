@@ -146,18 +146,21 @@ describe('fixtures', () => {
   });
 
   it('serve pre-run checks and spend in the contract shapes, and never make a call', () => {
+    let unstored = 0;
     for (const c of fixtureResponse('GET', '/configs') as { hash: string }[]) {
       const r = fixtureResponse('GET', `/configs/${c.hash}/rendered-prompt`) as { status: string };
       expect(keys(r)).toEqual(sorted(FIELDS.rendered));
       if (r.status !== 'ready') continue;
-      try {
-        const check = fixtureResponse('GET', `/configs/${c.hash}/conflict-check`) as { allowance: unknown };
-        expect(keys(check)).toEqual(sorted(FIELDS.conflict));
-        expect(keys(check.allowance)).toEqual(sorted(FIELDS.allowance));
-      } catch (err) {
-        expect((err as ApiError).code).toBe('no_conflict_check');
+      // None stored yet: null, as the API answers (200), never a 404.
+      const check = fixtureResponse('GET', `/configs/${c.hash}/conflict-check`) as { allowance: unknown } | null;
+      if (check === null) {
+        unstored += 1;
+        continue;
       }
+      expect(keys(check)).toEqual(sorted(FIELDS.conflict));
+      expect(keys(check.allowance)).toEqual(sorted(FIELDS.allowance));
     }
+    expect(unstored).toBeGreaterThan(0);
     const spend = fixtureResponse('GET', '/spend') as { allowances: unknown[] };
     expect(keys(spend)).toEqual(sorted(FIELDS.spend));
     // A POST with no stored result is refused in sample mode, never answered as if a model ran.

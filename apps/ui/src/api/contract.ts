@@ -1135,7 +1135,7 @@ export interface AllowanceView {
   half_reached: boolean;
 }
 
-/** POST /configs/:hash/conflict-check, and GET for the stored result without a call. */
+/** POST /configs/:hash/conflict-check, and GET for the stored result without a call (GET answers `null` when none is stored). */
 export interface ConflictCheckView {
   config_hash: Sha256;
   rendered_sha256: Sha256;

@@ -29,9 +29,12 @@ export class PreflightController {
     return this.preflight.conflictCheck(hash);
   }
 
-  /** The stored result for the config as it is now; 404 `no_conflict_check` before any. Never calls a model. */
+  /**
+   * The stored result for the config as it is now; 200 `null` before any (not a 404, so a page
+   * that asks on every visit logs no error). Never calls a model.
+   */
   @Get(':hash/conflict-check')
-  stored(@Param('hash') hash: string): Promise<ConflictCheckView> {
-    return this.preflight.storedCheck(hash);
+  async stored(@Param('hash') hash: string, @Res() res: HttpResponse): Promise<void> {
+    res.status(200).json(await this.preflight.storedCheck(hash));
   }
 }
