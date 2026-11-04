@@ -125,6 +125,9 @@ services:
       - ./runs:/runs
       - ./workers:/repo/workers:ro
       - ./configs:/repo/configs:ro
+      # Read-write over the read-only configs/ above: POST /api/prompts adds new version files
+      # here (never overwriting one). Like runs/, it must be writable by uid 1000 on the host.
+      - ./configs/prompts:/repo/configs/prompts
       - ./tasks:/repo/tasks:ro
       - ./labels:/repo/labels
     depends_on:

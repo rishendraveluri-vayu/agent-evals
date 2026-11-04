@@ -98,6 +98,24 @@ export interface PromptView {
   text: string;
 }
 
+/** POST /prompts: a new version of an existing prompt, written as configs/prompts/<id>.v<n>.md. */
+export interface CreatePromptRequest {
+  /** An existing prompt id, as in GET /prompts. */
+  id: string;
+  /** The version the text was edited from (an existing version of `id`), named in the file's header. */
+  base_version: string;
+  /** The prompt text, at most 50 KB (UTF-8). */
+  text: string;
+}
+
+/** POST /prompts: 201 with the new version, or 200 with an existing version of the same text. */
+export interface CreatedPrompt {
+  id: string;
+  version: string;
+  sha256: Sha256;
+  path: string;
+}
+
 export interface ToolsetServer {
   name: string;
   allowed_tools: string[];

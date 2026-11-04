@@ -31,9 +31,42 @@ status, plus `"fix": "<what to change>"` where the API can say how to put the re
 | --- | --- |
 | `GET /harnesses` | `[{name, package, ref, python, capabilities}]`, one per `workers/*/src/*/capabilities.json` (read-only mount). |
 | `GET /prompts` | `[{id, version, sha256, path, text}]` from `configs/prompts/<id>.<version>.md` (the leading `<!-- -->` review header stripped, as `prompt_text` does). |
+| `POST /prompts` | `{id, base_version, text}` writes the next version of an existing prompt and returns `{id, version, sha256, path}` (below). |
 | `GET /toolsets` | `[{id, version, sha256, servers: [{name, allowed_tools}]}]`. One built-in toolset `finance/all` until more exist. |
 | `GET /tasks` | `[{sha256, id, version, split, kind, summary, graders}]` from `tasks/<id>/task.json`. |
 | `GET /models` | `[{name, provider, input_per_mtok, output_per_mtok}]` from LiteLLM's `/model/info`, real models only. |
+
+**New prompt version** (`POST /prompts`, for the UI's prompt editor). The API writes
+`configs/prompts/<id>.v<n>.md`, where `n` is the highest `v<number>` version of `id` plus one
+(versions that are not `v<number>` are not counted). The file starts with a review header in the
+existing files' style, which `GET /prompts` strips again:
+
+```text
+<!--
+finance-advisor v2, created from v1 in the UI on 4 Nov 2026.
+This header comment is stripped before use. Once a run has used this version, changes go in
+a new version file.
+-->
+
+<text, trimmed>
+```
+
+`sha256` is that of the stripped text, as in `GET /prompts`, and the new version is stored at
+once, so a config can point at it. The same text as an existing version of `id` (after trimming)
+returns that version with 200 and writes nothing; a new file is 201. Posts run one at a time.
+The compose file mounts `configs/prompts` read-write over the read-only `configs/`, so it must be
+writable by uid 1000 on the host. The API does not commit the file: it is in the working tree until
+someone commits it, and the database keeps the text by its hash either way. Refusals, each with a
+`fix`:
+
+| `error` | When |
+| --- | --- |
+| `invalid_prompt` (400) | not an object; `id` or `base_version` with anything but letters, digits, `_` and `-` (so no `/`, `\` or `..`); an empty `text` |
+| `unknown_prompt_id` (400) | no `configs/prompts/<id>.*.md`: only existing prompts get new versions |
+| `unknown_base_version` (400) | `base_version` is not a version of `id` |
+| `prompt_too_large` (400) | `text` over 50 KB (51,200 bytes in UTF-8) |
+| `prompt_text_exists` (409) | the text is already a version of another prompt id (the prompts table is keyed by text hash) |
+| `prompt_version_exists` (409) | the next file appeared between the listing and the write; it is never overwritten (`wx`), so post again |
 
 **Task file, minimum the engine needs** (`tasks/<id>/task.json`). The task format is
 **[Rishi designs]** in SP4; this is only what the engine reads, and everything else is kept
