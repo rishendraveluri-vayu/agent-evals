@@ -1,0 +1,7 @@
+# A stand-in judge for the platform's judge plumbing (graders/src/evals_graders/judge.py): one
+# reply, "yes" on the open-coding criterion `overall`, with an empty quote (so the grade shows an
+# unfound quote, as a real judge's empty quote would). For the fake path only: it never reads the
+# trial, so its verdicts mean nothing.
+description: A judge reply with "yes" on criterion overall, as JSON.
+steps:
+  - text: '{"criteria": [{"id": "overall", "verdict": "yes", "quote": "", "reason": "fake judge: always yes"}]}'

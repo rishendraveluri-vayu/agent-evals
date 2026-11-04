@@ -40,7 +40,7 @@ weaker grader.
 | `provenance` | `max_unsupported` (default 0); `target`: `agent_messages` (default, every reply) or `final_answer` | `checks.json`'s number provenance (contract v2 section 12) found at most that many money amounts with no tool result, client-file number or user message behind them (note 31). The evidence quotes each unsupported amount in the reply it came from. `not_applicable` when there is no `checks.json` (trials from before 4 Nov); `error` when the file is not the contract's shape. |
 | `required_tools` | `successful` (default false: with true, a tool whose every call errored counts as not called) | Every tool in the task's own `required_tools` field was called, as `checks.json` records it. The tools are listed once, in `task.json`; the grader takes no tool list, and is an `error` when the task lists none. |
 | `unit_test` | `file` (default `grader.py`, next to `task.json`); `function` (default `grade`); `timeout_s` (default 10, max 120) | The task's own `grade(trial)` says so. This is the brief's "unit tests". |
-| `judge` | `rubric` (`{id, version}` or a path); `criteria` (a list); `model`; `reference` | **Reserved.** Returns `not_implemented` until the rubric exists. |
+| `judge` | `rubric` (`{id, version}` or a `configs/rubrics/` path); `criteria` (a list of `{id, text?, required?}`); `model`; `reference` | An LLM judge, blind to harness and model, with a verdict and quote per criterion (`evals_graders/judge.py`, below). `not_implemented` until the experiment's judging is approved with a model and a budget. |
 
 **Targets** (`number`, `regex_*`): `final_answer` is the agent's last visible reply;
 `agent_messages` is each visible reply on its own (a conversation's earlier answers count);
@@ -149,3 +149,54 @@ side. The API computes the same hashes (shared test vectors in `graders/tests/ha
 A caution from the real trials: `regex_absent` on `\bOTP\b` failed LangGraph's conversation
 because it *warned* the client not to share an OTP. Absence checks on words are blunt; the judge
 or a `unit_test` fits such rules better.
+
+## The judge (plumbing built 4 Nov night; the rubric and the choices below are Rishi's)
+
+What is built, in `graders/src/evals_graders/judge.py` (framework 0.3.0):
+
+- **No spend without an approval.** The judge calls a model only with the key the API mints once an
+  experiment's judging is approved: `POST /api/experiments/:id/judge` with `{model, budget_usd}`
+  (R8). The key is capped at the budget and can call only that model. Without one, the grade is
+  `not_implemented` and nothing is spent. An approval made after the trials finished applies on
+  the next `POST /api/experiments/:id/regrade`.
+- **Blind, and the same view as yours.** The judge gets the task summary, the conversation (client
+  and assistant turns), the tool calls with bare names, arguments and results, and the spec's
+  `reference` facts if any. That is what the blind labelling screen shows you, plus the reference.
+  It never gets the harness, the model, the config, the system prompt, timings, cost or another
+  grade. A test checks, on the real 4 Nov trial of each of the five harnesses, that no harness or
+  model name and no `mcp__` prefix reaches the judge.
+- **The prompt:** the system message is the rubric file (its leading `<!-- -->` notes removed),
+  then a fixed answer-format paragraph (`OUTPUT_INSTRUCTIONS`): yes or no per criterion, a quote
+  copied exactly from the material (empty when the verdict rests on something missing), one
+  sentence of reason, as one JSON object. The user message is the material and the criteria.
+  No temperature is sent (the Claude 5.5 models reject it); `max_tokens` 8,000 leaves room for the
+  model's thinking.
+- **Every quote is looked up.** A quote found in the material (whitespace aside) is evidence with
+  its source (`agent_message`, `client_message`, `tool_result` or `span`, with the index or span
+  id). One not found is kept with `source: "judge"` and `quote_found: false`, and the reason says
+  so. The call itself is the last evidence item (`judge_call`: model, rubric sha256, request
+  sha256, tokens, cost, latency and the raw reply), so every verdict can be audited.
+- **The rubric is part of the grader version**, like a unit_test's file: the API sends it in the
+  claim under its `configs/rubrics/` path and hashes it into `spec_sha256`. Editing the rubric
+  gives new grades next to the old ones.
+- **Test-retest** is a regrade of the same trials: each new answer from the same grader version is
+  the next `run_index`, and each grading job keeps the ids of its grades.
+- **Tests:** `graders/tests/test_judge.py` and the judge cases in `tests/test_worker.py`, against a
+  stub and a local HTTP stand-in for LiteLLM; `fake/judge` on the fake model server for the
+  compose path. No test calls a real model.
+
+### Choices for you (the code takes the first option of each until you decide)
+
+9. **The grader's verdict from the criteria:** fail when a required criterion is "no", pass when
+   every required one is "yes", otherwise `error` (an "unsure" or a missing answer), which makes
+   the task `incomplete`. Alternatives: count "unsure" as a fail, or let the judge answer only yes
+   or no (the format paragraph asks for yes or no today; an "unsure" is read only if it comes).
+10. **A quote that is not in the material:** kept and flagged, the verdict unchanged. Alternatives:
+    turn that criterion into "unsure", or into "no" for a "yes" (stricter: a pass must quote).
+11. **What the judge sees:** the same as the labelling screen plus `reference`. Alternatives: no
+    tool calls (judge the client's view only), or no reference facts.
+12. **The judge model:** none by default; it is whatever you approve per experiment (the
+    judge-validation proposal suggests Claude Sonnet 5.5, pinned).
+13. **One call per trial for all criteria** (cheaper, criteria can colour each other), or one call
+    per criterion (independent, about N criteria times the cost).
+

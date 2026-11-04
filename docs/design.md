@@ -144,7 +144,9 @@ Built on 4 Nov, where graders live (follows D1, D2, R10.2 and R14; the SPEC left
 - **Grading is its own step after the trial (R14).** A `grader` compose service (`evals-grader`, same read-only runtime as a harness worker, trials network only, no mounts) claims grading jobs from the API, downloads the trial's files over HTTP, grades and reports (D2). A grader fix is `POST /experiments/:id/regrade`: new grade versions next to the old ones, no trial re-run (`docs/api-contract.md`, Grading).
 - **Every grade quotes its evidence verbatim** and carries a version: the hash of its spec (and grader file) plus the framework version, computed identically in Python and in the API.
 
-Built as a draft, open for Rishi (SP4 **[Rishi designs]**): the grader spec format, its ten types (number, tool_called, tool_not_called, regex_present, regex_absent, end_state, provenance, required_tools, unit_test, and the reserved judge; provenance and required_tools read the runner's `checks.json`) and the outcome rule are in `docs/proposals/grader-format.md`, with the choices listed there.
+- **The judge is plumbing around Rishi's rubric** (4 Nov night): it runs in the same grader worker, calls a model only with the per-experiment key the API mints when judging is approved with a model and a budget (R8), sees only what the blind labelling screen shows plus any reference facts, answers yes or no with a quote per criterion, and every quote is looked up in the material. The rubric file is part of the grader version. Details and the open choices: `docs/proposals/grader-format.md`, The judge.
+
+Built as a draft, open for Rishi (SP4 **[Rishi designs]**): the grader spec format, its ten types (number, tool_called, tool_not_called, regex_present, regex_absent, end_state, provenance, required_tools, unit_test, and the judge; provenance and required_tools read the runner's `checks.json`) and the outcome rule are in `docs/proposals/grader-format.md`, with the choices listed there.
 
 Open:
 

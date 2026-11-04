@@ -8,7 +8,10 @@ The loop, over HTTP only (D2), with the worker token:
 2. Download: GET /trials/:id/files/<path> for result.json, trace.jsonl, runner-report.json and
    checks.json when the manifest lists them, each checked against the manifest's sha256. Nothing
    is mounted from the host.
-3. Grade: the same code as `evals-grade` (graders.grade_trial), in a fresh temporary folder.
+3. Grade: the same code as `evals-grade` (graders.grade_trial), in a fresh temporary folder. A
+   judge grader calls a model only when the claim carries `judge` (the experiment's judging was
+   approved with a model and a budget, and the API minted a key for it), and its rubric comes in
+   `grader_files` under its configs/rubrics/ path.
 4. Report: POST /grader/trials/:id/grades with every grade. Retried on network errors and 5xx;
    the API treats a repeat of the same job and claim as a no-op. A 409 means the lease lapsed and
    another worker holds the job: drop it.
@@ -41,6 +44,7 @@ from typing import Any
 
 from evals_graders import FRAMEWORK_VERSION
 from evals_graders.graders import grade_trial
+from evals_graders.judge import RUBRIC_PATH, JudgeAccess, Transport
 
 WANTED = ("result.json", "trace.jsonl", "runner-report.json", "checks.json")
 MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
@@ -167,19 +171,34 @@ def fetch_files(api: GraderApi, job: dict[str, Any], out: Path) -> list[str]:
     return problems
 
 
-def write_grader_files(job: dict[str, Any], task_dir: Path) -> None:
+def write_grader_files(job: dict[str, Any], task_dir: Path, repo_dir: Path | None = None) -> None:
+    """A unit_test's file goes next to the task; a judge's rubric (keyed by its configs/rubrics/
+    path) under `repo_dir`. Any other name, or bytes that differ from their sha256, is skipped,
+    and the grade that needed it says the file is missing."""
     for name, entry in (job.get("grader_files") or {}).items():
         if not isinstance(entry, dict) or not isinstance(entry.get("base64"), str):
-            continue  # listed but missing on the API's side: the unit_test grade says so
-        if "/" in name or name.startswith("."):
+            continue  # listed but missing on the API's side: the grade says so
+        if RUBRIC_PATH.match(name):
+            if repo_dir is None:
+                continue
+            target = repo_dir / name
+        elif "/" in name or name.startswith("."):
             continue
+        else:
+            target = task_dir / name
         data = base64.b64decode(entry["base64"])
         if entry.get("sha256") and _sha(data) != _norm_sha(entry["sha256"]):
             continue
-        (task_dir / name).write_bytes(data)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
 
 
-def grade_job(api: GraderApi, job: dict[str, Any], workdir: Path | None = None) -> dict[str, Any]:
+def grade_job(
+    api: GraderApi,
+    job: dict[str, Any],
+    workdir: Path | None = None,
+    judge_transport: Transport | None = None,
+) -> dict[str, Any]:
     """Downloads, grades and builds the report body for one claimed job."""
     graders = job.get("graders") or []
     specs = [g.get("spec") for g in graders]
@@ -187,16 +206,25 @@ def grade_job(api: GraderApi, job: dict[str, Any], workdir: Path | None = None) 
     with tempfile.TemporaryDirectory(prefix="evals-grade-", dir=workdir) as tmp:
         out = Path(tmp) / "out"
         task_dir = Path(tmp) / "task"
+        repo_dir = Path(tmp) / "repo"
         out.mkdir()
         task_dir.mkdir()
+        repo_dir.mkdir()
         problems = fetch_files(api, job, out)
-        write_grader_files(job, task_dir)
+        write_grader_files(job, task_dir, repo_dir)
+        task = job.get("task") or {}
+        summary = task.get("summary") if isinstance(task.get("summary"), str) else None
         report = grade_trial(
             out,
             specs,
             task_dir=task_dir,
             spec_hashes=hashes,
             end_state_fallback=(job.get("trial") or {}).get("end_state"),
+            repo_root=repo_dir,
+            task_summary=summary,
+            # Nothing is spent on a trial whose files are not intact: its grades become errors.
+            judge=None if problems else JudgeAccess.from_claim(job.get("judge")),
+            judge_transport=judge_transport,
         )
     if problems:
         why = "; ".join(problems)

@@ -67,6 +67,7 @@ uv run --no-project --with pyyaml==6.0.3 python scripts/check_compose.py        
 
 cd graders && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run pytest -q   # grader framework (SP4), incl. the 4 Nov real trials
 cd graders && uv run evals-grade <trial out/ folder> --task ../tasks/<id>/task.json            # grade one trial folder, print the grades as JSON
+# the judge spends only after Rishi approves an experiment's judging (R8): POST /api/experiments/<id>/judge {model, budget_usd}, then POST .../regrade
 # API grading e2e with the real Python grader (throwaway Postgres as in apps/api/test/support/db.ts)
 TEST_DATABASE_URL=postgresql://postgres:x@127.0.0.1:55432/postgres EVALS_GRADER_BIN=$PWD/graders/.venv/bin/evals-grader pnpm --filter @agent-evals/api test -- grading
 

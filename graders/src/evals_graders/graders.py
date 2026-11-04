@@ -6,9 +6,11 @@ Every grader returns a grade:
 
 `verdict` is pass, fail, not_applicable (nothing to check, e.g. no checks.json), error (the
 grader could not run: a bad spec, a missing file, a unit test that crashed or timed out) or
-not_implemented (the reserved judge). `score` is 0..1, or null when there is no verdict on the
-agent. `evidence` items are {source, quote?, span_id?, ...}; a quote is always a verbatim
-substring of the text named by `source`, so a reader can find exactly what the grade relied on.
+not_implemented (the judge, when judging is not approved for the experiment). `score` is 0..1,
+or null when there is no verdict on the agent. `evidence` items are {source, quote?, span_id?,
+...}; a quote is always a verbatim substring of the text named by `source`, so a reader can find
+exactly what the grade relied on (the judge's own quotes are checked, and one it made up is kept
+with source "judge" and quote_found false).
 Sources: final_answer, agent_message (with its transcript `index`), span (a tool call's
 arguments), tool_result, result (a result.json field) and checks.
 """
@@ -22,6 +24,8 @@ from typing import Any
 
 from evals_graders import FRAMEWORK_VERSION
 from evals_graders.amounts import context, find, fmt_inr, within
+from evals_graders.judge import JudgeAccess, Transport
+from evals_graders.judge import grade_judge as judge_grade
 from evals_graders.spec import Prepared, prepare
 from evals_graders.trial import ToolCall, TrialView, normalise_tool_name
 
@@ -31,11 +35,24 @@ VERDICTS = ("pass", "fail", "not_applicable", "error", "not_implemented")
 
 
 class Context:
-    """What one grading run shares: the trial, the task folder (for unit_test files)."""
+    """What one grading run shares: the trial, the task folder (for unit_test files), and for the
+    judge: the repo folder its rubric is read from, the task summary, and the approved access."""
 
-    def __init__(self, trial: TrialView, task_dir: Path | None) -> None:
+    def __init__(
+        self,
+        trial: TrialView,
+        task_dir: Path | None,
+        repo_root: Path | None = None,
+        task_summary: str | None = None,
+        judge: JudgeAccess | None = None,
+        judge_transport: Transport | None = None,
+    ) -> None:
         self.trial = trial
         self.task_dir = task_dir
+        self.repo_root = repo_root
+        self.task_summary = task_summary
+        self.judge = judge
+        self.judge_transport = judge_transport
         self._calls: list[ToolCall] | None = None
 
     @property
@@ -512,15 +529,11 @@ def grade_required_tools(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-# ---- judge (reserved) -----------------------------------------------------------------------
+# ---- judge (evals_graders.judge) ------------------------------------------------------------
 
 
 def grade_judge(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
-    return _grade(
-        "not_implemented",
-        "the judge is reserved: it is built after Rishi writes the rubric,"
-        " so this grader is recorded but not run",
-    )
+    return judge_grade(ctx, spec)
 
 
 def grade_unit_test(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
@@ -584,15 +597,21 @@ def grade_trial(
     task_dir: str | Path | None = None,
     spec_hashes: list[str] | None = None,
     end_state_fallback: str | None = None,
+    repo_root: str | Path | None = None,
+    task_summary: str | None = None,
+    judge: JudgeAccess | None = None,
+    judge_transport: Transport | None = None,
 ) -> dict[str, Any]:
     """Runs every grader on one trial folder. Never raises for a grader's sake: a grader that
-    cannot run is an `error` grade, so the others are still recorded."""
+    cannot run is an `error` grade, so the others are still recorded. The judge calls a model only
+    when `judge` (the approved access) is given."""
     trial = TrialView.load(out_dir)
     if end_state_fallback and trial.end_state is None:
         trial.end_state_fallback = end_state_fallback
     tdir = Path(task_dir) if task_dir is not None else None
-    ctx = Context(trial, tdir)
-    prepared = prepare(specs, tdir, spec_hashes)
+    root = Path(repo_root) if repo_root is not None else None
+    ctx = Context(trial, tdir, root, task_summary, judge, judge_transport)
+    prepared = prepare(specs, tdir, spec_hashes, repo_root=root)
     grades = [run_one(ctx, p) for p in prepared]
     passed, result, why = outcome(grades)
     return {

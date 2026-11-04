@@ -15,6 +15,7 @@ import jsonschema
 
 from evals_graders import FRAMEWORK_VERSION
 from evals_graders.canonical import grader_version, spec_sha256
+from evals_graders.judge import rubric_path
 
 DEFAULT_UNIT_FILE = "grader.py"
 
@@ -83,12 +84,15 @@ def prepare(
     task_dir: Path | None,
     spec_hashes: list[str] | None = None,
     framework_version: str = FRAMEWORK_VERSION,
+    repo_root: Path | None = None,
 ) -> list[Prepared]:
     """Validates every spec and computes its version.
 
     `spec_hashes`, when given (the grader worker), are the API's own spec hashes for these specs,
     so a grade's version is exactly what the API expects; otherwise (the CLI) they are computed
-    here the same way, from the spec and the files it runs.
+    here the same way, from the spec and the files it runs: a unit_test's grader file (in
+    `task_dir`) or a judge's rubric (its configs/rubrics/ path, in `repo_root`), so editing the
+    rubric gives the judge a new version.
     """
     out: list[Prepared] = []
     seen: set[str] = set()
@@ -105,6 +109,10 @@ def prepare(
             name = unit_file(spec) if isinstance(spec, dict) else None
             if name:
                 files[name] = file_sha256(task_dir / name) if task_dir else None
+            is_judge = isinstance(spec, dict) and spec.get("type") == "judge"
+            rubric = rubric_path(spec) if is_judge else None
+            if rubric:
+                files[rubric] = file_sha256(repo_root / rubric) if repo_root else None
             sha = spec_sha256(spec, files)
         out.append(Prepared(spec, sha, grader_version(sha, framework_version), tuple(found)))
     return out

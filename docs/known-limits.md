@@ -119,6 +119,13 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 - **Grade evidence is verbatim for the built-in types only.** A `unit_test` may return any quote; its evidence is checked for shape, not checked against the text.
 - **`provenance` and `required_tools` need a `checks.json`**, which the runner writes after every trial since 4 Nov (contract v2 section 12). The 4 Nov real trials predate it, so both are `not_applicable` on them; re-running the checks on an old trial folder (`python -m evals_adapter.checks`) needs the whole trial folder (`spec.json`, `state/`, `out/`); the uploaded `out/` files alone give no client-file numbers and no `required_tools`. Their verdicts inherit the check's own limits (see Platform checks above).
 
+## The judge's plumbing (SP4, 4 Nov night)
+
+- **Not yet run on a real model.** Built and tested against a stub and the fake model server only. The answer format, the 8,000-token cap and the JSON parsing have not met Claude Sonnet 5.5 (or any real judge) yet; the first approved judge run is where they are checked.
+- **A quote is checked as a substring, whitespace aside.** A quote the judge stitched from two places with "..." is reported as not found even when both parts are real; a short quote such as "yes" can be found by chance. The verdict is not changed either way (choice 10 in `docs/proposals/grader-format.md`).
+- **All criteria are judged in one call,** so one criterion's verdict can influence another's. Per-criterion calls would cost about one call per criterion (choice 13).
+- **The fake judge (`fake/judge`) always answers "yes" on `overall`** and never reads the trial. It tests the path, not judgment.
+
 ## Labelling UI (SP7)
 
 - Labelling is blind only when it is done from the Label page. While held-out outputs remain to label, the Judge page keeps the judge's reasons closed, and a trial page hides the judge's quotes, rationale and highlights for any task with an output still in the queue and never says where your label disputes the judge. Trial pages still show the judge's Pass or Fail on every check, and the hiding matches tasks by the queue item's `task_id`, which is not in the API contract: if the API leaves it out, trial pages show the judge's reasons for every task.

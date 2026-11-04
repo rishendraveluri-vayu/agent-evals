@@ -31,6 +31,7 @@ EXAMPLES = {
     "finance-emi-unsupported",
     "sim-client",
     "sim-empty",
+    "judge",
 }
 
 

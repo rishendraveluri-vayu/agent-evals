@@ -149,7 +149,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["rubric", "criteria"],
-      "description": "RESERVED. The interface only: the judge is built after Rishi writes the rubric, and returns not_implemented until then.",
+      "description": "An LLM judge, blind to harness and model, with a verdict and a quote per criterion (evals_graders.judge). It calls a model only once the experiment's judging is approved with a model and budget; until then not_implemented. The rubric file is part of the grader version.",
       "properties": {
         "id": true, "type": true, "required": true, "description": true,
         "rubric": {
@@ -174,7 +174,7 @@
             ]
           }
         },
-        "model": {"type": "string", "description": "The pinned judge model; the experiment's judge model when absent."},
+        "model": {"type": "string", "description": "The pinned judge model. It must equal the model the experiment's judging was approved for, or the grade is an error; when absent, the approved model."},
         "reference": {"type": "object", "description": "Reference facts the judge grades against, not what the agent saw (review note 20)."}
       }
     }
