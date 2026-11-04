@@ -1,6 +1,7 @@
 /** Settings in words: a value as the config holds it, and where it came from (R11b). */
 import type { CapabilitySetting, ConfigView, SettingName, SettingSource } from '../api/types';
 import { text } from '../trials';
+import { settingLabel } from './names';
 
 /** Memory, skills and compression are `{enabled}` in the contract. */
 export function toggleValue(value: unknown): boolean | null {
@@ -51,7 +52,18 @@ export function ignoredReasons(harness: string, caps: Record<string, CapabilityS
     }
   }
   for (const [name, cap] of Object.entries(caps ?? {}) as [SettingName, CapabilitySetting][]) {
-    if (!cap.supported) out[name] = cap.observed ? `${harness} does not support ${name}: ${cap.observed}` : `${harness} does not support ${name}`;
+    if (cap.supported) continue;
+    const head = `${harness} does not support ${settingLabel(name).toLowerCase()}`;
+    out[name] = cap.observed ? `${head}. ${observedSentence(cap.observed)}` : head;
   }
   return out;
+}
+
+/** A capabilities note as a sentence of its own after "… does not support memory.": a leading
+ *  "off:" (which that already says) dropped, a plain first word capitalised (an identifier such as
+ *  create_agent kept as it is), and a full stop at the end. */
+function observedSentence(observed: string): string {
+  const rest = observed.trim().replace(/^off:\s*/i, '');
+  const first = /^[a-z]+(?=[\s,;:]|$)/.test(rest) ? rest[0].toUpperCase() + rest.slice(1) : rest;
+  return /[.!?]$/.test(first) ? first : `${first}.`;
 }

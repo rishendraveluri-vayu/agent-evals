@@ -42,7 +42,10 @@ describe('ConfigPage: what the config is', () => {
     await lineage.get('[data-test="compare-parent"]').trigger('click');
     await settle();
     expect(diff).toHaveBeenCalledWith(v1.hash, v2.hash);
-    expect(w.get('[data-test="parent-diff"]').text()).toContain('prompt.version: v1 to v2');
+    // In words with both values; the field paths only behind Details (QA round 3, minor 3).
+    expect(w.get('[data-test="parent-diff"]').text()).toBe('Prompt v1 vs v2');
+    expect(w.get('[data-test="parent-fields"]').attributes('open')).toBeUndefined();
+    expect(w.get('[data-test="parent-fields"]').text()).toContain('prompt.version: v1 to v2');
     expect(w.get('[data-test="fork"]').attributes('href')).toBe(`#/configs?fork=${encodeURIComponent(v2.hash)}`);
     const parent = mount(ConfigPage, { props: { configHash: v1.hash } });
     await settle();

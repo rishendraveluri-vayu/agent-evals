@@ -5,11 +5,12 @@ import { ApiError, errorText, errorWithFix } from '../api/errors';
 import { SETTING_NAMES, type ConfigDiffEntry, type ConfigView, type ConfigWarning, type CreatedPrompt, type Harness, type JsonObject, type ModelView, type PromptView, type SeedSkill, type SettingName, type ToolsetView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
-import { useLoad } from '../lib/async';
+import { optional, useLoad } from '../lib/async';
 import { coverageText } from '../lib/capabilities';
 import { changedLineCount, lineChanges, sentenceChanges } from '../lib/diff';
 import { mdBlocks } from '../lib/markdown';
-import { plainText, shortHash, shortRef } from '../lib/format';
+import { plainText, shortHash, shortRef, splitIdents } from '../lib/format';
+import { autoConfigName, configChanges, contentDiff, PLATFORM_DEFAULTS } from '../lib/checks';
 import { BOOLEAN_SETTINGS, harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
 import { agentModels, fakeDoes, isFake } from '../lib/models';
 import { NAME_MAX, settingProblem } from '../lib/limits';
@@ -114,10 +115,8 @@ watch(data, (d) => {
   for (const [k, v] of Object.entries(base?.harness_options ?? {})) form.options[k] = text(v);
   seedMemory.value = (base?.seed?.memory ?? []).join('\n');
   seedSkills.splice(0, seedSkills.length, ...(base?.seed?.skills ?? []).map((k) => ({ ...k })));
-  if (forked) {
-    form.name = `${forked.name}, fork`;
-    nameTouched.value = true;
-  }
+  // A fork's name is made from what it holds, as any new config's is (suggestedName), so a fork
+  // moved to another model or prompt never keeps its parent's now-wrong words.
 });
 
 const harness = computed(() => data.value?.harnesses.find((h) => h.name === form.harness) ?? null);
@@ -137,7 +136,7 @@ const supported = (name: SettingName) => harness.value?.capabilities.settings[na
 
 /** Every setting this harness or model ignores, with the reason to show by the greyed field. */
 const ignored = computed<Partial<Record<SettingName, string>>>(() => ({
-  ...ignoredReasons(form.harness, harness.value?.capabilities.settings, form.model, data.value?.configs ?? []),
+  ...ignoredReasons(harnessName(form.harness), harness.value?.capabilities.settings, form.model, data.value?.configs ?? []),
   ...(learnt[form.model] ?? {}),
 }));
 const isIgnored = (name: SettingName) => !!ignored.value[name];
@@ -244,13 +243,6 @@ async function savePrompt() {
   }
 }
 
-/** "Prompt v2 on Hermes, Claude Haiku 5.5": the model is in it, so two configs that differ only in
- *  their model never share a name in a list. */
-const suggestedName = computed(() => (prompt.value && harness.value ? `Prompt ${prompt.value.version} on ${harnessShort(harness.value.name)}${form.model ? `, ${modelName(form.model)}` : ''}` : ''));
-watch(suggestedName, (n) => {
-  if (!nameTouched.value) form.name = n;
-});
-
 /** Why a typed setting cannot be saved, by setting, shown by its field. */
 const problems = computed<Partial<Record<SettingName, string>>>(() => {
   const out: Partial<Record<SettingName, string>> = {};
@@ -275,22 +267,40 @@ const invalid = computed(() => {
   return null;
 });
 
-/** PLATFORM_DEFAULTS in apps/api/src/configs/settings.ts: what the API stores for a setting left unset. */
-const PLATFORM_DEFAULTS: Record<SettingName, unknown> = {
-  temperature: null,
-  max_output_tokens: 8192,
-  max_steps: 15,
-  timeout_s: 300,
-  parallel_tool_calls: false,
-  memory: { enabled: false },
-  skills: { enabled: false },
-  compression: { enabled: false },
-};
 /** The value the API would store for a setting from this form: the hash is over these, so a value
  *  set to its default is no change. */
 const resolvedNow = (name: SettingName) => (!supported(name) || isIgnored(name) ? null : (settings.value[name] ?? PLATFORM_DEFAULTS[name]));
 const shown = (v: unknown) =>
   v === undefined || v === null ? 'not sent' : typeof v === 'object' && 'enabled' in v ? ((v as { enabled: boolean }).enabled ? 'on' : 'off') : text(v);
+
+/** The config as the API would store it, before it has a hash: what its name and the comparison
+ *  are made from. */
+const content = computed(() => {
+  const h = harness.value;
+  const p = prompt.value;
+  const t = toolset.value;
+  if (!h || !p || !t) return null;
+  return {
+    harness: h.name,
+    harness_ref: h.ref,
+    adapter_version: h.adapter_version,
+    capabilities_sha256: h.capabilities_sha256,
+    model: form.model,
+    prompt: { id: p.id, version: p.version, sha256: p.sha256 },
+    toolset: { id: t.id, version: t.version, sha256: t.sha256 },
+    settings: Object.fromEntries(SETTING_NAMES.map((name) => [name, resolvedNow(name)])) as unknown as ConfigView['settings'],
+    harness_options: harnessOptions.value,
+    seed: seed.value ?? { memory: [], skills: [] },
+  };
+});
+
+/** "Own loop, Claude Haiku 5.5, finance-advisor v1, max steps 12": made from what the config holds,
+ *  so two configs one thing apart never share a name (lib/checks.ts autoConfigName), until a name
+ *  is typed. A fork is named this way too, against the config it forks. */
+const suggestedName = computed(() => (content.value && form.model ? autoConfigName(content.value, forkOf.value ?? base.value) : ''));
+watch(suggestedName, (n) => {
+  if (!nameTouched.value) form.name = n;
+});
 
 /** What differs from the comparison config, in words. */
 const changes = computed(() => {
@@ -298,6 +308,10 @@ const changes = computed(() => {
   if (!b) return [];
   const out: string[] = [];
   if (b.harness !== form.harness) out.push(`Harness: ${harnessShort(b.harness)} to ${harnessShort(form.harness)}`);
+  // The same harness at another version (a shipped example's config was made elsewhere): said in
+  // words, since the saved config gets today's.
+  const version = content.value ? configChanges(b, content.value).find((c) => c.key === 'harness_version') : undefined;
+  if (version) out.push(version.differs ? `${harnessShort(form.harness)} capabilities file: today's, not the one ${b.name} was made with` : `${version.label}: ${version.a} to ${version.b}`);
   if (b.model !== form.model) out.push(`Model: ${modelName(b.model)} to ${modelName(form.model)}`);
   if (b.prompt.sha256 !== form.prompt) out.push(`Prompt: ${b.prompt.id === prompt.value?.id ? '' : `${b.prompt.id} `}${b.prompt.version} to ${prompt.value?.id === b.prompt.id ? '' : `${prompt.value?.id} `}${prompt.value?.version ?? '?'}`);
   if (b.toolset.sha256 !== form.toolset) {
@@ -334,6 +348,26 @@ const sameAs = computed(() => {
   return d.configs.find(same) ?? null;
 });
 const shownHash = computed(() => saved.value?.hash ?? sameAs.value?.hash ?? null);
+/** The saved configs' own fields that differ (GET /configs/:a/diff/:b), for Details: content only,
+ *  never where a value came from, so nothing is listed that the form did not change. */
+const savedFields = computed(() => contentDiff(apiDiff.value ?? []));
+
+/** Every setting's "Changes behaviour?" answer is "not checked yet": one note says so instead of a
+ *  column of the same words. */
+const noneChecked = computed(() => SETTING_NAMES.every((name) => ['todo', 'na'].includes(effect(name).kind)));
+/** How a setting reaches the model is a few words for most harnesses and a paragraph for some (the
+ *  own loop's max output tokens): a long one shows its first clause, and the rest on request in a
+ *  row of its own, the table's full width. */
+const NATIVE_SHORT = 48;
+const nativeOf = (name: SettingName) => plainText(harness.value?.capabilities.settings[name]?.native ?? '');
+const nativeHead = (name: SettingName) => {
+  const full = nativeOf(name);
+  if (full.length <= NATIVE_SHORT) return full;
+  const clause = full.split(/(?<=[,;.])\s/)[0].replace(/[,;.]$/, '');
+  return clause.length <= NATIVE_SHORT ? clause : `${full.slice(0, NATIVE_SHORT).replace(/\s+\S*$/, '')}`;
+};
+const nativeLong = (name: SettingName) => nativeOf(name).length > NATIVE_SHORT;
+const nativeOpen = reactive<Partial<Record<SettingName, boolean>>>({});
 
 /** Warnings for this harness and model: from the saved config once saved, else from any saved
  *  config with the same harness and model (the API works them out from those two alone). */
@@ -454,7 +488,8 @@ async function save(thenRun: boolean) {
     saved.value = config;
     // The saved list (and its count) shows the new config at once.
     if (!d0.configs.some((c) => c.hash === config.hash) && data.value) data.value = { ...data.value, configs: [...data.value.configs, config] };
-    apiDiff.value = base.value && base.value.hash !== config.hash ? await api.configDiff(base.value.hash, config.hash) : [];
+    // Only for Details: a diff that cannot be read never turns a save that worked into an error.
+    apiDiff.value = base.value && base.value.hash !== config.hash ? await optional(api.configDiff(base.value.hash, config.hash), []) : [];
     if (thenRun) navigate(href.runNew(base.value && base.value.hash !== config.hash ? base.value.hash : undefined, config.hash));
   } catch (err) {
     if (err instanceof ApiError) {
@@ -881,7 +916,10 @@ watch(
                   <th scope="col">
                     Reaches the model as
                   </th>
-                  <th scope="col">
+                  <th
+                    v-if="!noneChecked"
+                    scope="col"
+                  >
                     Changes behaviour?
                   </th>
                 </tr>
@@ -952,10 +990,25 @@ watch(
                       class="c-native"
                       data-label="Reaches the model as"
                     >
-                      <span
-                        v-if="supported(name) && !isIgnored(name) && harness?.capabilities.settings[name].native"
-                        class="mono"
-                      >{{ plainText(harness?.capabilities.settings[name].native ?? '') }}</span>
+                      <template v-if="supported(name) && !isIgnored(name) && nativeOf(name)">
+                        <span class="native"><template
+                          v-for="(part, pi) in splitIdents(nativeHead(name), { lone: true })"
+                          :key="pi"
+                        ><span
+                          v-if="part.ident"
+                          class="mono"
+                        >{{ part.text }}</span><template v-else>{{ part.text }}</template></template></span>
+                        <button
+                          v-if="nativeLong(name)"
+                          type="button"
+                          class="link-button smaller native-more"
+                          :aria-expanded="!!nativeOpen[name]"
+                          :data-test="`native-more-${name}`"
+                          @click="nativeOpen[name] = !nativeOpen[name]"
+                        >
+                          {{ nativeOpen[name] ? 'Less' : 'How, in full' }}
+                        </button>
+                      </template>
                       <span
                         v-else
                         class="secondary"
@@ -964,6 +1017,7 @@ watch(
                     <!-- Each answer looks different, and the words carry it: a check for a change seen,
                        an alert for none seen, plain grey for not checked. -->
                     <td
+                      v-if="!noneChecked"
                       :data-test="`effect-${name}`"
                       data-label="Changes behaviour?"
                     >
@@ -982,10 +1036,32 @@ watch(
                     </td>
                   </tr>
                   <tr
+                    v-if="nativeOpen[name] && nativeLong(name)"
+                    class="native-row"
+                    :data-test="`native-full-${name}`"
+                  >
+                    <td :colspan="noneChecked ? 4 : 5">
+                      <p class="small native-full">
+                        <span class="strong">{{ settingLabel(name) }} reaches the model as:</span>
+                        <template
+                          v-for="(part, pi) in splitIdents(nativeOf(name))"
+                          :key="pi"
+                        >
+                          <span
+                            v-if="part.ident"
+                            class="mono"
+                          >{{ part.text }}</span><template v-else>
+                            {{ part.text }}
+                          </template>
+                        </template>
+                      </p>
+                    </td>
+                  </tr>
+                  <tr
                     v-if="refusalFor(name)"
                     class="refusal-row"
                   >
-                    <td colspan="5">
+                    <td :colspan="noneChecked ? 4 : 5">
                       <p
                         :id="`refusal-${name}`"
                         class="refusal small"
@@ -1005,6 +1081,13 @@ watch(
               </tbody>
             </table>
           </div>
+          <p
+            v-if="noneChecked && harness"
+            class="secondary small effect-note"
+            data-test="effect-note"
+          >
+            Whether each setting changes behaviour on {{ modelName(form.model) }} has not been checked yet for {{ harnessName(harness.name) }}: a check runs the same task with the setting on and off and compares the calls. The <a :href="href.harnesses()">Harnesses</a> page lists the checks that have run.
+          </p>
           <section
             v-if="supported('memory') || supported('skills')"
             class="seeds"
@@ -1201,6 +1284,12 @@ watch(
                 data-test="base-select"
               >
                 <option
+                  v-if="!base"
+                  value=""
+                >
+                  Nothing yet
+                </option>
+                <option
                   v-for="c in ownConfigs(data.configs)"
                   :key="c.hash"
                   :value="c.hash"
@@ -1218,28 +1307,36 @@ watch(
               </select>
             </label>
             <ul
-              v-if="(apiDiff ? apiDiff.length : changes.length)"
+              v-if="base && changes.length"
               class="changes"
               data-test="config-changes"
             >
-              <template v-if="apiDiff">
+              <li
+                v-for="c in changes"
+                :key="c"
+              >
+                {{ c }}
+              </li>
+            </ul>
+            <span
+              class="secondary small block"
+              data-test="compare-note"
+            >{{ !base ? (ownConfigs(data.configs).length ? 'Pick a config to see what this one changes.' : 'No config of your own to compare with yet. Pick one from the shipped example to see what this one changes.') : changes.length ? 'Everything else is identical.' : 'Identical to it.' }}</span>
+            <details
+              v-if="saved && savedFields.length"
+              class="saved-fields smaller"
+              data-test="saved-fields"
+            >
+              <summary>Details: the two saved configs' fields</summary>
+              <ul class="mono">
                 <li
-                  v-for="c in apiDiff"
+                  v-for="c in savedFields"
                   :key="c.path"
                 >
-                  <span class="mono">{{ c.path }}</span>: {{ text(c.a) }} to {{ text(c.b) }}
+                  {{ c.path }}: {{ text(c.a) }} to {{ text(c.b) }}
                 </li>
-              </template>
-              <template v-else>
-                <li
-                  v-for="c in changes"
-                  :key="c"
-                >
-                  {{ c }}
-                </li>
-              </template>
-            </ul>
-            <span class="secondary small block">{{ (apiDiff ? apiDiff.length : changes.length) ? 'Everything else is identical.' : 'Identical to it.' }}</span>
+              </ul>
+            </details>
           </div>
           <div
             v-for="w in warnings"
@@ -1741,9 +1838,40 @@ watch(
   color: var(--ink-2);
 }
 
-/* Every column fits: the natives (long call paths) wrap anywhere, the rest between words. */
+/* Every column fits: words wrap between words, and an identifier only where it must. */
 .settings .mono {
   white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.native-more {
+  display: block;
+  margin-top: 2px;
+}
+
+.native-row td {
+  padding-top: 0;
+}
+
+.native-full {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--surface-muted);
+  border-radius: 6px;
+  max-width: 80ch;
+}
+
+.effect-note {
+  margin: 10px 0 0;
+}
+
+.saved-fields {
+  margin-top: 8px;
+}
+
+.saved-fields ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
   overflow-wrap: anywhere;
 }
 

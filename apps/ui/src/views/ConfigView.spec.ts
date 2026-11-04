@@ -79,10 +79,11 @@ describe('ConfigView in fixture mode', () => {
     const create = vi.spyOn(api, 'createConfig').mockResolvedValueOnce(v2);
     const w = mount(ConfigView);
     await settle();
-    expect((w.get('[data-test="config-name"]').element as HTMLInputElement).value).toBe('Prompt v2 on Hermes, Gemini 3.8 Flash');
+    // Made from what it holds: the harness, model and prompt, then each setting away from its default.
+    expect((w.get('[data-test="config-name"]').element as HTMLInputElement).value).toBe('Hermes, Gemini 3.8 Flash, finance-advisor v2, max output tokens 1,024, max steps 12, timeout 180 s');
     // On Claude Haiku 5.5 it is exactly the saved "Prompt v2 on Hermes".
     await haiku(w);
-    expect((w.get('[data-test="config-name"]').element as HTMLInputElement).value).toBe('Prompt v2 on Hermes, Claude Haiku 5.5');
+    expect((w.get('[data-test="config-name"]').element as HTMLInputElement).value).toBe('Hermes, Claude Haiku 5.5, finance-advisor v2, max output tokens 1,024, max steps 12, timeout 180 s');
     expect(w.get('[data-test="config-name"]').attributes('maxlength')).toBe('120');
     expect(w.get('[data-test="same-as"]').text()).toContain('Same content as “Prompt v2 on Hermes”: saving returns that config, under its own name.');
     await w.get('[data-test="config-name"]').setValue('My better name');
@@ -170,7 +171,9 @@ describe('ConfigView in fixture mode', () => {
       const row = w.get(`[data-test="setting-${name}"]`);
       expect(row.get('input').attributes('disabled')).toBeDefined();
       expect(row.text()).toContain('Not supported by Own loop');
-      expect(row.get(`[data-test="ignored-${name}"]`).text()).toMatch(new RegExp(`^ownloop does not support ${name}`));
+      // The harness by its name, then its own note as a sentence of its own (QA round 3, minor 17).
+      expect(row.get(`[data-test="ignored-${name}"]`).text()).toMatch(new RegExp(`^Own loop does not support ${name}(\\. [A-Z].*\\.)?$`));
+      expect(row.get(`[data-test="ignored-${name}"]`).text()).not.toMatch(/: off:|::/);
     }
     // Claude Haiku 5.5 refuses temperature (D25): greyed on every harness, with the API's reason.
     const temp = w.get('[data-test="setting-temperature"]');
@@ -339,10 +342,15 @@ describe('ConfigView, forking a config', () => {
     expect(w.get('.lede a').attributes('href')).toBe(`#/configs/${encodeURIComponent(parent.hash)}`);
     // An exact copy: the same prompt (not the newest), so nothing differs yet.
     expect(w.get('[data-test="config-hash"]').text()).toBe('3b81e04');
-    expect((w.get('[data-test="config-name"]').element as HTMLInputElement).value).toBe('Prompt v1 on Hermes, fork');
+    // Named from what it holds, never the parent's name with ", fork" (QA round 3, M1).
+    const name = () => (w.get('[data-test="config-name"]').element as HTMLInputElement).value;
+    expect(name()).toBe('Hermes, Claude Haiku 5.5, finance-advisor v1, max output tokens 1,024, max steps 12, timeout 180 s');
     await w.get('[data-test="model-select"]').setValue('gemini-3.8-flash');
     await settle();
     expect(w.get('[data-test="config-changes"]').text()).toBe('Model: Claude Haiku 5.5 to Gemini 3.8 Flash');
+    // The name follows the change, so the fork never keeps the parent's now-wrong model.
+    expect(name()).toBe('Hermes, Gemini 3.8 Flash, finance-advisor v1, max output tokens 1,024, max steps 12, timeout 180 s');
+    expect(name()).not.toContain('Haiku');
     await w.get('[data-test="save-config"]').trigger('click');
     await settle();
     expect(create.mock.calls[0][0].parent_hash).toBe(parent.hash);
@@ -469,5 +477,74 @@ describe('ConfigView keeps decision-log ids off the settings table', () => {
     await settle();
     const cell = w.get('[data-test="setting-max_output_tokens"] .c-native').text();
     expect(cell).toBe('max_tokens, raised once on a cut-off reply');
+  });
+});
+
+describe('ConfigView, fresh-clone QA round 3', () => {
+  it('says there is nothing of your own to compare with, never "Identical to it." beside a blank picker (minor 2)', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([exampleConfig()]);
+    const w = mount(ConfigView);
+    await settle();
+    const select = w.get('[data-test="base-select"]').element as HTMLSelectElement;
+    expect(select.value).toBe('');
+    expect(select.selectedOptions[0]?.text).toBe('Nothing yet');
+    expect(w.get('[data-test="compare-note"]').text()).toBe('No config of your own to compare with yet. Pick one from the shipped example to see what this one changes.');
+    expect(w.text()).not.toContain('Identical to it.');
+    expect(w.find('[data-test="config-changes"]').exists()).toBe(false);
+  });
+
+  it('keeps the words of the change list after saving a fork, and never lists a change it did not make (minor 3)', async () => {
+    const example = exampleConfig({ settings_sources: { ...exampleConfig().settings_sources, parallel_tool_calls: 'platform_default' } });
+    vi.spyOn(api, 'configs').mockResolvedValue([...(configs as unknown as Config[]), example]);
+    // As the API answered on 5 Nov: the form sends every toggle, so where one came from changed too.
+    vi.spyOn(api, 'configDiff').mockResolvedValue([
+      { path: 'settings_sources.parallel_tool_calls', a: 'platform_default', b: 'config' },
+      { path: 'toolset.sha256', a: example.toolset.sha256, b: CURRENT_TOOLSET.sha256 },
+    ]);
+    const child: Config = { ...example, hash: `sha256:c4110d${'0'.repeat(58)}`, name: 'the fork', toolset: CURRENT_TOOLSET, example_only: false, parent_hash: example.hash };
+    vi.spyOn(api, 'createConfig').mockResolvedValue(child);
+    const w = mount(ConfigView, { props: { fork: example.hash } });
+    await settle();
+    const before = w.get('[data-test="config-changes"]').text();
+    expect(before).toContain('Toolset: finance all (e8a3303) to finance all (e4c1f08)');
+    await w.get('[data-test="save-config"]').trigger('click');
+    await settle();
+    const after = w.get('[data-test="config-changes"]');
+    expect(after.text()).toBe(before);
+    expect(after.text()).not.toMatch(/settings_sources|capabilities_sha256|toolset\.sha256|sha256:/);
+    // The saved configs' own fields, behind Details, content only.
+    const details = w.get('[data-test="saved-fields"]');
+    expect(details.attributes('open')).toBeUndefined();
+    expect(details.text()).toContain('toolset.sha256');
+    expect(details.text()).not.toContain('settings_sources');
+  });
+
+  it('gives a long "reaches the model as" its own full-width row, on request (minor 5)', async () => {
+    const w = mount(ConfigView);
+    await settle();
+    await pick(w, 'adk');
+    await w.get('[data-test="model-select"]').setValue('gemini-3.8-flash');
+    await settle();
+    const harnesses = await api.harnesses();
+    const full = harnesses.find((h) => h.name === 'adk')!.capabilities.settings.max_output_tokens.native ?? '';
+    expect(full.length).toBeGreaterThan(48);
+    const cell = w.get('[data-test="setting-max_output_tokens"] .c-native');
+    expect(cell.get('.native').text().length).toBeLessThanOrEqual(48);
+    expect(w.find('[data-test="native-full-max_output_tokens"]').exists()).toBe(false);
+    await w.get('[data-test="native-more-max_output_tokens"]').trigger('click');
+    const row = w.get('[data-test="native-full-max_output_tokens"]');
+    expect(row.get('td').attributes('colspan')).toBe('5');
+    expect(row.text().replace(/\s+/g, ' ')).toContain(full.replace(/\s+/g, ' '));
+    expect(w.get('[data-test="native-more-max_output_tokens"]').attributes('aria-expanded')).toBe('true');
+  });
+
+  it('says once that no setting is checked yet, rather than a column of the same words (minor 5)', async () => {
+    const w = mount(ConfigView);
+    await settle();
+    await pick(w, 'langgraph');
+    expect(w.findAll('[data-test^="effect-"]').filter((c) => c.attributes('data-test') !== 'effect-note')).toHaveLength(0);
+    expect(w.get('[data-test="settings-table"] thead').text()).not.toContain('Changes behaviour?');
+    expect(w.get('[data-test="effect-note"]').text()).toMatch(/^Whether each setting changes behaviour on .+ has not been checked yet for LangGraph/);
+    expect(w.text().split('Not checked yet').length - 1).toBe(0);
   });
 });

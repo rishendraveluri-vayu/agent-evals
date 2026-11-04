@@ -15,6 +15,7 @@ import RenderedPrompt from '../components/RenderedPrompt.vue';
 import { optional, useLoad } from '../lib/async';
 import { plainText, relative, shortHash, shortRef } from '../lib/format';
 import { harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
+import { changeWords, configChanges, contentDiff } from '../lib/checks';
 import { missingKey, needsKeyWords } from '../lib/runSetup';
 import { settingValue, sourceWords } from '../lib/settings';
 import { href } from '../router';
@@ -80,6 +81,15 @@ const rows = computed(() => {
 
 const showDiff = ref(false);
 const diff = shallowRef<ConfigDiffEntry[] | null>(null);
+/** What this config changes from its parent, in words with both values ("Max steps 12 vs 10"),
+ *  once both are known; the API's field paths stay in a Details disclosure. */
+const parentChanges = computed(() => {
+  const p = parent.value;
+  const c = data.value?.config;
+  return p && c && 'harness' in p && diff.value ? configChanges(p, c).map(changeWords) : null;
+});
+/** The API's diff without bookkeeping (where a setting's value came from), for Details. */
+const parentFields = computed(() => contentDiff(diff.value ?? []));
 const diffError = ref<string | null>(null);
 async function toggleDiff() {
   showDiff.value = !showDiff.value;
@@ -249,18 +259,41 @@ async function refreshSpend() {
           >
             {{ diffError }}
           </p>
-          <ul
-            v-else-if="diff && diff.length"
-            class="diff small"
-            data-test="parent-diff"
-          >
-            <li
-              v-for="d in diff"
-              :key="d.path"
+          <template v-else-if="diff && (parentChanges ?? parentFields).length">
+            <ul
+              class="diff small"
+              data-test="parent-diff"
             >
-              <span class="mono">{{ d.path }}</span>: {{ text(d.a) }} to {{ text(d.b) }}
-            </li>
-          </ul>
+              <template v-if="parentChanges">
+                <li
+                  v-for="c in parentChanges"
+                  :key="c"
+                >
+                  {{ c }}
+                </li>
+              </template>
+              <li v-else>
+                {{ parentFields.length }} {{ parentFields.length === 1 ? 'field differs' : 'fields differ' }}: see Details.
+              </li>
+            </ul>
+            <p class="small secondary">
+              The parent's value comes first. Everything else is identical.
+            </p>
+            <details
+              class="smaller parent-fields"
+              data-test="parent-fields"
+            >
+              <summary>Details: each field and its values</summary>
+              <ul class="mono">
+                <li
+                  v-for="d in parentFields"
+                  :key="d.path"
+                >
+                  {{ d.path }}: {{ text(d.a) }} to {{ text(d.b) }}
+                </li>
+              </ul>
+            </details>
+          </template>
           <p
             v-else-if="diff"
             class="small secondary"
@@ -495,6 +528,12 @@ async function refreshSpend() {
 .diff {
   margin: 6px 0;
   padding-left: 18px;
+}
+
+.parent-fields ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
 }
 
 .link-button {
