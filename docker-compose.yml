@@ -108,6 +108,8 @@ services:
       EVALS_WORKER_TOKEN: *worker-token
       # Recorded on every experiment; set it to `git rev-parse HEAD` when starting a real run.
       EVALS_PLATFORM_COMMIT: ${EVALS_PLATFORM_COMMIT:-}
+      # D38: the standing allowance for pre-run conflict checks on Claude Sonnet 5.5, in USD.
+      EVALS_CONFLICT_CHECK_ALLOWANCE_USD: ${EVALS_CONFLICT_CHECK_ALLOWANCE_USD:-2}
       # Trial folders: SP1 gate and smoke runs, and experiment attempts, which the API writes
       # from the files workers upload (runs/<experiment>/<trial>/attempt-<n>/).
       RUNS_DIR: /runs
