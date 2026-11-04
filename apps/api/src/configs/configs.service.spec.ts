@@ -35,6 +35,18 @@ describe('configHash', () => {
     expect(configHash({ ...BASE, ...change })).not.toBe(configHash(BASE));
   });
 
+  it('keeps the hash of a config without seeds, and changes it for any seed (D39)', () => {
+    const memory = { memory: ['The client (synthetic) is paid in rupees.'], skills: [] };
+    const skill = { memory: [], skills: [{ name: 'emi-check', description: 'd', body: 'b' }] };
+    expect(configHash({ ...BASE, seed: { memory: [], skills: [] } })).toBe(configHash(BASE));
+    expect(configHash({ ...BASE, seed: memory })).not.toBe(configHash(BASE));
+    expect(configHash({ ...BASE, seed: skill })).not.toBe(configHash(BASE));
+    expect(configHash({ ...BASE, seed: skill })).not.toBe(configHash({ ...BASE, seed: memory }));
+    // The same seeds always give the same hash; a changed entry gives another.
+    expect(configHash({ ...BASE, seed: { ...memory, memory: [...memory.memory] } })).toBe(configHash({ ...BASE, seed: memory }));
+    expect(configHash({ ...BASE, seed: { ...memory, memory: ['another fact'] } })).not.toBe(configHash({ ...BASE, seed: memory }));
+  });
+
   it('gives a short config id from the hash', () => {
     expect(configId(`sha256:${'ab'.repeat(32)}`)).toBe('c_abababababab');
   });

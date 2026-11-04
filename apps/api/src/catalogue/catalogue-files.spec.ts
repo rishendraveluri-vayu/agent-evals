@@ -1,7 +1,21 @@
 import { promises as fs, readFileSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { FINANCE_TOOLS, builtInToolsets, checkTask, parsePromptName, parsePyproject, promptText, readHarnesses, readPrompts, readTasks } from './catalogue-files';
+import {
+  FINANCE_TOOLS,
+  PROMPT_NAME_PART,
+  builtInToolsets,
+  checkTask,
+  headerDate,
+  nextPromptVersion,
+  parsePromptName,
+  parsePyproject,
+  promptFile,
+  promptText,
+  readHarnesses,
+  readPrompts,
+  readTasks,
+} from './catalogue-files';
 
 const REPO = path.resolve(__dirname, '../../../..');
 
@@ -23,6 +37,33 @@ describe('prompt files', () => {
     expect(advisor?.version).toBe('v1');
     expect(advisor?.text.startsWith('<!--')).toBe(false);
     expect(advisor?.sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+  });
+});
+
+describe('new prompt versions (POST /prompts)', () => {
+  it('numbers the next version after the highest v<n>, in numeric order', () => {
+    expect(nextPromptVersion(['v1'])).toBe('v2');
+    expect(nextPromptVersion(['v1', 'v3', 'v2'])).toBe('v4');
+    expect(nextPromptVersion(['v9', 'v10'])).toBe('v11');
+    expect(nextPromptVersion(['draft', 'v2'])).toBe('v3');
+    expect(nextPromptVersion([])).toBe('v1');
+  });
+
+  it('writes a review header in the existing style, which promptText strips again', () => {
+    const file = promptFile('finance-advisor', 'v2', 'v1', '\nBe kind.\n\n', new Date('2026-11-04T23:30:00Z'));
+    expect(file).toBe(
+      '<!--\nfinance-advisor v2, created from v1 in the UI on 4 Nov 2026.\n' +
+        'This header comment is stripped before use. Once a run has used this version, changes go in\na new version file.\n-->\n\nBe kind.\n',
+    );
+    expect(promptText(file)).toBe('Be kind.\n');
+    // A text with its own comment keeps it: only the first header is stripped.
+    expect(promptText(promptFile('p', 'v2', 'v1', '<!-- mine -->\nText', new Date()))).toBe('<!-- mine -->\nText\n');
+    expect(headerDate(new Date('2026-01-09T00:00:00Z'))).toBe('9 Jan 2026');
+  });
+
+  it('allows no separators in ids and versions, so a file name cannot leave configs/prompts', () => {
+    for (const ok of ['finance-advisor', 'client-sim', 'v12']) expect(PROMPT_NAME_PART.test(ok)).toBe(true);
+    for (const bad of ['../finance-advisor', 'a/b', 'a\\b', '.hidden', 'v1.md', '', 'x\0']) expect(PROMPT_NAME_PART.test(bad)).toBe(false);
   });
 });
 

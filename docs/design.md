@@ -98,6 +98,8 @@ Added with D33 and D38 (migration `006_probes_and_system_spend.sql`; 005 is the 
 
 Added with SP4's grading step (migration `007_grading.sql`; R14 "grading is its own step"): a `grading_jobs` table, one row per grading of one trial, holding the frozen grader specs with their hashes, any grader files, a claim lease and the task's outcome on that trial (pass, fail or incomplete); and `grades` gains the grader type, `required`, the reason, the spec hash, the framework version and the job. A grade is unique by (trial, grader id, grader version, run index), so a re-grade adds rows and never overwrites one. Views `current_grading` and `current_grades` give each trial's latest finished grading.
 
+Added with D39's seeded runs (migration `008_config_seed.sql`): `configs.seed`, the memory entries and skills every trial of the config starts with, in contract v2's seed shape; older configs get empty lists. A non-empty seed is part of the config hash, and an empty one is left out of it, so configs made before seeds keep their hashes. The claim copies it into `spec.seed`. `POST /configs` refuses a seed for a feature the harness cannot take or the config turns off (`docs/api-contract.md`).
+
 Interim, not a design decision: until SP2, the API reads finished trial folders from `RUNS_DIR` through a `TrialStore` interface (`apps/api/src/trials/trial-store.ts`), so the trace view and spend chart work now. SP2's database store replaces the file store behind the same interface.
 
 Planned in the spec, not yet designed:

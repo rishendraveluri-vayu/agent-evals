@@ -155,6 +155,58 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
     expect((bad.body as { error: string }).error).toBe('invalid_harness_options');
   });
 
+  it('seeds memory and skills on Hermes: a seeded config has its own hash, the same seeds the same one (D39)', async () => {
+    const base = { name: 'h mem', harness: 'hermes', model: 'fake/finance-emi', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset };
+    const on = { memory: { enabled: true }, skills: { enabled: true } };
+    const seed = {
+      memory: ['The client (synthetic) wants every amount in rupees.'],
+      skills: [{ name: 'emi-check', description: 'Check an EMI before quoting it', body: 'Call the EMI tool, then quote its number.' }],
+    };
+    const empty = (await request(env.http).post('/api/configs').send({ ...base, settings: on }).expect(201)).body as { hash: string; seed: unknown };
+    expect(empty.seed).toEqual({ memory: [], skills: [] });
+    // Empty lists are no seed: the same config.
+    expect(((await request(env.http).post('/api/configs').send({ ...base, settings: on, seed: { memory: [], skills: [] } }).expect(200)).body as { hash: string }).hash).toBe(empty.hash);
+
+    const seeded = (await request(env.http).post('/api/configs').send({ ...base, name: 'h seeded', settings: on, seed }).expect(201)).body as { hash: string; seed: unknown };
+    expect(seeded.hash).not.toBe(empty.hash);
+    expect(seeded.seed).toEqual(seed);
+    const again = (await request(env.http).post('/api/configs').send({ ...base, name: 'h seeded again', settings: on, seed: { skills: seed.skills, memory: seed.memory } }).expect(200))
+      .body as { hash: string };
+    expect(again.hash).toBe(seeded.hash);
+    const memoryOnly = (await request(env.http).post('/api/configs').send({ ...base, settings: on, seed: { memory: seed.memory } }).expect(201)).body as { hash: string; seed: unknown };
+    expect(memoryOnly.seed).toEqual({ memory: seed.memory, skills: [] });
+    expect(new Set([empty.hash, seeded.hash, memoryOnly.hash]).size).toBe(3);
+
+    expect(((await request(env.http).get(`/api/configs/${seeded.hash}`).expect(200)).body as { seed: unknown }).seed).toEqual(seed);
+    expect((await request(env.http).get(`/api/configs/${empty.hash}/diff/${seeded.hash}`).expect(200)).body).toEqual([
+      { path: 'name', a: 'h mem', b: 'h seeded' },
+      { path: 'seed.memory', a: [], b: seed.memory },
+      { path: 'seed.skills', a: [], b: seed.skills },
+    ]);
+  });
+
+  it('refuses seeds a harness cannot take, or a config turns off, with a fix (D39)', async () => {
+    const base = { name: 's', model: 'fake/finance-emi', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset };
+    const noMemory = await request(env.http).post('/api/configs').send({ ...base, harness: 'ownloop', seed: { memory: ['a fact'] } }).expect(400);
+    expect(noMemory.body).toEqual({
+      error: 'unsupported_seed',
+      message: 'ownloop does not support memory, so a config cannot seed it',
+      fix: 'ownloop has no memory to seed: remove seed.memory, or pick a harness that takes it (hermes).',
+    });
+    // Memory is off unless the config turns it on (R3, R10.8).
+    const off = await request(env.http).post('/api/configs').send({ ...base, harness: 'hermes', seed: { memory: ['a fact'] } }).expect(400);
+    expect(off.body).toEqual({
+      error: 'seed_feature_off',
+      message: 'seed.memory is set but memory is off for this config, so the seeds would not be used',
+      fix: 'Set settings.memory to {"enabled": true}, or remove seed.memory.',
+    });
+    const shape = await request(env.http)
+      .post('/api/configs')
+      .send({ ...base, harness: 'hermes', settings: { skills: { enabled: true } }, seed: { skills: [{ name: 'Bad Name', description: 'd', body: 'b' }] } })
+      .expect(400);
+    expect(shape.body).toMatchObject({ error: 'invalid_seed', fix: expect.stringContaining('"memory"') as string });
+  });
+
   it.each([
     ['an unknown harness', { harness: 'nope' }, 'unknown_harness'],
     ['an unknown model', { model: 'gpt-nope' }, 'unknown_model'],

@@ -31,9 +31,42 @@ status, plus `"fix": "<what to change>"` where the API can say how to put the re
 | --- | --- |
 | `GET /harnesses` | `[{name, package, ref, python, capabilities}]`, one per `workers/*/src/*/capabilities.json` (read-only mount). |
 | `GET /prompts` | `[{id, version, sha256, path, text}]` from `configs/prompts/<id>.<version>.md` (the leading `<!-- -->` review header stripped, as `prompt_text` does). |
+| `POST /prompts` | `{id, base_version, text}` writes the next version of an existing prompt and returns `{id, version, sha256, path}` (below). |
 | `GET /toolsets` | `[{id, version, sha256, servers: [{name, allowed_tools}]}]`. One built-in toolset `finance/all` until more exist. |
 | `GET /tasks` | `[{sha256, id, version, split, kind, summary, graders}]` from `tasks/<id>/task.json`. |
 | `GET /models` | `[{name, provider, input_per_mtok, output_per_mtok}]` from LiteLLM's `/model/info`, real models only. |
+
+**New prompt version** (`POST /prompts`, for the UI's prompt editor). The API writes
+`configs/prompts/<id>.v<n>.md`, where `n` is the highest `v<number>` version of `id` plus one
+(versions that are not `v<number>` are not counted). The file starts with a review header in the
+existing files' style, which `GET /prompts` strips again:
+
+```text
+<!--
+finance-advisor v2, created from v1 in the UI on 4 Nov 2026.
+This header comment is stripped before use. Once a run has used this version, changes go in
+a new version file.
+-->
+
+<text, trimmed>
+```
+
+`sha256` is that of the stripped text, as in `GET /prompts`, and the new version is stored at
+once, so a config can point at it. The same text as an existing version of `id` (after trimming)
+returns that version with 200 and writes nothing; a new file is 201. Posts run one at a time.
+The compose file mounts `configs/prompts` read-write over the read-only `configs/`, so it must be
+writable by uid 1000 on the host. The API does not commit the file: it is in the working tree until
+someone commits it, and the database keeps the text by its hash either way. Refusals, each with a
+`fix`:
+
+| `error` | When |
+| --- | --- |
+| `invalid_prompt` (400) | not an object; `id` or `base_version` with anything but letters, digits, `_` and `-` (so no `/`, `\` or `..`); an empty `text` |
+| `unknown_prompt_id` (400) | no `configs/prompts/<id>.*.md`: only existing prompts get new versions |
+| `unknown_base_version` (400) | `base_version` is not a version of `id` |
+| `prompt_too_large` (400) | `text` over 50 KB (51,200 bytes in UTF-8) |
+| `prompt_text_exists` (409) | the text is already a version of another prompt id (the prompts table is keyed by text hash) |
+| `prompt_version_exists` (409) | the next file appeared between the listing and the write; it is never overwritten (`wx`), so post again |
 
 **Task file, minimum the engine needs** (`tasks/<id>/task.json`). The task format is
 **[Rishi designs]** in SP4; this is only what the engine reads, and everything else is kept
@@ -55,7 +88,7 @@ simulated-client task the API also summarises that file (profile and debts) into
 
 ## Configs
 
-- `POST /configs` with `{name, harness, model, prompt_sha256, toolset_sha256, settings, harness_options, parent_hash}`.
+- `POST /configs` with `{name, harness, model, prompt_sha256, toolset_sha256, settings, harness_options, seed, parent_hash}`.
   `parent_hash` (optional, D34) names the config this one was forked from: it must exist (400
   `unknown_parent`), and a fork identical to its parent is a 400 `same_as_parent` ("change the one
   thing this fork is meant to test"). Lineage is not behaviour, so it is not in the hash; the
@@ -79,10 +112,27 @@ simulated-client task the API also summarises that file (profile and debts) into
   | any setting the harness cannot take | `null` | `unsupported` |
   | any setting the model refuses | `null`, never a platform default | `harness_default` |
 
+  **Seeds (D39).** `seed` (optional) is the state every trial of the config starts with, in
+  contract v2's seed shape (`contract/v2/spec.schema.json`, `seed`):
+  `{"memory": ["a fact", ...], "skills": [{"name", "description", "body"}]}`. Either list may be
+  left out (it is then empty); a skill name is lower-case letters, digits and hyphens, and two
+  skills cannot share one. Config-given state only, never learned state (R10.8). The claim copies
+  it into the trial's `spec.seed`, which the adapter writes natively (Hermes: `memories/MEMORY.md`
+  and `skills/<name>/SKILL.md`). Refusals, each with a `fix`:
+
+  | `error` | When | `fix` |
+  | --- | --- | --- |
+  | `invalid_seed` | not the seed shape (an unknown key, an empty memory entry, a bad skill name, two skills with one name) | the shape to send |
+  | `unsupported_seed` | a non-empty list for a feature the harness cannot take (capabilities, as for settings) | "ownloop has no memory to seed: remove seed.memory, or pick a harness that takes it (hermes)." |
+  | `seed_feature_off` | a non-empty list while the config's resolved setting turns the feature off (memory and skills are off unless set) | "Set settings.memory to {"enabled": true}, or remove seed.memory." |
+
   It then computes
   `hash = sha256(canonical JSON of harness ref, adapter version, capabilities sha256, model,
-  prompt sha256, toolset sha256, settings, harness_options)`. Posting the same content twice
-  returns the same config (200, not a duplicate).
+  prompt sha256, toolset sha256, settings, harness_options, seed)`. An empty seed (both lists
+  empty, or `seed` left out) is left out of the hashed JSON, so a config without seeds keeps the
+  hash it had before seeds existed, and any seed gives a different hash. Memory entries keep
+  their order, and so do skills. Posting the same content twice returns the same config (200,
+  not a duplicate).
 
   **Refusals carry a fix** (D25 follow-up, Rishi's guide review item 1). Every 400 for a refused
   setting has a `fix` the Config screen shows by the field:
@@ -111,12 +161,13 @@ simulated-client task the API also summarises that file (profile and debts) into
   model's refusal ("Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's
   default applies").
 - `GET /configs`, `GET /configs/:hash` return `{hash, name, harness, harness_ref, model,
-  prompt, toolset, settings, settings_sources, unsupported, warnings, harness_options,
-  parent_hash, created_at}`. `unsupported` and `warnings` are worked out from the stored
+  prompt, toolset, settings, settings_sources, unsupported, warnings, harness_options, seed,
+  parent_hash, created_at}`; `seed` always has both lists, empty when nothing is seeded. `unsupported` and `warnings` are worked out from the stored
   capabilities, so every read has them, not only the POST. `GET /configs/:hash` adds
   `children: [{hash, name, created_at}]`, the configs forked from it, oldest first.
 - `GET /configs/:a/diff/:b` returns `[{path, a, b}]`: every field that differs (`unsupported`,
-  `warnings` and `parent_hash` are left out: derived, or not behaviour).
+  `warnings` and `parent_hash` are left out: derived, or not behaviour). Seeds show as
+  `seed.memory` and `seed.skills`, each list compared whole.
 
 ## Pre-run checks: rendered prompt and conflict check (D33, D38)
 

@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import type { ConfigDetail, ConfigDiffEntry, ConfigView, CreateConfigRequest, Json, JsonObject, SettingName, Settings, SettingsSources } from '../contract';
+import type { ConfigDetail, ConfigDiffEntry, ConfigView, CreateConfigRequest, Json, JsonObject, Seed, SettingName, Settings, SettingsSources } from '../contract';
 import { SETTING_NAMES } from '../contract';
 import { badRequest, notFound } from '../common/api-error';
 import { canonicalJson, hashCanonical, normalizeSha } from '../common/hashing';
 import { CatalogueService } from '../catalogue/catalogue.service';
 import { Db } from '../database/db.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
+import { checkSeed, seedIsEmpty } from './seed';
 import { checkHarnessOptions, resolveSettings, supports, unsupportedReasons } from './settings';
 import { configWarnings } from './warnings';
 
@@ -19,8 +20,14 @@ export interface ConfigHashInput {
   toolset_sha256: string;
   settings: Settings;
   harness_options: JsonObject;
+  /** Seeded memory and skills (D39). Left out, or empty, it adds nothing to the hash. */
+  seed?: Seed;
 }
 
+/**
+ * An empty seed is left out of the hashed JSON, so a config without seeds keeps the hash it had
+ * before seeds existed, and a seeded one always differs from it.
+ */
 export function configHash(input: ConfigHashInput): string {
   return hashCanonical({
     harness_ref: input.harness_ref,
@@ -31,6 +38,7 @@ export function configHash(input: ConfigHashInput): string {
     toolset_sha256: input.toolset_sha256,
     settings: input.settings,
     harness_options: input.harness_options,
+    seed: input.seed && !seedIsEmpty(input.seed) ? input.seed : undefined,
   });
 }
 
@@ -60,6 +68,7 @@ export interface ConfigRow {
   settings: Settings;
   settings_sources: SettingsSources;
   harness_options: JsonObject;
+  seed: Seed;
   parent_hash: string | null;
   created_at: Date;
 }
@@ -85,6 +94,7 @@ export function configView(r: ConfigRow): ConfigView {
     unsupported: unsupportedReasons(r.capabilities, r.harness, r.model),
     warnings: configWarnings(r.harness, r.model),
     harness_options: r.harness_options,
+    seed: r.seed,
     parent_hash: r.parent_hash,
     created_at: r.created_at.toISOString(),
   };
@@ -144,6 +154,7 @@ export class ConfigsService {
     }
     const { settings, settings_sources } = resolveSettings(body.settings, caps, harness.name, body.model, elsewhere);
     const harnessOptions = checkHarnessOptions(body.harness_options, caps.harness_options_schema, harness.name);
+    const seed = checkSeed(body.seed, settings, caps, harness.name, elsewhere);
 
     const prompt = await this.catalogue.prompt(promptSha);
     if (!prompt) throw badRequest('unknown_prompt', `no prompt with ${promptSha}; see GET /prompts`, 'Pick a prompt sha256 from GET /prompts.');
@@ -164,6 +175,7 @@ export class ConfigsService {
       toolset_sha256: toolsetSha,
       settings,
       harness_options: harnessOptions,
+      seed,
     });
     if (parentHash === hash) {
       throw badRequest(
@@ -176,8 +188,8 @@ export class ConfigsService {
     const inserted = await this.db.query<{ hash: string }>(
       `INSERT INTO configs (hash, name, harness, harness_package, harness_ref, adapter_version, capabilities_sha256,
                             capabilities, model, api_format, prompt_sha256, toolset_sha256, settings, settings_sources,
-                            harness_options, parent_hash)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                            harness_options, seed, parent_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        ON CONFLICT (hash) DO NOTHING RETURNING hash`,
       [
         hash,
@@ -195,6 +207,7 @@ export class ConfigsService {
         JSON.stringify(settings),
         JSON.stringify(settings_sources),
         JSON.stringify(harnessOptions),
+        JSON.stringify(seed),
         parentHash,
       ],
     );

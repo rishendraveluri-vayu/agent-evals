@@ -238,6 +238,23 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     await cancel(exp.id);
   });
 
+  it("puts the config's seeded memory and skills in the claimed trial's spec (D39)", async () => {
+    const seed = {
+      memory: ['The client (synthetic) wants every amount in rupees.'],
+      skills: [{ name: 'emi-check', description: 'Check an EMI before quoting it', body: 'Call the EMI tool, then quote its number.' }],
+    };
+    const seeded = await makeConfig(env.http, cat, { name: 'hermes seeded', harness: 'hermes', settings: { memory: { enabled: true }, skills: { enabled: true } }, seed });
+    const exp = await experiment({ configs: [seeded] });
+    const c = (await claim('w-seed', 'hermes'))!;
+    expect(validateSpec(c.spec)).toBe(true);
+    expect(c.spec).toMatchObject({ trial: { config_hash: seeded }, seed });
+    await cancel(exp.id);
+    // A config without seeds still starts its trials with none.
+    const plain = await experiment();
+    expect(((await claim('w-seed'))!.spec as { seed: unknown }).seed).toEqual({ memory: [], skills: [] });
+    await cancel(plain.id);
+  });
+
   it('leaves the trial queued when LiteLLM cannot mint its key', async () => {
     const exp = await experiment();
     env.stub.failKeyGenerate = 500;
