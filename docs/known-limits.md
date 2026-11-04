@@ -100,6 +100,7 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 
 - It does not model `max_tokens`: a reply is cut off (`finish_reason: length`) only where a script asks for it with the `length` fault (`finance-length`, `finance-length-always`), never because a cap was too small. It does not model `tool_choice`, `n`, auth, or whether a tool call matches the request's `tools` either. Tests that pass against it say nothing about those behaviours; real dev runs (R9) cover them.
 - It speaks only the OpenAI Chat Completions format. A harness that needs the Anthropic Messages format (for example the Claude Agent SDK) reaches it only through LiteLLM's translation, which is untested.
+- **Its costs are made up (5 Nov).** Fake models are priced in `services/litellm/config.yaml` only so budgets and spend can be tested; a cost on a fake-model trial is not what any real model would cost. The comparison says so above its cost tiles, and approving a real judge for fake-model trials warns and asks twice, since it spends real money grading scripted replies.
 
 ## Finance tools (`services/finance-mcp`)
 
@@ -137,6 +138,9 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 ## Labelling UI (SP7)
 
 - Labelling is blind only when it is done from the Label page. While held-out outputs remain to label, the Judge page keeps the judge's reasons closed, and a trial page hides the judge's quotes, rationale and highlights for any task with an output still in the queue and never says where your label disputes the judge. Trial pages still show the judge's Pass or Fail on every check, and the hiding matches tasks by the queue item's `task_id`, which is not in the API contract: if the API leaves it out, trial pages show the judge's reasons for every task.
+
+- **No screen says how far to trust a judge-graded check (5 Nov).** `GET /judge/agreement` returns null in this version, so the Judge page says the agreement is not shown, and the comparison and trial pages give a judge's Pass or Fail with no measured trust beside it. The agreement is worked out from the command line (`stats/`, `evals-agreement`). Until a screen shows it, read a judge-graded result as unvalidated.
+- **The trial page's number check marks amounts by their text (5 Nov).** The runner's `checks.json` (contract v2) lists each amount with its reply's turn, not its position, so an amount written the same way in two replies is underlined in both when either is unsupported. The list beside the grades gives each amount once, with its source. Trials from before the runner wrote `checks.json` (the 4 Nov runs, and the shipped draft example) have no number check at all, and the page says so.
 
 ## Hermes memory (D39, 4 Nov)
 
