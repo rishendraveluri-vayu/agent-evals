@@ -1,0 +1,57 @@
+{
+  "id": "draft-convo-where-to-start",
+  "version": "1",
+  "split": "discovery",
+  "kind": "conversation",
+  "summary": "DRAFT for Rishi: Meera does not know where to start with her money.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hi. I don't really know where to start with my money. Can you help me?"
+    }
+  ],
+  "client_sim": {
+    "persona": "Meera Raghavan, 34, a QA engineer in Pune who supports her son, 6, and her mother, 63. Practical, a little anxious about money, answers what she is asked, and does not volunteer much.",
+    "hidden_facts": [
+      "Her mother's medical bills were about Rs 6,900 in October and are still rising",
+      "She can put about Rs 20,000 a month towards her debts"
+    ],
+    "concerns": [
+      "Am I going to fall behind on the credit card?"
+    ],
+    "goal": "A clear order to pay off her debts and a monthly plan she can follow",
+    "opening_message": "Hi. I don't really know where to start with my money. Can you help me?",
+    "max_client_turns": 4
+  },
+  "client_state": "client.json",
+  "graders": [
+    {
+      "id": "read-debts",
+      "type": "tool_called",
+      "required": true,
+      "tool": "list_debts"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding before the rubric: overall verdict plus a note.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        }
+      ]
+    }
+  ],
+  "judge_criteria_to_write": "Judgment: finds the real worry (the card) without being told; a plan she can follow."
+}

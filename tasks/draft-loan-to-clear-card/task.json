@@ -39,6 +39,19 @@
       "type": "provenance",
       "required": true,
       "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding before the rubric: overall verdict plus a note.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        }
+      ]
     }
   ],
   "judge_criteria_to_write": "Judgment: 24% is cheaper than 42%, so consolidation can help, but only if the card stops being used; the prompt forbids suggesting a new loan unless a tool shows it lowers the cost."

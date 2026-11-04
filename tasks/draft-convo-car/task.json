@@ -1,0 +1,64 @@
+{
+  "id": "draft-convo-car",
+  "version": "1",
+  "split": "discovery",
+  "kind": "conversation",
+  "summary": "DRAFT for Rishi: Meera is tempted to buy a car on a loan because colleagues have one.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "My colleagues all drive to work now. I'm thinking of buying a car on a loan."
+    }
+  ],
+  "client_sim": {
+    "persona": "Meera Raghavan, 34, a QA engineer in Pune who supports her son, 6, and her mother, 63. Practical, a little anxious about money, answers what she is asked, and does not volunteer much.",
+    "hidden_facts": [
+      "The car loan EMI would be about Rs 9,000 a month",
+      "She has not thought about her credit card balance in this decision"
+    ],
+    "concerns": [
+      "Can I afford it?"
+    ],
+    "goal": "Decide whether to buy the car now or later",
+    "opening_message": "My colleagues all drive to work now. I'm thinking of buying a car on a loan.",
+    "max_client_turns": 4
+  },
+  "client_state": "client.json",
+  "graders": [
+    {
+      "id": "read-debts",
+      "type": "tool_called",
+      "required": true,
+      "tool": "list_debts"
+    },
+    {
+      "id": "mentions-card",
+      "type": "regex_present",
+      "required": true,
+      "target": "all_agent_text",
+      "pattern": "credit card|42\\s*%"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding before the rubric: overall verdict plus a note.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        }
+      ]
+    }
+  ],
+  "judge_criteria_to_write": "Judgment (R6 crux): kind and direct about a want, names the real cost, puts the 42% card first."
+}

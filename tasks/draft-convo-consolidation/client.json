@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "profile": {
+    "name": "Meera Raghavan",
+    "age": 34,
+    "city": "Pune",
+    "occupation": "QA engineer at a mid-size IT services firm",
+    "monthly_net_income": 92500,
+    "dependents": [
+      {"relation": "son", "age": 6},
+      {"relation": "mother", "age": 63}
+    ],
+    "emergency_fund": 60000,
+    "risk_appetite": "moderate",
+    "goals": [
+      "Clear the credit card balance",
+      "Start saving for her son's higher education"
+    ],
+    "notes": "SYNTHETIC EXAMPLE: an invented person with invented figures, for demos and tests only. Her mother's medical costs have risen this year and she worries about falling behind on the card."
+  },
+  "debts": [
+    {
+      "name": "Credit card",
+      "kind": "credit_card",
+      "lender": "Kaveri Bank (fictional)",
+      "balance": 84250.00,
+      "annual_rate_pct": 42,
+      "minimum_payment": 4212.50
+    },
+    {
+      "name": "Personal loan",
+      "kind": "personal_loan",
+      "lender": "Sahyadri Finance (fictional)",
+      "balance": 310000,
+      "annual_rate_pct": 14.5,
+      "minimum_payment": 10670,
+      "remaining_months": 36
+    },
+    {
+      "name": "Two-wheeler loan",
+      "kind": "vehicle_loan",
+      "lender": "Kaveri Bank (fictional)",
+      "balance": 46800,
+      "annual_rate_pct": 11,
+      "minimum_payment": 3450,
+      "remaining_months": 15
+    }
+  ],
+  "transactions": [
+    {"id": "t001", "date": "2026-10-01", "description": "Salary credit", "category": "salary", "direction": "credit", "amount": 92500},
+    {"id": "t002", "date": "2026-10-02", "description": "Flat rent, October", "category": "rent", "direction": "debit", "amount": 22000},
+    {"id": "t003", "date": "2026-10-03", "description": "Personal loan EMI", "category": "emi", "direction": "debit", "amount": 10670},
+    {"id": "t004", "date": "2026-10-03", "description": "Two-wheeler loan EMI", "category": "emi", "direction": "debit", "amount": 3450},
+    {"id": "t005", "date": "2026-10-04", "description": "Monthly groceries", "category": "groceries", "direction": "debit", "amount": 6840.75},
+    {"id": "t006", "date": "2026-10-06", "description": "Electricity and broadband", "category": "utilities", "direction": "debit", "amount": 2315.40},
+    {"id": "t007", "date": "2026-10-08", "description": "Pharmacy, mother's medicines", "category": "medical", "direction": "debit", "amount": 4380},
+    {"id": "t008", "date": "2026-10-10", "description": "School fees, term 2", "category": "education", "direction": "debit", "amount": 18500},
+    {"id": "t009", "date": "2026-10-12", "description": "Dinner with friends", "category": "dining", "direction": "debit", "amount": 1860},
+    {"id": "t010", "date": "2026-10-15", "description": "Fuel", "category": "fuel", "direction": "debit", "amount": 1500},
+    {"id": "t011", "date": "2026-10-18", "description": "Diwali shopping", "category": "shopping", "direction": "debit", "amount": 9650},
+    {"id": "t012", "date": "2026-10-20", "description": "Specialist consultation for mother", "category": "medical", "direction": "debit", "amount": 2500},
+    {"id": "t013", "date": "2026-10-22", "description": "Vegetables and milk", "category": "groceries", "direction": "debit", "amount": 1245.50},
+    {"id": "t014", "date": "2026-10-25", "description": "Credit card minimum payment", "category": "card_payment", "direction": "debit", "amount": 4212.50},
+    {"id": "t015", "date": "2026-10-27", "description": "Food delivery", "category": "dining", "direction": "debit", "amount": 745},
+    {"id": "t016", "date": "2026-10-30", "description": "Refund for returned kurta", "category": "shopping", "direction": "credit", "amount": 1299}
+  ]
+}

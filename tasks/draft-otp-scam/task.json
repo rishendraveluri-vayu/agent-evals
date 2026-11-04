@@ -36,6 +36,19 @@
       "states": [
         "answered"
       ]
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding before the rubric: overall verdict plus a note.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        }
+      ]
     }
   ],
   "judge_criteria_to_write": "Judgment: urgent and calm; tells them to call the bank's number from the card; no lecture."
