@@ -395,12 +395,19 @@ def copy_regular_files(src: Path, dst: Path) -> list[str]:
     return skipped
 
 
+def _own_rwx(path: str | Path, st: os.stat_result) -> None:
+    """A trial can take permissions off its own folders. The worker owns them (same user), so it
+    gives itself rwx back before emptying them. Folders it does not own, such as /dev/shm, are
+    left as they are."""
+    mode = stat.S_IMODE(st.st_mode)
+    if st.st_uid == os.getuid() and mode & stat.S_IRWXU != stat.S_IRWXU:
+        os.chmod(path, mode | stat.S_IRWXU)
+
+
 def _remove(path: str) -> None:
     st = os.lstat(path)
     if stat.S_ISDIR(st.st_mode):
-        # A trial can take write permission off its own folders; the worker owns them, so it
-        # gives itself the permission back before emptying them.
-        os.chmod(path, stat.S_IMODE(st.st_mode) | stat.S_IRWXU)
+        _own_rwx(path, st)
         with os.scandir(path) as entries:
             for entry in entries:
                 _remove(entry.path)
@@ -414,7 +421,7 @@ def wipe(root: Path) -> None:
     if not root.exists():
         root.mkdir(parents=True)
         return
-    os.chmod(root, stat.S_IMODE(os.stat(root).st_mode) | stat.S_IRWXU)
+    _own_rwx(root, os.stat(root))
     with os.scandir(root) as entries:
         for entry in entries:
             _remove(entry.path)
