@@ -53,9 +53,9 @@ claim, and the report says so.
 ## 4. The trust rule (D8), set before any results
 
 A criterion is **trusted** when, on the held-out set:
-- kappa is at least **[0.6]** and its interval's lower end at least **[0.4]**;
+- kappa is at least **0.6** and its interval's lower end at least **0.4** (D8, settled 5 Nov);
 - the false-pass rate does not differ between arms (the interval for the gap includes 0);
-- test-retest agreement is at least **[90%]**.
+- test-retest agreement is at least **90%**.
 
 Otherwise it is **not trusted**: it stays in the trial view and the report, with its numbers, and is
 left out of the headline pass. The numbers in brackets are Rishi's to set; once set they go into
@@ -117,7 +117,7 @@ current grading, so that read is still to build.
 
 ## Decisions for Rishi
 
-1. The trust thresholds in §4 (kappa, its lower bound, test-retest).
+1. **Settled 5 Nov (D8):** kappa >= 0.6, lower bound >= 0.4, test-retest >= 90%.
 2. Per-arm or pooled sensitivity and specificity in the correction (per-arm is safer, needs more labels).
 3. Whether "not sure" labels count as fail, are excluded (proposed), or trigger a second look.
 4. The label budget: 20 / 40 / 20 as in SPEC, or more held-out labels for tighter intervals.

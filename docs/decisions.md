@@ -52,13 +52,13 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D42 Equivalence margin | +/- 10 points of pass rate: "practically equivalent" when the whole 95% interval of B minus A lies inside it | Rishi | 5 Nov |
 | D43 Significance level | Alpha 0.05 and 95% intervals throughout (verdict, critical guardrail, equivalence, BH q = 0.05) | Rishi | 5 Nov |
 | D44 A/A calibration | An explicit calibration run: the same config on both arms only when the run is marked "A/A calibration"; the comparison of an A/B shows the latest A/A interval for its configs; each one is a paid run signed off like any other | Rishi | 5 Nov |
+| D8 Judge trust bar | A judge criterion counts in the headline only when, on the held-out labels, kappa >= 0.6 with its 95% interval's lower end >= 0.4, no false-pass gap between arms, and test-retest agreement >= 90%; below it, it stays visible in trials and the report | Rishi | 5 Nov |
 
 ## Open
 
 | # | Call | Options | Lean | Needed by |
 | --- | --- | --- | --- | --- |
 | D7 | Tasks using the judge | Any share of the 20+ | About 6 to 8 | Thu |
-| D8 | Judge threshold and what happens below it | Set before seeing results | Below threshold leaves the headline score | Thu |
 | D15 | Hermes settings that are design calls | Compression on or off; Tool Search off or on (must be off for MCP tools, R10.7); in skills-on configs allow `skill_manage` writes or stage them; ~~accept the untrusted MCP wrapper or not~~ (settled by D20: accept) | None yet. Evidence in `docs/research/hermes/context_and_self_improvement.md` | Wed |
 
 ## Notes behind the open calls
@@ -248,6 +248,12 @@ Options: an explicit calibration run (the same config on both arms, allowed only
 Choice: the explicit calibration run. Without the mark, the same config on both arms stays refused (A30), so an accidental A/A cannot happen. The comparison of an A/B shows the latest A/A interval for its configs beside its own. The simulated A/A tests stay as well.
 Why: Rishi picked it. The stats design (proposal section 5) calls for an A/A run every time, and the grading guide asks to interrogate the math: only a real A/A shows the noise of this setup, harness and model.
 What would change it: cost (each A/A is a full run, about $1 to $2 on Haiku at 20 tasks x 10 trials, a rough estimate, needing a sign-off under R8).
+
+### D8: The judge's trust bar (5 Nov)
+Options: kappa >= 0.6, lower bound >= 0.4, retest >= 90%; kappa >= 0.7, lower >= 0.5, retest >= 95%; kappa >= 0.4, lower >= 0.2, retest >= 85%. In each, the false-pass rate must not differ between arms.
+Choice: kappa at least 0.6 and its 95% interval's lower end at least 0.4, on the held-out set; the false-pass gap between arms has an interval that includes 0; test-retest agreement at least 90%. A criterion below the bar is "not trusted": it stays in the trial view and the report with its numbers, and leaves the headline pass. Fixed in `docs/experiment.md` before the pilot; never moved after seeing held-out results.
+Why: Rishi picked it. 0.6 is "substantial" agreement on the usual scale; with about 40 held-out labels the kappa interval is about +/- 0.2 wide, so the lower-bound rule asks for a point estimate near 0.6 and the stricter bar would fail good judges on label count alone.
+What would change it: more held-out labels (a tighter interval would allow a stricter bar); kappa misleading on a criterion whose answer is almost always yes (then report raw agreement, sensitivity and specificity beside it, as section 3 of the proposal already does).
 
 ## Entry template
 
