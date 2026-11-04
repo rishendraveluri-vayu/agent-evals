@@ -73,6 +73,8 @@ Open:
 
 Tasks, configs, experiments, trials and traces. **[Rishi designs]** in SP2.
 
+Approved on 4 Nov (R14): `docs/proposals/data-model.md`. Content-addressed prompts, toolsets, tasks and configs; experiments freeze task hashes × config hashes × N; one trial row per (experiment, task, config, repeat, attempt) with a claim, heartbeat and idempotent report; spans and grades in their own tables; labels stay files; raw trial files stay under `runs/`.
+
 Interim, not a design decision: until SP2, the API reads finished trial folders from `RUNS_DIR` through a `TrialStore` interface (`apps/api/src/trials/trial-store.ts`), so the trace view and spend chart work now. SP2's database store replaces the file store behind the same interface.
 
 Planned in the spec, not yet designed:
