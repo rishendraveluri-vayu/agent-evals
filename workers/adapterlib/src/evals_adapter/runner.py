@@ -21,6 +21,7 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -108,6 +109,11 @@ def sweep(leader: int, tag: str) -> int:
             continue
         if pgid == leader or sid == leader or _has_tag(pid, tag):
             victims.add(pid)
+    return kill_all(victims)
+
+
+def kill_all(victims: set[int]) -> int:
+    """SIGKILL every pid in `victims` and wait up to 5 s for them to die. Returns how many."""
     killed = len(victims)
     for pid in victims:
         with contextlib.suppress(ProcessLookupError):
@@ -127,7 +133,15 @@ def _is_zombie(pid: int) -> bool:
         return True
 
 
-def launch(paths: TrialPaths, inputs: TrialInputs, net_s: float) -> dict[str, Any]:
+def launch(
+    paths: TrialPaths,
+    inputs: TrialInputs,
+    net_s: float,
+    on_spawn: Callable[[subprocess.Popen], None] | None = None,
+) -> dict[str, Any]:
+    """Start the adapter as its own process group and wait for it, up to the safety net.
+    `on_spawn` gets the process as soon as it exists, so the SP3 worker can kill the group when
+    the API says the claim is lost."""
     tag = f"{inputs.spec['trial']['id']}-{uuid.uuid4().hex[:8]}"
     env = {
         "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
@@ -151,6 +165,8 @@ def launch(paths: TrialPaths, inputs: TrialInputs, net_s: float) -> dict[str, An
             cwd=str(inputs.cwd or paths.home),
             start_new_session=True,
         )
+        if on_spawn is not None:
+            on_spawn(proc)
         killed = None
         try:
             code: int | None = proc.wait(timeout=net_s)
@@ -311,7 +327,10 @@ class ProxySettings:
 
 
 def run_trial(
-    trial_dir: Path, inputs: TrialInputs, proxy: ProxySettings | None = None
+    trial_dir: Path,
+    inputs: TrialInputs,
+    proxy: ProxySettings | None = None,
+    on_spawn: Callable[[subprocess.Popen], None] | None = None,
 ) -> dict[str, Any]:
     """Run one trial end to end and return the runner report (also written to the folder).
 
@@ -341,7 +360,7 @@ def run_trial(
     try:
         prepare(paths, inputs)
         net = safety_net_s(float(spec["settings"]["timeout_s"]))
-        info = launch(paths, inputs, net)
+        info = launch(paths, inputs, net, on_spawn)
         proxy_usage = None
         if proxy is not None and agent_key is not None:
             claimed = _harness_calls(paths)
