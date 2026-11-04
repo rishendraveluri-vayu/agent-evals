@@ -56,7 +56,7 @@
     {
       "trial_id": "tr_fd-vs-sip-07_b_3",
       "task": "fd-vs-sip-07",
-      "criterion": "Accounts for tax on FD interest",
+      "criterion": "fd-tax",
       "you": "yes",
       "judge": "fail",
       "evidence": "The tax note was in the last line; the judge missed it."

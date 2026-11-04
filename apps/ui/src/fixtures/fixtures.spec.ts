@@ -34,9 +34,9 @@ const FIELDS = {
   compareRow: ['task', 'task_id', 'arm', 'config', 'config_name', 'passed', 'graded', 'trials', 'infra_failed', 'abandoned'],
   trial: [
     'id', 'experiment_id', 'probe', 'task', 'config', 'repeat_index', 'attempt', 'status', 'label', 'end_state', 'spec', 'result', 'runner_report', 'usage',
-    'timing', 'worker_id', 'files', 'grades', 'problems',
+    'timing', 'worker_id', 'files', 'grades', 'grading', 'problems',
   ],
-  grade: ['id', 'grader_id', 'grader_version', 'kind', 'verdict', 'score', 'evidence', 'judge_model', 'run_index', 'created_at'],
+  grade: ['id', 'grader_id', 'grader_version', 'kind', 'type', 'required', 'verdict', 'score', 'reason', 'evidence', 'judge_model', 'run_index', 'created_at'],
   rendered: ['config_hash', 'status', 'probe', 'cached', 'error', 'rendered'],
   conflict: ['config_hash', 'rendered_sha256', 'input_sha256', 'checker', 'model', 'conflicts', 'notes', 'cost_usd', 'cached', 'skipped', 'spend_id', 'checked_at', 'allowance'],
   allowance: ['kind', 'limit_usd', 'used_usd', 'remaining_usd', 'calls', 'half_reached'],
