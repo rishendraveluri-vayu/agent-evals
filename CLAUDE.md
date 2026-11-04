@@ -80,4 +80,17 @@ cd workers/ownloop && EVALS_PROXY_URL=http://127.0.0.1:4000 LITELLM_MASTER_KEY=s
 
 If a host port is taken, set `UI_PORT`, `API_PORT` or `LITELLM_PORT` (and `SMOKE_API_URL` etc. for the smoke test). On Rishi's machine, port 3000 is held by an older sibling-project process, so use `API_PORT=3001`.
 
-Run an experiment and export results: not built yet (SP3, SP2).
+Run an experiment and export results (SP2, SP3):
+
+```bash
+API_PORT=3001 docker compose up -d --build --wait     # includes the five worker containers
+python3 scripts/sp3_kill_test.py --n 10              # engine check on fake models: kill a worker mid-run, every trial done once
+# configs, experiments, start, progress, export: see docs/api-contract.md (all paths under /api)
+curl -s http://127.0.0.1:3001/api/experiments/<id>/export?format=csv > results.csv
+workers/build_images.sh                               # build the worker images (EVALS_IMAGE_TAG sets the tag)
+cd workers/adapterlib && EVALS_IMAGE_TESTS=1 uv run pytest -q tests/test_images.py   # D3 leak and kill tests per image
+VITE_FIXTURES=1 pnpm --dir apps/ui dev                # UI with sample data, no backend
+TEST_DATABASE_URL=postgresql://... pnpm --dir apps/api test   # API database tests (CI starts its own Postgres)
+```
+
+When running `docker compose up` for one service, pass the same port overrides (`API_PORT=3001`), or compose recreates the API on its default port.
