@@ -88,21 +88,49 @@ class Rendered:
     content: str | None
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     usage: dict[str, Any] = field(default_factory=dict)
+    cut: bool = False  # the `length` fault: the reply stopped at the output token cap
 
     @property
     def finish_reason(self) -> str:
+        if self.cut:
+            return "length"
         return "tool_calls" if self.tool_calls else "stop"
 
 
+def request_cap(body: dict[str, Any]) -> int | None:
+    """The request's output token cap: `max_tokens`, else `max_completion_tokens`."""
+    for key in ("max_tokens", "max_completion_tokens"):
+        value = body.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
+
+
+def cut_text(text: str) -> str:
+    """A reply stopped at its token cap: the first half of the text, rounded up."""
+    return text[: math.ceil(len(text) / 2)]
+
+
 def render_step(
-    step: Step, *, script: str, step_index: int, body: dict[str, Any], malformed: bool
+    step: Step,
+    *,
+    script: str,
+    step_index: int,
+    body: dict[str, Any],
+    malformed: bool,
+    cut: bool = False,
 ) -> Rendered:
+    """`cut` is the `length` fault: the reply is the first half of the step's text, with no tool
+    calls and `finish_reason: length`, and its completion tokens are the request's cap when it
+    sets one, as a real provider reports a reply that ran into the cap."""
     messages = body.get("messages", [])
     content = step.text
     if content is not None and LAST_USER_PLACEHOLDER in content:
         content = content.replace(LAST_USER_PLACEHOLDER, last_user_text(messages))
+    if cut:
+        content = cut_text(content or "")
     tool_calls = []
-    for position, call in enumerate(step.tool_calls):
+    for position, call in enumerate(() if cut else step.tool_calls):
         arguments = malform(call.arguments) if malformed else call.arguments
         tool_calls.append(
             {
@@ -115,6 +143,8 @@ def render_step(
         tc["function"]["name"] + tc["function"]["arguments"] for tc in tool_calls
     )
     prompt, completion = prompt_tokens(body), count_tokens(output)
+    if cut and request_cap(body) is not None:
+        completion = request_cap(body)
     usage = {
         "prompt_tokens": prompt,
         "completion_tokens": completion,
@@ -124,7 +154,7 @@ def render_step(
     }
     if content is None and not tool_calls:
         content = ""  # a fault-only step that is served anyway still returns a message
-    return Rendered(content=content, tool_calls=tool_calls, usage=usage)
+    return Rendered(content=content, tool_calls=tool_calls, usage=usage, cut=cut)
 
 
 @dataclass(frozen=True)

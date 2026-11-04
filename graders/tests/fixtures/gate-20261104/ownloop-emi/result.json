@@ -1,0 +1,122 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-ownloop-emi",
+ "end_state": "answered",
+ "end_detail": {
+  "harness_stop_reason": "stop",
+  "exception_type": null,
+  "exception_message": null,
+  "last_message_excerpt": "Your EMI would be about Rs 8,997 a month for 20 years, and the total interest is about Rs 11.59 lakh."
+ },
+ "final_answer": "Your EMI would be about Rs 8,997 a month for 20 years, and the total interest is about Rs 11.59 lakh.",
+ "conversation": {
+  "agent_turns": 1,
+  "client_turns": 0,
+  "ended_by": null,
+  "transcript": [
+   {
+    "role": "user",
+    "content": "What is my EMI on Rs 10 lakh at 9% for 20 years?",
+    "source": "task"
+   },
+   {
+    "role": "assistant",
+    "content": "Your EMI would be about Rs 8,997 a month for 20 years, and the total interest is about Rs 11.59 lakh.",
+    "source": "agent"
+   }
+  ]
+ },
+ "harness": {
+  "name": "ownloop",
+  "version": "0.1.0 (openai 3.42.1, mcp 2.3.0)",
+  "extra": {
+   "tool_names": [
+    "calculate_emi",
+    "amortization_schedule",
+    "prepayment_impact",
+    "debt_payoff_plan",
+    "sip_future_value",
+    "fd_maturity",
+    "inflation_adjusted_value",
+    "loan_affordability",
+    "get_client_profile",
+    "list_debts",
+    "list_transactions"
+   ]
+  }
+ },
+ "applied_settings": {
+  "temperature": {
+   "value": 0.2,
+   "source": "platform_default"
+  },
+  "max_output_tokens": {
+   "value": 1024,
+   "source": "platform_default"
+  },
+  "max_steps": {
+   "value": 10,
+   "source": "platform_default"
+  },
+  "timeout_s": {
+   "value": 60,
+   "source": "platform_default"
+  },
+  "parallel_tool_calls": {
+   "value": false,
+   "source": "platform_default"
+  },
+  "memory": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "the loop has no memory"
+  },
+  "skills": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "the loop has no skills"
+  },
+  "compression": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "the loop never compresses; the full history is sent"
+  },
+  "top_p": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  },
+  "seed": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  },
+  "tool_choice": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  }
+ },
+ "harness_usage": {
+  "model_calls": 2,
+  "input_tokens": 5212,
+  "output_tokens": 46,
+  "cost_usd": null
+ },
+ "counts": {
+  "model_calls": 2,
+  "tool_calls": 1,
+  "tool_errors": 0,
+  "malformed_tool_calls": 0
+ },
+ "integrity": {
+  "before": {},
+  "after": {}
+ },
+ "timing": {
+  "started_at": "2026-11-04T14:21:13.299414Z",
+  "ended_at": "2026-11-04T14:21:14.248662Z",
+  "wall_s": 0.949
+ },
+ "artifacts": []
+}

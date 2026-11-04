@@ -56,5 +56,12 @@
     "ended_at": "2026-11-03T16:19:01.274463Z",
     "wall_s": 0.193,
     "safety_net_s": 60.0
+  },
+  "checks": {
+    "path": "checks.json",
+    "valid": true,
+    "errors": [],
+    "unsupported_amounts": 0,
+    "missing_tools": []
   }
 }

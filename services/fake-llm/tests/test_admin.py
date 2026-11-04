@@ -26,6 +26,9 @@ EXAMPLES = {
     "finance-503",
     "finance-503-twice",
     "finance-400",
+    "finance-length",
+    "finance-length-always",
+    "finance-emi-unsupported",
     "sim-client",
     "sim-empty",
 }
@@ -128,6 +131,12 @@ def test_register_replace_and_list_scripts(client):
         {"name": "fault-times-needs-body", "steps": [{"fault": {"kind": "500", "times": 1}}]},
         {"name": "msg-kind", "steps": [{"text": "x", "fault": {"kind": "timeout", "message": ""}}]},
         {"name": "msg-type", "steps": [{"fault": {"kind": "400", "message": 4}}]},
+        {"name": "len", "steps": [{"tool_calls": [{"name": "f"}], "fault": {"kind": "length"}}]},
+        {"name": "len-empty", "steps": [{"text": "", "fault": {"kind": "length"}}]},
+        {
+            "name": "len-message",
+            "steps": [{"text": "x", "fault": {"kind": "length", "message": "m"}}],
+        },
     ],
 )
 def test_invalid_scripts_are_rejected(client, definition):

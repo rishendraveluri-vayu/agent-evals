@@ -6,6 +6,11 @@ import type { CreatedPrompt, PromptView } from '../src/contract';
 import { type TestEnv, bootEnv } from './support/app';
 import { describeWithDb } from './support/db';
 
+/** The highest N among client-sim.vN.md file names. */
+function highestSim(names: string[]): number {
+  return Math.max(...names.map((n) => /^client-sim\.v(\d+)\.md$/.exec(n)?.[1]).filter((v): v is string => v !== undefined).map(Number));
+}
+
 describeWithDb('POST /prompts (e2e, real Postgres, a copy of configs/)', () => {
   let env: TestEnv;
 
@@ -58,20 +63,22 @@ describeWithDb('POST /prompts (e2e, real Postgres, a copy of configs/)', () => {
     const before = new Map<string, string>();
     for (const name of await fs.readdir(promptsDir())) before.set(name, await fs.readFile(path.join(promptsDir(), name), 'utf8'));
     const res = await post({ id: 'client-sim', base_version: 'v1', text: 'A different simulator prompt (test fixture).' }).expect(201);
-    expect((res.body as CreatedPrompt).version).toBe('v4');
+    // One past the highest client-sim file in configs/prompts, whatever that is today (v4 since 4 Nov).
+    expect((res.body as CreatedPrompt).version).toBe(`v${highestSim([...before.keys()]) + 1}`);
     for (const [name, text] of before) expect(await fs.readFile(path.join(promptsDir(), name), 'utf8')).toBe(text);
   });
 
   it('never overwrites a file that appears at the next version: 409, and the file is kept', async () => {
     // A file the listing has not seen yet (as when another writer gets there first).
-    const squatter = path.join(promptsDir(), 'client-sim.v5.md');
-    await fs.writeFile(squatter, 'a v5 written by hand');
+    const next = `v${highestSim(await fs.readdir(promptsDir())) + 1}`;
+    const squatter = path.join(promptsDir(), `client-sim.${next}.md`);
+    await fs.writeFile(squatter, `a ${next} written by hand`);
     const real = files.readPrompts;
-    const spy = jest.spyOn(files, 'readPrompts').mockImplementation(async (dir) => (await real(dir)).filter((p) => !(p.id === 'client-sim' && p.version === 'v5')));
+    const spy = jest.spyOn(files, 'readPrompts').mockImplementation(async (dir) => (await real(dir)).filter((p) => !(p.id === 'client-sim' && p.version === next)));
     try {
       const res = await post({ id: 'client-sim', base_version: 'v1', text: 'Yet another simulator prompt (test fixture).' }).expect(409);
       expect(res.body).toMatchObject({ error: 'prompt_version_exists', fix: expect.any(String) as string });
-      expect(await fs.readFile(squatter, 'utf8')).toBe('a v5 written by hand');
+      expect(await fs.readFile(squatter, 'utf8')).toBe(`a ${next} written by hand`);
     } finally {
       spy.mockRestore();
       await fs.unlink(squatter);

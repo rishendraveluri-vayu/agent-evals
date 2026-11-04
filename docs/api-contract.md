@@ -32,7 +32,7 @@ status, plus `"fix": "<what to change>"` where the API can say how to put the re
 | `GET /harnesses` | `[{name, package, ref, python, capabilities}]`, one per `workers/*/src/*/capabilities.json` (read-only mount). |
 | `GET /prompts` | `[{id, version, sha256, path, text}]` from `configs/prompts/<id>.<version>.md` (the leading `<!-- -->` review header stripped, as `prompt_text` does). |
 | `POST /prompts` | `{id, base_version, text}` writes the next version of an existing prompt and returns `{id, version, sha256, path}` (below). |
-| `GET /toolsets` | `[{id, version, sha256, servers: [{name, allowed_tools}]}]`. One built-in toolset `finance/all` until more exist. |
+| `GET /toolsets` | `[{id, version, sha256, servers: [{name, allowed_tools}], manifest: [{server, server_version, tools: [{name, description, input_schema}]}]}]`. One built-in toolset `finance/all` until more exist. `sha256` is the canonical JSON hash of everything else in the entry, so it covers each tool's description and input schema and the server's version, not just the names (since 4 Nov; configs made before keep their names-only hash). |
 | `GET /tasks` | `[{sha256, id, version, split, kind, summary, graders}]` from `tasks/<id>/task.json`. |
 | `GET /models` | `[{name, provider, input_per_mtok, output_per_mtok}]` from LiteLLM's `/model/info`, real models only. |
 
@@ -80,6 +80,10 @@ and passed through unread:
  "graders": []}
 ```
 
+An optional `required_tools` (finance tool names, such as `["calculate_emi"]`) is copied into
+the spec's `task.required_tools`, a grader primitive: the runner's `checks.json` records which
+were called (docs/adapter-contract.md section 12). A name the finance server does not have, or a
+repeated one, is a task problem.
 `client_sim` is contract v2's object without `model` (the experiment supplies the simulator
 model) and without `client_summary` (the API builds it). `client_state` names a file next to
 `task.json` that the runner places in the trial's state folder for the finance MCP server. For a

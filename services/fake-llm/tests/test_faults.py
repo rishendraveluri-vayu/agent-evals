@@ -1,5 +1,5 @@
-"""Forced faults (429, 500, timeout, broken stream, malformed tool call), `times` counting,
-and injected latency."""
+"""Forced faults (429, 500, timeout, broken stream, malformed tool call, length), `times`
+counting, and injected latency."""
 
 import json
 import threading
@@ -142,6 +142,93 @@ def test_malformed_tool_call_when_streamed(client):
     for call in reassemble(chunks)["tool_calls"]:
         with pytest.raises(json.JSONDecodeError):
             json.loads(call["function"]["arguments"])
+
+
+FULL = (
+    "Your EMI would be about Rs 8,997 a month for 20 years, and the total interest is about "
+    "Rs 11.59 lakh."
+)
+EMI_CALL = {
+    "role": "assistant",
+    "content": None,
+    "tool_calls": [
+        {
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "calculate_emi", "arguments": "{}"},
+        }
+    ],
+}
+AFTER_TOOL = [
+    {"role": "user", "content": "What is my EMI on Rs 10 lakh at 9% for 20 years?"},
+    EMI_CALL,
+    {"role": "tool", "tool_call_id": "call_1", "content": '{"emi":8997.26}'},
+]
+
+
+def test_finance_length_cuts_the_answer_once_then_serves_it_whole(client):
+    """D36's script: the answer step is cut off (finish_reason length) on its first attempt;
+    the same messages sent again, with a raised cap, get the whole answer."""
+    first = client.post(
+        "/v1/chat/completions",
+        json=chat_body("fake/finance-length", messages=AFTER_TOOL, max_tokens=1024),
+    ).json()
+    choice = first["choices"][0]
+    assert choice["finish_reason"] == "length"
+    assert choice["message"]["content"] == FULL[: -(-len(FULL) // 2)]
+    assert "tool_calls" not in choice["message"]
+    assert first["usage"]["completion_tokens"] == 1024  # a cut reply used the whole cap
+    again = client.post(
+        "/v1/chat/completions",
+        json=chat_body("fake/finance-length", messages=AFTER_TOOL, max_tokens=2048),
+    ).json()
+    assert again["choices"][0]["finish_reason"] == "stop"
+    assert again["choices"][0]["message"]["content"] == FULL
+    assert again["usage"]["completion_tokens"] == -(-len(FULL) // 4)
+    assert [r["fault"] for r in captured(client)] == ["length", None]
+    assert [r["body"]["max_tokens"] for r in captured(client)] == [1024, 2048]
+
+
+def test_finance_length_first_step_is_the_tool_call(client):
+    opening = [{"role": "user", "content": "What is my EMI?"}]
+    reply = client.post(
+        "/v1/chat/completions", json=chat_body("fake/finance-length", messages=opening)
+    ).json()
+    choice = reply["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    assert choice["message"]["tool_calls"][0]["function"]["name"] == "calculate_emi"
+
+
+def test_finance_length_always_is_cut_every_time(client):
+    for cap in (1024, 2048, 2048):
+        reply = client.post(
+            "/v1/chat/completions",
+            json=chat_body("fake/finance-length-always", messages=AFTER_TOOL, max_tokens=cap),
+        ).json()
+        assert reply["choices"][0]["finish_reason"] == "length"
+        assert reply["usage"]["completion_tokens"] == cap
+
+
+def test_length_without_a_cap_counts_the_cut_text(client):
+    register(client, "cut", [{"text": "x" * 40, "fault": {"kind": "length"}}])
+    reply = client.post("/v1/chat/completions", json=chat_body("cut")).json()
+    assert reply["choices"][0]["message"]["content"] == "x" * 20
+    assert reply["usage"]["completion_tokens"] == 5
+    capped = chat_body("cut", max_completion_tokens=64)
+    reply = client.post("/v1/chat/completions", json=capped).json()
+    assert reply["usage"]["completion_tokens"] == 64
+
+
+def test_length_when_streamed_ends_with_finish_reason_length(client):
+    register(client, "cut-stream", [{"text": "y" * 30, "fault": {"kind": "length"}}])
+    request = chat_body("cut-stream", stream=True, stream_options={"include_usage": True})
+    with client.stream("POST", "/v1/chat/completions", json=request) as response:
+        chunks, done = parse_sse(response.read().decode())
+    assert done
+    message = reassemble(chunks)
+    assert message["content"] == "y" * 15
+    assert message["finish_reason"] == "length"
+    assert message["tool_calls"] == []
 
 
 def test_delay_ms(client):

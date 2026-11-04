@@ -1,0 +1,9 @@
+# Like finance-emi, but the answer also gives a yearly figure worked out in the reply
+# (8,997.26 x 12) that no tool returned: the "calculation without a tool behind it" the
+# platform's number-provenance check (checks.json) must flag, and the provenance grader fails.
+description: Calls calculate_emi, then answers with the EMI and an unsupported yearly total.
+steps:
+  - tool_calls:
+      - name: calculate_emi
+        arguments: {principal: 1000000, annual_rate_pct: 9, tenure_months: 240}
+  - text: "Your EMI would be about Rs 8,997 a month, so about Rs 1,07,967 a year, and the total interest is about Rs 11.59 lakh."

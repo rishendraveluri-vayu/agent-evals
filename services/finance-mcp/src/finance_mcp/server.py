@@ -312,6 +312,15 @@ def create_server(state_dir: Path | None) -> FinanceServer:
                 le=100,
             ),
         ] = 0,
+        lump_sum: Annotated[
+            float,
+            Field(
+                description="One-time amount invested at the start, in rupees; it grows at the "
+                "same rate. 0 for none.",
+                ge=0,
+                le=MAX_RUPEES,
+            ),
+        ] = 0,
     ) -> CallToolResult:
         return _text(
             calculators.sip_future_value,
@@ -319,6 +328,7 @@ def create_server(state_dir: Path | None) -> FinanceServer:
             expected_annual_return_pct,
             years,
             annual_step_up_pct,
+            lump_sum,
         )
 
     def fd_maturity(
@@ -443,7 +453,8 @@ def create_server(state_dir: Path | None) -> FinanceServer:
             sip_future_value,
             "Future value of a monthly SIP, with total invested and gains. Contributions at the "
             "start of each month (annuity due), returns compounded monthly at annual/12, and the "
-            "monthly amount stepped up every 12 months.",
+            "monthly amount stepped up every 12 months. An optional lump sum invested at the "
+            "start grows at the same rate; its value and the SIP's are then reported separately.",
         ),
         (
             fd_maturity,

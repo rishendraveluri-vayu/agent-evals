@@ -19,7 +19,16 @@ from finance_mcp.server import create_server
 from mcp import Client, ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
-from support import EXPECTED_TOOLS, SAMPLE_CALLS, SNAPSHOT, call, error, stdio_command, text_of
+from support import (
+    EXPECTED_TOOLS,
+    SAMPLE_CALLS,
+    SNAPSHOT,
+    call,
+    error,
+    ok,
+    stdio_command,
+    text_of,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -261,6 +270,17 @@ def test_nested_debt_objects_are_inlined() -> None:
             "Error executing tool list_transactions: from_date must be a date in the form "
             "YYYY-MM-DD",
         ),
+        (
+            "sip_future_value",
+            {
+                "monthly_investment": 10000,
+                "expected_annual_return_pct": 12,
+                "years": 10,
+                "lump_sum": -1,
+            },
+            "Error executing tool sip_future_value: invalid arguments: lump_sum: Input should be "
+            "greater than or equal to 0",
+        ),
         ("no_such_tool", {}, "Unknown tool: no_such_tool"),
     ],
 )
@@ -271,6 +291,23 @@ def test_bad_calls_return_short_error_results(
     assert message in text
     assert len(text) < 250
     assert "pydantic" not in text and "Traceback" not in text
+
+
+def test_sip_lump_sum_over_the_wire(state_dir: Path) -> None:
+    """The optional lump sum reaches the calculator; without it the result is unchanged."""
+    server = create_server(state_dir)
+    base = {"monthly_investment": 10000, "expected_annual_return_pct": 12, "years": 10}
+    both = ok(server, "sip_future_value", {**base, "lump_sum": 100000})
+    assert (both["lump_sum_value"], both["sip_value"], both["corpus"]) == (
+        330038.69,
+        2323390.76,
+        2653429.45,
+    )
+    assert both["lump_sum_formatted"] == "₹1,00,000.00"
+    plain = text_of(call(server, "sip_future_value", base))
+    zero = text_of(call(server, "sip_future_value", {**base, "lump_sum": 0}))
+    assert plain == zero
+    assert "lump_sum" not in plain
 
 
 def test_a_tool_error_does_not_break_the_next_call(state_dir: Path) -> None:

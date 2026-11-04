@@ -219,7 +219,7 @@
   },
   {
     "name": "sip_future_value",
-    "description": "Future value of a monthly SIP, with total invested and gains. Contributions at the start of each month (annuity due), returns compounded monthly at annual/12, and the monthly amount stepped up every 12 months.",
+    "description": "Future value of a monthly SIP, with total invested and gains. Contributions at the start of each month (annuity due), returns compounded monthly at annual/12, and the monthly amount stepped up every 12 months. An optional lump sum invested at the start grows at the same rate; its value and the SIP's are then reported separately.",
     "inputSchema": {
       "properties": {
         "monthly_investment": {
@@ -245,6 +245,13 @@
           "description": "Increase in the monthly amount every 12 months, in percent.",
           "minimum": 0,
           "maximum": 100,
+          "default": 0
+        },
+        "lump_sum": {
+          "type": "number",
+          "description": "One-time amount invested at the start, in rupees; it grows at the same rate. 0 for none.",
+          "minimum": 0,
+          "maximum": 1000000000000,
           "default": 0
         }
       },

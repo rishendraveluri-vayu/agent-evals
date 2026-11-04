@@ -117,6 +117,9 @@ services:
       WORKERS_DIR: /repo/workers
       CONFIGS_DIR: /repo/configs
       TASKS_DIR: /repo/tasks
+      # The finance MCP server's published tool manifest and version: the toolset's sha256
+      # covers both, so a tool schema change is a new toolset.
+      FINANCE_MCP_DIR: /repo/services/finance-mcp
       # Rishi's hand labels: the labelling view appends here, nothing else writes them.
       LABELS_DIR: /repo/labels
     volumes:
@@ -129,6 +132,7 @@ services:
       # here (never overwriting one). Like runs/, it must be writable by uid 1000 on the host.
       - ./configs/prompts:/repo/configs/prompts
       - ./tasks:/repo/tasks:ro
+      - ./services/finance-mcp:/repo/services/finance-mcp:ro
       - ./labels:/repo/labels
     depends_on:
       postgres:

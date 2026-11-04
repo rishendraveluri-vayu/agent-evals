@@ -6,8 +6,9 @@ model calls here instead of to a real provider, so no test spends money or needs
 It does three jobs:
 
 1. **Scripted replies.** Deterministic text and tool calls, so end-to-end runs repeat exactly.
-2. **Forced faults.** 429, 500, timeout, broken stream and malformed tool call, on demand, so
-   retry, timeout and infra-failure handling can be tested reliably.
+2. **Forced faults.** 429, 500, timeout, broken stream, malformed tool call and a reply cut off
+   at the token cap (`length`), on demand, so retry, timeout and infra-failure handling can be
+   tested reliably.
 3. **Request capture.** Every request body is kept, so tests can check what actually reached
    the model: `temperature`, `max_tokens`, the `tools` array, the system prompt.
 
@@ -100,11 +101,13 @@ steps:
   sha256(script, step, position). The same step always gets the same ids.
 - **Token counts.** Usage is deterministic: `ceil(chars / 4)`. Prompt tokens count the
   canonical JSON of `messages`, plus `tools` when the request has them. Completion tokens count
-  the content plus each tool name and its argument string.
+  the content plus each tool name and its argument string. A reply cut by the `length` fault
+  reports the request's `max_tokens` (or `max_completion_tokens`) as its completion tokens
+  when the request sets one, as a provider does for a reply that ran into its cap.
 - **Fields that change on every response.** The completion `id` and `created` are different
   each time, so anything keyed on the response id never collides.
 
-Example scripts: `echo`, `two-tools`, `rate-limited` and `flaky-stream`. For the harness gate tests: `finance-emi` (one finance tool call, then an answer) and `finance-loop` (a tool call on every step, never an answer). For LiteLLM's retries (D16): `finance-429` (always 429), `finance-429-twice` and `finance-503-twice` (the first call fails twice, then the `finance-emi` flow), `finance-503` (always 503) and `finance-400` (always 400, worded like Haiku 5.5's rejected-temperature error). For the simulated client: `sim-client` (two client replies, then the end marker) and `sim-empty` (a reply with no text, as Haiku 5.5 gave when its whole token cap went to reasoning; the adapter library must call it a simulator failure).
+Example scripts: `echo`, `two-tools`, `rate-limited` and `flaky-stream`. For the harness gate tests: `finance-emi` (one finance tool call, then an answer) and `finance-loop` (a tool call on every step, never an answer). For the platform's number-provenance check and the graders: `finance-emi-unsupported` (as `finance-emi`, plus a yearly figure the reply works out itself, which no tool returned). For LiteLLM's retries (D16): `finance-429` (always 429), `finance-429-twice` and `finance-503-twice` (the first call fails twice, then the `finance-emi` flow), `finance-503` (always 503) and `finance-400` (always 400, worded like Haiku 5.5's rejected-temperature error). For the own loop's retry on a cut-off reply (D36): `finance-length` (a tool call, then an answer cut off at the cap once and served whole when the same request is sent again) and `finance-length-always` (the answer is cut off every time). For the simulated client: `sim-client` (two client replies, then the end marker) and `sim-empty` (a reply with no text, as Haiku 5.5 gave when its whole token cap went to reasoning; the adapter library must call it a simulator failure).
 
 ## Faults
 
@@ -123,6 +126,7 @@ requests. Clear it with `DELETE /_fake/faults`.
 | `timeout` | Sleeps `seconds` (default 30), then serves the step normally. The sleep stops early if the client disconnects, so abandoned requests do not pile up. |
 | `broken_stream` | **Streaming:** sends the role chunk and the first half (rounded up) of the content or argument chunks, then closes the TCP connection. There is no `finish_reason`, no usage chunk and no `[DONE]`. For a tool-call step, the client gets the tool-call header and part of the arguments. **Non-stream:** sends a `Content-Length` for the full body, sends half of it, then closes. Either way the client sees a protocol error; the official openai client raises `APIConnectionError`. |
 | `malformed_tool_call` | Tool-call arguments that are not valid JSON (the closing `}` is dropped), on every call in the step. The step must have `tool_calls`. |
+| `length` | The reply stops at the output token cap: the first half (rounded up) of the step's text, no tool calls, and `finish_reason: length` (also in the last stream chunk). The step must have non-empty `text`. With `times: 1`, the same messages sent again get the whole step, whatever the new `max_tokens`. |
 
 `kind` can be written `429` or `"429"`. The status faults (400 to 503) respond before any stream
 starts, as OpenAI does, and take an optional `message` that replaces the default error text (for
@@ -151,7 +155,8 @@ chunk before `[DONE]`, which has `choices: []` and the usage.
 The fake does not do any of the following:
 
 - honour `n` (it always returns one choice);
-- enforce `max_tokens` (no `finish_reason: length`);
+- enforce `max_tokens`: a reply is cut off (`finish_reason: length`) only by the `length`
+  fault, never because of the cap's value;
 - read `tool_choice`;
 - check that the tools it calls are in the request's `tools`;
 - check authentication.

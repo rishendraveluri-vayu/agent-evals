@@ -106,6 +106,15 @@
               "$ref": "#/$defs/client_sim"
             }
           ]
+        },
+        "required_tools": {
+          "description": "Optional, a grader primitive: tools the agent must call for the task (for example calculate_emi), named as the finance server names them, without a harness prefix. The adapter ignores it; the runner's checks.json records which were called and which were missing (docs/adapter-contract.md section 12).",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
         }
       }
     },

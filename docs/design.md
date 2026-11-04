@@ -64,6 +64,7 @@ Decided, the field-by-field contract (R12, 3 Nov; to be iterated on 4 Nov):
 
 - **`docs/adapter-contract.md` v2** defines the trial folder, `spec.json`, `capabilities.json`, `result.json`, the span names, exit codes, gate tests, effect checks, the simulated client and what is stored. The JSON Schemas in `contract/v2/` are its machine-readable form.
 - **The config shape** is a common `settings` block (temperature, max output tokens, max steps, timeout, parallel tool calls, memory, skills, compression) plus `harness_options` validated against each adapter's own schema (D23).
+- **Platform checks after every trial** (4 Nov, from Rishi's review): the runner writes `checks.json` next to the result, the same for every harness: number provenance (each money amount the agent wrote, and whether a tool result, the client file or a user message holds it at the precision shown) and the task's `required_tools` called or missing. Graders and the judge read it; it never changes a trial's label (contract section 12).
 
 Open:
 
@@ -73,7 +74,7 @@ Open:
 
 Tasks, configs, experiments, trials and traces. **[Rishi designs]** in SP2.
 
-Approved on 4 Nov (R14): `docs/proposals/data-model.md`. Content-addressed prompts, toolsets, tasks and configs; experiments freeze task hashes × config hashes × N; one trial row per (experiment, task, config, repeat, attempt) with a claim, heartbeat and idempotent report; spans and grades in their own tables; labels stay files; raw trial files stay under `runs/`.
+Approved on 4 Nov (R14): `docs/proposals/data-model.md`. Content-addressed prompts, toolsets (since 4 Nov the toolset hash covers the published tool manifest and the server version, not just the tool names), tasks and configs; experiments freeze task hashes × config hashes × N; one trial row per (experiment, task, config, repeat, attempt) with a claim, heartbeat and idempotent report; spans and grades in their own tables; labels stay files; raw trial files stay under `runs/`.
 
 Added with D22's reply cache (migration `002_sim_replies.sql`): a `sim_replies` table keyed by the simulator cache key, with the task sha256, simulator model, temperature, token cap and prompt sha256 it is scoped by and the trial that first produced each reply. A claim hands out every reply in its trial's scope; a report adds the trial's new ones, first reply per key kept. An empty reply is never cached (D26, 4 Nov): the adapter marks it with `error` in `sim_replies.jsonl`, the report skips it, and a claim leaves out any empty reply stored before that rule, so a trial re-queued after `infra:sim_error` asks the simulator again.
 
@@ -143,7 +144,7 @@ Built on 4 Nov, where graders live (follows D1, D2, R10.2 and R14; the SPEC left
 - **Grading is its own step after the trial (R14).** A `grader` compose service (`evals-grader`, same read-only runtime as a harness worker, trials network only, no mounts) claims grading jobs from the API, downloads the trial's files over HTTP, grades and reports (D2). A grader fix is `POST /experiments/:id/regrade`: new grade versions next to the old ones, no trial re-run (`docs/api-contract.md`, Grading).
 - **Every grade quotes its evidence verbatim** and carries a version: the hash of its spec (and grader file) plus the framework version, computed identically in Python and in the API.
 
-Built as a draft, open for Rishi (SP4 **[Rishi designs]**): the grader spec format, its nine types (number, tool_called, tool_not_called, regex_present, regex_absent, end_state, provenance, unit_test, and the reserved judge) and the outcome rule are in `docs/proposals/grader-format.md`, with the choices listed there.
+Built as a draft, open for Rishi (SP4 **[Rishi designs]**): the grader spec format, its ten types (number, tool_called, tool_not_called, regex_present, regex_absent, end_state, provenance, required_tools, unit_test, and the reserved judge; provenance and required_tools read the runner's `checks.json`) and the outcome rule are in `docs/proposals/grader-format.md`, with the choices listed there.
 
 Open:
 

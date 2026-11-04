@@ -1,0 +1,11 @@
+# One finance tool call, then an answer that is cut off at the output token cap
+# (finish_reason: length) the first time it is asked for. The same request sent again (same
+# messages, whatever its max_tokens) gets the whole answer, as a retry with a raised cap would
+# on a real model. For the own loop's D36 test: re-send once with the cap doubled.
+description: Calls calculate_emi, then answers; the answer is cut off once (length), then whole.
+steps:
+  - tool_calls:
+      - name: calculate_emi
+        arguments: {principal: 1000000, annual_rate_pct: 9, tenure_months: 240}
+  - text: "Your EMI would be about Rs 8,997 a month for 20 years, and the total interest is about Rs 11.59 lakh."
+    fault: {kind: length, times: 1}

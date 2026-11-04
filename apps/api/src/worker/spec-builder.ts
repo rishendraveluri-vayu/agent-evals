@@ -80,6 +80,17 @@ export interface SpecInputs {
 const SIM_FIELDS = ['persona', 'hidden_facts', 'concerns', 'goal', 'opening_message', 'max_client_turns'] as const;
 
 /**
+ * A task's optional `required_tools` (a grader primitive), copied into the spec only when the
+ * task sets it: the runner's checks.json records which were called (docs/adapter-contract.md
+ * section 12). The catalogue has already checked it is a list of finance tool names.
+ */
+function requiredTools(body: JsonObject): { required_tools?: string[] } {
+  const list = body.required_tools;
+  if (!Array.isArray(list)) return {};
+  return { required_tools: list.filter((t): t is string => typeof t === 'string') };
+}
+
+/**
  * A complete contract v2 spec (contract/v2/spec.schema.json) for one trial attempt.
  * The task's client_sim gets the experiment's simulator model, held identical across every
  * config in the experiment (D22), and the summary of the task's client file (D27).
@@ -117,7 +128,7 @@ export function buildSpec(i: SpecInputs): JsonObject {
       repeat_index: i.trial.repeatIndex,
       attempt: i.trial.attempt,
     },
-    task: { messages: i.task.body.messages ?? [], client_sim: clientSim },
+    task: { messages: i.task.body.messages ?? [], client_sim: clientSim, ...requiredTools(i.task.body) },
     system_prompt: { id: i.prompt.id, version: i.prompt.version, sha256: bareHex(i.prompt.sha256), text: i.prompt.text },
     model: { name: i.config.model, base_url: i.modelBaseUrl, api_key_env: MODEL_KEY_ENV, api_format: i.config.apiFormat },
     settings: i.config.settings as unknown as JsonObject,

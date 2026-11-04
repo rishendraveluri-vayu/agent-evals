@@ -399,70 +399,116 @@ def grade_end_state(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
     return _grade("fail", f"ended {state}, not {' or '.join(spec['states'])}", ev)
 
 
-PROVENANCE_KEYS = ("number_provenance", "provenance")
+def _checks(ctx: Context) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """(checks.json, None), or (None, the grade to return when there is nothing usable).
+
+    checks.json is the runner's platform checks, contract/v2/checks.schema.json: `amounts` (each
+    money amount the agent wrote, with `turn`, `text`, `supported_by` and `match`),
+    `unsupported`, `tools_called` and `required_tools`."""
+    trial = ctx.trial
+    if not trial.checks_present:
+        return None, _grade(
+            "not_applicable",
+            "the trial has no checks.json (it ran before the runner wrote one, or the runner"
+            " could not)",
+        )
+    checks = trial.checks
+    if checks is None:
+        return None, _grade("error", "checks.json is not a JSON object")
+    if not isinstance(checks.get("amounts"), list) or not isinstance(
+        checks.get("unsupported"), int
+    ):
+        return None, _grade(
+            "error",
+            "checks.json does not follow contract/v2/checks.schema.json"
+            " (no amounts list or unsupported count)",
+        )
+    return checks, None
 
 
-def _provenance_node(checks: dict[str, Any]) -> dict[str, Any] | None:
-    for key in PROVENANCE_KEYS:
-        if isinstance(checks.get(key), dict):
-            return checks[key]
-    items = checks.get("checks")
-    if isinstance(items, list):
-        for item in items:
-            if isinstance(item, dict) and any(
-                item.get(k) in PROVENANCE_KEYS for k in ("id", "name", "type", "check")
-            ):
-                return item
-    return None
-
-
-def _item_quote(item: Any) -> str:
-    if isinstance(item, dict):
-        for k in ("text", "quote", "raw", "match", "amount_text"):
-            if isinstance(item.get(k), str):
-                return item[k]
-        for k in ("amount", "value"):
-            if k in item:
-                return str(item[k])
-        return str(item)[:200]
-    return str(item)
+def _reply_source(ctx: Context, turn: Any) -> dict[str, Any]:
+    """The evidence source for an amount in agent turn `turn` (the turn-th visible reply)."""
+    messages = [m for m in ctx.trial.agent_messages() if m.index < len(ctx.trial.transcript)]
+    if isinstance(turn, int) and 0 <= turn < len(messages):
+        m = messages[turn]
+        return (
+            {"source": "final_answer"}
+            if m.is_final
+            else {
+                "source": "agent_message",
+                "index": m.index,
+            }
+        )
+    return {"source": "checks"}
 
 
 def grade_provenance(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
-    trial = ctx.trial
-    if not trial.checks_present:
-        return _grade(
-            "not_applicable", "the trial has no checks.json, so number provenance was not checked"
-        )
-    if trial.checks is None:
-        return _grade("error", "checks.json is not a JSON object")
-    node = _provenance_node(trial.checks)
-    if node is None:
-        return _grade("error", f"checks.json has no {' or '.join(PROVENANCE_KEYS)} entry")
-    items = node.get("unsupported")
-    if isinstance(items, list):
-        count = len(items)
-    elif isinstance(node.get("unsupported_count"), int):
-        count, items = node["unsupported_count"], []
+    """checks.json's number provenance (note 31): how many money amounts the agent wrote have
+    no tool result, client-file number or user message behind them at the precision shown."""
+    checks, early = _checks(ctx)
+    if checks is None:
+        return early
+    amounts = [a for a in checks["amounts"] if isinstance(a, dict)]
+    target = spec.get("target", "agent_messages")
+    if target == "final_answer":
+        turns = [a.get("turn") for a in amounts if isinstance(a.get("turn"), int)]
+        last = max(turns, default=None)
+        amounts = [a for a in amounts if a.get("turn") == last]
+        where = "the final answer"
     else:
-        return _grade(
-            "error", "the provenance entry has neither an unsupported list nor an unsupported_count"
-        )
+        where = "the agent's replies"
+    unsupported = [a for a in amounts if a.get("supported_by") is None]
+    count = len(unsupported) if target == "final_answer" else checks["unsupported"]
     cap = spec.get("max_unsupported", 0)
-    ev = [{"source": "checks", "quote": _item_quote(i)} for i in items[:20]]
-    total = node.get("total") if isinstance(node.get("total"), int) else node.get("amounts")
-    of = f" of {total}" if isinstance(total, int) else ""
+    ev = [
+        {**_reply_source(ctx, a.get("turn")), "quote": str(a.get("text", ""))}
+        for a in unsupported[:20]
+    ]
+    shown = ", ".join(str(a.get("text")) for a in unsupported[:5])
+    listed = f": {shown}" + (", ..." if len(unsupported) > 5 else "") if unsupported else ""
+    summary = (
+        f"{count} of {len(amounts)} amount(s) in {where} have no tool result, client-file"
+        f" number or user message behind them{listed}"
+    )
     if count <= cap:
+        return _grade("pass", f"{summary} (allowed {cap})", ev)
+    return _grade("fail", f"{summary}, more than the {cap} allowed", ev)
+
+
+def grade_required_tools(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
+    """checks.json's required_tools: every tool in the task's `required_tools` was called."""
+    checks, early = _checks(ctx)
+    if checks is None:
+        return early
+    req = checks.get("required_tools")
+    if req is None:
         return _grade(
-            "pass",
-            f"{count}{of} amount(s) in the answer have no tool result behind them (allowed {cap})",
+            "error",
+            "the task lists no required_tools, so checks.json has none to grade"
+            " (add required_tools to task.json, or use tool_called)",
+        )
+    if not isinstance(req, dict) or not all(
+        isinstance(req.get(k), list) for k in ("required", "called", "missing", "only_errors")
+    ):
+        return _grade("error", "checks.json's required_tools does not follow the contract")
+    missing = list(req["missing"])
+    failed = [t for t in req["only_errors"] if t not in missing]
+    if spec.get("successful"):
+        missing += failed
+    first_calls: dict[str, ToolCall] = {}
+    for c in ctx.calls:
+        first_calls.setdefault(c.name, c)
+    ev = [_call_ev(first_calls[t]) for t in req["called"] if t in first_calls]
+    errors_note = f"; every call of {', '.join(failed)} returned an error" if failed else ""
+    if missing:
+        return _grade(
+            "fail",
+            f"required tool(s) not called{' successfully' if spec.get('successful') else ''}:"
+            f" {', '.join(missing)} (called: {', '.join(req['called']) or 'none'})",
             ev,
         )
     return _grade(
-        "fail",
-        f"{count}{of} amount(s) in the answer have no tool result behind them,"
-        f" more than the {cap} allowed",
-        ev,
+        "pass", f"every required tool was called: {', '.join(req['required'])}{errors_note}", ev
     )
 
 
@@ -491,6 +537,7 @@ GRADERS: dict[str, Callable[[Context, dict[str, Any]], dict[str, Any]]] = {
     "regex_absent": grade_regex_absent,
     "end_state": grade_end_state,
     "provenance": grade_provenance,
+    "required_tools": grade_required_tools,
     "unit_test": grade_unit_test,
     "judge": grade_judge,
 }

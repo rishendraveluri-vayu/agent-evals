@@ -28,6 +28,7 @@ def test_every_schema_is_a_valid_json_schema():
         ("runner-report-config-error.json", "runner-report"),
         ("result-sim-error.json", "result"),
         ("runner-report-sim-error.json", "runner-report"),
+        ("checks.json", "checks"),
     ],
 )
 def test_examples_validate(example, schema):

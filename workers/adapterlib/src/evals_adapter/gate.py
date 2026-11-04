@@ -194,6 +194,11 @@ class Gate:
     # do that (LangGraph's router ends the run when no valid tool call is left) declares the end
     # state its adapter labels the run with, and lists the behaviour in known_differences.
     malformed_ends_in: str | None = None
+    # Seconds a harness spends before the adapter library's clock starts (its own imports, at
+    # module level, before `main`), which timeout_s cannot cover. The timeout test allows it on
+    # top of its usual margin, and still checks the library's clock fired on time. 0 for a
+    # harness that starts quickly; a harness that sets it says why in its test_gate.py.
+    startup_s: float = 0.0
     # Proxy mode: route every call through LiteLLM (which routes fake/* to the compose fake),
     # let the runner make the trial keys, and read the requests from LiteLLM's records.
     proxy: ProxySettings | None = None
@@ -469,7 +474,9 @@ class Gate:
         assert run.result["end_state"] == "timeout", run.explain()
         hung = [r for r in self.agent_requests(run) if r.get("fault") == "timeout"]
         assert hung, "the deadline passed before the hung model call was sent"
-        assert run.wall_s < timeout_s + 10, run.wall_s
+        # The watchdog fired on time by the library's own clock, whatever the start-up took.
+        assert run.result["timing"]["wall_s"] < timeout_s + 2, run.result["timing"]
+        assert run.wall_s < timeout_s + 10 + self.startup_s, run.wall_s
         return run
 
     def test_malformed_tool_call(self, tmp_path: Path, fake: FakeServer) -> GateRun:

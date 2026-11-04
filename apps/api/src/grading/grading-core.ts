@@ -23,6 +23,7 @@ const KIND: Record<string, GradeKind> = {
   tool_not_called: 'state',
   end_state: 'state',
   provenance: 'state',
+  required_tools: 'state',
   unit_test: 'unit',
   judge: 'judge',
 };

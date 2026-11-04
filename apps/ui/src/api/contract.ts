@@ -121,12 +121,22 @@ export interface ToolsetServer {
   allowed_tools: string[];
 }
 
+/** One published tool: what the model is shown. */
+export interface ToolsetTool {
+  name: string;
+  description: string | null;
+  input_schema: Json;
+}
+
 /** GET /toolsets */
 export interface ToolsetView {
   id: string;
   version: string;
+  /** Covers id, version, servers and manifest, as canonical JSON (since 4 Nov; names only before). */
   sha256: Sha256;
   servers: ToolsetServer[];
+  /** Per server: its version and each allowed tool's name, description and input schema. */
+  manifest: { server: string; server_version: string; tools: ToolsetTool[] }[];
 }
 
 export type TaskSplit = 'discovery' | 'held_out';
@@ -313,7 +323,7 @@ export interface CreateExperimentRequest {
   sim_model?: string | null;
   budget_usd: number;
   plan_commit?: string | null;
-  /** Optional; defaults to the highest version of the `client-sim` prompt (v2 since D27). */
+  /** Optional; defaults to the highest version of the `client-sim` prompt (v4 since 4 Nov). */
   sim_prompt_sha256?: Sha256 | null;
   /**
    * D32: the seed of the claim-order shuffle, 0 to 2^32 - 1. Optional: a random one is drawn and
@@ -569,7 +579,7 @@ export interface StoredFile {
 /** SP4 (docs/proposals/grader-format.md, a draft for Rishi). */
 export type GradeVerdict = 'pass' | 'fail' | 'not_applicable' | 'error' | 'not_implemented';
 /** The data model's coarse family: exact (number, regex), state (tool calls, end state,
- *  provenance), unit (unit_test), judge; invalid for a spec naming no known type. */
+ *  provenance, required_tools), unit (unit_test), judge; invalid for a spec naming no known type. */
 export type GradeKind = 'exact' | 'unit' | 'state' | 'judge' | 'invalid';
 export type GradingOutcome = 'pass' | 'fail' | 'incomplete';
 export type GradingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'superseded' | 'no_graders';

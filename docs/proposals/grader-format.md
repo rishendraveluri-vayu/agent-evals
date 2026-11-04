@@ -21,7 +21,7 @@ trials is SP6's job; the framework records each grade and the task's outcome per
 | Field | Meaning |
 | --- | --- |
 | `id` | Unique within the task: lowercase letters, digits, `_.-`. |
-| `type` | One of the nine types below. |
+| `type` | One of the ten types below. |
 | `required` | Counts towards the task's pass. **Default `true`**, so leaving it out is the strict choice. |
 | `description` | Optional words for the UI. |
 
@@ -37,7 +37,8 @@ weaker grader.
 | `tool_not_called` | `tool`; `args` | No call of the tool (with those args, when given). |
 | `regex_present` / `regex_absent` | `pattern` (Python regex); `target`; `case_sensitive` (default false) | The pattern is (or is not) in the target. |
 | `end_state` | `states`: a list of contract v2 end states | The trial ended in one of them. |
-| `provenance` | `max_unsupported` (default 0) | `checks.json`'s number-provenance check found at most that many amounts with no tool result behind them (note 31). `not_applicable` when there is no `checks.json`. |
+| `provenance` | `max_unsupported` (default 0); `target`: `agent_messages` (default, every reply) or `final_answer` | `checks.json`'s number provenance (contract v2 section 12) found at most that many money amounts with no tool result, client-file number or user message behind them (note 31). The evidence quotes each unsupported amount in the reply it came from. `not_applicable` when there is no `checks.json` (trials from before 4 Nov); `error` when the file is not the contract's shape. |
+| `required_tools` | `successful` (default false: with true, a tool whose every call errored counts as not called) | Every tool in the task's own `required_tools` field was called, as `checks.json` records it. The tools are listed once, in `task.json`; the grader takes no tool list, and is an `error` when the task lists none. |
 | `unit_test` | `file` (default `grader.py`, next to `task.json`); `function` (default `grade`); `timeout_s` (default 10, max 120) | The task's own `grade(trial)` says so. This is the brief's "unit tests". |
 | `judge` | `rubric` (`{id, version}` or a path); `criteria` (a list); `model`; `reference` | **Reserved.** Returns `not_implemented` until the rubric exists. |
 
@@ -63,6 +64,24 @@ Google ADK's MCP `{"content": [{"type": "text", ...}]}` wrapper are peeled befor
 is killed (its whole process group) at the timeout, and cannot open a socket or start a process (a
 Python audit hook installed before `grader.py` is imported; audit hooks cannot be removed). A
 crash, a timeout or an unusable return value is an `error` grade, never a fail.
+
+### Required tools: the task's `required_tools` field or a `tool_called` grader
+
+Two paths check that the agent called a tool. Use the field for a plain "these tools must have
+been called" rule, and `tool_called` when the rule needs more.
+
+- **`required_tools` in `task.json`** (contract v2 `task.required_tools`, a list of finance tool
+  names). The API copies it into each trial's spec, and the runner records which were called and
+  which are missing in `checks.json` after every trial, so the runner report and the trial view
+  show it even with no grader. Add a `required_tools` grader to make it count towards the task's
+  pass. It knows names only: any call counts (or any successful one, with `successful: true`).
+- **A `tool_called` grader** reads the trace's tool calls itself. Use it when the arguments
+  matter (`calculate_emi` with `principal: 4500000`), for a minimum or maximum number of calls,
+  or for trials that have no `checks.json`. `tool_not_called` is its opposite. One task can use
+  both: the field for the record, `tool_called` for an argument check.
+
+Both remove harness prefixes (Hermes's `mcp__finance__`), and on the same trial they agree
+(`graders/tests/test_gate_checks.py`).
 
 ### What a grader returns
 
@@ -119,9 +138,10 @@ side. The API computes the same hashes (shared test vectors in `graders/tests/ha
    `tasks/<id>/task.json`, unless the task itself (anything but `graders`, `version` and
    `summary`, or its client file) changed since the trial ran, in which case the trial's own task
    version. A unit_test file is then unavailable and its grade is an `error`.
-7. **The `provenance` reader** accepts `checks.json` as `{"number_provenance": {"unsupported":
-   [...], "total"?}}` (or `unsupported_count`), or `{"checks": [{"id": "number_provenance",
-   ...}]}`, until the adapter library's check lands and fixes one shape.
+7. **`provenance` and `required_tools` read `checks.json` as the contract fixes it**
+   (`contract/v2/checks.schema.json`, since framework 0.2.0). The shapes guessed before the check
+   existed are no longer read (assumption A14, superseded); their tests now use `checks.json`
+   from real gate runs (`graders/tests/fixtures/gate-20261104/`).
 8. **The judge's interface:** `rubric` as a versioned file like prompts, a list of `criteria`
    (each `{id, text?, required?}`), an optional pinned `model`, and `reference` facts it grades
    against rather than what the agent saw (note 20).

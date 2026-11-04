@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
 from support import EMI_ARGS, EMI_RESULT, make_trial
 
 from evals_graders import FRAMEWORK_VERSION
@@ -413,35 +412,95 @@ def test_provenance_not_applicable_without_checks(tmp_path):
     assert g["verdict"] == "not_applicable" and g["score"] is None
 
 
-@pytest.mark.parametrize(
-    "checks",
-    [
-        {
-            "number_provenance": {
-                "total": 2,
-                "unsupported": [{"text": "₹11.59 lakh", "value": 1159000}],
-            }
-        },
-        {"checks": [{"id": "number_provenance", "unsupported": ["₹11.59 lakh"]}]},
-    ],
-)
-def test_provenance_counts_unsupported_amounts(tmp_path, checks):
+def contract_checks(amounts, required=None):
+    """A checks.json in the contract's shape (contract/v2/checks.schema.json); the gate-run
+    fixtures in test_gate_checks.py are the real runner's output."""
+    return {
+        "contract_version": "2",
+        "trial_id": "t_test",
+        "amounts": amounts,
+        "unsupported": sum(1 for a in amounts if a["supported_by"] is None),
+        "tools_called": ["calculate_emi"],
+        "required_tools": required,
+    }
+
+
+def amount(text, turn, supported_by):
+    match = (
+        None
+        if supported_by is None
+        else {
+            "value": 1.0,
+            "where": "tool:calculate_emi",
+            "how": "exact",
+            "precision": 1,
+        }
+    )
+    return {"turn": turn, "text": text, "value": 1.0, "supported_by": supported_by, "match": match}
+
+
+def test_provenance_counts_unsupported_amounts(tmp_path):
+    checks = contract_checks([amount("₹8,997.26", 0, "tool"), amount("₹11.59 lakh", 0, None)])
     out = make_trial(tmp_path, EMI_ANSWER, checks=checks)
     g = one(out, {"id": "p", "type": "provenance"})
     assert g["verdict"] == "fail"
-    assert g["evidence"] == [{"source": "checks", "quote": "₹11.59 lakh"}]
+    assert g["evidence"] == [{"source": "final_answer", "quote": "₹11.59 lakh"}]
+    assert "1 of 2 amount(s)" in g["reason"] and "₹11.59 lakh" in g["reason"]
     assert one(out, {"id": "p", "type": "provenance", "max_unsupported": 1})["verdict"] == "pass"
+
+
+def test_provenance_on_the_final_answer_only(tmp_path):
+    """In a conversation, an earlier reply's unsupported amount fails `agent_messages` (the
+    default) and not `final_answer`."""
+    checks = contract_checks([amount("₹2,810", 0, None), amount("₹8,997.26", 1, "tool")])
+    out = make_trial(tmp_path, EMI_ANSWER, earlier=["About ₹2,810 is spare."], checks=checks)
+    every = one(out, {"id": "p", "type": "provenance"})
+    assert every["verdict"] == "fail"
+    assert every["evidence"] == [{"source": "agent_message", "index": 1, "quote": "₹2,810"}]
+    final = one(out, {"id": "p", "type": "provenance", "target": "final_answer"})
+    assert final["verdict"] == "pass", final
 
 
 def test_provenance_errors_on_a_checks_file_it_cannot_read(tmp_path):
     out = make_trial(tmp_path, EMI_ANSWER, checks="not json")
     assert one(out, {"id": "p", "type": "provenance"})["verdict"] == "error"
-    other = make_trial(tmp_path / "o", EMI_ANSWER, checks={"something_else": {}})
-    assert one(other, {"id": "p", "type": "provenance"})["verdict"] == "error"
-    counted = make_trial(
-        tmp_path / "c", EMI_ANSWER, checks={"number_provenance": {"unsupported_count": 0}}
+    # The shape guessed before the check existed (assumption A14, superseded) is refused.
+    guessed = make_trial(
+        tmp_path / "o", EMI_ANSWER, checks={"number_provenance": {"unsupported": []}}
     )
-    assert one(counted, {"id": "p", "type": "provenance"})["verdict"] == "pass"
+    g = one(guessed, {"id": "p", "type": "provenance"})
+    assert g["verdict"] == "error" and "checks.schema.json" in g["reason"]
+
+
+def test_required_tools_grader_reads_checks(tmp_path):
+    req = {
+        "required": ["calculate_emi", "list_debts"],
+        "called": ["calculate_emi"],
+        "missing": ["list_debts"],
+        "only_errors": [],
+    }
+    out = make_trial(
+        tmp_path,
+        EMI_ANSWER,
+        tools=[("calculate_emi", EMI_ARGS, EMI_RESULT)],
+        checks=contract_checks([], req),
+    )
+    g = one(out, {"id": "r", "type": "required_tools"})
+    assert g["verdict"] == "fail" and "list_debts" in g["reason"]
+    assert [e["tool"] for e in g["evidence"]] == ["calculate_emi"]
+    done = dict(req, called=["calculate_emi", "list_debts"], missing=[], only_errors=["list_debts"])
+    ok = make_trial(tmp_path / "ok", EMI_ANSWER, checks=contract_checks([], done))
+    assert one(ok, {"id": "r", "type": "required_tools"})["verdict"] == "pass"
+    strict = one(ok, {"id": "r", "type": "required_tools", "successful": True})
+    assert strict["verdict"] == "fail" and "successfully" in strict["reason"]
+
+
+def test_required_tools_grader_without_the_task_field_or_checks(tmp_path):
+    none_listed = make_trial(tmp_path, EMI_ANSWER, checks=contract_checks([], None))
+    g = one(none_listed, {"id": "r", "type": "required_tools"})
+    assert g["verdict"] == "error" and "lists no required_tools" in g["reason"]
+    no_checks = make_trial(tmp_path / "n", EMI_ANSWER)
+    assert one(no_checks, {"id": "r", "type": "required_tools"})["verdict"] == "not_applicable"
 
 
 # ---- judge (reserved) ----

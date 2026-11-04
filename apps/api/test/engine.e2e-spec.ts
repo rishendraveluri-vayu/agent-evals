@@ -209,14 +209,15 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
 
   it('gives a simulated-client task the experiment simulator and its own key', async () => {
     const exp = await experiment({ tasks: [cat.tasks['widow-loan']], sim: 'claude-haiku-5-5' });
-    // D27: the default simulator prompt is the highest version (v3 since D30), and Haiku 5.5 gets no temperature.
-    expect(exp.sim).toMatchObject({ prompt: { id: 'client-sim', version: 'v3' }, temperature: null, max_output_tokens: 2048 });
+    // D27: the default simulator prompt is the highest version (v4 since Rishi's review, 4 Nov), and Haiku 5.5 gets no temperature.
+    expect(exp.sim).toMatchObject({ prompt: { id: 'client-sim', version: 'v4' }, temperature: null, max_output_tokens: 2048 });
     const c = (await claim('w-sim'))!;
     expect(validateSpec(c.spec)).toBe(true);
     const sim = (c.spec as { task: { client_sim: { client_summary?: string; model: { name: string; api_key_env: string; temperature: number | null; prompt: { text: string; version: string } } } } }).task
       .client_sim;
     expect(sim.model).toMatchObject({ name: 'claude-haiku-5-5', api_key_env: 'EVALS_SIM_API_KEY', temperature: null, max_output_tokens: 2048 });
-    expect(sim.model.prompt.version).toBe('v3');
+    expect(sim.model.prompt.version).toBe('v4');
+    expect(sim.model.prompt.text).toContain('## Your patience');
     expect(sim.model.prompt.text.startsWith('<!--')).toBe(false);
     expect(sim.model.prompt.text).toContain('{{client_summary}}');
     // The summary of the task's client file, which the API built from the stored client.json.
@@ -234,7 +235,7 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
 
   it("keeps D22's temperature 0 for a simulator model that takes it", async () => {
     const exp = await experiment({ tasks: [cat.tasks['widow-loan']], sim: 'gemini-3.8-flash', start: false });
-    expect(exp.sim).toMatchObject({ prompt: { version: 'v3' }, temperature: 0 });
+    expect(exp.sim).toMatchObject({ prompt: { version: 'v4' }, temperature: 0 });
     await cancel(exp.id);
   });
 

@@ -461,14 +461,21 @@ def sip_future_value(
     expected_annual_return_pct: object,
     years: object,
     annual_step_up_pct: object = 0,
+    lump_sum: object = 0,
 ) -> dict:
     """Annuity due: each month's contribution is added, then the month's growth applies.
     Year y (from 0) invests round2(monthly_investment * (1 + step/100)^y) every month. The
-    corpus is carried unrounded (50 significant digits) and rounded once at the end."""
+    SIP's value is carried unrounded (50 significant digits) and rounded once at the end.
+
+    An optional lump sum is invested once at the start and grows at the same monthly rate:
+    lump_sum * (1 + annual/1200)^(12 * years), rounded once. With a lump sum the corpus is the
+    sum of the two rounded parts, both reported, so they add up exactly; without one the
+    output is what it was before the lump sum existed."""
     base = _money_in(monthly_investment, "monthly_investment")
     rate = _rate_in(expected_annual_return_pct, "expected_annual_return_pct")
     n_years = _int_in(years, "years", 1, MAX_SIP_YEARS)
     step = _rate_in(annual_step_up_pct, "annual_step_up_pct")
+    lump = _money_in(lump_sum, "lump_sum", minimum=ZERO)
 
     growth = 1 + rate / 1200
     value = Decimal(0)
@@ -479,13 +486,27 @@ def sip_future_value(
         for _ in range(12):
             value = (value + contribution) * growth
             invested += contribution
-    corpus = round2(value)
+    sip_value = round2(value)
+    if lump == 0:
+        return {
+            "months": 12 * n_years,
+            **money("corpus", sip_value, words=True),
+            **money("total_invested", invested, words=True),
+            **money("gains", sip_value - invested, words=True),
+            **money("final_monthly_investment", contribution),
+        }
+    lump_value = round2(lump * growth ** (12 * n_years))
+    corpus = lump_value + sip_value
+    invested += lump
     return {
         "months": 12 * n_years,
         **money("corpus", corpus, words=True),
         **money("total_invested", invested, words=True),
         **money("gains", corpus - invested, words=True),
         **money("final_monthly_investment", contribution),
+        **money("lump_sum", lump, words=True),
+        **money("lump_sum_value", lump_value, words=True),
+        **money("sip_value", sip_value, words=True),
     }
 
 

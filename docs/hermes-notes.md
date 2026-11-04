@@ -117,3 +117,10 @@ All nine gate tests pass at the pin (`workers/hermes/tests/test_gate.py`), again
 - **The step budget resets every turn** from `agent.max_iterations` (`agent/turn_context.py:664`), so the adapter sets it to the trial's remaining steps before each turn of a conversation. At `max_steps=3` the fake saw 5 requests: 3 counted by Hermes and 2 summary requests it does not count.
 - **Start-up takes several seconds** (import, then MCP connect and discovery) before the first model call. It counts toward `timeout_s`.
 - **MCP tool filtering** uses `mcp_servers.<name>.tools.include`, so a toolset version that leaves a tool out reaches Hermes as a smaller tool list.
+
+## Decided after Rishi's review (4 Nov evening), gate-level tests against the fake
+
+Tests: `workers/hermes/tests/test_prompt_switches.py`, against the fake model server only.
+
+- [x] **D33: the "Parallel tool calls" prompt section follows `parallel_tool_calls`.** The switch is Hermes's own config key `agent.parallel_tool_call_guidance` (default true, `hermes_cli/config_defaults.py:176`, read in `agent/agent_init.py:1323`; the section is `PARALLEL_TOOL_CALL_GUIDANCE` in `agent/prompt_builder.py:411`, added in `agent/system_prompt.py:566` only when tools are loaded). The adapter writes `false` when the setting is false and leaves the key out when it is true or unset. With `false`, the system message on the wire has no "# Parallel tool calls" heading and still has "# Finishing the job" and every other section (D20). `applied_settings.parallel_tool_call_guidance` records the value read back from `agent._parallel_tool_call_guidance`.
+- [x] **D31: prompt-cache markers are off in every config.** The adapter writes `prompt_caching.cache_ttl: "off"` unless `harness_options.prompt_cache_markers` is true. Checked with a model name containing `claude` on a host named `litellm.localhost` (which resolves to loopback here): no `cache_control` in any request by default or with the option false, and markers present with it true. `applied_settings.prompt_cache_markers` has source `platform_default` unless the option is set.

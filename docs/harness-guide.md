@@ -10,6 +10,7 @@ This guide explains each of the five harnesses, how our adapter drives it, and w
 - §4.8: the own loop is the vanilla, most configurable baseline; the contradiction with §3.12 is gone.
 - §8.1: memory on-and-empty against on-and-seeded is comparable only with caveats (identical starting memory, writes during a trial).
 - Open questions answered: Hermes's parallel guidance (D33) and prompt-cache markers (D31). New decisions D32 to D39 (early stopping, lineage, two arms, the own loop's retry, per-arm pause, conflict checks, the Hermes verification run) are in `docs/decisions.md`; chapters change again when they are built.
+- Built from the review, against the fake model only: D33 and D31 on Hermes (§3.2, §3.3, §3.5, §3.11); the own loop's re-send on a cut-off reply, D36 (§4.4, §4.5); `client-sim.v4` with patience (§2.4); the finance tools' independent tests and `sip_future_value`'s lump sum (§2.5); and `checks.json`, number provenance and required tools, written by the runner after every trial (§2.8).
 
 ### Changes in v2 (4 Nov)
 
@@ -74,8 +75,8 @@ The facts that matter most for eval design:
 | Route to LiteLLM | `provider="custom"`, `api_mode="chat_completions"` [ran] | `openai` client, chat completions [ran] | `ChatOpenAI(base_url, use_responses_api=False, disable_streaming=True)` [ran] | `LiteLlm("openai/<alias>")`: the LiteLLM library in front of the proxy. The adapter's choice, for your review [ran] | `OpenAIChatCompletionsModel` instance; a model string would use the Responses API [ran] |
 | Step limit | `max_iterations`, reset to steps left each turn. **+2 calls** at the limit [ran] | Loop counter. +0 [ran] | `ModelCallLimitMiddleware(thread_limit, "error")`, whole trial. +0 [ran] | `RunConfig(max_llm_calls)`, steps left each turn. +0 [ran] | `max_turns`, steps left each turn. +0 [ran] |
 | Temperature | `request_overrides`; unset means not sent [ran] | Request field; unset means not sent [ran] | `ChatOpenAI(temperature=)`; some model names rewrite it [ran; names src] | `generate_content_config` [ran] | `ModelSettings` [ran] |
-| Max output tokens | Sent as `max_tokens`. A `length` stop is **not** a stop: Hermes raises the cap and continues [src] | `max_tokens`; `length` ends as `token_limit` [src] | `max_completion_tokens`; `length` ends as `token_limit` [ran; mapping src] | `max_completion_tokens`; `MAX_TOKENS` ends as `token_limit` [ran; mapping src] | `max_tokens`; finish reason read from the raw response for `token_limit` [ran; mapping src] |
-| Parallel tool calls | Sent as set [ran], but the prompt tells the model to batch, and calls to one MCP server run one at a time [src] | Sent when tools exist; tools run in order [src] | Middleware to `bind_tools` [ran]; calls in one reply run concurrently [src] | `LiteLlm` keyword [ran]; calls run concurrently [src] | `ModelSettings` [ran]; calls run concurrently [src] |
+| Max output tokens | Sent as `max_tokens`. A `length` stop is **not** a stop: Hermes raises the cap and continues [src] | `max_tokens`; on `length` the same request is re-sent once at double the cap (up to 8,192), and a second `length` ends as `token_limit` (D36) [ran] | `max_completion_tokens`; `length` ends as `token_limit` [ran; mapping src] | `max_completion_tokens`; `MAX_TOKENS` ends as `token_limit` [ran; mapping src] | `max_tokens`; finish reason read from the raw response for `token_limit` [ran; mapping src] |
+| Parallel tool calls | Sent as set [ran]; with it false, Hermes's batching section is off too (D33) [ran]; calls to one MCP server run one at a time [src] | Sent when tools exist; tools run in order [src] | Middleware to `bind_tools` [ran]; calls in one reply run concurrently [src] | `LiteLlm` keyword [ran]; calls run concurrently [src] | `ModelSettings` [ran]; calls run concurrently [src] |
 | Retries off | `agent.api_max_retries: 1`, `auto_recovery_cycles: 0` [ran] | `max_retries=0` [ran] | `max_retries=0` (default 2) [ran] | `num_retries=0`, `max_retries=0` (default 2) [ran] | `max_retries=0` on the client and the runner [ran] |
 | Streaming | `stream: true` [ran] | `stream: false` [ran] | `stream: false` [ran] | Not sent [ran] | Not sent [ran] |
 | Telemetry off | Shared metrics off by default; no third-party calls seen [ran] | Nothing to turn off | Tracing variables forced off; one trial made a single `connect()`, to the model [ran] | Environment scrubbed; only the model server contacted [ran] | Trace processors removed, tracing off [ran] |
@@ -137,7 +138,7 @@ Workers mount nothing from the host, so a trial cannot read another trial's stor
 | --- | --- | --- |
 | `answered` | The agent's last turn ended with a reply | All. ADK can report it with an empty reply [src] |
 | `step_limit` | `max_steps` used up | All [ran] |
-| `token_limit` | A reply stopped at `max_output_tokens` | Own loop, LangGraph, ADK and the Agents SDK, in code only: the fake never returns `length` and no real trial hit the cap [src]. Hermes never stops on length |
+| `token_limit` | A reply stopped at `max_output_tokens` | Own loop: after one re-send at double the cap, or when the cap cannot be raised (D36) [ran against the fake's `length` fault]. LangGraph, ADK and the Agents SDK in code only; no real trial hit the cap [src]. Hermes never stops on length |
 | `timeout` | The watchdog fired at `timeout_s` | Library, for all [ran] |
 | `agent_error` | The agent did something the harness could not run | LangGraph (a reply with only malformed calls) and ADK (the 4th malformed call in a row) [ran]; ADK (any other error code, or a turn ending on a call) and the Agents SDK (a model error other than a length cut) [src]. Never Hermes or the own loop |
 | `harness_error` | The harness or a provider failed, or the adapter raised | All. Includes provider 400s [ran, 4 Nov] |
@@ -192,7 +193,7 @@ Span events carry `evals.error` (kinds `malformed_tool_call`, `unknown_tool`, `t
 
 - After each agent turn that ends `answered`, the library asks the simulator for the next client message, unless the turn cap is reached.
 - The simulator sees only the visible transcript, with roles flipped (its own messages are `assistant`). It never sees tool calls or results [ran: gate assertion]. On 4 Nov it did not see the client file either, which is why it disowned the figures the agent read from it (section 2.9). Since D27 the API puts a summary of the client file (profile and debts) in `client_sim.client_summary` and the v2 prompt shows it [ran: fake simulator only].
-- Its prompt is now `configs/prompts/client-sim.v2.md` (D27, a draft for your review; the API's default as the highest version), with persona, client summary, hidden facts, concerns, goal and end marker filled in. v2 adds the client file, chat text only (no narration or stage directions) and ending once the concerns are answered; it keeps v1's guards. It is a plain non-streaming call to LiteLLM with its own key, budget, model, token cap and, unless it is null, temperature, and no tools. The 4 Nov run used `client-sim.v1.md` and Haiku 5.5 at temperature 1, because Haiku rejects 0, with a 1,500-token cap that its own thinking also uses [unverified: Claude docs]. Engine runs on Haiku now send no simulator temperature (D27).
+- Its prompt is now `configs/prompts/client-sim.v4.md` (a draft for your review; the API's default as the highest version), with persona, client summary, hidden facts, concerns, goal and end marker filled in. v2 (D27) added the client file, chat text only (no narration or stage directions) and ending once the concerns are answered, keeping v1's guards; v3 (D30) added the latest month's transactions and a concrete end rule. **v4 adds patience** (your note 16, "A human will not answer 10 questions without any value"): after two advisor replies in a row that give nothing on the main concern and only ask questions, the client says plainly that it wants an answer; if the next reply also gives nothing, it ends unhappy with the end marker, so `ended_by: client` no longer always means satisfied. v4 has run only against the fake simulator, which ignores the prompt [src]. It is a plain non-streaming call to LiteLLM with its own key, budget, model, token cap and, unless it is null, temperature, and no tools. The 4 Nov run used `client-sim.v1.md` and Haiku 5.5 at temperature 1, because Haiku rejects 0, with a 1,500-token cap that its own thinking also uses [unverified: Claude docs]. Engine runs on Haiku now send no simulator temperature (D27).
 - **End marker.** The client ends by writing `[[END_CONVERSATION]]`. Any text left with it (the goodbye) is added as a client turn and the conversation ends. **The agent never answers the goodbye.**
 - **Turn cap.** `max_client_turns` counts client messages after the opening one, so a cap of 3 allows up to 4 agent turns.
 - **Failures.** A failed simulator call, or a reply with no text (with or without the marker), ends the trial as `harness_error`, stop reason `simulator_error`, `ended_by: sim_error`, label `infra:sim_error`; the API re-queues it once. The marker alone after the client's own earlier message is still a normal ending. The empty reply stays in `sim_replies.jsonl` with its usage and an `error` field, and is never cached [src, ran: fake `sim-empty`].
@@ -215,7 +216,7 @@ Span events carry `evals.error` (kinds `malformed_tool_call`, `unknown_tool`, `t
 | `amortization_schedule` | as above; `granularity` = yearly, `start_period` = 1 | EMI, totals, `total_periods`, `next_start_period`, rows of opening balance, principal, interest, closing balance | At most 60 rows per call; page with `start_period` |
 | `prepayment_impact` | `outstanding_principal`, `annual_rate_pct`, `remaining_months`, `prepayment_amount`; `mode` = reduce_tenure | current and new EMI and tenure, `interest_saved`, `months_saved`, `emi_reduction` | Prepayment must be less than the outstanding amount |
 | `debt_payoff_plan` | `debts` (1 to 20: name, balance, rate, minimum), `monthly_budget`; `strategy` = avalanche | priority and payoff order, month each debt clears, months to debt-free, total interest | Budget below the minimums is rejected. Snowball orders by starting balance (A6). Capped at 600 months |
-| `sip_future_value` | `monthly_investment`, `expected_annual_return_pct`, `years`; `annual_step_up_pct` = 0 | `corpus`, `total_invested`, `gains` | Paid at the start of each month, compounded monthly |
+| `sip_future_value` | `monthly_investment`, `expected_annual_return_pct`, `years`; `annual_step_up_pct` = 0, `lump_sum` = 0 | `corpus`, `total_invested`, `gains`; with a lump sum also `lump_sum_value` and `sip_value`, which add up to the corpus | Paid at the start of each month, compounded monthly; a lump sum grows at the same rate from the start. `lump_sum` is new on 4 Nov, so SIP results before and after are not comparable (`docs/known-limits.md`) |
 | `fd_maturity` | `principal`, `annual_rate_pct`, `years` (0.01 to 50); `compounding` = quarterly | `maturity_amount`, `interest_earned` | A part period at the end earns simple interest |
 | `inflation_adjusted_value` | `amount`, `annual_inflation_pct`, `years` (whole); `direction` = future_cost | `adjusted_value`, `cumulative_inflation_pct` | Compounded yearly |
 | `loan_affordability` | `monthly_net_income`, `existing_monthly_emis`, `annual_rate_pct`, `tenure_months`; `max_foir_pct` = 50 | FOIR limit EMI, `current_foir_pct`, `eligible`, `max_new_emi`, `max_loan_amount` | Zero if existing EMIs already reach the limit |
@@ -224,6 +225,8 @@ Span events carry `evals.error` (kinds `malformed_tool_call`, `unknown_tool`, `t
 | `list_transactions` | `category`, `from_date`, `to_date`, `limit` = 50 | Matches, totals of debits and credits, `available_categories` | Category match is exact and case-insensitive; dates inclusive |
 
 With no `client.json`, the three client tools return `{"client_on_file": false, "message": "No client on file."}` [src].
+
+**Tested on their own** (Rishi's note 17): `services/finance-mcp/tests/test_calculators_independent.py` checks all eight calculators against a second, stdlib-only implementation over a grid of about 2,000 inputs, field by field, plus golden values from published figures [ran].
 
 **What this means for task design:**
 
@@ -256,7 +259,7 @@ Gate tests prove a setting reaches the request. Effect checks prove it changes b
 
 **Where results live now** [src]. In an experiment, read a trial with `GET /api/trials/:id`: task, config, attempt, status, label, end state, `spec`, `result`, `runner_report`, `usage` (calls, tokens, `cost_usd`, `sim_cost_usd`, `complete`), timing, the file list and `grades` (empty until grading exists; R14 makes grading a step after the trial). Spans come from `GET /api/trials/:id/spans` in raw OpenTelemetry shape, and each stored file from `GET /api/trials/:id/files/<path>` (the folder `runs/<experiment_id>/<trial_id>/attempt-<n>/`). Per experiment: `GET /api/experiments/:id/trials?status=&config=&task=`, `/compare` (pass counts; `stats` is null until SP6) and `/export?format=json|csv`. Grade `done` rows; `infra_failed` and `abandoned` rows are reported, not scored.
 
-**The task file the engine reads** is `tasks/<id>/task.json`. The task format is yours to design (SP4); the engine needs only `id`, `version`, `split`, `messages`, `client_sim` (contract v2's object without `model`, which the experiment supplies), `client_state` (a file next to `task.json`, placed in the trial's state folder) and `graders`. Everything else is kept and passed through unread. Experiments reference a task by its sha256, so an edited task is a new task. The only task today is `tasks/engine-smoke-emi/`, a synthetic engine test that is not part of the task set [src].
+**The task file the engine reads** is `tasks/<id>/task.json`. The task format is yours to design (SP4); the engine needs only `id`, `version`, `split`, `messages`, `client_sim` (contract v2's object without `model`, which the experiment supplies), `client_state` (a file next to `task.json`, placed in the trial's state folder) and `graders`, plus an optional `required_tools` that the spec carries for `checks.json`. Everything else is kept and passed through unread. Experiments reference a task by its sha256, so an edited task is a new task. The only task today is `tasks/engine-smoke-emi/`, a synthetic engine test that is not part of the task set [src].
 
 | To grade | Read | Watch out for |
 | --- | --- | --- |
@@ -271,6 +274,7 @@ Gate tests prove a setting reaches the request. Effect checks prove it changes b
 | Inputs and ground truth | `spec` (the trial row, or `spec.json`) → `task`, `task.client_sim`, `seed`; the task's `client.json` in `tasks/<id>/` | Graders know every hidden fact; the agent and the simulator do not see each other's |
 | Settings in force | `result.json` → `applied_settings` | `harness_default` with value `null` means the harness sent nothing |
 | Self-edits | `result.json` → `integrity.before` and `after` | Hermes only today |
+| Numbers with no tool behind them; required tools | `checks.json` (the runner writes it after every trial, contract section 12): each money amount the agent wrote, `supported_by` `tool`, `client` (the client file), `user` or null, and `required_tools` called and missing; `runner-report.json` → `checks` | A heuristic: an example figure the agent picked shows as unsupported, and a round figure can match an unrelated number. On the 4 Nov run every single-prompt amount was backed by a tool, and 34 of the conversation amounts were not [ran, 4 Nov] |
 | Simulator turns | `client_sim.turn` spans; `sim-NNNN` bodies; `sim_replies.jsonl` | |
 
 **Harness extras** in `out/artifacts/`: Hermes's `hermes-system-prompt.txt`, `hermes-messages.json`, `hermes-config.yaml`, `hermes-logs/` (`agent.log` for repairs, `errors.log` for blocked seeds) and `hermes-sessions/` request dumps after a provider failure; LangGraph's `langgraph-messages.json` (every message with usage, finish reason and invalid tool calls); ADK's `adk-session.json` (every event ADK recorded) [src].
@@ -344,7 +348,8 @@ The loop: `AIAgent(...)` reads its home's `config.yaml` and builds the tool list
 | `agent.environment_probe`, `coding_context`, lazy installs, telemetry | off | No per-host prompt lines, installs or metrics [src] |
 | `enabled_toolsets` | `finance`, plus `memory` and `skills` when on, plus enabled built-ins | Built-in tools off (R10.7) [src] |
 | `skip_memory`, `skip_background_review`, `skip_context_files`; `session_db=None`; trajectories, checkpoints and session id off | | No external memory, project files, `state.db` or session id in the prompt [ran] |
-| `prompt_caching.cache_ttl` | off only if `harness_options.prompt_cache_markers` is false | Hermes's own behaviour by default (section 3.11) [src] |
+| `prompt_caching.cache_ttl` | off, unless `harness_options.prompt_cache_markers` is true | D31: no cache markers in any Hermes config, like every other harness (section 3.11) [ran] |
+| `agent.parallel_tool_call_guidance` | false when `parallel_tool_calls` is false; Hermes's default (on) when true or unset | D33: the prompt never tells the model to batch calls when the setting forbids it [ran] |
 
 ### 3.3 How the system prompt is built
 
@@ -393,7 +398,7 @@ Scratch directory: /trial/harness/hermes/cache/scratch (TMPDIR points here; writ
 **Which parts can move** [src unless marked]:
 
 - The identity paragraph is the same whatever we set, unless we wrote a custom `SOUL.md`.
-- "Finishing the job" and "Parallel tool calls" are config switches (`agent.task_completion_guidance`, `agent.parallel_tool_call_guidance`), on by default. The adapter leaves them on. **The parallel section stays even when `parallel_tool_calls` is false on the wire** [ran].
+- "Finishing the job" and "Parallel tool calls" are config switches (`agent.task_completion_guidance`, `agent.parallel_tool_call_guidance`), on by default. **Since D33 the parallel section follows `parallel_tool_calls`:** with the setting false the adapter turns the section off through Hermes's own switch, and with it true or unset the section stays as shipped. "Finishing the job" and every other section stay (D20). The gate-level tests in `workers/hermes/tests/test_prompt_switches.py` read the system message on the wire [ran]. `applied_settings.parallel_tool_call_guidance` records the value Hermes ended up with.
 - The date line changes daily; "Model:" changes with the model. Paths are fixed in a container.
 
 **Memory on** adds a guidance paragraph and, when `MEMORY.md` has entries, a block with a usage meter [ran]. The guidance opens: "You have persistent memory, carried across sessions and loaded into each new session's context; the memory tool's schema defines what belongs there." It then says skills come first, memory is for facts that apply to every session, and entries should be declarative facts [src]. The block looks like this, with `§` lines between entries [ran for the meter format]:
@@ -441,12 +446,12 @@ The server's JSON arrives as an **escaped string inside another JSON object**. T
 | `max_output_tokens` | `request_overrides.max_tokens` | `max_tokens`; unset means not sent. On `finish_reason: length` Hermes raises the cap and continues, so it is not a hard cap | [ran] on the wire; [src] for the boost |
 | `max_steps` | `max_iterations`, set before each turn to the steps left | N calls, plus up to 2 summary calls | [ran] |
 | `timeout_s` | The library's watchdog; Hermes's own run budget only nudges at 80% | none | [ran] timeout gate |
-| `parallel_tool_calls` | `request_overrides.parallel_tool_calls` | `parallel_tool_calls` | [ran]; effect unchecked |
+| `parallel_tool_calls` | `request_overrides.parallel_tool_calls`; false also turns off Hermes's "Parallel tool calls" prompt section (D33) | `parallel_tool_calls`; the section is absent from the system message when false | [ran]; effect unchecked |
 | `memory` | `memory` toolset, `memory_enabled` and `user_profile_enabled` | `memory` tool, guidance and block in the prompt | [src]; [ran] for the prompt |
 | `skills` | `skills` toolset | `skills_list`, `skill_view`, `skill_manage`; guidance and index | [src] |
 | `compression` | `compression.enabled` | Rewrites messages through an extra model call when over the threshold | [src] |
 | Not sent | `reasoning_effort` (kept off), `top_p`, `seed` | absent | [ran] |
-| Streaming, cache markers | Hermes defaults; markers via `harness_options.prompt_cache_markers` | `stream: true`; three `cache_control` markers for "claude" names on host `litellm` | [ran] |
+| Streaming, cache markers | Hermes's streaming default; cache markers off (D31), back on with `harness_options.prompt_cache_markers: true` | `stream: true`; no `cache_control`. With the option on, three `cache_control` markers for "claude" names on a host named `litellm` | [ran] |
 
 ### 3.6 The step limit and end states
 
@@ -503,7 +508,7 @@ So **"memory on and empty" vs "on and seeded" is a clean comparison**: same tool
 
 Each is described above and collected in section 8.2: the extra 4,500 characters of prompt (1,633 more tokens on the first call on Haiku 5.5); the wrapper and escaped JSON on tool results; prefixed, sorted tool names; silent JSON repair; up to 2 extra calls and a summary answer at the step limit; no hard token cap; the circuit breaker; the date line (interleave arms in time); and start-up time.
 
-One more: **prompt-cache markers.** Hermes adds them for model names containing "claude" when the proxy host is named `litellm`. In engine containers the proxy is `http://litellm:4000/v1` (the API builds the spec with that URL), so Claude arms on Hermes get cached prompts and other harnesses do not [src]. The 4 Nov run went to 127.0.0.1, so it sent none (`prompt_cache_markers: false`) [ran, 4 Nov]. Caching changes cost and latency, not outputs.
+One more: **prompt-cache markers.** Hermes adds them for model names containing "claude" when the proxy host is named `litellm`, which is the case in engine containers (`http://litellm:4000/v1`). **Since D31 they are off in every Hermes config** (`prompt_caching.cache_ttl: off`), like every other harness; `harness_options.prompt_cache_markers: true` turns them back on. A gate-level test runs a claude model name on a host named `litellm.localhost` and sees no `cache_control` by default and the three markers with the option on [ran].
 
 ### 3.12 Implications for eval design
 
@@ -520,7 +525,7 @@ One more: **prompt-cache markers.** Hermes adds them for model names containing 
 - **Deliberately bad inputs** (an unschedulable loan, a budget below the minimums, a prepayment above the balance): three errors in a row pause the tools for 60 s, on Hermes only.
 - **Injection-shaped text** in `client.json` notes or transactions: Hermes marks tool results as data; ADK fences only descriptions; the others mark nothing.
 - **Empathy tasks:** Hermes's identity asks for brevity ("Depth is earned") and no narration of tool calls, which pulls against a warm, longer answer. On the real single trial the model skipped the sympathy line it wrote on the other four harnesses before its first tool call [ran, 4 Nov, n = 1]. Constant within Hermes; a style confound across harnesses that the judge will see.
-- **Two independent calculations:** Hermes's prompt says batch them even with `parallel_tool_calls` off.
+- **Two independent calculations:** with `parallel_tool_calls` false, Hermes's prompt no longer says batch them (D33); with it true or unset, it does.
 
 **What to watch in results:** proxy calls against Hermes's count (summary calls, probe retries); `counts.malformed_tool_calls`; `[BLOCKED` in `hermes-logs/errors.log` for memory tasks; `prompt_cache_markers` on Claude runs; tokens from `proxy_usage`, not `harness_usage`; wall time, which includes start-up; stop reason `format_error` for a provider 400.
 
@@ -530,7 +535,7 @@ One more: **prompt-cache markers.** Hermes adds them for model names containing 
 
 `workers/ownloop/src/ownloop/adapter.py`, about 245 lines. It is the reference harness: it adds nothing to the prompt or the schemas, sends only what the spec gives, and never retries [src]. Every other harness is measured against what this one sends.
 
-The loop: the messages start as the system prompt plus the task messages. Each step makes one non-streaming chat completion call. If `finish_reason` is `length`, the turn ends as `token_limit`. If the reply has no tool calls, it is the answer. Otherwise each tool call runs in order through MCP, its result is appended as a `tool` message, and the loop repeats until `max_steps` calls [src].
+The loop: the messages start as the system prompt plus the task messages. Each step makes one non-streaming chat completion call. If `finish_reason` is `length`, the same request is re-sent once with the cap doubled, up to 8,192, and a second `length` ends the turn as `token_limit` (D36). If the reply has no tool calls, it is the answer. Otherwise each tool call runs in order through MCP, its result is appended as a `tool` message, and the loop repeats until `max_steps` calls [src].
 
 It uses `openai` 3.42.1 with `max_retries=0` and a per-request timeout of `timeout_s`, and `mcp` 2.3.0 on a background event loop [ran: version string].
 
@@ -553,7 +558,7 @@ The spec's prompt text is `messages[0]` with role `system`, byte for byte. Nothi
 | Setting | Native | On the wire | Evidence |
 | --- | --- | --- | --- |
 | `temperature` | request field | `temperature`; unset means not sent | [ran] probe |
-| `max_output_tokens` | request field | `max_tokens`; `length` gives `token_limit` | [ran] on the wire; [src] mapping |
+| `max_output_tokens` | request field: the first attempt's cap (D36) | `max_tokens`; a `length` reply is re-sent once at double the cap, up to 8,192, with an `evals.token_cap_raised` event; a second `length` gives `token_limit` | [ran] on the wire and against the fake's `length` fault |
 | `max_steps` | loop counter | exactly N calls | [ran] |
 | `timeout_s` | library watchdog; per-request timeout too | none | [ran] |
 | `parallel_tool_calls` | request field, only when tools exist | `parallel_tool_calls` | [ran] |
@@ -567,7 +572,8 @@ At the limit the loop stops right after running the last tool calls. It makes no
 | Event | `end_state` |
 | --- | --- |
 | Reply with no tool calls | `answered` |
-| `finish_reason: length` | `token_limit` (the partial text is kept as the reply) [src] |
+| `finish_reason: length` | Re-sent once, the same request with the cap doubled (up to 8,192), recorded as an `evals.token_cap_raised` event on the turn with both caps; both calls are in the proxy's `chat` spans (D36) [ran] |
+| `length` again, or no cap to raise (unset, or already 8,192), or no step left for the re-send | `token_limit` (the partial text is kept as the reply) [ran] |
 | N calls used | `step_limit`, no reply |
 | `openai.APIError` | `harness_error` with the exception |
 | Watchdog | `timeout` |
@@ -595,7 +601,7 @@ At the limit the loop stops right after running the last tool calls. It makes no
 - **The baseline for harness overhead:** the gap to the own loop on the same task and model is "what the harness does".
 - **No memory or skills axes.**
 - **`step_limit` trials have no answer** in a single-prompt task, unlike Hermes.
-- **Ends on `token_limit` with the partial text**, as LangGraph, ADK and the Agents SDK now do in code [src]. A small cap truncates answers on these four and not on Hermes.
+- **Re-sends a cut-off reply once at double the cap, then ends on `token_limit`** with the partial text (D36). LangGraph, ADK and the Agents SDK end on the first `length` [src]; Hermes raises the cap and continues. A small cap truncates answers on those three, and less often on the own loop and Hermes; `max_output_tokens` is the first attempt's cap on both. The re-send counts as a step.
 
 ## 5. LangGraph
 
@@ -937,7 +943,7 @@ At `max_turns` 3 the SDK makes exactly 3 calls and raises `MaxTurnsExceeded`: 0 
 | Extra calls at the step limit | Hermes +2 with a summary answer | Cost; a graded answer where others have none | Proxy vs harness call counts; `capabilities.json` `extra_calls_at_limit` |
 | Output-token cap | Hermes boosts and continues; on Claude, thinking counts toward the cap | Long answers survive a cap on Hermes only; a tight cap can end a thinking reply before any text | `finish_reasons` in `chat` spans; `completion_tokens_details` in bodies |
 | Reasoning or thinking | All | Haiku 5.5 thinks by default (0 to 1,520 reasoning tokens per call); no harness passes thinking blocks back; Hermes keeps `reasoning_effort` off, others send nothing | Response bodies; question 16 |
-| Prompt caching | Hermes, Claude names, host `litellm` (engine containers) | Cost and latency only | `harness.extra.prompt_cache_markers`; `cache_control` in bodies |
+| Prompt caching | Off on every harness (D31); Hermes only with `harness_options.prompt_cache_markers: true` | Cost and latency only | `harness.extra.prompt_cache_markers`; `cache_control` in bodies |
 | Streaming | Hermes streams; the others do not | Latency profile, timeout behaviour | `evals.request.stream` |
 | Start-up and warm-up | Hermes (inside `timeout_s`), ADK (about 10 s before the clock) | Wall time; Hermes's counts against `timeout_s` | `runner-report.timing` against `result.timing` |
 | Tool execution order | LangGraph, ADK, SDK concurrent [src]; Hermes and own loop sequential | Trace order | Sort by call order in the response |

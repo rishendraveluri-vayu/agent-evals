@@ -18,6 +18,8 @@ export interface AppConfig {
   tasksDir: string;
   labelsDir: string;
   runsDir: string;
+  /** The finance MCP server's folder: its published tool manifest and version give the toolset's hash. */
+  financeMcpDir: string;
   /** D38: the standing allowance for pre-run conflict checks, in USD. */
   conflictCheckAllowanceUsd: number;
 }
@@ -54,6 +56,7 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     configsDir: dir('CONFIGS_DIR', 'configs'),
     tasksDir: dir('TASKS_DIR', 'tasks'),
     labelsDir: dir('LABELS_DIR', 'labels'),
+    financeMcpDir: dir('FINANCE_MCP_DIR', 'services/finance-mcp'),
     // RUNS_DIR keeps its SP1 meaning: relative to the working directory.
     runsDir: path.resolve(nonEmpty(env.RUNS_DIR) ?? 'runs'),
     conflictCheckAllowanceUsd: usd('EVALS_CONFLICT_CHECK_ALLOWANCE_USD', env.EVALS_CONFLICT_CHECK_ALLOWANCE_USD, DEFAULT_CONFLICT_CHECK_ALLOWANCE_USD),

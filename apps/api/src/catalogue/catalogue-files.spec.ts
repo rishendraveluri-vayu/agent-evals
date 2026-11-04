@@ -1,12 +1,17 @@
 import { promises as fs, readFileSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { hashCanonical } from '../common/hashing';
+import type { Json } from '../contract';
 import {
   FINANCE_TOOLS,
+  type FinanceServerManifest,
   PROMPT_NAME_PART,
+  type PublishedTool,
   builtInToolsets,
   checkTask,
   headerDate,
+  loadFinanceServer,
   nextPromptVersion,
   parsePromptName,
   parsePyproject,
@@ -89,10 +94,52 @@ describe('the built-in toolset', () => {
     expect([...FINANCE_TOOLS]).toEqual(snapshot.map((t) => t.name));
   });
 
-  it('is finance/all with a content hash', () => {
-    const [t] = builtInToolsets();
+  const server = loadFinanceServer(path.join(REPO, 'services/finance-mcp'));
+
+  it('is finance/all with a content hash over the published manifest', () => {
+    const [t] = builtInToolsets(server);
     expect(t).toMatchObject({ id: 'finance', version: 'all', servers: [{ name: 'finance' }] });
     expect(t.sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(t.manifest).toHaveLength(1);
+    expect(t.manifest[0].server_version).toBe(server.version);
+    expect(t.manifest[0].tools.map((x) => x.name)).toEqual([...FINANCE_TOOLS]);
+    const sip = t.manifest[0].tools.find((x) => x.name === 'sip_future_value');
+    expect(Object.keys((sip?.input_schema as { properties: object }).properties)).toContain('lump_sum');
+    const { sha256, ...content } = t;
+    expect(sha256).toBe(hashCanonical(content));
+  });
+
+  it("changes its hash when a tool's description, input schema or the server version changes", () => {
+    const [base] = builtInToolsets(server);
+    const edit = (change: (s: FinanceServerManifest) => void): string => {
+      const copy = JSON.parse(JSON.stringify(server)) as FinanceServerManifest;
+      change(copy);
+      return builtInToolsets(copy)[0].sha256;
+    };
+    const sip = (s: FinanceServerManifest) => s.tools.find((x) => x.name === 'sip_future_value') as PublishedTool;
+    const hashes = [
+      edit((s) => (sip(s).description = `${sip(s).description} (edited)`)),
+      // The 4 Nov change: the SIP tool without its lump_sum parameter, as it was before.
+      edit((s) => delete (sip(s).input_schema as { properties: Record<string, unknown> }).properties.lump_sum),
+      edit((s) => (s.version = '0.1.0-old')),
+    ];
+    expect(new Set([base.sha256, ...hashes]).size).toBe(4);
+    // Key order inside a schema is not content: canonical JSON sorts it.
+    const reversed = (o: Record<string, Json>): Json => Object.fromEntries(Object.entries(o).reverse());
+    expect(edit((s) => (sip(s).input_schema = reversed(sip(s).input_schema as Record<string, Json>)))).toBe(base.sha256);
+    // The names-only hash of before 4 Nov is not what it is any more.
+    const namesOnly = hashCanonical({ id: 'finance', version: 'all', servers: [{ name: 'finance', allowed_tools: [...FINANCE_TOOLS] }] });
+    expect(base.sha256).not.toBe(namesOnly);
+  });
+
+  it('refuses a manifest that is missing a tool, or a server folder it cannot read', async () => {
+    expect(() => builtInToolsets({ ...server, tools: server.tools.slice(1) })).toThrow('calculate_emi');
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'evals-finance-'));
+    try {
+      expect(() => loadFinanceServer(dir)).toThrow();
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -103,6 +150,10 @@ describe('task files', () => {
     expect(checkTask(good)).toEqual([]);
   });
 
+  it('accepts required_tools naming finance tools (a grader primitive)', () => {
+    expect(checkTask({ ...good, required_tools: ['calculate_emi', 'list_debts'] })).toEqual([]);
+  });
+
   it.each<[string, Record<string, unknown>, string]>([
     ['bad split', { split: 'heldout' }, 'split'],
     ['no messages', { messages: [] }, 'messages'],
@@ -110,6 +161,9 @@ describe('task files', () => {
     ['simulator with a model', { client_sim: { persona: 'p', hidden_facts: [], concerns: ['c'], goal: 'g', opening_message: 'o', max_client_turns: 2, model: {} } }, 'model'],
     ['simulator missing a field', { client_sim: { persona: 'p' } }, 'goal'],
     ['state file with a path', { client_state: '../secret.json' }, 'client_state'],
+    ['an unknown required tool', { required_tools: ['calculate_emi', 'mcp__finance__list_debts'] }, 'required_tools'],
+    ['required tools that are not a list', { required_tools: 'calculate_emi' }, 'required_tools'],
+    ['a repeated required tool', { required_tools: ['calculate_emi', 'calculate_emi'] }, 'repeat'],
   ])('flags %s', (_what, change, word) => {
     expect(checkTask({ ...good, ...change }).join(' ')).toContain(word);
   });
