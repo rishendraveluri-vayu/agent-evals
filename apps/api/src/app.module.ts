@@ -6,11 +6,12 @@ import { CoreModule } from './common/core.module';
 import { ConfigsModule } from './configs/configs.module';
 import { ExperimentsModule } from './experiments/experiments.module';
 import { HealthModule } from './health/health.module';
+import { LabelsModule } from './labels/labels.module';
 import { TrialsModule } from './trials/trials.module';
 import { WorkerModule } from './worker/worker.module';
 
 @Module({
-  imports: [CoreModule, HealthModule, CatalogueModule, ConfigsModule, ExperimentsModule, TrialsModule, WorkerModule],
+  imports: [CoreModule, HealthModule, CatalogueModule, ConfigsModule, ExperimentsModule, TrialsModule, WorkerModule, LabelsModule],
   providers: [{ provide: APP_FILTER, useClass: ApiErrorFilter }],
 })
 export class AppModule {}

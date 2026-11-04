@@ -468,6 +468,37 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     expect(e.basis).toContain('earlier finished trials');
   });
 
+  it('serves a blind label queue and appends labels to labels/<set>.jsonl', async () => {
+    const exp = await experiment();
+    const c = (await claim('w-label'))!;
+    await report(c, 'w-label');
+    const queue = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as Record<string, unknown>[];
+    expect(queue).toHaveLength(1);
+    const item = queue[0];
+    expect(Object.keys(item).sort()).toEqual(['criteria', 'item_id', 'task_summary', 'tool_calls', 'transcript']);
+    expect(JSON.stringify(item)).not.toMatch(/ownloop|fake\/finance-emi|arm A|cost|wall_s/);
+    expect(item.criteria).toEqual([
+      { id: 'empathy', text: 'Acknowledges the client situation' },
+      { id: 'no_jargon', text: 'no_jargon' },
+    ]);
+    expect((item.tool_calls as { name: string }[])[0].name).toBe('calculate_emi');
+
+    await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'nope', value: 'yes' }).expect(400);
+    await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'empathy', value: 'maybe' }).expect(400);
+    await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'nonsense', criterion: 'empathy', value: 'yes' }).expect(400);
+    const created = await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'empathy', value: 'yes', note: 'warm' }).expect(201);
+    expect(created.body).toMatchObject({ trial_id: c.trial_id, set: 'tuning', criterion: 'empathy', value: 'yes', note: 'warm' });
+    const lines = (await fs.readFile(path.join(env.labelsDir, 'tuning.jsonl'), 'utf8')).trim().split('\n');
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toMatchObject({ criterion: 'empathy', value: 'yes', labelled_at: expect.any(String) as string });
+
+    const left = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as { criteria: { id: string }[] }[];
+    expect(left[0].criteria.map((x) => x.id)).toEqual(['no_jargon']);
+    expect((await request(env.http).get(`/api/labels/queue?set=heldout&experiment=${exp.id}`).expect(200)).body).toHaveLength(1);
+    const agreement = await request(env.http).get('/api/judge/agreement?set=heldout').expect(200);
+    expect(agreement.text).toBe('null');
+  });
+
   it('takes a report far over Express’s 100 kB default body limit', async () => {
     const exp = await experiment();
     const c = (await claim('w-big'))!;
