@@ -100,8 +100,10 @@ Se + Sp well above 1; a criterion near 1 is untrustworthy by definition and alre
 
 ## 8. Cost
 
-About $0.01 per trial per judge pass on Claude Sonnet 5.5 (estimate; measured on the first run), so
-120 trials x 3 test-retest passes on the labelled subset is a few dollars. Every judge run is signed
+About $0.0034 per trial per judge pass on Gemini 3.8 Flash (D45; 3,000 input and 300 output tokens
+at $0.75 / $3.75 per MTok, before any thinking tokens; an estimate until the first run measures it),
+so 120 trials x 3 test-retest passes on the labelled subset is about $1.20. Sonnet 5.5 would be
+about $0.009 a pass. Every judge run is signed
 off with an estimate first (R8).
 
 ## Built so far (4 Nov night): the arithmetic only

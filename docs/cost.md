@@ -48,7 +48,7 @@ These are assumptions until the pilot replaces them: 8 LLM calls per trial, 8k i
 
 - 400 trials is 20 tasks × 2 configs × N=10, used as a placeholder until the pilot sets N.
 - Sonnet vs Gemini Flash at 200 trials each: about $42.
-- Judge estimate: 3k input and 300 output per call on Sonnet is about $0.009. 60 labelled trials × 3 repeats is about $1.60.
+- Judge estimate (D45, Gemini 3.8 Flash): 3k input and 300 output per call is about $0.0034, before any thinking tokens; 60 labelled trials × 3 repeats is about $0.61. On Sonnet 5.5 it would be about $0.009 a call.
 - Check third-party prices on the provider pages before quoting them. Gemini 3.8 Flash is listed to rise to $1.50 / $7.50 from 1 Jan 2027.
 
 Sources:
