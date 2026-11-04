@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { promises as fs, readFileSync } from 'node:fs';
+import { promises as fs, readFileSync, readdirSync } from 'node:fs';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import * as os from 'node:os';
@@ -226,7 +226,9 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
     expect(exp.status).toBe('done');
     const res = await request(source.http).get(`/api/experiments/${exp.id}/bundle`).expect(200);
     const bundle = res.body as ExperimentBundle;
-    expect(bundle).toMatchObject({ format: 'agent-evals-bundle', format_version: 1, experiment_id: exp.id, schema_version: '011_examples' });
+    // The bundle names the newest migration this database has applied.
+    const newest = readdirSync(path.join(REPO, 'apps/api/migrations')).filter((f) => /^\d+_.+\.sql$/.test(f)).sort().at(-1)!.replace(/\.sql$/, '');
+    expect(bundle).toMatchObject({ format: 'agent-evals-bundle', format_version: 1, experiment_id: exp.id, schema_version: newest });
     const t = bundle.tables;
     expect(t.experiments).toHaveLength(1);
     expect(t.trials).toHaveLength(5); // 4 slots, one re-queued after an infra failure

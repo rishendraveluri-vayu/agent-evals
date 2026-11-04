@@ -1058,6 +1058,11 @@ export interface LabelQueueItem {
   transcript: { role: string; content: string }[];
   tool_calls: { name: string; arguments: string | null; result: string | null; is_error: boolean | null }[];
   criteria: LabelCriterion[];
+  /**
+   * D46: true when these criteria were all marked "unsure" before and come back once for a firm
+   * answer. Second-look items follow every fresh item in the queue.
+   */
+  second_look: boolean;
 }
 
 /** POST /labels */
@@ -1067,6 +1072,8 @@ export interface CreateLabelRequest {
   criterion: string;
   value: LabelValue;
   note?: string | null;
+  /** D46: the answer on a second look at a criterion labelled "unsure" in this set before. */
+  second_look?: boolean;
 }
 
 /** The line appended to labels/<set>.jsonl, and the POST /labels response. */
@@ -1078,6 +1085,8 @@ export interface LabelLine {
   value: LabelValue;
   note: string | null;
   labelled_at: string;
+  /** D46: present and true only on a second-look answer. */
+  second_look?: boolean;
 }
 
 // ---- Pre-run checks and spend (D33, D38) -----------------------------------------------

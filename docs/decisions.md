@@ -54,6 +54,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D44 A/A calibration | An explicit calibration run: the same config on both arms only when the run is marked "A/A calibration"; the comparison of an A/B shows the latest A/A interval for its configs; each one is a paid run signed off like any other | Rishi | 5 Nov |
 | D8 Judge trust bar | A judge criterion counts in the headline only when, on the held-out labels, kappa >= 0.6 with its 95% interval's lower end >= 0.4, no false-pass gap between arms, and test-retest agreement >= 90%; below it, it stays visible in trials and the report | Rishi | 5 Nov |
 | D45 Judge model | Gemini 3.8 Flash, pinned for the experiment (billing enabled 5 Nov and checked with one call) | Rishi | 5 Nov |
+| D46 "Not sure" labels | A second look: each "not sure" criterion comes back once, after the fresh items; still "not sure" then means excluded from the judge's agreement, with the count reported | Rishi | 5 Nov |
 
 ## Open
 
@@ -263,6 +264,12 @@ Why: Rishi picked it. It is the cheapest ($0.75 / $3.75 per MTok, listed to rise
 Unblocked 5 Nov: Rishi enabled billing; one check call answered in 2.4 s for $0.000235 (`docs/cost.md`). Before that, the Gemini key's project was not on a paid tier. On 4 Nov every Gemini call failed with 503 "high demand", then 429 "You exceeded your current quota, please check your plan and billing details" (`docs/cost.md`). The judge cannot run until billing is on. One call also took 3 minutes before a 503, against the judge's 300 s timeout (A22).
 What would change it: Gemini still failing or too slow with billing on (then Sonnet 5.5, the proposal's choice); the judge missing the trust bar (D8) where a stronger judge would pass.
 Not yet run: the judge has never met a real model; its JSON answer format, the 8,000-token cap and the quote check are tested against a stub and the fake server only (`docs/known-limits.md`).
+
+### D46: "Not sure" labels get a second look (5 Nov)
+Options: excluded from the agreement (proposed); counted as "no"; a second look.
+Choice: a second look. A criterion Rishi marks "not sure" comes back once in the same set, after every fresh item, marked "Second look". The answer then given replaces the "not sure" in the judge's agreement and is not counted as a relabel (it is not a self-consistency test). A second "not sure" is final: it is left out of the agreement (`--human-unsure exclude`) and counted per criterion. A criterion with many "not sure" labels points at an unclear rubric.
+Why: Rishi picked it: the best data for the judge check, at the cost of some extra labelling time.
+What would change it: labelling time running out before Friday (then exclude what is left, which is the same rule applied early).
 
 ## Entry template
 

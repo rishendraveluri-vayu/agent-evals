@@ -216,6 +216,7 @@ export function toBlindItem(raw: unknown): BlindItem {
       is_error: typeof obj(t).is_error === 'boolean' ? (obj(t).is_error as boolean) : null,
     })),
     criteria: criteria.map(criterion),
+    second_look: o.second_look === true,
   };
 }
 

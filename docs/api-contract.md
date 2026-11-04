@@ -788,10 +788,18 @@ field is left (a key inside a binary file cannot be scrubbed, so it fails the ex
 ## UI-only endpoints
 
 - `GET /labels/queue?set=tuning|heldout|final` returns blind items `{item_id, task_summary,
-  transcript, tool_calls, criteria}` with no harness, model, arm, timing, cost or grade. Only
-  trials whose agent ran on a real model are items: a `fake/*` model plays a script, so its
-  output is nothing to label (since 5 Nov). Probe trials and shipped examples are left out too.
-- `POST /labels` with `{item_id, set, criterion, value: "yes"|"no"|"unsure", note}` appends one
-  line to `labels/<set>.jsonl` with the date. Labels are Rishi's own judgments, entered by him;
-  nothing else writes them.
+  transcript, tool_calls, criteria, second_look}` with no harness, model, arm, timing, cost or
+  grade. Only trials whose agent ran on a real model are items: a `fake/*` model plays a script,
+  so its output is nothing to label (since 5 Nov). Probe trials and shipped examples are left out
+  too. **Second look (D46):** fresh criteria come first; a criterion labelled only "unsure" in the
+  set comes back once, after every fresh item, as an item with `second_look: true` holding just
+  those criteria. An item with fresh criteria shows those first and its second look on a later
+  load, so no item is in the queue twice.
+- `POST /labels` with `{item_id, set, criterion, value: "yes"|"no"|"unsure", note, second_look?}`
+  appends one line to `labels/<set>.jsonl` with the date (and `"second_look": true` on a second
+  look). Labels are Rishi's own judgments, entered by him; nothing else writes them. A second look
+  is refused (400 `not_a_second_look`) unless the criterion was labelled "unsure" in that set and
+  has no firm or second-look answer yet. Migration `013_label_second_look.sql` adds the column.
+  The agreement (`evals-agreement`) takes a second-look answer in place of the first "unsure" and
+  does not count it as a relabel; an "unsure" given again stays "unsure" and is left out.
 - `GET /judge/agreement?set=heldout` is SP5 and returns `null` until then.

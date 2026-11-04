@@ -121,7 +121,8 @@ current grading, so that read is still to build.
 
 1. **Settled 5 Nov (D8):** kappa >= 0.6, lower bound >= 0.4, test-retest >= 90%.
 2. Per-arm or pooled sensitivity and specificity in the correction (per-arm is safer, needs more labels).
-3. Whether "not sure" labels count as fail, are excluded (proposed), or trigger a second look.
+3. **Settled 5 Nov (D46):** a "not sure" label triggers one second look, after the fresh items;
+   what is still "not sure" then is excluded, and the count is reported per criterion.
 4. The label budget: 20 / 40 / 20 as in SPEC, or more held-out labels for tighter intervals.
 5. **Settled 5 Nov (D45):** Gemini 3.8 Flash, pinned; it needs billing on the Gemini key first. (Proposed was Claude Sonnet 5.5.) For prompt v1 vs v2 both arms
    use the same model, so this is fine; in a Claude-vs-Gemini comparison a Claude judge could favour

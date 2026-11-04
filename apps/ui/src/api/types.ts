@@ -134,4 +134,6 @@ export interface BlindItem {
   transcript: { role: string; content: string }[];
   tool_calls: { name: string; arguments: unknown; result: unknown; is_error?: boolean | null }[];
   criteria: LabelCriterion[];
+  /** D46: these criteria were marked "not sure" before and come back once for a firm answer. */
+  second_look: boolean;
 }

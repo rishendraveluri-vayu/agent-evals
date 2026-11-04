@@ -87,9 +87,9 @@ export class LabelsService {
         continue;
       }
       await this.db.query(
-        `INSERT INTO labels (trial_id, criterion, value, label_set, note, labelled_at, source, line_sha256)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (line_sha256) DO NOTHING`,
-        [trial, l.criterion, l.value, set, typeof l.note === 'string' ? l.note : null, l.labelled_at, `labels/${set}.jsonl`, sha256Hex(line)],
+        `INSERT INTO labels (trial_id, criterion, value, label_set, note, labelled_at, source, line_sha256, second_look)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (line_sha256) DO NOTHING`,
+        [trial, l.criterion, l.value, set, typeof l.note === 'string' ? l.note : null, l.labelled_at, `labels/${set}.jsonl`, sha256Hex(line), l.second_look === true],
       );
     }
   }
@@ -117,21 +117,32 @@ export class LabelsService {
       params.push(experimentId);
       where += ` AND t.experiment_id = $${params.length}`;
     }
-    const rows = await this.db.query<{ id: string; result: JsonObject; body: JsonObject; summary: string; done: string[] }>(
+    // seen: criteria with any label in this set; settled: those with a firm answer (yes or no) or a
+    // second-look answer. A criterion seen but not settled was only ever marked "unsure" (D46).
+    const rows = await this.db.query<{ id: string; result: JsonObject; body: JsonObject; summary: string; seen: string[]; settled: string[] }>(
       `SELECT t.id, t.result, k.body, k.summary,
-              coalesce((SELECT array_agg(DISTINCT l.criterion) FROM labels l WHERE l.trial_id = t.id AND l.label_set = $1), '{}') AS done
+              coalesce((SELECT array_agg(DISTINCT l.criterion) FROM labels l WHERE l.trial_id = t.id AND l.label_set = $1), '{}') AS seen,
+              coalesce((SELECT array_agg(DISTINCT l.criterion) FROM labels l
+                        WHERE l.trial_id = t.id AND l.label_set = $1 AND (l.value <> 'unsure' OR l.second_look)), '{}') AS settled
        FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256
        WHERE ${where}
        ORDER BY md5($1 || ':' || t.id)`,
       params,
     );
-    const items: LabelQueueItem[] = [];
+    // Fresh criteria first. A criterion marked "unsure" comes back once, after every fresh item, for
+    // a firm answer (D46). An item with fresh criteria shows those first; its second look comes on a
+    // later load of the queue, so an item is never in the queue twice.
+    const fresh: LabelQueueItem[] = [];
+    const again: LabelQueueItem[] = [];
     for (const r of rows) {
-      const criteria = judgeCriteria(r.body).filter((c) => !r.done.includes(c.id));
+      const all = judgeCriteria(r.body);
+      const unseen = all.filter((c) => !r.seen.includes(c.id));
+      const unsure = all.filter((c) => r.seen.includes(c.id) && !r.settled.includes(c.id));
+      const [list, criteria, secondLook] = unseen.length ? [fresh, unseen, false] : [again, unsure, true];
       if (!criteria.length) continue;
-      items.push({ item_id: r.id, task_summary: r.summary, transcript: transcriptOf(r.result), tool_calls: await this.toolCalls(r.id), criteria });
+      list.push({ item_id: r.id, task_summary: r.summary, transcript: transcriptOf(r.result), tool_calls: await this.toolCalls(r.id), criteria, second_look: secondLook });
     }
-    return items;
+    return [...fresh, ...again];
   }
 
   private async toolCalls(trialId: string): Promise<LabelQueueItem['tool_calls']> {
@@ -164,6 +175,24 @@ export class LabelsService {
     if (!criteria.some((c) => c.id === body.criterion)) {
       throw badRequest('unknown_criterion', `${body.criterion} is not one of this task's criteria: ${criteria.map((c) => c.id).join(', ') || 'none'}`);
     }
+    if (body.second_look !== undefined && typeof body.second_look !== 'boolean') throw badRequest('invalid_label', 'second_look must be true or false');
+    const secondLook = body.second_look === true;
+    if (secondLook) {
+      // D46: a second look answers a criterion marked "unsure" in this set, and only once.
+      const [prior] = await this.db.query<{ unsure: number; settled: number }>(
+        `SELECT count(*) FILTER (WHERE value = 'unsure' AND NOT second_look)::int AS unsure,
+                count(*) FILTER (WHERE value <> 'unsure' OR second_look)::int AS settled
+         FROM labels WHERE trial_id = $1 AND criterion = $2 AND label_set = $3`,
+        [trial.id, body.criterion, set],
+      );
+      if (!prior.unsure || prior.settled) {
+        throw badRequest(
+          'not_a_second_look',
+          prior.settled ? `${body.criterion} on ${trial.id} already has a firm or second-look answer in ${set}` : `${body.criterion} on ${trial.id} was not marked unsure in ${set}`,
+          'Save it as an ordinary label (leave second_look out).',
+        );
+      }
+    }
     const line: LabelLine = {
       item_id: body.item_id,
       trial_id: trial.id,
@@ -172,6 +201,7 @@ export class LabelsService {
       value: body.value,
       note: typeof body.note === 'string' && body.note.trim() ? body.note : null,
       labelled_at: new Date().toISOString(),
+      ...(secondLook ? { second_look: true } : {}),
     };
     await fs.mkdir(this.config.labelsDir, { recursive: true });
     await fs.appendFile(this.file(set), `${JSON.stringify(line)}\n`, { encoding: 'utf8', flag: 'a' });

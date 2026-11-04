@@ -151,6 +151,48 @@ def test_read_labels_keeps_the_first_and_sends_later_ones_to_self_agreement(tmp_
     assert relabels == [("t1:c", "yes", "no")]
 
 
+def test_a_second_look_replaces_an_unsure_and_is_not_a_relabel(tmp_path):
+    lines = [
+        {"trial_id": "t1", "criterion": "c", "value": "unsure", "labelled_at": "2026-11-05T09:00Z"},
+        {
+            "trial_id": "t1",
+            "criterion": "c",
+            "value": "no",
+            "labelled_at": "2026-11-05T10:00Z",
+            "second_look": True,
+        },
+        {"trial_id": "t2", "criterion": "c", "value": "unsure", "labelled_at": "2026-11-05T09:00Z"},
+        {
+            "trial_id": "t2",
+            "criterion": "c",
+            "value": "unsure",
+            "labelled_at": "2026-11-05T10:00Z",
+            "second_look": True,
+        },
+        # Only an "unsure" can be looked at again, and only once.
+        {"trial_id": "t3", "criterion": "c", "value": "yes", "labelled_at": "2026-11-05T09:00Z"},
+        {
+            "trial_id": "t3",
+            "criterion": "c",
+            "value": "no",
+            "labelled_at": "2026-11-05T10:00Z",
+            "second_look": True,
+        },
+        {
+            "trial_id": "t1",
+            "criterion": "c",
+            "value": "yes",
+            "labelled_at": "2026-11-05T11:00Z",
+            "second_look": True,
+        },
+    ]
+    f = tmp_path / "tuning.jsonl"
+    f.write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+    first, relabels = read_labels(f)
+    assert first == {("t1", "c"): "no", ("t2", "c"): "unsure", ("t3", "c"): "yes"}
+    assert relabels == []
+
+
 def test_judge_verdicts_come_from_the_judge_grades_criterion_items():
     trial = {
         "grades": [

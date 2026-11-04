@@ -155,6 +155,30 @@ describe('LabelView against the API', () => {
       { item_id: 'lq_1', set: 'heldout', criterion: 'b', value: 'unsure', note: 'Clear enough.' },
     ]);
     expect(w.get('[data-test="queue-empty"]').text()).toContain('All 1 in this queue done: 1 saved.');
+    // D46: the "Not sure" answer comes back once.
+    expect(w.get('[data-test="queue-empty"]').text()).toContain('You marked one question "Not sure": it comes back once for a second look.');
+    expect(w.get('[data-test="load-more"]').text()).toBe('Take the second look');
+  });
+
+  it('asks a second look at a "Not sure" question once, and saves the answer as a second look', async () => {
+    const { calls } = routeFetch({
+      '/api/labels/queue?set=tuning': [],
+      '/api/labels/queue?set=final': [],
+      '/api/labels/queue?set=heldout': [
+        { item_id: 'lq_2', task_summary: '', transcript: [{ role: 'assistant', content: 'Answer.' }], tool_calls: [], criteria: [{ id: 'b', text: 'Second?' }], second_look: true },
+      ],
+      'POST /api/labels': { ok: true },
+    });
+    const w = mount(LabelView);
+    await settle();
+    expect(w.get('[data-test="second-look"]').text()).toContain('you marked this question "Not sure" before');
+    expect(w.get('[data-test="second-look"]').text()).toContain('does not come back');
+    await w.get('[data-test="criterion"]').findAll('button')[1].trigger('click');
+    await w.get('[data-test="save-label"]').trigger('click');
+    await settle();
+    expect(calls.filter((c) => c.method === 'POST').map((p) => p.body)).toEqual([{ item_id: 'lq_2', set: 'heldout', criterion: 'b', value: 'no', note: '', second_look: true }]);
+    // A second-look "Not sure" is final: nothing more comes back.
+    expect(w.get('[data-test="queue-empty"]').text()).not.toContain('second look');
   });
 
   it('says, when the queue is empty, which trials never join it', async () => {
