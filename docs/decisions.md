@@ -62,6 +62,8 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D50 Minimum tasks for a verdict | 6 tasks in the aggregate; below it the verdict is "no detectable difference" with "too few tasks for any verdict" | Rishi | 5 Nov |
 | D51 Fake models for reviewers | Kept as a test tool on the full Config screen, clearly labelled; they replay one script whatever the task, so their trials fail and show no A/B difference. Reviewers see real results in the shipped example and run agents with their own key | Rishi | 5 Nov |
 | D52 Label sets and the task split | Tuning labels come from discovery-task trials only; held-out and final labels from held-out-task trials only; the queue and POST /labels enforce it | Rishi | 5 Nov |
+| D53 The task set | The 21 tasks of docs/proposals/tasks-review.md (15 from 4 Nov, 6 new), split A: 11 discovery, 10 held-out; severities as proposed; the proposed grader fixes applied | Rishi | 5 Nov |
+| D54 Arithmetic tools; provenance stays required | Add basic arithmetic tools (add, subtract, multiply, divide, percentages, rounding) to the finance toolset for both arms; the agent never does its own arithmetic; provenance stays required at 0 unsupported; prompt v1 unchanged | Rishi | 5 Nov |
 
 ## Open
 
@@ -308,6 +310,17 @@ Options: follow the task split; disjoint tasks assigned at random to sets; keep 
 Choice: the tuning set takes trials of discovery tasks only; the held-out and final sets take trials of held-out tasks only. The label queue offers only those, and `POST /labels` refuses a label in the wrong set (400 `wrong_split`).
 Why: Rishi picked it. Disjoint by trial alone let one task appear in both tuning and held-out, so the judge could be tuned on a task's outputs and scored on more of the same task's, which flatters its agreement. Following the split also matches the experiment: the v2 prompt and the rubric are both shaped on discovery tasks, and both are measured on held-out ones.
 What would change it: too few held-out-task trials for 40 held-out labels before the final run (then label held-out tasks from a v1 run on them, still never a discovery task).
+
+### D53: The task set, its split and severities (5 Nov)
+Options: approve the six new tasks or drop some; split A (11 discovery, 10 held-out), B (9 / 12) or C (A without convo-where-to-start); severities as proposed or set by hand; the smaller grader fixes all, only the false fails, or none.
+Choice: all 21 tasks; split A, with held-out = the six new tasks, loan-to-clear-card and convo-consolidation, sip-education-goal and otp-scam; severities as proposed in `docs/proposals/tasks-review.md` section 3 (20 critical, 63 major, 1 minor of the 84 required deterministic graders); all proposed grader fixes (the months regexes become `number` checks, names-a-risk becomes a judge criterion, convo-payoff's hidden fact says "in total, minimums included" as a new task version, convo-where-to-start gets its own concern).
+Why: Rishi picked them. K = 10 held-out tasks lets the sign-flip test reach p = 0.002 and survive one reversal; the never-run tasks are the cleanest held-out set; near-duplicate scenarios stay on one side. Power for a real +15 points is about 50% at K = 10 (D50's table): the write-up says so.
+Recorded in `docs/experiment.md`: the four held-out tasks from 4 Nov (the consolidation pair, sip, otp) had their v1 outputs read before v2 was written; v2 is written from discovery traces only.
+
+### D54: Arithmetic tools, and provenance stays required (5 Nov)
+Options: make provenance optional and report it beside the pass rate; keep it required at 0; allow 1 or 2 unsupported amounts.
+Choice: keep it required at 0, and add basic arithmetic tools to the finance toolset (add, subtract, multiply, divide, percentages, rounding), so every figure in an answer can come from a tool and the model never does its own arithmetic. Both arms of the experiment get the new toolset. Prompt v1 stays as it is: it already forbids prose arithmetic and will see the new tools in its tool list.
+Why: Rishi: "addition if done wrong fails so keep it required add basic math tools like add / subtract/ multiply / divide and other basics and never allow llm to do its own calculation, we may highlight this in the video. the failure trace". On 4 Nov provenance failed 18 of 24 Hermes trials, almost all on sums written in prose (Rs 23,120 = Rs 14,120 + Rs 9,000): a missing tool, found by trace analysis. The video shows that failure trace, the tools added, then v1 vs v2 measured on held-out tasks; if v1 still does sums in prose with the tools available, v2 can tell it to use them, and the prompt stays the only difference.
 
 ## Entry template
 
