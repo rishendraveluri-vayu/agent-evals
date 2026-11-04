@@ -14,7 +14,7 @@ export const PLATFORM_DEFAULTS: Settings = {
   max_output_tokens: 8192, // D25
   max_steps: 15,
   timeout_s: 300,
-  parallel_tool_calls: null, // D25: not sent
+  parallel_tool_calls: false, // D19: a config setting, off by default (D25 covers sampling settings only)
   memory: { enabled: false }, // R3, R10.8: nothing learns unless the config says so
   skills: { enabled: false },
   compression: { enabled: false },

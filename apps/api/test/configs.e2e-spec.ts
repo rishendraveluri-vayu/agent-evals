@@ -71,16 +71,16 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
     expect(res.body).toEqual({ error: 'unsupported_setting', message: expect.stringContaining('memory') as string });
   });
 
-  it('leaves an unset temperature and parallel_tool_calls unsent, shown as the harness default (D25)', async () => {
+  it('leaves an unset temperature unsent, shown as the harness default (D25); parallel tool calls stay off (D19)', async () => {
     const res = await request(env.http)
       .post('/api/configs')
       .send({ name: 'unset', harness: 'ownloop', model: 'fake/finance-emi', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset, settings: {} })
       .expect(201);
     const c = res.body as { settings: Record<string, unknown>; settings_sources: Record<string, string> };
-    expect(c.settings).toMatchObject({ temperature: null, parallel_tool_calls: null, max_output_tokens: 8192, max_steps: 15, timeout_s: 300 });
+    expect(c.settings).toMatchObject({ temperature: null, parallel_tool_calls: false, max_output_tokens: 8192, max_steps: 15, timeout_s: 300 });
     expect(c.settings_sources).toMatchObject({
       temperature: 'harness_default',
-      parallel_tool_calls: 'harness_default',
+      parallel_tool_calls: 'platform_default',
       max_output_tokens: 'platform_default',
       max_steps: 'platform_default',
       timeout_s: 'platform_default',

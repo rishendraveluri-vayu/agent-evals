@@ -63,7 +63,8 @@ simulated-client task the API also summarises that file (profile and debts) into
 
   | Setting | Left unset | Source |
   | --- | --- | --- |
-  | `temperature`, `parallel_tool_calls` | `null`: not sent, so the harness's or provider's default applies (D25) | `harness_default` |
+  | `temperature` | `null`: not sent, so the harness's or provider's default applies (D25) | `harness_default` |
+  | `parallel_tool_calls` | `false`: off by default (D19; D25 covers sampling settings only) | `platform_default` |
   | `max_output_tokens` | 8192 | `platform_default` |
   | `max_steps` | 15 | `platform_default` |
   | `timeout_s` | 300 | `platform_default` |

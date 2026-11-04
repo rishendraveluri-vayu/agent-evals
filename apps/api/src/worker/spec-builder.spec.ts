@@ -23,7 +23,7 @@ const base: SpecInputs = {
       max_output_tokens: 'platform_default',
       max_steps: 'platform_default',
       timeout_s: 'platform_default',
-      parallel_tool_calls: 'harness_default',
+      parallel_tool_calls: 'platform_default',
       memory: 'unsupported',
       skills: 'unsupported',
       compression: 'unsupported',

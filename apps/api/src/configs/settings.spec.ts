@@ -41,12 +41,16 @@ describe('resolveSettings', () => {
     expect(settings_sources).toMatchObject({ max_output_tokens: 'platform_default', max_steps: 'platform_default', timeout_s: 'platform_default' });
   });
 
-  it('does not send an unset temperature or parallel_tool_calls: null, source harness_default (D25)', () => {
+  it('does not send an unset temperature: null, source harness_default (D25)', () => {
     const { settings, settings_sources } = resolveSettings({}, HERMES, 'hermes', MODEL);
     expect(settings.temperature).toBeNull();
-    expect(settings.parallel_tool_calls).toBeNull();
     expect(settings_sources.temperature).toBe('harness_default');
-    expect(settings_sources.parallel_tool_calls).toBe('harness_default');
+  });
+
+  it('keeps parallel tool calls off when unset (D19), from the platform default', () => {
+    const { settings, settings_sources } = resolveSettings({}, HERMES, 'hermes', MODEL);
+    expect(settings.parallel_tool_calls).toBe(false);
+    expect(settings_sources.parallel_tool_calls).toBe('platform_default');
   });
 
   it('still takes either when the config sets it, false included', () => {
