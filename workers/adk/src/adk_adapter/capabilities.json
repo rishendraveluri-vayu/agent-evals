@@ -1,0 +1,77 @@
+{
+  "contract_version": "2",
+  "harness": "adk",
+  "version": {
+    "package": "google-adk",
+    "ref": "2.12.0"
+  },
+  "model_api_formats": [
+    "openai_chat"
+  ],
+  "settings": {
+    "temperature": {
+      "supported": true,
+      "evidence": "probe:2026-11-04",
+      "default": null,
+      "observed": "unset: not sent; set to 0.37: sent as temperature",
+      "native": "generate_content_config.temperature, sent as temperature"
+    },
+    "max_output_tokens": {
+      "supported": true,
+      "evidence": "probe:2026-11-04",
+      "default": null,
+      "observed": "unset: not sent; set to 777: sent as max_tokens",
+      "native": "generate_content_config.max_output_tokens, sent as max_completion_tokens"
+    },
+    "max_steps": {
+      "supported": true,
+      "evidence": "probe:2026-11-04",
+      "extra_calls_at_limit": 0,
+      "observed": "max_steps 3: 3 model calls, end_state step_limit, harness counted 3",
+      "native": "RunConfig.max_llm_calls, set each turn to the steps left"
+    },
+    "timeout_s": {
+      "supported": true,
+      "native": "wrapper",
+      "evidence": "declared:the adapter library's watchdog"
+    },
+    "parallel_tool_calls": {
+      "supported": true,
+      "evidence": "probe:2026-11-04",
+      "default": null,
+      "observed": "unset: not sent; set to False: sent as parallel_tool_calls",
+      "native": "LiteLlm(parallel_tool_calls=...), passed through to the request"
+    },
+    "memory": {
+      "supported": false,
+      "native": "Runner(memory_service=None)",
+      "observed": "off: the Runner gets no memory service, so nothing is stored or recalled. ADK has memory services; the adapter does not wire them yet",
+      "evidence": "declared:a request cannot show memory being off"
+    },
+    "skills": {
+      "supported": false,
+      "observed": "off: the agent gets no skills toolset. ADK has skills support; the adapter does not wire it yet",
+      "evidence": "declared:a request cannot show skills being off"
+    },
+    "compression": {
+      "supported": false,
+      "native": "App(events_compaction_config=None, context_cache_config=None)",
+      "observed": "off: no events compaction and no context cache; the whole session history is sent each call",
+      "evidence": "declared:a request cannot show compression being off"
+    }
+  },
+  "harness_options_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "known_differences": [
+    "ADK appends its identity line ('You are an agent. Your internal name is \"assistant\".') and, with MCP tools, a fencing preamble to the system prompt, each after a blank line; the task prompt comes first, unchanged (D20)",
+    "Every MCP tool and parameter description is wrapped as '<<<BEGIN_UNTRUSTED_TOOL_DESCRIPTION>>>\\n' + text + '\\n<<<END_UNTRUSTED_TOOL_DESCRIPTION>>>' (D20); names and schemas are otherwise unchanged",
+    "Tool results reach the model as the whole MCP result in JSON ({\"content\": [...], \"isError\": false}), not the text alone",
+    "A tool call whose arguments do not parse is dropped; ADK's ReflectAndRetryModelPlugin puts a call to adk_handle_model_error (not in the tools list) with reflection guidance in its place, and the model never sees its own call. After 3 in a row the turn ends as agent_error (D18)",
+    "An unknown tool name gets ADK's own error text back as the tool result (D18)",
+    "max_output_tokens is sent as max_completion_tokens",
+    "Replayed tool-call arguments are re-serialised by ADK from the parsed arguments"
+  ]
+}
