@@ -12,7 +12,9 @@ export const CHECK_KIND = 'conflict_check';
 /** D38: pinned. Temperature is not sent and thinking stays at the model's default. */
 export const CHECKER_MODEL = 'claude-sonnet-5-5';
 export const CHECKER_PROMPT_ID = 'conflict-check';
-export const CHECKER_MAX_TOKENS = 2000;
+// Sonnet 5.5 thinks by default and thinking counts toward max_tokens, so leave room for it plus
+// the JSON reply. Worst case about $0.07 a check at the 4 Nov prices, under the $0.10 key budget.
+export const CHECKER_MAX_TOKENS = 6000;
 /** The minted key's LiteLLM budget for one check. */
 export const CHECK_KEY_BUDGET_USD = 0.1;
 /** At most this long for one check's model call. */

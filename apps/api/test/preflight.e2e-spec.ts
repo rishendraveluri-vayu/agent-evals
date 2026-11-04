@@ -226,10 +226,10 @@ describeWithDb('pre-run rendered prompt, conflict check and spend (e2e, real Pos
       allowance: { kind: 'conflict_check', limit_usd: 2, used_usd: 0.0123, calls: 1, half_reached: false },
     });
 
-    // The call: Sonnet 5.5, max_tokens 2000, no temperature, no thinking setting, our checker prompt.
+    // The call: Sonnet 5.5, max_tokens 6000, no temperature, no thinking setting, our checker prompt.
     expect(env.stub.chatCalls).toHaveLength(1);
     const call = env.stub.chatCalls[0];
-    expect(call.body).toMatchObject({ model: 'claude-sonnet-5-5', max_tokens: 2000 });
+    expect(call.body).toMatchObject({ model: 'claude-sonnet-5-5', max_tokens: 6000 });
     expect(Object.keys(call.body).sort()).toEqual(['max_tokens', 'messages', 'model']);
     const messages = call.body.messages as { role: string; content: string }[];
     expect(messages[0]).toEqual({ role: 'system', content: checkerPrompt });
