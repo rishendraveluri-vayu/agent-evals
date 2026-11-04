@@ -330,7 +330,11 @@ export interface FutilityRule {
 }
 
 /** POST /experiments */
+/** The longest name an experiment may have, in characters (after trimming); a longer one is 400 `invalid_experiment`. */
+export const EXPERIMENT_NAME_MAX = 200;
+
 export interface CreateExperimentRequest {
+  /** 1 to EXPERIMENT_NAME_MAX characters. */
   name: string;
   axis: string;
   config_hashes: Sha256[];

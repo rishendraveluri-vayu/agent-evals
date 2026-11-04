@@ -342,6 +342,9 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   reuse_baseline}` creates the experiment and all its trial rows
   (`queued`), records the platform commit (`EVALS_PLATFORM_COMMIT`), and sets a LiteLLM budget
   for the whole experiment. It returns the experiment. Nothing runs until it is started.
+  `name` is trimmed and must be 1 to 200 characters (`EXPERIMENT_NAME_MAX`); a longer one is a 400
+  `invalid_experiment` that says its length, with the fix "Shorten the name to 200 characters or
+  fewer." (since 5 Nov, QA round 3; nothing is created).
   `budget_usd` must cover the estimate's high end (400 `budget_below_estimate`, R10.6), **except
   for a run on fake models only**: when every model it calls (each arm's, and the simulator's when
   a task needs one) is `fake/*`, nothing real is spent and the prices are made up for testing, so

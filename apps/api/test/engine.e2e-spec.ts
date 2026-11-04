@@ -153,6 +153,18 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     expect((await est({ config_hashes: [`sha256:${'0'.repeat(64)}`] }).expect(400)).body).toMatchObject({ error: 'unknown_config' });
   });
 
+  it('refuses a run name longer than 200 characters, saying how long it is, and creates nothing (QA round 3)', async () => {
+    const body = (name: string) => ({ name, axis: 'temperature', config_hashes: [configA], task_sha256s: [cat.tasks['emi-basic']], n: 1, budget_usd: 1 });
+    const before = ((await request(env.http).get('/api/experiments').expect(200)).body as unknown[]).length;
+    const res = await request(env.http).post('/api/experiments').send(body('N'.repeat(201))).expect(400);
+    expect(res.body).toEqual({ error: 'invalid_experiment', message: 'name is 201 characters, longer than the 200 allowed', fix: 'Shorten the name to 200 characters or fewer.' });
+    expect(((await request(env.http).get('/api/experiments').expect(200)).body as unknown[]).length).toBe(before);
+    // Spaces around it are trimmed first, and 200 is allowed.
+    const ok = (await request(env.http).post('/api/experiments').send(body(`  ${'N'.repeat(200)}  `)).expect(201)).body as ExperimentDetail;
+    expect(ok.name).toHaveLength(200);
+    await cancel(ok.id);
+  });
+
   it('creates an experiment with queued trials, a LiteLLM team budget and the platform commit; nothing runs until started', async () => {
     // A real model: a budget below the estimate's high end is refused (R10.6).
     const haiku = await makeConfig(env.http, cat, { name: 'real haiku', model: 'claude-haiku-5-5' });

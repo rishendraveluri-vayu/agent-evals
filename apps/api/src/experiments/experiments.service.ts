@@ -21,7 +21,7 @@ import type {
   TrialRowSummary,
   TrialStatus,
 } from '../contract';
-import { TRIAL_STATUSES } from '../contract';
+import { EXPERIMENT_NAME_MAX, TRIAL_STATUSES } from '../contract';
 import { badRequest, conflict, notFound } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { normalizeSha } from '../common/hashing';
@@ -318,6 +318,9 @@ export class ExperimentsService {
   async create(body: CreateExperimentRequest): Promise<ExperimentDetail> {
     const name = typeof body?.name === 'string' ? body.name.trim() : '';
     if (!name) throw badRequest('invalid_experiment', 'name is required');
+    if (name.length > EXPERIMENT_NAME_MAX) {
+      throw badRequest('invalid_experiment', `name is ${name.length} characters, longer than the ${EXPERIMENT_NAME_MAX} allowed`, `Shorten the name to ${EXPERIMENT_NAME_MAX} characters or fewer.`);
+    }
     const axis = typeof body.axis === 'string' ? body.axis.trim() : '';
     if (!axis) throw badRequest('invalid_experiment', 'axis is required: the one thing the configs differ on');
     if (typeof body.budget_usd !== 'number' || !Number.isFinite(body.budget_usd) || body.budget_usd <= 0) {
