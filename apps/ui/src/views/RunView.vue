@@ -553,7 +553,7 @@ const planNote = computed(() => {
         v-if="!started"
         class="lede"
       >
-        Nothing starts unless the run can finish. The estimates come from {{ estimate?.basis ? estimate.basis.charAt(0).toLowerCase() + estimate.basis.slice(1) : 'earlier trials and the prices in LiteLLM' }}.
+        Nothing starts unless the run can finish. The estimates come from {{ estimate?.basis ? (estimate.basis.charAt(0).toLowerCase() + estimate.basis.slice(1)).replace(/[.\s]+$/, '') : 'earlier trials and the prices in LiteLLM' }}.
       </p>
     </div>
     <div
