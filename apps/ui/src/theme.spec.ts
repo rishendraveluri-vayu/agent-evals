@@ -1,8 +1,11 @@
 // @vitest-environment node
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const css = readFileSync(new URL('./theme.css', import.meta.url), 'utf8');
+const SRC = fileURLToPath(new URL('.', import.meta.url));
 
 /** The tokens one theme block declares: a hex value or `var(--other)`, unresolved. */
 function declared(selector: string): Record<string, string> {
@@ -62,6 +65,8 @@ const TEXT: [string, string][] = [
   ['fail', 'fail-soft'],
   ['fail', 'fail-cell'],
   ['fail', 'surface'],
+  ['error', 'surface'],
+  ['error', 'ground'],
   ['on-pass', 'pass'],
   ['arm-a-ink', 'arm-a-soft'],
   ['arm-b-ink', 'arm-b-soft'],
@@ -125,5 +130,83 @@ describe('the dark theme', () => {
 
   it('is only applied when chosen, never from the system setting', () => {
     expect(css).not.toContain('prefers-color-scheme');
+  });
+});
+
+/** Every stylesheet in the UI: theme.css and each component's <style> blocks, by file. */
+function stylesheets(): { file: string; css: string }[] {
+  const out: { file: string; css: string }[] = [{ file: 'theme.css', css }];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name.endsWith('.vue')) {
+        const source = readFileSync(path, 'utf8');
+        const styles = [...source.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n');
+        if (styles) out.push({ file: relative(SRC, path), css: styles });
+      }
+    }
+  };
+  walk(SRC);
+  return out;
+}
+
+/** Each rule's selector and body, with comments and @media wrappers set aside. */
+function rules(sheet: string): { selector: string; body: string }[] {
+  const plain = sheet.replace(/\/\*[\s\S]*?\*\//g, '');
+  return [...plain.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ selector: m[1].trim().replace(/\s+/g, ' '), body: m[2] }));
+}
+
+/** Where pass green and fail red may appear: graded outcomes only. Anything else (an error, a
+ *  probe, a saved config, a matrix of agreement) uses ink, greys or --error. */
+const PASS_FAIL_ALLOWED: Record<string, string[]> = {
+  // Grade pills.
+  'theme.css': ['.pill--pass', '.pill--fail', ":root[data-theme='dark'] mark"],
+  // The check badges before a run and in a trial.
+  'components/AppIcon.vue': ['.badge-fill--pass', '.badge-fill--fail', '.badge-mark--pass', '.badge-mark--fail'],
+  'components/VerdictTag.vue': ['.verdict-tag--better', '.verdict-tag--worse'],
+  // Run grid cells.
+  'views/RunView.vue': ['.cell--pass', '.cell--fail'],
+  // Your own grade: Yes and No once pressed.
+  'views/LabelView.vue': [".answer--yes[aria-pressed='true']", ".answer--no[aria-pressed='true']"],
+};
+
+describe('pass green and fail red', () => {
+  it('appear only on graded outcomes: grade pills and badges, run-grid cells, VerdictTag, the quoted text on a trial', () => {
+    const found: string[] = [];
+    const allowed: string[] = [];
+    for (const { file, css: sheet } of stylesheets()) {
+      for (const { selector, body } of rules(sheet)) {
+        if (selector === ':root' || selector === ":root[data-theme='dark']") continue; // token definitions
+        if (!/var\(--(pass|pass-soft|fail|fail-soft)\)/.test(body)) continue;
+        if ((PASS_FAIL_ALLOWED[file] ?? []).includes(selector)) allowed.push(`${file}: ${selector}`);
+        else found.push(`${file}: ${selector}`);
+      }
+    }
+    expect(found).toEqual([]);
+    // The scan really reads every file: each allowed use is found where the list says.
+    expect(allowed.sort()).toEqual(Object.entries(PASS_FAIL_ALLOWED).flatMap(([file, list]) => list.map((sel) => `${file}: ${sel}`)).sort());
+  });
+
+  it('are never reached through another name, except --error for error messages', () => {
+    const aliases = rules(css)
+      .filter((r) => r.selector.startsWith(':root'))
+      .flatMap((r) => [...r.body.matchAll(/--([a-z0-9-]+):\s*var\(--(pass|pass-soft|fail|fail-soft)\)/g)].map((m) => m[1]));
+    expect(aliases).toEqual(['error']);
+  });
+});
+
+describe('disclosures', () => {
+  it('show a chevron that flips when open, on every kind of summary', () => {
+    const all = rules(css);
+    const chevron = all.find((r) => r.selector.includes('summary::after') && !r.selector.includes('[open]'));
+    const flipped = all.find((r) => r.selector.includes('[open] > summary::after'));
+    for (const kind of ['.disclosure', '.options', '.requests', '.run-details']) {
+      expect(chevron?.selector, kind).toContain(`${kind} > summary::after`);
+      expect(flipped?.selector, kind).toContain(`${kind}[open] > summary::after`);
+    }
+    expect(chevron?.body).toMatch(/margin-left:\s*auto/);
+    expect(chevron?.body).toMatch(/border-right:\s*2px solid var\(--ink-2\)/);
+    expect(flipped?.body).toMatch(/rotate\(-135deg\)/);
   });
 });

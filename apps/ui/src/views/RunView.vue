@@ -6,7 +6,7 @@ import { isFixtureMode } from '../api/mode';
 import type { Config, ConfigDiffEntry, Estimate, ExperimentDetail, ExperimentTrial, Harness, ModelInfo, Prompt, TaskInfo } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
-import { armsOf, totalTrials } from '../lib/arms';
+import { armsOf, timeLeft, totalTrials } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, contentDiff, planCheck, splitCheck, type Check } from '../lib/checks';
 import { changedLineCount, lineChanges, sentenceChanges, type LineChange } from '../lib/diff';
@@ -127,6 +127,14 @@ const checks = computed<Check[]>(() => {
 });
 const allPass = computed(() => checks.value.length > 0 && checks.value.every((c) => c.ok));
 
+/** Under a disabled Start: which checks stand in the way, by name. */
+const startHelper = computed(() => {
+  const failing = checks.value.filter((c) => !c.ok);
+  const n = failing.length;
+  if (!n) return 'Every check above has to pass first.';
+  return `${n} check${n === 1 ? ' is' : 's are'} not passing: ${failing.map((c) => c.title).join('; ')}.`;
+});
+
 /** How the arms differ: the prompt's changed lines, or each differing field. */
 const armDiff = computed<{ summary: string; lines: LineChange[] }>(() => {
   const content = contentDiff(diff.value);
@@ -195,8 +203,8 @@ async function act(kind: 'start' | 'cancel') {
 
 // ---------------------------------------------------------------- progress
 
-type CellState = 'pass' | 'fail' | 'ungraded' | 'running' | 'waiting' | 'infra' | 'cancelled';
-const CELL_WORDS: Record<CellState, string> = {
+type CellState = 'pass' | 'fail' | 'ungraded' | 'running' | 'waiting' | 'infra' | 'abandoned' | 'cancelled';
+const CELL_WORDS: Record<Exclude<CellState, 'abandoned'>, string> = {
   pass: 'passed',
   fail: 'failed',
   ungraded: 'done, not graded',
@@ -206,22 +214,32 @@ const CELL_WORDS: Record<CellState, string> = {
   cancelled: 'cancelled',
 };
 
-function slotState(attempts: ExperimentTrial[]): CellState {
-  if (!attempts.length) return 'waiting';
+const isInfraStop = (t: ExperimentTrial) => t.status === 'infra_failed' || t.status === 'abandoned';
+
+/** A slot's state is its latest attempt's; `hadInfra` keeps the history, so a slot that was
+ *  stopped by an infra failure and then re-run still says so once it has passed or failed. */
+function slotState(attempts: ExperimentTrial[]): { state: CellState; hadInfra: boolean } {
+  if (!attempts.length) return { state: 'waiting', hadInfra: false };
+  const hadInfra = attempts.some(isInfraStop);
   const latest = attempts.reduce((x, y) => (y.attempt > x.attempt ? y : x));
-  switch (latest.status) {
-    case 'done':
-      return latest.passed === true ? 'pass' : latest.passed === false ? 'fail' : 'ungraded';
-    case 'running':
-    case 'claimed':
-      return 'running';
-    case 'queued':
-      return attempts.length > 1 ? 'infra' : 'waiting';
-    case 'cancelled':
-      return 'cancelled';
-    default:
-      return 'infra';
-  }
+  const state = ((): CellState => {
+    switch (latest.status) {
+      case 'done':
+        return latest.passed === true ? 'pass' : latest.passed === false ? 'fail' : 'ungraded';
+      case 'running':
+      case 'claimed':
+        return 'running';
+      case 'queued':
+        return attempts.length > 1 ? 'infra' : 'waiting';
+      case 'cancelled':
+        return 'cancelled';
+      case 'abandoned':
+        return 'abandoned';
+      default:
+        return 'infra';
+    }
+  })();
+  return { state, hadInfra };
 }
 
 const grid = computed(() => {
@@ -234,27 +252,58 @@ const grid = computed(() => {
     arms: e.config_hashes.slice(0, 2).map((h, arm) =>
       Array.from({ length: e.n }, (_, r) => {
         const repeat = twice ? r + arm * e.n : r;
-        const attempts = trials.filter((x) => (x.task === t.sha256 || x.task === t.id) && x.config === h && x.repeat_index === repeat);
-        const state = slotState(attempts);
-        return { state, label: `${t.id}, arm ${arm === 0 ? 'A' : 'B'}, trial ${r + 1}: ${CELL_WORDS[state]}` };
+        const attempts = trials
+          .filter((x) => (x.task === t.sha256 || x.task === t.id) && x.config === h && x.repeat_index === repeat)
+          .sort((x, y) => x.attempt - y.attempt);
+        const { state, hadInfra } = slotState(attempts);
+        const tries = attempts.length ? Math.max(...attempts.map((x) => x.attempt)) : 0;
+        const words = state === 'abandoned' ? `infra failure, gave up after ${tries} ${tries === 1 ? 'attempt' : 'attempts'}` : CELL_WORDS[state];
+        const retried = hadInfra && (state === 'pass' || state === 'fail');
+        return { state, retried, attempts, label: `${t.id}, arm ${arm === 0 ? 'A' : 'B'}, trial ${r + 1}: ${words}${retried ? ', after an infra failure' : ''}` };
       }),
     ),
   }));
 });
 
+/** Infra stops are counted from the attempts, not from the latest states, so a finished run still
+ *  reports the trials the provider stopped. Each stop was re-run, is re-queued, or gave up. */
 const tally = computed(() => {
   const all = grid.value.flatMap((row) => row.arms.flat());
   const of = (...s: CellState[]) => all.filter((c) => s.includes(c.state)).length;
-  const infraTrials = (data.value?.trials ?? []).filter((t) => t.status === 'infra_failed' || t.status === 'abandoned');
-  const provider = infraTrials.length > 0 && infraTrials.every((t) => t.label === 'infra:provider_error');
-  return { done: of('pass', 'fail', 'ungraded'), running: of('running'), waiting: of('waiting'), infra: of('infra'), cancelled: of('cancelled'), provider };
+  const stops = { total: 0, rerun: 0, requeued: 0, gaveUp: 0 };
+  const stopped: ExperimentTrial[] = [];
+  for (const c of all) {
+    c.attempts.forEach((a, k) => {
+      if (!isInfraStop(a)) return;
+      stopped.push(a);
+      stops.total += 1;
+      const next = c.attempts[k + 1];
+      if (a.status === 'abandoned') stops.gaveUp += 1;
+      else if (!next || next.status === 'queued') stops.requeued += 1;
+      else stops.rerun += 1;
+    });
+  }
+  const provider = stopped.length > 0 && stopped.every((t) => t.label === 'infra:provider_error');
+  return { done: of('pass', 'fail', 'ungraded'), running: of('running'), waiting: of('waiting'), stops, cancelled: of('cancelled'), provider };
 });
+
+const slotCount = computed(() => grid.value.reduce((sum, row) => sum + row.arms.flat().length, 0));
 
 const tallyText = computed(() => {
   const t = tally.value;
   const parts = [`${t.done} done`, `${t.running} running`, `${t.waiting} waiting`];
-  if (t.infra) parts.push(`${t.infra} stopped ${t.provider ? 'by the provider' : 'on infra failures'} and re-queued`);
+  const s = t.stops;
+  if (s.total) {
+    const how = `${s.total} stopped ${t.provider ? 'by the provider' : 'on infra failures'}`;
+    if (s.requeued === s.total) parts.push(`${how} and re-queued`);
+    else parts.push(`${how}: ${[s.rerun ? `${s.rerun} re-run` : '', s.requeued ? `${s.requeued} re-queued` : '', s.gaveUp ? `${s.gaveUp} gave up` : ''].filter(Boolean).join(', ')}`);
+  }
   if (t.cancelled) parts.push(`${t.cancelled} cancelled`);
+  const e = data.value?.experiment;
+  if (e?.status === 'running') {
+    const left = timeLeft(e.estimate, t.done, slotCount.value || totalTrials(e));
+    if (left !== null) parts.push(`about ${minutes(left)} left`);
+  }
   return parts.join(', ');
 });
 
@@ -297,8 +346,7 @@ const started = computed(() => !draft && (data.value?.experiment?.status ?? 'cre
 const heading = computed(() => {
   const e = data.value?.experiment;
   if (!started.value || !e) return 'Check and run';
-  const slots = grid.value.reduce((sum, row) => sum + row.arms.flat().length, 0);
-  const total = slots || totalTrials(e);
+  const total = slotCount.value || totalTrials(e);
   const done = tally.value.done;
   if (e.status === 'running') return `Running: ${done} of ${total} trials done`;
   if (e.status === 'done' || e.status === 'finished') return `Run finished: ${done} of ${total}`;
@@ -439,7 +487,7 @@ const planNote = computed(() => {
                     v-for="c in data.configs"
                     :key="c.hash"
                     :value="c.hash"
-                  >Config {{ shortHash(c.hash) }}, {{ c.name }}</option>
+                  >{{ c.name }} · {{ shortHash(c.hash) }}</option>
                 </select>
               </label>
               <label class="field">
@@ -452,7 +500,7 @@ const planNote = computed(() => {
                     v-for="c in data.configs"
                     :key="c.hash"
                     :value="c.hash"
-                  >Config {{ shortHash(c.hash) }}, {{ c.name }}</option>
+                  >{{ c.name }} · {{ shortHash(c.hash) }}</option>
                 </select>
               </label>
               <fieldset class="field fieldset">
@@ -625,8 +673,9 @@ const planNote = computed(() => {
             <p
               v-if="!allPass"
               class="secondary smaller"
+              data-test="start-helper"
             >
-              Every check above has to pass first.
+              {{ startHelper }}
             </p>
           </template>
           <button
@@ -679,6 +728,11 @@ const planNote = computed(() => {
               <span class="legend-item"><span class="cell cell--running" />Running</span>
               <span class="legend-item"><span class="cell cell--waiting" />Waiting</span>
               <span class="legend-item"><span class="cell cell--infra">!</span>Infra, re-queued</span>
+              <span class="legend-item"><span class="cell cell--pass cell--retried"><AppIcon
+                name="check"
+                :size="13"
+              /></span>Re-run after infra</span>
+              <span class="legend-item"><span class="cell cell--abandoned">!</span>Infra, gave up</span>
             </div>
             <div class="grid-scroll">
               <table
@@ -725,9 +779,10 @@ const planNote = computed(() => {
                         :class="{ gap: ai > 0 && ci === 0 }"
                       >
                         <span
-                          :class="`cell cell--${c.state}`"
+                          :class="['cell', `cell--${c.state}`, { 'cell--retried': c.retried }]"
                           :title="c.label"
                           :data-state="c.state"
+                          :data-retried="c.retried ? 'true' : undefined"
                         ><AppIcon
                           v-if="c.state === 'pass'"
                           name="check"
@@ -736,7 +791,7 @@ const planNote = computed(() => {
                           v-else-if="c.state === 'fail'"
                           name="cross"
                           :size="12"
-                        /><template v-else-if="c.state === 'infra'">!</template><span class="visually-hidden">{{ c.label }}</span></span>
+                        /><template v-else-if="c.state === 'infra' || c.state === 'abandoned'">!</template><span class="visually-hidden">{{ c.label }}</span></span>
                       </td>
                     </template>
                   </tr>
@@ -944,11 +999,24 @@ const planNote = computed(() => {
   font-size: 34px;
 }
 
+/* Two columns from 720 px: the arms, then tasks and the client model, then the name and the
+   plan commit. One column below that. */
 .setup-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px 20px;
   margin-top: 14px;
+}
+
+@media (min-width: 720px) {
+  .setup-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.grow > * + .checks,
+.grow > * + .arm-diff {
+  margin-top: 32px;
 }
 
 .field {
@@ -998,6 +1066,12 @@ const planNote = computed(() => {
   flex-direction: column;
   gap: 4px;
   overflow-wrap: anywhere;
+}
+
+/* The summary is a sentence, so it is set in Plex Sans; only the changed lines are literal. */
+.diff-body > .secondary {
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 14px;
 }
 
 .line {
@@ -1051,7 +1125,7 @@ const planNote = computed(() => {
 }
 
 .error {
-  color: var(--fail);
+  color: var(--error);
 }
 
 .head-actions {
@@ -1079,21 +1153,6 @@ const planNote = computed(() => {
 
 .budget-note {
   margin-top: 10px;
-}
-
-/* A chevron says the summary opens: a flex summary loses the browser's own marker. */
-.run-details > summary::after {
-  content: '';
-  margin-left: auto;
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid var(--ink-2);
-  border-bottom: 2px solid var(--ink-2);
-  transform: translateY(-2px) rotate(45deg);
-}
-
-.run-details[open] > summary::after {
-  transform: translateY(2px) rotate(-135deg);
 }
 
 .checks--inside {
@@ -1204,9 +1263,48 @@ const planNote = computed(() => {
   box-shadow: inset 0 0 0 1px var(--rule);
 }
 
-.cell--infra {
+.cell--infra,
+.cell--abandoned {
   border: 1px dashed var(--ink-2);
   color: var(--ink-2);
+}
+
+/* Passed or failed on a re-run after an infra failure: the history stays visible as a ring. */
+.cell--retried {
+  outline: 1.5px dashed var(--ink-2);
+  outline-offset: 2px;
+}
+
+/* The legend's own width never sets the panel's: the panel hugs the grid. */
+.legend {
+  width: 0;
+  min-width: 100%;
+}
+
+@media (min-width: 1024px) {
+  .cell {
+    width: 28px;
+    height: 28px;
+  }
+
+  .cell :deep(svg) {
+    width: 16px;
+    height: 16px;
+  }
+
+  .run-grid {
+    border-spacing: 6px;
+  }
+
+  .run-grid td.gap {
+    padding-left: 28px;
+  }
+
+  .split > .grid-wrap {
+    flex: 0 1 auto;
+    width: fit-content;
+    max-width: 100%;
+  }
 }
 
 .sub-title {
@@ -1246,6 +1344,10 @@ const planNote = computed(() => {
     width: 11px;
     height: 11px;
   }
+
+  .run-grid .cell--retried {
+    outline-offset: 1px;
+  }
 }
 
 .spend-now {
@@ -1253,9 +1355,11 @@ const planNote = computed(() => {
   font-weight: 600;
 }
 
+/* Drawn at about its own scale: the column can be wide, and the labels grow with the drawing. */
 .spend-bar {
   margin-top: 8px;
   display: block;
+  max-width: 360px;
   overflow: visible;
 }
 

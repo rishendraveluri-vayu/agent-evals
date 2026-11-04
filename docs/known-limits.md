@@ -77,6 +77,10 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 - Tool schemas leave the server identical for every client, but harnesses rewrite them before the model sees them (LangGraph strips titles and inlines references; ADK wraps descriptions). The schemas are kept flat to minimise this, and the tool test compares what actually reaches the model.
 - The MCP SDK orders `inputSchema` keys differently under protocol 2026-07-28 than under 2025-11-25. Content is identical; every known harness negotiates 2025-11-25.
 
+## Labelling UI (SP7)
+
+- Labelling is blind only when it is done from the Label page. The Judge page keeps the judge's reasons closed until the held-out set is labelled, but trial pages still show judge verdicts and their evidence while labelling is open, so opening a trial mid-set can steer the labels still to come.
+
 ## To check before submission
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted

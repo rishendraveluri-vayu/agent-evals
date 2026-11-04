@@ -18,6 +18,18 @@ describe('ExperimentsView in fixture mode', () => {
     expect(latest).not.toContain('An A/A run on the same setup moved');
   });
 
+  it('says under the caption that the result rests on the judge', async () => {
+    const w = mount(ExperimentsView);
+    await settle();
+    const caveat = w.get('[data-test="latest-result"] [data-test="judge-caveat"]');
+    expect(caveat.text()).toBe(
+      'Rests on the judge: both tasks that differ are judge-graded, and its agreement with you (κ 0.70, interval 0.47 to 0.88) dips below the 0.6 bar and is provisional.',
+    );
+    expect(caveat.get('a').attributes('href')).toBe('#/labels/judge');
+    const caption = w.get('[data-test="latest-result"] figcaption').element;
+    expect(caption.parentElement?.nextElementSibling).toBe(caveat.element);
+  });
+
   it('draws the result in arm B colour only because B is better, with the A/A run labelled under it', async () => {
     const w = mount(ExperimentsView);
     await settle();
@@ -52,11 +64,28 @@ describe('ExperimentsView in fixture mode', () => {
     expect(rows()[1].text()).toContain('Better');
     expect(rows()[1].text()).toContain('+15 points (+7 to +23)');
     expect(rows()[3].get('[data-verdict]').text()).toBe('No clear difference');
-    expect(rows()[3].text()).toContain('+1 points (−7 to +9), as expected');
+    expect(rows()[3].text()).toContain('+1 point (−7 to +9), as expected');
     await w.get('[data-test="show-filter"]').setValue('running');
     expect(rows()).toHaveLength(1);
     expect(rows()[0].text()).toContain('Running');
     expect(rows()[0].text()).toContain('60 of 120');
+    expect(rows()[0].get('[data-test="result"]').text()).toContain('About 19 min left');
+  });
+
+  it('shows a pill in the Result column only for Better or Worse; status words are plain', async () => {
+    const w = mount(ExperimentsView);
+    await settle();
+    const results = w.findAll('[data-test="result"]');
+    expect(results).toHaveLength(5);
+    for (const r of results) {
+      expect(r.find('.pill').exists()).toBe(false);
+      const tag = r.find('.verdict-tag');
+      if (tag.exists()) expect(['better', 'worse']).toContain(tag.attributes('data-verdict'));
+      expect(r.find('.result-detail').exists()).toBe(true);
+    }
+    const plain = results.flatMap((r) => r.findAll('.result-plain').map((p) => p.text()));
+    expect(plain).toEqual(expect.arrayContaining(['Running', 'No clear difference', 'One arm']));
+    expect(results.filter((r) => r.find('.verdict-tag').exists())).toHaveLength(1);
   });
 
   it('opens a failed trial of arm B on the task where B did worst', async () => {

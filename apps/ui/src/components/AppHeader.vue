@@ -270,7 +270,7 @@ onMounted(async () => {
 }
 
 .health--down {
-  color: var(--fail);
+  color: var(--error);
 }
 
 .theme {

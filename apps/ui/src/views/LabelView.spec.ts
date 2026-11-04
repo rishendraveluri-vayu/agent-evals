@@ -24,6 +24,16 @@ describe('LabelView in fixture mode', () => {
     expectBlind(item.text());
   });
 
+  it('marks the question 1, 2 and 3 answer with a band, not an underline', async () => {
+    const w = mount(LabelView);
+    await settle();
+    const criteria = w.findAll('[data-test="criterion"]');
+    expect(criteria[0].classes()).toContain('criterion--active');
+    await criteria[2].findAll('button')[0].trigger('click');
+    expect(criteria[2].classes()).toContain('criterion--active');
+    expect(criteria[0].classes()).not.toContain('criterion--active');
+  });
+
   it('starts with no answer chosen and saves only once every question is answered', async () => {
     const w = mount(LabelView);
     await settle();
@@ -39,7 +49,7 @@ describe('LabelView in fixture mode', () => {
     const w = mount(LabelView);
     await settle();
     expect(w.find('a[href="#/labels/judge"]').exists()).toBe(false);
-    expect(w.get('[data-test="judge-later"]').text()).toBe('The judge comparison opens when this set is done (3 to go).');
+    expect(w.get('[data-test="judge-later"]').text()).toBe("The judge's reasons open on the Judge page when this set is done (3 to go).");
     await w.get('[data-test="set-tuning"]').trigger('click');
     expect(w.find('[data-test="judge-later"]').exists()).toBe(false);
     expect(w.get('[data-test="judge-link"]').attributes('href')).toBe('#/labels/judge');

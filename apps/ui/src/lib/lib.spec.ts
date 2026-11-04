@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeSpan, toBlindItem } from '../api/client';
 import type { Config } from '../api/types';
-import { armsOf, headline, pointsWithInterval, setupOf } from './arms';
+import { armsOf, headline, judgeCaveat, methodName, pointsWithInterval, setupOf, timeLeft } from './arms';
+import { coverage, coverageText } from './capabilities';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, splitCheck } from './checks';
 import { sentenceChanges } from './diff';
 import { money, relative, shortHash, signed, wholeMoney } from './format';
@@ -53,9 +54,13 @@ describe('scale', () => {
     expect(domainFor([-43, 12], -20, 30)).toEqual([-50, 30]);
   });
 
-  it('gives evenly spaced ticks every 10 points', () => {
-    expect(ticksFor(-20, 30, 10, '0', ' points').map((t) => t.label)).toEqual(['−20', '−10', '0', '+10', '+20', '+30 points']);
-    const values = ticksFor(-20, 30, 10).map((t) => t.value);
+  it('gives evenly spaced ticks every 10 points, zero named and no unit on any tick', () => {
+    const ticks = ticksFor(-20, 30, 10);
+    expect(ticks.map((t) => t.label)).toEqual(['−20', '−10', '0, no change', '+10', '+20', '+30']);
+    expect(ticks.find((t) => t.value === 0)).toMatchObject({ short: '0', strong: true });
+    expect(ticks.filter((t) => t.strong)).toHaveLength(1);
+    expect(ticks.some((t) => t.label.includes('point'))).toBe(false);
+    const values = ticks.map((t) => t.value);
     expect(new Set(values.slice(1).map((v, i) => v - values[i]))).toEqual(new Set([10]));
   });
 
@@ -127,8 +132,68 @@ describe('arms', () => {
     expect(armsOf({ axis: 'none', config_hashes: [configs[0].hash, configs[0].hash] }, configs).map((a) => a.label)).toEqual(['Config 3b81e04', 'Config 3b81e04']);
   });
 
-  it('writes a difference in points, with its interval', () => {
+  it('writes a difference in points, with its interval, and one point in the singular', () => {
     expect(pointsWithInterval({ estimate: 15, low: 7, high: 23 })).toBe('+15 points (+7 to +23)');
+    expect(pointsWithInterval({ estimate: 1, low: -7, high: 9 })).toBe('+1 point (−7 to +9)');
+    expect(pointsWithInterval({ estimate: -1, low: -9, high: 7 })).toBe('−1 point (−9 to +7)');
+    expect(pointsWithInterval({ estimate: 0, low: -5, high: 5 })).toBe('0 points (−5 to +5)');
+  });
+
+  it('works out the time left from the estimate and the trials done', () => {
+    expect(timeLeft({ minutes: 38 }, 60, 120)).toBe(19);
+    expect(timeLeft({ minutes: 38 }, 120, 120)).toBe(0);
+    expect(timeLeft(null, 60, 120)).toBeNull();
+  });
+
+  it('names only the methods the statistics step names', () => {
+    expect(methodName('paired_task_bootstrap')).toBe('Paired task bootstrap');
+    expect(methodName('something_new')).toBe('something_new');
+  });
+});
+
+describe('judgeCaveat', () => {
+  const judged = { id: 'a', judged: true };
+  const code = { id: 'b', judged: false };
+  const judge = { kappa: 0.7, low: 0.47, high: 0.88, bar: 0.6, tasks: 4 };
+  const isJudged = (t: { judged: boolean }) => t.judged;
+
+  it('says the result rests on the judge when every differing task is judge-graded', () => {
+    const c = judgeCaveat({ differing: [judged, { ...judged, id: 'c' }], isJudged, judge, toGo: 3 });
+    expect(c?.text).toBe(
+      'Rests on the judge: both tasks that differ are judge-graded, and its agreement with you (κ 0.70, interval 0.47 to 0.88) dips below the 0.6 bar and is provisional.',
+    );
+    expect(c?.link).toBe('agreement with you');
+    expect(`${c?.before}${c?.link}${c?.after}`).toBe(c?.text);
+    expect(judgeCaveat({ differing: [judged], isJudged, judge, toGo: 0 })?.text).toBe(
+      'Rests on the judge: the one task that differs is judge-graded, and its agreement with you (κ 0.70, interval 0.47 to 0.88) dips below the 0.6 bar.',
+    );
+    expect(judgeCaveat({ differing: [judged, judged, judged], isJudged, judge, toGo: 1 })?.text).toContain('all 3 tasks that differ are judge-graded');
+  });
+
+  it('says nothing when a code grader also sees a differing task, or there is no judge or no difference', () => {
+    expect(judgeCaveat({ differing: [judged, code], isJudged, judge, toGo: 3 })).toBeNull();
+    expect(judgeCaveat({ differing: [judged], isJudged, judge: null, toGo: 3 })).toBeNull();
+    expect(judgeCaveat({ differing: [], isJudged, judge, toGo: 3 })).toBeNull();
+  });
+
+  it('says the judge clears the bar when its whole interval does and labelling is done', () => {
+    expect(judgeCaveat({ differing: [judged], isJudged, judge: { ...judge, low: 0.62 }, toGo: 0 })?.text).toBe(
+      'Rests on the judge: the one task that differs is judge-graded, and its agreement with you (κ 0.70, interval 0.62 to 0.88) clears the 0.6 bar.',
+    );
+    expect(judgeCaveat({ differing: [judged], isJudged, judge: { ...judge, low: 0.62 }, toGo: 2 })?.after).toContain(') is provisional.');
+  });
+});
+
+describe('capability coverage', () => {
+  const harness = (evidence: string[]) =>
+    ({ capabilities: { settings: Object.fromEntries(evidence.map((e, i) => [`s${i}`, { supported: true, evidence: e }])) } }) as unknown as Parameters<typeof coverage>[0];
+
+  it('counts probed, declared and pending settings, and names only the nonzero parts', () => {
+    const h = harness(['probe:2026-11-03', 'probe:2026-11-03', 'declared:adapter watchdog', 'none']);
+    expect(coverage(h)).toEqual({ probed: 2, declared: 1, pending: 1, total: 4 });
+    expect(coverageText(h)).toBe('2 probed, 1 declared, 1 not probed yet');
+    expect(coverageText(harness(['declared:x', 'none', 'none']))).toBe('1 declared, 2 not probed yet');
+    expect(coverageText(harness(['probe:x', 'declared:y']))).toBe('1 probed, 1 declared');
   });
 });
 

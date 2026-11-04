@@ -1,5 +1,7 @@
 /* Design tokens for the whole UI (SP7 design, approved 4 Nov). Colour always carries meaning:
    arm A is blue, arm B is orange, pass is green, fail is red, infra is dashed grey with an icon.
+   Pass green and fail red belong to graded outcomes only (theme.spec.ts lists where they may be
+   used); error messages use --error, which takes the fail red but is its own name.
    Blue is kept for arm A and dashes for infra (and zero lines): links, focus rings and running
    indicators are ink.
    The dark theme is chosen by the viewer (header toggle, or ?theme=dark), never flipped
@@ -34,6 +36,7 @@
   --fail: #b4232b;
   --fail-soft: #fdeded;
   --fail-cell: #fbd5d7;
+  --error: var(--fail);
   --neutral-dot: #57606a;
   --neutral-line: #afb8c1;
   --client: #6639ba;
@@ -62,9 +65,7 @@
   --series-6: #57606a;
   --neutral-mark: #c9d1d9;
   --neutral-mark-strong: #8c959f;
-  --good: var(--pass);
   --warning: #9a6700;
-  --critical: var(--fail);
 }
 
 :root[data-theme='dark'] {
@@ -104,7 +105,7 @@
   --span-tool: #39a8b0;
   --span-client: #a887ee;
   --span-harness: var(--neutral-mark-strong);
-  --mark: #4a1c20;
+  --mark: #341618;
 
   --series-1: #6f93f2;
   --series-2: #e5814a;
@@ -477,6 +478,25 @@ code,
   padding: 1px 9px;
 }
 
+/* A result that is not a finding (no clear difference, no interval yet) or a status (Running,
+   Finished): plain words, darker and larger than the detail line under them. Only Better and
+   Worse are pills. */
+.result-plain {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* The line under any result: its numbers, or what happens next. */
+.result-detail {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
 .dot {
   display: inline-block;
   width: 10px;
@@ -620,10 +640,18 @@ code,
   white-space: pre-wrap;
 }
 
+/* Text the judge quoted for a failed check (trial page). In the dark theme a tint alone is too
+   faint to find, so the passage is underlined in the fail red as well. */
 mark {
   background: var(--mark);
   color: var(--ink);
   padding: 0 2px;
+}
+
+:root[data-theme='dark'] mark {
+  background: var(--fail-soft);
+  text-decoration: underline 1px var(--fail);
+  text-underline-offset: 3px;
 }
 
 .disclosure {
@@ -640,10 +668,55 @@ mark {
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 12px;
+  margin: 0 -18px;
+  padding: 0 18px;
+  border-radius: 9px;
+}
+
+.disclosure > summary:hover {
+  background: var(--surface-muted);
 }
 
 .disclosure[open] > summary {
   margin-bottom: 4px;
+  border-radius: 9px 9px 0 0;
+}
+
+/* Every disclosure shows a chevron that flips when it opens: a flex summary loses the browser's
+   own marker. */
+.disclosure > summary,
+.options > summary,
+.requests > summary,
+.run-details > summary {
+  list-style: none;
+}
+
+.disclosure > summary::-webkit-details-marker,
+.options > summary::-webkit-details-marker,
+.requests > summary::-webkit-details-marker,
+.run-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure > summary::after,
+.options > summary::after,
+.requests > summary::after,
+.run-details > summary::after {
+  content: '';
+  flex: none;
+  margin-left: auto;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--ink-2);
+  border-bottom: 2px solid var(--ink-2);
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.disclosure[open] > summary::after,
+.options[open] > summary::after,
+.requests[open] > summary::after,
+.run-details[open] > summary::after {
+  transform: translateY(2px) rotate(-135deg);
 }
 
 .code-block {

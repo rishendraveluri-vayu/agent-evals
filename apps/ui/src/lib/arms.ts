@@ -62,6 +62,12 @@ export function doneCount(counts: TrialCounts): number {
   return typeof counts.done === 'number' ? counts.done : Object.values(counts.done).reduce((a, b) => a + b, 0);
 }
 
+/** Minutes left on a run, from its estimate and how far it has got: null without an estimate. */
+export function timeLeft(estimate: { minutes: number } | null | undefined, done: number, total: number): number | null {
+  if (!estimate) return null;
+  return (estimate.minutes * Math.max(0, total - done)) / Math.max(1, total);
+}
+
 export function totalTrials(e: Pick<Experiment, 'counts' | 'estimate'>): number {
   const c = e.counts;
   const fromCounts = c.queued + c.running + doneCount(c) + c.cancelled;
@@ -92,9 +98,10 @@ export function verdictTitle(stats: CompareStats, arms: Arm[]): string {
   return 'No clear difference';
 }
 
-/** "+15 points (+7 to +23)" */
+/** "+15 points (+7 to +23)", "+1 point (−7 to +9)" */
 export function pointsWithInterval(i: Interval, unit = 'points'): string {
-  return `${signed(i.estimate)}${unit ? ` ${unit}` : ''} (${signed(i.low)} to ${signed(i.high)})`;
+  const word = unit === 'points' && Math.abs(i.estimate) === 1 ? 'point' : unit;
+  return `${signed(i.estimate)}${word ? ` ${word}` : ''} (${signed(i.low)} to ${signed(i.high)})`;
 }
 
 export function intervalText(i: Interval): string {
@@ -103,4 +110,43 @@ export function intervalText(i: Interval): string {
 
 export function excludesZero(i: Interval): boolean {
   return i.low > 0 || i.high < 0;
+}
+
+/** The statistics step's method ids, in words. An id not listed here is shown as it is. */
+export const METHOD_NAMES: Record<string, string> = {
+  paired_task_bootstrap: 'Paired task bootstrap',
+};
+
+export function methodName(id: string): string {
+  return METHOD_NAMES[id] ?? id;
+}
+
+/** What a result rests on when every task that differs is judge-graded. `link` is the part that
+ *  opens the Judge page; `text` is the whole sentence. */
+export interface JudgeCaveat {
+  text: string;
+  before: string;
+  link: string;
+  after: string;
+}
+
+/** Says a verdict rests on the judge, and how far the judge can be trusted, when every task that
+ *  differs after correction is judge-graded. Null when there is no judge, no differing task, or a
+ *  differing task that a code grader also sees. */
+export function judgeCaveat<T>(args: {
+  differing: T[];
+  isJudged: (task: T) => boolean;
+  judge: CompareStats['judge'] | null | undefined;
+  toGo: number;
+}): JudgeCaveat | null {
+  const { differing, isJudged, judge, toGo } = args;
+  if (!judge || !differing.length || !differing.every(isJudged)) return null;
+  const n = differing.length;
+  const which = n === 1 ? 'the one task that differs is' : n === 2 ? 'both tasks that differ are' : `all ${n} tasks that differ are`;
+  const parts = [...(judge.low < judge.bar ? [`dips below the ${judge.bar} bar`] : []), ...(toGo > 0 ? ['is provisional'] : [])];
+  const verb = parts.length ? parts.join(' and ') : `clears the ${judge.bar} bar`;
+  const before = `Rests on the judge: ${which} judge-graded, and its `;
+  const link = 'agreement with you';
+  const after = ` (κ ${judge.kappa.toFixed(2)}, interval ${judge.low.toFixed(2)} to ${judge.high.toFixed(2)}) ${verb}.`;
+  return { text: `${before}${link}${after}`, before, link, after };
 }

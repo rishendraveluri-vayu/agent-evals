@@ -188,7 +188,14 @@ interface ToolItem {
 }
 interface Segment {
   text: string;
-  mark: boolean;
+  /** The failed check that quoted this passage: its index in the grades and its name. */
+  quote: { index: number; name: string } | null;
+}
+
+interface Quote {
+  text: string;
+  index: number;
+  name: string;
 }
 interface MessageItem {
   kind: 'message';
@@ -196,6 +203,8 @@ interface MessageItem {
   who: string;
   client: boolean;
   paragraphs: Segment[][];
+  /** Whether any passage in it is highlighted, so the key goes under it. */
+  marked: boolean;
 }
 
 function pretty(value: unknown): string {
@@ -227,27 +236,30 @@ function summarise(args: unknown): string {
     .join(', ');
 }
 
-/** Splits a reply into paragraphs and marks the passages a failed check quoted. */
-function segments(body: string, quotes: string[]): Segment[][] {
+/** Splits a reply into paragraphs and marks the passages a failed check quoted, each tied to the
+ *  check that quoted it. */
+function segments(body: string, quotes: Quote[]): Segment[][] {
   return body.split(/\n{2,}/).map((para) => {
     const hits = quotes
-      .map((q) => ({ q, at: para.indexOf(q) }))
-      .filter((h) => h.q && h.at >= 0)
+      .map((q) => ({ q, at: para.indexOf(q.text) }))
+      .filter((h) => h.q.text && h.at >= 0)
       .sort((x, y) => x.at - y.at);
     const out: Segment[] = [];
     let pos = 0;
     for (const h of hits) {
       if (h.at < pos) continue;
-      if (h.at > pos) out.push({ text: para.slice(pos, h.at), mark: false });
-      out.push({ text: h.q, mark: true });
-      pos = h.at + h.q.length;
+      if (h.at > pos) out.push({ text: para.slice(pos, h.at), quote: null });
+      out.push({ text: h.q.text, quote: { index: h.q.index, name: h.q.name } });
+      pos = h.at + h.q.text.length;
     }
-    if (pos < para.length) out.push({ text: para.slice(pos), mark: false });
+    if (pos < para.length) out.push({ text: para.slice(pos), quote: null });
     return out;
   });
 }
 
-const failedQuotes = computed(() => (vm.value?.grades ?? []).filter((g) => g.verdict === 'fail').flatMap((g) => g.evidence));
+const failedQuotes = computed<Quote[]>(() =>
+  (vm.value?.grades ?? []).flatMap((g, index) => (g.verdict === 'fail' ? g.evidence.map((text) => ({ text, index, name: g.name })) : [])),
+);
 
 const conversation = computed<(ToolItem | MessageItem)[]>(() => {
   const v = vm.value;
@@ -280,12 +292,14 @@ const conversation = computed<(ToolItem | MessageItem)[]>(() => {
       out.push(...toolsOf(turnId));
       agentIndex += 1;
     }
+    const paragraphs = segments(m.content, isAgent ? failedQuotes.value : []);
     out.push({
       kind: 'message',
       id: `m${i}`,
       who: isAgent ? 'Agent' : m.source === 'client_sim' ? 'Client, simulated' : 'Client',
       client: !isAgent,
-      paragraphs: segments(m.content, isAgent ? failedQuotes.value : []),
+      paragraphs,
+      marked: paragraphs.some((p) => p.some((x) => x.quote)),
     });
   });
   if (!transcript.length) out.push(...toolsOf(null));
@@ -545,16 +559,29 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                     v-for="(seg, si) in para"
                     :key="si"
                   >
-                    <mark v-if="seg.mark">{{ seg.text }}</mark>
+                    <a
+                      v-if="seg.quote"
+                      :href="`#grade-${seg.quote.index}`"
+                      class="quote-link"
+                      data-test="quote-link"
+                      @click.prevent="jumpToGrade(seg.quote.index)"
+                    ><span class="visually-hidden">Quoted by the judge for {{ seg.quote.name }}: </span><mark>{{ seg.text }}</mark></a>
                     <template v-else>
                       {{ seg.text }}
                     </template>
                   </template>
                 </p>
               </article>
+              <p
+                v-if="item.kind === 'message' && item.marked"
+                class="mark-key"
+                data-test="mark-key"
+              >
+                Highlighted: text the judge quoted for a failed check.
+              </p>
               <details
-                v-else
-                class="disclosure"
+                v-else-if="item.kind === 'tool'"
+                class="disclosure tool-call"
                 data-test="tool-call"
               >
                 <summary>
@@ -918,6 +945,28 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
   margin-left: auto;
 }
 
+/* The time stays right-aligned; the chevron follows it, 12 px on. */
+.tool-call > summary::after {
+  margin-left: 0;
+}
+
+/* A quoted passage is a link to the check that quoted it, styled as the highlight alone. */
+.quote-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.quote-link:hover mark {
+  box-shadow: inset 0 -2px 0 var(--rule-strong);
+}
+
+.mark-key {
+  margin-top: -6px;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
 .tool-body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -991,22 +1040,19 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 }
 
 .files a,
-.requests summary {
+.requests > summary {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
 }
 
-.requests summary {
+/* A disclosure, not a link: ink, medium weight, and the chevron from theme.css. */
+.requests > summary {
   cursor: pointer;
-  color: var(--link);
-  text-decoration: underline;
-  text-decoration-color: var(--rule-strong);
-  text-underline-offset: 3px;
-}
-
-.requests summary:hover {
-  text-decoration-color: var(--ink);
+  gap: 8px;
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: none;
 }
 
 .requests ul {

@@ -124,7 +124,7 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
         <span
           v-if="queue && left > 0"
           data-test="judge-later"
-        >The judge comparison opens when this set is done ({{ left }} to go).</span>
+        >The judge's reasons open on the Judge page when this set is done ({{ left }} to go).</span>
         <a
           v-else-if="!loading"
           :href="href.judge()"
@@ -265,31 +265,33 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
             Press 1, 2 or 3 to answer the selected question.
           </p>
         </div>
-        <fieldset
-          v-for="(c, ci) in criteria"
-          :key="c.id"
-          class="criterion"
-          :class="{ 'criterion--active': ci === active }"
-          data-test="criterion"
-        >
-          <legend class="strong">
-            {{ c.question }}
-          </legend>
-          <div class="answers">
-            <button
-              v-for="v in VALUES"
-              :key="v.value"
-              type="button"
-              class="answer"
-              :class="`answer--${v.value}`"
-              :aria-pressed="answers[c.id] === v.value"
-              @click="choose(ci, v.value)"
-              @focus="active = ci"
-            >
-              {{ v.text }}
-            </button>
-          </div>
-        </fieldset>
+        <div class="criteria">
+          <fieldset
+            v-for="(c, ci) in criteria"
+            :key="c.id"
+            class="criterion"
+            :class="{ 'criterion--active': ci === active }"
+            data-test="criterion"
+          >
+            <legend class="strong">
+              {{ c.question }}
+            </legend>
+            <div class="answers">
+              <button
+                v-for="v in VALUES"
+                :key="v.value"
+                type="button"
+                class="answer"
+                :class="`answer--${v.value}`"
+                :aria-pressed="answers[c.id] === v.value"
+                @click="choose(ci, v.value)"
+                @focus="active = ci"
+              >
+                {{ v.text }}
+              </button>
+            </div>
+          </fieldset>
+        </div>
         <label class="field small">
           <span class="strong">Note, optional</span>
           <textarea
@@ -393,28 +395,35 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
   gap: 18px;
 }
 
+.criteria {
+  display: flex;
+  flex-direction: column;
+}
+
 .hint {
   margin-top: 4px;
 }
 
+/* Every question keeps the same box, so moving the selection does not shift the layout; the one
+   that 1, 2 and 3 answer sits in a grey band. The legend floats so it sits inside the padding. */
 .criterion {
-  margin: 0;
-  padding: 0;
+  margin: 0 -12px;
+  padding: 10px 12px;
   border: 0;
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
 .criterion legend {
+  float: left;
+  width: 100%;
   padding: 0;
-  margin-bottom: 8px;
 }
 
-.criterion--active legend {
-  text-decoration: underline;
-  text-decoration-color: var(--rule-strong);
-  text-underline-offset: 4px;
+.criterion--active {
+  background: var(--surface-muted);
 }
 
 .answers {
@@ -430,10 +439,6 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
-}
-
-.answer--unsure {
-  color: var(--ink-2);
 }
 
 .answer--yes[aria-pressed='true'] {
@@ -473,6 +478,6 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
 }
 
 .error {
-  color: var(--fail);
+  color: var(--error);
 }
 </style>

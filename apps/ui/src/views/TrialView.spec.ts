@@ -27,6 +27,12 @@ describe('TrialView in fixture mode', () => {
     const messages = w.findAll('[data-test="message"]');
     expect(messages.map((m) => m.find('.bubble-who').text())).toEqual(['Client', 'Agent']);
     expect(messages[1].get('mark').text()).toBe('an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870');
+    // The highlight links to the check that quoted it, and says so to a screen reader.
+    const quote = messages[1].get('[data-test="quote-link"]');
+    expect(quote.attributes('href')).toBe('#grade-1');
+    expect(quote.get('.visually-hidden').text()).toBe('Quoted by the judge for Accounts for tax on FD interest:');
+    expect(w.get('[data-test="mark-key"]').text()).toBe('Highlighted: text the judge quoted for a failed check.');
+    expect(w.findAll('[data-test="mark-key"]')).toHaveLength(1);
     const grades = w.findAll('[data-test="grade"]');
     expect(grades).toHaveLength(3);
     expect(grades[1].text()).toContain('Accounts for tax on FD interest');
@@ -56,14 +62,24 @@ describe('TrialView in fixture mode', () => {
     expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed: 2 of 3 checks passed');
   });
 
-  it('jumps to the failed check without changing the route', async () => {
+  it('jumps to the failed check without changing the route, from "Failed on" or the highlight', async () => {
     const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' }, attachTo: document.body });
     await settle();
     const before = window.location.hash;
     await w.get('[data-test="failed-on"] a').trigger('click');
     expect(document.activeElement?.id).toBe('grade-1');
+    (document.activeElement as HTMLElement).blur();
+    await w.get('[data-test="quote-link"]').trigger('click');
+    expect(document.activeElement?.id).toBe('grade-1');
     expect(window.location.hash).toBe(before);
     w.unmount();
+  });
+
+  it('shows a chevron on every disclosure, after the time on tool rows', async () => {
+    const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
+    await settle();
+    expect(w.get('[data-test="tool-call"]').classes()).toEqual(expect.arrayContaining(['disclosure', 'tool-call']));
+    expect(w.get('.requests > summary').text()).toMatch(/^Model requests \(\d+\)$/);
   });
 
   it('places the timeline in the story column, under the conversation', async () => {

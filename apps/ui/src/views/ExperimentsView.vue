@@ -6,10 +6,10 @@ import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { armsOf, axisWords, doneCount, excludesZero, headline, intervalText, pointsWithInterval, setupOf, totalTrials, type Verdict } from '../lib/arms';
+import { armsOf, axisWords, doneCount, excludesZero, headline, intervalText, judgeCaveat, pointsWithInterval, setupOf, timeLeft, totalTrials, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { minutes, money, percent, relative, signed } from '../lib/format';
-import { harnessShort, modelName, settingLabel, splitName } from '../lib/names';
+import { harnessShort, isJudged, modelName, settingLabel, splitName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
 import { href } from '../router';
 
@@ -77,9 +77,15 @@ const latestResult = computed(() => {
     rates: `pass rate, ${percent(stats.a.rate)} to ${percent(stats.b.rate)}`,
     min,
     max,
-    ticks: ticksFor(min, max, 10, '0, no change'),
+    ticks: ticksFor(min, max, 10),
     rows: [main, ...aa],
     caption: `${level}% interval ${intervalText(stats.diff)}, paired over ${latest.tasks.length}${split ? ` ${split}` : ''} tasks with ${latest.n} trials each.${noise}`,
+    caveat: judgeCaveat({
+      differing: stats.tasks.filter((t) => t.significant).map((t) => latest.tasks.find((x) => x.sha256 === t.task || x.id === t.task)),
+      isJudged,
+      judge: stats.judge,
+      toGo: d.heldoutToGo ?? 0,
+    }),
     aria: `Difference in pass rate: ${signed(stats.diff.estimate)} points, ${level}% interval ${intervalText(stats.diff)}, on a scale from ${min} to ${max}.${stats.aa ? ` An A/A run on the same setup gave ${signed(stats.aa.diff.estimate)}, interval ${intervalText(stats.aa.diff)}.` : ''}`,
   };
 });
@@ -87,7 +93,7 @@ const latestResult = computed(() => {
 interface Attention {
   key: string;
   to: string;
-  icon: 'plug' | 'check' | 'alert';
+  icon: 'plug' | 'tag' | 'alert';
   title: string;
   detail: string;
   infra: boolean;
@@ -113,7 +119,7 @@ const attention = computed<Attention[]>(() => {
     out.push({
       key: 'labels',
       to: href.labels(),
-      icon: 'check',
+      icon: 'tag',
       infra: false,
       title: `${d.heldoutToGo} held-out ${d.heldoutToGo === 1 ? 'label' : 'labels'} to go`,
       detail: "The judge's agreement with you is final once all of them are labelled.",
@@ -147,8 +153,7 @@ interface Row {
   trials: string;
   share: number;
   live: boolean;
-  pill: string;
-  pillClass: string;
+  status: string;
   verdict: Verdict | null;
   detail: string;
   estimate: string;
@@ -165,22 +170,21 @@ const rows = computed<Row[]>(() => {
       const done = doneCount(e.counts);
       const stats = d.compares.get(e.id)?.stats ?? null;
       const sameTwice = twoArms(e) && e.config_hashes[0] === e.config_hashes[1];
-      let pill = 'Finished';
-      let pillClass = 'pill--outline';
+      let status = 'Finished';
       let verdict: Verdict | null = null;
       let detail = 'Verdict not computed yet';
       if (e.status === 'running') {
-        pill = 'Running';
-        const left = e.estimate ? (e.estimate.minutes * (total - done)) / Math.max(1, total) : null;
+        status = 'Running';
+        const left = timeLeft(e.estimate, done, total);
         detail = left !== null ? `About ${minutes(left)} left` : `${done} of ${total} done`;
       } else if (e.status === 'created') {
-        pill = 'Not started';
+        status = 'Not started';
         detail = 'Waiting for you to start it';
       } else if (e.status === 'cancelled') {
-        pill = 'Cancelled';
+        status = 'Cancelled';
         detail = `${done} of ${total} ran`;
       } else if (!twoArms(e)) {
-        pill = 'One arm';
+        status = 'One arm';
         detail = 'Nothing to compare';
       } else if (stats) {
         verdict = stats.verdict === 'better' ? 'better' : stats.verdict === 'worse' ? 'worse' : 'none';
@@ -196,8 +200,7 @@ const rows = computed<Row[]>(() => {
         trials: `${done} of ${total}`,
         share: total ? (done / total) * 100 : 0,
         live: e.status === 'running',
-        pill,
-        pillClass,
+        status,
         verdict,
         detail,
         estimate: e.estimate ? `of ${money(e.estimate.cost_usd.expected)} estimated` : '',
@@ -272,6 +275,17 @@ const rows = computed<Row[]>(() => {
             {{ latestResult.caption }}
           </figcaption>
         </figure>
+        <p
+          v-if="latestResult.caveat"
+          class="caveat"
+          data-test="judge-caveat"
+        >
+          <AppIcon
+            name="alert"
+            :size="14"
+          />
+          <span>{{ latestResult.caveat.before }}<a :href="href.judge()">{{ latestResult.caveat.link }}</a>{{ latestResult.caveat.after }}</span>
+        </p>
       </section>
       <section
         v-else
@@ -461,10 +475,10 @@ const rows = computed<Row[]>(() => {
                 />
                 <span
                   v-else
-                  class="pill"
-                  :class="r.pillClass"
-                >{{ r.pill }}</span>
-                <span class="secondary block num detail">{{ r.detail }}</span>
+                  class="result-plain"
+                  data-test="status"
+                >{{ r.status }}</span>
+                <span class="result-detail detail">{{ r.detail }}</span>
               </td>
               <td class="right num c-spend">
                 {{ money(r.e.spend_usd) }}<span class="secondary block estimate">{{ r.estimate }}</span>
@@ -496,7 +510,7 @@ const rows = computed<Row[]>(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 24px;
-  align-items: stretch;
+  align-items: start;
 }
 
 .latest {
@@ -547,6 +561,21 @@ const rows = computed<Row[]>(() => {
 .caption {
   margin-top: 10px;
   max-width: 70ch;
+}
+
+/* What the result rests on, right under the caption: an icon and words, never colour alone. */
+.caveat {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 72ch;
+  margin-top: -6px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.caveat .icon {
+  margin-top: 4px;
 }
 
 .attention {

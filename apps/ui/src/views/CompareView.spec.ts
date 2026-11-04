@@ -1,13 +1,25 @@
-import { mount } from '@vue/test-utils';
+import { mount, type VueWrapper } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
-import { settle, useFixtures } from '../test/helpers';
+import type { Compare, CompareStats } from '../api/types';
+import compares from '../fixtures/compares.json';
+import details from '../fixtures/experiment-details.json';
+import experimentTrials from '../fixtures/experiment-trials.json';
+import judge from '../fixtures/judge-agreement.json';
+import queue from '../fixtures/label-queue.json';
+import { routeFetch, settle, useFixtures } from '../test/helpers';
 import CompareView from './CompareView.vue';
-
-useFixtures();
 
 const toneOf = (classes: string[], prefix: string) => classes.find((c) => c.startsWith(prefix))?.slice(prefix.length);
 
+/** Each element follows the one before it in the document. */
+function inOrder(w: VueWrapper, selectors: string[]) {
+  const els = selectors.map((s) => w.get(s).element);
+  return els.every((el, i) => i === 0 || !!(els[i - 1].compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
+}
+
 describe('CompareView in fixture mode', () => {
+  useFixtures();
+
   it('leads with the verdict and states the difference with its interval', async () => {
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
@@ -15,8 +27,21 @@ describe('CompareView in fixture mode', () => {
     const verdict = w.get('[data-test="verdict"]').text();
     expect(verdict).toContain('+15 points of pass rate, from 58% to 73%');
     expect(verdict).toContain('The 95% interval runs from +7 to +23 points');
-    expect(verdict).toContain("Running the same config twice moved only +1 point (−7 to +9), so the setup's own wobble is smaller than this difference.");
     expect(verdict).toContain('2 trials stopped on infra failures were re-run and are listed, not dropped');
+  });
+
+  it('says why this is not noise, then what it rests on, naming the method only as the payload does', async () => {
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.findAll('[data-test="why-title"]').map((h) => h.text())).toEqual(['Why this is not noise', 'What it rests on']);
+    expect(w.findAll('[data-test="why-line"]').map((p) => p.text())).toEqual([
+      'The interval stays above zero.',
+      'Check on the method: the same config run twice gave +1 point (−7 to +9), which includes zero, so the method did not invent a difference when nothing changed.',
+      'Paired by task: each task is compared with itself across the two arms. Paired task bootstrap, p = 0.003.',
+    ]);
+    expect(w.text()).not.toContain('Permutation');
+    expect(w.text()).not.toContain('wobble');
+    expect(w.text()).not.toContain('resampled');
   });
 
   it('names the plan and platform commits in the meta line', async () => {
@@ -83,10 +108,14 @@ describe('CompareView in fixture mode', () => {
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     const fd = w.findAll('[data-test="forest-row"]')[11];
-    expect(fd.get('a').attributes('href')).toBe('#/trials/tr_fd-vs-sip-07_b_3');
+    // The row link opens the same trial as the callout's button.
+    expect(fd.get('a').attributes('href')).toBe('#/trials/tr_fd-vs-sip-07_b_4');
+    expect(fd.get('a').attributes('aria-label')).toBe('Open a failed trial of fd-vs-sip-07, arm B');
+    expect(fd.get('a').attributes('title')).toBe('Open a failed trial of fd-vs-sip-07, arm B');
     const look = w.get('[data-test="worth-a-look"]');
-    expect(look.classes()).not.toContain('panel--dashed');
-    expect(look.get('h2').text()).toBe('Worth a look: fd-vs-sip-07 fell from 4 of 5 to 2 of 5');
+    expect(look.classes()).not.toContain('panel');
+    expect(look.get('h3').text()).toBe('Worth a look: fd-vs-sip-07 fell from 4 of 5 to 2 of 5');
+    expect(w.findAll('h2, h3').filter((h) => h.text().startsWith('Worth a look'))).toHaveLength(1);
     expect(look.text()).toContain('No clear difference: its interval includes zero even before correcting for 12 tasks (−40, interval −90 to +10). The failed trials show what went wrong.');
     expect(look.text()).not.toContain('got worse');
     expect(look.text()).not.toContain('B passed');
@@ -97,13 +126,41 @@ describe('CompareView in fixture mode', () => {
     expect(link.text()).toBe('Open a failed trial');
   });
 
-  it('says the result leans on the judge, and that the judge check is provisional', async () => {
+  it('says under the figure that the result rests on the judge, then gives the next step, in the answer column', async () => {
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
-    const verdict = w.get('[data-test="verdict"]').text();
-    expect(verdict).toContain(
-      'though its interval dips below it. Both tasks that differ after correction are judge-graded, so this result leans on the judge. Provisional: 3 held-out items still to label.',
+    const caveat = w.get('[data-test="judge-caveat"]');
+    expect(caveat.text()).toBe(
+      'Rests on the judge: both tasks that differ are judge-graded, and its agreement with you (κ 0.70, interval 0.47 to 0.88) dips below the 0.6 bar and is provisional.',
     );
+    expect(caveat.get('a').text()).toBe('agreement with you');
+    expect(caveat.get('a').attributes('href')).toBe('#/labels/judge');
+    expect(inOrder(w, ['[data-test="verdict-title"]', '.verdict-main svg[role="img"]', '[data-test="judge-caveat"]', '[data-test="worth-a-look"]', '.verdict-why'])).toBe(true);
+    expect(w.get('.verdict-main').find('[data-test="worth-a-look"]').exists()).toBe(true);
+    // Nothing follows the task table.
+    expect(w.get('#tasks').element.closest('section')?.nextElementSibling).toBeNull();
+    const why = w.get('.verdict-why').text();
+    expect(why).toContain('though its interval dips below it. Provisional: 3 held-out outputs still to label.');
+    expect(why).not.toContain('leans on the judge');
+  });
+
+  it('says on a phone what the shared axis shows, and that export needs the API in sample mode', async () => {
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="axis-caption"]').text()).toBe("B minus A, in points. 95% intervals, not corrected; verdicts after Holm's correction for 12 tasks.");
+    expect(w.get('[data-test="export-note"]').text()).toBe('Export needs the API');
+    expect(w.get('.actions button').attributes('disabled')).toBeDefined();
+  });
+
+  it('draws each cost bar on a rail that is its tile’s scale', async () => {
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('#costs').text()).toBe('Pass rate and what it costs');
+    const tiles = w.findAll('.metrics > div');
+    expect(tiles[0].text()).toContain('interval +7 to +23 points');
+    expect(tiles[0].get('[data-test="bar-a"]').attributes('style')).toContain('width: 58');
+    expect(tiles[1].get('[data-test="bar-b"]').attributes('style')).toContain('width: 100%');
+    for (const t of tiles) expect(t.findAll('.rail')).toHaveLength(2);
   });
 
   it('says there is no verdict yet when the statistics have not reported', async () => {
@@ -113,5 +170,35 @@ describe('CompareView in fixture mode', () => {
     expect(w.text()).toContain('graded trials');
     expect(w.findAll('[data-test="forest-row"]')).toHaveLength(12);
     expect(w.text()).toContain('No interval yet');
+  });
+});
+
+describe('CompareView against the API: the check on the method', () => {
+  const base = compares.exp_heldout as unknown as Compare;
+  function withStats(over: Partial<CompareStats>) {
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': { ...base, stats: { ...base.stats, ...over } },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+    });
+  }
+
+  it('warns when the same config run twice showed a difference', async () => {
+    withStats({ aa: { experiment_id: 'exp_aa', diff: { estimate: 9, low: 2, high: 16 } } });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.findAll('[data-test="why-line"]')[1].text()).toBe(
+      'Check on the method: the same config run twice gave +9 points (+2 to +16), a difference where there is none. Treat this result with caution.',
+    );
+  });
+
+  it('says the method is unchecked when there is no A/A run', async () => {
+    withStats({ aa: null });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.findAll('[data-test="why-line"]')[1].text()).toBe('No A/A run on this setup yet, so the method has not been checked on a run where nothing changed.');
+    expect(w.find('[data-test="export-note"]').exists()).toBe(false);
   });
 });

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /** One way to say how arm B did against arm A, wherever a verdict shows. Better and worse are a
  *  tinted pill with an arrow, so the meaning never rests on colour alone. No clear difference is
- *  plain grey text with no pill: it is the absence of a finding, not a finding. */
+ *  plain ink text with no pill (.result-plain in theme.css): it is the absence of a finding, not
+ *  a finding. */
 import { computed } from 'vue';
 import type { Verdict } from '../lib/arms';
 import AppIcon from './AppIcon.vue';
@@ -30,7 +31,7 @@ const text = computed(() => props.label ?? DEFAULTS[props.verdict]);
   />{{ text }}</span>
   <span
     v-else
-    class="verdict-plain"
+    class="result-plain"
     :data-verdict="verdict"
   >{{ text }}</span>
 </template>
@@ -55,11 +56,5 @@ const text = computed(() => props.label ?? DEFAULTS[props.verdict]);
 .verdict-tag--worse {
   background: var(--fail-soft);
   color: var(--fail);
-}
-
-.verdict-plain {
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--ink-2);
 }
 </style>

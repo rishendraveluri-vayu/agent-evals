@@ -238,7 +238,7 @@ const LEGEND: [SpanBar['role'], string][] = [
 }
 
 .err {
-  color: var(--fail);
+  color: var(--error);
 }
 
 /* No fill behind the bars: thin verticals at each axis tick run down through every row. */

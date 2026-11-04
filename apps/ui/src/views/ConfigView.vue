@@ -5,6 +5,7 @@ import { errorText } from '../api/errors';
 import { SETTING_NAMES, type Config, type ConfigDiffEntry, type Harness, type ModelInfo, type Prompt, type SettingName, type Settings, type Toolset } from '../api/types';
 import LoadState from '../components/LoadState.vue';
 import { useLoad } from '../lib/async';
+import { coverageText } from '../lib/capabilities';
 import { changedLineCount, lineChanges, sentenceChanges } from '../lib/diff';
 import { mdBlocks } from '../lib/markdown';
 import { shortHash, shortRef } from '../lib/format';
@@ -216,13 +217,6 @@ function versionLine(h: Harness): string {
   return /^[0-9a-f]{40}$/.test(h.ref) ? `Pinned at ${shortRef(h.ref)}` : `${h.package} ${h.ref}`;
 }
 
-function evidenceLine(h: Harness): string {
-  const all = Object.values(h.capabilities.settings);
-  const pending = all.filter((s) => s.evidence === 'none').length;
-  const probed = all.filter((s) => s.evidence.startsWith('probe:')).length;
-  if (pending) return `${pending} of ${all.length} settings not probed yet`;
-  return `${probed} probed, ${all.length - probed} declared`;
-}
 
 async function save(thenRun: boolean) {
   if (invalid.value || !harness.value || !prompt.value || !toolset.value) return;
@@ -309,7 +303,10 @@ watch(
                 data-test="harness-radio"
               ><span class="strong">{{ harnessName(h.name) }}</span></span>
               <span class="secondary smaller">{{ versionLine(h) }}</span>
-              <span class="smaller">{{ evidenceLine(h) }}</span>
+              <span
+                class="smaller"
+                data-test="harness-coverage"
+              >{{ coverageText(h) }}</span>
             </label>
           </div>
         </fieldset>
@@ -546,8 +543,7 @@ watch(
                   <td>
                     <span
                       :class="{
-                        'pill pill--pass pill--small': effect(name).kind === 'yes',
-                        'pill pill--outline pill--small': effect(name).kind === 'todo' || effect(name).kind === 'no',
+                        'pill pill--outline pill--small': effect(name).kind !== 'na',
                         secondary: effect(name).kind === 'na',
                       }"
                     >{{ effect(name).text }}</span>
@@ -639,9 +635,8 @@ watch(
                   v-for="c in data.configs"
                   :key="c.hash"
                   :value="c.hash"
-                >Config {{ shortHash(c.hash) }}</option>
+                >{{ c.name }} · {{ shortHash(c.hash) }}</option>
               </select>
-              <span class="secondary smaller">{{ base?.name }}</span>
             </label>
             <ul
               v-if="(apiDiff ? apiDiff.length : changes.length)"
@@ -959,7 +954,7 @@ watch(
 
 .tool-check {
   display: inline-flex;
-  color: var(--pass);
+  color: var(--ink-2);
 }
 
 .toolset-pick {
@@ -1006,11 +1001,12 @@ watch(
   font-size: 14px;
 }
 
-.options summary {
+.options > summary {
   cursor: pointer;
   min-height: 44px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  gap: 10px;
   font-weight: 500;
 }
 
@@ -1056,11 +1052,11 @@ watch(
 }
 
 .error {
-  color: var(--fail);
+  color: var(--error);
 }
 
 .saved {
-  color: var(--pass);
+  color: var(--ink);
 }
 
 .pins {

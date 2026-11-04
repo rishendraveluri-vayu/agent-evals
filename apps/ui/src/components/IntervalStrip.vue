@@ -3,12 +3,12 @@
  *  or a bar such as kappa 0.6). Drawn at its real pixel width so the labels stay readable on a
  *  phone. Every use also states the numbers in text; the figure never carries them alone. */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import type { StripRow } from '../lib/scale';
+import type { StripRow, Tick } from '../lib/scale';
 
 const props = defineProps<{
   min: number;
   max: number;
-  ticks: { value: number; label: string; strong?: boolean }[];
+  ticks: Tick[];
   rows: StripRow[];
   reference: { value: number; dashed?: boolean };
   summary: string;
@@ -36,52 +36,86 @@ const RADIUS = { lg: 10, sm: 6 } as const;
 const STROKE = { lg: 3, sm: 2 } as const;
 const sizeOf = (r: StripRow) => r.size ?? 'lg';
 const outer = (r: StripRow) => RADIUS[sizeOf(r)] + STROKE[sizeOf(r)] / 2;
+/** About how wide a 13 px label is, to keep labels apart and inside the figure. */
+const textWidth = (text: string) => text.length * 6.6;
+/** Room a label above its row takes: the row, and every row under it, moves down this far. */
+const ABOVE = 16;
+/** No label comes nearer the reference line than this, so the line never runs through a letter. */
+const REF_CLEAR = 6;
+
+interface Placement {
+  x: number;
+  anchor: 'start' | 'end';
+  above: boolean;
+  from: number;
+  to: number;
+}
+
+const refX = computed(() => x(props.reference.value));
+const fits = (p: Placement) => p.from >= PAD && p.to <= width.value - PAD && (p.to < refX.value - REF_CLEAR || p.from > refX.value + REF_CLEAR);
+
+/** A row's label goes right of its interval, else left of it, else above it (from its low end,
+ *  or back from its high end), wherever it stays inside the figure and clear of the reference
+ *  line. A row with no such place is named in the legend under the figure. */
+const placements = computed<(Placement | null)[]>(() =>
+  props.rows.map((r) => {
+    if (!r.label) return null;
+    const w = textWidth(r.label);
+    const lo = x(r.low);
+    const hi = x(r.high);
+    const candidates: Placement[] = [
+      { x: hi + 10, anchor: 'start', above: false, from: hi + 10, to: hi + 10 + w },
+      { x: lo - 10, anchor: 'end', above: false, from: lo - 10 - w, to: lo - 10 },
+      { x: lo, anchor: 'start', above: true, from: lo, to: lo + w },
+      { x: hi, anchor: 'end', above: true, from: hi - w, to: hi },
+    ];
+    return candidates.find(fits) ?? null;
+  }),
+);
+
 const ys = computed(() => {
   const out: number[] = [];
   props.rows.forEach((r, i) => {
-    out.push(i === 0 ? 22 : out[i - 1] + outer(props.rows[i - 1]) + 12 + outer(r));
+    const lift = placements.value[i]?.above ? ABOVE : 0;
+    out.push((i === 0 ? 22 : out[i - 1] + outer(props.rows[i - 1]) + 12 + outer(r)) + lift);
   });
   return out;
 });
 const rowY = (i: number) => ys.value[i] ?? 22;
 const lastY = computed(() => rowY(props.rows.length - 1));
 const height = computed(() => lastY.value + 38);
-/** About how wide a 13 px label is, to keep labels apart and inside the figure. */
-const textWidth = (text: string) => text.length * 6.6;
+const labelY = (r: StripRow, i: number) => (placements.value[i]?.above ? rowY(i) - outer(r) - 6 : rowY(i) + 4);
 
-/** Labels are placed in order of importance: the reference (zero or a bar), then the two
- *  ends, then the rest. A label that would touch one already placed is left out, which
- *  only happens at phone width. */
+/** Every tick when they all fit 8 px apart. Otherwise the reference tick (in its short form) and
+ *  the ticks an even number of steps from it, so the shown ticks stay evenly spaced; any that
+ *  still collide are left out. Each is centred on its value, kept inside the figure. */
 const shownTicks = computed(() => {
-  const n = props.ticks.length;
-  const placed = props.ticks.map((t, i) => {
-    const at = i === 0 ? PAD : i === n - 1 ? width.value - PAD : x(t.value);
-    const w = textWidth(t.label);
-    const anchor = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle';
-    const [from, to] = anchor === 'start' ? [at, at + w] : anchor === 'end' ? [at - w, at] : [at - w / 2, at + w / 2];
-    return { ...t, at, anchor, from, to, rank: t.strong ? 0 : i === 0 || i === n - 1 ? 1 : 2 };
+  const sorted = [...props.ticks].sort((p, q) => p.value - q.value);
+  const place = (t: Tick, text: string) => {
+    const w = textWidth(text);
+    const at = Math.min(Math.max(x(t.value), w / 2), width.value - w / 2);
+    return { ...t, text, at, from: at - w / 2, to: at + w / 2 };
+  };
+  const all = sorted.map((t) => place(t, t.label));
+  if (all.every((t, i) => i === 0 || all[i - 1].to + 8 <= t.from) || sorted.length < 2) return all;
+  const anchor = sorted.find((t) => t.strong) ?? [...sorted].sort((p, q) => Math.abs(p.value - props.reference.value) - Math.abs(q.value - props.reference.value))[0];
+  const gaps = sorted.slice(1).map((t, i) => t.value - sorted[i].value).filter((g) => g > 1e-9);
+  const step = Math.min(...gaps);
+  const even = sorted.filter((t) => {
+    const k = (t.value - anchor.value) / step;
+    return Math.abs(k - Math.round(k)) < 1e-6 && Math.round(k) % 2 === 0;
   });
-  const kept: typeof placed = [];
-  for (const t of [...placed].sort((p, q) => p.rank - q.rank)) {
-    if (kept.every((k) => t.to + 8 < k.from || t.from > k.to + 8)) kept.push(t);
+  const kept: ReturnType<typeof place>[] = [];
+  for (const t of [...even].sort((p, q) => Math.abs(p.value - anchor.value) - Math.abs(q.value - anchor.value))) {
+    const c = place(t, t.short ?? t.label);
+    if (kept.every((k) => c.to + 8 <= k.from || c.from >= k.to + 8)) kept.push(c);
   }
-  return kept;
+  return kept.sort((p, q) => p.value - q.value);
 });
-
-/** A row's label goes right of its interval, else left of it, else it is left out: the
- *  surrounding text always states the same numbers. */
-const labelAt = (r: StripRow) => {
-  const w = textWidth(r.label ?? '');
-  const right = x(r.high) + 10;
-  if (right + w < width.value) return { x: right, anchor: 'start' };
-  const left = x(r.low) - 10;
-  if (left - w > 0) return { x: left, anchor: 'end' };
-  return null;
-};
 
 /** Rows whose label has no room in the figure are named in a legend under it, so no row is ever
  *  left unlabelled. */
-const legend = computed(() => props.rows.filter((r) => r.label && !labelAt(r)));
+const legend = computed(() => props.rows.filter((r, i) => r.label && !placements.value[i]));
 </script>
 
 <template>
@@ -128,10 +162,11 @@ const legend = computed(() => props.rows.filter((r) => r.label && !labelAt(r)));
           :class="`point point--${r.tone} point--${sizeOf(r)}`"
         />
         <text
-          v-if="r.label && labelAt(r)"
-          :x="labelAt(r)?.x"
-          :y="rowY(i) + 4"
-          :text-anchor="labelAt(r)?.anchor"
+          v-if="r.label && placements[i]"
+          :x="placements[i]?.x"
+          :y="labelY(r, i)"
+          :text-anchor="placements[i]?.anchor"
+          :data-place="placements[i]?.above ? 'above' : 'beside'"
           class="tick row-label"
           data-test="strip-label"
         >{{ r.label }}</text>
@@ -141,9 +176,10 @@ const legend = computed(() => props.rows.filter((r) => r.label && !labelAt(r)));
         :key="t.value"
         :x="t.at"
         :y="height - 6"
-        :text-anchor="t.anchor"
+        text-anchor="middle"
         :class="t.strong ? 'tick tick--strong' : 'tick'"
-      >{{ t.label }}</text>
+        data-test="strip-tick"
+      >{{ t.text }}</text>
     </svg>
     <ul
       v-if="legend.length"
@@ -255,7 +291,8 @@ svg {
   fill: var(--ink);
 }
 
-/* A halo in the surface colour keeps a row label readable where it crosses the zero line. */
+/* A label beside the first row sits on the grey axis track; a halo in the surface colour keeps it
+   readable there. The reference line needs no halo: placement keeps every label clear of it. */
 .row-label {
   paint-order: stroke;
   stroke: var(--surface);

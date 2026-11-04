@@ -1,20 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { api } from '../api/client';
-import { SETTING_NAMES, type Harness } from '../api/types';
+import { SETTING_NAMES } from '../api/types';
+import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import { useLoad } from '../lib/async';
-import { matrixCell } from '../lib/capabilities';
+import { coverageText, matrixCell } from '../lib/capabilities';
 import { shortRef } from '../lib/format';
 import { harnessName, harnessShort, settingLabel } from '../lib/names';
 
 const { data, error, loading } = useLoad(() => api.harnesses());
-
-function checked(h: Harness) {
-  const all = Object.values(h.capabilities.settings);
-  const done = all.filter((s) => s.evidence !== 'none').length;
-  return { done, total: all.length, complete: done === all.length };
-}
 
 const differences = computed(() => (data.value ?? []).flatMap((h) => h.capabilities.known_differences.map((text, i) => ({ key: `${h.name}-${i}`, harness: h.name, text }))));
 
@@ -54,7 +49,10 @@ const STEPS = [
             What reaches the model
           </h2>
           <div class="key smaller secondary">
-            <span><span class="probed">Probed</span>: seen in a request</span>
+            <span><span class="probed"><AppIcon
+              name="check"
+              :size="12"
+            />Probed</span>: seen in a request</span>
             <span><span class="declared">Declared</span>: a request cannot show it</span>
             <span><span class="none">Not supported</span>: the harness has no such feature</span>
           </div>
@@ -81,9 +79,9 @@ const STEPS = [
                   <span class="block strong-head">{{ harnessName(h.name) }}</span>
                   <span class="block secondary smaller mono">{{ shortRef(h.ref) }}</span>
                   <span
-                    class="pill pill--small status"
-                    :class="checked(h).complete ? 'pill--pass' : 'pill--outline'"
-                  >{{ checked(h).done }} of {{ checked(h).total }} checked</span>
+                    class="pill pill--small pill--outline status"
+                    data-test="coverage"
+                  >{{ coverageText(h) }}</span>
                 </th>
               </tr>
             </thead>
@@ -103,7 +101,11 @@ const STEPS = [
                   :key="h.name"
                   :data-test="`cell-${h.name}-${name}`"
                 >
-                  <span :class="matrixCell(h.capabilities.settings[name]).kind">{{ matrixCell(h.capabilities.settings[name]).text }}</span>
+                  <span :class="matrixCell(h.capabilities.settings[name]).kind"><AppIcon
+                    v-if="matrixCell(h.capabilities.settings[name]).kind === 'probed'"
+                    name="check"
+                    :size="12"
+                  />{{ matrixCell(h.capabilities.settings[name]).text }}</span>
                   <span
                     v-if="matrixCell(h.capabilities.settings[name]).note"
                     class="block secondary smaller"
@@ -200,8 +202,12 @@ const STEPS = [
   color: var(--ink);
 }
 
+/* The coverage line can be longer than its column: it wraps rather than run into the next one. */
 .status {
   margin-top: 6px;
+  white-space: normal;
+  border-radius: 10px;
+  line-height: 1.35;
 }
 
 .block {
@@ -212,8 +218,12 @@ const STEPS = [
   font-weight: 500;
 }
 
+/* Probed is the strongest evidence, but not a pass: ink and a check mark, no green. */
 .probed {
-  color: var(--pass);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink);
   font-weight: 500;
 }
 

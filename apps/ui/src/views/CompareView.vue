@@ -3,10 +3,11 @@ import { computed } from 'vue';
 import { api } from '../api/client';
 import { isFixtureMode } from '../api/mode';
 import type { BlindItem, Compare, CompareRow, ExperimentDetail, ExperimentTrial, Interval, JudgeAgreement, TaskInfo } from '../api/types';
+import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { armsOf, excludesZero, intervalText, setupOf, totalTrials, verdictTitle, type ArmKey, type Verdict } from '../lib/arms';
+import { armsOf, excludesZero, intervalText, judgeCaveat, methodName, pointsWithInterval, setupOf, totalTrials, verdictTitle, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { money, percent, seconds, signed, signedMoney, thousands, tick } from '../lib/format';
 import { gradedBy, infraReason, isJudged } from '../lib/names';
@@ -109,36 +110,33 @@ const hero = computed(() => {
     level,
     min,
     max,
-    ticks: ticksFor(min, max, 10, '0', ' points'),
+    ticks: ticksFor(min, max, 10),
     rows: [...rows, ...aa],
     aria: `Difference ${signed(s.diff.estimate)} points, interval ${intervalText(s.diff)}.${s.aa ? ` The A/A run gave ${signed(s.aa.diff.estimate)}, interval ${intervalText(s.aa.diff)}.` : ''}`,
   };
 });
 
+/** Why the result is or is not noise: the interval, the check on the method (an A/A run), and
+ *  the method itself, named only as the statistics step names it. */
 const why = computed(() => {
   const s = stats.value;
-  const d = data.value;
-  if (!s || !d) return [];
-  const out: string[] = [];
+  if (!s) return [];
   const side = s.diff.low > 0 ? 'above' : 'below';
-  let first = excludesZero(s.diff)
+  const interval = excludesZero(s.diff)
     ? `The interval stays ${side} zero.`
     : 'The interval crosses zero, so these trials cannot rule out no difference at all.';
+  let aa = 'No A/A run on this setup yet, so the method has not been checked on a run where nothing changed.';
   if (s.aa) {
-    const wobble = Math.max(Math.abs(s.aa.diff.low), Math.abs(s.aa.diff.high));
-    first += ` Running the same config twice moved only ${signed(s.aa.diff.estimate)} ${Math.abs(s.aa.diff.estimate) === 1 ? 'point' : 'points'} (${intervalText(s.aa.diff)}), so the setup's own wobble is ${Math.abs(s.diff.estimate) > wobble ? 'smaller than' : 'about as large as'} this difference.`;
-  } else {
-    first += ' There is no A/A run on this setup yet, so its own wobble is not measured.';
+    aa = excludesZero(s.aa.diff)
+      ? `Check on the method: the same config run twice gave ${pointsWithInterval(s.aa.diff)}, a difference where there is none. Treat this result with caution.`
+      : `Check on the method: the same config run twice gave ${pointsWithInterval(s.aa.diff)}, which includes zero, so the method did not invent a difference when nothing changed.`;
   }
-  out.push(first);
-  if (s.method === 'paired_task_bootstrap') {
-    out.push(`Paired by task: each task is compared with itself across the two arms, then the ${s.tasks.length} task differences are resampled.${s.p_value !== null ? ` Permutation test p = ${s.p_value}.` : ''}`);
-  } else {
-    out.push(`Method: ${s.method}.${s.p_value !== null ? ` p = ${s.p_value}.` : ''}`);
-  }
-  return out;
+  const p = s.p_value !== null ? `, p = ${s.p_value}` : '';
+  const method = s.method === 'paired_task_bootstrap'
+    ? `Paired by task: each task is compared with itself across the two arms. ${methodName(s.method)}${p}.`
+    : `${methodName(s.method)}${p}.`;
+  return [interval, aa, method];
 });
-
 
 interface Metric {
   name: string;
@@ -167,7 +165,7 @@ const metrics = computed<Metric[]>(() => {
   const out: Metric[] = [];
   const rel = (i: Interval | null, abs: string) => (i ? `${signed(i.estimate)}%, interval ${signed(i.low)}% to ${signed(i.high)}%` : abs);
   if (s) {
-    out.push({ name: 'Pass rate', delta: `${signed(s.diff.estimate)} points`, interval: intervalText(s.diff), a: s.a.rate, b: s.b.rate, aText: percent(s.a.rate), bText: percent(s.b.rate), max: 1 });
+    out.push({ name: 'Pass rate', delta: `${signed(s.diff.estimate)} points`, interval: `interval ${intervalText(s.diff)} points`, a: s.a.rate, b: s.b.rate, aText: percent(s.a.rate), bText: percent(s.b.rate), max: 1 });
   } else if (t.a.graded && t.b.graded) {
     const ra = t.a.passed / t.a.graded;
     const rb = t.b.passed / t.b.graded;
@@ -176,9 +174,9 @@ const metrics = computed<Metric[]>(() => {
   const costs = s?.costs ?? [];
   if (costs.length) {
     for (const c of costs) {
-      if (c.metric === 'cost_usd') out.push({ name: 'Cost per trial', delta: signedMoney(c.diff.estimate), interval: rel(c.relative, `Interval ${signedMoney(c.diff.low)} to ${signedMoney(c.diff.high)}`), a: c.a, b: c.b, aText: money(c.a), bText: money(c.b), max: Math.max(c.a, c.b) });
-      if (c.metric === 'wall_s') out.push({ name: 'Time per trial, median', delta: `${signed(c.diff.estimate)} s`, interval: rel(c.relative, `Interval ${signed(c.diff.low)} to ${signed(c.diff.high)} s`), a: c.a, b: c.b, aText: `${Math.round(c.a)} s`, bText: `${Math.round(c.b)} s`, max: Math.max(c.a, c.b) });
-      if (c.metric === 'tokens') out.push({ name: 'Tokens per trial', delta: signed(c.diff.estimate), interval: rel(c.relative, `Interval ${signed(c.diff.low)} to ${signed(c.diff.high)}`), a: c.a, b: c.b, aText: thousands(c.a), bText: thousands(c.b), max: Math.max(c.a, c.b) });
+      if (c.metric === 'cost_usd') out.push({ name: 'Cost per trial', delta: signedMoney(c.diff.estimate), interval: rel(c.relative, `interval ${signedMoney(c.diff.low)} to ${signedMoney(c.diff.high)}`), a: c.a, b: c.b, aText: money(c.a), bText: money(c.b), max: Math.max(c.a, c.b) });
+      if (c.metric === 'wall_s') out.push({ name: 'Time per trial, median', delta: `${signed(c.diff.estimate)} s`, interval: rel(c.relative, `interval ${signed(c.diff.low)} to ${signed(c.diff.high)} s`), a: c.a, b: c.b, aText: `${Math.round(c.a)} s`, bText: `${Math.round(c.b)} s`, max: Math.max(c.a, c.b) });
+      if (c.metric === 'tokens') out.push({ name: 'Tokens per trial', delta: signed(c.diff.estimate), interval: rel(c.relative, `interval ${signed(c.diff.low)} to ${signed(c.diff.high)}`), a: c.a, b: c.b, aText: thousands(c.a), bText: thousands(c.b), max: Math.max(c.a, c.b) });
     }
     return out;
   }
@@ -205,7 +203,9 @@ const metrics = computed<Metric[]>(() => {
   return out;
 });
 
-const barW = (v: number, max: number) => Math.max(2, Math.round((v / (max || 1)) * 150));
+/** A bar's share of its rail: the rail runs from 0 to 100% for pass rate, and from 0 to the
+ *  larger arm's value for the rest. */
+const barShare = (v: number, max: number) => `${Math.max(0, Math.min(100, (v / (max || 1)) * 100))}%`;
 
 interface TaskRow {
   key: string;
@@ -216,6 +216,7 @@ interface TaskRow {
   diff: Interval | null;
   significant: boolean;
   link: string | null;
+  linkTitle: string;
 }
 
 function failedTrial(task: string, prefer: 0 | 1): ExperimentTrial | undefined {
@@ -239,16 +240,21 @@ const taskRows = computed<TaskRow[]>(() => {
       });
   return base
     .map((r) => {
-      const failed = failedTrial(r.key, 1);
+      // The same trial the "Worth a look" button opens: a failure your label does not dispute.
+      const look = lookTrial(r.key);
+      const name = taskName(r.key);
+      const what = look && look.trial.passed === false ? 'a failed trial' : 'a trial';
+      const linkTitle = look ? `Open ${what} of ${name}, arm ${armOfTrial(look.trial).toUpperCase()}${look.disputed ? ' (your label disagrees with the judge)' : ''}` : '';
       return {
         key: r.key,
-        name: taskName(r.key),
+        name,
         grader: gradedBy(taskOf(r.key)),
         a: cell(r.key, 0),
         b: cell(r.key, 1),
         diff: r.diff,
         significant: r.significant,
-        link: failed ? href.trial(failed.id) : null,
+        link: look ? href.trial(look.trial.id) : null,
+        linkTitle,
       };
     })
     .sort((x, y) => (y.diff?.estimate ?? -999) - (x.diff?.estimate ?? -999));
@@ -283,16 +289,24 @@ const judgeLine = computed(() => {
   if (!j || !d) return null;
   const judged = d.detail.tasks.filter(isJudged).length;
   let line = `The judge scored ${judged} of the ${d.detail.tasks.length} tasks. It agrees with your held-out labels at κ ${j.kappa.toFixed(2)}, ${j.kappa >= j.bar ? 'above' : 'below'} the ${j.bar} bar set before the run${j.low < j.bar ? ', though its interval dips below it' : ''}.`;
-  // When every task that differs is judge-graded, the verdict rests on the judge. Say so.
-  const sig = taskRows.value.filter((r) => r.significant);
-  if (sig.length && sig.every((r) => isJudged(taskOf(r.key)))) {
-    const after = stats.value?.correction ? ' after correction' : '';
-    const which = sig.length === 1 ? `The one task that differs${after} is` : sig.length === 2 ? `Both tasks that differ${after} are` : `All ${sig.length} tasks that differ${after} are`;
-    line += ` ${which} judge-graded, so this result leans on the judge.`;
-  }
   const toGo = d.queue.length;
-  if (toGo) line += ` Provisional: ${toGo} held-out ${toGo === 1 ? 'item' : 'items'} still to label.`;
+  if (toGo) line += ` Provisional: ${toGo} held-out ${toGo === 1 ? 'output' : 'outputs'} still to label.`;
   return line;
+});
+
+/** Under the figure: when every task that differs is judge-graded, the verdict rests on the judge. */
+const caveat = computed(() => {
+  const s = stats.value;
+  const d = data.value;
+  if (!s || !d) return null;
+  return judgeCaveat({ differing: taskRows.value.filter((r) => r.significant).map((r) => taskOf(r.key)), isJudged, judge: s.judge, toGo: d.queue.length });
+});
+
+/** On a phone the column heads are hidden, so the shared axis says what its intervals are. */
+const axisCaption = computed(() => {
+  const level = stats.value ? Math.round(stats.value.level * 100) : 95;
+  const verdicts = correctionWords.value ? `verdicts after ${correctionWords.value} for ${taskRows.value.length} tasks.` : 'verdicts not corrected either.';
+  return `B minus A, in points. ${level}% intervals, not corrected; ${verdicts}`;
 });
 
 /** The failed trial to open for a task: arm B first, then arm A, skipping any trial whose judge
@@ -374,32 +388,41 @@ const worthALook = computed(() => {
           </div>
         </div>
         <div class="actions">
-          <a
-            v-if="data.detail.status === 'running' || data.detail.status === 'created'"
-            :href="href.run(data.detail.id)"
-            class="btn btn--quiet"
-          >See the run</a>
-          <template v-if="!fixtures">
+          <div class="action-buttons">
             <a
-              :href="api.exportUrl(data.detail.id, 'csv')"
+              v-if="data.detail.status === 'running' || data.detail.status === 'created'"
+              :href="href.run(data.detail.id)"
               class="btn btn--quiet"
-              download
-            >Export CSV</a>
-            <a
-              :href="api.exportUrl(data.detail.id, 'json')"
+            >See the run</a>
+            <template v-if="!fixtures">
+              <a
+                :href="api.exportUrl(data.detail.id, 'csv')"
+                class="btn btn--quiet"
+                download
+              >Export CSV</a>
+              <a
+                :href="api.exportUrl(data.detail.id, 'json')"
+                class="btn btn--quiet"
+                download
+              >Export JSON</a>
+            </template>
+            <button
+              v-else
+              type="button"
               class="btn btn--quiet"
-              download
-            >Export JSON</a>
-          </template>
-          <button
-            v-else
-            type="button"
-            class="btn btn--quiet"
-            disabled
-            title="Export needs the API; sample data has nothing to export"
+              disabled
+              title="Export needs the API; sample data has nothing to export"
+            >
+              Export CSV
+            </button>
+          </div>
+          <p
+            v-if="fixtures"
+            class="secondary smaller export-note"
+            data-test="export-note"
           >
-            Export CSV
-          </button>
+            Export needs the API
+          </p>
         </div>
       </div>
 
@@ -428,6 +451,17 @@ const worthALook = computed(() => {
               :reference="{ value: 0, dashed: true }"
               :summary="hero.aria"
             />
+            <p
+              v-if="caveat"
+              class="caveat"
+              data-test="judge-caveat"
+            >
+              <AppIcon
+                name="alert"
+                :size="14"
+              />
+              <span>{{ caveat.before }}<a :href="href.judge()">{{ caveat.link }}</a>{{ caveat.after }}</span>
+            </p>
           </template>
           <template v-else>
             <h2
@@ -444,20 +478,57 @@ const worthALook = computed(() => {
               {{ noVerdictText }}
             </p>
           </template>
+          <template v-if="worthALook">
+            <!-- Takes the free height, so the next step sits at the foot of the answer column. -->
+            <div
+              class="push"
+              aria-hidden="true"
+            />
+            <div
+              class="look"
+              data-test="worth-a-look"
+            >
+              <h3
+                id="look"
+                class="look-title"
+              >
+                {{ worthALook.title }}
+              </h3>
+              <p class="look-body">
+                {{ worthALook.text }}
+              </p>
+              <a
+                v-if="worthALook.link"
+                :href="worthALook.link"
+                class="btn look-btn"
+                data-test="look-link"
+              >{{ worthALook.button }}</a>
+            </div>
+          </template>
         </div>
         <div
           v-if="stats"
           class="verdict-why small"
         >
-          <h3 class="why-title">
+          <h3
+            class="why-title"
+            data-test="why-title"
+          >
             {{ excludesZero(stats.diff) ? 'Why this is not noise' : 'Why this could be noise' }}
           </h3>
           <p
             v-for="(line, i) in why"
             :key="i"
+            data-test="why-line"
           >
             {{ line }}
           </p>
+          <h3
+            class="why-title rests-title"
+            data-test="why-title"
+          >
+            What it rests on
+          </h3>
           <p v-if="judgeLine">
             {{ judgeLine }} <a :href="href.judge()">See the check</a>
           </p>
@@ -506,7 +577,7 @@ const worthALook = computed(() => {
           id="costs"
           class="section-title"
         >
-          What it costs
+          Pass rate and what it costs
         </h2>
         <div class="stat-strip metrics">
           <div
@@ -516,40 +587,26 @@ const worthALook = computed(() => {
             <span class="stat-label">{{ m.name }}</span>
             <span class="metric-delta num">{{ m.delta }}</span>
             <span class="secondary smaller num block">{{ m.interval }}</span>
-            <svg
-              viewBox="0 0 220 44"
-              width="100%"
+            <!-- Each bar sits on a rail that is the tile's scale: 0 to 100% for pass rate, 0 to the
+                 larger arm's value for the rest. -->
+            <div
+              class="bars"
               role="img"
               :aria-label="`${m.name}: A ${m.aText}, B ${m.bText}`"
-              class="bars"
             >
-              <rect
-                x="0"
-                y="4"
-                :width="barW(m.a, m.max)"
-                height="12"
-                rx="4"
+              <span class="bar-label num">A {{ m.aText }}</span>
+              <span class="rail"><span
                 class="bar bar--a"
-              />
-              <text
-                :x="barW(m.a, m.max) + 8"
-                y="14"
-                class="bar-label"
-              >A {{ m.aText }}</text>
-              <rect
-                x="0"
-                y="26"
-                :width="barW(m.b, m.max)"
-                height="12"
-                rx="4"
+                data-test="bar-a"
+                :style="{ width: barShare(m.a, m.max) }"
+              /></span>
+              <span class="bar-label num">B {{ m.bText }}</span>
+              <span class="rail"><span
                 class="bar bar--b"
-              />
-              <text
-                :x="barW(m.b, m.max) + 8"
-                y="36"
-                class="bar-label"
-              >B {{ m.bText }}</text>
-            </svg>
+                data-test="bar-b"
+                :style="{ width: barShare(m.b, m.max) }"
+              /></span>
+            </div>
           </div>
         </div>
       </section>
@@ -614,6 +671,10 @@ const worthALook = computed(() => {
               >
                 <td colspan="4" />
                 <td class="axis-cell">
+                  <span
+                    class="axis-caption"
+                    data-test="axis-caption"
+                  >{{ axisCaption }}</span>
                   <svg
                     viewBox="0 0 400 18"
                     width="100%"
@@ -653,6 +714,8 @@ const worthALook = computed(() => {
                   <a
                     v-if="r.link"
                     :href="r.link"
+                    :title="r.linkTitle"
+                    :aria-label="r.linkTitle"
                     class="mono task-link"
                   >{{ r.name }}</a>
                   <span
@@ -707,37 +770,12 @@ const worthALook = computed(() => {
                     :verdict="verdictOf(r).kind"
                     :label="verdictOf(r).label"
                   />
-                  <span class="secondary smaller num block">{{ labelOf(r) }}</span>
+                  <span class="result-detail">{{ labelOf(r) }}</span>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-      </section>
-
-      <section
-        v-if="worthALook"
-        aria-labelledby="look"
-        class="panel look"
-        data-test="worth-a-look"
-      >
-        <div class="look-text">
-          <h2
-            id="look"
-            class="section-title"
-          >
-            {{ worthALook.title }}
-          </h2>
-          <p class="look-body">
-            {{ worthALook.text }}
-          </p>
-        </div>
-        <a
-          v-if="worthALook.link"
-          :href="worthALook.link"
-          class="btn"
-          data-test="look-link"
-        >{{ worthALook.button }}</a>
       </section>
     </template>
   </LoadState>
@@ -751,10 +789,32 @@ const worthALook = computed(() => {
   margin-top: 10px;
 }
 
+/* The export controls sit top right, level with the h1. */
+.page-head {
+  flex: 1 1 560px;
+  min-width: 0;
+}
+
 .actions {
+  flex: none;
+  margin-left: auto;
+  margin-top: 26px;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.action-buttons {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
+}
+
+.export-note {
+  text-align: right;
 }
 
 .verdict {
@@ -801,6 +861,51 @@ const worthALook = computed(() => {
   font-size: 15px;
 }
 
+.rests-title {
+  margin-top: 20px;
+}
+
+/* What the result rests on, right under the figure: an icon and words, never colour alone. */
+.caveat {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 72ch;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.caveat .icon {
+  margin-top: 4px;
+}
+
+.push {
+  flex: 1 0 0;
+}
+
+/* The next step, at the foot of the answer column. */
+.look {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  border-top: 1px solid var(--rule);
+  padding-top: 16px;
+}
+
+.look-title {
+  font-size: 15px;
+}
+
+.look-body {
+  max-width: 72ch;
+  font-size: 15px;
+}
+
+.look-btn {
+  margin-top: 8px;
+}
+
 .metrics {
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
 }
@@ -817,21 +922,42 @@ const worthALook = computed(() => {
 }
 
 .bars {
-  margin-top: 10px;
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.rail {
   display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
 }
 
 .bar--a {
-  fill: var(--arm-a);
+  background: var(--arm-a);
 }
 
 .bar--b {
-  fill: var(--arm-b);
+  background: var(--arm-b);
 }
 
 .bar-label {
   font-size: 12px;
-  fill: var(--ink);
+  color: var(--ink);
+}
+
+.axis-caption {
+  display: none;
 }
 
 .head-row--baseline {
@@ -949,24 +1075,6 @@ const worthALook = computed(() => {
   display: none;
 }
 
-.look {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  align-items: flex-start;
-  padding: 22px 26px;
-}
-
-.look-text {
-  flex: 999 1 520px;
-  min-width: 0;
-}
-
-.look-body {
-  margin-top: 6px;
-  max-width: 72ch;
-}
-
 @media (max-width: 640px) {
   .verdict-main {
     padding: 22px 20px;
@@ -986,8 +1094,15 @@ const worthALook = computed(() => {
     font-size: 16px;
   }
 
-  .look {
-    padding: 20px;
+  .actions {
+    margin-top: 0;
+  }
+
+  .table.forest .axis-caption {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: var(--ink-2);
   }
 
   /* Task by task stacks: the shared axis once at the top, then for each task its name and

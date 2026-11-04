@@ -23,7 +23,20 @@ describe('HarnessesView in fixture mode', () => {
     const table = w.get('[data-test="capability-matrix"]');
     expect(table.findAll('thead th')).toHaveLength(6);
     expect(table.findAll('tbody tr')).toHaveLength(8);
-    expect(table.text()).toContain('8 of 8 checked');
-    expect(table.text()).toContain('1 of 8 checked');
+    const pills = table.findAll('[data-test="coverage"]');
+    expect(pills.map((p) => p.text())).toEqual(['4 probed, 4 declared', '4 probed, 4 declared', '1 declared, 7 not probed yet', '1 probed, 1 declared, 6 not probed yet', '1 declared, 7 not probed yet']);
+    for (const p of pills) {
+      expect(p.classes()).toContain('pill--outline');
+      expect(p.classes()).not.toContain('pill--pass');
+    }
+  });
+
+  it('marks a probed setting with a check and ink, not green', async () => {
+    const w = mount(HarnessesView);
+    await settle();
+    const probed = w.get('[data-test="cell-hermes-max_steps"] .probed');
+    expect(probed.find('svg').exists()).toBe(true);
+    expect(w.find('.key .probed svg').exists()).toBe(true);
+    expect(w.find('.pill--pass').exists()).toBe(false);
   });
 });

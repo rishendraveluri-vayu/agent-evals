@@ -27,16 +27,24 @@ export function domainFor(values: number[], floor: number, ceil: number): [numbe
   return [Math.floor(lo / 10) * 10, Math.ceil(hi / 10) * 10];
 }
 
-/** The two ends, zero, and multiples of `step` in between that are not crowding an end. */
-export function ticksFor(min: number, max: number, step: number, zeroLabel = '0', lastSuffix = '') {
+/** A tick on an IntervalStrip axis. `short` stands in for `label` when the axis is too narrow to
+ *  show every tick. */
+export interface Tick {
+  value: number;
+  label: string;
+  short?: string;
+  strong?: boolean;
+}
+
+/** The two ends, zero, and multiples of `step` in between that are not crowding an end. Zero is
+ *  named "0, no change" ("0" when space is short); the unit lives in the headline, never on a tick. */
+export function ticksFor(min: number, max: number, step: number): Tick[] {
   const values = new Set<number>([min, 0, max]);
   for (let v = Math.ceil(min / step) * step; v < max; v += step) {
     if (v - min >= step / 2 && max - v >= step / 2) values.add(v);
   }
-  const sorted = [...values].filter((v) => v >= min && v <= max).sort((a, b) => a - b);
-  return sorted.map((value, i) => ({
-    value,
-    label: value === 0 ? zeroLabel : `${tick(value)}${i === sorted.length - 1 ? lastSuffix : ''}`,
-    strong: value === 0,
-  }));
+  return [...values]
+    .filter((v) => v >= min && v <= max)
+    .sort((a, b) => a - b)
+    .map((value) => (value === 0 ? { value, label: '0, no change', short: '0', strong: true } : { value, label: tick(value), strong: false }));
 }

@@ -33,7 +33,7 @@ defineProps<{ loading: boolean; error: string | null; what: string }>();
 }
 
 .state--error {
-  color: var(--fail);
-  border-color: var(--fail);
+  color: var(--error);
+  border-color: var(--error);
 }
 </style>

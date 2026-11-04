@@ -14,7 +14,8 @@ export type IconName =
   | 'fail-badge'
   | 'infra-badge'
   | 'arrow-up'
-  | 'arrow-down';
+  | 'arrow-down'
+  | 'tag';
 
 withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 20 });
 </script>
@@ -122,6 +123,14 @@ withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 20 });
       d="M10 4v12M5 11l5 5 5-5"
       stroke-width="2"
     />
+    <g v-else-if="name === 'tag'">
+      <path d="M3 3.5v6l7.5 7.5 6-6L9 3.5H3z" />
+      <circle
+        cx="6.5"
+        cy="7"
+        r="1.2"
+      />
+    </g>
     <g v-else-if="name === 'infra-badge'">
       <circle
         cx="10"

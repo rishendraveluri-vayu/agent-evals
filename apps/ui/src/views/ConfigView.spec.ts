@@ -15,6 +15,18 @@ describe('ConfigView in fixture mode', () => {
     expect(w.text()).toContain('2 lines differ from v1');
   });
 
+  it('says how each harness\'s settings are known, in the words the Harnesses page uses, and names configs first', async () => {
+    const w = mount(ConfigView);
+    await settle();
+    const coverage = w.findAll('[data-test="harness-coverage"]').map((c) => c.text());
+    expect(coverage[0]).toBe('4 probed, 4 declared');
+    expect(coverage).toContain('1 declared, 7 not probed yet');
+    const base = w.get('[data-test="base-select"]').element as HTMLSelectElement;
+    expect(base.selectedOptions[0]?.text).toBe('Prompt v1 on Hermes · 3b81e04');
+    expect(w.find('.tools .pill--pass').exists()).toBe(false);
+    expect(w.find('.pill--pass').exists()).toBe(false);
+  });
+
   it('shows the settings a harness does not support as disabled, and never sends them', async () => {
     const create = vi.spyOn(api, 'createConfig');
     const w = mount(ConfigView);

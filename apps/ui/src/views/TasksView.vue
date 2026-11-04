@@ -24,8 +24,6 @@ const { data, error, loading } = useLoad(async () => {
 
 const split = ref<string>('all');
 const grader = ref('any');
-const showAll = ref(false);
-const LIMIT = 12;
 
 const tasks = computed(() => data.value?.tasks ?? []);
 const splits = computed(() => [...new Set(tasks.value.map((t) => t.split))]);
@@ -70,8 +68,18 @@ const lastRun = (t: TaskInfo) => {
 const filtered = computed(() =>
   tasks.value.filter((t) => (split.value === 'all' || t.split === split.value) && (grader.value === 'any' || graderKinds(t.graders).includes(grader.value))),
 );
-const shown = computed(() => (showAll.value ? filtered.value : filtered.value.slice(0, LIMIT)));
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+/** Every matching task. Under "All" they are grouped by split, each group with its own heading
+ *  row; under one split there is a single group with no heading. */
+const groups = computed(() => {
+  if (split.value !== 'all') return [{ key: split.value, title: null as string | null, tasks: filtered.value }];
+  return splits.value
+    .map((s) => {
+      const list = filtered.value.filter((t) => t.split === s);
+      return { key: s, title: `${sentence(splitName(s))} (${list.length})` as string | null, tasks: list };
+    })
+    .filter((g) => g.tasks.length);
+});
 </script>
 
 <template>
@@ -182,10 +190,26 @@ const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
             </th>
           </tr>
         </thead>
-        <tbody>
+        <tbody
+          v-for="g in groups"
+          :key="g.key"
+        >
           <tr
-            v-for="t in shown"
+            v-if="g.title"
+            class="group-row"
+            data-test="group-row"
+          >
+            <th
+              colspan="6"
+              scope="rowgroup"
+            >
+              {{ g.title }}
+            </th>
+          </tr>
+          <tr
+            v-for="t in g.tasks"
             :key="t.sha256"
+            data-test="task-row"
           >
             <th scope="row">
               <a
@@ -210,8 +234,9 @@ const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
             </td>
             <td class="right num">
               <template v-if="lastRun(t)">
+                <VerdictTag :verdict="lastRun(t)?.verdict ?? 'pending'" />
                 <span
-                  class="arm-counts"
+                  class="result-detail arm-counts"
                   data-test="last-run"
                 ><span class="arm"><span
                   class="dot dot--a"
@@ -220,7 +245,6 @@ const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
                   class="dot dot--b"
                   aria-hidden="true"
                 />B {{ lastRun(t)?.b }}</span></span>
-                <span class="block tag-line"><VerdictTag :verdict="lastRun(t)?.verdict ?? 'pending'" /></span>
               </template>
               <span
                 v-else
@@ -228,7 +252,9 @@ const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
               >Not in this run</span>
             </td>
           </tr>
-          <tr v-if="!shown.length">
+        </tbody>
+        <tbody v-if="!filtered.length">
+          <tr>
             <td
               colspan="6"
               class="secondary"
@@ -239,15 +265,6 @@ const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
         </tbody>
       </table>
     </div>
-    <button
-      v-if="filtered.length > LIMIT"
-      type="button"
-      class="btn btn--quiet show-all"
-      :aria-expanded="showAll"
-      @click="showAll = !showAll"
-    >
-      {{ showAll ? `Show the first ${LIMIT}` : `Show all ${filtered.length} tasks` }}
-    </button>
   </LoadState>
 </template>
 
@@ -297,11 +314,18 @@ const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
   gap: 6px;
 }
 
-.tag-line {
-  margin-top: 4px;
+/* A full-width heading row for each split when "All" is shown. */
+.group-row th {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  background: var(--ground);
+  border-top: 1px solid var(--rule);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
 }
 
-.show-all {
-  align-self: flex-start;
+tbody:first-of-type .group-row th {
+  border-top: 0;
 }
 </style>

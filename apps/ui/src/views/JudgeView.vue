@@ -63,9 +63,28 @@ function configLabel(hash: string): string {
 
 const lede = computed(() =>
   j.value
-    ? `Measured on the ${j.value.labels} held-out labels, which are never used to tune the rubric. The bar of ${j.value.bar} was set before any results came in.`
-    : 'Measured on the held-out labels, which are never used to tune the rubric.',
+    ? `Measured on the ${j.value.labels} held-out checks, which are never used to tune the rubric. The bar of ${j.value.bar} was set before any results came in.`
+    : 'Measured on the held-out checks, which are never used to tune the rubric.',
 );
+
+/** Your own consistency against the judge's agreement with you: the same measure, so the first is
+ *  roughly the ceiling for the second. */
+const selfLine = computed(() => {
+  const a = j.value;
+  if (!a?.self) return '';
+  const pct = (n: number, of: number) => `${Math.round((n / Math.max(1, of)) * 100)}%`;
+  return `relabelled checks got the same answer (${pct(a.self.same, a.self.total)}). The judge matched you on ${a.agree} of ${a.labels} (${pct(a.agree, a.labels)}), the same measure; your own consistency is roughly its ceiling.`;
+});
+
+/** The kappa scale: evenly spaced, so a phone can keep every other tick. */
+const kappaTicks = computed(() => {
+  const bar = j.value?.bar ?? 0.6;
+  const values = [0, 0.2, 0.4, 0.6, 0.8, 1].filter((v) => Math.abs(v - bar) > 1e-9);
+  return [
+    ...values.map((v) => (v === 1 ? { value: 1, label: '1, full agreement', short: '1' } : { value: v, label: String(v) })),
+    { value: bar, label: `bar ${bar}`, strong: true },
+  ].sort((p, q) => p.value - q.value);
+});
 
 const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'no' || v === 'fail' ? 'No' : 'Not sure');
 </script>
@@ -86,7 +105,7 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
       class="provisional"
       data-test="provisional"
     >
-      Provisional: {{ toGo }} held-out {{ toGo === 1 ? 'item' : 'items' }} still to label. These numbers will change.
+      Provisional: {{ toGo }} held-out {{ toGo === 1 ? 'output' : 'outputs' }} still to label. These numbers will change.
     </p>
     <p class="lede">
       {{ lede }}
@@ -129,7 +148,7 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
           <IntervalStrip
             :min="0"
             :max="1"
-            :ticks="[{ value: 0, label: '0' }, { value: j.bar, label: `bar ${j.bar}`, strong: true }, { value: 1, label: '1, full agreement' }]"
+            :ticks="kappaTicks"
             :rows="[{ estimate: j.kappa.estimate, low: j.kappa.low, high: j.kappa.high, tone: 'ink', label: `κ ${j.kappa.estimate.toFixed(2)}, ${j.labels} labelled checks` }]"
             :reference="{ value: j.bar }"
             :summary="`Kappa ${j.kappa.estimate.toFixed(2)}, interval ${j.kappa.low.toFixed(2)} to ${j.kappa.high.toFixed(2)}, bar at ${j.bar}`"
@@ -162,10 +181,16 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
                 <th scope="row">
                   Judge: pass
                 </th>
-                <td class="agree">
+                <td
+                  class="agree"
+                  data-test="matrix-cell"
+                >
                   <span class="n">{{ j.matrix.judge_pass_you_pass }}</span>agree
                 </td>
-                <td class="disagree">
+                <td
+                  class="disagree"
+                  data-test="matrix-cell"
+                >
                   <span class="n">{{ j.matrix.judge_pass_you_fail }}</span>too lenient
                 </td>
               </tr>
@@ -173,10 +198,16 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
                 <th scope="row">
                   Judge: fail
                 </th>
-                <td class="disagree">
+                <td
+                  class="disagree"
+                  data-test="matrix-cell"
+                >
                   <span class="n">{{ j.matrix.judge_fail_you_pass }}</span>too strict
                 </td>
-                <td class="agree">
+                <td
+                  class="agree"
+                  data-test="matrix-cell"
+                >
                   <span class="n">{{ j.matrix.judge_fail_you_fail }}</span>agree
                 </td>
               </tr>
@@ -205,8 +236,11 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
               />{{ configLabel(c.config) }}, {{ c.labels }} labels</span>
               <span class="num strong">κ {{ c.kappa.toFixed(2) }}</span>
             </div>
-            <p class="secondary">
-              If the judge favoured one arm, the headline would be biased. Compare these two with the noise of {{ Math.min(...j.per_config.map((c) => c.labels)) }} labels each before reading anything into a gap.
+            <p
+              class="secondary"
+              data-test="per-config-note"
+            >
+              How often you and the judge agree within each arm. κ does not show which way the judge leans, so a gap here is not evidence for or against bias.
             </p>
           </div>
         </section>
@@ -239,8 +273,11 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
           </h2>
           <template v-if="j.self">
             <span class="figure num">{{ j.self.same }} of {{ j.self.total }}</span>
-            <p class="secondary small">
-              relabelled the same way. The ceiling for any judge is roughly your own consistency.
+            <p
+              class="secondary small"
+              data-test="self-line"
+            >
+              {{ selfLine }}
             </p>
           </template>
           <p
@@ -262,7 +299,19 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
         >
           The {{ j.disagreements.length }} disagreements
         </h2>
-        <div class="table-wrap">
+        <!-- Until the held-out set is labelled, the judge's reasons stay closed, so they cannot
+             steer the labels still to come. The numbers above stay, marked provisional. -->
+        <p
+          v-if="toGo > 0"
+          class="secondary"
+          data-test="disagreements-later"
+        >
+          These open when the held-out set is done ({{ toGo }} to go), so the judge's reasons cannot steer the labels still to come.
+        </p>
+        <div
+          v-else
+          class="table-wrap"
+        >
           <table class="table disagreements">
             <thead>
               <tr>
@@ -287,6 +336,7 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
               <tr
                 v-for="(r, i) in j.disagreements"
                 :key="i"
+                data-test="disagreement-row"
               >
                 <th scope="row">
                   <a
@@ -387,23 +437,31 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
 }
 
 .matrix td {
-  padding: 14px 0;
+  padding: 14px 8px;
   border-radius: 8px;
   color: var(--ink);
 }
 
+/* Neutral on purpose: the words agree, too lenient and too strict carry the meaning. The
+   disagreements are the cells to read, so they get the ink outline and the heavier count. */
 .agree {
-  background: var(--pass-soft);
+  background: var(--surface-muted);
 }
 
 .disagree {
-  background: var(--fail-soft);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--ink);
 }
 
 .n {
   display: block;
   font-size: 24px;
   font-weight: 600;
+  color: var(--ink);
+}
+
+.disagree .n {
+  font-weight: 700;
 }
 
 .three {
