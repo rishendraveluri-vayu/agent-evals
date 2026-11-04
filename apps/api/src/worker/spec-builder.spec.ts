@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { builtInToolsets } from '../catalogue/catalogue-files';
 import { sha256Ref } from '../common/hashing';
 import { PLATFORM_DEFAULTS } from '../configs/settings';
-import { MODEL_KEY_ENV, SIM_KEY_ENV, type SpecInputs, buildSpec, simTemperature } from './spec-builder';
+import { MODEL_KEY_ENV, SIM_KEY_ENV, SIM_MAX_OUTPUT_TOKENS, type SpecInputs, buildSpec, simTemperature } from './spec-builder';
 
 const SCHEMA = JSON.parse(readFileSync(path.resolve(__dirname, '../../../../contract/v2/spec.schema.json'), 'utf8')) as object;
 const validate = new Ajv2020({ allErrors: true, strict: false }).compile(SCHEMA);
@@ -119,6 +119,15 @@ describe('buildSpec', () => {
     expect(simTemperature('claude-haiku-5-5')).toBeNull();
     expect(simTemperature('gemini-3.8-flash')).toBe(0);
     expect(simTemperature('fake/sim-client')).toBe(0);
+  });
+
+  it("gives the simulator room for Haiku 5.5's reasoning: 2048 tokens, as in the contract example", () => {
+    // On 4 Nov a cap of 300 went entirely to reasoning and the simulator's reply was empty.
+    expect(SIM_MAX_OUTPUT_TOKENS).toBe(2048);
+    const example = JSON.parse(readFileSync(path.resolve(__dirname, '../../../../contract/v2/examples/spec-client-sim.json'), 'utf8')) as {
+      task: { client_sim: { model: { max_output_tokens: number } } };
+    };
+    expect(example.task.client_sim.model.max_output_tokens).toBe(SIM_MAX_OUTPUT_TOKENS);
   });
 
   it('refuses a simulated-client task when the experiment has no simulator', () => {

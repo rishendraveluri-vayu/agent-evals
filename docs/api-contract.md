@@ -93,8 +93,9 @@ simulated-client task the API also summarises that file (profile and debts) into
   for the whole experiment. It returns the experiment. Nothing runs until it is started. The
   simulator prompt defaults to the highest version of `client-sim` (v2 since D27). The simulator
   runs at D22's temperature 0, except on a model that refuses temperature (Haiku 5.5), where its
-  temperature is `null` and not sent (D27); the token cap is 300. `sim` in the experiment shows
-  all three.
+  temperature is `null` and not sent (D27); the token cap is 2048, because Haiku 5.5's reasoning
+  counts towards it (at 300 on 4 Nov it took the whole cap and the reply was empty). An
+  experiment keeps the cap it was created with. `sim` in the experiment shows all three.
 - `POST /experiments/:id/start` starts a `created` experiment or resumes a `paused` one (and
   marks it `done` if nothing is left to claim); `POST /experiments/:id/cancel` (queued trials
   become `cancelled`; running ones finish), from `created`, `running` or `paused`.

@@ -280,7 +280,7 @@ A task with no `client_sim` block is a single prompt. With one, a second model p
   "goal": "Understand whether she can keep the house and what to do first",
   "opening_message": "I don't really know where to start. My husband handled all of this.",
   "max_client_turns": 3,
-  "model": {"name": "claude-haiku-5-5", "base_url": "http://litellm:4000/v1", "api_key_env": "EVALS_SIM_API_KEY", "temperature": null, "max_output_tokens": 300,
+  "model": {"name": "claude-haiku-5-5", "base_url": "http://litellm:4000/v1", "api_key_env": "EVALS_SIM_API_KEY", "temperature": null, "max_output_tokens": 2048,
             "prompt": {"id": "client-sim", "version": "v2", "sha256": "...", "text": "..."}}
 }
 ```
@@ -300,7 +300,7 @@ A task with no `client_sim` block is a single prompt. With one, a second model p
   - If Haiku proves too agreeable, the simulator model can be changed in config.
   - **Rishi reviews about 10 simulator transcripts** before the experiment, like a small judge validation, and the simulator prompt is versioned.
   - Simulated tasks stay a small share of the set, about 5 to 8, because each needs a persona and this review.
-- **Simulator settings** (model, temperature, token cap, prompt version) are configurable, recorded in every trial, and identical across all configs in an experiment, which the invariance check enforces.
+- **Simulator settings** (model, temperature, token cap, prompt version) are configurable, recorded in every trial, and identical across all configs in an experiment, which the invariance check enforces. The API's token cap is 2048 (`SIM_MAX_OUTPUT_TOKENS`, 4 Nov): Haiku 5.5's reasoning counts towards it, and at 300 it took the whole cap and left the reply empty.
 - **One set of responses where the conversation is the same.** Client replies are cached by task, simulator settings and exact visible transcript. The agent's calls are never cached.
 - **Ending.** The client ends by writing `[[END_CONVERSATION]]`; `max_client_turns` counts simulated messages after the opening one. The conversation ends when the client sends the marker (its concerns answered, or it has what it came for), at `max_client_turns`, or when the simulator fails (below). The agent's last reply is graded, and `max_steps` and `timeout_s` cover the whole conversation.
 - **A failed or empty simulator turn is a simulator failure, never a client ending (D26, 4 Nov).** On 4 Nov Haiku 5.5 spent the simulator's whole 300-token cap on reasoning (`reasoning_tokens: 300, text_tokens: 0`) and returned an empty reply; the library took that as the client ending, so three conversations stopped after one agent turn and were labelled `agent`. Now (`evals_adapter.sim.empty_reply`):
