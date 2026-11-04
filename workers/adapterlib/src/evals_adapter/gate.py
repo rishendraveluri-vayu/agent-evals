@@ -2,7 +2,8 @@
 
 A harness counts only once these pass against the fake model server, with no real calls:
 
-1. settings: each supported setting reaches the request with the configured value;
+1. settings: each supported setting reaches the request with the configured value, and an unset
+   temperature or parallel_tool_calls is not sent at all (D25);
 2. steps: a model that never stops calling tools ends in step_limit, within max_steps plus the
    declared extra calls;
 3. tools: the first request's tools equal the finance server's manifest, apart from the
@@ -388,6 +389,31 @@ class Gate:
                     }
                 else:
                     assert run.result["applied_settings"][name]["source"] == "unsupported"
+        return run
+
+    def test_unset_not_sent(self, tmp_path: Path, fake: FakeServer) -> GateRun:
+        """D25: an unset temperature or parallel_tool_calls is null in the spec with source
+        harness_default, and the adapter leaves it out of every request, so the harness's or
+        provider's own default applies. A harness that adds its own value fails here."""
+        caps = self.capabilities["settings"]
+        wire = {"temperature": "temperature", "parallel_tool_calls": "parallel_tool_calls"}
+        unset = {name: None for name in wire if caps[name]["supported"]}
+        spec = self.spec(tmp_path / "trial", "finance-emi", fake, **unset)
+        for name in unset:
+            spec["settings_sources"][name] = "harness_default"
+        run = self.run(tmp_path, fake, spec)
+        self.check_schemas(run)
+        assert run.result["end_state"] == "answered", run.explain()
+        requests = self.agent_requests(run)
+        assert requests, "no model request reached the fake"
+        for req in requests:
+            for name in unset:
+                assert wire[name] not in req["body"], (
+                    f"{name} unset, but the request sent {wire[name]}={req['body'][wire[name]]!r}"
+                )
+        for name in unset:
+            applied = run.result["applied_settings"][name]
+            assert applied["value"] is None and applied["source"] == "harness_default", applied
         return run
 
     def test_steps(self, tmp_path: Path, fake: FakeServer, max_steps: int = 3) -> GateRun:

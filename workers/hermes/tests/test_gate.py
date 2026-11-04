@@ -60,6 +60,10 @@ def test_settings(tmp_path, fake):
     GATE.test_settings(tmp_path, fake)
 
 
+def test_unset_not_sent(tmp_path, fake):
+    GATE.test_unset_not_sent(tmp_path, fake)
+
+
 def test_steps(tmp_path, fake):
     GATE.test_steps(tmp_path, fake)
 
