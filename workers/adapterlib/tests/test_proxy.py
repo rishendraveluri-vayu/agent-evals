@@ -3,7 +3,7 @@
 
 import json
 
-from support import attrs, errors, read_jsonl
+from support import CONTRACT, attrs, errors, read_jsonl
 
 from evals_adapter.proxy import ProxyClient, call_status, merge_proxy_spans
 from evals_adapter.runner import label
@@ -11,8 +11,10 @@ from evals_adapter.spec import TrialPaths
 from evals_adapter.trace import Tracer, trace_id_for
 
 
-def row(n, start, end, status="success", code=None, messages=None, spend=0.000034):
-    meta = {"error_information": None}
+def row(n, start, end, status="success", code=None, messages=None, spend=0.000034, retries=0):
+    # attempted_retries is LiteLLM's count of its own retries for the call (D16); a call refused
+    # before routing (a budget stop) has None.
+    meta = {"error_information": None, "attempted_retries": retries, "max_retries": 3}
     if status != "success":
         meta["error_information"] = {
             "error_code": code,
@@ -115,7 +117,35 @@ def test_hidden_retries_show_as_extra_attempts(tmp_path):
     assert [c["status"]["code"] for c in chats] == [2, 2, 1, 1]
     usage = ProxyClient.usage(records)
     assert usage["model_calls"] == 4 and usage["failed_calls"] == 2
+    assert usage["attempts"] == 4 and usage["retried_calls"] == 0
     assert usage["last_status"] == "200"
+
+
+def test_litellm_retries_are_attempts_not_calls(tmp_path):
+    """D16: LiteLLM retries inside one request, which stays one row (seen 4 Nov on v1.99.4:
+    429, 429, 200 from the fake gave one success row with attempted_retries 2). So the trace
+    shows 1 harness request with 3 provider attempts, not a harness retry."""
+    paths, _ = make_trace(tmp_path, [(ns("2026-11-03T10:00:00Z"), ns("2026-11-03T10:01:00Z"))])
+    same = [{"role": "user", "content": "same"}]
+    budget = row(3, "2026-11-03T10:00:09Z", "2026-11-03T10:00:09Z", "failure", "429", same)
+    budget["metadata"]["attempted_retries"] = budget["metadata"]["max_retries"] = None
+    budget["metadata"]["error_information"]["error_budget_limit"] = "1e-06"
+    records = [
+        row(1, "2026-11-03T10:00:01Z", "2026-11-03T10:00:04Z", messages=same, retries=2),
+        row(2, "2026-11-03T10:00:05Z", "2026-11-03T10:00:15Z", "failure", "503", retries=3),
+        budget,
+    ]
+    merge_proxy_spans(paths, records, "t_1")
+    chats = [s for s in read_jsonl(paths.trace) if s["name"].startswith("chat ")]
+    assert [attrs(c)["evals.proxy.attempts"] for c in chats] == [3, 4, 0]
+    assert [attrs(c)["evals.attempt"] for c in chats] == [1, 1, 1]  # the harness sent each once
+    usage = ProxyClient.usage(records)
+    assert usage["model_calls"] == 3
+    assert usage["attempts"] == 7 and usage["retried_calls"] == 2
+    assert usage["failed_calls"] == 2 and usage["last_status"] == "budget_exceeded"
+    report = json.loads((CONTRACT / "examples" / "runner-report.json").read_text())
+    report["proxy_usage"] = usage
+    assert errors("runner-report", report) == []
 
 
 def test_status_and_labels():

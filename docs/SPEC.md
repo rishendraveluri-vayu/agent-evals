@@ -182,7 +182,7 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [x] Run tasks × configs × N trials (`scripts/sp3_kill_test.py`: 20 trials over 2 harnesses)
 - [x] Implement isolation per D3: one trial folder at a fixed path, leftover-process sweep, wipe and empty check between trials, with a test proving no state leaks from one trial to the next in the same container (image tests in all five worker images; files reach the API over HTTP, so workers mount no shared folder)
 - [x] Use a fixed `HERMES_HOME` path per trial, because the path appears in the system prompt (`/trial` in every container)
-- [ ] Set LiteLLM per-call retries with backoff and a capped trial re-queue (D16), tested against the fake's forced 429s; update the config check
+- [x] Set LiteLLM per-call retries with backoff and a capped trial re-queue (D16), tested against the fake's forced 429s; update the config check (4 Nov: also 503s, 400s and a hung call, on a throwaway LiteLLM of the pinned image; attempts counted per trial in `proxy_usage`)
 - [ ] Handle timeouts, rate limits and retries: tested with the fake's forced faults, then seen on a signed-off real dev run (R9)
 - [ ] Separate infra failures from agent failures, including budget stops
 - [x] Make trial claiming idempotent and runs resumable (SKIP LOCKED claims, 60 s lease; passed the kill test on 4 Nov)

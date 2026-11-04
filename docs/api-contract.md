@@ -120,7 +120,9 @@ simulated-client task the API also summarises that file (profile and debts) into
 
 - `GET /trials/:id` returns `{id, experiment_id, task, config, repeat_index, attempt, status,
   label, end_state, result, runner_report, usage, timing, files: [{path, bytes, sha256}],
-  grades: []}`.
+  grades: []}`. `runner_report.proxy_usage` is stored as the runner wrote it; since D16 it
+  carries `attempts` (LiteLLM's tries at the provider) and `retried_calls` beside
+  `model_calls` (the harness's requests). The API does not index those two yet.
 - `GET /trials/:id/spans` returns contract v2 spans in time order.
 - `GET /trials/:id/files/*path` streams one stored file (path traversal refused).
 - The existing folder-based `/trials` endpoints (`FileTrialStore`) stay for runs recorded

@@ -115,6 +115,8 @@
           "required": [
             "complete",
             "model_calls",
+            "attempts",
+            "retried_calls",
             "failed_calls",
             "input_tokens",
             "output_tokens",
@@ -127,10 +129,22 @@
               "type": "boolean"
             },
             "model_calls": {
+              "description": "Requests the harness sent to LiteLLM: one spend-log row each. A harness retry is an extra call here.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "attempts": {
+              "description": "Requests LiteLLM sent to the provider for those calls, its own retries included (D16): each call's 1 + metadata.attempted_retries, and 0 for a call refused before routing (a budget stop).",
+              "type": "integer",
+              "minimum": 0
+            },
+            "retried_calls": {
+              "description": "Calls LiteLLM sent to the provider more than once (D16).",
               "type": "integer",
               "minimum": 0
             },
             "failed_calls": {
+              "description": "Calls that still failed after LiteLLM's retries.",
               "type": "integer",
               "minimum": 0
             },
