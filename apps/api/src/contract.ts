@@ -238,6 +238,17 @@ export interface Estimate {
   budgets: { trial_usd: number; sim_usd: number };
 }
 
+/**
+ * D32's futility check, once per arm: when an arm has `after` finished trials (status `done`), it
+ * pauses the experiment if fewer than `min_passed` of them passed. Until graders exist (SP4),
+ * "passed" means label `agent` and end state `answered`.
+ */
+export interface FutilityRule {
+  enabled: boolean;
+  after: number;
+  min_passed: number;
+}
+
 /** POST /experiments */
 export interface CreateExperimentRequest {
   name: string;
@@ -250,6 +261,11 @@ export interface CreateExperimentRequest {
   plan_commit?: string | null;
   /** Optional; defaults to the highest version of the `client-sim` prompt (v2 since D27). */
   sim_prompt_sha256?: Sha256 | null;
+  /**
+   * D32: the seed of the claim-order shuffle, 0 to 2^32 - 1. Optional: a random one is drawn and
+   * recorded. The same seed, tasks, configs and N give the same order.
+   */
+  order_seed?: number | null;
 }
 
 export const TRIAL_STATUSES = [
@@ -326,6 +342,8 @@ export interface ExperimentDetail extends ExperimentSummary {
   sim: { prompt: VersionRef; temperature: number | null; max_output_tokens: number } | null;
   platform_commit: string | null;
   plan_commit: string | null;
+  /** D32: the seed the claim order was shuffled from; null for experiments made before it. */
+  order_seed: number | null;
   budgets: { trial_usd: number; sim_usd: number };
   started_at: string | null;
   finished_at: string | null;
@@ -349,6 +367,8 @@ export interface TrialRowSummary {
   harness: string;
   model: string;
   repeat_index: number;
+  /** D32: the trial's place in the claim order (a re-queued attempt keeps its slot's). */
+  order_index: number;
   attempt: number;
   status: TrialStatus;
   label: string | null;

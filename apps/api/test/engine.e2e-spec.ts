@@ -603,13 +603,15 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     expect(json.headers['content-type']).toContain('application/json');
     const body = JSON.parse(json.text) as { experiment: { id: string; platform_commit: string }; trials: { status: string; label: string | null; config: { hash: string; settings: unknown }; task: { id: string }; spend: { cost_usd: number | null }; grades: unknown[] }[] };
     expect(body.experiment).toMatchObject({ id: exp.id, platform_commit: 'abc1234' });
-    expect(body.trials.map((t) => [t.status, t.label])).toEqual([
+    // The export is in plan order (repeat, task, config); claims went in the seeded order (D32).
+    const byStatus = (a: (string | null)[], b: (string | null)[]): number => String(a).localeCompare(String(b));
+    expect(body.trials.map((t) => [t.status, t.label]).sort(byStatus)).toEqual([
+      ['cancelled', null],
+      ['cancelled', null],
       ['done', 'agent'],
       ['infra_failed', 'infra:provider_error'],
-      ['cancelled', null],
-      ['cancelled', null],
     ]);
-    expect(body.trials[0]).toMatchObject({ config: { hash: configA }, task: { id: 'emi-basic' }, spend: { cost_usd: 0.00136 }, grades: [] });
+    expect(body.trials.find((t) => t.status === 'done')).toMatchObject({ config: { hash: configA }, task: { id: 'emi-basic' }, spend: { cost_usd: 0.00136 }, grades: [] });
 
     const csv = await request(env.http).get(`/api/experiments/${exp.id}/export?format=csv`).expect(200);
     expect(csv.headers['content-type']).toContain('text/csv');
@@ -618,11 +620,11 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     const header = lines[0].split(',');
     const status = header.indexOf('status');
     const label = header.indexOf('label');
-    expect(lines.slice(1).map((l) => [l.split(',')[status], l.split(',')[label]])).toEqual([
+    expect(lines.slice(1).map((l) => [l.split(',')[status], l.split(',')[label]]).sort(byStatus)).toEqual([
+      ['cancelled', ''],
+      ['cancelled', ''],
       ['done', 'agent'],
       ['infra_failed', 'infra:provider_error'],
-      ['cancelled', ''],
-      ['cancelled', ''],
     ]);
     await request(env.http).get(`/api/experiments/${exp.id}/export?format=xml`).expect(400);
     await request(env.http).get('/api/experiments/e_nope/export').expect(404);
@@ -680,7 +682,7 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
 
     let detail = (await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body as ExperimentDetail;
     expect(detail.status).toBe('paused');
-    expect(detail.paused_reason).toContain('emi-basic on arm A, attempt 1: infra:config_error (LiteLLM status 400): This API key is not scoped to a workspace');
+    expect(detail.paused_reason).toMatch(/emi-basic on arm [AB], attempt 1: infra:config_error \(LiteLLM status 400\): This API key is not scoped to a workspace/);
     const paused = detail.events.find((e) => e.kind === 'paused');
     expect(paused?.detail).toBe(detail.paused_reason);
     expect(detail.events.filter((e) => e.kind === 'config_error').map((e) => e.trial_id)).toEqual([first.trial_id]);

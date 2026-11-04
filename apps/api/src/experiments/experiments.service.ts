@@ -10,6 +10,7 @@ import type {
   ExperimentEventKind,
   ExperimentStatus,
   ExperimentSummary,
+  FutilityRule,
   TrialRowSummary,
   TrialStatus,
 } from '../contract';
@@ -24,6 +25,10 @@ import { Db, type Queryable } from '../database/db.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
 import { SIM_MAX_OUTPUT_TOKENS, simTemperature } from '../worker/spec-builder';
 import { type CellInput, type Price, estimate } from './estimate';
+import { claimOrder, isSeed, newSeed } from './order';
+
+/** D35: arm A and arm B, or one config for a pilot. */
+export const MAX_ARMS = 2;
 
 export interface ExperimentRow {
   id: string;
@@ -51,6 +56,14 @@ export interface ExperimentRow {
   paused_at: Date | null;
   paused_reason: string | null;
   resumed_at: Date | null;
+  // 005
+  parent_experiment_id: string | null;
+  reuse_baseline: boolean;
+  baseline_decision: string | null;
+  /** bigint: node-pg returns it as a string. */
+  order_seed: string | null;
+  futility: FutilityRule | null;
+  spend_guard_at: Date | null;
 }
 
 const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
@@ -87,6 +100,14 @@ export class ExperimentsService {
   private async plan(body: EstimateRequest): Promise<Plan> {
     if (typeof body !== 'object' || body === null) throw badRequest('invalid_experiment', 'the body must be a JSON object');
     const configHashes = shaList(body.config_hashes, 'config_hashes');
+    if (configHashes.length > MAX_ARMS) {
+      // D35: two arms, A against B. A question with more arms is several A/B experiments.
+      throw badRequest(
+        'too_many_arms',
+        `an experiment has one config (a pilot) or two (arm A and arm B); this one has ${configHashes.length}`,
+        'Run several A/B experiments against the same parent: each new config as arm B, the shared baseline as arm A (reuse_baseline can reuse its trials).',
+      );
+    }
     const taskShas = shaList(body.task_sha256s, 'task_sha256s');
     const n = body.n;
     if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > 1000) {
@@ -193,15 +214,23 @@ export class ExperimentsService {
       }
     }
 
+    if (body.order_seed !== undefined && body.order_seed !== null && !isSeed(body.order_seed)) {
+      throw badRequest('invalid_experiment', 'order_seed must be an integer from 0 to 4294967295', 'Leave order_seed out for a random one, or give the seed of the order to repeat.');
+    }
+    const seed = isSeed(body.order_seed) ? body.order_seed : newSeed();
+
     const id = newId('e');
-    const slots: { id: string; task: string; config: string; harness: string; repeat: number; seq: number }[] = [];
+    const slots: { id: string; task: string; config: string; harness: string; repeat: number; seq: number; order: number }[] = [];
+    // D32: claims follow a seeded shuffle of (task, repeat) blocks with the arms in a random
+    // order inside each block, so the arms alternate and any early batch is a random sample.
+    // `seq` stays the slot's place in the plan (repeat, task, config), a stable number for paging.
+    const order = new Map(claimOrder(plan.tasks.map((t) => t.sha256), plan.configs.map((c) => c.hash), plan.n, seed).map((s, i) => [`${s.task}|${s.config}|${s.repeat}`, i]));
     let seq = 0;
-    // Repeat-major, then task, then config: the arms are interleaved in claim order, so a
-    // cancel or a budget trip part-way leaves the arms balanced.
     for (let r = 0; r < plan.n; r += 1) {
       for (const t of plan.tasks) {
         for (const c of plan.configs) {
-          slots.push({ id: newId('t'), task: t.sha256, config: c.hash, harness: c.harness, repeat: r, seq: seq++ });
+          const at = order.get(`${t.sha256}|${c.hash}|${r}`) as number;
+          slots.push({ id: newId('t'), task: t.sha256, config: c.hash, harness: c.harness, repeat: r, seq: seq++, order: at });
         }
       }
     }
@@ -209,8 +238,8 @@ export class ExperimentsService {
       await client.query(
         `INSERT INTO experiments (id, name, axis, config_hashes, task_sha256s, n, sim_model, sim_prompt_sha256,
                                   sim_temperature, sim_max_output_tokens, budget_usd, trial_budget_usd, sim_budget_usd,
-                                  platform_commit, plan_commit, estimate, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'created')`,
+                                  platform_commit, plan_commit, estimate, status, order_seed)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'created', $17)`,
         [
           id,
           name,
@@ -228,14 +257,24 @@ export class ExperimentsService {
           this.config.platformCommit,
           body.plan_commit ?? null,
           JSON.stringify(plan.estimate),
+          seed,
         ],
       );
       await client.query(
         `INSERT INTO trials (id, experiment_id, task_sha256, config_hash, repeat_index, attempt, seq, order_index, harness, status)
-         SELECT s.id, $1, s.task, s.config, s.repeat, 1, s.seq, s.seq, s.harness, 'queued'
-         FROM unnest($2::text[], $3::text[], $4::text[], $5::int[], $6::int[], $7::text[])
-              AS s(id, task, config, repeat, seq, harness)`,
-        [id, slots.map((s) => s.id), slots.map((s) => s.task), slots.map((s) => s.config), slots.map((s) => s.repeat), slots.map((s) => s.seq), slots.map((s) => s.harness)],
+         SELECT s.id, $1, s.task, s.config, s.repeat, 1, s.seq, s.ord, s.harness, 'queued'
+         FROM unnest($2::text[], $3::text[], $4::text[], $5::int[], $6::int[], $7::int[], $8::text[])
+              AS s(id, task, config, repeat, seq, ord, harness)`,
+        [
+          id,
+          slots.map((s) => s.id),
+          slots.map((s) => s.task),
+          slots.map((s) => s.config),
+          slots.map((s) => s.repeat),
+          slots.map((s) => s.seq),
+          slots.map((s) => s.order),
+          slots.map((s) => s.harness),
+        ],
       );
       await client.query(
         `INSERT INTO experiment_arms (experiment_id, config_hash, arm, position)
@@ -355,6 +394,7 @@ export class ExperimentsService {
       sim,
       platform_commit: r.platform_commit,
       plan_commit: r.plan_commit,
+      order_seed: r.order_seed === null ? null : Number(r.order_seed),
       budgets: { trial_usd: r.trial_budget_usd, sim_usd: r.sim_budget_usd },
       started_at: iso(r.started_at),
       finished_at: iso(r.finished_at),
@@ -481,6 +521,7 @@ export interface TrialSummaryRow {
   harness: string;
   model: string;
   repeat_index: number;
+  order_index: number;
   attempt: number;
   status: TrialStatus;
   label: string | null;
@@ -497,7 +538,7 @@ export interface TrialSummaryRow {
 
 export const TRIAL_SUMMARY_SELECT = `
   SELECT t.id, t.experiment_id, t.task_sha256, k.id AS task_id, t.config_hash, c.name AS config_name, c.harness, c.model,
-         t.repeat_index, t.attempt, t.status, t.label, t.end_state, t.cost_usd, t.input_tokens, t.output_tokens,
+         t.repeat_index, t.order_index, t.attempt, t.status, t.label, t.end_state, t.cost_usd, t.input_tokens, t.output_tokens,
          t.model_calls, t.wall_s, t.worker_id, t.claimed_at, t.finished_at
   FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 JOIN configs c ON c.hash = t.config_hash`;
 

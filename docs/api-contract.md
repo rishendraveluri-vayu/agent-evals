@@ -131,6 +131,19 @@ simulated-client task the API also summarises that file (profile and debts) into
   runs at D22's temperature 0, except on a model that refuses temperature (Haiku 5.5), where its
   temperature is `null` and not sent (D27); the token cap is 300. `sim` in the experiment shows
   all three.
+- **Arms (D35).** `config_hashes` holds one config (a pilot) or two: arm A, then arm B. More is a
+  400 `too_many_arms` (on the estimate too), with the fix "Run several A/B experiments against
+  the same parent".
+- **Claim order (D32).** `order_seed` (optional, 0 to 2^32 - 1) seeds the shuffle; without one a
+  random seed is drawn, and either way it is stored and shown as `order_seed`. Every (task,
+  repeat) is a block with one trial per arm; the blocks are shuffled, and so is the arm order
+  inside each block, so the arms alternate and any early batch is a random sample. Each trial's
+  place is its `order_index` (in the trial summaries); claims go in `order_index` order, and a
+  re-queued attempt keeps its slot's place. The i-th random number is the first 4 bytes of
+  `sha256("<seed>:<i>")` over 2^32, used in a Fisher-Yates shuffle
+  (`apps/api/src/experiments/order.ts`), so the order can be rebuilt anywhere from the seed. `seq`
+  stays the slot's number in plan order (repeat, task, config), which the export and the trial
+  list are sorted by.
 - `POST /experiments/:id/start` starts a `created` experiment or resumes a `paused` one (and
   marks it `done` if nothing is left to claim); `POST /experiments/:id/cancel` (queued trials
   become `cancelled`; running ones finish), from `created`, `running` or `paused`.

@@ -139,7 +139,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
          WHERE id = (
            SELECT t.id FROM trials t JOIN experiments e ON e.id = t.experiment_id
            WHERE t.status = 'queued' AND t.harness = $1 AND e.status = 'running'
-           ORDER BY e.started_at, e.id, t.seq, t.attempt
+           ORDER BY e.started_at, e.id, t.order_index, t.attempt
            LIMIT 1
            FOR UPDATE OF t SKIP LOCKED)
          RETURNING id, experiment_id, task_sha256, config_hash, repeat_index, attempt`,
