@@ -3,7 +3,8 @@ import { computed, ref } from 'vue';
 import { api } from '../api/client';
 import type { Compare, Experiment, ExperimentDetail, TaskInfo } from '../api/types';
 import LoadState from '../components/LoadState.vue';
-import { armsOf } from '../lib/arms';
+import VerdictTag from '../components/VerdictTag.vue';
+import { armsOf, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { clientKind, gradedBy, graderKinds, graderName, splitName } from '../lib/names';
 import { href } from '../router';
@@ -62,7 +63,8 @@ const lastRun = (t: TaskInfo) => {
   const b = rows.find((r) => r.config === hb);
   if (!a || !b) return null;
   const stat = run.compare.stats?.tasks.find((x) => x.task === t.sha256 || x.task === t.id);
-  return { text: `${a.passed} to ${b.passed} of ${Math.max(a.graded, b.graded)}`, separates: !!stat?.significant, hasStats: !!stat };
+  const verdict: Verdict = !stat ? 'pending' : stat.significant ? (stat.diff.estimate >= 0 ? 'better' : 'worse') : 'none';
+  return { a: `${a.passed}/${a.graded}`, b: `${b.passed}/${b.graded}`, verdict };
 };
 
 const filtered = computed(() =>
@@ -174,8 +176,9 @@ const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
             <th
               scope="col"
               class="right"
+              data-test="last-run-head"
             >
-              Last run, A to B
+              {{ data?.run ? `Last run: ${data.run.detail.name}` : 'Last run' }}
             </th>
           </tr>
         </thead>
@@ -207,11 +210,17 @@ const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
             </td>
             <td class="right num">
               <template v-if="lastRun(t)">
-                {{ lastRun(t)?.text }}
                 <span
-                  class="block smaller"
-                  :class="lastRun(t)?.separates ? 'separates' : 'secondary'"
-                >{{ lastRun(t)?.separates ? `Separates ${arms[0]?.short} and ${arms[1]?.short}` : lastRun(t)?.hasStats ? 'Within noise' : 'No interval yet' }}</span>
+                  class="arm-counts"
+                  data-test="last-run"
+                ><span class="arm"><span
+                  class="dot dot--a"
+                  aria-hidden="true"
+                />A {{ lastRun(t)?.a }}</span> · <span class="arm"><span
+                  class="dot dot--b"
+                  aria-hidden="true"
+                />B {{ lastRun(t)?.b }}</span></span>
+                <span class="block tag-line"><VerdictTag :verdict="lastRun(t)?.verdict ?? 'pending'" /></span>
               </template>
               <span
                 v-else
@@ -280,9 +289,16 @@ const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
   display: block;
 }
 
-.separates {
-  color: var(--pass);
-  font-weight: 500;
+.arm-counts {
+  white-space: nowrap;
+}
+
+.arm-counts .arm {
+  gap: 6px;
+}
+
+.tag-line {
+  margin-top: 4px;
 }
 
 .show-all {

@@ -31,7 +31,48 @@ describe('TrialView in fixture mode', () => {
     expect(grades).toHaveLength(3);
     expect(grades[1].text()).toContain('Accounts for tax on FD interest');
     expect(grades[1].text()).toContain('Fail');
-    expect(grades[1].text()).toContain('Judge, rubric v3');
+    expect(grades[1].get('[data-test="grade-kind"]').text()).toBe('Judge claude-haiku-5-5, rubric v3');
+    expect(grades[1].get('[data-test="grade-kind"] .mono').text()).toBe('claude-haiku-5-5');
+    expect(grades[0].get('[data-test="grade-kind"]').text()).toBe('Unit test');
+    const at = w.findAll('[data-test="tool-call"] .at');
+    expect(at[0].text()).toMatch(/^at \d+\.\d s$/);
+    expect(at[0].attributes('title')).toMatch(/^Started \d+\.\d s in, took \d+\.\d s$/);
+  });
+
+  it('names the pinned harness and says which check failed, who graded it and that you dispute it', async () => {
+    const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
+    await settle();
+    expect(w.get('[data-test="trial-meta"]').text()).toBe('Prompt v2, config 7f3a9c2, Hermes 6112c2a');
+    const failedOn = w.get('[data-test="failed-on"]');
+    expect(failedOn.text()).toBe('Failed on: Accounts for tax on FD interest (judge; your label passes it)');
+    expect(failedOn.get('a').attributes('href')).toBe('#grade-1');
+    const grades = w.findAll('[data-test="grade"]');
+    expect(grades[1].attributes('id')).toBe('grade-1');
+    const dispute = grades[1].get('[data-test="dispute"]');
+    expect(dispute.text()).toContain('Your held-out label: Yes. You and the judge disagree on this check.');
+    expect(dispute.get('a').attributes('href')).toBe('#/labels/judge');
+    expect(grades[2].find('[data-test="dispute"]').exists()).toBe(false);
+    // The status pill still reports the grades as they are.
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed: 2 of 3 checks passed');
+  });
+
+  it('jumps to the failed check without changing the route', async () => {
+    const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' }, attachTo: document.body });
+    await settle();
+    const before = window.location.hash;
+    await w.get('[data-test="failed-on"] a').trigger('click');
+    expect(document.activeElement?.id).toBe('grade-1');
+    expect(window.location.hash).toBe(before);
+    w.unmount();
+  });
+
+  it('places the timeline in the story column, under the conversation', async () => {
+    const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
+    await settle();
+    const story = w.get('.story');
+    expect(story.find('#timeline').exists()).toBe(true);
+    expect(story.find('#convo').exists()).toBe(true);
+    expect(w.get('.graders-col').find('#timeline').exists()).toBe(false);
   });
 
   it('draws the timeline with the start-up and shut-down the harness spends around the agent', async () => {

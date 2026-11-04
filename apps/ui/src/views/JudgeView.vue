@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { api } from '../api/client';
-import type { Config, Experiment, JudgeAgreement } from '../api/types';
+import type { BlindItem, Config, Experiment, JudgeAgreement } from '../api/types';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import { armsOf } from '../lib/arms';
@@ -10,13 +10,17 @@ import { shortHash } from '../lib/format';
 import { href } from '../router';
 
 const { data, error, loading } = useLoad(async () => {
-  const [agreement, configs, experiments] = await Promise.all([
+  const [agreement, configs, experiments, queue] = await Promise.all([
     api.judgeAgreement('heldout'),
     optional(api.configs(), [] as Config[]),
     optional(api.experiments(), [] as Experiment[]),
+    optional(api.labelQueue('heldout'), [] as BlindItem[]),
   ]);
-  return { agreement, configs, experiments };
+  return { agreement, configs, experiments, queue };
 });
+
+/** Held-out items still to label: until there are none, every number here is provisional. */
+const toGo = computed(() => data.value?.queue.length ?? 0);
 
 const j = computed<JudgeAgreement | null>(() => data.value?.agreement ?? null);
 
@@ -29,7 +33,7 @@ const answer = computed(() => {
   const tail = k.low < a.bar && k.estimate >= a.bar ? `, but the interval runs from ${k.low.toFixed(2)} to ${k.high.toFixed(2)}, so its lower end is under ${a.bar}` : `, with an interval from ${k.low.toFixed(2)} to ${k.high.toFixed(2)}`;
   return {
     title,
-    text: `The judge agrees with you on ${a.agree} of ${a.labels} outputs. Cohen's κ is ${k.estimate.toFixed(2)}, ${pos}${tail}.`,
+    text: `The judge agrees with you on ${a.agree} of ${a.labels} labelled checks (one output, one question). Cohen's κ is ${k.estimate.toFixed(2)}, ${pos}${tail}.`,
     meaning:
       k.low >= a.bar
         ? 'Judge-graded tasks can be read like the others.'
@@ -77,6 +81,13 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
     <h1 tabindex="-1">
       Can we trust the judge?
     </h1>
+    <p
+      v-if="toGo"
+      class="provisional"
+      data-test="provisional"
+    >
+      Provisional: {{ toGo }} held-out {{ toGo === 1 ? 'item' : 'items' }} still to label. These numbers will change.
+    </p>
     <p class="lede">
       {{ lede }}
     </p>
@@ -119,7 +130,7 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
             :min="0"
             :max="1"
             :ticks="[{ value: 0, label: '0' }, { value: j.bar, label: `bar ${j.bar}`, strong: true }, { value: 1, label: '1, full agreement' }]"
-            :rows="[{ estimate: j.kappa.estimate, low: j.kappa.low, high: j.kappa.high, tone: 'ink' }]"
+            :rows="[{ estimate: j.kappa.estimate, low: j.kappa.low, high: j.kappa.high, tone: 'ink', label: `κ ${j.kappa.estimate.toFixed(2)}, ${j.labels} labelled checks` }]"
             :reference="{ value: j.bar }"
             :summary="`Kappa ${j.kappa.estimate.toFixed(2)}, interval ${j.kappa.low.toFixed(2)} to ${j.kappa.high.toFixed(2)}, bar at ${j.bar}`"
           />
@@ -311,6 +322,11 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
 .not-yet {
   margin-top: 8px;
   max-width: 72ch;
+}
+
+.provisional {
+  margin-top: 8px;
+  color: var(--ink-2);
 }
 
 .answer {

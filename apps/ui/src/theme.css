@@ -1,5 +1,7 @@
 /* Design tokens for the whole UI (SP7 design, approved 4 Nov). Colour always carries meaning:
    arm A is blue, arm B is orange, pass is green, fail is red, infra is dashed grey with an icon.
+   Blue is kept for arm A and dashes for infra (and zero lines): links, focus rings and running
+   indicators are ink.
    The dark theme is chosen by the viewer (header toggle, or ?theme=dark), never flipped
    automatically, and has its own steps of the same palette. theme.spec.ts checks the contrast
    of every text pair below in both themes. */
@@ -15,9 +17,9 @@
   --rule-dashed: #afb8c1;
   --ink: #1f2328;
   --ink-2: #57606a;
-  --link: #2f5bd3;
-  --link-hover: #1f3f99;
-  --focus: #2f5bd3;
+  --link: var(--ink);
+  --link-hover: var(--ink);
+  --focus: var(--ink);
   --primary: #1f2328;
   --on-primary: #ffffff;
   --arm-a: #2f5bd3;
@@ -39,7 +41,7 @@
   --span-agent: #3d444d;
   --span-tool: #1b7c83;
   --span-client: #8250df;
-  --span-harness: #c9d1d9;
+  --span-harness: var(--neutral-mark-strong);
   --mark: #fdeded;
 
   /* Older names, kept so the spend chart and the recorded-runs list keep their colours. */
@@ -77,9 +79,9 @@
   --rule-dashed: #545d68;
   --ink: #e6edf3;
   --ink-2: #9ba6b2;
-  --link: #7ea2f5;
-  --link-hover: #a9c1fa;
-  --focus: #7ea2f5;
+  --link: var(--ink);
+  --link-hover: var(--ink);
+  --focus: var(--ink);
   --primary: #e6edf3;
   --on-primary: #0e1116;
   --arm-a: #6f93f2;
@@ -101,7 +103,7 @@
   --span-agent: #aab4bf;
   --span-tool: #39a8b0;
   --span-client: #a887ee;
-  --span-harness: #3a424c;
+  --span-harness: var(--neutral-mark-strong);
   --mark: #4a1c20;
 
   --series-1: #6f93f2;
@@ -136,10 +138,14 @@ body {
 
 a {
   color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
 }
 
 a:hover {
   color: var(--link-hover);
+  text-decoration-color: var(--ink);
 }
 
 :focus-visible {
@@ -320,11 +326,6 @@ code,
 
 .panel--pad {
   padding: 22px 24px;
-}
-
-.panel--dashed {
-  border-style: dashed;
-  border-color: var(--rule-dashed);
 }
 
 /* A row of figures with rules between them that survive wrapping. */
@@ -510,11 +511,11 @@ code,
 .meter > span {
   display: block;
   height: 6px;
-  background: var(--ink);
+  background: var(--rule-strong);
 }
 
 .meter--live > span {
-  background: var(--arm-a);
+  background: var(--ink);
 }
 
 /* Tables */
@@ -593,7 +594,7 @@ code,
 }
 
 .bubble--client {
-  background: var(--client-soft);
+  background: var(--surface-muted);
   max-width: 80%;
 }
 

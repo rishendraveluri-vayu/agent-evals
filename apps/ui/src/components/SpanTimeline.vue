@@ -81,8 +81,16 @@ const LEGEND: [SpanBar['role'], string][] = [
             v-if="b.derived"
             class="row row--static"
           >
-            <span class="label">{{ b.label }}</span>
+            <span
+              class="label"
+              :title="b.label"
+            >{{ b.label }}</span>
             <span class="track"><span
+              v-for="t in ticks"
+              :key="t.label"
+              class="gridline"
+              :style="{ left: t.left }"
+            /><span
               :class="`bar bar--${b.role}`"
               :style="{ left: pct(b.startMs), width: width(b) }"
             /></span>
@@ -97,13 +105,21 @@ const LEGEND: [SpanBar['role'], string][] = [
             data-test="span-row"
             @click="emit('select', b.id)"
           >
-            <span class="label"><AppIcon
+            <span
+              class="label"
+              :title="b.label"
+            ><AppIcon
               v-if="b.error"
               name="cross"
               :size="14"
               class="err"
             />{{ b.label }}</span>
             <span class="track"><span
+              v-for="t in ticks"
+              :key="t.label"
+              class="gridline"
+              :style="{ left: t.left }"
+            /><span
               :class="`bar bar--${b.role}`"
               :style="{ left: pct(b.startMs), width: width(b) }"
             /></span>
@@ -114,7 +130,7 @@ const LEGEND: [SpanBar['role'], string][] = [
           class="row row--axis"
           aria-hidden="true"
         >
-          <span />
+          <span class="axis-pad" />
           <span class="axis">
             <span
               v-for="t in ticks"
@@ -123,7 +139,7 @@ const LEGEND: [SpanBar['role'], string][] = [
               :style="{ left: t.left }"
             >{{ t.label }}</span>
           </span>
-          <span />
+          <span class="axis-pad" />
         </div>
       </div>
     </div>
@@ -165,18 +181,17 @@ const LEGEND: [SpanBar['role'], string][] = [
 }
 
 .chart {
-  min-width: 820px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
+/* A 180 px label, the bars, and a 48 px duration: about 800 px fits beside the grading column. */
 .row {
   display: grid;
-  grid-template-columns: 250px 1fr 64px;
+  grid-template-columns: 180px minmax(0, 1fr) 48px;
   gap: 12px;
-  align-items: center;
-  min-height: 30px;
+  align-items: stretch;
+  min-height: 32px;
   padding: 0 6px;
   border: 0;
   border-radius: 6px;
@@ -209,30 +224,43 @@ const LEGEND: [SpanBar['role'], string][] = [
 }
 
 .label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  display: block;
+  align-self: center;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.label .err {
+  vertical-align: -2px;
+  margin-right: 4px;
 }
 
 .err {
   color: var(--fail);
 }
 
+/* No fill behind the bars: thin verticals at each axis tick run down through every row. */
 .track {
   position: relative;
   display: block;
-  height: 18px;
-  background: var(--ground);
-  border-radius: 4px;
+  min-height: 32px;
+}
+
+.gridline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--grid);
 }
 
 .bar {
   position: absolute;
-  top: 2px;
+  top: 50%;
   height: 14px;
+  margin-top: -7px;
   min-width: 3px;
   border-radius: 4px;
 }
@@ -258,6 +286,7 @@ const LEGEND: [SpanBar['role'], string][] = [
 }
 
 .dur {
+  align-self: center;
   text-align: right;
   color: var(--ink-2);
 }
@@ -278,5 +307,38 @@ const LEGEND: [SpanBar['role'], string][] = [
 
 .axis-tick:first-child {
   transform: none;
+}
+
+/* On a phone each span is two lines: its name and duration, then its bar across the full width,
+   with the time axis under the last bar. */
+@media (max-width: 640px) {
+  .chart-wrap {
+    padding: 10px 12px;
+  }
+
+  .row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 10px;
+    padding: 4px 6px 0;
+  }
+
+  .row .track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-height: 22px;
+  }
+
+  .row--axis {
+    grid-template-columns: minmax(0, 1fr);
+    padding-top: 2px;
+  }
+
+  .row--axis .axis {
+    grid-column: 1 / -1;
+  }
+
+  .axis-pad {
+    display: none;
+  }
 }
 </style>

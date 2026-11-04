@@ -30,7 +30,20 @@ onBeforeUnmount(() => observer?.disconnect());
 
 const PAD = 20;
 const x = (v: number) => PAD + ((Math.min(props.max, Math.max(props.min, v)) - props.min) / (props.max - props.min)) * (width.value - 2 * PAD);
-const rowY = (i: number) => 22 + i * 24;
+/** A main row is a 6 px line with a 10 px-radius dot; a small one (such as an A/A run) is a 4 px
+ *  line with a 6 px dot. Rows sit about 12 px apart, edge to edge. */
+const RADIUS = { lg: 10, sm: 6 } as const;
+const STROKE = { lg: 3, sm: 2 } as const;
+const sizeOf = (r: StripRow) => r.size ?? 'lg';
+const outer = (r: StripRow) => RADIUS[sizeOf(r)] + STROKE[sizeOf(r)] / 2;
+const ys = computed(() => {
+  const out: number[] = [];
+  props.rows.forEach((r, i) => {
+    out.push(i === 0 ? 22 : out[i - 1] + outer(props.rows[i - 1]) + 12 + outer(r));
+  });
+  return out;
+});
+const rowY = (i: number) => ys.value[i] ?? 22;
 const lastY = computed(() => rowY(props.rows.length - 1));
 const height = computed(() => lastY.value + 38);
 /** About how wide a 13 px label is, to keep labels apart and inside the figure. */
@@ -65,6 +78,10 @@ const labelAt = (r: StripRow) => {
   if (left - w > 0) return { x: left, anchor: 'end' };
   return null;
 };
+
+/** Rows whose label has no room in the figure are named in a legend under it, so no row is ever
+ *  left unlabelled. */
+const legend = computed(() => props.rows.filter((r) => r.label && !labelAt(r)));
 </script>
 
 <template>
@@ -102,20 +119,21 @@ const labelAt = (r: StripRow) => {
           :x2="x(r.high)"
           :y1="rowY(i)"
           :y2="rowY(i)"
-          :class="`range range--${r.tone} range--${r.size ?? 'lg'}`"
+          :class="`range range--${r.tone} range--${sizeOf(r)}`"
         />
         <circle
           :cx="x(r.estimate)"
           :cy="rowY(i)"
-          :r="(r.size ?? 'lg') === 'lg' ? 9 : 6"
-          :class="`point point--${r.tone} point--${r.size ?? 'lg'}`"
+          :r="RADIUS[sizeOf(r)]"
+          :class="`point point--${r.tone} point--${sizeOf(r)}`"
         />
         <text
           v-if="r.label && labelAt(r)"
           :x="labelAt(r)?.x"
           :y="rowY(i) + 4"
           :text-anchor="labelAt(r)?.anchor"
-          class="tick"
+          class="tick row-label"
+          data-test="strip-label"
         >{{ r.label }}</text>
       </g>
       <text
@@ -127,6 +145,21 @@ const labelAt = (r: StripRow) => {
         :class="t.strong ? 'tick tick--strong' : 'tick'"
       >{{ t.label }}</text>
     </svg>
+    <ul
+      v-if="legend.length"
+      class="strip-legend"
+      data-test="strip-legend"
+    >
+      <li
+        v-for="(r, i) in legend"
+        :key="i"
+      >
+        <span
+          :class="`swatch-line swatch-line--${r.tone}`"
+          aria-hidden="true"
+        />{{ r.label }}
+      </li>
+    </ul>
   </div>
 </template>
 
@@ -220,5 +253,66 @@ svg {
 
 .tick--strong {
   fill: var(--ink);
+}
+
+/* A halo in the surface colour keeps a row label readable where it crosses the zero line. */
+.row-label {
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.strip-legend {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0 0 0 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.strip-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The row in miniature: its line with its dot in the middle. */
+.swatch-line {
+  position: relative;
+  display: inline-block;
+  width: 20px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--neutral-line);
+}
+
+.swatch-line::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--neutral-dot);
+}
+
+.swatch-line--a,
+.swatch-line--a::after {
+  background: var(--arm-a);
+}
+
+.swatch-line--b,
+.swatch-line--b::after {
+  background: var(--arm-b);
+}
+
+.swatch-line--ink,
+.swatch-line--ink::after {
+  background: var(--ink);
 }
 </style>

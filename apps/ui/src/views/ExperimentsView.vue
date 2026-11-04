@@ -5,11 +5,12 @@ import type { Compare, Config, Experiment, ExperimentDetail, ExperimentTrial, Ha
 import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
-import { armsOf, axisWords, doneCount, excludesZero, headline, intervalText, pointsWithInterval, setupOf, totalTrials } from '../lib/arms';
+import VerdictTag from '../components/VerdictTag.vue';
+import { armsOf, axisWords, doneCount, excludesZero, headline, intervalText, pointsWithInterval, setupOf, totalTrials, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { minutes, money, percent, relative, signed } from '../lib/format';
 import { harnessShort, modelName, settingLabel, splitName } from '../lib/names';
-import { domainFor, leanTone, ticksFor } from '../lib/scale';
+import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
 import { href } from '../router';
 
 interface Loaded {
@@ -58,9 +59,16 @@ const latestResult = computed(() => {
   const values = [stats.diff.low, stats.diff.high, ...(stats.aa ? [stats.aa.diff.low, stats.aa.diff.high] : [])];
   const [min, max] = domainFor(values, -20, 30);
   const level = Math.round(stats.level * 100);
-  const noise = stats.aa
-    ? ` An A/A run on the same setup moved ${signed(stats.aa.diff.estimate)} (${intervalText(stats.aa.diff)}), so this difference ${excludesZero(stats.diff) ? 'is larger than the noise' : 'is within the noise'}.`
-    : ' No A/A run on this setup yet, so the noise floor is not measured.';
+  // The A/A run is drawn as its own row under the result, so the caption does not repeat it.
+  const noise = stats.aa ? '' : ' No A/A run on this setup yet, so the noise floor is not measured.';
+  const main: StripRow = {
+    estimate: stats.diff.estimate,
+    low: stats.diff.low,
+    high: stats.diff.high,
+    tone: verdictTone(stats.verdict),
+    label: arms.length === 2 ? `${arms[1].short} minus ${arms[0].short}, ${stats.tasks.length} tasks` : undefined,
+  };
+  const aa: StripRow[] = stats.aa ? [{ estimate: stats.aa.diff.estimate, low: stats.aa.diff.low, high: stats.aa.diff.high, tone: 'neutral', size: 'sm', label: 'A/A run, same config twice' }] : [];
   return {
     experiment: latest,
     stats,
@@ -69,10 +77,10 @@ const latestResult = computed(() => {
     rates: `pass rate, ${percent(stats.a.rate)} to ${percent(stats.b.rate)}`,
     min,
     max,
-    ticks: ticksFor(min, max, 20, '0, no change'),
+    ticks: ticksFor(min, max, 10, '0, no change'),
+    rows: [main, ...aa],
     caption: `${level}% interval ${intervalText(stats.diff)}, paired over ${latest.tasks.length}${split ? ` ${split}` : ''} tasks with ${latest.n} trials each.${noise}`,
-    aria: `Difference in pass rate: ${signed(stats.diff.estimate)} points, ${level}% interval ${intervalText(stats.diff)}, on a scale from ${min} to ${max}`,
-    tone: leanTone(stats.diff.estimate),
+    aria: `Difference in pass rate: ${signed(stats.diff.estimate)} points, ${level}% interval ${intervalText(stats.diff)}, on a scale from ${min} to ${max}.${stats.aa ? ` An A/A run on the same setup gave ${signed(stats.aa.diff.estimate)}, interval ${intervalText(stats.aa.diff)}.` : ''}`,
   };
 });
 
@@ -141,6 +149,7 @@ interface Row {
   live: boolean;
   pill: string;
   pillClass: string;
+  verdict: Verdict | null;
   detail: string;
   estimate: string;
 }
@@ -158,6 +167,7 @@ const rows = computed<Row[]>(() => {
       const sameTwice = twoArms(e) && e.config_hashes[0] === e.config_hashes[1];
       let pill = 'Finished';
       let pillClass = 'pill--outline';
+      let verdict: Verdict | null = null;
       let detail = 'Verdict not computed yet';
       if (e.status === 'running') {
         pill = 'Running';
@@ -173,8 +183,7 @@ const rows = computed<Row[]>(() => {
         pill = 'One arm';
         detail = 'Nothing to compare';
       } else if (stats) {
-        pill = stats.verdict === 'better' ? 'Better' : stats.verdict === 'worse' ? 'Worse' : 'No clear difference';
-        pillClass = stats.verdict === 'better' ? 'pill--pass' : stats.verdict === 'worse' ? 'pill--fail' : '';
+        verdict = stats.verdict === 'better' ? 'better' : stats.verdict === 'worse' ? 'worse' : 'none';
         detail = `${pointsWithInterval(stats.diff)}${sameTwice && !excludesZero(stats.diff) ? ', as expected' : ''}`;
       }
       return {
@@ -189,6 +198,7 @@ const rows = computed<Row[]>(() => {
         live: e.status === 'running',
         pill,
         pillClass,
+        verdict,
         detail,
         estimate: e.estimate ? `of ${money(e.estimate.cost_usd.expected)} estimated` : '',
       };
@@ -255,7 +265,7 @@ const rows = computed<Row[]>(() => {
             :max="latestResult.max"
             :ticks="latestResult.ticks"
             :reference="{ value: 0, dashed: true }"
-            :rows="[{ estimate: latestResult.stats.diff.estimate, low: latestResult.stats.diff.low, high: latestResult.stats.diff.high, tone: latestResult.tone }]"
+            :rows="latestResult.rows"
             :summary="latestResult.aria"
           />
           <figcaption class="secondary small caption">
@@ -416,41 +426,50 @@ const rows = computed<Row[]>(() => {
             <tr
               v-for="r in rows"
               :key="r.e.id"
+              data-test="experiment-row"
             >
-              <td>
+              <td class="c-name">
                 <a
                   :href="r.to"
                   class="row-link"
                 >{{ r.e.name }}</a>
-                <span class="secondary block">Changes {{ r.axis }}</span>
+                <span class="secondary block changes">Changes {{ r.axis }}</span>
               </td>
-              <td>
+              <td class="c-arms">
                 <span class="arm"><span class="dot dot--a" />{{ r.a }}</span>
                 <span
                   v-if="r.e.config_hashes.length > 1"
                   class="arm block-flex"
                 ><span class="dot dot--b" />{{ r.b }}</span>
-                <span class="secondary block">{{ r.setup }}</span>
+                <span class="secondary block setup">{{ r.setup }}</span>
               </td>
-              <td class="num">
-                <span class="block">{{ r.trials }}</span>
+              <td class="num c-trials">
+                <span class="block">{{ r.trials }}<span class="phone-only"> trials</span></span>
                 <span
                   class="meter trials-meter"
                   :class="{ 'meter--live': r.live }"
                   aria-hidden="true"
                 ><span :style="{ width: `${r.share}%` }" /></span>
               </td>
-              <td>
+              <td
+                class="c-result"
+                data-test="result"
+              >
+                <VerdictTag
+                  v-if="r.verdict"
+                  :verdict="r.verdict"
+                />
                 <span
+                  v-else
                   class="pill"
                   :class="r.pillClass"
                 >{{ r.pill }}</span>
                 <span class="secondary block num detail">{{ r.detail }}</span>
               </td>
-              <td class="right num">
-                {{ money(r.e.spend_usd) }}<span class="secondary block">{{ r.estimate }}</span>
+              <td class="right num c-spend">
+                {{ money(r.e.spend_usd) }}<span class="secondary block estimate">{{ r.estimate }}</span>
               </td>
-              <td class="right secondary">
+              <td class="right secondary c-updated">
                 {{ relative(updatedAt(r.e)) }}
               </td>
             </tr>
@@ -631,9 +650,113 @@ const rows = computed<Row[]>(() => {
   margin-top: 4px;
 }
 
+.phone-only {
+  display: none;
+}
+
 @media (max-width: 640px) {
   .latest {
     padding: 22px 20px;
+  }
+
+  /* Each experiment stacks into four lines: the name, the verdict with its interval, the arms,
+     then trials, spend and when, so the answer is never off to the side. The header stays for
+     screen readers. */
+  .table.experiments {
+    min-width: 0;
+  }
+
+  .table.experiments thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .table.experiments tbody tr {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: 6px 0;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  .table.experiments tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .table.experiments tbody tr > td {
+    padding: 0;
+    border: 0;
+    text-align: left;
+  }
+
+  .table.experiments tbody tr > td[colspan] {
+    grid-column: 1 / -1;
+  }
+
+  .c-name {
+    order: 1;
+    grid-column: 1 / -1;
+  }
+
+  .c-result {
+    order: 2;
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+  }
+
+  .c-result .detail {
+    margin-top: 0;
+  }
+
+  .c-arms {
+    order: 3;
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+  }
+
+  .c-trials {
+    order: 4;
+    color: var(--ink-2);
+    font-size: 13px;
+  }
+
+  .c-spend {
+    order: 5;
+    color: var(--ink-2);
+    font-size: 13px;
+  }
+
+  .c-updated {
+    order: 6;
+    font-size: 13px;
+  }
+
+  .c-spend::before,
+  .c-updated::before {
+    content: '·';
+    padding: 0 6px;
+    color: var(--ink-2);
+  }
+
+  .changes,
+  .setup,
+  .estimate,
+  .trials-meter {
+    display: none;
+  }
+
+  .phone-only {
+    display: inline;
   }
 
   .big {

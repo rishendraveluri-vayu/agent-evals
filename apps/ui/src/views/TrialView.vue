@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { api, type AnyTrial } from '../api/client';
 import { isFixtureMode } from '../api/mode';
-import type { ExperimentDetail, ExperimentTrial, Grade, Prompt, TrialResult } from '../api/types';
+import type { ExperimentDetail, ExperimentTrial, Grade, JudgeAgreement, Prompt, TrialResult } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import SpanTimeline from '../components/SpanTimeline.vue';
@@ -22,15 +22,21 @@ interface Loaded {
   experiment: ExperimentDetail | null;
   siblings: ExperimentTrial[];
   prompts: Prompt[];
+  /** Your held-out labels against the judge, to flag a judge verdict you disagree with. */
+  judge: JudgeAgreement | null;
 }
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
-  const [any, spans] = await Promise.all([api.trial(props.trialId), optional(api.trialSpans(props.trialId), [] as SpanView[])]);
+  const [any, spans, judge] = await Promise.all([
+    api.trial(props.trialId),
+    optional(api.trialSpans(props.trialId), [] as SpanView[]),
+    optional(api.judgeAgreement('heldout'), null),
+  ]);
   const experimentId = any.kind === 'experiment' ? any.trial.experiment_id : null;
   const [experiment, siblings, prompts] = experimentId
     ? await Promise.all([optional(api.experiment(experimentId), null), optional(api.experimentTrials(experimentId), [] as ExperimentTrial[]), optional(api.prompts(), [] as Prompt[])])
     : [null, [] as ExperimentTrial[], [] as Prompt[]];
-  return { any, spans, experiment, siblings, prompts };
+  return { any, spans, experiment, siblings, prompts, judge };
 });
 
 const EMPTY_RESULT: TrialResult = {};
@@ -92,6 +98,18 @@ const vm = computed(() => {
 });
 
 const isInfra = computed(() => !!vm.value?.label?.startsWith('infra:'));
+
+/** The harness and its pinned version from result.json: "Hermes 6112c2a". Contract v2 gives the
+ *  version as a string; an object with a `ref` is read too. */
+const harnessRef = computed(() => {
+  const v = vm.value;
+  const h = v?.result.harness as { name?: unknown; version?: unknown } | undefined;
+  const version = h?.version;
+  const ref = typeof version === 'string' ? version : version && typeof version === 'object' && typeof (version as { ref?: unknown }).ref === 'string' ? (version as { ref: string }).ref : null;
+  if (!ref) return null;
+  const name = v?.harness ?? (typeof h?.name === 'string' ? h.name : null);
+  return { name: name ? harnessShort(name) : 'Harness', ref: ref.slice(0, 7) };
+});
 
 const arm = computed(() => {
   const v = vm.value;
@@ -163,6 +181,7 @@ interface ToolItem {
   name: string;
   summary: string;
   at: string;
+  title: string;
   args: string;
   result: string;
   error: boolean;
@@ -244,7 +263,8 @@ const conversation = computed<(ToolItem | MessageItem)[]>(() => {
         id: r.span.spanId,
         name: text(r.span.attributes['gen_ai.tool.name'] ?? r.span.name.replace(/^execute_tool /, '')),
         summary: summarise(r.span.attributes['evals.tool.arguments']),
-        at: `${(r.startMs / 1000).toFixed(1)} s`,
+        at: `at ${(r.startMs / 1000).toFixed(1)} s`,
+        title: `Started ${(r.startMs / 1000).toFixed(1)} s in, took ${(r.durationMs / 1000).toFixed(1)} s`,
         args: pretty(r.span.attributes['evals.tool.arguments']),
         result: pretty(r.span.attributes['evals.tool.result']),
         error: r.span.attributes['evals.tool.is_error'] === true || r.span.statusCode === 2,
@@ -316,6 +336,30 @@ const files = computed(() => {
 const fileUrl = (path: string) => api.trialFileUrl(props.trialId, path);
 
 const gradeKind = (g: Grade) => (g.kind === 'judge' ? `Judge, rubric ${g.grader_version}` : graderName(g.kind));
+const isJudge = (g: Grade) => g.kind === 'judge' || !!g.judge_model;
+
+/** Where your held-out label disagrees with the judge on this trial's check. */
+const disputeOf = (g: Grade) => data.value?.judge?.disagreements.find((x) => x.trial_id === props.trialId && x.criterion === g.name) ?? null;
+const labelWord = (v: string) => (v === 'yes' ? 'Yes' : v === 'no' ? 'No' : 'Not sure');
+
+/** "Failed on" names each failed check, says which the judge graded, and which you dispute. */
+const failedOn = computed(() =>
+  (vm.value?.grades ?? [])
+    .map((g, index) => ({ g, index }))
+    .filter(({ g }) => g.verdict === 'fail')
+    .map(({ g, index }) => {
+      const dispute = disputeOf(g);
+      let note = '';
+      if (isJudge(g)) note = dispute ? (dispute.you === 'yes' ? ' (judge; your label passes it)' : ` (judge; your label: ${labelWord(dispute.you).toLowerCase()})`) : ' (judge)';
+      return { name: g.name, index, note };
+    }),
+);
+
+function jumpToGrade(index: number) {
+  const el = document.getElementById(`grade-${index}`);
+  el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  el?.focus({ preventScroll: true });
+}
 
 // Previous and next failed trial in the same experiment, in task, arm and repeat order.
 const failures = computed(() => {
@@ -386,10 +430,32 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             </span>
           </div>
           <p
-            v-if="arm"
+            v-if="arm || harnessRef"
             class="secondary small arm-line"
+            data-test="trial-meta"
           >
-            <span :class="`dot dot--${arm.key}`" /><span>{{ arm.label }}, config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span></span>
+            <span
+              v-if="arm"
+              :class="`dot dot--${arm.key}`"
+            /><span><template v-if="arm">{{ arm.label }}, config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span></template><template v-if="arm && harnessRef">, </template><template v-if="harnessRef">{{ harnessRef.name }} <span class="mono">{{ harnessRef.ref }}</span></template></span>
+          </p>
+          <p
+            v-if="outcome?.kind === 'fail' && failedOn.length"
+            class="small failed-on"
+            data-test="failed-on"
+          >
+            Failed on:
+            <template
+              v-for="(f, fi) in failedOn"
+              :key="f.index"
+            >
+              <a
+                :href="`#grade-${f.index}`"
+                @click.prevent="jumpToGrade(f.index)"
+              >{{ f.name }}</a>{{ f.note }}<template v-if="fi < failedOn.length - 1">
+                ,
+              </template>
+            </template>
           </p>
         </div>
         <div
@@ -430,109 +496,180 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
       </dl>
 
       <div class="split">
-        <section
-          aria-labelledby="convo"
-          class="grow stack"
-        >
-          <h2
-            id="convo"
-            class="section-title"
+        <div class="grow stack story">
+          <section
+            aria-labelledby="convo"
+            class="stack"
           >
-            What happened
-          </h2>
-
-          <details
-            v-if="systemPrompt"
-            class="disclosure"
-          >
-            <summary>
-              <span class="strong">System prompt</span>
-              <span class="secondary small">{{ systemPrompt.name }}, plus any text {{ vm.harness ? harnessShort(vm.harness) : 'the harness' }} adds itself</span>
-            </summary>
-            <p class="secondary small gap-below">
-              What the harness adds is kept as it ships it, and is the same in both arms. The first model request shows the full text.
-            </p>
-            <pre
-              v-if="systemPrompt.text"
-              class="code-block prompt-text"
-            >{{ systemPrompt.text }}</pre>
-          </details>
-
-          <template
-            v-for="item in conversation"
-            :key="item.id"
-          >
-            <article
-              v-if="item.kind === 'message'"
-              class="bubble"
-              :class="item.client ? 'bubble--client' : 'bubble--agent'"
-              data-test="message"
+            <h2
+              id="convo"
+              class="section-title"
             >
-              <span class="bubble-who">{{ item.who }}</span>
-              <p
-                v-for="(para, pi) in item.paragraphs"
-                :key="pi"
-                class="bubble-text"
-              >
-                <template
-                  v-for="(seg, si) in para"
-                  :key="si"
-                >
-                  <mark v-if="seg.mark">{{ seg.text }}</mark>
-                  <template v-else>
-                    {{ seg.text }}
-                  </template>
-                </template>
-              </p>
-            </article>
+              What happened
+            </h2>
+
             <details
-              v-else
+              v-if="systemPrompt"
               class="disclosure"
-              data-test="tool-call"
             >
               <summary>
-                <AppIcon
-                  name="tool"
-                  :size="16"
-                  class="tool-icon"
-                />
-                <span class="mono strong">{{ item.name }}</span>
-                <span class="secondary small">{{ item.summary }}</span>
-                <span
-                  v-if="item.error"
-                  class="pill pill--fail pill--small"
-                ><AppIcon
-                  name="cross"
-                  :size="12"
-                />Error</span>
-                <span class="secondary smaller num at">{{ item.at }}</span>
+                <span class="strong">System prompt</span>
+                <span class="secondary small">{{ systemPrompt.name }}, plus any text {{ vm.harness ? harnessShort(vm.harness) : 'the harness' }} adds itself</span>
               </summary>
-              <div class="tool-body">
-                <div>
-                  <span class="secondary smaller block">Arguments</span>
-                  <pre class="code-block">{{ item.args }}</pre>
-                </div>
-                <div>
-                  <span class="secondary smaller block">Result</span>
-                  <pre class="code-block">{{ item.result }}</pre>
-                </div>
-              </div>
+              <p class="secondary small gap-below">
+                What the harness adds is kept as it ships it, and is the same in both arms. The first model request shows the full text.
+              </p>
+              <pre
+                v-if="systemPrompt.text"
+                class="code-block prompt-text"
+              >{{ systemPrompt.text }}</pre>
             </details>
-          </template>
-          <p
-            v-if="!conversation.length"
-            class="secondary"
-          >
-            No conversation was recorded{{ isInfra ? ': the trial stopped before the agent replied' : '' }}.
-          </p>
 
-          <p
-            v-if="ending"
-            class="secondary small ending"
+            <template
+              v-for="item in conversation"
+              :key="item.id"
+            >
+              <article
+                v-if="item.kind === 'message'"
+                class="bubble"
+                :class="item.client ? 'bubble--client' : 'bubble--agent'"
+                data-test="message"
+              >
+                <span class="bubble-who">{{ item.who }}</span>
+                <p
+                  v-for="(para, pi) in item.paragraphs"
+                  :key="pi"
+                  class="bubble-text"
+                >
+                  <template
+                    v-for="(seg, si) in para"
+                    :key="si"
+                  >
+                    <mark v-if="seg.mark">{{ seg.text }}</mark>
+                    <template v-else>
+                      {{ seg.text }}
+                    </template>
+                  </template>
+                </p>
+              </article>
+              <details
+                v-else
+                class="disclosure"
+                data-test="tool-call"
+              >
+                <summary>
+                  <AppIcon
+                    name="tool"
+                    :size="16"
+                    class="tool-icon"
+                  />
+                  <span class="mono strong">{{ item.name }}</span>
+                  <span class="secondary small">{{ item.summary }}</span>
+                  <span
+                    v-if="item.error"
+                    class="pill pill--fail pill--small"
+                  ><AppIcon
+                    name="cross"
+                    :size="12"
+                  />Error</span>
+                  <span
+                    class="secondary smaller num at"
+                    :title="item.title"
+                  >{{ item.at }}</span>
+                </summary>
+                <div class="tool-body">
+                  <div>
+                    <span class="secondary smaller block">Arguments</span>
+                    <pre class="code-block">{{ item.args }}</pre>
+                  </div>
+                  <div>
+                    <span class="secondary smaller block">Result</span>
+                    <pre class="code-block">{{ item.result }}</pre>
+                  </div>
+                </div>
+              </details>
+            </template>
+            <p
+              v-if="!conversation.length"
+              class="secondary"
+            >
+              No conversation was recorded{{ isInfra ? ': the trial stopped before the agent replied' : '' }}.
+            </p>
+
+            <p
+              v-if="ending"
+              class="secondary small ending"
+            >
+              {{ ending }}
+            </p>
+          </section>
+
+          <section
+            aria-labelledby="timeline"
+            class="stack"
           >
-            {{ ending }}
-          </p>
-        </section>
+            <h2
+              id="timeline"
+              class="section-title"
+            >
+              Timeline
+            </h2>
+            <SpanTimeline
+              :spans="data.spans"
+              :selected="selectedId"
+              :harness="vm.harness ?? undefined"
+              @select="selectedId = selectedId === $event ? null : $event"
+            />
+            <div
+              v-if="selected"
+              class="panel panel--pad span-detail"
+              data-test="span-detail"
+            >
+              <h3 class="span-title mono">
+                {{ selected.name }}
+              </h3>
+              <p
+                v-if="selected.statusMessage"
+                class="secondary"
+              >
+                {{ selected.statusMessage }}
+              </p>
+              <p
+                v-if="refs(selected).length && !fixtures"
+                class="small"
+              >
+                <a
+                  v-for="k in refs(selected)"
+                  :key="k"
+                  :href="fileUrl(text(selected.attributes[k]))"
+                  target="_blank"
+                  rel="noopener"
+                  class="ref-link"
+                >{{ k === 'evals.request_ref' ? 'Request body' : 'Response body' }}</a>
+              </p>
+              <div class="table-scroll">
+                <table class="table attrs">
+                  <tbody>
+                    <tr
+                      v-for="(v, k) in selected.attributes"
+                      :key="k"
+                    >
+                      <th
+                        scope="row"
+                        class="mono"
+                      >
+                        {{ k }}
+                      </th>
+                      <td class="value-cell mono">
+                        {{ text(v) }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
 
         <aside
           aria-labelledby="graders"
@@ -545,9 +682,11 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             How it was graded
           </h2>
           <div
-            v-for="g in vm.grades"
+            v-for="(g, gi) in vm.grades"
+            :id="`grade-${gi}`"
             :key="`${g.grader_id}-${g.run_index}`"
             class="grade"
+            tabindex="-1"
             data-test="grade"
           >
             <div class="grade-head">
@@ -560,7 +699,10 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                 :size="12"
               />{{ g.verdict === 'pass' ? 'Pass' : 'Fail' }}</span>
             </div>
-            <span class="secondary smaller">{{ gradeKind(g) }}</span>
+            <span
+              class="secondary smaller"
+              data-test="grade-kind"
+            ><template v-if="g.judge_model">Judge <span class="mono">{{ g.judge_model }}</span>, rubric {{ g.grader_version }}</template><template v-else>{{ gradeKind(g) }}</template></span>
             <blockquote
               v-for="(q, qi) in g.evidence"
               :key="qi"
@@ -573,6 +715,14 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               class="small"
             >
               {{ g.rationale }}
+            </p>
+            <p
+              v-if="disputeOf(g)"
+              class="small dispute"
+              data-test="dispute"
+            >
+              Your held-out label: {{ labelWord(disputeOf(g)?.you ?? 'unsure') }}. You and the judge disagree on this check.
+              <a :href="href.judge()">See how the judge compares</a>
             </p>
           </div>
           <p
@@ -670,72 +820,6 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
           </div>
         </aside>
       </div>
-
-      <section
-        aria-labelledby="timeline"
-        class="stack"
-      >
-        <h2
-          id="timeline"
-          class="section-title"
-        >
-          Timeline
-        </h2>
-        <SpanTimeline
-          :spans="data.spans"
-          :selected="selectedId"
-          :harness="vm.harness ?? undefined"
-          @select="selectedId = selectedId === $event ? null : $event"
-        />
-        <div
-          v-if="selected"
-          class="panel panel--pad span-detail"
-          data-test="span-detail"
-        >
-          <h3 class="span-title mono">
-            {{ selected.name }}
-          </h3>
-          <p
-            v-if="selected.statusMessage"
-            class="secondary"
-          >
-            {{ selected.statusMessage }}
-          </p>
-          <p
-            v-if="refs(selected).length && !fixtures"
-            class="small"
-          >
-            <a
-              v-for="k in refs(selected)"
-              :key="k"
-              :href="fileUrl(text(selected.attributes[k]))"
-              target="_blank"
-              rel="noopener"
-              class="ref-link"
-            >{{ k === 'evals.request_ref' ? 'Request body' : 'Response body' }}</a>
-          </p>
-          <div class="table-scroll">
-            <table class="table attrs">
-              <tbody>
-                <tr
-                  v-for="(v, k) in selected.attributes"
-                  :key="k"
-                >
-                  <th
-                    scope="row"
-                    class="mono"
-                  >
-                    {{ k }}
-                  </th>
-                  <td class="value-cell mono">
-                    {{ text(v) }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
     </template>
   </LoadState>
 </template>
@@ -763,6 +847,24 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
   align-items: center;
   gap: 6px;
   margin-top: 8px;
+}
+
+.failed-on {
+  margin-top: 6px;
+}
+
+.story {
+  gap: 28px;
+}
+
+.grade:focus-visible {
+  outline-offset: 2px;
+}
+
+.dispute {
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule-soft);
 }
 
 .actions {
@@ -898,6 +1000,13 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 .requests summary {
   cursor: pointer;
   color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+
+.requests summary:hover {
+  text-decoration-color: var(--ink);
 }
 
 .requests ul {
@@ -932,6 +1041,11 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 @media (max-width: 640px) {
   .title-row h1 {
     font-size: 24px;
+  }
+
+  /* On a phone the grading comes first: it says why the trial failed before the transcript. */
+  .split > .graders-col {
+    order: -1;
   }
 }
 </style>

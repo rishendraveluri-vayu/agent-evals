@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { api } from '../api/client';
 import { isFixtureMode } from '../api/mode';
 import { fetchHealth, type HealthResult } from '../health';
@@ -8,7 +8,7 @@ import { setTheme, theme } from '../lib/theme';
 import { href, type Section } from '../router';
 import AppIcon from './AppIcon.vue';
 
-defineProps<{ section: Section | null }>();
+const props = defineProps<{ section: Section | null }>();
 
 const fixtures = isFixtureMode();
 const health = ref<HealthResult | null>(null);
@@ -26,8 +26,26 @@ const links: { section: Section; label: string; to: string }[] = [
 const dbWords: Record<string, string> = { up: 'up', down: 'down', not_configured: 'not configured' };
 const spentShare = computed(() => (spend.value !== null && budget.value ? Math.min(100, (spend.value / budget.value) * 100) : 0));
 const dark = computed(() => theme.value === 'dark');
+const spendWords = computed(() => (spend.value === null ? '' : `${money(spend.value)} spent${budget.value ? ` of ${wholeMoney(budget.value)}` : ''}`));
+/** "$54 of $150": whole dollars for the phone header, where there is no room for cents. */
+const compactSpend = computed(() => (spend.value === null ? '' : `$${Math.round(spend.value)}${budget.value ? ` of ${wholeMoney(budget.value)}` : ''}`));
+
+/** On a phone the nav is one row that scrolls sideways; the current section is kept in view. */
+const nav = ref<HTMLElement | null>(null);
+async function showCurrent() {
+  await nextTick();
+  const el = nav.value;
+  const current = el?.querySelector<HTMLElement>('[aria-current="page"]');
+  if (!el || !current || el.scrollWidth <= el.clientWidth) return;
+  el.scrollLeft = Math.max(0, current.offsetLeft - (el.clientWidth - current.offsetWidth) / 2);
+}
+watch(
+  () => props.section,
+  () => void showCurrent(),
+);
 
 onMounted(async () => {
+  void showCurrent();
   const envBudget = Number(import.meta.env.VITE_TOTAL_BUDGET_USD);
   if (fixtures) {
     const { meta } = await import('../fixtures');
@@ -74,6 +92,7 @@ onMounted(async () => {
       Agent Evals
     </a>
     <nav
+      ref="nav"
       aria-label="Main"
       class="nav"
     >
@@ -90,18 +109,24 @@ onMounted(async () => {
         class="spend"
         data-test="spend"
       >
-        <span>Spend</span>
+        <span class="wide-only">Spend</span>
         <span
           v-if="budget"
-          class="meter spend-meter"
+          class="meter spend-meter wide-only"
           role="img"
-          :aria-label="`${money(spend)} spent of ${wholeMoney(budget)}`"
+          :aria-label="spendWords"
         ><span :style="{ width: `${spentShare}%` }" /></span>
-        <span class="num ink">{{ money(spend) }}<template v-if="budget"> of {{ wholeMoney(budget) }}</template></span>
+        <span class="num ink wide-only">{{ money(spend) }}<template v-if="budget"> of {{ wholeMoney(budget) }}</template></span>
+        <span
+          class="num ink phone-only"
+          role="img"
+          :aria-label="spendWords"
+          data-test="spend-compact"
+        >{{ compactSpend }}</span>
       </span>
       <span
         v-if="fixtures"
-        class="pill pill--dashed pill--small"
+        class="pill pill--outline pill--small sample"
         data-test="sample-data"
       >Sample data</span>
       <template v-else>
@@ -133,6 +158,7 @@ onMounted(async () => {
       <button
         type="button"
         class="theme"
+        aria-label="Dark theme"
         :aria-pressed="dark"
         data-test="theme-toggle"
         @click="setTheme(dark ? 'light' : 'dark')"
@@ -141,7 +167,7 @@ onMounted(async () => {
           :name="dark ? 'sun' : 'moon'"
           :size="18"
         />
-        Dark theme
+        <span class="theme-text">Dark theme</span>
       </button>
     </div>
   </header>
@@ -174,7 +200,7 @@ onMounted(async () => {
 }
 
 .brand-dot {
-  fill: var(--arm-a);
+  fill: currentColor;
 }
 
 .nav {
@@ -228,6 +254,15 @@ onMounted(async () => {
   color: var(--ink);
 }
 
+.sample {
+  border-color: var(--rule-strong);
+  color: var(--ink-2);
+}
+
+.phone-only {
+  display: none;
+}
+
 .health {
   display: inline-flex;
   align-items: center;
@@ -255,24 +290,63 @@ onMounted(async () => {
   background: var(--surface-muted);
 }
 
+/* A phone gets two rows: the brand, the spend, the sample flag and the theme button, then the
+   sections in one row that scrolls sideways. */
 @media (max-width: 640px) {
   .top {
-    padding: 6px 16px 10px;
-    gap: 4px 12px;
+    padding: 0 12px 2px;
+    gap: 0 8px;
+  }
+
+  .brand {
+    gap: 8px;
+    font-size: 15px;
+  }
+
+  .right {
+    flex-wrap: nowrap;
+    gap: 6px;
+    font-size: 13px;
+  }
+
+  .wide-only {
+    display: none;
+  }
+
+  .phone-only {
+    display: inline;
+  }
+
+  .theme {
+    justify-content: center;
+    width: 44px;
+    padding: 0;
+  }
+
+  .theme-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 
   .nav {
     order: 3;
-    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    width: calc(100% + 24px);
+    margin: 0 -12px;
+    padding: 0 8px;
   }
 
   .nav a {
+    flex: none;
     padding: 0 10px;
     white-space: nowrap;
-  }
-
-  .right {
-    gap: 6px 10px;
   }
 }
 </style>

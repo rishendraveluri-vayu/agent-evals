@@ -11,18 +11,30 @@ describe('JudgeView in fixture mode', () => {
     await settle();
     const answer = w.get('[data-test="judge-answer"]').text();
     expect(answer).toContain('Mostly, with one caution');
-    expect(answer).toContain("The judge agrees with you on 34 of 40 outputs. Cohen's κ is 0.70, above the bar, but the interval runs from 0.47 to 0.88, so its lower end is under 0.6.");
+    expect(answer).toContain(
+      "The judge agrees with you on 34 of 40 labelled checks (one output, one question). Cohen's κ is 0.70, above the bar, but the interval runs from 0.47 to 0.88, so its lower end is under 0.6.",
+    );
+    expect(answer).not.toContain('outputs');
     expect(w.get('[data-test="judge-matrix"]').text()).toMatch(/19\s*agree\s*3\s*too lenient[\s\S]*3\s*too strict\s*15\s*agree/);
     expect(w.text()).toContain('Prompt v1, 20 labels');
     expect(w.text()).toContain('The 6 disagreements');
+  });
+
+  it('says the numbers are provisional while held-out items remain to label', async () => {
+    const w = mount(JudgeView);
+    await settle();
+    expect(w.get('[data-test="provisional"]').text()).toBe('Provisional: 3 held-out items still to label. These numbers will change.');
+    // Nothing is hidden while provisional.
+    expect(w.find('[data-test="judge-answer"]').exists()).toBe(true);
   });
 });
 
 describe('JudgeView before SP5', () => {
   it('says the agreement is not measured yet when the API returns null', async () => {
-    routeFetch({ '/api/judge/agreement?set=heldout': null, '/api/configs': [], '/api/experiments': [] });
+    routeFetch({ '/api/judge/agreement?set=heldout': null, '/api/configs': [], '/api/experiments': [], '/api/labels/queue?set=heldout': [] });
     const w = mount(JudgeView);
     await settle();
     expect(w.get('[data-test="judge-empty"]').text()).toContain('Not measured yet');
+    expect(w.find('[data-test="provisional"]').exists()).toBe(false);
   });
 });

@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeSpan, toBlindItem } from '../api/client';
 import type { Config } from '../api/types';
-import { armsOf, headline, setupOf } from './arms';
+import { armsOf, headline, pointsWithInterval, setupOf } from './arms';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, splitCheck } from './checks';
 import { sentenceChanges } from './diff';
 import { money, relative, shortHash, signed, wholeMoney } from './format';
 import { mdBlocks } from './markdown';
 import { modelName } from './names';
-import { domainFor, ticksFor } from './scale';
+import { domainFor, ticksFor, verdictTone } from './scale';
 
 const config = (over: Partial<Config>): Config => ({
   hash: 'sha256:3b81e04aaaa',
@@ -47,9 +47,22 @@ describe('format', () => {
 });
 
 describe('scale', () => {
-  it('pads the range to tens and keeps zero on the axis', () => {
+  it('pads the range and snaps both ends outward to tens, keeping zero on the axis', () => {
     expect(domainFor([7, 23, -7, 9], -20, 30)).toEqual([-20, 30]);
-    expect(ticksFor(-20, 30, 20, '0, no change').map((t) => t.label)).toEqual(['−20', '0, no change', '+20', '+30']);
+    expect(domainFor([2, 31], -15, 25)).toEqual([-20, 40]);
+    expect(domainFor([-43, 12], -20, 30)).toEqual([-50, 30]);
+  });
+
+  it('gives evenly spaced ticks every 10 points', () => {
+    expect(ticksFor(-20, 30, 10, '0', ' points').map((t) => t.label)).toEqual(['−20', '−10', '0', '+10', '+20', '+30 points']);
+    const values = ticksFor(-20, 30, 10).map((t) => t.value);
+    expect(new Set(values.slice(1).map((v, i) => v - values[i]))).toEqual(new Set([10]));
+  });
+
+  it('gives an arm colour only to a result that holds up', () => {
+    expect(verdictTone('better')).toBe('b');
+    expect(verdictTone('worse')).toBe('a');
+    expect(verdictTone('no_clear_difference')).toBe('neutral');
   });
 });
 
@@ -112,6 +125,10 @@ describe('arms', () => {
     const stats = { verdict: 'better' } as Parameters<typeof headline>[0];
     expect(headline(stats, arms, [{ sha256: 'a', id: 'a', version: '1', split: 'heldout', kind: 'single', summary: '', graders: [] }])).toBe('Prompt v2 beats v1 on the held-out tasks');
     expect(armsOf({ axis: 'none', config_hashes: [configs[0].hash, configs[0].hash] }, configs).map((a) => a.label)).toEqual(['Config 3b81e04', 'Config 3b81e04']);
+  });
+
+  it('writes a difference in points, with its interval', () => {
+    expect(pointsWithInterval({ estimate: 15, low: 7, high: 23 })).toBe('+15 points (+7 to +23)');
   });
 });
 

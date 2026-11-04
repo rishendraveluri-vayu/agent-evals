@@ -12,7 +12,9 @@ export type IconName =
   | 'moon'
   | 'pass-badge'
   | 'fail-badge'
-  | 'infra-badge';
+  | 'infra-badge'
+  | 'arrow-up'
+  | 'arrow-down';
 
 withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 20 });
 </script>
@@ -110,6 +112,16 @@ withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 20 });
         stroke-width="1.9"
       />
     </g>
+    <path
+      v-else-if="name === 'arrow-up'"
+      d="M10 16V4M5 9l5-5 5 5"
+      stroke-width="2"
+    />
+    <path
+      v-else-if="name === 'arrow-down'"
+      d="M10 4v12M5 11l5 5 5-5"
+      stroke-width="2"
+    />
     <g v-else-if="name === 'infra-badge'">
       <circle
         cx="10"

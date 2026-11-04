@@ -5,6 +5,10 @@ import { harnessName, harnessShort, modelName, settingLabel, splitName } from '.
 
 export type ArmKey = 'a' | 'b';
 
+/** How arm B did against arm A, as one tag shows it everywhere: better and worse only when the
+ *  difference holds up, none when it does not, pending before there is an interval. */
+export type Verdict = 'better' | 'worse' | 'none' | 'pending';
+
 export interface Arm {
   key: ArmKey;
   hash: string;
@@ -88,8 +92,8 @@ export function verdictTitle(stats: CompareStats, arms: Arm[]): string {
   return 'No clear difference';
 }
 
-/** "+15 pts (+7 to +23)" */
-export function pointsWithInterval(i: Interval, unit = 'pts'): string {
+/** "+15 points (+7 to +23)" */
+export function pointsWithInterval(i: Interval, unit = 'points'): string {
   return `${signed(i.estimate)}${unit ? ` ${unit}` : ''} (${signed(i.low)} to ${signed(i.high)})`;
 }
 

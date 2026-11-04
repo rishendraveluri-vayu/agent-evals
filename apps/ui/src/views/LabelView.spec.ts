@@ -34,6 +34,16 @@ describe('LabelView in fixture mode', () => {
     expect(save.attributes('disabled')).toBeUndefined();
     expect(w.get('[data-test="label-file"]').text()).toBe('Sample data: nothing is saved in this mode.');
   });
+
+  it('keeps the judge comparison out of reach while the set still has items to label', async () => {
+    const w = mount(LabelView);
+    await settle();
+    expect(w.find('a[href="#/labels/judge"]').exists()).toBe(false);
+    expect(w.get('[data-test="judge-later"]').text()).toBe('The judge comparison opens when this set is done (3 to go).');
+    await w.get('[data-test="set-tuning"]').trigger('click');
+    expect(w.find('[data-test="judge-later"]').exists()).toBe(false);
+    expect(w.get('[data-test="judge-link"]').attributes('href')).toBe('#/labels/judge');
+  });
 });
 
 describe('LabelView against the API', () => {

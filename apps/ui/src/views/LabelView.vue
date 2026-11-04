@@ -119,7 +119,17 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
         Label outputs
       </h1>
       <p class="lede">
-        Your judgments are the ground truth the judge is measured against. <a :href="href.judge()">See how the judge compares</a>
+        Your judgments are the ground truth the judge is measured against.
+        <!-- While this set has items to go, the judge's verdicts stay out of sight, so labelling stays blind. -->
+        <span
+          v-if="queue && left > 0"
+          data-test="judge-later"
+        >The judge comparison opens when this set is done ({{ left }} to go).</span>
+        <a
+          v-else-if="!loading"
+          :href="href.judge()"
+          data-test="judge-link"
+        >See how the judge compares</a>
       </p>
     </div>
     <div

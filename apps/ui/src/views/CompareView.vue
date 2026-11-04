@@ -2,14 +2,15 @@
 import { computed } from 'vue';
 import { api } from '../api/client';
 import { isFixtureMode } from '../api/mode';
-import type { Compare, CompareRow, ExperimentDetail, ExperimentTrial, Interval, TaskInfo } from '../api/types';
+import type { BlindItem, Compare, CompareRow, ExperimentDetail, ExperimentTrial, Interval, JudgeAgreement, TaskInfo } from '../api/types';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
-import { armsOf, excludesZero, intervalText, setupOf, totalTrials, verdictTitle } from '../lib/arms';
+import VerdictTag from '../components/VerdictTag.vue';
+import { armsOf, excludesZero, intervalText, setupOf, totalTrials, verdictTitle, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { money, percent, seconds, signed, signedMoney, thousands, tick } from '../lib/format';
-import { gradedBy, isJudged } from '../lib/names';
-import { domainFor, leanTone, ticksFor, type StripRow } from '../lib/scale';
+import { gradedBy, infraReason, isJudged } from '../lib/names';
+import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
 import { href } from '../router';
 
 const props = defineProps<{ experimentId: string }>();
@@ -19,15 +20,20 @@ interface Loaded {
   detail: ExperimentDetail;
   compare: Compare;
   trials: ExperimentTrial[];
+  judge: JudgeAgreement | null;
+  /** Held-out items still to label: while any remain, the judge's agreement is provisional. */
+  queue: BlindItem[];
 }
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
-  const [detail, compare, trials] = await Promise.all([
+  const [detail, compare, trials, judge, queue] = await Promise.all([
     api.experiment(props.experimentId),
     api.compare(props.experimentId),
     optional(api.experimentTrials(props.experimentId), [] as ExperimentTrial[]),
+    optional(api.judgeAgreement('heldout'), null),
+    optional(api.labelQueue('heldout'), [] as BlindItem[]),
   ]);
-  return { detail, compare, trials };
+  return { detail, compare, trials, judge, queue };
 });
 
 const arms = computed(() => (data.value ? armsOf(data.value.detail, data.value.detail.configs) : []));
@@ -64,7 +70,29 @@ const noVerdictText = computed(() => {
   return `A passed ${t.a.passed} of ${t.a.graded} graded trials${b}. The interval and the verdict come from the statistics step, which has not reported on this experiment yet.`;
 });
 
-const infraCount = computed(() => data.value?.trials.filter((t) => t.status === 'infra_failed' || t.status === 'abandoned').length ?? data.value?.detail.counts.infra_failed ?? 0);
+/** Trials stopped on infra failures: listed, never dropped. When the trial list did not load,
+ *  the experiment's counts still say how many there were. */
+const infraTrials = computed(() => data.value?.trials.filter((t) => t.status === 'infra_failed' || t.status === 'abandoned') ?? []);
+const infraCount = computed(() => {
+  const d = data.value;
+  if (!d) return 0;
+  return infraTrials.value.length || d.detail.counts.infra_failed + d.detail.counts.abandoned;
+});
+
+/** Which arm a trial ran in. An A/A run has one hash twice: its second arm's repeats come after
+ *  the first arm's. */
+function armOfTrial(t: ExperimentTrial): ArmKey {
+  const d = data.value;
+  if (!d) return 'a';
+  const [ha, hb] = d.detail.config_hashes;
+  if (ha === hb) return t.repeat_index >= d.detail.n ? 'b' : 'a';
+  return t.config === hb ? 'b' : 'a';
+}
+
+const commits = computed(() => {
+  const d = data.value?.detail;
+  return { plan: d?.plan_commit ? d.plan_commit.slice(0, 7) : null, platform: d?.platform_commit ? d.platform_commit.slice(0, 7) : null };
+});
 
 const hero = computed(() => {
   const s = stats.value;
@@ -72,13 +100,16 @@ const hero = computed(() => {
   const values = [s.diff.low, s.diff.high, ...(s.aa ? [s.aa.diff.low, s.aa.diff.high] : [])];
   const [min, max] = domainFor(values, -20, 30);
   const level = Math.round(s.level * 100);
-  const rows: StripRow[] = [{ estimate: s.diff.estimate, low: s.diff.low, high: s.diff.high, tone: leanTone(s.diff.estimate) }];
+  const [a, b] = arms.value;
+  const name = a && b && a.short !== b.short ? `${b.short} minus ${a.short}` : 'B minus A';
+  // Arm colour only when the result holds up; a result with no clear difference is grey.
+  const rows: StripRow[] = [{ estimate: s.diff.estimate, low: s.diff.low, high: s.diff.high, tone: verdictTone(s.verdict), label: `${name}, ${s.tasks.length} tasks` }];
   const aa: StripRow[] = s.aa ? [{ estimate: s.aa.diff.estimate, low: s.aa.diff.low, high: s.aa.diff.high, tone: 'neutral', size: 'sm', label: 'A/A run, same config twice' }] : [];
   return {
     level,
     min,
     max,
-    ticks: ticksFor(min, max, 20, '0', ' points'),
+    ticks: ticksFor(min, max, 10, '0', ' points'),
     rows: [...rows, ...aa],
     aria: `Difference ${signed(s.diff.estimate)} points, interval ${intervalText(s.diff)}.${s.aa ? ` The A/A run gave ${signed(s.aa.diff.estimate)}, interval ${intervalText(s.aa.diff)}.` : ''}`,
   };
@@ -95,7 +126,7 @@ const why = computed(() => {
     : 'The interval crosses zero, so these trials cannot rule out no difference at all.';
   if (s.aa) {
     const wobble = Math.max(Math.abs(s.aa.diff.low), Math.abs(s.aa.diff.high));
-    first += ` Running the same config twice moved only ${signed(s.aa.diff.estimate)} ${Math.abs(s.aa.diff.estimate) === 1 ? 'point' : 'points'}, so the setup's own wobble is ${Math.abs(s.diff.estimate) > wobble ? 'far smaller than' : 'about as large as'} this difference.`;
+    first += ` Running the same config twice moved only ${signed(s.aa.diff.estimate)} ${Math.abs(s.aa.diff.estimate) === 1 ? 'point' : 'points'} (${intervalText(s.aa.diff)}), so the setup's own wobble is ${Math.abs(s.diff.estimate) > wobble ? 'smaller than' : 'about as large as'} this difference.`;
   } else {
     first += ' There is no A/A run on this setup yet, so its own wobble is not measured.';
   }
@@ -108,13 +139,6 @@ const why = computed(() => {
   return out;
 });
 
-const judgeLine = computed(() => {
-  const j = stats.value?.judge;
-  const d = data.value;
-  if (!j || !d) return null;
-  const judged = d.detail.tasks.filter(isJudged).length;
-  return `The judge scored ${judged} of the ${d.detail.tasks.length} tasks. It agrees with your held-out labels at κ ${j.kappa.toFixed(2)}, ${j.kappa >= j.bar ? 'above' : 'below'} the ${j.bar} bar set before the run${j.low < j.bar ? ', though its interval dips below it' : ''}.`;
-});
 
 interface Metric {
   name: string;
@@ -231,23 +255,82 @@ const taskRows = computed<TaskRow[]>(() => {
 });
 
 const fx = (v: number) => 200 + Math.max(-100, Math.min(100, v)) * 2;
-const lean = (r: TaskRow) => (!r.diff ? 'neutral' : r.significant ? (r.diff.estimate >= 0 ? 'b' : 'a') : r.diff.estimate < 0 ? 'a' : 'neutral');
-const verdictOf = (r: TaskRow) => (!r.diff || !stats.value ? 'No interval yet' : r.significant ? (r.diff.estimate >= 0 ? 'Better' : 'Worse') : 'Within noise');
-const pillOf = (r: TaskRow) => (r.significant ? (r.diff && r.diff.estimate >= 0 ? 'pill--pass' : 'pill--fail') : '');
+/** Arm colour only for a task whose difference holds up after correction; every other row is grey. */
+const lean = (r: TaskRow) => (!r.diff || !r.significant ? 'neutral' : r.diff.estimate >= 0 ? 'b' : 'a');
+function verdictOf(r: TaskRow): { kind: Verdict; label?: string } {
+  if (!r.diff || !stats.value) return { kind: 'pending' };
+  if (r.significant) return { kind: r.diff.estimate >= 0 ? 'better' : 'worse' };
+  // Clear of zero on its own, but not once the other comparisons are accounted for.
+  if (excludesZero(r.diff)) return { kind: 'none', label: 'No clear difference after correction' };
+  return { kind: 'none' };
+}
 const labelOf = (r: TaskRow) => (!r.diff ? 'Not graded yet' : stats.value ? `${signed(r.diff.estimate)} (${intervalText(r.diff)})` : `${signed(r.diff.estimate)}, no interval`);
 const passedText = (c: CompareRow | undefined) => (c ? `${c.passed} of ${c.graded}` : '–');
 
 const differing = computed(() => taskRows.value.filter((r) => r.significant).length);
 
+const correctionWords = computed(() => {
+  const c = stats.value?.correction;
+  if (!c) return null;
+  if (c.toLowerCase() === 'holm') return "Holm's correction";
+  if (c.toLowerCase() === 'bonferroni') return 'the Bonferroni correction';
+  return `the ${c} correction`;
+});
+
+const judgeLine = computed(() => {
+  const j = stats.value?.judge;
+  const d = data.value;
+  if (!j || !d) return null;
+  const judged = d.detail.tasks.filter(isJudged).length;
+  let line = `The judge scored ${judged} of the ${d.detail.tasks.length} tasks. It agrees with your held-out labels at κ ${j.kappa.toFixed(2)}, ${j.kappa >= j.bar ? 'above' : 'below'} the ${j.bar} bar set before the run${j.low < j.bar ? ', though its interval dips below it' : ''}.`;
+  // When every task that differs is judge-graded, the verdict rests on the judge. Say so.
+  const sig = taskRows.value.filter((r) => r.significant);
+  if (sig.length && sig.every((r) => isJudged(taskOf(r.key)))) {
+    const after = stats.value?.correction ? ' after correction' : '';
+    const which = sig.length === 1 ? `The one task that differs${after} is` : sig.length === 2 ? `Both tasks that differ${after} are` : `All ${sig.length} tasks that differ${after} are`;
+    line += ` ${which} judge-graded, so this result leans on the judge.`;
+  }
+  const toGo = d.queue.length;
+  if (toGo) line += ` Provisional: ${toGo} held-out ${toGo === 1 ? 'item' : 'items'} still to label.`;
+  return line;
+});
+
+/** The failed trial to open for a task: arm B first, then arm A, skipping any trial whose judge
+ *  verdict your held-out label disputes, since that failure may not be the agent's. When every
+ *  failure is disputed, the disputed one is still offered, and the button says so. */
+function lookTrial(task: string): { trial: ExperimentTrial; disputed: boolean } | null {
+  const d = data.value;
+  if (!d) return null;
+  const disputed = new Set((d.judge?.disagreements ?? []).map((x) => x.trial_id).filter((id): id is string => !!id));
+  const failedIn = (arm: 0 | 1) => d.trials.filter((t) => t.task === task && t.config === d.detail.config_hashes[arm] && t.passed === false);
+  const failed = [...failedIn(1), ...failedIn(0)];
+  const clean = failed.find((t) => !disputed.has(t.id));
+  if (clean) return { trial: clean, disputed: false };
+  if (failed[0]) return { trial: failed[0], disputed: true };
+  const any = failedTrial(task, 1);
+  return any ? { trial: any, disputed: false } : null;
+}
+
 const worthALook = computed(() => {
+  const s = stats.value;
   const candidates = taskRows.value.filter((r) => r.diff && r.diff.estimate < 0);
   const worst = candidates.sort((x, y) => (x.diff?.estimate ?? 0) - (y.diff?.estimate ?? 0))[0];
-  if (!worst || !worst.diff || !stats.value) return null;
-  const failed = failedTrial(worst.key, 1);
+  if (!worst || !worst.diff || !s) return null;
+  // The heading claims no more than the statistics: "got worse" only when it holds up.
+  const title = worst.significant ? `Worth a look: ${worst.name} got worse` : `Worth a look: ${worst.name} fell from ${passedText(worst.a)} to ${passedText(worst.b)}`;
+  const numbers = `(${signed(worst.diff.estimate)}, interval ${intervalText(worst.diff)})`;
+  const finding = worst.significant
+    ? `B passed ${passedText(worst.b)}, A passed ${passedText(worst.a)}. This difference holds up ${numbers}.`
+    : excludesZero(worst.diff)
+      ? `No clear difference after correcting for ${s.tasks.length} tasks ${numbers}.`
+      : `No clear difference: its interval includes zero even before correcting for ${s.tasks.length} tasks ${numbers}.`;
+  const look = lookTrial(worst.key);
   return {
     row: worst,
-    text: `B passed ${passedText(worst.b)}, A passed ${passedText(worst.a)}. ${worst.significant ? 'This difference holds up' : 'Not significant on its own'} (${signed(worst.diff.estimate)}, interval ${intervalText(worst.diff)}). The failed trials show what went wrong.`,
-    link: failed ? href.trial(failed.id) : null,
+    title,
+    text: `${finding} The failed trials show what went wrong.`,
+    link: look ? href.trial(look.trial.id) : null,
+    button: look?.disputed ? 'Open a failed trial (your label disagrees with the judge)' : 'Open a failed trial',
   };
 });
 </script>
@@ -277,6 +360,17 @@ const worthALook = computed(() => {
               class="arm"
             ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ arm.label }} (config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span>)</span></span>
             <span class="secondary">{{ setupOf(data.detail, arms) }}, {{ totalTrials(data.detail) }} trials</span>
+            <a
+              v-if="commits.plan"
+              :href="href.run(data.detail.id)"
+              class="secondary"
+              data-test="plan-commit"
+            >plan <span class="mono">{{ commits.plan }}</span>, committed before the run</a>
+            <span
+              v-if="commits.platform"
+              class="secondary"
+              data-test="platform-commit"
+            >platform <span class="mono">{{ commits.platform }}</span></span>
           </div>
         </div>
         <div class="actions">
@@ -367,14 +461,39 @@ const worthALook = computed(() => {
           <p v-if="judgeLine">
             {{ judgeLine }} <a :href="href.judge()">See the check</a>
           </p>
-          <p class="secondary">
-            <template v-if="infraCount">
-              {{ infraCount }} {{ infraCount === 1 ? 'trial' : 'trials' }} stopped on infra failures {{ infraCount === 1 ? 'was' : 'were' }} re-run and {{ infraCount === 1 ? 'is' : 'are' }} listed, not dropped.
-            </template>
-            <template v-else>
-              No trial stopped on an infra failure.
-            </template>
-          </p>
+          <div class="infra">
+            <p
+              class="secondary"
+              data-test="infra-sentence"
+            >
+              <template v-if="infraCount">
+                {{ infraCount }} {{ infraCount === 1 ? 'trial' : 'trials' }} stopped on infra failures {{ infraCount === 1 ? 'was' : 'were' }} re-run and {{ infraCount === 1 ? 'is' : 'are' }} listed, not dropped.<template v-if="!infraTrials.length">
+                  <a :href="href.run(data.detail.id)">See them on the run page</a>
+                </template>
+              </template>
+              <template v-else>
+                No trial stopped on an infra failure.
+              </template>
+            </p>
+            <ul
+              v-if="infraTrials.length"
+              class="infra-list"
+              data-test="infra-list"
+            >
+              <li
+                v-for="t in infraTrials"
+                :key="t.id"
+              >
+                <a
+                  :href="href.trial(t.id)"
+                  class="infra-link"
+                ><span
+                  :class="`dot dot--${armOfTrial(t)}`"
+                  aria-hidden="true"
+                /><span class="visually-hidden">Arm {{ armOfTrial(t).toUpperCase() }}, </span><span class="mono infra-task">{{ taskName(t.task) }}</span> <span>attempt {{ t.attempt }}</span> <span class="secondary">{{ infraReason(t.label) || t.status.replace('_', ' ') }}</span></a>
+              </li>
+            </ul>
+          </div>
         </div>
       </section>
 
@@ -451,7 +570,7 @@ const worthALook = computed(() => {
             class="secondary small"
             data-test="task-summary"
           >
-            {{ differing }} {{ differing === 1 ? 'task differs' : 'tasks differ' }} {{ stats.correction ? `after correcting for ${taskRows.length} comparisons` : 'before any correction for many comparisons' }}. The other {{ taskRows.length - differing }} {{ taskRows.length - differing === 1 ? 'is' : 'are' }} within noise.
+            {{ differing }} {{ differing === 1 ? 'task differs' : 'tasks differ' }} {{ correctionWords ? `after ${correctionWords} for ${taskRows.length} comparisons` : 'before any correction for many comparisons' }}. The other {{ taskRows.length - differing }} {{ taskRows.length - differing === 1 ? 'shows' : 'show' }} no clear difference.
           </p>
         </div>
         <div class="table-wrap">
@@ -460,7 +579,7 @@ const worthALook = computed(() => {
             data-test="forest"
           >
             <thead>
-              <tr>
+              <tr class="col-heads">
                 <th scope="col">
                   Task
                 </th>
@@ -483,13 +602,16 @@ const worthALook = computed(() => {
                   scope="col"
                   class="plot-col"
                 >
-                  Difference, B minus A, with {{ stats ? Math.round(stats.level * 100) : 95 }}% interval
+                  Difference, B minus A, {{ stats ? Math.round(stats.level * 100) : 95 }}% interval (not corrected)
                 </th>
                 <th scope="col">
                   Verdict
                 </th>
               </tr>
-              <tr aria-hidden="true">
+              <tr
+                aria-hidden="true"
+                class="axis-row"
+              >
                 <td colspan="4" />
                 <td class="axis-cell">
                   <svg
@@ -524,7 +646,10 @@ const worthALook = computed(() => {
                 :key="r.key"
                 data-test="forest-row"
               >
-                <th scope="row">
+                <th
+                  scope="row"
+                  class="c-task"
+                >
                   <a
                     v-if="r.link"
                     :href="r.link"
@@ -535,14 +660,14 @@ const worthALook = computed(() => {
                     class="mono"
                   >{{ r.name }}</span>
                 </th>
-                <td class="secondary">
+                <td class="secondary c-grader">
                   {{ r.grader }}
                 </td>
-                <td class="right num">
-                  {{ passedText(r.a) }}
+                <td class="right num c-a">
+                  <span class="phone-only">A </span>{{ passedText(r.a) }}
                 </td>
-                <td class="right num">
-                  {{ passedText(r.b) }}
+                <td class="right num c-b">
+                  <span class="phone-only">B </span>{{ passedText(r.b) }}
                 </td>
                 <td class="plot-cell">
                   <svg
@@ -564,7 +689,7 @@ const worthALook = computed(() => {
                       :x2="fx(r.diff.high)"
                       y1="13"
                       y2="13"
-                      :class="`ci ci--${r.significant ? lean(r) : 'neutral'}`"
+                      :class="`ci ci--${lean(r)}`"
                     />
                     <circle
                       :cx="fx(r.diff.estimate)"
@@ -574,11 +699,14 @@ const worthALook = computed(() => {
                     />
                   </svg>
                 </td>
-                <td>
-                  <span
-                    class="pill pill--small"
-                    :class="pillOf(r)"
-                  >{{ verdictOf(r) }}</span>
+                <td
+                  class="c-verdict"
+                  data-test="task-verdict"
+                >
+                  <VerdictTag
+                    :verdict="verdictOf(r).kind"
+                    :label="verdictOf(r).label"
+                  />
                   <span class="secondary smaller num block">{{ labelOf(r) }}</span>
                 </td>
               </tr>
@@ -590,14 +718,15 @@ const worthALook = computed(() => {
       <section
         v-if="worthALook"
         aria-labelledby="look"
-        class="panel panel--dashed look"
+        class="panel look"
+        data-test="worth-a-look"
       >
         <div class="look-text">
           <h2
             id="look"
             class="section-title"
           >
-            Worth a look: {{ worthALook.row.name }} got worse
+            {{ worthALook.title }}
           </h2>
           <p class="look-body">
             {{ worthALook.text }}
@@ -607,7 +736,8 @@ const worthALook = computed(() => {
           v-if="worthALook.link"
           :href="worthALook.link"
           class="btn"
-        >Open a failed trial</a>
+          data-test="look-link"
+        >{{ worthALook.button }}</a>
       </section>
     </template>
   </LoadState>
@@ -779,6 +909,46 @@ const worthALook = computed(() => {
   fill: var(--neutral-dot);
 }
 
+.infra {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.infra-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* One underline, on the task id: the arm, attempt and reason read as plain text beside it. */
+.infra-link {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 32px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.infra-task {
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+
+.infra-link:hover .infra-task {
+  text-decoration-color: var(--ink);
+}
+
+.phone-only {
+  display: none;
+}
+
 .look {
   display: flex;
   flex-wrap: wrap;
@@ -818,6 +988,104 @@ const worthALook = computed(() => {
 
   .look {
     padding: 20px;
+  }
+
+  /* Task by task stacks: the shared axis once at the top, then for each task its name and
+     verdict, its interval across the full width, and the counts with the grader underneath. */
+  .table.forest,
+  .table.forest thead,
+  .table.forest tbody {
+    display: block;
+    min-width: 0;
+  }
+
+  .table.forest .col-heads {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .table.forest .axis-row {
+    display: block;
+  }
+
+  .table.forest .axis-row > td {
+    display: none;
+  }
+
+  .table.forest .axis-row > td.axis-cell {
+    display: block;
+    padding: 10px 16px 4px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .table.forest tbody tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 0;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  .table.forest tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .table.forest tbody tr > * {
+    padding: 0;
+    border: 0;
+    text-align: left;
+  }
+
+  .table.forest .c-task {
+    order: 1;
+    flex: 1 1 0;
+    min-width: 0;
+    padding-right: 12px;
+  }
+
+  .table.forest .c-verdict {
+    order: 2;
+    flex: none;
+    text-align: right;
+  }
+
+  .table.forest .plot-cell {
+    order: 3;
+    flex: 0 0 100%;
+  }
+
+  .table.forest .c-a,
+  .table.forest .c-b,
+  .table.forest .c-grader {
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+
+  .table.forest .c-a {
+    order: 4;
+  }
+
+  .table.forest .c-b {
+    order: 5;
+  }
+
+  .table.forest .c-grader {
+    order: 6;
+  }
+
+  .table.forest .c-b::before,
+  .table.forest .c-grader::before {
+    content: '·';
+    padding: 0 6px;
+  }
+
+  .phone-only {
+    display: inline;
   }
 }
 </style>

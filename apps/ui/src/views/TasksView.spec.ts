@@ -23,9 +23,14 @@ describe('TasksView in fixture mode', () => {
     const rows = () => w.findAll('[data-test="tasks-table"] tbody tr');
     expect(rows()).toHaveLength(12);
     expect(rows()[0].text()).toContain('distress-12');
-    expect(rows()[0].text()).toContain('1 to 5 of 5');
-    expect(rows()[0].text()).toContain('Separates v1 and v2');
+    expect(rows()[0].get('[data-test="last-run"]').text()).toBe('A 1/5 · B 5/5');
+    expect(rows()[0].get('[data-verdict]').attributes('data-verdict')).toBe('better');
+    expect(rows()[0].get('[data-verdict]').text()).toBe('Better');
     expect(rows()[1].text()).toContain('Judge and state check');
+    expect(w.get('[data-test="last-run-head"]').text()).toBe('Last run: Prompt v1 vs v2, held-out');
+    const plain = rows().filter((r) => r.find('[data-verdict="none"]').exists());
+    expect(plain.length).toBeGreaterThan(0);
+    expect(plain[0].get('[data-verdict="none"]').text()).toBe('No clear difference');
     await w.findAll('button').find((b) => b.text() === 'Show all 24 tasks')?.trigger('click');
     expect(rows()).toHaveLength(24);
     await w.findAll('.seg button').find((b) => b.text() === 'Discovery')?.trigger('click');

@@ -6,7 +6,7 @@ import { isFixtureMode } from '../api/mode';
 import type { Config, ConfigDiffEntry, Estimate, ExperimentDetail, ExperimentTrial, Harness, ModelInfo, Prompt, TaskInfo } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
-import { armsOf } from '../lib/arms';
+import { armsOf, totalTrials } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, contentDiff, planCheck, splitCheck, type Check } from '../lib/checks';
 import { changedLineCount, lineChanges, sentenceChanges, type LineChange } from '../lib/diff';
@@ -289,6 +289,35 @@ const budgetNote = computed(() => {
   return `LiteLLM stops all spending at ${wholeMoney(b)}${times}. If it ever trips, the trials it stopped are reported as infra failures, not agent failures.`;
 });
 
+// ---------------------------------------------------------------- a started run
+
+/** Once a run has started, the page leads with its progress; before that, with the checks. */
+const started = computed(() => !draft && (data.value?.experiment?.status ?? 'created') !== 'created');
+
+const heading = computed(() => {
+  const e = data.value?.experiment;
+  if (!started.value || !e) return 'Check and run';
+  const slots = grid.value.reduce((sum, row) => sum + row.arms.flat().length, 0);
+  const total = slots || totalTrials(e);
+  const done = tally.value.done;
+  if (e.status === 'running') return `Running: ${done} of ${total} trials done`;
+  if (e.status === 'done' || e.status === 'finished') return `Run finished: ${done} of ${total}`;
+  if (e.status === 'cancelled') return `Run cancelled: ${done} of ${total} done`;
+  return `Run ${e.status}: ${done} of ${total} done`;
+});
+
+const checksSummary = computed(() => {
+  const passed = checks.value.filter((c) => c.ok).length;
+  const plan = data.value?.experiment?.plan_commit;
+  return `Checked before the start: ${passed} of ${checks.value.length} passed${plan ? `, plan ${plan.slice(0, 7)}` : ''}`;
+});
+
+const diffSummary = computed(() => {
+  if (sameConfig.value) return 'How the two arms differ: nothing, the same config twice';
+  const n = contentDiff(diff.value).length;
+  return `How the two arms differ: ${n} ${n === 1 ? 'field' : 'fields'}`;
+});
+
 const planNote = computed(() => {
   const e = estimate.value;
   if (!e) return '';
@@ -298,19 +327,59 @@ const planNote = computed(() => {
 </script>
 
 <template>
-  <div class="page-head">
-    <nav
-      aria-label="Breadcrumb"
-      class="crumbs"
+  <div class="head-row">
+    <div class="page-head">
+      <nav
+        aria-label="Breadcrumb"
+        class="crumbs"
+      >
+        <a :href="href.experiments()">Experiments</a> / {{ data?.experiment?.name ?? (setup.name || 'New experiment') }}
+      </nav>
+      <h1
+        tabindex="-1"
+        data-test="run-title"
+      >
+        {{ heading }}
+      </h1>
+      <p
+        v-if="!started"
+        class="lede"
+      >
+        Nothing starts unless the run can finish. The estimates come from {{ estimate?.basis ? estimate.basis.charAt(0).toLowerCase() + estimate.basis.slice(1) : 'earlier trials and the prices in LiteLLM' }}.
+      </p>
+    </div>
+    <div
+      v-if="started && data?.experiment"
+      class="head-actions"
+      data-test="run-actions"
     >
-      <a :href="href.experiments()">Experiments</a> / {{ data?.experiment?.name ?? (setup.name || 'New experiment') }}
-    </nav>
-    <h1 tabindex="-1">
-      Check and run
-    </h1>
-    <p class="lede">
-      Nothing starts unless the run can finish. The estimates come from {{ estimate?.basis ? estimate.basis.charAt(0).toLowerCase() + estimate.basis.slice(1) : 'earlier trials and the prices in LiteLLM' }}.
-    </p>
+      <template v-if="data.experiment.status === 'running'">
+        <button
+          type="button"
+          class="btn btn--quiet"
+          :disabled="busy"
+          data-test="cancel"
+          @click="act('cancel')"
+        >
+          Cancel the waiting trials
+        </button>
+        <p class="secondary smaller">
+          Running trials finish; waiting ones are marked cancelled and kept.
+        </p>
+      </template>
+      <a
+        v-else
+        :href="href.compare(data.experiment.id)"
+        class="btn"
+      >Open the comparison</a>
+      <p
+        v-if="actionError"
+        class="error small"
+        role="alert"
+      >
+        {{ actionError }}
+      </p>
+    </div>
   </div>
 
   <LoadState
@@ -318,7 +387,7 @@ const planNote = computed(() => {
     :error="error"
     what="the run"
   >
-    <template v-if="data">
+    <template v-if="data && !started">
       <section
         aria-label="Plan"
         class="stat-strip plan"
@@ -499,7 +568,7 @@ const planNote = computed(() => {
             id="start"
             class="section-title"
           >
-            {{ draft || data.experiment?.status === 'created' ? 'Start the run' : 'The run' }}
+            Start the run
           </h2>
           <div class="stack arm-list">
             <span
@@ -560,48 +629,22 @@ const planNote = computed(() => {
               Every check above has to pass first.
             </p>
           </template>
-          <template v-else-if="data.experiment">
-            <button
-              v-if="data.experiment.status === 'created'"
-              type="button"
-              class="btn btn--big"
-              :disabled="busy || !allPass"
-              data-test="start"
-              @click="act('start')"
-            >
-              Start {{ estimate?.trials ?? '' }} trials
-            </button>
-            <template v-else-if="data.experiment.status === 'running'">
-              <p class="small">
-                Running since {{ clock(data.experiment.started_at ?? data.experiment.created_at) }}.
-              </p>
-              <button
-                type="button"
-                class="btn btn--quiet"
-                :disabled="busy"
-                @click="act('cancel')"
-              >
-                Cancel the waiting trials
-              </button>
-              <p class="secondary smaller">
-                Running trials finish; waiting ones are marked cancelled and kept.
-              </p>
-            </template>
-            <template v-else>
-              <p class="small">
-                {{ data.experiment.status === 'cancelled' ? 'Cancelled.' : 'Finished.' }}
-              </p>
-              <a
-                :href="href.compare(data.experiment.id)"
-                class="btn"
-              >Open the comparison</a>
-            </template>
-          </template>
+          <button
+            v-else-if="data.experiment"
+            type="button"
+            class="btn btn--big"
+            :disabled="busy || !allPass"
+            data-test="start"
+            @click="act('start')"
+          >
+            Start {{ estimate?.trials ?? '' }} trials
+          </button>
         </aside>
       </div>
+    </template>
 
+    <template v-else-if="data && data.experiment">
       <section
-        v-if="data.experiment && data.experiment.status !== 'created'"
         aria-labelledby="progress"
         class="progress"
       >
@@ -621,7 +664,10 @@ const planNote = computed(() => {
         </div>
         <div class="split">
           <div class="grow panel grid-wrap">
-            <div class="legend smaller">
+            <div
+              class="legend smaller"
+              data-test="grid-legend"
+            >
               <span class="legend-item"><span class="cell cell--pass"><AppIcon
                 name="check"
                 :size="13"
@@ -698,7 +744,7 @@ const planNote = computed(() => {
               </table>
             </div>
           </div>
-          <div class="side stack">
+          <div class="side stack side-col">
             <div v-if="spend">
               <h3 class="sub-title">
                 Spend so far
@@ -762,6 +808,22 @@ const planNote = computed(() => {
                   >stop at {{ wholeMoney(spend.cap) }}</text>
                 </template>
               </svg>
+              <div
+                class="stack arm-list run-arms small"
+                data-test="run-arms"
+              >
+                <span
+                  v-for="arm in arms"
+                  :key="arm.key"
+                  class="arm"
+                ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ arm.label }}, config <span class="mono">{{ shortHash(arm.hash) }}</span></span></span>
+              </div>
+              <p
+                v-if="budgetNote"
+                class="secondary small budget-note"
+              >
+                {{ budgetNote }}
+              </p>
             </div>
             <div>
               <h3 class="sub-title">
@@ -783,6 +845,92 @@ const planNote = computed(() => {
           </div>
         </div>
       </section>
+
+      <section
+        aria-labelledby="planned"
+        class="stack"
+      >
+        <h2
+          id="planned"
+          class="section-title"
+        >
+          Planned
+        </h2>
+        <div
+          class="stat-strip plan"
+          data-test="plan"
+        >
+          <div>
+            <span class="stat-label">Trials</span>
+            <span class="stat-value">{{ estimate?.trials ?? '–' }}</span>
+            <span class="stat-note">{{ planNote }}</span>
+          </div>
+          <div>
+            <span class="stat-label">Estimated cost</span>
+            <span class="stat-value">{{ estimate ? money(estimate.cost_usd.expected) : '–' }}</span>
+            <span class="stat-note">{{ estimate ? `Likely ${money(estimate.cost_usd.low)} to ${money(estimate.cost_usd.high)}` : '' }}</span>
+          </div>
+          <div>
+            <span class="stat-label">Estimated time</span>
+            <span class="stat-value">{{ estimate ? minutes(estimate.minutes) : '–' }}</span>
+            <span class="stat-note">{{ estimate?.concurrency ? `${estimate.concurrency} trials at a time` : '' }}</span>
+          </div>
+          <div>
+            <span class="stat-label">Smallest difference it can see</span>
+            <span class="stat-value">{{ estimate?.min_detectable_effect ? `${estimate.min_detectable_effect.points} points` : '–' }}</span>
+            <span class="stat-note">{{ estimate?.min_detectable_effect ? `${Math.round(estimate.min_detectable_effect.power * 10)} times in 10, from the pilot's spread` : 'Not estimated yet: the power estimate comes with the statistics step' }}</span>
+          </div>
+        </div>
+      </section>
+
+      <details
+        class="disclosure run-details"
+        data-test="checks-details"
+      >
+        <summary class="strong">
+          {{ checksSummary }}
+        </summary>
+        <div class="checks checks--inside">
+          <div
+            v-for="c in checks"
+            :key="c.title"
+            class="check-row"
+            data-test="check"
+          >
+            <AppIcon
+              :name="c.ok ? 'pass-badge' : 'fail-badge'"
+              :size="22"
+            />
+            <span>
+              <strong>{{ c.title }}</strong>
+              <span class="visually-hidden">{{ c.ok ? 'Check passed.' : 'Check failed.' }}</span>
+              <span class="secondary small block">{{ c.detail }}</span>
+            </span>
+          </div>
+        </div>
+      </details>
+
+      <details
+        v-if="hashes.length === 2"
+        class="disclosure run-details"
+        data-test="diff-details"
+      >
+        <summary class="strong">
+          {{ diffSummary }}
+        </summary>
+        <div class="mono diff-body diff-body--inside">
+          <div class="secondary">
+            {{ armDiff.summary }}
+          </div>
+          <div
+            v-for="(l, i) in armDiff.lines"
+            :key="i"
+            :class="`line line--${l.side}`"
+          >
+            <span class="side">{{ l.side.toUpperCase() }}</span>&nbsp; {{ l.text }}
+          </div>
+        </div>
+      </details>
     </template>
   </LoadState>
 </template>
@@ -906,12 +1054,58 @@ const planNote = computed(() => {
   color: var(--fail);
 }
 
+.head-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 320px;
+  text-align: right;
+}
+
 .progress {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  border-top: 1px solid var(--rule);
-  padding-top: 28px;
+}
+
+.side-col {
+  gap: 24px;
+}
+
+.run-arms {
+  margin-top: 14px;
+}
+
+.budget-note {
+  margin-top: 10px;
+}
+
+/* A chevron says the summary opens: a flex summary loses the browser's own marker. */
+.run-details > summary::after {
+  content: '';
+  margin-left: auto;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--ink-2);
+  border-bottom: 2px solid var(--ink-2);
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.run-details[open] > summary::after {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+.checks--inside {
+  padding-bottom: 8px;
+}
+
+.checks--inside .check-row:last-child {
+  border-bottom: 0;
+}
+
+.diff-body--inside {
+  padding-bottom: 16px;
 }
 
 .head-row--baseline {
@@ -991,8 +1185,8 @@ const planNote = computed(() => {
 }
 
 .cell--fail {
-  background: var(--fail-cell);
-  color: var(--fail);
+  background: var(--fail);
+  color: var(--on-pass);
 }
 
 .cell--ungraded {
@@ -1001,12 +1195,13 @@ const planNote = computed(() => {
 }
 
 .cell--running {
-  box-shadow: inset 0 0 0 2px var(--arm-a);
+  box-shadow: inset 0 0 0 2px var(--ink);
 }
 
 .cell--waiting,
 .cell--cancelled {
-  background: var(--surface-muted);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--rule);
 }
 
 .cell--infra {
@@ -1020,6 +1215,11 @@ const planNote = computed(() => {
 }
 
 @media (max-width: 640px) {
+  .head-actions {
+    align-items: flex-start;
+    text-align: left;
+  }
+
   .grid-wrap {
     padding: 14px 12px;
   }

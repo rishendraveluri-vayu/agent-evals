@@ -1,0 +1,65 @@
+<script setup lang="ts">
+/** One way to say how arm B did against arm A, wherever a verdict shows. Better and worse are a
+ *  tinted pill with an arrow, so the meaning never rests on colour alone. No clear difference is
+ *  plain grey text with no pill: it is the absence of a finding, not a finding. */
+import { computed } from 'vue';
+import type { Verdict } from '../lib/arms';
+import AppIcon from './AppIcon.vue';
+
+const props = defineProps<{ verdict: Verdict; label?: string }>();
+
+const DEFAULTS: Record<Verdict, string> = {
+  better: 'Better',
+  worse: 'Worse',
+  none: 'No clear difference',
+  pending: 'No interval yet',
+};
+
+const text = computed(() => props.label ?? DEFAULTS[props.verdict]);
+</script>
+
+<template>
+  <span
+    v-if="verdict === 'better' || verdict === 'worse'"
+    class="verdict-tag"
+    :class="verdict === 'better' ? 'verdict-tag--better' : 'verdict-tag--worse'"
+    :data-verdict="verdict"
+  ><AppIcon
+    :name="verdict === 'better' ? 'arrow-up' : 'arrow-down'"
+    :size="13"
+  />{{ text }}</span>
+  <span
+    v-else
+    class="verdict-plain"
+    :data-verdict="verdict"
+  >{{ text }}</span>
+</template>
+
+<style scoped>
+.verdict-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 9px 1px 7px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.verdict-tag--better {
+  background: var(--pass-soft);
+  color: var(--pass);
+}
+
+.verdict-tag--worse {
+  background: var(--fail-soft);
+  color: var(--fail);
+}
+
+.verdict-plain {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+</style>

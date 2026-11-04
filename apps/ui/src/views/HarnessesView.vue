@@ -82,7 +82,7 @@ const STEPS = [
                   <span class="block secondary smaller mono">{{ shortRef(h.ref) }}</span>
                   <span
                     class="pill pill--small status"
-                    :class="checked(h).complete ? 'pill--pass' : 'pill--dashed'"
+                    :class="checked(h).complete ? 'pill--pass' : 'pill--outline'"
                   >{{ checked(h).done }} of {{ checked(h).total }} checked</span>
                 </th>
               </tr>

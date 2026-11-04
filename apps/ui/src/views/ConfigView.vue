@@ -547,7 +547,7 @@ watch(
                     <span
                       :class="{
                         'pill pill--pass pill--small': effect(name).kind === 'yes',
-                        'pill pill--dashed pill--small': effect(name).kind === 'todo' || effect(name).kind === 'no',
+                        'pill pill--outline pill--small': effect(name).kind === 'todo' || effect(name).kind === 'no',
                         secondary: effect(name).kind === 'na',
                       }"
                     >{{ effect(name).text }}</span>
@@ -864,6 +864,12 @@ watch(
   cursor: pointer;
   text-align: left;
   text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+
+.link-button:hover {
+  text-decoration-color: var(--ink);
 }
 
 .line-diff {
