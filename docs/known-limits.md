@@ -142,6 +142,10 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 
 - **Memory is never written within one trial.** In 20 memory-on trials on Haiku 5.5, Hermes did not call its `memory` tool once. Each trial is a fresh session, so a memory-on vs memory-off comparison on these tasks measures the extra tool schema and prompt text, and a seeded config measures the seeded facts. It does not measure whether Hermes saves the right things for later. Testing that needs a task that runs two sessions on one home, which we have not built.
 
+## Run screen and engine (fresh-clone QA fixes, 4 Nov night)
+
+- **The time estimate uses each trial's claim-to-report time.** It leaves out time a trial waits in the queue and the start of a worker that has just come up, and it averages over every earlier trial of the cell, including ones run while other experiments shared the workers. With no history it assumes 10 s a trial on a fake model (measured on the own loop only) and 60 s on a real one (A25).
+
 ## To check before submission
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted

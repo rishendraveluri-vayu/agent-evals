@@ -56,7 +56,7 @@ const estimateOf = (cost: { expected: number; low: number; high: number }): Esti
   basis_detail: {
     cells: [],
     prices: {},
-    assumptions: { input_tokens_per_trial: 0, output_tokens_per_trial: 0, wall_s_per_trial: 0, sim_input_tokens_per_call: 0, sim_output_tokens_per_call: 0, low_factor: 0.5, high_factor: 2 },
+    assumptions: { input_tokens_per_trial: 0, output_tokens_per_trial: 0, wall_s_per_trial: 0, fake_wall_s_per_trial: 0, sim_input_tokens_per_call: 0, sim_output_tokens_per_call: 0, low_factor: 0.5, high_factor: 2 },
   },
   budgets: { trial_usd: 0.5, sim_usd: 0.1 },
 });

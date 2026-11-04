@@ -314,8 +314,15 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   else from earlier trials of the same task with the same simulator model, else the
   assumptions. **Time** divides each harness's trial time by its live workers (a worker is live
   if it asked for a trial, 204 included, or heartbeat in the last 60 s; none seen counts as one),
-  harnesses in parallel; `basis_detail.workers` is `{<harness>: {live, used}}`. `basis` says all
-  of this in words. No power estimate yet; SP6 adds `min_detectable_effect`.
+  harnesses in parallel; `basis_detail.workers` is `{<harness>: {live, used}}`. **A trial's time
+  is its worker's whole slot, claim to report** (the mean of `finished_at - claimed_at`, since 4
+  Nov): starting the trial process and the tool server, running it and uploading its files, not
+  only the agent's own `wall_s`, which is used only for a trial with no claim time. On the 4 Nov
+  fresh-clone QA the slot was 8.0 s against 3.5 s of agent time. With no history a trial takes
+  60 s on a real model and `fake_wall_s_per_trial` (10 s) on a `fake/*` one, which answers at once
+  (60 s made a 30-trial fake run's estimate 30 min against 4 min 13 s). Each cell's `wall_s` is
+  that slot time. `basis` says all of this in words. No power estimate yet; SP6 adds
+  `min_detectable_effect`.
 - `POST /experiments` with `{name, axis, config_hashes, task_sha256s, n, sim_model,
   budget_usd, plan_commit, sim_prompt_sha256, order_seed, futility, parent_experiment_id,
   reuse_baseline}` creates the experiment and all its trial rows

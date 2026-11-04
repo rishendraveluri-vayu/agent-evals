@@ -137,8 +137,10 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     // fake/* prices: 64k x $1e-6 + 2.4k x $2e-6 = $0.0688 a trial
     expect(e.cost_usd.expected).toBeCloseTo(0.688, 6);
     expect(e.cost_usd.high).toBeCloseTo(1.376, 6);
-    expect(e.minutes).toBe(10); // one ownloop worker, 10 x 60 s
+    // One ownloop worker, 10 trials x 10 s: a fake model answers at once (60 s is for real models).
+    expect(e.minutes).toBe(1.7);
     expect(e.basis).toContain('docs/cost.md assumptions');
+    expect(e.basis).toContain('with no history 60 s on a real model, 10 s on a fake one');
   });
 
   it('refuses a plan it cannot cost or run', async () => {
@@ -812,13 +814,20 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
   });
 
   it('estimates from earlier finished trials once there are some', async () => {
+    // A trial's time is its worker's slot, claim to report (here 20 s), not the agent's own 12.5 s:
+    // the slot also covers starting the trial and uploading its files.
+    await env.pool.query(
+      `UPDATE trials SET claimed_at = finished_at - interval '20 seconds'
+       WHERE config_hash = $1 AND task_sha256 = $2 AND status = 'done' AND NOT probe`,
+      [configA, cat.tasks['emi-basic']],
+    );
     const res = await request(env.http)
       .post('/api/experiments/estimate')
       .send({ config_hashes: [configA], task_sha256s: [cat.tasks['emi-basic']], n: 1 })
       .expect(200);
     const e = res.body as { basis: string; basis_detail: { cells: { source: string; input_tokens: number; wall_s: number; agent_usd_per_trial: number }[] } };
     // LiteLLM's recorded cost of those trials, not tokens at today's price (item 8).
-    expect(e.basis_detail.cells[0]).toMatchObject({ source: 'config_task', input_tokens: 1200, wall_s: 12.5, agent_usd_per_trial: 0.00136 });
+    expect(e.basis_detail.cells[0]).toMatchObject({ source: 'config_task', input_tokens: 1200, wall_s: 20, agent_usd_per_trial: 0.00136 });
     expect(e.basis).toContain('earlier finished trials of the same config and task');
   });
 

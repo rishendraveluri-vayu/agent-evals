@@ -149,11 +149,14 @@ export class ExperimentsService {
     }
 
     // Item 8: the closest history there is. Finished trials only, with LiteLLM's full record.
-    type Row = { trials: number; input_tokens: number; output_tokens: number; wall_s: number | null; cost_usd: number | null };
+    type Row = { trials: number; input_tokens: number; output_tokens: number; wall_s: number | null; slot_s: number | null; cost_usd: number | null };
     // Probes (D33) render a prompt on the fake model; they are never history.
     const finished = `t.status = 'done' AND NOT t.probe AND t.input_tokens IS NOT NULL AND t.output_tokens IS NOT NULL AND t.proxy_complete IS NOT FALSE`;
+    // A trial's time is its worker's slot, claim to report; wall_s (the agent's own run) leaves out
+    // starting the trial and uploading its files, about half of a fake trial's slot.
     const means = `count(*)::int AS trials, avg(t.input_tokens)::float8 AS input_tokens, avg(t.output_tokens)::float8 AS output_tokens,
-                   avg(t.wall_s)::float8 AS wall_s, avg(t.cost_usd)::float8 AS cost_usd`;
+                   avg(t.wall_s)::float8 AS wall_s, avg(extract(epoch FROM (t.finished_at - t.claimed_at)))::float8 AS slot_s,
+                   avg(t.cost_usd)::float8 AS cost_usd`;
     const byCell = await this.db.query<Row & { config_hash: string; task_sha256: string; sim_cost_usd: number | null }>(
       `SELECT t.config_hash, t.task_sha256, ${means}, avg(t.sim_cost_usd)::float8 AS sim_cost_usd
        FROM trials t WHERE ${finished} AND t.config_hash = ANY($1) AND t.task_sha256 = ANY($2)
@@ -185,7 +188,7 @@ export class ExperimentsService {
       ).map((w) => [w.harness, w.live]),
     );
     const hist = (r: Row | undefined): History | null =>
-      r ? { trials: r.trials, inputTokens: r.input_tokens, outputTokens: r.output_tokens, wallS: r.wall_s, costUsd: r.cost_usd } : null;
+      r ? { trials: r.trials, inputTokens: r.input_tokens, outputTokens: r.output_tokens, wallS: r.wall_s, slotS: r.slot_s, costUsd: r.cost_usd } : null;
     const cells: CellInput[] = [];
     for (const c of ordered.configs) {
       for (const t of ordered.tasks) {

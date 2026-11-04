@@ -272,6 +272,7 @@ export interface EstimateCell {
   trials_seen: number;
   input_tokens: number;
   output_tokens: number;
+  /** Seconds per trial, claim to report (the worker's whole slot, not only the agent's run). */
   wall_s: number;
   agent_usd_per_trial: number;
   sim_usd_per_trial: number;
@@ -290,6 +291,8 @@ export interface Estimate {
       input_tokens_per_trial: number;
       output_tokens_per_trial: number;
       wall_s_per_trial: number;
+      /** The same with no history on a fake model (`fake/*`), which answers at once. */
+      fake_wall_s_per_trial: number;
       sim_input_tokens_per_call: number;
       sim_output_tokens_per_call: number;
       low_factor: number;

@@ -307,7 +307,7 @@ const armOf = (letter, cfg, trials, status, extra = {}) => {
 const doneArm = (letter, cfg, done) => ({ ...armOf(letter, cfg, [], 'complete'), counts: { ...zero(), done } });
 
 const PRICES = { [HAIKU]: { input_per_mtok: 0.1, output_per_mtok: 0.5 }, 'gemini-3.8-flash': { input_per_mtok: 0.75, output_per_mtok: 3.75 } };
-const ASSUMPTIONS = { input_tokens_per_trial: 64000, output_tokens_per_trial: 2400, wall_s_per_trial: 60, sim_input_tokens_per_call: 2000, sim_output_tokens_per_call: 150, low_factor: 0.5, high_factor: 2 };
+const ASSUMPTIONS = { input_tokens_per_trial: 64000, output_tokens_per_trial: 2400, wall_s_per_trial: 60, fake_wall_s_per_trial: 10, sim_input_tokens_per_call: 2000, sim_output_tokens_per_call: 150, low_factor: 0.5, high_factor: 2 };
 const estimate = (trials, expected, low, high, minutes, workers, basis = 'Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.') => ({
   trials, cost_usd: { expected, low, high }, minutes, basis,
   basis_detail: { cells: [], prices: PRICES, assumptions: ASSUMPTIONS, workers },
