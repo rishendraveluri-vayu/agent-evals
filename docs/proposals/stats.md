@@ -43,8 +43,9 @@ so it does not fit N > 1; a mixed-effects logistic model is the heavier alternat
 
 - Every task's d(t) is shown with its own interval (two independent proportions, Newcombe's method).
 - With 12 to 20 tasks at 5%, about one task will look different by chance. So a task is only flagged
-  "differs" after a **Holm correction** across tasks; the rest are shown as within noise. The
-  per-task view is for finding what to inspect, not a second set of conclusions.
+  "differs" after a **Benjamini-Hochberg correction** across tasks (q = 0.05, D41); the rest are
+  shown as within noise. The per-task view is for finding what to inspect, not a second set of
+  conclusions: every task where B dropped is listed, flagged or not.
 
 ## 5. The verdict, including "it's just noise"
 
@@ -98,7 +99,8 @@ Any change after seeing results is recorded there as a deviation (CLAUDE.md).
      wrong tool, made-up tool arguments, gave up early, ran out of steps, or grader disagrees with
      the human label (the brief's stretch item 7). Causes come from rules over the trace, written
      per harness where a harness reports a failure its own way.
-3. The per-task correction: Holm (proposed, strict) or Benjamini-Hochberg (more flags, controls the
-   share of false flags instead).
+3. **Settled 5 Nov (D41):** Benjamini-Hochberg at q = 0.05 for the per-task flags; the trade-off is
+   written out under D41 in `docs/decisions.md`. Holm was the first proposal; it was dropped because
+   at N = 5 to 10 trials per task it cannot flag a task, and a flag here means "look here".
 4. An equivalence margin delta, or none.
 5. Alpha 0.05 and 95% intervals (proposed).

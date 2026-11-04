@@ -48,6 +48,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D39 Hermes verification run | 30 trials first on Hermes with Haiku 5.5 (10 each: memory off, on and empty, on and seeded), about $0.60, cap $2, after the simulator empty-reply fix; the other 70 decided from what they show. Ran 4 Nov: 30 of 30 passed every check, $0.275; the other 70 not run yet | Rishi | 4 Nov |
 | D40 Agent builder for reviewers | A guided "Build an agent" page (agent type with an explainer per harness, model, prompt, a few settings, then try it on the free fake model or evaluate it) and a short demo guide, on the existing API. No accounts, logins, per-account API keys or hosted demo: the brief does not ask for them (Rishi, asked whether to build a shared demo login on our keys: "They did not ask"). Reviewers run the platform locally; fake models need no key. Rishi: "They did not ask for a full login and all so we don't complicate it, maybe ask Friday evening if needed": revisit Friday evening | Rishi | 4 Nov |
 | D10 Unit of analysis and the verdict | The task is the unit: per-task pass-rate difference B minus A, two-level bootstrap interval (tasks, then trials), sign-flip permutation test; the headline is the task pass rate (decision 2 of the stats proposal); a critical-failure guardrail and a regression list with severity and cause sit beside it | Rishi | 5 Nov |
+| D41 Per-task flags: multiple-comparison correction | Benjamini-Hochberg at 5% false discovery rate marks a task's difference as beyond noise; every task where B dropped is listed either way | Rishi | 5 Nov |
 
 ## Open
 
@@ -217,6 +218,20 @@ Choice: the task as the unit, as proposed. The headline is the task pass rate (e
 Why: Rishi: "While the logic is sound, we may need to have more details, some failures are more catastrophic than others so an overall pass rate works, but also where b regressed needs a further look as to what kind of regression that is." He chose the critical guardrail over a weighted score or report-only.
 What would change it: severities that cannot be agreed per grader; too few critical checks for their interval to say anything (then report them without the gate, and say so).
 Still open from the stats proposal: the per-task correction (Holm or BH), an equivalence margin, alpha.
+
+### D41: Which correction flags a task as beyond noise (5 Nov)
+Options: Holm (family-wise error: at most a 5% chance that any flag is false); Benjamini-Hochberg (false discovery rate: about 5% of flagged tasks may be noise); both as two levels ("worth a look" and "confirmed"); no correction (about one false flag in 20 tasks even when nothing changed).
+Choice: Benjamini-Hochberg at q = 0.05 over the per-task tests of one experiment. It decides only the per-task flag. The overall verdict is one test and needs no correction; the critical-failure guardrail (D10) is one pooled test and needs none either.
+Why: Rishi: "BH is fine but we need to prepare for the decision taken and trade offs." D10 asks that every regression of B gets a closer look, so a flag means "look here", whose cost when wrong is a wasted read, not a false claim. At our sizes Holm cannot flag anything useful: with 20 tasks its first bar is 0.05 / 20 = 0.0025, and with N = 5 trials per arm the most extreme task (5 of 5 against 0 of 5) has p = 0.008 by Fisher's exact test, so no task can ever be flagged; at N = 10 only near-total flips are (10 of 10 against 2 of 10, p = 0.0007), while 8 of 10 against 2 of 10 (p = 0.023) is not.
+What would change it: a write-up that must quote individual tasks as findings (then Holm, or report the BH flags as leads only); many more trials per task.
+
+**The trade-off, to explain it.**
+- What BH controls: among the tasks it flags, the expected share that are really unchanged is at most 5%. With 10 flags, expect about half a false one.
+- What it does not control: the chance of at least one false flag. When nothing changed at all, BH and Holm behave alike (both at most 5% chance of any flag); when several tasks really changed, BH lets the bar rise with the rank (the k-th smallest p-value is compared with k x 0.05 / 20), so it flags more, and some of those can be noise.
+- Why not Holm: it guards against even one false flag, which suits claims, not a list of places to look; at N = 5 to 10 trials per task it would leave the flag column empty or nearly so, and an always-empty column tells a reviewer nothing.
+- Why not no correction: with 20 tasks about one looks different by chance in every experiment, which is what the brief means by "make it clear when a difference is just noise".
+- What protects us from BH's looser flags: every task where B dropped is shown with its counts and its interval whether flagged or not; a flag is a pointer, not a verdict; the verdict and the critical guardrail are separate tests; and the A/A calibration run shows how many tasks BH flags when nothing changed.
+- Assumptions under it: BH holds for independent tests or positively dependent ones (tasks sharing a harness and model tend to move together, which is positive dependence); per-task p-values come from that task's trials only, so a task with few trials can never reach a small p-value, and the write-up says how many trials each task had.
 
 ## Entry template
 
