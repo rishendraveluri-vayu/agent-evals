@@ -48,7 +48,13 @@ describe('what two configs differ in, in words (QA round 3, M1)', () => {
 
   it('tells two toolsets of one name apart by their hashes, and a harness version by its ref', () => {
     const older = { ...ownloop, toolset: { ...ownloop.toolset, sha256: 'sha256:e8a33031' + '0'.repeat(56) }, capabilities_sha256: 'sha256:0ld0000' + '0'.repeat(57) };
-    expect(configChanges(older, ownloop).map(changeWords)).toEqual(['Own loop version capabilities 0ld0000 vs capabilities ' + ownloop.capabilities_sha256.slice(7, 14), 'Toolset all (e8a3303) vs all (' + ownloop.toolset.sha256.slice(7, 14) + ')']);
+    const changes = configChanges(older, ownloop);
+    // The main text names what changed; the hashes stay in the values, for a label or Details.
+    expect(changes.map(changeWords)).toEqual(['The Own loop capabilities file', "The finance all toolset's content"]);
+    expect(changes.map((c) => armValue(c, 'a'))).toEqual(['Own loop version capabilities 0ld0000', 'toolset all (e8a3303)']);
+    expect(changesWords(changes)).toBe("The Own loop capabilities file and the finance all toolset's content");
+    const newerRef = { ...ownloop, harness_ref: '7f3a9c2' + '0'.repeat(33) };
+    expect(configChanges({ ...ownloop, harness_ref: '6112c2a' + '0'.repeat(33) }, newerRef).map(changeWords)).toEqual(['Own loop version 6112c2a vs 7f3a9c2']);
   });
 });
 

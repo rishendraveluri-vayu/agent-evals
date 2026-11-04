@@ -255,6 +255,9 @@ export interface ConfigChange {
   b: string;
   /** The values name themselves (a model, a harness), so the label is not said before them. */
   named: boolean;
+  /** For a change with no readable values (a file of the same name with other content): the
+   *  change in words, said instead of the two values ("The finance all toolset's content"). */
+  differs?: string;
 }
 
 /** PLATFORM_DEFAULTS in apps/api/src/configs/settings.ts: what the API stores for a setting left unset. */
@@ -333,13 +336,15 @@ export function configChanges(a: ConfigContent, b: ConfigContent): ConfigChange[
           : a.adapter_version !== b.adapter_version
             ? [`adapter ${a.adapter_version}`, `adapter ${b.adapter_version}`]
             : [`capabilities ${shortHash(a.capabilities_sha256)}`, `capabilities ${shortHash(b.capabilities_sha256)}`];
-      return { key, label: `${harnessName(a.harness)} version`, a: x, b: y, named: false };
+      const capsOnly = a.harness_ref === b.harness_ref && a.adapter_version === b.adapter_version;
+      return { key, label: `${harnessName(a.harness)} version`, a: x, b: y, named: false, ...(capsOnly ? { differs: `The ${harnessName(a.harness)} capabilities file` } : {}) };
     }
     if (key === 'prompt' || key === 'toolset') {
       const [x, y] = [a[key], b[key]];
       const sameName = x.id === y.id && x.version === y.version;
       const words = (r: typeof x) => `${x.id === y.id ? '' : `${r.id} `}${r.version}${sameName ? ` (${shortHash(r.sha256)})` : ''}`;
-      return { key, label: key === 'prompt' ? 'Prompt' : 'Toolset', a: words(x), b: words(y), named: false };
+      const differs = key === 'prompt' ? `The ${x.id} ${x.version} prompt's text` : `The ${x.id} ${x.version} toolset's content`;
+      return { key, label: key === 'prompt' ? 'Prompt' : 'Toolset', a: words(x), b: words(y), named: false, ...(sameName ? { differs } : {}) };
     }
     if (key === 'seed') return { key, label: 'Seeds', a: seedWords(a.seed), b: seedWords(b.seed), named: false };
     const [head, name] = key.split('.');
@@ -352,8 +357,10 @@ export function configChanges(a: ConfigContent, b: ConfigContent): ConfigChange[
   });
 }
 
-/** One change in words: "Max steps 10 vs 12", "Prompt v1 vs v2", "Claude Haiku 5.5 vs Claude Sonnet 5.5". */
+/** One change in words: "Max steps 10 vs 12", "Prompt v1 vs v2", "Claude Haiku 5.5 vs Claude Sonnet 5.5";
+ *  a file of the same name with other content by what it is ("The finance all toolset's content"). */
 export function changeWords(c: ConfigChange): string {
+  if (c.differs) return c.differs;
   return c.named ? `${c.a} vs ${c.b}` : `${c.label} ${c.a} vs ${c.b}`;
 }
 
@@ -397,7 +404,9 @@ export function runAutoName(a: ConfigView, b: ConfigView | undefined, set: strin
 
 /** What a config being named holds: its harness, model, prompt and settings as the API would
  *  store them (null for one it cannot take); its harness options, seeds and toolset when known. */
-export type NameContent = Pick<ConfigContent, 'harness' | 'model' | 'settings'> & {
+export type NameContent = Pick<ConfigContent, 'harness' | 'model'> & {
+  /** A setting left out is unset: the platform's default applies. */
+  settings: Partial<ConfigContent['settings']>;
   prompt: Pick<ConfigContent['prompt'], 'id' | 'version'>;
 } & Partial<Pick<ConfigContent, 'harness_options' | 'seed' | 'toolset'>>;
 
