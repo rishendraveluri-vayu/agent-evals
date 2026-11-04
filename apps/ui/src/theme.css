@@ -544,6 +544,13 @@ code,
   margin-top: 4px;
 }
 
+/* A caveat opens with its point ("Rests on the judge:", "Provisional:") in ink at medium weight;
+   the alert icon stays. */
+.caveat-lead {
+  color: var(--ink);
+  font-weight: 500;
+}
+
 /* A task id in a caveat is a literal identifier: mono, and never split at its hyphens. */
 .caveat .mono {
   white-space: nowrap;

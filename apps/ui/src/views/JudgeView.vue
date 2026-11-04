@@ -31,7 +31,18 @@ const answer = computed(() => {
   const a = j.value;
   if (!a) return null;
   const k = a.kappa;
-  const title = k.estimate >= a.bar && k.low >= a.bar ? 'Yes, on this evidence' : k.estimate >= a.bar ? 'Mostly, with one caution' : 'Not yet';
+  // While held-out checks remain to label, the answer is only as good as the labels so far.
+  const soFar = toGo.value > 0;
+  const title =
+    k.estimate >= a.bar && k.low >= a.bar
+      ? soFar
+        ? 'Yes so far'
+        : 'Yes, on this evidence'
+      : k.estimate >= a.bar
+        ? soFar
+          ? 'Mostly so far, with one caution'
+          : 'Mostly, with one caution'
+        : 'Not yet';
   const pos = k.estimate >= a.bar ? 'above the bar' : 'below the bar';
   const tail = k.low < a.bar && k.estimate >= a.bar ? `, but the interval runs from ${k.low.toFixed(2)} to ${k.high.toFixed(2)}, so its lower end is under ${a.bar}` : `, with an interval from ${k.low.toFixed(2)} to ${k.high.toFixed(2)}`;
   return {
@@ -68,7 +79,9 @@ const lede = computed(() => {
   const a = j.value;
   if (!a) return 'Measured on the held-out checks, which are never used to tune the rubric.';
   const on = checksToGo.value ? `${a.labels} of ${a.labels + checksToGo.value} held-out checks so far` : `the ${a.labels} held-out checks`;
-  return `Measured on ${on}, which are never used to tune the rubric. The bar of ${a.bar} was set before any results came in.`;
+  // The bar is stated, not dated: D8 (the judge threshold) is still open, so nothing on record
+  // says when it was set.
+  return `Measured on ${on}, which are never used to tune the rubric. The bar is ${a.bar}.`;
 });
 
 /** "3 held-out outputs (7 checks)" */
@@ -162,7 +175,7 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
         name="alert"
         :size="14"
       />
-      <span>Provisional: {{ toGoWords }} still to label. These numbers will change.</span>
+      <span><strong class="caveat-lead">Provisional:</strong> {{ toGoWords }} still to label. These numbers will change.</span>
     </p>
   </div>
 

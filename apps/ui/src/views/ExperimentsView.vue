@@ -291,7 +291,7 @@ const rows = computed<Row[]>(() => {
             name="alert"
             :size="14"
           />
-          <span><template
+          <span><strong class="caveat-lead">{{ latestResult.caveat.lead }}:</strong> <template
             v-for="(part, pi) in identParts(latestResult.caveat.before, latestResult.caveat.idents)"
             :key="pi"
           ><span

@@ -587,7 +587,7 @@ const worthALook = computed(() => {
                 name="alert"
                 :size="14"
               />
-              <span><template
+              <span><strong class="caveat-lead">{{ caveat.lead }}:</strong> <template
                 v-for="(part, pi) in identParts(caveat.before, caveat.idents)"
                 :key="pi"
               ><span

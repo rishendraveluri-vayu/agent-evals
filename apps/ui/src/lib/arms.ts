@@ -124,10 +124,12 @@ export function methodName(id: string): string {
   return METHOD_NAMES[id] ?? id;
 }
 
-/** What a result rests on when every task that differs needs the judge's pass. `link` is the part
- *  that opens the Judge page; `text` is the whole sentence. */
+/** What a result rests on when every task that differs needs the judge's pass. `lead` is the
+ *  point it opens with, which the page sets in bold before a colon; `before`, `link` and `after`
+ *  follow it, and `link` is the part that opens the Judge page. `text` is the whole sentence. */
 export interface JudgeCaveat {
   text: string;
+  lead: string;
   before: string;
   link: string;
   after: string;
@@ -185,10 +187,11 @@ export function judgeCaveat<T>(args: {
   if (!judge || !differing.length || !differing.every(isJudged)) return null;
   const mixed = alsoGraded ? differing.map(alsoGraded).filter((t): t is { name: string; graders: string[] } => !!t && t.graders.length > 0) : [];
   const brackets = mixed.length ? ` (${alsoGradedWords(mixed)})` : '';
-  const before = `Rests on the judge: ${differingWords(differing.length)} the judge's pass${brackets}. Its `;
+  const lead = 'Rests on the judge';
+  const before = `${differingWords(differing.length)} the judge's pass${brackets}. Its `;
   const link = 'agreement with you';
   const after = agreementWords(judge, toGo);
-  return { text: `${before}${link}${after}`, before, link, after, idents: mixed.map((t) => t.name) };
+  return { text: `${lead}: ${before}${link}${after}`, lead, before, link, after, idents: mixed.map((t) => t.name) };
 }
 
 /** Checks still to label: one per question on each queued output. */

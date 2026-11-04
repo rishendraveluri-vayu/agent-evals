@@ -113,6 +113,20 @@ const shownTicks = computed(() => {
   return kept.sort((p, q) => p.value - q.value);
 });
 
+/** The grey axis track along the first row. When that row's label sits beside its interval, on
+ *  the track itself, the track stops 6 px short of the label on each side, so no line runs behind
+ *  the words. A label above the row leaves the track whole. */
+const LABEL_CLEAR = 6;
+const axisSegments = computed<[number, number][]>(() => {
+  const full: [number, number] = [PAD, width.value - PAD];
+  const p = placements.value[0];
+  if (!p || p.above) return [full];
+  const out: [number, number][] = [];
+  if (p.from - LABEL_CLEAR > PAD) out.push([PAD, p.from - LABEL_CLEAR]);
+  if (p.to + LABEL_CLEAR < width.value - PAD) out.push([p.to + LABEL_CLEAR, width.value - PAD]);
+  return out;
+});
+
 /** Rows whose label has no room in the figure are named in a legend under it, so no row is ever
  *  left unlabelled. */
 const legend = computed(() => props.rows.filter((r, i) => r.label && !placements.value[i]));
@@ -131,11 +145,14 @@ const legend = computed(() => props.rows.filter((r, i) => r.label && !placements
       :aria-label="summary"
     >
       <line
-        :x1="PAD"
-        :x2="width - PAD"
+        v-for="([from, to], si) in axisSegments"
+        :key="`axis-${si}`"
+        :x1="from"
+        :x2="to"
         :y1="rowY(0)"
         :y2="rowY(0)"
         class="axis"
+        data-test="strip-axis"
       />
       <line
         :x1="x(reference.value)"
@@ -291,8 +308,9 @@ svg {
   fill: var(--ink);
 }
 
-/* A label beside the first row sits on the grey axis track; a halo in the surface colour keeps it
-   readable there. The reference line needs no halo: placement keeps every label clear of it. */
+/* A label beside the first row sits in a gap in the grey axis track; a halo in the surface colour
+   keeps the glyph edges clear of the interval and dots. The reference line needs no halo:
+   placement keeps every label clear of it. */
 .row-label {
   paint-order: stroke;
   stroke: var(--surface);

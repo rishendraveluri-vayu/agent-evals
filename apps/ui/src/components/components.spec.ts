@@ -117,6 +117,30 @@ describe('IntervalStrip', () => {
     }
   });
 
+  it('breaks the first row\'s axis track around a label beside it, so no line runs behind the words', () => {
+    const label = 'κ 0.70, 40 labelled checks';
+    const w = mount(IntervalStrip, {
+      props: { min: 0, max: 1, ticks: [{ value: 0.6, label: 'bar 0.6', strong: true }], rows: [{ estimate: 0.7, low: 0.47, high: 0.88, tone: 'ink', label }], reference: { value: 0.6 }, summary: 'test' },
+    });
+    expect(w.get('[data-test="strip-label"]').attributes('data-place')).toBe('beside');
+    const [from, to] = span(w, label);
+    const segments = w.findAll('[data-test="strip-axis"]').map((l) => [Number(l.attributes('x1')), Number(l.attributes('x2'))]);
+    expect(segments.length).toBeGreaterThan(0);
+    for (const [x1, x2] of segments) expect(x2 <= from - 6 || x1 >= to + 6, `segment ${x1} to ${x2} crosses the label`).toBe(true);
+    // The track still starts at the figure's left edge.
+    expect(segments[0][0]).toBe(20);
+  });
+
+  it('keeps the axis track whole when the first row\'s label sits above it', () => {
+    const w = strip([
+      { estimate: 15, low: 7, high: 23, tone: 'b', label: 'v2 minus v1, 12 tasks' },
+      { estimate: 1, low: -7, high: 9, tone: 'neutral', size: 'sm', label: 'A/A run' },
+    ]);
+    expect(w.findAll('[data-test="strip-label"]')[0].attributes('data-place')).toBe('above');
+    const segments = w.findAll('[data-test="strip-axis"]').map((l) => [Number(l.attributes('x1')), Number(l.attributes('x2'))]);
+    expect(segments).toEqual([[20, 580]]);
+  });
+
   it('keeps the shown ticks evenly spaced on a narrow figure, with zero in its short form', async () => {
     atWidth(320);
     const w = strip([{ estimate: 15, low: 7, high: 23, tone: 'b' }], ticksFor(-20, 30, 10));

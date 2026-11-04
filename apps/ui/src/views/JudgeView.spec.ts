@@ -15,7 +15,8 @@ describe('JudgeView in fixture mode', () => {
     const w = mount(JudgeView);
     await settle();
     const answer = w.get('[data-test="judge-answer"]').text();
-    expect(answer).toContain('Mostly, with one caution');
+    // Held-out checks remain to label, so the answer says it holds so far.
+    expect(w.get('#answer').text()).toBe('Mostly so far, with one caution');
     expect(answer).toContain(
       "The judge agrees with you on 34 of 40 labelled checks (one output, one question). Cohen's κ is 0.70, above the bar, but the interval runs from 0.47 to 0.88, so its lower end is under 0.6.",
     );
@@ -36,8 +37,10 @@ describe('JudgeView in fixture mode', () => {
     expect(w.get('.lede').element.nextElementSibling).toBe(provisional.element);
     expect(judgeSource).not.toMatch(/^\.provisional\b/m);
     expect(w.get('.lede').text()).toBe(
-      'Measured on 40 of 47 held-out checks so far, which are never used to tune the rubric. The bar of 0.6 was set before any results came in.',
+      'Measured on 40 of 47 held-out checks so far, which are never used to tune the rubric. The bar is 0.6.',
     );
+    // The caveat opens with its point, in ink at medium weight.
+    expect(provisional.get('strong.caveat-lead').text()).toBe('Provisional:');
     // The numbers stay in view while provisional.
     expect(w.find('[data-test="judge-answer"]').exists()).toBe(true);
     expect(w.find('[data-test="judge-matrix"]').exists()).toBe(true);
@@ -103,6 +106,32 @@ describe('JudgeView once the held-out set is labelled', () => {
     const rows = w.findAll('[data-test="disagreement-row"]');
     expect(rows).toHaveLength(6);
     expect(rows[0].text()).toContain(agreement.disagreements[0].evidence);
+  });
+});
+
+describe('JudgeView against the API: the answer while labels remain and once they are done', () => {
+  const clearing = { ...agreement, kappa: { estimate: 0.8, low: 0.65, high: 0.92 } };
+  const queued = [{ item_id: 'lq_1', task_summary: '', transcript: [{ role: 'assistant', content: 'Answer.' }], tool_calls: [], criteria: ['First?'] }];
+
+  it('says "Yes so far" while held-out checks remain, even when the whole interval clears the bar', async () => {
+    routeFetch({ '/api/judge/agreement?set=heldout': clearing, '/api/configs': [], '/api/experiments': [], '/api/labels/queue?set=heldout': queued });
+    const w = mount(JudgeView);
+    await settle();
+    expect(w.get('#answer').text()).toBe('Yes so far');
+  });
+
+  it('says "Yes, on this evidence" once every held-out check is labelled', async () => {
+    routeFetch({ '/api/judge/agreement?set=heldout': clearing, '/api/configs': [], '/api/experiments': [], '/api/labels/queue?set=heldout': [] });
+    const w = mount(JudgeView);
+    await settle();
+    expect(w.get('#answer').text()).toBe('Yes, on this evidence');
+  });
+
+  it('keeps "Mostly, with one caution" once labelled when the interval reaches under the bar', async () => {
+    routeFetch({ '/api/judge/agreement?set=heldout': agreement, '/api/configs': [], '/api/experiments': [], '/api/labels/queue?set=heldout': [] });
+    const w = mount(JudgeView);
+    await settle();
+    expect(w.get('#answer').text()).toBe('Mostly, with one caution');
   });
 });
 

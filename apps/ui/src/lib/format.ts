@@ -99,6 +99,11 @@ export function clock(iso: string): string {
   return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: displayTimeZone() }).format(new Date(iso));
 }
 
+/** 14:06:09, for "the update from" a moment ago. */
+export function clockSeconds(at: Date | number): string {
+  return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZone: displayTimeZone() }).format(new Date(at));
+}
+
 /** The first 7 hex characters of a `sha256:` hash, as git shows a commit. */
 export function shortHash(hash: string | null | undefined): string {
   if (!hash) return '–';
@@ -118,10 +123,19 @@ export function capitalise(text: string): string {
   return text ? text[0].toUpperCase() + text.slice(1) : text;
 }
 
-/** Splits running text around literal identifiers with a double underscore
- *  ("mcp__finance__<name>"), so they can be set in mono. Punctuation that ends the sentence
- *  around one stays with the words. */
-export function splitIdents(text: string): { text: string; ident: boolean }[] {
+/** A token that reads as code: an underscore (mcp__finance__<name>, max_tokens), a dot or slash
+ *  between words (compression.enabled, finance/all, Runner.run), or a keyword argument
+ *  (ChatOpenAI(temperature=)). "e.g." and plain words are not. */
+const CODE_TOKEN = /_|[A-Za-z]{2,}[./][A-Za-z<]|[A-Za-z]=/;
+
+const countOf = (text: string, ch: string) => text.split(ch).length - 1;
+
+/** Splits running text around literal identifiers, so they can be set in mono and the words
+ *  around them in Plex Sans. Punctuation that ends the sentence around one stays with the words,
+ *  and a bracket the identifier opened stays with it. With `lone`, text that is one token with no
+ *  spaces ("temperature", "ModelCallLimitMiddleware") is an identifier whole: for cells that hold
+ *  either a name or a few words, such as how a setting reaches the model. */
+export function splitIdents(text: string, opts: { lone?: boolean } = {}): { text: string; ident: boolean }[] {
   const out: { text: string; ident: boolean }[] = [];
   const push = (part: string, ident: boolean) => {
     if (!part) return;
@@ -129,12 +143,29 @@ export function splitIdents(text: string): { text: string; ident: boolean }[] {
     if (last && last.ident === ident && !ident) last.text += part;
     else out.push({ text: part, ident });
   };
-  text.split(/(\S*__\S*)/).forEach((part, i) => {
-    if (i % 2 === 0) return push(part, false);
-    const [, ident, tail] = part.match(/^(.*?)([,.;:!?)]*)$/) ?? [part, part, ''];
-    push(ident, true);
-    push(tail, false);
-  });
+  if (opts.lone && text.trim() && !/\s/.test(text.trim())) return [{ text, ident: true }];
+  for (const token of text.split(/(\s+)/)) {
+    const m = /\S/.test(token) ? token.match(/^([("'[]*)(.*?)([,.;:!?)"'\]]*)$/) : null;
+    if (!m) {
+      push(token, false);
+      continue;
+    }
+    const lead = m[1];
+    let core = m[2];
+    let tail = m[3];
+    // A closing bracket the identifier opened belongs to it: ChatOpenAI(temperature=).
+    for (const [open, close] of [['(', ')'], ['[', ']']] as const) {
+      while (tail.startsWith(close) && countOf(core, open) > countOf(core, close)) {
+        core += close;
+        tail = tail.slice(1);
+      }
+    }
+    if (core && CODE_TOKEN.test(core)) {
+      push(lead, false);
+      push(core, true);
+      push(tail, false);
+    } else push(token, false);
+  }
   return out;
 }
 
