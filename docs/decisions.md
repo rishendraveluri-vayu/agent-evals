@@ -55,6 +55,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D8 Judge trust bar | A judge criterion counts in the headline only when, on the held-out labels, kappa >= 0.6 with its 95% interval's lower end >= 0.4, no false-pass gap between arms, and test-retest agreement >= 90%; below it, it stays visible in trials and the report | Rishi | 5 Nov |
 | D45 Judge model | Gemini 3.8 Flash, pinned for the experiment (billing enabled 5 Nov and checked with one call) | Rishi | 5 Nov |
 | D46 "Not sure" labels | A second look: each "not sure" criterion comes back once, after the fresh items; still "not sure" then means excluded from the judge's agreement, with the count reported | Rishi | 5 Nov |
+| D47 Headline experiment's harness and model | Hermes Agent (pinned 6112c2a) on Claude Haiku 5.5, the same for both arms of prompt v1 vs v2 | Rishi | 5 Nov |
 
 ## Open
 
@@ -270,6 +271,13 @@ Options: excluded from the agreement (proposed); counted as "no"; a second look.
 Choice: a second look. A criterion Rishi marks "not sure" comes back once in the same set, after every fresh item, marked "Second look". The answer then given replaces the "not sure" in the judge's agreement and is not counted as a relabel (it is not a self-consistency test). A second "not sure" is final: it is left out of the agreement (`--human-unsure exclude`) and counted per criterion. A criterion with many "not sure" labels points at an unclear rubric.
 Why: Rishi picked it: the best data for the judge check, at the cost of some extra labelling time.
 What would change it: labelling time running out before Friday (then exclude what is left, which is the same rule applied early).
+
+### D47: The headline experiment runs on Hermes with Claude Haiku 5.5 (5 Nov)
+Options: Hermes on Claude Haiku 5.5; Hermes on Gemini 3.8 Flash; the own loop on Claude Haiku 5.5.
+Choice: Hermes Agent at the pinned SHA 6112c2a on Claude Haiku 5.5, for both arms of prompt v1 vs v2.
+Why: Rishi picked it. Hermes is the brief's required harness and passed every D39 check on Haiku 5.5; Haiku is cheap (measured $0.0024 to $0.014 a trial on 4 Nov) and is not the judge's family (D45, Gemini), so the judge does not grade its own model family's answers.
+What would change it: Hermes failing on the final tasks in a way the platform cannot label as infra; Anthropic rate limits at the planned N.
+Rough cost, an estimate before the pilot: 20 tasks x 10 trials x 2 arms on Haiku 5.5 is about $2 to $5, plus the simulated client and the judge.
 
 ## Entry template
 
