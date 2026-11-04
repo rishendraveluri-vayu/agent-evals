@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue';
 import AppHeader from './components/AppHeader.vue';
 import { currentHash, href, parseHash, sectionOf } from './router';
 import CompareView from './views/CompareView.vue';
+import ConfigPage from './views/ConfigPage.vue';
 import ConfigView from './views/ConfigView.vue';
 import ExperimentsView from './views/ExperimentsView.vue';
 import HarnessesView from './views/HarnessesView.vue';
@@ -52,7 +53,16 @@ watch(
     tabindex="-1"
   >
     <ExperimentsView v-if="route.name === 'experiments'" />
-    <ConfigView v-else-if="route.name === 'config'" />
+    <ConfigView
+      v-else-if="route.name === 'config'"
+      :key="`config-${route.fork}`"
+      :fork="route.fork"
+    />
+    <ConfigPage
+      v-else-if="route.name === 'config-page'"
+      :key="`config-page-${route.hash}`"
+      :config-hash="route.hash"
+    />
     <RunView
       v-else-if="route.name === 'run-new'"
       :key="`new-${route.a}-${route.b}`"
@@ -75,7 +85,12 @@ watch(
       :trial-id="route.id"
     />
     <TrialsView v-else-if="route.name === 'recorded'" />
-    <LabelView v-else-if="route.name === 'labels'" />
+    <LabelView
+      v-else-if="route.name === 'labels'"
+      :key="`labels-${route.set}-${route.experiment}`"
+      :initial-set="route.set"
+      :experiment="route.experiment"
+    />
     <JudgeView v-else-if="route.name === 'judge'" />
     <HarnessesView v-else-if="route.name === 'harnesses'" />
     <TasksView v-else-if="route.name === 'tasks'" />

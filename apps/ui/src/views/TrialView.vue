@@ -2,11 +2,12 @@
 import { computed, ref } from 'vue';
 import { api, type AnyTrial } from '../api/client';
 import { isFixtureMode } from '../api/mode';
-import type { BlindItem, ExperimentDetail, ExperimentTrial, Grade, JudgeAgreement, Prompt, TrialResult } from '../api/types';
+import type { BlindItem, ExperimentDetail, TrialRowSummary, JudgeAgreement, PromptView, TrialResult, VersionRef } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import SpanTimeline from '../components/SpanTimeline.vue';
-import { armsOf } from '../lib/arms';
+import { armIndexOf, armsOf } from '../lib/arms';
+import { gradeView, markAmounts, provenanceOf, type AmountCheck, type GradeView, type ProvenanceView } from '../lib/grading';
 import { optional, useLoad } from '../lib/async';
 import { capitalise, count, money, seconds } from '../lib/format';
 import { endStateName, graderName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
@@ -20,13 +21,15 @@ interface Loaded {
   any: AnyTrial;
   spans: SpanView[];
   experiment: ExperimentDetail | null;
-  siblings: ExperimentTrial[];
-  prompts: Prompt[];
+  siblings: TrialRowSummary[];
+  prompts: PromptView[];
   /** Your held-out labels against the judge, to flag a judge verdict you disagree with. */
   judge: JudgeAgreement | null;
   /** Held-out outputs still to label. A failed load counts as none, as on the Judge page, so the
    *  two pages always agree on whether labelling is still blind. */
   queue: BlindItem[];
+  /** The number-provenance check from the trial's checks.json, when it has one. */
+  checks: ProvenanceView | null;
 }
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
@@ -37,16 +40,20 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
     optional(api.labelQueue('heldout'), [] as BlindItem[]),
   ]);
   const experimentId = any.kind === 'experiment' ? any.trial.experiment_id : null;
-  const [experiment, siblings, prompts] = experimentId
-    ? await Promise.all([optional(api.experiment(experimentId), null), optional(api.experimentTrials(experimentId), [] as ExperimentTrial[]), optional(api.prompts(), [] as Prompt[])])
-    : [null, [] as ExperimentTrial[], [] as Prompt[]];
-  return { any, spans, experiment, siblings, prompts, judge, queue };
+  const hasChecks = any.kind === 'experiment' && any.trial.files.some((f) => f.path === 'checks.json');
+  const [experiment, siblings, prompts, checks] = await Promise.all([
+    experimentId ? optional(api.experiment(experimentId), null) : Promise.resolve(null),
+    experimentId ? optional(api.experimentTrials(experimentId), [] as TrialRowSummary[]) : Promise.resolve([] as TrialRowSummary[]),
+    any.kind === 'experiment' ? optional(api.prompts(), [] as PromptView[]) : Promise.resolve([] as PromptView[]),
+    hasChecks ? optional(api.trialJson(props.trialId, 'checks.json').then(provenanceOf), null) : Promise.resolve(null),
+  ]);
+  return { any, spans, experiment, siblings, prompts, judge, queue, checks };
 });
 
 const EMPTY_RESULT: TrialResult = {};
-/** The folder store's result is the same contract v2 file, typed loosely. */
-function recordedResult(result: Record<string, unknown> | null): TrialResult {
-  return result ?? EMPTY_RESULT;
+/** result.json is contract v2's result, which the API carries as loose JSON. */
+function resultOf(result: unknown): TrialResult {
+  return typeof result === 'object' && result !== null && !Array.isArray(result) ? (result as TrialResult) : EMPTY_RESULT;
 }
 
 /** One view of a trial, whichever store it came from. */
@@ -55,48 +62,60 @@ const vm = computed(() => {
   if (!d) return null;
   if (d.any.kind === 'experiment') {
     const t = d.any.trial;
-    const config = d.experiment?.configs.find((c) => c.hash === t.config);
-    const task = d.experiment?.tasks.find((x) => x.sha256 === t.task || x.id === t.task);
+    const result = resultOf(t.result);
     return {
       id: t.id,
-      taskId: task?.id ?? t.task,
-      harness: config?.harness ?? t.result?.harness?.name ?? null,
+      probe: t.probe,
+      taskId: t.task.id,
+      harness: t.config.harness,
+      configName: t.config.name,
       label: t.label,
       status: t.status,
-      endState: t.end_state ?? t.result?.end_state ?? null,
-      result: t.result ?? EMPTY_RESULT,
+      endState: t.end_state ?? result.end_state ?? null,
+      result,
       cost: t.usage?.cost_usd ?? null,
+      simCost: t.usage?.sim_cost_usd ?? null,
       costComplete: t.usage?.complete ?? null,
       inputTokens: t.usage?.input_tokens ?? null,
       outputTokens: t.usage?.output_tokens ?? null,
-      wallS: t.timing?.wall_s ?? t.result?.timing?.wall_s ?? null,
-      grades: t.grades,
+      wallS: t.timing.wall_s ?? result.timing?.wall_s ?? null,
+      grades: t.grades.map(gradeView),
       files: t.files.map((f) => f.path),
+      badFiles: t.files.filter((f) => f.ok === false).map((f) => `${f.path}${f.problem ? `: ${f.problem}` : ''}`),
+      problems: t.problems,
       repeatIndex: t.repeat_index,
       attempt: t.attempt,
-      config,
-      task: t.task,
+      configHash: t.config.hash,
+      prompt: t.config.prompt,
+      task: t.task.sha256,
     };
   }
-  const { summary, result } = d.any.detail;
+  const { summary } = d.any.detail;
+  const result = resultOf(d.any.detail.result);
   return {
     id: summary.trialId,
+    probe: false,
     taskId: summary.taskId ?? 'unknown task',
     harness: summary.harness,
+    configName: null as string | null,
     label: summary.label,
     status: 'done',
     endState: summary.endState,
-    result: recordedResult(result),
+    result,
     cost: summary.proxyCostUsd,
+    simCost: null as number | null,
     costComplete: summary.proxyComplete,
     inputTokens: summary.proxyInputTokens,
     outputTokens: summary.proxyOutputTokens,
     wallS: summary.wallS,
-    grades: [] as Grade[],
+    grades: [] as GradeView[],
     files: ['result.json', 'trace.jsonl', 'runner-report.json', 'stdout.log', 'stderr.log'],
+    badFiles: [] as string[],
+    problems: [] as string[],
     repeatIndex: null,
     attempt: 1,
-    config: undefined,
+    configHash: summary.configHash,
+    prompt: null as VersionRef | null,
     task: summary.taskId ?? '',
   };
 });
@@ -133,9 +152,9 @@ const harnessRef = computed(() => {
 const arm = computed(() => {
   const v = vm.value;
   const e = data.value?.experiment;
-  if (!v || !e || !v.config) return null;
+  if (!v || !e || !v.configHash) return null;
   const arms = armsOf(e, e.configs);
-  return arms.find((a) => a.hash === v.config?.hash) ?? null;
+  return arms.find((a) => a.hash === v.configHash) ?? null;
 });
 
 const title = computed(() => {
@@ -144,6 +163,7 @@ const title = computed(() => {
   if (arm.value && v.repeatIndex !== null && data.value?.experiment) {
     return `Arm ${arm.value.key.toUpperCase()}, trial ${v.repeatIndex + 1} of ${data.value.experiment.n}${v.attempt > 1 ? `, attempt ${v.attempt}` : ''}`;
   }
+  if (v.probe) return `Prompt probe for ${v.configName ?? 'a config'}`;
   return `${v.harness ? harnessShort(v.harness) : 'Trial'} on ${v.taskId}`;
 });
 
@@ -151,6 +171,7 @@ const outcome = computed(() => {
   const v = vm.value;
   if (!v) return null;
   if (isInfra.value) return { kind: 'infra', text: `Infra failure: ${infraReason(v.label)}, not graded` };
+  if (v.probe) return { kind: 'pending', text: 'Probe: never graded or counted' };
   if (v.grades.length) {
     // The pill says what happened in the trial's own terms: how many checks it failed.
     const n = v.grades.length;
@@ -191,7 +212,11 @@ const facts = computed(() => {
     { k: 'Ended because', v: endStateName(v.endState), n: endNote },
     { k: 'Counted as', v: isInfra.value ? 'Infra failure' : v.label === 'agent' ? 'Agent outcome' : (v.label ?? 'Not reported'), n: isInfra.value ? infraReason(v.label) : 'Not an infra failure' },
     { k: 'Time', v: seconds(v.wallS), n: startupS.value !== null ? `${startupS.value.toFixed(1)} s of it start-up` : '' },
-    { k: 'Cost', v: money(v.cost), n: v.cost === null ? 'Not logged' : v.costComplete === false ? "LiteLLM's log is incomplete" : 'From LiteLLM' },
+    {
+      k: 'Cost',
+      v: money(v.cost),
+      n: v.cost === null ? 'Not logged' : v.costComplete === false ? "LiteLLM's log is incomplete" : `From LiteLLM${v.simCost ? `; the client's calls ${money(v.simCost)} more` : ''}`,
+    },
     {
       k: 'Model calls',
       v: data.value?.spans.length ? `${calls.value.agent} agent, ${calls.value.client} client` : '–',
@@ -217,6 +242,8 @@ interface Segment {
   text: string;
   /** The failed check that quoted this passage: its index in the grades and its name. */
   quote: { index: number; name: string } | null;
+  /** An amount the number check found no source for. */
+  amount: AmountCheck | null;
 }
 
 interface Quote {
@@ -232,6 +259,8 @@ interface MessageItem {
   paragraphs: Segment[][];
   /** Whether any passage in it is highlighted, so the key goes under it. */
   marked: boolean;
+  /** Whether it shows an amount the number check found no source for. */
+  amounts: boolean;
 }
 
 function pretty(value: unknown): string {
@@ -264,8 +293,9 @@ function summarise(args: unknown): string {
 }
 
 /** Splits a reply into paragraphs and marks the passages a failed check quoted, each tied to the
- *  check that quoted it. */
-function segments(body: string, quotes: Quote[]): Segment[][] {
+ *  check that quoted it, then the amounts the number check could not trace to a source. */
+function segments(body: string, quotes: Quote[], amounts: AmountCheck[]): Segment[][] {
+  const plain = (text: string): Segment[] => markAmounts(text, amounts).map((p) => ({ text: p.text, quote: null, amount: p.amount }));
   return body.split(/\n{2,}/).map((para) => {
     const hits = quotes
       .map((q) => ({ q, at: para.indexOf(q.text) }))
@@ -275,18 +305,19 @@ function segments(body: string, quotes: Quote[]): Segment[][] {
     let pos = 0;
     for (const h of hits) {
       if (h.at < pos) continue;
-      if (h.at > pos) out.push({ text: para.slice(pos, h.at), quote: null });
-      out.push({ text: h.q.text, quote: { index: h.q.index, name: h.q.name } });
+      if (h.at > pos) out.push(...plain(para.slice(pos, h.at)));
+      out.push({ text: h.q.text, quote: { index: h.q.index, name: h.q.name }, amount: null });
       pos = h.at + h.q.text.length;
     }
-    if (pos < para.length) out.push({ text: para.slice(pos), quote: null });
+    if (pos < para.length) out.push(...plain(para.slice(pos)));
     return out;
   });
 }
 
 const failedQuotes = computed<Quote[]>(() =>
-  queuedForTask.value ? [] : (vm.value?.grades ?? []).flatMap((g, index) => (g.verdict === 'fail' ? g.evidence.map((text) => ({ text, index, name: g.name })) : [])),
+  queuedForTask.value ? [] : (vm.value?.grades ?? []).flatMap((g) => (g.verdict === 'fail' ? g.quotes.map((text) => ({ text, index: g.index, name: g.name })) : [])),
 );
+const unsupportedAmounts = computed(() => data.value?.checks?.unsupported ?? []);
 
 const conversation = computed<(ToolItem | MessageItem)[]>(() => {
   const v = vm.value;
@@ -319,7 +350,7 @@ const conversation = computed<(ToolItem | MessageItem)[]>(() => {
       out.push(...toolsOf(turnId));
       agentIndex += 1;
     }
-    const paragraphs = segments(m.content, isAgent ? failedQuotes.value : []);
+    const paragraphs = segments(m.content, isAgent ? failedQuotes.value : [], isAgent ? unsupportedAmounts.value : []);
     out.push({
       kind: 'message',
       id: `m${i}`,
@@ -327,6 +358,7 @@ const conversation = computed<(ToolItem | MessageItem)[]>(() => {
       client: !isAgent,
       paragraphs,
       marked: paragraphs.some((p) => p.some((x) => x.quote)),
+      amounts: paragraphs.some((p) => p.some((x) => x.amount)),
     });
   });
   if (!transcript.length) out.push(...toolsOf(null));
@@ -342,7 +374,7 @@ const ending = computed(() => {
   if (conv?.ended_by === 'client') parts.push('The client ended the conversation after this reply.');
   else if (v.endState === 'step_limit') parts.push('The agent stopped at the step limit.');
   else if (v.endState === 'timeout') parts.push('The trial was stopped at its timeout.');
-  const off = (k: string) => applied[k] && (applied[k].value === false || applied[k].value === null);
+  const off = (k: string) => applied[k] && (applied[k].value === false || applied[k].value === null || toggleOf(applied[k].value) === false);
   if (off('memory') && off('skills')) parts.push('No memory was read or written and no skills were loaded: both are off in this config.');
   else if (applied.memory || applied.skills) {
     const tools = timelineRows(data.value?.spans ?? []).rows.filter((r) => r.role === 'tool').map((r) => text(r.span.attributes['gen_ai.tool.name']));
@@ -354,15 +386,21 @@ const ending = computed(() => {
 });
 
 const systemPrompt = computed(() => {
-  const config = vm.value?.config;
-  if (!config) return null;
-  const prompt = data.value?.prompts.find((p) => p.sha256 === config.prompt.sha256);
-  return { name: `${config.prompt.id} ${config.prompt.version}`, text: prompt?.text ?? null };
+  const ref = vm.value?.prompt;
+  if (!ref) return null;
+  const prompt = data.value?.prompts.find((p) => p.sha256 === ref.sha256);
+  return { name: `${ref.id} ${ref.version}`, text: prompt?.text ?? null };
 });
+
+/** A memory, skills or compression setting is `{enabled}`; anything else is not a toggle. */
+function toggleOf(value: unknown): boolean | null {
+  return typeof value === 'object' && value !== null && typeof (value as { enabled?: unknown }).enabled === 'boolean' ? (value as { enabled: boolean }).enabled : null;
+}
 
 const applied = computed(() =>
   Object.entries(vm.value?.result.applied_settings ?? {}).map(([k, s]) => {
-    const value = s.value === true ? 'On' : s.value === false ? 'Off' : s.value === null || s.value === undefined ? 'Not set' : text(s.value);
+    const toggle = toggleOf(s.value);
+    const value = s.value === true || toggle === true ? 'On' : s.value === false || toggle === false ? 'Off' : s.value === null || s.value === undefined ? 'Not sent' : text(s.value);
     const who = vm.value?.harness ? harnessShort(vm.value.harness) : 'Harness';
     const source =
       s.source === 'config' ? 'Config' : s.source === 'platform_default' ? 'Platform default' : s.source === 'harness_default' ? `${who} default` : s.source === 'unsupported' ? 'Not supported' : s.source;
@@ -374,22 +412,37 @@ const applied = computed(() =>
 
 const files = computed(() => {
   const all = vm.value?.files ?? [];
-  return { requests: all.filter((f) => f.startsWith('requests/')), other: all.filter((f) => !f.startsWith('requests/') && !f.startsWith('responses/')) };
+  // Model requests and responses: requests/ in older runs, artifacts/proxy/ since the API stores them.
+  const isCall = (f: string) => /^(requests|responses)\//.test(f) || /^artifacts\/proxy\//.test(f);
+  return { requests: all.filter(isCall), other: all.filter((f) => !isCall(f)) };
 });
 const fileUrl = (path: string) => api.trialFileUrl(props.trialId, path);
 
-const gradeKind = (g: Grade) => (g.kind === 'judge' ? `Judge, rubric ${g.grader_version}` : graderName(g.kind));
-const isJudge = (g: Grade) => g.kind === 'judge' || !!g.judge_model;
+const gradeKind = (g: GradeView) => (g.kind === 'judge' ? `Judge, rubric ${g.graderVersion}` : graderName(g.kind));
+const isJudge = (g: GradeView) => g.kind === 'judge' || !!g.judgeModel;
+const verdictWord = (g: GradeView) => (g.verdict === 'pass' ? 'Pass' : g.verdict === 'fail' ? 'Fail' : (g.rawVerdict ?? 'No verdict'));
+
+/** The number check in words: how many amounts trace to a source, and which do not. */
+const numberCheck = computed(() => {
+  const c = data.value?.checks;
+  if (!c) return null;
+  const ok = c.amounts.length - c.unsupported.length;
+  return {
+    summary: `${ok} of ${c.amounts.length} amounts in the answer come from a tool result or the client's own words.`,
+    unsupported: c.unsupported,
+    supported: c.amounts.filter((a) => a.supported),
+  };
+});
 
 /** Where your held-out label disagrees with the judge on this trial's check: shown only once the
  *  held-out set is labelled. */
-const disputeOf = (g: Grade) => (labelsDone.value ? (data.value?.judge?.disagreements.find((x) => x.trial_id === props.trialId && x.criterion === g.name) ?? null) : null);
+const disputeOf = (g: GradeView) => (labelsDone.value ? (data.value?.judge?.disagreements.find((x) => x.trial_id === props.trialId && x.criterion === g.name) ?? null) : null);
 const labelWord = (v: string) => (v === 'yes' ? 'Yes' : v === 'no' ? 'No' : 'Not sure');
 
 /** "Failed on" names each failed check, says which the judge graded, and which you dispute. */
 const failedOn = computed(() =>
   (vm.value?.grades ?? [])
-    .map((g, index) => ({ g, index }))
+    .map((g) => ({ g, index: g.index }))
     .filter(({ g }) => g.verdict === 'fail')
     .map(({ g, index }) => {
       const dispute = disputeOf(g);
@@ -410,7 +463,7 @@ const failures = computed(() => {
   const d = data.value;
   const e = d?.experiment;
   if (!d || !e) return { prev: null as string | null, next: null as string | null };
-  const order = (t: ExperimentTrial) => [e.tasks.findIndex((x) => x.sha256 === t.task), e.config_hashes.indexOf(t.config), t.repeat_index, t.attempt];
+  const order = (t: TrialRowSummary) => [e.tasks.findIndex((x) => x.sha256 === t.task_sha256), armIndexOf(t, e), t.repeat_index, t.attempt];
   const failed = d.siblings
     .filter((t) => t.passed === false)
     .sort((x, y) => {
@@ -446,6 +499,9 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             <a :href="href.experiments()">Experiments</a> /
             <template v-if="data.experiment">
               <a :href="href.compare(data.experiment.id)">{{ data.experiment.name }}</a> /
+            </template>
+            <template v-else-if="vm.probe && vm.configHash">
+              <a :href="href.configPage(vm.configHash)">{{ vm.configName ?? 'Config' }}</a> /
             </template>
             <template v-else>
               <a :href="href.recorded()">Recorded runs</a> /
@@ -598,6 +654,12 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                       data-test="quote-link"
                       @click.prevent="jumpToGrade(seg.quote.index)"
                     ><span class="visually-hidden">Quoted by the judge for {{ seg.quote.name }}: </span><mark>{{ seg.text }}</mark></a>
+                    <mark
+                      v-else-if="seg.amount"
+                      class="amount-mark"
+                      data-test="unsupported-amount"
+                      :title="'No tool result or client message gives this amount'"
+                    ><span class="visually-hidden">Amount with no source found: </span>{{ seg.text }}</mark>
                     <template v-else>
                       {{ seg.text }}
                     </template>
@@ -610,6 +672,13 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                 data-test="mark-key"
               >
                 Highlighted: text the judge quoted for a failed check.
+              </p>
+              <p
+                v-if="item.kind === 'message' && item.amounts"
+                class="mark-key"
+                data-test="amount-key"
+              >
+                <mark class="amount-mark">Underlined</mark>: amounts the number check found no source for, in any tool result or the client's own words.
               </p>
               <details
                 v-else-if="item.kind === 'tool'"
@@ -745,7 +814,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
           <div
             v-for="(g, gi) in vm.grades"
             :id="`grade-${gi}`"
-            :key="`${g.grader_id}-${g.run_index}`"
+            :key="`${g.graderId}-${g.runIndex}-${gi}`"
             class="grade"
             tabindex="-1"
             data-test="grade"
@@ -754,16 +823,18 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               <span class="strong">{{ g.name }}</span>
               <span
                 class="pill pill--small"
-                :class="g.verdict === 'pass' ? 'pill--pass' : 'pill--fail'"
+                :class="g.verdict === 'pass' ? 'pill--pass' : g.verdict === 'fail' ? 'pill--fail' : 'pill--outline'"
+                data-test="grade-verdict"
               ><AppIcon
+                v-if="g.verdict !== 'other'"
                 :name="g.verdict === 'pass' ? 'check' : 'cross'"
                 :size="12"
-              />{{ g.verdict === 'pass' ? 'Pass' : 'Fail' }}</span>
+              />{{ verdictWord(g) }}</span>
             </div>
             <span
               class="secondary smaller"
               data-test="grade-kind"
-            ><template v-if="g.judge_model">Judge <span class="mono">{{ g.judge_model }}</span>, rubric {{ g.grader_version }}</template><template v-else>{{ gradeKind(g) }}</template></span>
+            ><template v-if="g.judgeModel">Judge <span class="mono">{{ g.judgeModel }}</span>, rubric {{ g.graderVersion }}</template><template v-else>{{ gradeKind(g) }}</template><template v-if="g.score !== null && g.verdict === 'other'">, score {{ g.score }}</template></span>
             <p
               v-if="isJudge(g) && hiddenReasons"
               class="small hidden-reasons"
@@ -772,19 +843,21 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               {{ hiddenReasons }}
             </p>
             <template v-else>
+              <p
+                v-if="g.reason"
+                class="small"
+                data-test="grade-reason"
+              >
+                {{ g.reason }}
+              </p>
               <blockquote
-                v-for="(q, qi) in g.evidence"
+                v-for="(q, qi) in g.quotes"
                 :key="qi"
                 class="quote small"
+                data-test="grade-quote"
               >
                 “{{ q }}”
               </blockquote>
-              <p
-                v-if="g.rationale"
-                class="small"
-              >
-                {{ g.rationale }}
-              </p>
             </template>
             <p
               v-if="disputeOf(g)"
@@ -798,14 +871,73 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
           <p
             v-if="!vm.grades.length"
             class="secondary small"
+            data-test="not-graded"
           >
-            {{ isInfra ? 'Infra failures are not graded: they say nothing about the agent.' : 'No grades yet. Grading runs as its own step after the trial.' }}
+            {{ isInfra ? 'Infra failures are not graded: they say nothing about the agent.' : vm.probe ? 'A probe only renders the prompt; it is never graded.' : 'Not graded yet. Grading runs as its own step after the trial.' }}
           </p>
           <p
             v-else
             class="secondary smaller"
           >
             A task passes only when every check passes. The judge never sees the harness, the model or the arm.
+          </p>
+
+          <section
+            v-if="numberCheck"
+            aria-labelledby="numbers"
+            class="number-check"
+            data-test="number-check"
+          >
+            <h3
+              id="numbers"
+              class="sub-title"
+            >
+              Where the numbers come from
+            </h3>
+            <p class="small">
+              {{ numberCheck.summary }}
+            </p>
+            <ul
+              v-if="numberCheck.unsupported.length"
+              class="amounts small"
+              data-test="unsupported-list"
+            >
+              <li
+                v-for="a in numberCheck.unsupported"
+                :key="a.text"
+              >
+                <mark class="amount-mark mono">{{ a.text }}</mark> no source found
+              </li>
+            </ul>
+            <details
+              v-if="numberCheck.supported.length"
+              class="disclosure"
+            >
+              <summary><span class="summary-text small">Amounts with a source ({{ numberCheck.supported.length }})</span></summary>
+              <ul class="amounts small">
+                <li
+                  v-for="a in numberCheck.supported"
+                  :key="a.text"
+                >
+                  <span class="mono">{{ a.text }}</span> <span class="secondary">from {{ a.source ?? 'a tool result' }}</span>
+                </li>
+              </ul>
+            </details>
+          </section>
+          <p
+            v-else-if="vm.files.length && !isInfra && !vm.probe && data.any.kind === 'experiment'"
+            class="secondary smaller"
+            data-test="no-number-check"
+          >
+            No number check for this trial yet: it comes with grading (checks.json).
+          </p>
+          <p
+            v-if="vm.problems.length || vm.badFiles.length"
+            class="small problems"
+            role="note"
+            data-test="trial-problems"
+          >
+            <strong>The API flagged this trial:</strong> {{ [...vm.problems, ...vm.badFiles].join('; ') }}
           </p>
         </aside>
 
@@ -917,6 +1049,36 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 </template>
 
 <style scoped>
+/* An amount with no source: the highlight and a wavy underline, so it reads apart from a judge's
+   quote, and the words say what it means. */
+.amount-mark {
+  background: var(--mark);
+  color: var(--ink);
+  text-decoration: underline wavy;
+  text-decoration-color: var(--ink);
+  text-underline-offset: 3px;
+  padding: 0 2px;
+  border-radius: 3px;
+}
+
+.number-check {
+  border-top: 1px solid var(--rule);
+  padding-top: 12px;
+}
+
+.amounts {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.problems {
+  border-left: 3px solid var(--ink);
+  padding-left: 10px;
+}
+
 /* The story on the left; on the right the grading, then the settings and files under it. A
    phone reads grading, story, then settings: why it failed, what happened, how it was set up. */
 .split {

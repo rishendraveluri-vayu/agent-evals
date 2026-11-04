@@ -1,173 +1,336 @@
 {
   "exp_heldout": {
+    "experiment_id": "exp_heldout",
+    "status": "complete",
+    "reason": null,
+    "arms": [
+      {
+        "arm": "A",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "complete",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "done": 60,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      },
+      {
+        "arm": "B",
+        "config_hash": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
+        "status": "complete",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "done": 60,
+          "infra_failed": 2,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      }
+    ],
     "rows": [
       {
         "task": "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
+        "task_id": "distress-12",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 1,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
+        "task_id": "distress-12",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 5,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
+        "task_id": "debt-hardship-03",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
+        "task_id": "debt-hardship-03",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 5,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 1,
+        "abandoned": 0
       },
       {
         "task": "sha256:0898a95850884320814ab6ca5681f1d651b9bdf36f7082c949059805e9365f8f",
+        "task_id": "debt-regret-04",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:0898a95850884320814ab6ca5681f1d651b9bdf36f7082c949059805e9365f8f",
+        "task_id": "debt-regret-04",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:a972fb38006ca7dbb39d45f0d4dfa2c2385a2a903be1b2ee5086ae6df493bc56",
+        "task_id": "scam-otp-10",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 3,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:a972fb38006ca7dbb39d45f0d4dfa2c2385a2a903be1b2ee5086ae6df493bc56",
+        "task_id": "scam-otp-10",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:90278ef5926e8ea4be29333f28d1cb70b3074b97df447e0b5198e11d86107531",
+        "task_id": "afford-car-06",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 3,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:90278ef5926e8ea4be29333f28d1cb70b3074b97df447e0b5198e11d86107531",
+        "task_id": "afford-car-06",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:f489140e6f210f4520eab97162d598fb6cd5a51d3055ce51ae9bd80909d67957",
+        "task_id": "emi-prepay-02",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:f489140e6f210f4520eab97162d598fb6cd5a51d3055ce51ae9bd80909d67957",
+        "task_id": "emi-prepay-02",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 5,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:303b76c2b46a4df6f8bd97a11c59018632560d53021d1cabd90be7a2d5d212f8",
+        "task_id": "profile-gap-11",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:303b76c2b46a4df6f8bd97a11c59018632560d53021d1cabd90be7a2d5d212f8",
+        "task_id": "profile-gap-11",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:6cb22f66c177ae8a65105561ac06815d3a5d4d77a76dec261b1489da97d9ec04",
+        "task_id": "emi-basic-01",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 5,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:6cb22f66c177ae8a65105561ac06815d3a5d4d77a76dec261b1489da97d9ec04",
+        "task_id": "emi-basic-01",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 5,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
+        "task_id": "sip-goal-05",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
+        "task_id": "sip-goal-05",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15",
+        "task_id": "inflation-09",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15",
+        "task_id": "inflation-09",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:924c8f26ddd6933aa36a956ab55875ee3e106d751564c9f1cf4d9be98b6306ea",
+        "task_id": "payoff-order-08",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 3,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:924c8f26ddd6933aa36a956ab55875ee3e106d751564c9f1cf4d9be98b6306ea",
+        "task_id": "payoff-order-08",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
+        "task_id": "fd-vs-sip-07",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
+        "task_id": "fd-vs-sip-07",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 1,
+        "abandoned": 0
       }
     ],
     "stats": {
@@ -362,118 +525,241 @@
     }
   },
   "exp_discovery": {
+    "experiment_id": "exp_discovery",
+    "status": "complete",
+    "reason": null,
+    "arms": [
+      {
+        "arm": "A",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "complete",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "done": 40,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      },
+      {
+        "arm": "B",
+        "config_hash": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
+        "status": "complete",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "done": 40,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      }
+    ],
     "rows": [
       {
         "task": "sha256:59c93e4f9789961f4d3d8248319ef4246b87b9e2240b16621558915178bcb037",
+        "task_id": "loan-for-loan-14",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 3,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:59c93e4f9789961f4d3d8248319ef4246b87b9e2240b16621558915178bcb037",
+        "task_id": "loan-for-loan-14",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:55aecb3bae9801efa7989a9d840f6c688dce123d72c0e720f1e045b9290fa2a5",
+        "task_id": "sip-step-up-15",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:55aecb3bae9801efa7989a9d840f6c688dce123d72c0e720f1e045b9290fa2a5",
+        "task_id": "sip-step-up-15",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 3,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:29ff8880a50964a6bfd92a5cc89f871f0223828ee57d5d3b5ebef1e51ab79749",
+        "task_id": "emi-tenure-13",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:29ff8880a50964a6bfd92a5cc89f871f0223828ee57d5d3b5ebef1e51ab79749",
+        "task_id": "emi-tenure-13",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:f0e920310fa748380d2d3b3ecb138b5c31567759735b216d9b4147e86a9a7218",
+        "task_id": "gold-loan-16",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 1,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:f0e920310fa748380d2d3b3ecb138b5c31567759735b216d9b4147e86a9a7218",
+        "task_id": "gold-loan-16",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:a280f8085273dba4babbd42f9255a7a12450dfcefc30f74880463bd03379a23b",
+        "task_id": "card-minimum-17",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 3,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:a280f8085273dba4babbd42f9255a7a12450dfcefc30f74880463bd03379a23b",
+        "task_id": "card-minimum-17",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:d9bada81ecbae09a09d6109c81fe452e04f0e70def4af2020803d11d7943c3bb",
+        "task_id": "home-loan-tax-18",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:d9bada81ecbae09a09d6109c81fe452e04f0e70def4af2020803d11d7943c3bb",
+        "task_id": "home-loan-tax-18",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:53c3cfcfd9f97c6b2f85fa1b12c4413b930d8cd7f4feebe889abe31bdfe2c517",
+        "task_id": "ppf-vs-elss-19",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 5,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:53c3cfcfd9f97c6b2f85fa1b12c4413b930d8cd7f4feebe889abe31bdfe2c517",
+        "task_id": "ppf-vs-elss-19",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 5,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:8124f96f1f634931209dee1f008e440fbbd358c5a89b9f013876e98422e2bef0",
+        "task_id": "budget-split-20",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:8124f96f1f634931209dee1f008e440fbbd358c5a89b9f013876e98422e2bef0",
+        "task_id": "budget-split-20",
+        "arm": "B",
         "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
         "passed": 3,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       }
     ],
     "stats": {
@@ -585,146 +871,289 @@
     }
   },
   "exp_aa": {
+    "experiment_id": "exp_aa",
+    "status": "complete",
+    "reason": null,
+    "arms": [
+      {
+        "arm": "A",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "complete",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "done": 50,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      },
+      {
+        "arm": "B",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "complete",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "done": 50,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      }
+    ],
     "rows": [
       {
         "task": "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
+        "task_id": "distress-12",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 1,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
+        "task_id": "distress-12",
+        "arm": "B",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
+        "task_id": "debt-hardship-03",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
+        "task_id": "debt-hardship-03",
+        "arm": "B",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:0898a95850884320814ab6ca5681f1d651b9bdf36f7082c949059805e9365f8f",
+        "task_id": "debt-regret-04",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:0898a95850884320814ab6ca5681f1d651b9bdf36f7082c949059805e9365f8f",
+        "task_id": "debt-regret-04",
+        "arm": "B",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 1,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:a972fb38006ca7dbb39d45f0d4dfa2c2385a2a903be1b2ee5086ae6df493bc56",
+        "task_id": "scam-otp-10",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 3,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:a972fb38006ca7dbb39d45f0d4dfa2c2385a2a903be1b2ee5086ae6df493bc56",
+        "task_id": "scam-otp-10",
+        "arm": "B",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 3,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:90278ef5926e8ea4be29333f28d1cb70b3074b97df447e0b5198e11d86107531",
+        "task_id": "afford-car-06",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 3,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:90278ef5926e8ea4be29333f28d1cb70b3074b97df447e0b5198e11d86107531",
+        "task_id": "afford-car-06",
+        "arm": "B",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:f489140e6f210f4520eab97162d598fb6cd5a51d3055ce51ae9bd80909d67957",
+        "task_id": "emi-prepay-02",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:f489140e6f210f4520eab97162d598fb6cd5a51d3055ce51ae9bd80909d67957",
+        "task_id": "emi-prepay-02",
+        "arm": "B",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:303b76c2b46a4df6f8bd97a11c59018632560d53021d1cabd90be7a2d5d212f8",
+        "task_id": "profile-gap-11",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:303b76c2b46a4df6f8bd97a11c59018632560d53021d1cabd90be7a2d5d212f8",
+        "task_id": "profile-gap-11",
+        "arm": "B",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:6cb22f66c177ae8a65105561ac06815d3a5d4d77a76dec261b1489da97d9ec04",
+        "task_id": "emi-basic-01",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 5,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:6cb22f66c177ae8a65105561ac06815d3a5d4d77a76dec261b1489da97d9ec04",
+        "task_id": "emi-basic-01",
+        "arm": "B",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 5,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
+        "task_id": "sip-goal-05",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
+        "task_id": "sip-goal-05",
+        "arm": "B",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15",
+        "task_id": "inflation-09",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15",
+        "task_id": "inflation-09",
+        "arm": "B",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       }
     ],
     "stats": {
@@ -847,237 +1276,269 @@
     }
   },
   "exp_pilot": {
+    "experiment_id": "exp_pilot",
+    "status": "complete",
+    "reason": null,
+    "arms": [
+      {
+        "arm": "A",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "complete",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "done": 40,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      }
+    ],
     "rows": [
       {
         "task": "sha256:59c93e4f9789961f4d3d8248319ef4246b87b9e2240b16621558915178bcb037",
+        "task_id": "loan-for-loan-14",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 3,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:55aecb3bae9801efa7989a9d840f6c688dce123d72c0e720f1e045b9290fa2a5",
+        "task_id": "sip-step-up-15",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:29ff8880a50964a6bfd92a5cc89f871f0223828ee57d5d3b5ebef1e51ab79749",
+        "task_id": "emi-tenure-13",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 4,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:f0e920310fa748380d2d3b3ecb138b5c31567759735b216d9b4147e86a9a7218",
+        "task_id": "gold-loan-16",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 1,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:a280f8085273dba4babbd42f9255a7a12450dfcefc30f74880463bd03379a23b",
+        "task_id": "card-minimum-17",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 3,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:d9bada81ecbae09a09d6109c81fe452e04f0e70def4af2020803d11d7943c3bb",
+        "task_id": "home-loan-tax-18",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:53c3cfcfd9f97c6b2f85fa1b12c4413b930d8cd7f4feebe889abe31bdfe2c517",
+        "task_id": "ppf-vs-elss-19",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 5,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       },
       {
         "task": "sha256:8124f96f1f634931209dee1f008e440fbbd358c5a89b9f013876e98422e2bef0",
+        "task_id": "budget-split-20",
+        "arm": "A",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
         "passed": 2,
         "graded": 5,
-        "trials": 5
+        "trials": 5,
+        "infra_failed": 0,
+        "abandoned": 0
       }
     ],
     "stats": null
   },
   "exp_harness": {
-    "rows": [
+    "experiment_id": "exp_harness",
+    "status": "incomplete",
+    "reason": "arm A has 29 trials queued or running; arm B has 31 trials queued or running",
+    "arms": [
       {
-        "task": "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 1,
-        "graded": 3,
-        "trials": 3
+        "arm": "A",
+        "config_hash": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
+        "config_name": "Own loop, prompt v1",
+        "status": "active",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 27,
+          "running": 2,
+          "done": 31,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
       },
       {
-        "task": "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 2,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 1,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 2,
-        "graded": 2,
-        "trials": 2
-      },
-      {
-        "task": "sha256:0898a95850884320814ab6ca5681f1d651b9bdf36f7082c949059805e9365f8f",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 1,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:0898a95850884320814ab6ca5681f1d651b9bdf36f7082c949059805e9365f8f",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 2,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:a972fb38006ca7dbb39d45f0d4dfa2c2385a2a903be1b2ee5086ae6df493bc56",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 2,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:a972fb38006ca7dbb39d45f0d4dfa2c2385a2a903be1b2ee5086ae6df493bc56",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 3,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:90278ef5926e8ea4be29333f28d1cb70b3074b97df447e0b5198e11d86107531",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 1,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:90278ef5926e8ea4be29333f28d1cb70b3074b97df447e0b5198e11d86107531",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 3,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:f489140e6f210f4520eab97162d598fb6cd5a51d3055ce51ae9bd80909d67957",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 2,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:f489140e6f210f4520eab97162d598fb6cd5a51d3055ce51ae9bd80909d67957",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 3,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:303b76c2b46a4df6f8bd97a11c59018632560d53021d1cabd90be7a2d5d212f8",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 2,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:303b76c2b46a4df6f8bd97a11c59018632560d53021d1cabd90be7a2d5d212f8",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 2,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:6cb22f66c177ae8a65105561ac06815d3a5d4d77a76dec261b1489da97d9ec04",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 2,
-        "graded": 2,
-        "trials": 2
-      },
-      {
-        "task": "sha256:6cb22f66c177ae8a65105561ac06815d3a5d4d77a76dec261b1489da97d9ec04",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 2,
-        "graded": 2,
-        "trials": 2
-      },
-      {
-        "task": "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 2,
-        "graded": 2,
-        "trials": 2
-      },
-      {
-        "task": "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 2,
-        "graded": 2,
-        "trials": 2
-      },
-      {
-        "task": "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 1,
-        "graded": 2,
-        "trials": 2
-      },
-      {
-        "task": "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 2,
-        "graded": 2,
-        "trials": 2
-      },
-      {
-        "task": "sha256:924c8f26ddd6933aa36a956ab55875ee3e106d751564c9f1cf4d9be98b6306ea",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 1,
-        "graded": 2,
-        "trials": 2
-      },
-      {
-        "task": "sha256:924c8f26ddd6933aa36a956ab55875ee3e106d751564c9f1cf4d9be98b6306ea",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 1,
-        "graded": 2,
-        "trials": 2
-      },
-      {
-        "task": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 2,
-        "graded": 2,
-        "trials": 2
-      },
-      {
-        "task": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 1,
-        "graded": 1,
-        "trials": 1
+        "arm": "B",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "active",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 29,
+          "running": 2,
+          "done": 29,
+          "infra_failed": 2,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
       }
     ],
+    "rows": [],
+    "stats": null
+  },
+  "exp_model": {
+    "experiment_id": "exp_model",
+    "status": "incomplete",
+    "reason": "arm B is paused: trial tm_sip-step-up-15_b_2 (sip-step-up-15 on Prompt v1 on Hermes, Gemini Flash, attempt 1): infra:config_error (LiteLLM status 404): litellm.NotFoundError: model 'gemini-3.8-flash' is not served by this proxy",
+    "arms": [
+      {
+        "arm": "A",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "active",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 5,
+          "running": 2,
+          "done": 5,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      },
+      {
+        "arm": "B",
+        "config_hash": "sha256:c58e2d17c3b413b9ebcb277b97c0bb05868fad56b847b86f7a6e5ab1c005cc80",
+        "config_name": "Prompt v1 on Hermes, Gemini Flash",
+        "status": "paused",
+        "paused_at": "2026-11-05T14:01:00.000Z",
+        "paused_reason": "trial tm_sip-step-up-15_b_2 (sip-step-up-15 on Prompt v1 on Hermes, Gemini Flash, attempt 1): infra:config_error (LiteLLM status 404): litellm.NotFoundError: model 'gemini-3.8-flash' is not served by this proxy",
+        "fix": "The provider does not know the model: fix the model's route in LiteLLM's config, then POST /experiments/:id/arms/:config_hash/resume to continue this arm; if the config names the wrong model, fork it with the right one and run a new experiment.",
+        "counts": {
+          "queued": 10,
+          "running": 0,
+          "done": 1,
+          "infra_failed": 1,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      }
+    ],
+    "rows": [],
+    "stats": null
+  },
+  "exp_futility": {
+    "experiment_id": "exp_futility",
+    "status": "incomplete",
+    "reason": "the experiment is paused: futility check (D32): arm B passed 0 of its first 3 finished trials, fewer than the 1 the rule asks for (passed means label agent and end state answered until graders exist (SP4)). Review those trials, then resume or stop; the check runs once per arm and never compares the arms",
+    "arms": [
+      {
+        "arm": "A",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "active",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 17,
+          "running": 0,
+          "done": 3,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      },
+      {
+        "arm": "B",
+        "config_hash": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
+        "status": "active",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 17,
+          "running": 0,
+          "done": 3,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      }
+    ],
+    "rows": [],
     "stats": null
   }
 }

@@ -2,12 +2,12 @@
 import { computed } from 'vue';
 import { api } from '../api/client';
 import { isFixtureMode } from '../api/mode';
-import type { BlindItem, Compare, CompareRow, ExperimentDetail, ExperimentTrial, Interval, JudgeAgreement, TaskInfo } from '../api/types';
+import type { BlindItem, Compare, CompareRow, ExperimentDetail, TrialRowSummary, Interval, JudgeAgreement, TaskView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { agreementWords, armsOf, differingShort, excludesZero, intervalText, judgeCaveat, methodName, NBSP, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
+import { agreementWords, armIndexOf, armLetter, armsOf, differingShort, excludesZero, intervalText, judgeCaveat, methodName, NBSP, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { identParts, money, percent, plural, seconds, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
 import { alsoGradedBy, gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
@@ -20,7 +20,7 @@ const fixtures = isFixtureMode();
 interface Loaded {
   detail: ExperimentDetail;
   compare: Compare;
-  trials: ExperimentTrial[];
+  trials: TrialRowSummary[];
   judge: JudgeAgreement | null;
   /** Held-out items still to label: while any remain, the judge's agreement is provisional. */
   queue: BlindItem[];
@@ -30,7 +30,7 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
   const [detail, compare, trials, judge, queue] = await Promise.all([
     api.experiment(props.experimentId),
     api.compare(props.experimentId),
-    optional(api.experimentTrials(props.experimentId), [] as ExperimentTrial[]),
+    optional(api.experimentTrials(props.experimentId), [] as TrialRowSummary[]),
     optional(api.judgeAgreement('heldout'), null),
     optional(api.labelQueue('heldout'), [] as BlindItem[]),
   ]);
@@ -39,16 +39,25 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
 
 const arms = computed(() => (data.value ? armsOf(data.value.detail, data.value.detail.configs) : []));
 const stats = computed(() => data.value?.compare.stats ?? null);
-const taskOf = (key: string): TaskInfo | undefined => data.value?.detail.tasks.find((t) => t.sha256 === key || t.id === key);
+const taskOf = (key: string): TaskView | undefined => data.value?.detail.tasks.find((t) => t.sha256 === key || t.id === key);
 const taskName = (key: string) => taskOf(key)?.id ?? key.replace(/^sha256:/, '').slice(0, 12);
 
+/** A task's row for an arm, by the arm's letter, so an A/A run (one hash twice) keeps its arms apart. */
 function cell(task: string, arm: 0 | 1): CompareRow | undefined {
-  const hash = data.value?.detail.config_hashes[arm];
-  const rows = data.value?.compare.rows.filter((r) => r.task === task && r.config === hash) ?? [];
-  // An A/A run has the same hash twice: the rows come in arm order.
-  if (data.value && data.value.detail.config_hashes[0] === data.value.detail.config_hashes[1]) return rows[arm];
-  return rows[0];
+  const letter = arm === 0 ? 'A' : 'B';
+  return data.value?.compare.rows.find((r) => r.task === task && r.arm === letter);
 }
+
+/** D37: no comparison until every arm is complete; the API says why, and how each arm stands. */
+const incomplete = computed(() => (data.value?.compare.status === 'incomplete' ? (data.value.compare.reason ?? 'not every arm is complete yet') : null));
+const armProgress = computed(() =>
+  (data.value?.compare.arms ?? []).map((a) => {
+    const c = a.counts;
+    const total = c.queued + c.running + c.done + c.infra_failed + c.abandoned + c.cancelled;
+    const words: Record<string, string> = { not_started: 'not started', active: 'running', paused: 'paused', stopped: 'stopped', complete: 'complete' };
+    return { key: a.arm.toLowerCase(), letter: a.arm, name: a.config_name, status: words[a.status] ?? a.status, done: c.done, total, reason: a.status === 'paused' ? a.paused_reason : null };
+  }),
+);
 
 const totals = computed(() => {
   const d = data.value;
@@ -82,18 +91,16 @@ const infraCount = computed(() => {
 
 /** Which arm a trial ran in. An A/A run has one hash twice: its second arm's repeats come after
  *  the first arm's. */
-function armOfTrial(t: ExperimentTrial): ArmKey {
+function armOfTrial(t: TrialRowSummary): ArmKey {
   const d = data.value;
   if (!d) return 'a';
-  const [ha, hb] = d.detail.config_hashes;
-  if (ha === hb) return t.repeat_index >= d.detail.n ? 'b' : 'a';
-  return t.config === hb ? 'b' : 'a';
+  return armLetter(armIndexOf(t, d.detail)).toLowerCase();
 }
 
 /** The attempt that re-ran an infra-stopped trial: same task, config and repeat, one attempt on. */
-function rerunWords(t: ExperimentTrial): string {
+function rerunWords(t: TrialRowSummary): string {
   if (t.status === 'abandoned') return 'gave up, not re-run';
-  const next = data.value?.trials.find((x) => x.task === t.task && x.config === t.config && x.repeat_index === t.repeat_index && x.attempt === t.attempt + 1);
+  const next = data.value?.trials.find((x) => x.task_sha256 === t.task_sha256 && x.config_hash === t.config_hash && x.repeat_index === t.repeat_index && x.attempt === t.attempt + 1);
   if (!next || next.status === 'queued' || next.status === 'claimed' || next.status === 'running') return 'not re-run yet';
   if (next.status === 'infra_failed' || next.status === 'abandoned') return 're-run also an infra failure';
   if (next.passed === true) return 're-run passed';
@@ -104,7 +111,7 @@ function rerunWords(t: ExperimentTrial): string {
 const infraRows = computed(() =>
   infraTrials.value.map((t) => {
     const reason = infraReason(t.label);
-    return { trial: t, arm: armOfTrial(t), task: taskName(t.task), cause: `infra failure${reason ? `: ${reason}` : ''}`, rerun: rerunWords(t) };
+    return { trial: t, arm: armOfTrial(t), task: taskName(t.task_sha256), cause: `infra failure${reason ? `: ${reason}` : ''}`, rerun: rerunWords(t) };
   }),
 );
 
@@ -255,13 +262,11 @@ const metrics = computed<Metric[]>(() => {
     return out;
   }
   // Until the statistics step reports costs, show the arm means from the trials, with their N.
-  const [ha, hb] = d.detail.config_hashes;
   const done = d.trials.filter((x) => x.status === 'done');
-  const byArm = (h: string) => done.filter((x) => x.config === h);
-  const ta = byArm(ha);
-  const tb = ha === hb ? [] : byArm(hb);
+  const ta = done.filter((x) => armIndexOf(x, d.detail) === 0);
+  const tb = done.filter((x) => armIndexOf(x, d.detail) === 1);
   const n = `N = ${ta.length} and ${tb.length} trials; no interval yet`;
-  const pairs: [string, (x: ExperimentTrial) => number | null | undefined, 'mean' | 'median', (v: number) => string, (v: number) => string][] = [
+  const pairs: [string, (x: TrialRowSummary) => number | null | undefined, 'mean' | 'median', (v: number) => string, (v: number) => string][] = [
     ['Cost per trial', (x) => x.cost_usd, 'mean', money, signedMoney],
     ['Time per trial, median', (x) => x.wall_s, 'median', (v) => seconds(v), (v) => `${signed(v, 1)} s`],
     ['Tokens per trial', (x) => (x.input_tokens ?? 0) + (x.output_tokens ?? 0) || null, 'mean', thousands, (v) => signed(v)],
@@ -293,11 +298,11 @@ interface TaskRow {
   linkTitle: string;
 }
 
-function failedTrial(task: string, prefer: 0 | 1): ExperimentTrial | undefined {
+function failedTrial(task: string, prefer: 0 | 1): TrialRowSummary | undefined {
   const d = data.value;
   if (!d) return undefined;
-  const of = (arm: 0 | 1) => d.trials.find((t) => t.task === task && t.config === d.detail.config_hashes[arm] && t.passed === false);
-  return of(prefer) ?? of(prefer === 1 ? 0 : 1) ?? d.trials.find((t) => t.task === task && t.status === 'done');
+  const of = (arm: 0 | 1) => d.trials.find((t) => t.task_sha256 === task && armIndexOf(t, d.detail) === arm && t.passed === false);
+  return of(prefer) ?? of(prefer === 1 ? 0 : 1) ?? d.trials.find((t) => t.task_sha256 === task && t.status === 'done');
 }
 
 const taskRows = computed<TaskRow[]>(() => {
@@ -418,11 +423,11 @@ const axisCaption = computed(() => {
 /** The failed trial to open for a task: arm B first, then arm A, skipping any trial whose judge
  *  verdict your held-out label disputes, since that failure may not be the agent's. When every
  *  failure is disputed, the disputed one is still offered, and the button says so. */
-function lookTrial(task: string): { trial: ExperimentTrial; disputed: boolean } | null {
+function lookTrial(task: string): { trial: TrialRowSummary; disputed: boolean } | null {
   const d = data.value;
   if (!d) return null;
   const disputed = new Set((d.judge?.disagreements ?? []).map((x) => x.trial_id).filter((id): id is string => !!id));
-  const failedIn = (arm: 0 | 1) => d.trials.filter((t) => t.task === task && t.config === d.detail.config_hashes[arm] && t.passed === false);
+  const failedIn = (arm: 0 | 1) => d.trials.filter((t) => t.task_sha256 === task && armIndexOf(t, d.detail) === arm && t.passed === false);
   const failed = [...failedIn(1), ...failedIn(0)];
   const clean = failed.find((t) => !disputed.has(t.id));
   if (clean) return { trial: clean, disputed: false };
@@ -517,7 +522,7 @@ const worthALook = computed(() => {
         <div class="actions">
           <div class="action-buttons">
             <a
-              v-if="data.detail.status === 'running' || data.detail.status === 'created'"
+              v-if="data.detail.status === 'running' || data.detail.status === 'created' || data.detail.status === 'paused'"
               :href="href.run(data.detail.id)"
               class="btn btn--quiet"
             >See the run</a>
@@ -595,6 +600,36 @@ const worthALook = computed(() => {
                 class="mono"
               >{{ part.text }}</span><template v-else>{{ part.text }}</template></template><a :href="href.judge()">{{ caveat.link }}</a>{{ caveat.after }}</span>
             </p>
+          </template>
+          <template v-else-if="incomplete">
+            <h2
+              id="verdict"
+              class="verdict-title"
+              data-test="verdict-title"
+            >
+              No comparison until every arm is complete
+            </h2>
+            <p
+              class="verdict-text"
+              data-test="incomplete-reason"
+            >
+              {{ incomplete.charAt(0).toUpperCase() + incomplete.slice(1) }}. A verdict needs the full planned N, so no pass counts are shown off a partial run.
+            </p>
+            <ul
+              class="arm-progress small"
+              data-test="arm-progress"
+            >
+              <li
+                v-for="a in armProgress"
+                :key="a.letter"
+              >
+                <span class="arm"><span :class="`dot dot--${a.key}`" /><span><strong>{{ a.letter }}</strong>: {{ a.name }}, {{ a.status }}, <span class="num">{{ a.done }} of {{ a.total }}</span> done</span></span>
+              </li>
+            </ul>
+            <a
+              :href="href.run(data.detail.id)"
+              class="btn btn--quiet incomplete-link"
+            >Open the run</a>
           </template>
           <template v-else>
             <h2
@@ -918,6 +953,18 @@ const worthALook = computed(() => {
 </template>
 
 <style scoped>
+.arm-progress {
+  list-style: none;
+  margin: 4px 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.incomplete-link {
+  align-self: flex-start;
+}
+
 .arms-line {
   display: flex;
   flex-wrap: wrap;

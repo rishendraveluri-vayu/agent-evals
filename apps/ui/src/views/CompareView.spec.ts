@@ -210,22 +210,50 @@ describe('CompareView in fixture mode', () => {
     for (const t of tiles) expect(t.findAll('.rail')).toHaveLength(2);
   });
 
-  it('says there is no verdict yet when the statistics have not reported', async () => {
+  it('shows no comparison while an arm is still running, and says why (D37)', async () => {
     const w = mount(CompareView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    expect(w.get('[data-test="verdict-title"]').text()).toBe('No comparison until every arm is complete');
+    expect(w.get('[data-test="incomplete-reason"]').text()).toBe(
+      'Arm A has 29 trials queued or running; arm B has 31 trials queued or running. A verdict needs the full planned N, so no pass counts are shown off a partial run.',
+    );
+    const arms = w.findAll('[data-test="arm-progress"] li').map((li) => li.text());
+    expect(arms).toEqual(['A: Own loop, prompt v1, running, 31 of 60 done', 'B: Prompt v1 on Hermes, running, 29 of 62 done']);
+    expect(w.text()).not.toContain('graded trials');
+  });
+
+  it('names the paused arm as the reason there is no comparison', async () => {
+    const w = mount(CompareView, { props: { experimentId: 'exp_model' } });
+    await settle();
+    expect(w.get('[data-test="incomplete-reason"]').text()).toContain('Arm B is paused: trial tm_');
+    expect(w.findAll('[data-test="arm-progress"] li')[1].text()).toContain('paused');
+  });
+});
+
+describe('CompareView against the API: no statistics yet', () => {
+  it('says there is no verdict yet when every arm is complete but the statistics have not reported', async () => {
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     expect(w.get('[data-test="verdict-title"]').text()).toBe('No verdict yet');
     expect(w.text()).toContain('graded trials');
     expect(w.findAll('[data-test="forest-row"]')).toHaveLength(12);
-    expect(w.text()).toContain('No interval yet');
+    expect(w.text()).toContain('no interval');
   });
 });
 
 describe('CompareView against the API: blind labelling', () => {
-  type Trial = { id: string; task: string; config: string; passed: boolean | null };
+  type Trial = { id: string; task_sha256: string; config_hash: string; passed: boolean | null };
   const trials = (experimentTrials as unknown as Record<string, Trial[]>).exp_heldout;
   const fd = (details as unknown as { exp_heldout: { tasks: { id: string; sha256: string }[] } }).exp_heldout.tasks.find((t) => t.id === 'fd-vs-sip-07')?.sha256;
   // Every failure of fd-vs-sip-07 is one your label disputes, so the callout can only offer a disputed one.
-  const disputedAll = { ...judge, disagreements: trials.filter((t) => t.task === fd && t.passed === false).map((t) => ({ ...judge.disagreements[2], trial_id: t.id })) };
+  const disputedAll = { ...judge, disagreements: trials.filter((t) => t.task_sha256 === fd && t.passed === false).map((t) => ({ ...judge.disagreements[2], trial_id: t.id })) };
   const routes = (labelQueue: unknown) => ({
     '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
     '/api/experiments/exp_heldout/compare': compares.exp_heldout,

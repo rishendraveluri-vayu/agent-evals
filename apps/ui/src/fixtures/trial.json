@@ -1,13 +1,49 @@
 {
   "id": "tr_fd-vs-sip-07_b_3",
   "experiment_id": "exp_heldout",
-  "task": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
-  "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+  "probe": false,
+  "task": {
+    "sha256": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
+    "id": "fd-vs-sip-07",
+    "version": "1",
+    "split": "held_out",
+    "kind": "single_prompt",
+    "summary": "FD or SIP for a 5-year goal, accounting for tax on FD interest."
+  },
+  "config": {
+    "hash": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+    "name": "Prompt v2 on Hermes",
+    "harness": "hermes",
+    "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+    "model": "claude-haiku-5-5",
+    "prompt": {
+      "id": "finance-advisor",
+      "version": "v2",
+      "sha256": "sha256:9d24e7b554d4851c607372a4e0932b47fdcd031f434c8103e523dc944ec676ec"
+    },
+    "toolset": {
+      "id": "finance",
+      "version": "all",
+      "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
+    }
+  },
   "repeat_index": 2,
   "attempt": 1,
   "status": "done",
   "label": "agent",
   "end_state": "answered",
+  "spec": {
+    "contract_version": "2",
+    "trial": {
+      "id": "tr_fd-vs-sip-07_b_3",
+      "experiment_id": "exp_heldout",
+      "task_id": "fd-vs-sip-07",
+      "task_split": "held_out"
+    },
+    "model": {
+      "name": "claude-haiku-5-5"
+    }
+  },
   "result": {
     "contract_version": "2",
     "trial_id": "tr_fd-vs-sip-07_b_3",
@@ -43,8 +79,9 @@
     },
     "applied_settings": {
       "temperature": {
-        "value": 0.2,
-        "source": "config"
+        "value": null,
+        "source": "harness_default",
+        "observed": "not sent: Claude Haiku 5.5 rejects temperature"
       },
       "max_output_tokens": {
         "value": 1024,
@@ -63,21 +100,27 @@
         "source": "config"
       },
       "memory": {
-        "value": false,
+        "value": {
+          "enabled": false
+        },
         "source": "config"
       },
       "skills": {
-        "value": false,
+        "value": {
+          "enabled": false
+        },
         "source": "config"
       },
       "compression": {
-        "value": false,
+        "value": {
+          "enabled": false
+        },
         "source": "config",
         "observed": "Hermes default is on"
       },
       "prompt_cache_markers": {
-        "value": true,
-        "source": "harness_default"
+        "value": false,
+        "source": "config"
       }
     },
     "harness_usage": {
@@ -108,55 +151,74 @@
     "end_state": "answered"
   },
   "usage": {
-    "calls": 3,
+    "model_calls": 3,
     "input_tokens": 16910,
     "output_tokens": 2330,
     "cost_usd": 0.18,
-    "complete": true,
-    "sim_calls": 1
+    "sim_cost_usd": 0.021,
+    "complete": true
   },
   "timing": {
+    "created_at": "2026-11-05T11:23:00.000Z",
+    "claimed_at": "2026-11-05T12:02:00.000Z",
+    "heartbeat_at": "2026-11-05T11:31:32Z",
+    "finished_at": "2026-11-05T12:03:00.000Z",
     "started_at": "2026-11-05T11:31:12Z",
     "ended_at": "2026-11-05T11:31:36.600Z",
     "wall_s": 24.6
   },
+  "worker_id": "hermes-a96c5255c8e5",
   "files": [
     {
+      "ok": true,
       "path": "result.json",
       "bytes": 4210,
       "sha256": "sha256:68435aeffecbd07fc51f36bece6cc67bef40cd6d97479157a9f8a2211abc28a0"
     },
     {
+      "ok": true,
       "path": "trace.jsonl",
       "bytes": 9832,
       "sha256": "sha256:958292fdd571590ed2cde766ba5f663eb2350abd1eb241c725344d6ee7abf163"
     },
     {
+      "ok": true,
+      "path": "checks.json",
+      "bytes": 1320,
+      "sha256": "sha256:5c99a1e945ab8951da8141cc0a9ddb15f32392070bc0d0956296b23a81e0c1a9"
+    },
+    {
+      "ok": true,
       "path": "requests/001.json",
       "bytes": 18220,
       "sha256": "sha256:2265acdbd1484e77a5aad88e0ded0dbdfda4a9d9aab9a5f4f68d2de28936e5b7"
     },
     {
+      "ok": true,
       "path": "requests/002.json",
       "bytes": 19034,
       "sha256": "sha256:b64c980698880f902599e2480ca3729524baab11c5414de50520b678cdc91821"
     },
     {
+      "ok": true,
       "path": "requests/003.json",
       "bytes": 21140,
       "sha256": "sha256:2cab5aaed8e074a144fa81b60f2003ea55945e91f691bc3893852c84e174a1a1"
     },
     {
+      "ok": true,
       "path": "requests/004.json",
       "bytes": 6120,
       "sha256": "sha256:d0a94b2732b0bec19d1f423eeec56e288f47aba0591ba489ba6bce0810feadc7"
     },
     {
+      "ok": true,
       "path": "stdout.log",
       "bytes": 2210,
       "sha256": "sha256:9ce732e90e44ea11e0169d7bdfa724461d1b69f10244f1f2bc81904cd0c168f3"
     },
     {
+      "ok": true,
       "path": "stderr.log",
       "bytes": 14820,
       "sha256": "sha256:ababb33613e4d87dee5a02d93b30f4ac3d1e04fc99030721050324365b8bdc02"
@@ -164,44 +226,57 @@
   ],
   "grades": [
     {
+      "id": 101,
       "grader_id": "amounts-from-tools",
       "grader_version": "1",
       "kind": "unit",
-      "name": "Every amount comes from a tool",
       "verdict": "pass",
       "score": 1,
-      "evidence": [],
-      "rationale": "All 3 amounts in the reply match a tool result exactly.",
       "judge_model": null,
-      "run_index": 0
+      "run_index": 0,
+      "created_at": "2026-11-05T12:10:00.000Z",
+      "evidence": {
+        "name": "Every amount comes from a tool",
+        "reason": "All 3 amounts in the reply match a tool result exactly.",
+        "quotes": []
+      }
     },
     {
+      "id": 102,
       "grader_id": "fd-tax",
       "grader_version": "v3",
       "kind": "judge",
-      "name": "Accounts for tax on FD interest",
       "verdict": "fail",
       "score": 0,
-      "evidence": [
-        "an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870"
-      ],
-      "rationale": "The profile shows a 30% slab, but the comparison uses the pre-tax FD amount. After tax the FD gives about ₹6,47,600, which changes the comparison.",
       "judge_model": "claude-haiku-5-5",
-      "run_index": 0
+      "run_index": 0,
+      "created_at": "2026-11-05T12:10:00.000Z",
+      "evidence": {
+        "name": "Accounts for tax on FD interest",
+        "reason": "The profile shows a 30% slab, but the comparison uses the pre-tax FD amount. After tax the FD gives about ₹6,47,600, which changes the comparison.",
+        "quotes": [
+          "an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870"
+        ]
+      }
     },
     {
+      "id": 103,
       "grader_id": "horizon",
       "grader_version": "v3",
       "kind": "judge",
-      "name": "Respects the five-year horizon",
       "verdict": "pass",
       "score": 1,
-      "evidence": [
-        "Since you'll need this in about five years for a flat"
-      ],
-      "rationale": "The recommendation is built around the stated deadline.",
       "judge_model": "claude-haiku-5-5",
-      "run_index": 0
+      "run_index": 0,
+      "created_at": "2026-11-05T12:10:00.000Z",
+      "evidence": {
+        "name": "Respects the five-year horizon",
+        "reason": "The recommendation is built around the stated deadline.",
+        "quotes": [
+          "Since you'll need this in about five years for a flat"
+        ]
+      }
     }
-  ]
+  ],
+  "problems": []
 }

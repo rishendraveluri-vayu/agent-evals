@@ -1,32 +1,40 @@
 [
   {
-    "hash": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
-    "name": "Prompt v2 on Hermes",
+    "hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+    "name": "Prompt v1 on Hermes",
     "harness": "hermes",
     "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+    "adapter_version": "0.1.0",
+    "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2",
     "model": "claude-haiku-5-5",
     "prompt": {
       "id": "finance-advisor",
-      "version": "v2",
-      "sha256": "sha256:9d24e7b554d4851c607372a4e0932b47fdcd031f434c8103e523dc944ec676ec"
+      "version": "v1",
+      "sha256": "sha256:5c0f1a2ffbc17241e93f559be30cee2078075d56f42c791e6c8500939721de37"
     },
     "toolset": {
-      "id": "finance/all",
-      "version": "1",
+      "id": "finance",
+      "version": "all",
       "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
     },
     "settings": {
-      "temperature": 0.2,
+      "temperature": null,
       "max_output_tokens": 1024,
       "max_steps": 12,
       "timeout_s": 180,
       "parallel_tool_calls": false,
-      "memory": false,
-      "skills": false,
-      "compression": false
+      "memory": {
+        "enabled": false
+      },
+      "skills": {
+        "enabled": false
+      },
+      "compression": {
+        "enabled": false
+      }
     },
     "settings_sources": {
-      "temperature": "config",
+      "temperature": "harness_default",
       "max_output_tokens": "config",
       "max_steps": "config",
       "timeout_s": "config",
@@ -35,7 +43,64 @@
       "skills": "config",
       "compression": "config"
     },
+    "unsupported": {
+      "temperature": "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies"
+    },
+    "warnings": [],
     "harness_options": {},
+    "parent_hash": null,
+    "created_at": "2026-11-02T14:08:00.000Z"
+  },
+  {
+    "hash": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+    "name": "Prompt v2 on Hermes",
+    "harness": "hermes",
+    "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+    "adapter_version": "0.1.0",
+    "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2",
+    "model": "claude-haiku-5-5",
+    "prompt": {
+      "id": "finance-advisor",
+      "version": "v2",
+      "sha256": "sha256:9d24e7b554d4851c607372a4e0932b47fdcd031f434c8103e523dc944ec676ec"
+    },
+    "toolset": {
+      "id": "finance",
+      "version": "all",
+      "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
+    },
+    "settings": {
+      "temperature": null,
+      "max_output_tokens": 1024,
+      "max_steps": 12,
+      "timeout_s": 180,
+      "parallel_tool_calls": false,
+      "memory": {
+        "enabled": false
+      },
+      "skills": {
+        "enabled": false
+      },
+      "compression": {
+        "enabled": false
+      }
+    },
+    "settings_sources": {
+      "temperature": "harness_default",
+      "max_output_tokens": "config",
+      "max_steps": "config",
+      "timeout_s": "config",
+      "parallel_tool_calls": "config",
+      "memory": "config",
+      "skills": "config",
+      "compression": "config"
+    },
+    "unsupported": {
+      "temperature": "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies"
+    },
+    "warnings": [],
+    "harness_options": {},
+    "parent_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
     "created_at": "2026-11-03T10:48:00.000Z"
   },
   {
@@ -43,6 +108,8 @@
     "name": "Own loop, prompt v1",
     "harness": "ownloop",
     "harness_ref": "0.1.0",
+    "adapter_version": "0.1.0",
+    "capabilities_sha256": "sha256:17ae974939a5339c84f9deed1fad8ee089ac0aab0cb7e79d198a730e1848f399",
     "model": "claude-haiku-5-5",
     "prompt": {
       "id": "finance-advisor",
@@ -50,19 +117,22 @@
       "sha256": "sha256:5c0f1a2ffbc17241e93f559be30cee2078075d56f42c791e6c8500939721de37"
     },
     "toolset": {
-      "id": "finance/all",
-      "version": "1",
+      "id": "finance",
+      "version": "all",
       "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
     },
     "settings": {
-      "temperature": 0.2,
+      "temperature": null,
       "max_output_tokens": 1024,
       "max_steps": 12,
       "timeout_s": 180,
-      "parallel_tool_calls": false
+      "parallel_tool_calls": false,
+      "memory": null,
+      "skills": null,
+      "compression": null
     },
     "settings_sources": {
-      "temperature": "config",
+      "temperature": "harness_default",
       "max_output_tokens": "config",
       "max_steps": "config",
       "timeout_s": "config",
@@ -71,37 +141,53 @@
       "skills": "unsupported",
       "compression": "unsupported"
     },
+    "unsupported": {
+      "temperature": "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies",
+      "memory": "ownloop does not support memory",
+      "skills": "ownloop does not support skills",
+      "compression": "ownloop does not support compression: Always sends the full history"
+    },
+    "warnings": [],
     "harness_options": {},
+    "parent_hash": null,
     "created_at": "2026-11-04T09:08:00.000Z"
   },
   {
-    "hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-    "name": "Prompt v1 on Hermes",
+    "hash": "sha256:c58e2d17c3b413b9ebcb277b97c0bb05868fad56b847b86f7a6e5ab1c005cc80",
+    "name": "Prompt v1 on Hermes, Gemini Flash",
     "harness": "hermes",
     "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
-    "model": "claude-haiku-5-5",
+    "adapter_version": "0.1.0",
+    "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2",
+    "model": "gemini-3.8-flash",
     "prompt": {
       "id": "finance-advisor",
       "version": "v1",
       "sha256": "sha256:5c0f1a2ffbc17241e93f559be30cee2078075d56f42c791e6c8500939721de37"
     },
     "toolset": {
-      "id": "finance/all",
-      "version": "1",
+      "id": "finance",
+      "version": "all",
       "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
     },
     "settings": {
-      "temperature": 0.2,
+      "temperature": null,
       "max_output_tokens": 1024,
       "max_steps": 12,
       "timeout_s": 180,
       "parallel_tool_calls": false,
-      "memory": false,
-      "skills": false,
-      "compression": false
+      "memory": {
+        "enabled": false
+      },
+      "skills": {
+        "enabled": false
+      },
+      "compression": {
+        "enabled": false
+      }
     },
     "settings_sources": {
-      "temperature": "config",
+      "temperature": "harness_default",
       "max_output_tokens": "config",
       "max_steps": "config",
       "timeout_s": "config",
@@ -110,7 +196,10 @@
       "skills": "config",
       "compression": "config"
     },
+    "unsupported": {},
+    "warnings": [],
     "harness_options": {},
-    "created_at": "2026-11-02T14:08:00.000Z"
+    "parent_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+    "created_at": "2026-11-05T07:28:00.000Z"
   }
 ]

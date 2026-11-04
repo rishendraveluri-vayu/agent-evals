@@ -1,51 +1,17 @@
 /** Trials as the API serves them (apps/api/src/trials), plus the pure helpers the views use. */
 import { api } from './api/client';
+import type { FolderSpanView, FolderTrialDetail, FolderTrialSummary } from './api/types';
 import { harnessShort } from './lib/names';
 
-export interface TrialSummary {
-  trialId: string;
-  harness: string;
-  model: string | null;
-  taskId: string | null;
-  configHash: string | null;
-  promptVersion: string | null;
-  toolsetVersion: string | null;
-  label: string;
-  endState: string | null;
-  startedAt: string | null;
-  wallS: number | null;
-  proxyCalls: number | null;
-  proxyCostUsd: number | null;
-  proxyInputTokens: number | null;
-  proxyOutputTokens: number | null;
-  proxyComplete: boolean | null;
-  harnessCalls: number | null;
-  toolCalls: number | null;
-  toolErrors: number | null;
-  malformedToolCalls: number | null;
-  agentTurns: number | null;
-  clientTurns: number | null;
-}
+/** `GET /trials` rows: gate and smoke runs from the folder store, outside any experiment. */
+export type TrialSummary = FolderTrialSummary;
 
-export interface SpanView {
-  spanId: string;
-  parentSpanId: string | null;
-  name: string;
-  kind: number;
-  startNs: string;
-  endNs: string;
-  statusCode: number;
-  statusMessage: string | null;
-  attributes: Record<string, unknown>;
-  events: { name: string; timeNs: string; attributes: Record<string, unknown> }[];
-}
+/** A span with plain attributes: the folder store serves this shape, and the client turns an
+ *  experiment trial's OTLP spans into it (`normalizeSpan`). */
+export type SpanView = FolderSpanView;
 
-export interface TrialDetail {
-  summary: TrialSummary;
-  spec: Record<string, unknown> | null;
-  result: Record<string, unknown> | null;
-  report: Record<string, unknown> | null;
-}
+/** `GET /trials/:id` for a folder trial. */
+export type TrialDetail = FolderTrialDetail;
 
 /** Gate and smoke runs from the folder store (`GET /trials`), through the typed client so
  *  fixture mode serves them too. */

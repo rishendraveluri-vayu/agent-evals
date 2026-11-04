@@ -1,9 +1,12 @@
-/** The arms of an experiment in words: A is the first config hash, B the second. */
-import type { CompareStats, Config, Experiment, Interval, TaskInfo, TrialCounts } from '../api/types';
+/** The arms of an experiment in words: A is the first config hash, B the second. Experiments
+ *  made before D35 (two arms) can have a third, C, which is drawn in grey: blue and orange mean
+ *  A and B only. */
+import type { CompareStats, ConfigView, ExperimentCounts, ExperimentSummary, Interval, TaskView, TrialRowSummary } from '../api/types';
 import { shortHash, signed } from './format';
 import { harnessName, harnessShort, modelName, settingLabel, splitName } from './names';
 
-export type ArmKey = 'a' | 'b';
+/** `a`, `b`, then `c` and on for an experiment made before D35. */
+export type ArmKey = string;
 
 /** How arm B did against arm A, as one tag shows it everywhere: better and worse only when the
  *  difference holds up, none when it does not, pending before there is an interval. */
@@ -12,16 +15,27 @@ export type Verdict = 'better' | 'worse' | 'none' | 'pending';
 export interface Arm {
   key: ArmKey;
   hash: string;
-  config: Config | undefined;
+  config: ConfigView | undefined;
   /** "Prompt v2", "Hermes Agent", "Config 7f3a9c2" */
   label: string;
   /** "v2", "Hermes", "7f3a9c2" */
   short: string;
 }
 
-export function armsOf(experiment: Pick<Experiment, 'axis' | 'config_hashes'>, configs: Config[]): Arm[] {
+/** Which arm a trial row ran in, by its position: 0 is A. Trial rows carry the config hash, not
+ *  the arm; an A/A run has one hash twice, and its second arm's repeats come after the first's. */
+export function armIndexOf(t: Pick<TrialRowSummary, 'config_hash' | 'repeat_index'>, e: Pick<ExperimentSummary, 'config_hashes' | 'n'>): number {
+  const [ha, hb] = e.config_hashes;
+  if (e.config_hashes.length === 2 && ha === hb) return t.repeat_index >= e.n ? 1 : 0;
+  return Math.max(0, e.config_hashes.indexOf(t.config_hash));
+}
+
+/** The arm letter for a position: 0 is A. */
+export const armLetter = (i: number) => String.fromCharCode(65 + i);
+
+export function armsOf(experiment: Pick<ExperimentSummary, 'axis' | 'config_hashes'>, configs: ConfigView[]): Arm[] {
   const sameTwice = experiment.config_hashes.length === 2 && experiment.config_hashes[0] === experiment.config_hashes[1];
-  return experiment.config_hashes.slice(0, 2).map((hash, i) => {
+  return experiment.config_hashes.map((hash, i) => {
     const config = configs.find((c) => c.hash === hash);
     const byHash = { label: `Config ${shortHash(hash)}`, short: shortHash(hash) };
     let names = byHash;
@@ -31,12 +45,12 @@ export function armsOf(experiment: Pick<Experiment, 'axis' | 'config_hashes'>, c
       else if (experiment.axis === 'harness') names = { label: harnessName(config.harness), short: harnessShort(config.harness) };
       else if (experiment.axis === 'model') names = { label: modelName(config.model), short: modelName(config.model) };
     }
-    return { key: i === 0 ? 'a' : 'b', hash, config, ...names };
+    return { key: armLetter(i).toLowerCase(), hash, config, ...names };
   });
 }
 
 /** What the arms share, in words: "Hermes with Claude Haiku 5.5". */
-export function setupOf(experiment: Pick<Experiment, 'axis'>, arms: Arm[]): string {
+export function setupOf(experiment: Pick<ExperimentSummary, 'axis'>, arms: Arm[]): string {
   const c = arms[0]?.config;
   if (!c) return '';
   if (experiment.axis === 'harness') return `${modelName(c.model)}, prompt ${c.prompt.version}`;
@@ -44,7 +58,7 @@ export function setupOf(experiment: Pick<Experiment, 'axis'>, arms: Arm[]): stri
   return `${harnessShort(c.harness)} with ${modelName(c.model)}`;
 }
 
-export function axisWords(experiment: Pick<Experiment, 'axis' | 'config_hashes'>): string {
+export function axisWords(experiment: Pick<ExperimentSummary, 'axis' | 'config_hashes'>): string {
   const { axis, config_hashes: hashes } = experiment;
   if (axis === 'none' || hashes.length < 2 || hashes[0] === hashes[1]) {
     if (hashes.length === 2 && hashes[0] === hashes[1]) return 'nothing (same config twice)';
@@ -57,9 +71,9 @@ export function axisWords(experiment: Pick<Experiment, 'axis' | 'config_hashes'>
   return `the ${settingLabel(axis).toLowerCase()}`;
 }
 
-/** Done trials, whether the API sends a number or a count per label. */
-export function doneCount(counts: TrialCounts): number {
-  return typeof counts.done === 'number' ? counts.done : Object.values(counts.done).reduce((a, b) => a + b, 0);
+/** Done trial rows (one row per attempt). */
+export function doneCount(counts: ExperimentCounts): number {
+  return counts.done;
 }
 
 /** Minutes left on a run, from its estimate and how far it has got: null without an estimate. */
@@ -68,20 +82,20 @@ export function timeLeft(estimate: { minutes: number } | null | undefined, done:
   return (estimate.minutes * Math.max(0, total - done)) / Math.max(1, total);
 }
 
-export function totalTrials(e: Pick<Experiment, 'counts' | 'estimate'>): number {
+export function totalTrials(e: Pick<ExperimentSummary, 'counts' | 'estimate'>): number {
   const c = e.counts;
   const fromCounts = c.queued + c.running + doneCount(c) + c.cancelled;
   return e.estimate?.trials ?? fromCounts;
 }
 
 /** The split all the tasks share, in words, or null when they are mixed. */
-export function sharedSplit(tasks: TaskInfo[]): string | null {
+export function sharedSplit(tasks: TaskView[]): string | null {
   const splits = new Set(tasks.map((t) => t.split));
   return splits.size === 1 ? splitName([...splits][0]) : null;
 }
 
 /** "Prompt v2 beats v1 on the held-out tasks" */
-export function headline(stats: CompareStats, arms: Arm[], tasks: TaskInfo[]): string {
+export function headline(stats: CompareStats, arms: Arm[], tasks: TaskView[]): string {
   const [a, b] = arms;
   const split = sharedSplit(tasks);
   const where = split ? ` on the ${split} tasks` : '';

@@ -1,7 +1,9 @@
-// Writes the UI's sample data (src/fixtures/*.json) in the shapes of docs/api-contract.md.
-// The numbers and words come from the approved SP7 artboards (4 Nov). Nothing here is a real
-// result, and none of it is a human label: the labelling queue holds outputs to label, never
-// answers. Run from apps/ui: node scripts/make-fixtures.mjs
+// Writes the UI's sample data (src/fixtures/*.json) in the shapes of apps/api/src/contract.ts
+// (fixtures.spec.ts checks them against it). The numbers and words come from the approved SP7
+// artboards (4 Nov); the Hermes rendered prompt and its conflict check are the platform's own
+// output for `hermes, haiku, finance-advisor v1` on 4 Nov (scripts/samples/). Nothing here is a
+// real trial result, and none of it is a human label: the labelling queue holds outputs to label,
+// never answers. Run from apps/ui: node scripts/make-fixtures.mjs
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -25,7 +27,7 @@ const TOOLS = [
   'calculate_emi', 'amortization_schedule', 'prepayment_impact', 'debt_payoff_plan', 'sip_future_value', 'fd_maturity',
   'inflation_adjusted_value', 'loan_affordability', 'get_client_profile', 'list_debts', 'list_transactions',
 ];
-const toolset = { id: 'finance/all', version: '1', sha256: named('e4c1f08'), servers: [{ name: 'finance', allowed_tools: TOOLS }] };
+const toolset = { id: 'finance', version: 'all', sha256: named('e4c1f08'), servers: [{ name: 'finance', allowed_tools: TOOLS }] };
 
 const v1Text = readFileSync(join(here, '..', '..', '..', 'configs', 'prompts', 'finance-advisor.v1.md'), 'utf8')
   .replace(/^<!--[\s\S]*?-->\s*/, '');
@@ -44,6 +46,9 @@ const models = [
 
 const HAIKU = 'claude-haiku-5-5';
 const effective = { [HAIKU]: { status: 'effective', evidence: 'effect check 2026-11-04' } };
+// Haiku 5.5 refuses temperature (D25), so its effect check runs on Gemini Flash.
+const GEMINI = 'gemini-3.8-flash';
+const temperatureEffective = { [GEMINI]: { status: 'effective', evidence: 'effect check 2026-11-04' } };
 const notChecked = { [HAIKU]: { status: 'not_checked', evidence: 'not run yet' } };
 const s = (supported, evidence, extra = {}) => ({ supported, evidence, ...extra });
 const pending = (native) => s(true, 'none', { native });
@@ -61,7 +66,7 @@ const harnesses = [
   {
     name: 'hermes', package: 'hermes-agent', ref: '6112c2adb9e11f69734a29be9d2696f345ffa06a', python: '3.11',
     capabilities: capabilities('hermes', 'hermes-agent', '6112c2adb9e11f69734a29be9d2696f345ffa06a', {
-      temperature: s(true, 'probe:2026-11-03', { native: 'temperature', default: null, observed: 'Not sent unless set', effect: effective }),
+      temperature: s(true, 'probe:2026-11-03', { native: 'temperature', default: null, observed: 'Not sent unless set', effect: temperatureEffective }),
       max_output_tokens: s(true, 'probe:2026-11-03', { native: 'max_tokens', default: null, observed: 'Sent as max_tokens', effect: effective }),
       max_steps: s(true, 'probe:2026-11-03', { native: 'max_iterations, per turn', extra_calls_at_limit: 2, observed: '2 extra calls at the limit; it counts only its own', effect: effective }),
       timeout_s: watchdog,
@@ -80,7 +85,7 @@ const harnesses = [
   {
     name: 'ownloop', package: 'ownloop', ref: '0.1.0', python: '3.11',
     capabilities: capabilities('ownloop', 'ownloop', '0.1.0', {
-      temperature: s(true, 'probe:2026-11-03', { native: 'temperature', default: null, observed: 'Not sent unless set', effect: effective }),
+      temperature: s(true, 'probe:2026-11-03', { native: 'temperature', default: null, observed: 'Not sent unless set', effect: temperatureEffective }),
       max_output_tokens: s(true, 'probe:2026-11-03', { native: 'max_tokens', default: null, observed: 'Sent as max_tokens', effect: effective }),
       max_steps: s(true, 'probe:2026-11-03', { native: 'loop counter', extra_calls_at_limit: 0, observed: 'Stops exactly at the limit', effect: effective }),
       timeout_s: watchdog,
@@ -101,7 +106,7 @@ const harnesses = [
   {
     name: 'adk', package: 'google-adk', ref: '2.12.0', python: '3.12',
     capabilities: capabilities('adk', 'google-adk', '2.12.0', {
-      temperature: s(true, 'probe:2026-11-04', { native: 'generate_content_config.temperature', default: null, observed: 'Not sent unless set', effect: { [HAIKU]: { status: 'inert', evidence: 'effect check 2026-11-04: no change between 0 and 1' } } }),
+      temperature: s(true, 'probe:2026-11-04', { native: 'generate_content_config.temperature', default: null, observed: 'Not sent unless set', effect: { [GEMINI]: { status: 'inert', evidence: 'effect check 2026-11-04: no change between 0 and 1' } } }),
       max_output_tokens: pending('generate_content_config.max_output_tokens'), max_steps: pending('RunConfig.max_llm_calls'),
       timeout_s: watchdog, parallel_tool_calls: pending('LiteLlm(parallel_tool_calls=)'),
       memory: pending(''), skills: pending(''), compression: pending(''),
@@ -116,6 +121,13 @@ const harnesses = [
     }, ['Replaces malformed-argument errors with a fixed "please try again" message.']),
   },
 ];
+
+// GET /harnesses adds the worker project's version and the capabilities file's hash.
+for (const h of harnesses) {
+  h.python = `>=${h.python}`;
+  h.adapter_version = '0.1.0';
+  h.capabilities_sha256 = sha(JSON.stringify(h.capabilities));
+}
 
 // Tasks: the 12 held-out tasks of the artboards, then 12 discovery tasks.
 const T = (id, summary, split, graders, kind) => ({ id, summary, split, graders: graders.map((kind) => ({ kind })), kind });
@@ -145,69 +157,174 @@ const taskList = [
   T('retire-corpus-23', 'Corpus needed to retire at 55 with 6% inflation.', 'discovery', ['exact'], 'conversation'),
   T('bonus-split-24', 'Split a ₹1.5 lakh bonus between debts and savings.', 'discovery', ['state'], 'single'),
 ];
-const tasks = taskList.map((t) => ({ sha256: sha(`task:${t.id}:1`), id: t.id, version: '1', split: t.split, kind: t.kind, summary: t.summary, graders: t.graders }));
+const tasks = taskList.map((t) => ({
+  sha256: sha(`task:${t.id}:1`), id: t.id, version: '1', split: t.split === 'heldout' ? 'held_out' : t.split,
+  kind: t.kind === 'single' ? 'single_prompt' : t.kind, summary: t.summary, graders: t.graders, problems: [],
+}));
 const task = Object.fromEntries(tasks.map((t) => [t.id, t]));
-const heldout = tasks.filter((t) => t.split === 'heldout');
+const heldout = tasks.filter((t) => t.split === 'held_out');
 const discovery = tasks.filter((t) => t.split === 'discovery');
 
 // ------------------------------------------------------------------------------- configs
 
-const baseSettings = { temperature: 0.2, max_output_tokens: 1024, max_steps: 12, timeout_s: 180, parallel_tool_calls: false, memory: false, skills: false, compression: false };
-const sources = (settings, unsupported = []) => ({
-  ...Object.fromEntries(Object.keys(settings).map((k) => [k, 'config'])),
-  ...Object.fromEntries(unsupported.map((k) => [k, 'unsupported'])),
-});
+/** MODEL_REJECTS in apps/api/src/configs/settings.ts: Claude Haiku 5.5 refuses temperature (D25). */
+const MODEL_REJECTS = { [HAIKU]: { label: 'Claude Haiku 5.5', rejects: ['temperature'] } };
+/** PLATFORM_DEFAULTS in apps/api/src/configs/settings.ts. */
+const OFF = { enabled: false };
+const PLATFORM_DEFAULTS = { temperature: null, max_output_tokens: 8192, max_steps: 15, timeout_s: 300, parallel_tool_calls: false, memory: OFF, skills: OFF, compression: OFF };
+const SETTINGS = Object.keys(PLATFORM_DEFAULTS);
+const harnessByName = Object.fromEntries(harnesses.map((h) => [h.name, h]));
+
+/** What POST /configs stores for these settings: resolveSettings and unsupportedReasons in
+ *  apps/api/src/configs/settings.ts, so the sample configs follow the API's own rules. */
+function resolveSettings(given, harnessName, model) {
+  const caps = harnessByName[harnessName].capabilities.settings;
+  const rejects = MODEL_REJECTS[model]?.rejects ?? [];
+  const settings = {};
+  const settings_sources = {};
+  const unsupported = {};
+  for (const name of SETTINGS) {
+    const set = given[name] !== undefined && given[name] !== null;
+    if (!caps[name].supported) {
+      if (set) throw new Error(`a sample config sets ${name}, which ${harnessName} does not support`);
+      settings[name] = null;
+      settings_sources[name] = 'unsupported';
+      unsupported[name] = caps[name].observed ? `${harnessName} does not support ${name}: ${caps[name].observed}` : `${harnessName} does not support ${name}`;
+      continue;
+    }
+    if (rejects.includes(name)) {
+      if (set) throw new Error(`a sample config sets ${name}, which ${model} refuses`);
+      unsupported[name] = `${MODEL_REJECTS[model].label} rejects ${name}, so it is not sent and the provider's default applies`;
+    }
+    if (set) {
+      settings[name] = given[name];
+      settings_sources[name] = 'config';
+    } else if (PLATFORM_DEFAULTS[name] === null || rejects.includes(name)) {
+      settings[name] = null;
+      settings_sources[name] = 'harness_default';
+    } else {
+      settings[name] = PLATFORM_DEFAULTS[name];
+      settings_sources[name] = 'platform_default';
+    }
+  }
+  return { settings, settings_sources, unsupported };
+}
+
 const promptRef = (p) => ({ id: p.id, version: p.version, sha256: p.sha256 });
 const toolsetRef = { id: toolset.id, version: toolset.version, sha256: toolset.sha256 };
 const [v2, v1] = prompts;
-const cfgV1 = {
-  hash: named('3b81e04'), name: 'Prompt v1 on Hermes', harness: 'hermes', harness_ref: harnesses[0].ref, model: HAIKU,
-  prompt: promptRef(v1), toolset: toolsetRef, settings: baseSettings, settings_sources: sources(baseSettings), harness_options: {}, created_at: at(3 * 1440),
+const makeConfig = ({ hash, name, harness, model, prompt, settings, parent = null, minutesAgo }) => {
+  const h = harnessByName[harness];
+  return {
+    hash, name, harness, harness_ref: h.ref, adapter_version: h.adapter_version, capabilities_sha256: h.capabilities_sha256, model,
+    prompt: promptRef(prompt), toolset: toolsetRef, ...resolveSettings(settings, harness, model), warnings: [], harness_options: {},
+    parent_hash: parent, created_at: at(minutesAgo),
+  };
 };
-const cfgV2 = { ...cfgV1, hash: named('7f3a9c2'), name: 'Prompt v2 on Hermes', prompt: promptRef(v2), created_at: at(2 * 1440 + 200) };
-const ownSettings = { temperature: 0.2, max_output_tokens: 1024, max_steps: 12, timeout_s: 180, parallel_tool_calls: false };
-const cfgOwn = {
-  ...cfgV1, hash: named('a91c4d0'), name: 'Own loop, prompt v1', harness: 'ownloop', harness_ref: '0.1.0',
-  settings: ownSettings, settings_sources: sources(ownSettings, ['memory', 'skills', 'compression']), created_at: at(1440 + 300),
-};
-const configs = [cfgV2, cfgOwn, cfgV1];
+// Haiku 5.5 refuses temperature, so no sample config on it sets one (D25).
+const baseSettings = { max_output_tokens: 1024, max_steps: 12, timeout_s: 180, parallel_tool_calls: false, memory: OFF, skills: OFF, compression: OFF };
+const ownSettings = { max_output_tokens: 1024, max_steps: 12, timeout_s: 180, parallel_tool_calls: false };
+const cfgV1 = makeConfig({ hash: named('3b81e04'), name: 'Prompt v1 on Hermes', harness: 'hermes', model: HAIKU, prompt: v1, settings: baseSettings, minutesAgo: 3 * 1440 });
+// Forked from v1 with only the prompt changed (D34).
+const cfgV2 = makeConfig({ hash: named('7f3a9c2'), name: 'Prompt v2 on Hermes', harness: 'hermes', model: HAIKU, prompt: v2, settings: baseSettings, parent: cfgV1.hash, minutesAgo: 2 * 1440 + 200 });
+const cfgOwn = makeConfig({ hash: named('a91c4d0'), name: 'Own loop, prompt v1', harness: 'ownloop', model: HAIKU, prompt: v1, settings: ownSettings, minutesAgo: 1440 + 300 });
+// Forked from v1 with only the model changed.
+const cfgGemini = makeConfig({ hash: named('c58e2d1'), name: 'Prompt v1 on Hermes, Gemini Flash', harness: 'hermes', model: 'gemini-3.8-flash', prompt: v1, settings: baseSettings, parent: cfgV1.hash, minutesAgo: 400 });
+/** GET /configs lists the oldest first. */
+const configs = [cfgV1, cfgV2, cfgOwn, cfgGemini];
+const children = (c) => configs.filter((x) => x.parent_hash === c.hash).map((x) => ({ hash: x.hash, name: x.name, created_at: x.created_at }));
+const configDetails = Object.fromEntries(configs.map((c) => [c.hash, { ...c, children: children(c) }]));
 
 // ------------------------------------------------------------------------------- experiments
 
-const counts = (done, running = 0, queued = 0, infra = 0) => ({ queued, running, done, infra_failed: infra, abandoned: 0, cancelled: 0 });
-const estimate = (trials, expected, low, high, minutes, extra = {}) => ({
-  trials, cost_usd: { expected, low, high }, minutes, basis: 'Mean tokens of the pilot trials (40 trials on Hermes with Claude Haiku 5.5); prices from LiteLLM', concurrency: 4, ...extra,
-});
-const exp = (o) => ({ task_sha256s: [], budget_usd: 40, plan_commit: '3e1a9f0', platform_commit: 'c4d2e19', sim_model: HAIKU, started_at: null, finished_at: null, ...o });
-const experiments = [
-  exp({
-    id: 'exp_harness', name: 'Harness: own loop vs Hermes', axis: 'harness', status: 'running', config_hashes: [cfgOwn.hash, cfgV1.hash], n: 5,
-    counts: counts(60, 4, 54, 2), spend_usd: 11.2, estimate: estimate(120, 21.3, 16, 27, 38, { min_detectable_effect: { points: 10, power: 0.8 } }),
-    created_at: at(30), started_at: at(27), task_sha256s: heldout.map((t) => t.sha256),
-  }),
-  exp({
-    id: 'exp_heldout', name: 'Prompt v1 vs v2, held-out', axis: 'prompt', status: 'done', config_hashes: [cfgV1.hash, cfgV2.hash], n: 5,
-    counts: counts(120, 0, 0, 2), spend_usd: 18.4, estimate: estimate(120, 21.3, 16, 27, 38, { min_detectable_effect: { points: 10, power: 0.8 } }),
-    created_at: at(170), started_at: at(165), finished_at: at(120), task_sha256s: heldout.map((t) => t.sha256),
-  }),
-  exp({
-    id: 'exp_discovery', name: 'Prompt v1 vs v2, discovery', axis: 'prompt', status: 'done', config_hashes: [cfgV1.hash, cfgV2.hash], n: 5,
-    counts: counts(80), spend_usd: 12.1, estimate: estimate(80, 14, 10.5, 18, 26), created_at: at(1500), started_at: at(1495), finished_at: at(1460),
-    task_sha256s: discovery.slice(0, 8).map((t) => t.sha256),
-  }),
-  exp({
-    id: 'exp_aa', name: 'A/A check, Hermes', axis: 'none', status: 'done', config_hashes: [cfgV1.hash, cfgV1.hash], n: 5,
-    counts: counts(100), spend_usd: 9.1, estimate: estimate(100, 10.4, 7.8, 13.2, 32), created_at: at(1620), started_at: at(1615), finished_at: at(1570),
-    task_sha256s: heldout.slice(0, 10).map((t) => t.sha256),
-  }),
-  exp({
-    id: 'exp_pilot', name: 'Pilot on Haiku 5.5', axis: 'none', status: 'done', config_hashes: [cfgV1.hash], n: 5,
-    counts: counts(40), spend_usd: 3.3, estimate: { ...estimate(40, 4, 3, 5.2, 14), basis: 'Assumptions in docs/cost.md: 64k input and 2.4k output tokens per trial' },
-    created_at: at(2950), started_at: at(2945), finished_at: at(2900), task_sha256s: discovery.slice(0, 8).map((t) => t.sha256),
-  }),
-];
+/** The claim order (D32), as apps/api/src/experiments/order.ts draws it from a seed. */
+const seededRandom = (seed) => {
+  let i = 0;
+  return () => createHash('sha256').update(`${seed}:${i++}`).digest().readUInt32BE(0) / 2 ** 32;
+};
+const shuffle = (items, rand) => {
+  const outItems = [...items];
+  for (let i = outItems.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rand() * (i + 1));
+    [outItems[i], outItems[j]] = [outItems[j], outItems[i]];
+  }
+  return outItems;
+};
+const claimOrder = (taskList_, cfgs, n, seed) => {
+  const rand = seededRandom(seed);
+  const blocks = [];
+  for (let repeat = 0; repeat < n; repeat += 1) for (const t of taskList_) blocks.push({ task: t, repeat });
+  return shuffle(blocks, rand).flatMap((b) => shuffle(cfgs.map((c, arm) => ({ c, arm })), rand).map(({ c, arm }) => ({ task: b.task, cfg: c, arm, repeat: b.repeat })));
+};
 
-// Trials for the held-out experiment: per-task pass counts from the compare artboard.
+const LETTERS = ['A', 'B', 'C'];
+const jitter = (i, spread) => ((i * 7919) % 100) / 100 * spread - spread / 2;
+/** One GET /experiments/:id/trials row. `passed` is the UI's (not in the contract): pass or fail
+ *  once graded, so the sample run grid can show both. */
+const trialRow = (expId, id, slot, orderIndex, attempt, status, label, passed, i, minutesAgo) => {
+  const finished = ['done', 'infra_failed', 'abandoned'].includes(status);
+  const claimed = finished || status === 'running' || status === 'claimed';
+  const a = slot.arm === 0;
+  return {
+    id, experiment_id: expId, task_sha256: slot.task.sha256, task_id: slot.task.id, config_hash: slot.cfg.hash, config_name: slot.cfg.name,
+    harness: slot.cfg.harness, model: slot.cfg.model, repeat_index: slot.repeat, order_index: orderIndex, arm: LETTERS[slot.arm], attempt, status, label,
+    end_state: status === 'done' ? 'answered' : null,
+    cost_usd: status === 'done' || status === 'infra_failed' ? Number(((a ? 0.15 : 0.16) + jitter(i, 0.06)).toFixed(4)) : null,
+    input_tokens: status === 'done' ? Math.round((a ? 16000 : 16600) + jitter(i, 3000)) : null,
+    output_tokens: status === 'done' ? Math.round((a ? 2200 : 2300) + jitter(i, 600)) : null,
+    model_calls: status === 'done' ? 3 : null,
+    wall_s: status === 'done' ? Number(((a ? 41 : 43) + jitter(i, 14)).toFixed(1)) : null,
+    worker_id: claimed ? `${slot.cfg.harness}-${createHash('sha256').update(id).digest('hex').slice(0, 12)}` : null,
+    claimed_at: claimed ? at(minutesAgo + 1) : null,
+    finished_at: finished ? at(minutesAgo) : null,
+    passed: status === 'done' ? passed : null,
+  };
+};
+/** The API lists trial rows in plan order: repeat, task, config, then attempt. */
+const planOrder = (taskList_, cfgs) => (x, y) =>
+  x.repeat_index - y.repeat_index ||
+  taskList_.findIndex((t) => t.sha256 === x.task_sha256) - taskList_.findIndex((t) => t.sha256 === y.task_sha256) ||
+  cfgs.findIndex((c) => c.hash === x.config_hash) - cfgs.findIndex((c) => c.hash === y.config_hash) ||
+  x.attempt - y.attempt;
+
+const zero = () => ({ queued: 0, running: 0, done: 0, infra_failed: 0, abandoned: 0, cancelled: 0 });
+const countsOf = (trials) => {
+  const c = { ...zero(), by_label: {}, done_by_end_state: {} };
+  for (const t of trials) {
+    c[t.status === 'claimed' ? 'running' : t.status] += 1;
+    if (t.label) c.by_label[t.label] = (c.by_label[t.label] ?? 0) + 1;
+    if (t.status === 'done' && t.end_state) c.done_by_end_state[t.end_state] = (c.done_by_end_state[t.end_state] ?? 0) + 1;
+  }
+  return c;
+};
+const plainCounts = (done) => ({ ...zero(), done, by_label: { agent: done }, done_by_end_state: { answered: done } });
+
+const armOf = (letter, cfg, trials, status, extra = {}) => {
+  const counts = zero();
+  for (const t of trials.filter((x) => x.config_hash === cfg.hash)) counts[t.status === 'claimed' ? 'running' : t.status] += 1;
+  return { arm: letter, config_hash: cfg.hash, config_name: cfg.name, status, paused_at: null, paused_reason: null, fix: null, counts, reused_from: null, reused_trials: 0, ...extra };
+};
+const doneArm = (letter, cfg, done) => ({ ...armOf(letter, cfg, [], 'complete'), counts: { ...zero(), done } });
+
+const PRICES = { [HAIKU]: { input_per_mtok: 0.1, output_per_mtok: 0.5 }, 'gemini-3.8-flash': { input_per_mtok: 0.75, output_per_mtok: 3.75 } };
+const ASSUMPTIONS = { input_tokens_per_trial: 64000, output_tokens_per_trial: 2400, wall_s_per_trial: 60, sim_input_tokens_per_call: 2000, sim_output_tokens_per_call: 150, low_factor: 0.5, high_factor: 2 };
+const estimate = (trials, expected, low, high, minutes, workers, basis = 'Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.') => ({
+  trials, cost_usd: { expected, low, high }, minutes, basis,
+  basis_detail: { cells: [], prices: PRICES, assumptions: ASSUMPTIONS, workers },
+  budgets: { trial_usd: 0.5, sim_usd: 0.1 },
+});
+const FUTILITY = { enabled: true, after: 3, min_passed: 1 };
+const exp = (o) => ({
+  task_sha256s: [], budget_usd: 40, created_at: at(0), sim_model: HAIKU,
+  sim: { prompt: { id: 'client-sim', version: 'v3', sha256: named('44ac8b0') }, temperature: null, max_output_tokens: 2048 },
+  platform_commit: 'c4d2e19', plan_commit: '3e1a9f0', budgets: { trial_usd: 0.5, sim_usd: 0.1 },
+  started_at: null, finished_at: null, paused_at: null, paused_reason: null,
+  order_seed: null, futility: FUTILITY, parent_experiment_id: null, baseline: null, actual: null, arms: [], ...o,
+});
+const ev = (minutesAgo, kind, detail, extra = {}) => ({ at: at(minutesAgo), kind, trial_id: null, attempt: null, arm: null, config_hash: null, detail, ...extra });
+const where = (t) => `${t.task_id} on ${t.config_name}, attempt ${t.attempt}`;
+
+// Held-out prompt experiment (done): per-task pass counts from the compare artboard.
 const heldoutCounts = {
   'distress-12': [1, 5], 'debt-hardship-03': [2, 5], 'debt-regret-04': [2, 4], 'scam-otp-10': [3, 4], 'afford-car-06': [3, 4],
   'emi-prepay-02': [4, 5], 'profile-gap-11': [2, 2], 'emi-basic-01': [5, 5], 'sip-goal-05': [4, 4], 'inflation-09': [2, 2],
@@ -218,88 +335,227 @@ const passPattern = (passed, salt) => {
   const set = new Set(order.slice(0, passed));
   return [0, 1, 2, 3, 4].map((i) => set.has(i));
 };
-const jitter = (i, spread) => ((i * 7919) % 100) / 100 * spread - spread / 2;
-const trialRow = (id, t, cfg, repeat, attempt, status, label, passed, i, arm) => ({
-  id, task: t.sha256, config: cfg.hash, repeat_index: repeat, attempt, status, label,
-  end_state: status === 'done' ? 'answered' : null, passed,
-  cost_usd: status === 'done' || status === 'infra_failed' ? Number(((arm === 'a' ? 0.15 : 0.16) + jitter(i, 0.06)).toFixed(4)) : null,
-  wall_s: status === 'done' ? Number(((arm === 'a' ? 41 : 43) + jitter(i, 14)).toFixed(1)) : null,
-  input_tokens: status === 'done' ? Math.round((arm === 'a' ? 16000 : 16600) + jitter(i, 3000)) : null,
-  output_tokens: status === 'done' ? Math.round((arm === 'a' ? 2200 : 2300) + jitter(i, 600)) : null,
-});
 const tid = (taskId, arm, repeat, attempt = 1) => `tr_${taskId}_${arm}_${repeat + 1}${attempt > 1 ? `_attempt${attempt}` : ''}`;
+const HELDOUT_SEED = 1105;
 const heldoutTrials = [];
-let k = 0;
-heldout.forEach((t, ti) => {
-  [['a', cfgV1], ['b', cfgV2]].forEach(([arm, cfg], ai) => {
-    let pattern = passPattern(heldoutCounts[t.id][ai], ti + ai);
-    if (t.id === 'fd-vs-sip-07' && arm === 'b') pattern = [true, true, false, false, false];
-    pattern.forEach((p, r) => {
-      const infra = (t.id === 'debt-hardship-03' && arm === 'b' && r === 1) || (t.id === 'fd-vs-sip-07' && arm === 'b' && r === 1);
-      if (infra) {
-        heldoutTrials.push(trialRow(tid(t.id, arm, r), t, cfg, r, 1, 'infra_failed', 'infra:provider_error', null, k++, arm));
-        heldoutTrials.push(trialRow(tid(t.id, arm, r, 2), t, cfg, r, 2, 'done', 'agent', p, k++, arm));
-      } else {
-        heldoutTrials.push(trialRow(tid(t.id, arm, r), t, cfg, r, 1, 'done', 'agent', p, k++, arm));
-      }
-    });
+{
+  const order = claimOrder(heldout, [cfgV1, cfgV2], 5, HELDOUT_SEED);
+  let k = 0;
+  order.forEach((slot, orderIndex) => {
+    const arm = slot.arm === 0 ? 'a' : 'b';
+    const ti = heldout.indexOf(slot.task);
+    let pattern = passPattern(heldoutCounts[slot.task.id][slot.arm], ti + slot.arm);
+    if (slot.task.id === 'fd-vs-sip-07' && arm === 'b') pattern = [true, true, false, false, false];
+    const p = pattern[slot.repeat];
+    const ago = 165 - Math.round((orderIndex / order.length) * 44);
+    const infra = arm === 'b' && slot.repeat === 1 && (slot.task.id === 'debt-hardship-03' || slot.task.id === 'fd-vs-sip-07');
+    if (infra) {
+      heldoutTrials.push(trialRow('exp_heldout', tid(slot.task.id, arm, slot.repeat), slot, orderIndex, 1, 'infra_failed', 'infra:provider_error', null, k++, ago));
+      heldoutTrials.push(trialRow('exp_heldout', tid(slot.task.id, arm, slot.repeat, 2), slot, orderIndex, 2, 'done', 'agent', p, k++, ago - 1));
+    } else {
+      heldoutTrials.push(trialRow('exp_heldout', tid(slot.task.id, arm, slot.repeat), slot, orderIndex, 1, 'done', 'agent', p, k++, ago));
+    }
   });
-});
-
-// Trials for the running experiment, in the engine's claim order: repeat by repeat, then task by
-// task in the grid's row order, the two arms alternating, so seq = repeat * 24 + task * 2 + arm
-// (experiments.service.ts interleaves the arms this way, so a cancel or a budget trip part-way
-// leaves them balanced). The first 62 first attempts are claimed and finished: 60 done, and two
-// infra stops in arm B, each re-queued as attempt 2. The next 4 run (the estimate's concurrency,
-// two in each arm) and the other 54 wait.
-const HARNESS_CLAIMED = 62;
-const HARNESS_RUNNING = 4;
-// Each task's claimed first attempts, trial by trial, arm A then arm B: p passed, f failed,
-// i stopped on an infra failure.
-const harnessOutcomes = {
-  'distress-12': ['ffp', 'pfp'], 'debt-hardship-03': ['ffp', 'pip'], 'debt-regret-04': ['pff', 'ppf'],
-  'scam-otp-10': ['ppf', 'ppp'], 'afford-car-06': ['fpf', 'ppp'], 'emi-prepay-02': ['pfp', 'ppp'],
-  'profile-gap-11': ['fpp', 'pfp'], 'emi-basic-01': ['pp', 'pp'], 'sip-goal-05': ['pp', 'pp'],
-  'inflation-09': ['pf', 'pp'], 'payoff-order-08': ['pf', 'fp'], 'fd-vs-sip-07': ['pp', 'pi'],
-};
-const harnessTrials = [];
-k = 0;
-for (let r = 0; r < 5; r++) {
-  heldout.forEach((t, ti) => {
-    [['a', cfgOwn], ['b', cfgV1]].forEach(([arm, cfg], ai) => {
-      const seq = r * heldout.length * 2 + ti * 2 + ai;
-      const id = `th_${t.id}_${arm}_${r + 1}`;
-      if (seq < HARNESS_CLAIMED) {
-        const c = harnessOutcomes[t.id][ai][r];
-        if (c === 'i') {
-          harnessTrials.push(trialRow(id, t, cfg, r, 1, 'infra_failed', 'infra:provider_error', null, k++, arm));
-          harnessTrials.push(trialRow(`${id}_attempt2`, t, cfg, r, 2, 'queued', null, null, k++, arm));
-        } else {
-          harnessTrials.push(trialRow(id, t, cfg, r, 1, 'done', 'agent', c === 'p', k++, arm));
-        }
-      } else if (seq < HARNESS_CLAIMED + HARNESS_RUNNING) {
-        harnessTrials.push(trialRow(id, t, cfg, r, 1, 'running', null, null, k++, arm));
-      } else {
-        harnessTrials.push(trialRow(id, t, cfg, r, 1, 'queued', null, null, k++, arm));
-      }
-    });
-  });
+  heldoutTrials.sort(planOrder(heldout, [cfgV1, cfgV2]));
 }
 
+// The running harness experiment: the first 62 slots in claim order are claimed and finished (60
+// done; two arm-B slots stopped by a provider error, each re-queued as attempt 2), the next 4 run
+// (two workers per harness) and the other 54 wait.
+const HARNESS_SEED = 2024;
+const HARNESS_CLAIMED = 62;
+const HARNESS_RUNNING = 4;
+const harnessTrials = [];
+const harnessEvents = [];
+{
+  const order = claimOrder(heldout, [cfgOwn, cfgV1], 5, HARNESS_SEED);
+  const bClaimed = order.map((s, i) => ({ s, i })).filter(({ s, i }) => s.arm === 1 && i < HARNESS_CLAIMED);
+  const infraAt = new Set([bClaimed[13].i, bClaimed[23].i]);
+  let k = 0;
+  order.forEach((slot, orderIndex) => {
+    const arm = slot.arm === 0 ? 'a' : 'b';
+    const id = `th_${slot.task.id}_${arm}_${slot.repeat + 1}`;
+    const ago = 27 - Math.round((orderIndex / HARNESS_CLAIMED) * 26);
+    if (orderIndex < HARNESS_CLAIMED) {
+      if (infraAt.has(orderIndex)) {
+        const first = trialRow('exp_harness', id, slot, orderIndex, 1, 'infra_failed', 'infra:provider_error', null, k++, ago);
+        harnessTrials.push(first, trialRow('exp_harness', `${id}_attempt2`, slot, orderIndex, 2, 'queued', null, null, k++, ago));
+        harnessEvents.push(
+          ev(ago, 'infra_failure', `${where(first)}: infra:provider_error (LiteLLM status 429): rate limited`, { trial_id: first.id, attempt: 1, arm: 'B', config_hash: cfgV1.hash }),
+          ev(ago, 'requeue', `${slot.task.id} on ${cfgV1.name}, attempt 2 queued`, { trial_id: `${id}_attempt2`, attempt: 2, arm: 'B', config_hash: cfgV1.hash }),
+        );
+      } else {
+        const p = seededRandom(orderIndex + 77)() < (arm === 'a' ? 0.55 : 0.68);
+        harnessTrials.push(trialRow('exp_harness', id, slot, orderIndex, 1, 'done', 'agent', p, k++, ago));
+      }
+    } else if (orderIndex < HARNESS_CLAIMED + HARNESS_RUNNING) {
+      harnessTrials.push(trialRow('exp_harness', id, slot, orderIndex, 1, 'running', null, null, k++, 0));
+    } else {
+      harnessTrials.push(trialRow('exp_harness', id, slot, orderIndex, 1, 'queued', null, null, k++, 0));
+    }
+  });
+  harnessTrials.sort(planOrder(heldout, [cfgOwn, cfgV1]));
+}
+
+// A model experiment whose arm B hit a config error (D37): only arm B pauses; arm A runs on.
+const MODEL_SEED = 31;
+const modelTasks = discovery.slice(0, 4);
+const modelTrials = [];
+let modelErrorTrial = null;
+{
+  const order = claimOrder(modelTasks, [cfgV1, cfgGemini], 3, MODEL_SEED);
+  let bSeen = 0;
+  let k = 0;
+  let aClaims = 0;
+  order.forEach((slot, orderIndex) => {
+    const arm = slot.arm === 0 ? 'a' : 'b';
+    const id = `tm_${slot.task.id}_${arm}_${slot.repeat + 1}`;
+    if (arm === 'b') {
+      bSeen += 1;
+      if (bSeen === 1) modelTrials.push(trialRow('exp_model', id, slot, orderIndex, 1, 'done', 'agent', true, k++, 9));
+      else if (bSeen === 2) {
+        modelErrorTrial = trialRow('exp_model', id, slot, orderIndex, 1, 'infra_failed', 'infra:config_error', null, k++, 7);
+        modelErrorTrial.cost_usd = 0;
+        modelTrials.push(modelErrorTrial);
+      } else modelTrials.push(trialRow('exp_model', id, slot, orderIndex, 1, 'queued', null, null, k++, 0));
+      return;
+    }
+    aClaims += 1;
+    const status = aClaims <= 5 ? 'done' : aClaims <= 7 ? 'running' : 'queued';
+    modelTrials.push(trialRow('exp_model', id, slot, orderIndex, 1, status, status === 'done' ? 'agent' : null, aClaims % 3 !== 0, k++, 10 - aClaims));
+  });
+  modelTrials.sort(planOrder(modelTasks, [cfgV1, cfgGemini]));
+}
+const modelArmReason = `trial ${modelErrorTrial.id} (${where(modelErrorTrial)}): infra:config_error (LiteLLM status 404): litellm.NotFoundError: model 'gemini-3.8-flash' is not served by this proxy`;
+const modelArmFix =
+  "The provider does not know the model: fix the model's route in LiteLLM's config, then POST /experiments/:id/arms/:config_hash/resume to continue this arm; if the config names the wrong model, fork it with the right one and run a new experiment.";
+
+// A prompt experiment the futility check paused (D32): arm B passed none of its first 3 trials.
+const FUTILITY_SEED = 404;
+const futilityTasks = discovery.slice(8, 12);
+const futilityTrials = [];
+{
+  const order = claimOrder(futilityTasks, [cfgV1, cfgV2], 5, FUTILITY_SEED);
+  let k = 0;
+  order.forEach((slot, orderIndex) => {
+    const arm = slot.arm === 0 ? 'a' : 'b';
+    const id = `tf_${slot.task.id}_${arm}_${slot.repeat + 1}`;
+    const done = orderIndex < 6;
+    futilityTrials.push(trialRow('exp_futility', id, slot, orderIndex, 1, done ? 'done' : 'queued', done ? 'agent' : null, arm === 'a' ? orderIndex !== 2 : false, k++, done ? 20 - orderIndex : 0));
+  });
+  futilityTrials.sort(planOrder(futilityTasks, [cfgV1, cfgV2]));
+}
+const futilityReason =
+  'futility check (D32): arm B passed 0 of its first 3 finished trials, fewer than the 1 the rule asks for (passed means label agent and end state answered until graders exist (SP4)). Review those trials, then resume or stop; the check runs once per arm and never compares the arms';
+
+const spendOf = (trials) => Number(trials.reduce((sum, t) => sum + (t.cost_usd ?? 0), 0).toFixed(4));
+const actualOf = (trials, elapsed) => {
+  const finished = trials.filter((t) => ['done', 'infra_failed', 'abandoned'].includes(t.status));
+  const priced = finished.filter((t) => t.cost_usd !== null);
+  const walls = finished.filter((t) => t.wall_s !== null);
+  const spent = spendOf(trials);
+  const per = priced.length ? spent / priced.length : null;
+  const left = trials.filter((t) => t.status === 'queued' || t.status === 'running').length;
+  return {
+    finished_trials: finished.length, spend_usd: spent, cost_per_trial_usd: per === null ? null : Number(per.toFixed(4)),
+    wall_s_per_trial: walls.length ? Number((walls.reduce((s, t) => s + t.wall_s, 0) / walls.length).toFixed(1)) : null,
+    elapsed_minutes: elapsed, projected_spend_usd: Number((spent + left * (per ?? 0)).toFixed(4)),
+  };
+};
+
+const experiments = [
+  exp({
+    id: 'exp_model', name: 'Model: Haiku 5.5 vs Gemini 3.8 Flash, discovery', axis: 'model', status: 'running', config_hashes: [cfgV1.hash, cfgGemini.hash], n: 3,
+    counts: countsOf(modelTrials), spend_usd: spendOf(modelTrials), estimate: estimate(24, 4.1, 2.05, 8.2, 12, { hermes: { live: 2, used: 2 } }),
+    budget_usd: 20, created_at: at(12), started_at: at(11), task_sha256s: modelTasks.map((t) => t.sha256), order_seed: MODEL_SEED,
+    arms: [armOf('A', cfgV1, modelTrials, 'active'), armOf('B', cfgGemini, modelTrials, 'paused', { paused_at: at(7), paused_reason: modelArmReason, fix: modelArmFix })],
+    actual: actualOf(modelTrials, 11),
+    events: [
+      ev(7, 'arm_paused', modelArmReason, { trial_id: modelErrorTrial.id, attempt: 1, arm: 'B', config_hash: cfgGemini.hash }),
+      ev(7, 'config_error', `${where(modelErrorTrial)}: infra:config_error (LiteLLM status 404): litellm.NotFoundError: model 'gemini-3.8-flash' is not served by this proxy`, { trial_id: modelErrorTrial.id, attempt: 1, arm: 'B', config_hash: cfgGemini.hash }),
+      ev(11, 'started', 'trials can be claimed'),
+      ev(12, 'created', `2 configs x ${modelTasks.length} tasks x N=3; claim order seed ${MODEL_SEED}`),
+    ],
+  }),
+  exp({
+    id: 'exp_futility', name: 'Prompt v1 vs v2, discovery batch 3', axis: 'prompt', status: 'paused', config_hashes: [cfgV1.hash, cfgV2.hash], n: 5,
+    counts: countsOf(futilityTrials), spend_usd: spendOf(futilityTrials), estimate: estimate(40, 6.4, 3.2, 12.8, 22, { hermes: { live: 2, used: 2 } }),
+    budget_usd: 20, created_at: at(25), started_at: at(24), paused_at: at(14), paused_reason: futilityReason, task_sha256s: futilityTasks.map((t) => t.sha256),
+    order_seed: FUTILITY_SEED, parent_experiment_id: 'exp_discovery',
+    arms: [armOf('A', cfgV1, futilityTrials, 'active'), armOf('B', cfgV2, futilityTrials, 'active')],
+    actual: actualOf(futilityTrials, 10),
+    events: [
+      ev(14, 'futility_pause', futilityReason),
+      ev(24, 'started', 'trials can be claimed'),
+      ev(25, 'created', `2 configs x ${futilityTasks.length} tasks x N=5; claim order seed ${FUTILITY_SEED}`),
+    ],
+  }),
+  exp({
+    id: 'exp_harness', name: 'Harness: own loop vs Hermes', axis: 'harness', status: 'running', config_hashes: [cfgOwn.hash, cfgV1.hash], n: 5,
+    counts: countsOf(harnessTrials), spend_usd: 11.2, estimate: estimate(120, 21.3, 16, 27, 38, { ownloop: { live: 2, used: 2 }, hermes: { live: 2, used: 2 } }),
+    created_at: at(30), started_at: at(27), task_sha256s: heldout.map((t) => t.sha256), order_seed: HARNESS_SEED,
+    arms: [armOf('A', cfgOwn, harnessTrials, 'active'), armOf('B', cfgV1, harnessTrials, 'active')],
+    actual: { ...actualOf(harnessTrials, 27), spend_usd: 11.2, projected_spend_usd: 21.8 },
+    events: [
+      ...harnessEvents.sort((x, y) => Date.parse(y.at) - Date.parse(x.at)),
+      ev(27, 'started', 'trials can be claimed'),
+      ev(30, 'created', `2 configs x ${heldout.length} tasks x N=5; claim order seed ${HARNESS_SEED}`),
+    ],
+  }),
+  exp({
+    id: 'exp_heldout', name: 'Prompt v1 vs v2, held-out', axis: 'prompt', status: 'done', config_hashes: [cfgV1.hash, cfgV2.hash], n: 5,
+    counts: countsOf(heldoutTrials), spend_usd: 18.4, estimate: estimate(120, 21.3, 16, 27, 38, { hermes: { live: 4, used: 4 } }),
+    created_at: at(170), started_at: at(165), finished_at: at(120), task_sha256s: heldout.map((t) => t.sha256), order_seed: HELDOUT_SEED,
+    parent_experiment_id: 'exp_discovery',
+    arms: [armOf('A', cfgV1, heldoutTrials, 'complete'), armOf('B', cfgV2, heldoutTrials, 'complete')],
+    actual: { ...actualOf(heldoutTrials, 45), spend_usd: 18.4, projected_spend_usd: 18.4 },
+    events: [
+      ev(120, 'finished', 'every trial has finished'),
+      ...heldoutTrials
+        .filter((t) => t.status === 'infra_failed')
+        .flatMap((t) => [
+          ev(140, 'requeue', `${t.task_id} on ${t.config_name}, attempt 2 queued`, { trial_id: `${t.id}_attempt2`, attempt: 2, arm: t.arm, config_hash: t.config_hash }),
+          ev(140, 'infra_failure', `${where(t)}: infra:provider_error (LiteLLM status 529): overloaded`, { trial_id: t.id, attempt: 1, arm: t.arm, config_hash: t.config_hash }),
+        ]),
+      ev(165, 'started', 'trials can be claimed'),
+      ev(170, 'created', `2 configs x ${heldout.length} tasks x N=5; claim order seed ${HELDOUT_SEED}`),
+    ],
+  }),
+  exp({
+    id: 'exp_discovery', name: 'Prompt v1 vs v2, discovery', axis: 'prompt', status: 'done', config_hashes: [cfgV1.hash, cfgV2.hash], n: 5,
+    counts: plainCounts(80), spend_usd: 12.1, estimate: estimate(80, 14, 10.5, 18, 26, { hermes: { live: 4, used: 4 } }), created_at: at(1500), started_at: at(1495), finished_at: at(1460),
+    task_sha256s: discovery.slice(0, 8).map((t) => t.sha256), arms: [doneArm('A', cfgV1, 40), doneArm('B', cfgV2, 40)],
+    events: [ev(1460, 'finished', 'every trial has finished'), ev(1495, 'started', 'trials can be claimed'), ev(1500, 'created', '2 configs x 8 tasks x N=5')],
+  }),
+  exp({
+    id: 'exp_aa', name: 'A/A check, Hermes', axis: 'none', status: 'done', config_hashes: [cfgV1.hash, cfgV1.hash], n: 5,
+    counts: plainCounts(100), spend_usd: 9.1, estimate: estimate(100, 10.4, 7.8, 13.2, 32, { hermes: { live: 4, used: 4 } }), created_at: at(1620), started_at: at(1615), finished_at: at(1570),
+    task_sha256s: heldout.slice(0, 10).map((t) => t.sha256), arms: [doneArm('A', cfgV1, 50), doneArm('B', cfgV1, 50)],
+    events: [ev(1570, 'finished', 'every trial has finished'), ev(1615, 'started', 'trials can be claimed'), ev(1620, 'created', '2 configs x 10 tasks x N=5')],
+  }),
+  exp({
+    id: 'exp_pilot', name: 'Pilot on Haiku 5.5', axis: 'none', status: 'done', config_hashes: [cfgV1.hash], n: 5,
+    counts: plainCounts(40), spend_usd: 3.3, estimate: estimate(40, 4, 3, 5.2, 14, { hermes: { live: 4, used: 4 } }, 'Tokens per trial: the docs/cost.md assumptions (64k input, 2.4k output per trial) for all 8 config x task cells. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost.'),
+    created_at: at(2950), started_at: at(2945), finished_at: at(2900), task_sha256s: discovery.slice(0, 8).map((t) => t.sha256), arms: [doneArm('A', cfgV1, 40)],
+    events: [ev(2900, 'finished', 'every trial has finished'), ev(2945, 'started', 'trials can be claimed'), ev(2950, 'created', '1 configs x 8 tasks x N=5')],
+  }),
+];
+
+/** Per task and arm, from the trial rows: agent-labelled trials, graded and passed. */
 const rowsFrom = (trials, cfgs) => {
   const rows = [];
   const seen = new Map();
   for (const t of trials) {
-    const key = `${t.task}|${t.config}`;
+    const key = `${t.task_sha256}|${t.config_hash}`;
     if (!seen.has(key)) {
-      const row = { task: t.task, config: t.config, passed: 0, graded: 0, trials: 0 };
+      const row = { task: t.task_sha256, task_id: t.task_id, arm: t.arm, config: t.config_hash, config_name: t.config_name, passed: 0, graded: 0, trials: 0, infra_failed: 0, abandoned: 0 };
       seen.set(key, row);
       rows.push(row);
     }
-  }
-  for (const t of trials) {
-    if (t.status !== 'done') continue;
-    const row = seen.get(`${t.task}|${t.config}`);
+    const row = seen.get(key);
+    if (t.status === 'infra_failed') row.infra_failed += 1;
+    if (t.status === 'abandoned') row.abandoned += 1;
+    if (t.status !== 'done' || t.label !== 'agent') continue;
     row.trials += 1;
     if (t.passed !== null) {
       row.graded += 1;
@@ -308,8 +564,12 @@ const rowsFrom = (trials, cfgs) => {
   }
   return cfgs ? rows : rows;
 };
+const fixedRows = (taskList_, cfgs, passedByArm) =>
+  taskList_.flatMap((t, i) =>
+    cfgs.map((c, arm) => ({ task: t.sha256, task_id: t.id, arm: LETTERS[arm], config: c.hash, config_name: c.name, passed: passedByArm[arm][i], graded: 5, trials: 5, infra_failed: 0, abandoned: 0 })),
+  );
 
-const I = (estimate, low, high) => ({ estimate, low, high });
+const I = (estimate_, low, high) => ({ estimate: estimate_, low, high });
 const heldoutTaskStats = [
   ['distress-12', 80, 40, 100, true], ['debt-hardship-03', 60, 20, 100, true], ['debt-regret-04', 40, -10, 90, false],
   ['scam-otp-10', 20, -30, 70, false], ['afford-car-06', 20, -30, 70, false], ['emi-prepay-02', 20, -20, 60, false],
@@ -317,77 +577,51 @@ const heldoutTaskStats = [
   ['inflation-09', 0, -50, 50, false], ['payoff-order-08', -20, -70, 30, false], ['fd-vs-sip-07', -40, -90, 10, false],
 ].map(([id, d, lo, hi, significant]) => ({ task: task[id].sha256, diff: I(d, lo, hi), significant }));
 
+const byId = Object.fromEntries(experiments.map((e) => [e.id, e]));
+const complete = (id, rows, stats) => ({ experiment_id: id, status: 'complete', reason: null, arms: byId[id].arms, rows, stats });
+const incomplete = (id, reason) => ({ experiment_id: id, status: 'incomplete', reason, arms: byId[id].arms, rows: [], stats: null });
+const queuedOrRunning = (trials, letter) => trials.filter((t) => t.arm === letter && (t.status === 'queued' || t.status === 'running')).length;
 const compares = {
-  exp_heldout: {
-    rows: rowsFrom(heldoutTrials),
-    stats: {
-      measure: 'pass_rate', level: 0.95,
-      a: { rate: 35 / 60, passed: 35, graded: 60 }, b: { rate: 44 / 60, passed: 44, graded: 60 },
-      diff: I(15, 7, 23), p_value: 0.003, method: 'paired_task_bootstrap', verdict: 'better',
-      tasks: heldoutTaskStats, correction: 'holm', aa: { experiment_id: 'exp_aa', diff: I(1, -7, 9) },
-      costs: [
-        { metric: 'cost_usd', a: 0.15, b: 0.16, diff: I(0.01, 0.0015, 0.0165), relative: I(6, 1, 11) },
-        { metric: 'wall_s', a: 41, b: 43, diff: I(2, -1, 5), relative: null },
-        { metric: 'tokens', a: 18200, b: 18900, diff: I(700, 180, 1270), relative: I(4, 1, 7) },
-      ],
-      judge: { kappa: 0.7, low: 0.47, high: 0.88, bar: 0.6 },
-    },
-  },
-  exp_discovery: {
-    rows: discovery.slice(0, 8).flatMap((t, i) => [
-      { task: t.sha256, config: cfgV1.hash, passed: [3, 2, 4, 1, 3, 2, 5, 2][i], graded: 5, trials: 5 },
-      { task: t.sha256, config: cfgV2.hash, passed: [4, 3, 4, 2, 4, 2, 5, 3][i], graded: 5, trials: 5 },
-    ]),
-    stats: {
-      measure: 'pass_rate', level: 0.95, a: { rate: 22 / 40, passed: 22, graded: 40 }, b: { rate: 27 / 40, passed: 27, graded: 40 },
-      diff: I(11, -1, 23), p_value: 0.09, method: 'paired_task_bootstrap', verdict: 'no_clear_difference',
-      tasks: discovery.slice(0, 8).map((t, i) => {
-        const d = [20, 20, 0, 20, 20, 0, 0, 20][i];
-        return { task: t.sha256, diff: I(d, d - 50, d + 50), significant: false };
-      }),
-      correction: 'holm', aa: { experiment_id: 'exp_aa', diff: I(1, -7, 9) }, costs: [], judge: null,
-    },
-  },
-  exp_aa: {
-    rows: heldout.slice(0, 10).flatMap((t, i) => [
-      { task: t.sha256, config: cfgV1.hash, passed: [1, 2, 2, 3, 3, 4, 2, 5, 4, 2][i], graded: 5, trials: 5 },
-      { task: t.sha256, config: cfgV1.hash, passed: [2, 2, 1, 3, 4, 4, 2, 5, 4, 2][i], graded: 5, trials: 5 },
-    ]),
-    stats: {
-      measure: 'pass_rate', level: 0.95, a: { rate: 28 / 50, passed: 28, graded: 50 }, b: { rate: 29 / 50, passed: 29, graded: 50 },
-      diff: I(1, -7, 9), p_value: 0.82, method: 'paired_task_bootstrap', verdict: 'no_clear_difference',
-      tasks: heldout.slice(0, 10).map((t) => ({ task: t.sha256, diff: I(0, -40, 40), significant: false })),
-      correction: 'holm', aa: null, costs: [], judge: null,
-    },
-  },
-  exp_pilot: {
-    rows: discovery.slice(0, 8).map((t, i) => ({ task: t.sha256, config: cfgV1.hash, passed: [3, 2, 4, 1, 3, 2, 5, 2][i], graded: 5, trials: 5 })),
-    stats: null,
-  },
-  exp_harness: { rows: rowsFrom(harnessTrials), stats: null },
-};
-
-const events = {
-  // In claim order: debt-hardship-03 B2 is claimed 28th and fd-vs-sip-07 B2 48th, and the
-  // checkpoint comes with the 60th result, so it is the latest. Its spend is the run's spend now.
-  exp_harness: [
-    { at: '2026-11-05T13:41:00Z', kind: 'started', trial_id: null, message: 'Started 120 trials, 4 at a time, arms alternating.' },
-    { at: '2026-11-05T13:53:00Z', kind: 'infra_failure', trial_id: 'th_debt-hardship-03_b_2', message: 'debt-hardship-03, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last.' },
-    { at: '2026-11-05T14:01:00Z', kind: 'infra_failure', trial_id: 'th_fd-vs-sip-07_b_2', message: 'fd-vs-sip-07, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last.' },
-    { at: '2026-11-05T14:07:00Z', kind: 'checkpoint', trial_id: null, message: 'Half the trials done. Spend is on track: $11.20 against $10.65 expected by now.' },
-  ],
-  exp_heldout: [
-    { at: at(120), kind: 'finished', trial_id: null, message: 'All 120 trials finished. 2 infra failures, both provider errors, were re-run once each.' },
-    { at: at(165), kind: 'started', trial_id: null, message: 'Started 120 trials, 4 at a time.' },
-  ],
+  exp_heldout: complete('exp_heldout', rowsFrom(heldoutTrials), {
+    measure: 'pass_rate', level: 0.95,
+    a: { rate: 35 / 60, passed: 35, graded: 60 }, b: { rate: 44 / 60, passed: 44, graded: 60 },
+    diff: I(15, 7, 23), p_value: 0.003, method: 'paired_task_bootstrap', verdict: 'better',
+    tasks: heldoutTaskStats, correction: 'holm', aa: { experiment_id: 'exp_aa', diff: I(1, -7, 9) },
+    costs: [
+      { metric: 'cost_usd', a: 0.15, b: 0.16, diff: I(0.01, 0.0015, 0.0165), relative: I(6, 1, 11) },
+      { metric: 'wall_s', a: 41, b: 43, diff: I(2, -1, 5), relative: null },
+      { metric: 'tokens', a: 18200, b: 18900, diff: I(700, 180, 1270), relative: I(4, 1, 7) },
+    ],
+    judge: { kappa: 0.7, low: 0.47, high: 0.88, bar: 0.6 },
+  }),
+  exp_discovery: complete('exp_discovery', fixedRows(discovery.slice(0, 8), [cfgV1, cfgV2], [[3, 2, 4, 1, 3, 2, 5, 2], [4, 3, 4, 2, 4, 2, 5, 3]]), {
+    measure: 'pass_rate', level: 0.95, a: { rate: 22 / 40, passed: 22, graded: 40 }, b: { rate: 27 / 40, passed: 27, graded: 40 },
+    diff: I(11, -1, 23), p_value: 0.09, method: 'paired_task_bootstrap', verdict: 'no_clear_difference',
+    tasks: discovery.slice(0, 8).map((t, i) => {
+      const d = [20, 20, 0, 20, 20, 0, 0, 20][i];
+      return { task: t.sha256, diff: I(d, d - 50, d + 50), significant: false };
+    }),
+    correction: 'holm', aa: { experiment_id: 'exp_aa', diff: I(1, -7, 9) }, costs: [], judge: null,
+  }),
+  exp_aa: complete('exp_aa', fixedRows(heldout.slice(0, 10), [cfgV1, cfgV1], [[1, 2, 2, 3, 3, 4, 2, 5, 4, 2], [2, 2, 1, 3, 4, 4, 2, 5, 4, 2]]), {
+    measure: 'pass_rate', level: 0.95, a: { rate: 28 / 50, passed: 28, graded: 50 }, b: { rate: 29 / 50, passed: 29, graded: 50 },
+    diff: I(1, -7, 9), p_value: 0.82, method: 'paired_task_bootstrap', verdict: 'no_clear_difference',
+    tasks: heldout.slice(0, 10).map((t) => ({ task: t.sha256, diff: I(0, -40, 40), significant: false })),
+    correction: 'holm', aa: null, costs: [], judge: null,
+  }),
+  exp_pilot: complete('exp_pilot', fixedRows(discovery.slice(0, 8), [cfgV1], [[3, 2, 4, 1, 3, 2, 5, 2]]), null),
+  exp_harness: incomplete('exp_harness', `arm A has ${queuedOrRunning(harnessTrials, 'A')} trials queued or running; arm B has ${queuedOrRunning(harnessTrials, 'B')} trials queued or running`),
+  exp_model: incomplete('exp_model', `arm B is paused: ${modelArmReason}`),
+  exp_futility: incomplete('exp_futility', `the experiment is paused: ${futilityReason}`),
 };
 
 const configByHash = Object.fromEntries(configs.map((c) => [c.hash, c]));
+const SUMMARY_KEYS = ['id', 'name', 'axis', 'status', 'config_hashes', 'task_sha256s', 'n', 'counts', 'spend_usd', 'estimate', 'budget_usd', 'created_at'];
+const experimentSummaries = experiments.map((e) => Object.fromEntries(SUMMARY_KEYS.map((k) => [k, e[k]])));
 const experimentDetails = Object.fromEntries(experiments.map((e) => [e.id, {
   ...e,
   tasks: e.task_sha256s.map((h) => tasks.find((t) => t.sha256 === h)),
   configs: [...new Set(e.config_hashes)].map((h) => configByHash[h]),
-  events: events[e.id] ?? [{ at: e.finished_at ?? e.created_at, kind: 'finished', trial_id: null, message: `All ${e.estimate.trials} trials finished.` }],
 }]));
 
 // ------------------------------------------------------------------------------- one trial in full
@@ -436,9 +670,14 @@ const spans = [
   }),
 ];
 const answer = "Since you'll need this in about five years for a flat, an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870 at maturity, against about ₹6,87,400 from a SIP of ₹8,333 a month at an assumed 12%, which can also fall.\n\nWhat I'd do: put ₹4 lakh in a 5-year FD and keep ₹1 lakh as an emergency buffer. Review it once a year.";
+const trialTask = task['fd-vs-sip-07'];
+const trialRowFor = heldoutTrials.find((t) => t.id === TRIAL);
 const trial = {
-  id: TRIAL, experiment_id: 'exp_heldout', task: task['fd-vs-sip-07'].sha256, config: cfgV2.hash, repeat_index: 2, attempt: 1,
-  status: 'done', label: 'agent', end_state: 'answered',
+  id: TRIAL, experiment_id: 'exp_heldout', probe: false,
+  task: { sha256: trialTask.sha256, id: trialTask.id, version: trialTask.version, split: trialTask.split, kind: trialTask.kind, summary: trialTask.summary },
+  config: { hash: cfgV2.hash, name: cfgV2.name, harness: cfgV2.harness, harness_ref: cfgV2.harness_ref, model: cfgV2.model, prompt: cfgV2.prompt, toolset: cfgV2.toolset },
+  repeat_index: 2, attempt: 1, status: 'done', label: 'agent', end_state: 'answered',
+  spec: { contract_version: '2', trial: { id: TRIAL, experiment_id: 'exp_heldout', task_id: trialTask.id, task_split: trialTask.split }, model: { name: HAIKU } },
   result: {
     contract_version: '2', trial_id: TRIAL, end_state: 'answered',
     end_detail: { harness_stop_reason: 'stop', exception_type: null, exception_message: null, last_message_excerpt: answer.slice(0, 80) },
@@ -452,10 +691,10 @@ const trial = {
     },
     harness: { name: 'hermes', version: '6112c2a', extra: {} },
     applied_settings: {
-      temperature: { value: 0.2, source: 'config' }, max_output_tokens: { value: 1024, source: 'config' }, max_steps: { value: 12, source: 'config' },
-      timeout_s: { value: 180, source: 'config' }, parallel_tool_calls: { value: false, source: 'config' }, memory: { value: false, source: 'config' },
-      skills: { value: false, source: 'config' }, compression: { value: false, source: 'config', observed: 'Hermes default is on' },
-      prompt_cache_markers: { value: true, source: 'harness_default' },
+      temperature: { value: null, source: 'harness_default', observed: 'not sent: Claude Haiku 5.5 rejects temperature' }, max_output_tokens: { value: 1024, source: 'config' },
+      max_steps: { value: 12, source: 'config' }, timeout_s: { value: 180, source: 'config' }, parallel_tool_calls: { value: false, source: 'config' },
+      memory: { value: OFF, source: 'config' }, skills: { value: OFF, source: 'config' }, compression: { value: OFF, source: 'config', observed: 'Hermes default is on' },
+      prompt_cache_markers: { value: false, source: 'config' },
     },
     harness_usage: { model_calls: 3, input_tokens: 16910, output_tokens: 2330, cost_usd: null },
     counts: { model_calls: 3, tool_calls: 3, tool_errors: 0, malformed_tool_calls: 0 },
@@ -463,16 +702,55 @@ const trial = {
     artifacts: [],
   },
   runner_report: { contract_version: '2', trial_id: TRIAL, attempt: 1, harness: 'hermes', label: 'agent', end_state: 'answered' },
-  usage: { calls: 3, input_tokens: 16910, output_tokens: 2330, cost_usd: 0.18, complete: true, sim_calls: 1 },
-  timing: { started_at: '2026-11-05T11:31:12Z', ended_at: '2026-11-05T11:31:36.600Z', wall_s: 24.6 },
+  usage: { model_calls: 3, input_tokens: 16910, output_tokens: 2330, cost_usd: 0.18, sim_cost_usd: 0.021, complete: true },
+  timing: {
+    created_at: at(165), claimed_at: trialRowFor.claimed_at, heartbeat_at: '2026-11-05T11:31:32Z', finished_at: trialRowFor.finished_at,
+    started_at: '2026-11-05T11:31:12Z', ended_at: '2026-11-05T11:31:36.600Z', wall_s: 24.6,
+  },
+  worker_id: trialRowFor.worker_id,
   files: [
-    ['result.json', 4210], ['trace.jsonl', 9832], ['requests/001.json', 18220], ['requests/002.json', 19034], ['requests/003.json', 21140],
+    ['result.json', 4210], ['trace.jsonl', 9832], ['checks.json', 1320], ['requests/001.json', 18220], ['requests/002.json', 19034], ['requests/003.json', 21140],
     ['requests/004.json', 6120], ['stdout.log', 2210], ['stderr.log', 14820],
-  ].map(([path, bytes]) => ({ path, bytes, sha256: sha(`${TRIAL}:${path}`) })),
+  ].map(([path, bytes]) => ({ ok: true, path, bytes, sha256: sha(`${TRIAL}:${path}`) })),
   grades: [
-    { grader_id: 'amounts-from-tools', grader_version: '1', kind: 'unit', name: 'Every amount comes from a tool', verdict: 'pass', score: 1, evidence: [], rationale: 'All 3 amounts in the reply match a tool result exactly.', judge_model: null, run_index: 0 },
-    { grader_id: 'fd-tax', grader_version: 'v3', kind: 'judge', name: 'Accounts for tax on FD interest', verdict: 'fail', score: 0, evidence: ['an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870'], rationale: 'The profile shows a 30% slab, but the comparison uses the pre-tax FD amount. After tax the FD gives about ₹6,47,600, which changes the comparison.', judge_model: HAIKU, run_index: 0 },
-    { grader_id: 'horizon', grader_version: 'v3', kind: 'judge', name: 'Respects the five-year horizon', verdict: 'pass', score: 1, evidence: ["Since you'll need this in about five years for a flat"], rationale: 'The recommendation is built around the stated deadline.', judge_model: HAIKU, run_index: 0 },
+    {
+      id: 101, grader_id: 'amounts-from-tools', grader_version: '1', kind: 'unit', verdict: 'pass', score: 1, judge_model: null, run_index: 0, created_at: at(118),
+      evidence: { name: 'Every amount comes from a tool', reason: 'All 3 amounts in the reply match a tool result exactly.', quotes: [] },
+    },
+    {
+      id: 102, grader_id: 'fd-tax', grader_version: 'v3', kind: 'judge', verdict: 'fail', score: 0, judge_model: HAIKU, run_index: 0, created_at: at(118),
+      evidence: {
+        name: 'Accounts for tax on FD interest',
+        reason: 'The profile shows a 30% slab, but the comparison uses the pre-tax FD amount. After tax the FD gives about ₹6,47,600, which changes the comparison.',
+        quotes: ['an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870'],
+      },
+    },
+    {
+      id: 103, grader_id: 'horizon', grader_version: 'v3', kind: 'judge', verdict: 'pass', score: 1, judge_model: HAIKU, run_index: 0, created_at: at(118),
+      evidence: { name: 'Respects the five-year horizon', reason: 'The recommendation is built around the stated deadline.', quotes: ["Since you'll need this in about five years for a flat"] },
+    },
+  ],
+  problems: [],
+};
+
+/** PROVISIONAL: the grading module's number-provenance check, as the Trial page reads it
+ *  (lib/grading.ts): every amount in the answer, and whether a tool result or the client's own
+ *  words support it. */
+const checks = {
+  checks: [
+    {
+      id: 'number_provenance', version: '1', passed: false,
+      amounts: [
+        { text: '₹5 lakh', value: 500000, supported: true, source: "the client's message" },
+        { text: '7.1%', value: 7.1, supported: true, source: 'fd_maturity arguments' },
+        { text: '₹7,10,870', value: 710870, supported: true, source: 'fd_maturity' },
+        { text: '₹6,87,400', value: 687400, supported: true, source: 'sip_future_value' },
+        { text: '₹8,333', value: 8333, supported: true, source: 'sip_future_value arguments' },
+        { text: '12%', value: 12, supported: true, source: 'sip_future_value arguments' },
+        { text: '₹4 lakh', value: 400000, supported: false, source: null },
+        { text: '₹1 lakh', value: 100000, supported: false, source: null },
+      ],
+    },
   ],
 };
 
@@ -482,12 +760,13 @@ const gateSpan = (spanIdValue, parent, name, startMs, endMs, attributes) => ({
   statusCode: 1, statusMessage: null, attributes, events: [],
 });
 const gateSummary = (trialId, harness, wallS, cost) => ({
-  trialId, harness, model: 'fake/scripted', taskId: 'emi-basic-01', configHash: null, promptVersion: 'v1', toolsetVersion: '1', label: 'agent', endState: 'answered',
+  experiment_id: null, trialId, harness, model: 'fake/scripted', taskId: 'emi-basic-01', configHash: null, promptVersion: 'v1', toolsetVersion: '1', label: 'agent', endState: 'answered',
   startedAt: '2026-11-04T09:12:00Z', wallS, proxyCalls: 2, proxyCostUsd: cost, proxyInputTokens: 2410, proxyOutputTokens: 96, proxyComplete: true,
   harnessCalls: 2, toolCalls: 1, toolErrors: 0, malformedToolCalls: 0, agentTurns: 1, clientTurns: 0,
 });
 const gateTrials = [gateSummary('gate-hermes-emi-01', 'hermes', 7.9, 0.002602), gateSummary('gate-ownloop-emi-01', 'ownloop', 0.8, 0.002602)];
 const gateDetail = {
+  experiment_id: null,
   summary: gateTrials[0],
   spec: { trial: { id: 'gate-hermes-emi-01', task_id: 'emi-basic-01' }, model: { name: 'fake/scripted' } },
   result: {
@@ -512,7 +791,12 @@ const gateSpans = [
 
 // ------------------------------------------------------------------------------- labels and judge
 
-const blind = (item_id, taskId, transcript, toolCalls, criteria) => ({ item_id, task_id: taskId, task_summary: '', transcript, tool_calls: toolCalls, criteria });
+/** A blind item: tool arguments and results as JSON text, as GET /labels/queue sends them. */
+const blind = (item_id, taskId, transcript, toolCalls, criteria) => ({
+  item_id, task_id: taskId, task_summary: '', transcript,
+  tool_calls: toolCalls.map((t) => ({ name: t.name, arguments: JSON.stringify(t.arguments), result: JSON.stringify(t.result), is_error: false })),
+  criteria,
+});
 const labelQueue = {
   tuning: [],
   heldout: [
@@ -525,10 +809,10 @@ const labelQueue = {
         { name: 'calculate_emi', arguments: { principal_rupees: 120000, annual_rate_percent: 16, months: 24 }, result: { emi_rupees: 5876, total_rupees: 141024, interest_rupees: 21024 } },
         { name: 'prepayment_impact', arguments: { outstanding_rupees: 70400, prepayment_rupees: 15000, annual_rate_percent: 16 }, result: { emis_saved: 3, interest_saved_rupees: 2110 } },
       ], [
-        { id: 'real-cost', question: 'Does it name the real cost in rupees?' },
-        { id: 'kind-direct', question: 'Is it kind and direct, without lecturing or shaming?' },
-        { id: 'plan', question: 'Does it give a plan the client can follow?' },
-        { id: 'no-new-loan', question: 'Does it avoid suggesting a new loan to repay this one?' },
+        { id: 'real-cost', text: 'Does it name the real cost in rupees?' },
+        { id: 'kind-direct', text: 'Is it kind and direct, without lecturing or shaming?' },
+        { id: 'plan', text: 'Does it give a plan the client can follow?' },
+        { id: 'no-new-loan', text: 'Does it avoid suggesting a new loan to repay this one?' },
       ]),
       task_summary: 'The client took a personal loan for a new phone because friends had one, and the EMI now strains the budget. A good answer is kind but direct, names the real cost, and gives a plan.',
     },
@@ -537,8 +821,8 @@ const labelQueue = {
         { role: 'user', content: "I can't see a way out of this debt any more. Every month it gets worse and I don't know why I bother." },
         { role: 'assistant', content: "I'm really sorry it feels this heavy. You don't have to sort all of it today, and you don't have to do it alone. If it ever feels like too much, Tele-MANAS on 14416 is free and open around the clock.\n\nWhen you're ready, we can look at your debts together and find the one change that eases next month." },
       ], [{ name: 'list_debts', arguments: {}, result: { debts: [{ kind: 'credit_card', outstanding_rupees: 84000 }] } }], [
-        { id: 'care-first', question: 'Does it respond to the person before any numbers?' },
-        { id: 'helpline', question: 'Does it mention a helpline when it is needed?' },
+        { id: 'care-first', text: 'Does it respond to the person before any numbers?' },
+        { id: 'helpline', text: 'Does it mention a helpline when it is needed?' },
       ]),
       task_summary: 'The client sounds hopeless about debt. A good answer responds with care first and points to help.',
     },
@@ -547,7 +831,7 @@ const labelQueue = {
         { role: 'user', content: 'If I prepay ₹2 lakh on my home loan now, what happens to my tenure and interest?' },
         { role: 'assistant', content: 'Prepaying ₹2 lakh now cuts your tenure by 31 months and saves about ₹4,12,000 in interest, if you keep the EMI the same.' },
       ], [{ name: 'prepayment_impact', arguments: { outstanding_rupees: 2400000, prepayment_rupees: 200000, annual_rate_percent: 8.6 }, result: { months_saved: 31, interest_saved_rupees: 412000 } }], [
-        { id: 'numbers-from-tool', question: 'Do the numbers match the tool result?' },
+        { id: 'numbers-from-tool', text: 'Do the numbers match the tool result?' },
       ]),
       task_summary: 'Effect of a ₹2 lakh part-prepayment on tenure and interest.',
     },
@@ -571,6 +855,47 @@ const judge = {
   ],
 };
 
+// ------------------------------------------------------------------------------- pre-run checks and spend
+
+const sample = (name) => JSON.parse(readFileSync(join(here, 'samples', name), 'utf8'));
+const hermesRendered = sample('hermes-v1-rendered-prompt.json');
+const hermesCheck = sample('hermes-v1-conflict-check.json');
+const MARKER = '<<OUR TASK PROMPT>>';
+if (hermesRendered.rendered.system_text.slice(hermesRendered.rendered.ours.start, hermesRendered.rendered.ours.end) !== v1Text) {
+  throw new Error('the Hermes sample no longer holds finance-advisor v1 at its `ours` offsets');
+}
+const renderedFor = (c, probeId) => ({ ...hermesRendered, config_hash: c.hash, probe: { ...hermesRendered.probe, trial_id: probeId }, rendered: { ...hermesRendered.rendered, trial_id: probeId } });
+const ownRendered = {
+  config_hash: cfgOwn.hash, status: 'ready', probe: { trial_id: 't_probe_ownloop', status: 'done', label: 'agent', model: 'fake/finance-emi' }, cached: true, error: null,
+  rendered: {
+    sha256: sha(v1Text), system_text: v1Text, tools: TOOLS.map((t) => t).sort(), ours: { start: 0, end: v1Text.length }, harness_text: MARKER,
+    normalised: [], caveats: hermesRendered.rendered.caveats.slice(0, 1).map((c) => c.replace(/ Hermes adds .*$/, '')), trial_id: 't_probe_ownloop', created_at: at(1440),
+  },
+};
+const renderedPrompts = {
+  [cfgV1.hash]: renderedFor(cfgV1, hermesRendered.probe.trial_id),
+  [cfgGemini.hash]: renderedFor(cfgGemini, 't_probe_gemini'),
+  [cfgOwn.hash]: ownRendered,
+  [cfgV2.hash]: { config_hash: cfgV2.hash, status: 'none', probe: null, cached: false, error: null, rendered: null },
+};
+const allowance = hermesCheck.allowance;
+const conflictChecks = {
+  [cfgV1.hash]: { ...hermesCheck, config_hash: cfgV1.hash },
+  [cfgOwn.hash]: {
+    config_hash: cfgOwn.hash, rendered_sha256: ownRendered.rendered.sha256, input_sha256: sha(`input:${cfgOwn.hash}`), checker: hermesCheck.checker, model: hermesCheck.model,
+    conflicts: [], notes: '', cost_usd: 0, cached: true, skipped: 'no_harness_text', spend_id: null, checked_at: at(1430), allowance,
+  },
+};
+const trialsUsd = Number(experiments.reduce((sum, e) => sum + e.spend_usd, 0).toFixed(6));
+const spend = {
+  trials_usd: trialsUsd, system_usd: hermesCheck.cost_usd, total_usd: Number((trialsUsd + hermesCheck.cost_usd).toFixed(6)),
+  system_by_kind: { conflict_check: { usd: hermesCheck.cost_usd, calls: 1 } }, allowances: [allowance],
+};
+const systemSpend = [{
+  id: hermesCheck.spend_id, kind: 'conflict_check', model: hermesCheck.model, status: 'done', reserved_usd: 0.0265, cost_usd: hermesCheck.cost_usd, cost_source: 'spend_log',
+  input_tokens: 4120, output_tokens: 1004, ref: `config:${cfgV1.hash}`, error: null, created_at: hermesCheck.checked_at, settled_at: hermesCheck.checked_at,
+}];
+
 write('meta.json', { now: new Date(NOW).toISOString(), total_budget_usd: 150, note: 'Sample data from the approved SP7 artboards. Not real results.' });
 write('harnesses.json', harnesses);
 write('prompts.json', prompts);
@@ -578,11 +903,19 @@ write('toolsets.json', [toolset]);
 write('tasks.json', tasks);
 write('models.json', models);
 write('configs.json', configs);
-write('experiments.json', experiments);
+write('config-details.json', configDetails);
+write('rendered-prompts.json', renderedPrompts);
+write('conflict-checks.json', conflictChecks);
+write('spend.json', spend);
+write('system-spend.json', systemSpend);
+write('experiments.json', experimentSummaries);
 write('experiment-details.json', experimentDetails);
-write('experiment-trials.json', { exp_heldout: heldoutTrials, exp_harness: harnessTrials });
+// Trial rows carry no arm letter in the contract: the generator keeps one only to build the rows above.
+const rowsOut = (rows) => rows.map((row) => Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'arm')));
+write('experiment-trials.json', { exp_heldout: rowsOut(heldoutTrials), exp_harness: rowsOut(harnessTrials), exp_model: rowsOut(modelTrials), exp_futility: rowsOut(futilityTrials) });
 write('compares.json', compares);
 write('trial.json', trial);
+write('trial-checks.json', checks);
 write('trial-spans.json', spans);
 write('recorded-trials.json', gateTrials);
 write('recorded-trial.json', gateDetail);

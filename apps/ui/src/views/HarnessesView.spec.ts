@@ -16,7 +16,7 @@ describe('HarnessesView in fixture mode', () => {
     expect(w.get('[data-test="cell-langgraph-temperature"] span').classes()).toContain('pending');
     expect(w.get('.key').text()).toContain('Not probed yet: no request sent to check it');
     expect(w.get('.key .pending').text()).toBe('Not probed yet');
-    expect(w.get('[data-test="cell-adk-temperature"]').text()).toBe('ProbedNot sent unless set. Inert on Claude Haiku 5.5');
+    expect(w.get('[data-test="cell-adk-temperature"]').text()).toBe('ProbedNot sent unless set. Inert on Gemini 3.8 Flash');
     expect(w.get('[data-test="cell-ownloop-temperature"] span').classes()).toContain('probed');
   });
 

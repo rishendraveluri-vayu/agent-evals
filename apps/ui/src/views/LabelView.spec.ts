@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { routeFetch, settle, useFixtures } from '../test/helpers';
 import LabelView from './LabelView.vue';
 
@@ -123,7 +123,9 @@ describe('LabelView against the API', () => {
     const item = w.get('[data-test="blind-item"]');
     expect(item.get('summary .mono').text()).toBe('list_debts');
     expect(item.get('.tool > .mono').text()).toBe('list_debts');
-    expect(item.get('.tool-body').text()).toContain('{"result": "{\\"count\\":3}"}');
+    // JSON text is shown pretty-printed; the wrapper and its preamble are gone.
+    expect(item.get('.tool-body').text()).toContain('"result": "{\\"count\\":3}"');
+    expect(item.get('.tool-body').text()).not.toContain('untrusted_tool_result');
     const html = w.html();
     expect(html).not.toContain('mcp__');
     expect(html).not.toContain('untrusted_tool_result');
@@ -135,7 +137,7 @@ describe('LabelView against the API', () => {
       '/api/labels/queue?set=tuning': [],
       '/api/labels/queue?set=final': [],
       '/api/labels/queue?set=heldout': [
-        { item_id: 'lq_1', task_summary: '', transcript: [{ role: 'assistant', content: 'Answer.' }], tool_calls: [], criteria: [{ id: 'a', question: 'First?' }, { id: 'b', question: 'Second?' }] },
+        { item_id: 'lq_1', task_summary: '', transcript: [{ role: 'assistant', content: 'Answer.' }], tool_calls: [], criteria: [{ id: 'a', text: 'First?' }, { id: 'b', text: 'Second?' }] },
       ],
       'POST /api/labels': { ok: true },
     });
@@ -152,6 +154,143 @@ describe('LabelView against the API', () => {
       { item_id: 'lq_1', set: 'heldout', criterion: 'a', value: 'yes', note: 'Clear enough.' },
       { item_id: 'lq_1', set: 'heldout', criterion: 'b', value: 'unsure', note: 'Clear enough.' },
     ]);
-    expect(w.get('[data-test="queue-empty"]').text()).toBe('Nothing left to label in this set.');
+    expect(w.get('[data-test="queue-empty"]').text()).toContain('All 1 in this queue done: 1 saved.');
+  });
+});
+
+/** Two tuning items in the shape GET /labels/queue sends today (4 Nov batch, the draft tasks), plus
+ *  fields that would unblind the labeller, which the client must drop. */
+const tuningItem = (id: string, reply: string) => ({
+  item_id: id,
+  task_summary: 'DRAFT for Rishi: Meera can put Rs 20,000 a month towards her three debts: which first, and when is she debt-free?',
+  transcript: [
+    { role: 'user', content: 'I can put about ₹20,000 a month towards my debts. Which one should I pay off first?' },
+    { role: 'assistant', content: reply },
+  ],
+  tool_calls: [
+    { name: 'mcp__finance__list_debts', arguments: '{}', result: '{"count":3,"total_balance":441050.0}', is_error: false },
+    { name: 'debt_payoff_plan', arguments: '{"strategy": "avalanche"}', result: '{"months":28}', is_error: false },
+  ],
+  criteria: [{ id: 'overall', text: 'Would a real client in this situation be well served by this? Pass or fail, and one line on why.' }],
+  harness: 'hermes',
+  model: 'claude-haiku-5-5',
+  config_hash: 'sha256:3b81e04aaaa',
+  arm: 'B',
+  cost_usd: 0.0023,
+  grades: [{ verdict: 'fail' }],
+});
+
+describe('LabelView, the tuning batch against the API', () => {
+  // Each screen here is on the page and listens for keys, so every one is taken off after its test.
+  const mounted: { unmount: () => void }[] = [];
+  afterEach(() => {
+    for (const w of mounted.splice(0)) w.unmount();
+  });
+  function mountTuning() {
+    const fetched = routeFetch({
+      '/api/labels/queue?set=tuning&experiment=e_batch': [
+        tuningItem('t_one', '**Pay the credit card first.** At 42% a year it costs the most.\n\n- Keep paying every minimum.\n- Put the extra on the card.'),
+        tuningItem('t_two', 'Start with the personal loan.'),
+      ],
+      '/api/labels/queue?set=heldout&experiment=e_batch': [],
+      '/api/labels/queue?set=final&experiment=e_batch': [],
+      'POST /api/labels': { ok: true },
+    });
+    const w = mount(LabelView, { props: { initialSet: 'tuning', experiment: 'e_batch' }, attachTo: document.body });
+    mounted.push(w);
+    return { w, ...fetched };
+  }
+  const key = (k: string, target: Element | Window = window) => target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+
+  it('shows the reply with its tool calls folded away, the one question, and nothing that unblinds', async () => {
+    const { w } = mountTuning();
+    await settle();
+    expect(w.get('[data-test="progress"]').text()).toBe('1 of 2');
+    expect(w.get('[data-test="item-progress"]').text()).toBe('1 of 2');
+    expect(w.get('[data-test="set-purpose"]').text()).toContain('Open coding before any rubric');
+    const item = w.get('[data-test="blind-item"]');
+    // Folded: a closed disclosure, the bare tool names in its summary.
+    const tools = item.get('details');
+    expect(tools.attributes('open')).toBeUndefined();
+    expect(tools.get('summary').text()).toContain('2 tool calls');
+    expect(tools.get('summary').text()).toContain('list_debts, debt_payoff_plan');
+    // The reply reads as written: bold and bullets, as text.
+    expect(item.get('.bubble--agent strong').text()).toBe('Pay the credit card first.');
+    expect(item.findAll('.bubble--agent .md--item')).toHaveLength(2);
+    expect(w.findAll('[data-test="criterion"]')).toHaveLength(1);
+    expect(w.get('[data-test="criterion"] legend').text()).toContain('Would a real client in this situation be well served by this?');
+    expect(w.findAll('[data-test="criterion"] button').map((b) => b.text())).toEqual(['1Yes', '2No', '3Not sure']);
+    expect(w.html()).not.toContain('mcp__');
+    // The output itself (the question says pass or fail, so it is checked apart).
+    expectBlind(item.get('section').text());
+    for (const word of ['hermes', 'claude', 'haiku', '0.0023', '3b81e04']) expect(item.text().toLowerCase()).not.toContain(word);
+    expect(item.text()).not.toMatch(/\barm\b/i);
+  });
+
+  it('labels with the keyboard: 1 answers and moves to the note, Enter saves and opens the next', async () => {
+    const { w, calls } = mountTuning();
+    await settle();
+    key('2');
+    await settle();
+    expect(w.get('[data-test="criterion"] [aria-pressed="true"]').text()).toBe('2No');
+    const note = w.get('[data-test="label-note"]');
+    expect(document.activeElement).toBe(note.element);
+    // Keys typed in the note are text, not answers.
+    key('1', note.element);
+    await settle();
+    expect(w.get('[data-test="criterion"] [aria-pressed="true"]').text()).toBe('2No');
+    await note.setValue('Picks the right debt but never says when she is debt-free.');
+    key('Enter', note.element);
+    await settle();
+    const posts = calls.filter((c) => c.method === 'POST');
+    expect(posts.map((p) => p.body)).toEqual([
+      { item_id: 't_one', set: 'tuning', criterion: 'overall', value: 'no', note: 'Picks the right debt but never says when she is debt-free.' },
+    ]);
+    // The next item, with nothing carried over.
+    expect(w.get('[data-test="progress"]').text()).toBe('2 of 2 · 1 saved');
+    expect(w.get('.bubble--agent').text()).toContain('Start with the personal loan.');
+    expect(w.findAll('[data-test="criterion"] [aria-pressed="true"]')).toHaveLength(0);
+    expect((w.get('[data-test="label-note"]').element as HTMLTextAreaElement).value).toBe('');
+    // Enter does nothing until the question is answered.
+    key('Enter');
+    await settle();
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    key('3');
+    key('Enter', w.get('[data-test="label-note"]').element);
+    await settle();
+    expect(calls.filter((c) => c.method === 'POST').map((p) => (p.body as { value: string }).value)).toEqual(['no', 'unsure']);
+    expect(w.get('[data-test="queue-empty"]').text()).toContain('All 2 in this queue done: 2 saved.');
+  });
+
+  it('keeps a new line in the note with Shift+Enter, and skips without saving', async () => {
+    const { w, calls } = mountTuning();
+    await settle();
+    key('1');
+    await settle();
+    const note = w.get('[data-test="label-note"]').element;
+    note.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }));
+    await settle();
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+    await w.findAll('.buttons button')[1].trigger('click');
+    await settle();
+    expect(w.get('[data-test="progress"]').text()).toBe('2 of 2 · 0 saved, 1 skipped');
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+  });
+
+  it('shows a refused label with the reason and stays on the item', async () => {
+    routeFetch({
+      '/api/labels/queue?set=tuning': [tuningItem('t_one', 'Answer.')],
+      '/api/labels/queue?set=heldout': [],
+      '/api/labels/queue?set=final': [],
+    });
+    const w = mount(LabelView, { attachTo: document.body });
+    mounted.push(w);
+    await settle();
+    expect(w.get('[data-test="progress"]').text()).toBe('1 of 1');
+    key('1');
+    key('Enter');
+    await settle();
+    expect(w.get('[role="alert"]').text()).toContain('no route for POST /api/labels');
+    expect(w.get('[data-test="progress"]').text()).toBe('1 of 1');
   });
 });

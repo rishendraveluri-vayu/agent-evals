@@ -1,0 +1,17 @@
+[
+  {
+    "id": "ss_0mw2514q91eea4107aead",
+    "kind": "conflict_check",
+    "model": "claude-sonnet-5-5",
+    "status": "done",
+    "reserved_usd": 0.0265,
+    "cost_usd": 0.018282,
+    "cost_source": "spend_log",
+    "input_tokens": 4120,
+    "output_tokens": 1004,
+    "ref": "config:sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+    "error": null,
+    "created_at": "2026-11-04T13:13:58.896Z",
+    "settled_at": "2026-11-04T13:13:58.896Z"
+  }
+]

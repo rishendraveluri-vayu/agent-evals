@@ -1,8 +1,10 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
-import type { ExperimentDetail, ExperimentTrial } from '../api/types';
+import { describe, expect, it, vi } from 'vitest';
+import { api } from '../api/client';
+import type { ExperimentDetail, TrialRowSummary } from '../api/types';
 import details from '../fixtures/experiment-details.json';
 import experimentTrials from '../fixtures/experiment-trials.json';
+import { ApiError } from '../api/errors';
 import { routeFetch, settle, useFixtures } from '../test/helpers';
 import RunView from './RunView.vue';
 
@@ -30,7 +32,7 @@ describe('RunView, setting up a run in fixture mode', () => {
     expect(w.find('[data-test="start-helper"]').exists()).toBe(false);
   });
 
-  it('shows trials, cost, time and the smallest detectable difference before anything starts', async () => {
+  it('shows trials, cost and time before anything starts, and says the power estimate is not in yet', async () => {
     const w = mount(RunView, { props: {} });
     await settle();
     expect(w.get('[data-test="run-title"]').text()).toBe('Check and run');
@@ -41,12 +43,15 @@ describe('RunView, setting up a run in fixture mode', () => {
     expect(plan).toContain('12 tasks × 2 arms × 5 trials');
     expect(plan).toContain('$21.30');
     expect(plan).toContain('Likely $16.00 to $27.00');
-    expect(plan).toContain(`10${nb}points`);
+    expect(plan).toContain('4 workers at a time (4 hermes)');
     // Before the start the plan is the answer, so its figures stay large (34 px).
     expect(w.get('[data-test="plan"]').classes()).not.toContain('plan--past');
     const tiles = w.findAll('[data-test="plan"] > div');
     expect(tiles[3].get('.stat-label').text()).toBe('Smallest overall difference it can see');
-    expect(tiles[3].get('[data-test="power-note"]').text()).toBe("Pass rate over all 12 tasks, 8 times in 10, from the pilot's spread");
+    // The API has no power estimate yet (SP6), so the tile says so rather than inventing one.
+    expect(tiles[3].get('.stat-value').text()).toBe('–');
+    expect(tiles[3].get('[data-test="power-note"]').text()).toBe('Not estimated yet: the power estimate comes with the statistics step');
+    expect(nb).toBe('\u00a0');
   });
 
   it('will not start until every check passes', async () => {
@@ -84,28 +89,29 @@ describe('RunView, a running experiment in fixture mode', () => {
     const states = grid.findAll('[data-state]').map((c) => c.attributes('data-state'));
     expect(states).toHaveLength(120);
     expect(states.filter((s) => s === 'infra')).toHaveLength(2);
-    expect(grid.text()).toContain('debt-hardship-03, arm B, trial 2: infra failure, re-queued');
-    // The log reads in the order things happened, which is the order trials were claimed.
-    const lines = w.findAll('[data-test="events"] li').map((li) => li.text());
-    expect(lines[0]).toMatch(/arms alternating\.$/);
-    expect(lines[1]).toContain('debt-hardship-03, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last.');
-    expect(lines[2]).toContain('fd-vs-sip-07, arm B, trial 2');
-    expect(lines[3]).toContain('Half the trials done. Spend is on track: $11.20 against $10.65 expected by now.');
+    expect(grid.text()).toContain('debt-hardship-03, arm B, trial 3: infra failure, re-queued');
+    // The log reads in the order things happened, in the API's own words under a title.
+    const lines = w.findAll('[data-test="events"] li');
+    expect(lines[0].text()).toContain('Created2 configs x 12 tasks x N=5; claim order seed 2024');
+    expect(lines[1].text()).toContain('Started');
+    const infra = lines.filter((li) => li.attributes('data-tone') === 'infra');
+    expect(infra).toHaveLength(2);
+    expect(infra.map((li) => li.get('.event-title').text())).toEqual(['Infra failure, arm B', 'Infra failure, arm B']);
+    expect(infra.some((li) => li.text().includes('debt-hardship-03 on Prompt v1 on Hermes, attempt 1: infra:provider_error (LiteLLM status 429)'))).toBe(true);
   });
 
-  it('fills the grid in claim order: trials 1 and 2 in every row, trial 3 in the first rows', async () => {
+  it('fills the grid in its shuffled claim order (D32), the arms in step, so any early batch is a random sample', async () => {
     const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
     await settle();
     const rows = w.findAll('[data-test="run-grid"] tbody tr').map((tr) => tr.findAll('[data-state]').map((c) => c.attributes('data-state')));
     const filled = (s: string | undefined) => s === 'pass' || s === 'fail' || s === 'infra';
-    for (const cells of rows) {
-      // Trials 1 and 2 of arm A (cells 0, 1) and of arm B (cells 5, 6).
-      expect([cells[0], cells[1], cells[5], cells[6]].every(filled)).toBe(true);
-    }
-    expect(rows.slice(0, 7).every((cells) => filled(cells[2]) && filled(cells[7]))).toBe(true);
-    expect(rows.slice(7, 9).every((cells) => cells[2] === 'running' && cells[7] === 'running')).toBe(true);
-    expect(rows.slice(9).every((cells) => cells[2] === 'waiting' && cells[7] === 'waiting')).toBe(true);
-    expect(rows.every((cells) => [3, 4, 8, 9].every((i) => cells[i] === 'waiting'))).toBe(true);
+    expect(rows.flat().filter(filled)).toHaveLength(62);
+    // Not row by row: debt-hardship-03 has all 5 trials in, inflation-09 only its first.
+    const byTask = Object.fromEntries(w.findAll('[data-test="run-grid"] tbody tr').map((tr, i) => [tr.get('th').text(), rows[i]]));
+    expect(byTask['debt-hardship-03'].slice(0, 5).every(filled)).toBe(true);
+    expect(byTask['inflation-09'].slice(0, 5).map(filled)).toEqual([true, false, false, false, false]);
+    // Each task and repeat is a block with one trial per arm, so the arms fill the same slots.
+    for (const cells of rows) for (let r = 0; r < 5; r++) expect(cells[r] === 'waiting', `repeat ${r + 1}`).toBe(cells[r + 5] === 'waiting');
   });
 
   it('leads with its progress: the count in the title, then the grid, then what was planned and checked', async () => {
@@ -121,10 +127,14 @@ describe('RunView, a running experiment in fixture mode', () => {
     expect(w.get('[data-test="plan"]').classes()).toEqual(expect.arrayContaining(['stat-strip', 'plan', 'plan--past']));
     const tiles = w.findAll('[data-test="plan"] > div');
     expect(tiles[3].get('.stat-label').text()).toBe('Smallest overall difference it can see');
-    expect(tiles[3].get('[data-test="power-note"]').text()).toBe("Pass rate over all 12 tasks, 8 times in 10, from the pilot's spread");
+    expect(tiles[3].get('[data-test="power-note"]').text()).toBe('Not estimated yet: the power estimate comes with the statistics step');
     const actions = w.get('[data-test="run-actions"]');
-    expect(actions.get('[data-test="cancel"]').text()).toBe('Cancel the waiting trials');
-    expect(actions.text()).toContain('Running trials finish; waiting ones are marked cancelled and kept.');
+    expect(actions.get('[data-test="pause"]').text()).toBe('Pause');
+    expect(actions.get('[data-test="stop"]').text()).toBe('Stop');
+    expect(actions.text()).toContain('Pause stops new claims; running trials finish. Stop cancels the waiting trials for good; running ones finish and are kept.');
+    expect(w.get('[data-test="plan-facts"]').text()).toContain('Claim order shuffled from seed 2024, arms interleaved (D32).');
+    expect(w.get('[data-test="plan-facts"]').text()).toContain('Futility check on: pauses for review if an arm passes fewer than 1 of its first 3 finished trials');
+    expect(w.get('[data-test="actual"]').text()).toMatch(/^So far: 62 trials finished, \$[0-9.]+ a trial, \d+ s a trial, projected \$21\.80\.$/);
     const before = (first: string, then: string) => !!(w.get(first).element.compareDocumentPosition(w.get(then).element) & Node.DOCUMENT_POSITION_FOLLOWING);
     expect(before('[data-test="run-grid"]', '[data-test="plan"]')).toBe(true);
     expect(before('[data-test="plan"]', '[data-test="checks-details"]')).toBe(true);
@@ -199,11 +209,11 @@ describe('RunView, a finished run in fixture mode', () => {
 describe('RunView against the API, with a slot that gave up', () => {
   it('says the slot gave up, never that it was re-queued, and splits the tally', async () => {
     const detail = { ...(details as Record<string, ExperimentDetail>).exp_harness, status: 'done' };
-    const trials = ((experimentTrials as Record<string, ExperimentTrial[]>).exp_harness)
-      .filter((t) => t.id !== 'th_fd-vs-sip-07_b_2_attempt2')
+    const trials = ((experimentTrials as Record<string, TrialRowSummary[]>).exp_harness)
+      .filter((t) => t.id !== 'th_emi-basic-01_b_4_attempt2')
       .map((t) => {
-        if (t.id === 'th_fd-vs-sip-07_b_2') return { ...t, status: 'abandoned' };
-        if (t.id === 'th_debt-hardship-03_b_2_attempt2') return { ...t, status: 'done', label: 'agent', passed: false };
+        if (t.id === 'th_emi-basic-01_b_4') return { ...t, status: 'abandoned' };
+        if (t.id === 'th_debt-hardship-03_b_3_attempt2') return { ...t, status: 'done', label: 'agent', passed: false };
         return t;
       });
     routeFetch({ '/api/experiments/exp_harness': detail, '/api/experiments/exp_harness/trials': trials, '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] });
@@ -216,7 +226,7 @@ describe('RunView against the API, with a slot that gave up', () => {
     // Filled and marked with an en dash: finished, with no result.
     expect(gaveUp[0].text()).toContain('–');
     expect(gaveUp[0].text()).not.toContain('!');
-    expect(gaveUp[0].get('.visually-hidden').text()).toBe('fd-vs-sip-07, arm B, trial 2: infra failure, gave up after 1 attempt');
+    expect(gaveUp[0].get('.visually-hidden').text()).toBe('emi-basic-01, arm B, trial 4: infra failure, gave up after 1 attempt');
     expect(gaveUp[0].text()).not.toContain('re-queued');
     const failedAfter = grid.findAll('[data-retried="true"]');
     expect(failedAfter.map((c) => c.attributes('data-state'))).toEqual(['fail']);
@@ -227,8 +237,8 @@ describe('RunView against the API, with a slot that gave up', () => {
 describe('RunView against the API, with infra failures in both arms', () => {
   it('counts them per arm', async () => {
     const detail = (details as Record<string, ExperimentDetail>).exp_harness;
-    const base = (experimentTrials as Record<string, ExperimentTrial[]>).exp_harness;
-    const first = base.find((t) => t.id === 'th_emi-basic-01_a_1') as ExperimentTrial;
+    const base = (experimentTrials as Record<string, TrialRowSummary[]>).exp_harness;
+    const first = base.find((t) => t.id === 'th_distress-12_a_1') as TrialRowSummary;
     const trials = [
       ...base.map((t) => (t.id === first.id ? { ...t, status: 'infra_failed', label: 'infra:provider_error', passed: null } : t)),
       { ...first, id: `${first.id}_attempt2`, attempt: 2, status: 'queued', label: null, passed: null },
@@ -243,9 +253,9 @@ describe('RunView against the API, with infra failures in both arms', () => {
 describe('RunView against the API, with one slot re-queued and one that gave up', () => {
   it('tells them apart in the grid and the legend: an outline with "!", and a filled cell with "–"', async () => {
     const detail = (details as Record<string, ExperimentDetail>).exp_harness;
-    const trials = ((experimentTrials as Record<string, ExperimentTrial[]>).exp_harness)
-      .filter((t) => t.id !== 'th_fd-vs-sip-07_b_2_attempt2')
-      .map((t) => (t.id === 'th_fd-vs-sip-07_b_2' ? { ...t, status: 'abandoned' } : t));
+    const trials = ((experimentTrials as Record<string, TrialRowSummary[]>).exp_harness)
+      .filter((t) => t.id !== 'th_emi-basic-01_b_4_attempt2')
+      .map((t) => (t.id === 'th_emi-basic-01_b_4' ? { ...t, status: 'abandoned' } : t));
     routeFetch({ '/api/experiments/exp_harness': detail, '/api/experiments/exp_harness/trials': trials, '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] });
     const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
     await settle();
@@ -271,10 +281,107 @@ describe('RunView against the API, with one slot re-queued and one that gave up'
 describe('RunView against the API, with no simulated client', () => {
   it('leaves the simulated client line out', async () => {
     const detail = { ...(details as Record<string, ExperimentDetail>).exp_harness, sim_model: null };
-    routeFetch({ '/api/experiments/exp_harness': detail, '/api/experiments/exp_harness/trials': (experimentTrials as Record<string, ExperimentTrial[]>).exp_harness, '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] });
+    routeFetch({ '/api/experiments/exp_harness': detail, '/api/experiments/exp_harness/trials': (experimentTrials as Record<string, TrialRowSummary[]>).exp_harness, '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] });
     const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
     await settle();
     expect(w.get('[data-test="run-arms"]').text()).toContain('A: Own loop');
     expect(w.find('[data-test="run-sim-client"]').exists()).toBe(false);
+  });
+});
+
+describe('RunView run controls (D32, D37)', () => {
+  useFixtures();
+
+  it('pauses a running experiment through the client, and asks before stopping it', async () => {
+    const pause = vi.spyOn(api, 'pauseExperiment').mockResolvedValue((details as Record<string, ExperimentDetail>).exp_harness);
+    const stop = vi.spyOn(api, 'stopExperiment').mockResolvedValue((details as Record<string, ExperimentDetail>).exp_harness);
+    const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    await w.get('[data-test="pause"]').trigger('click');
+    await settle();
+    expect(pause).toHaveBeenCalledWith('exp_harness');
+    // Stop cancels the waiting trials for good, so the first click only asks.
+    await w.get('[data-test="stop"]').trigger('click');
+    expect(stop).not.toHaveBeenCalled();
+    expect(w.get('[data-test="stop-confirm"]').text()).toBe('Stop and cancel 56 waiting trials');
+    await w.get('[data-test="stop-keep"]').trigger('click');
+    expect(w.find('[data-test="stop-confirm"]').exists()).toBe(false);
+    await w.get('[data-test="stop"]').trigger('click');
+    await w.get('[data-test="stop-confirm"]').trigger('click');
+    await settle();
+    expect(stop).toHaveBeenCalledWith('exp_harness');
+  });
+
+  it('shows what paused the whole run, the full reason, and resumes it through the client', async () => {
+    const resume = vi.spyOn(api, 'resumeExperiment').mockResolvedValue((details as Record<string, ExperimentDetail>).exp_futility);
+    const w = mount(RunView, { props: { experimentId: 'exp_futility' } });
+    await settle();
+    expect(w.get('[data-test="run-title"]').text()).toBe('Paused: 6 of 40 trials done');
+    const banner = w.get('[data-test="pause-banner"]');
+    expect(banner.get('h2').text()).toBe('The futility check: arm B passed 0 of its first 3 finished trials');
+    expect(banner.text()).toContain('Review those trials, then resume or stop; the check runs once per arm and never compares the arms');
+    expect(w.find('[data-test="pause"]').exists()).toBe(false);
+    await w.get('[data-test="resume"]').trigger('click');
+    await settle();
+    expect(resume).toHaveBeenCalledWith('exp_futility');
+    // The pause is an event in the log, with its reason.
+    const pauseEvent = w.findAll('[data-test="events"] li').find((li) => li.attributes('data-tone') === 'pause');
+    expect(pauseEvent?.get('.event-title').text()).toBe('Paused by the futility check');
+    expect(w.get('[data-test="plan-facts"]').text()).toContain('Follows from exp_discovery');
+  });
+
+  it('says which arm is paused, why and how to fix it, and resumes or pauses an arm through the client', async () => {
+    const resumeArm = vi.spyOn(api, 'resumeArm').mockResolvedValue((details as Record<string, ExperimentDetail>).exp_model);
+    const pauseArm = vi.spyOn(api, 'pauseArm').mockResolvedValue((details as Record<string, ExperimentDetail>).exp_model);
+    const w = mount(RunView, { props: { experimentId: 'exp_model' } });
+    await settle();
+    expect(w.find('[data-test="pause-banner"]').exists()).toBe(false);
+    const b = w.get('[data-test="arm-B"]');
+    expect(b.classes()).toContain('arm-card--paused');
+    expect(b.text()).toContain('Arm B: Prompt v1 on Hermes, Gemini Flash');
+    expect(b.get('.arm-status').text()).toBe('Paused');
+    expect(b.get('[data-test="arm-reason"]').text()).toContain("infra:config_error (LiteLLM status 404): litellm.NotFoundError: model 'gemini-3.8-flash' is not served by this proxy");
+    expect(b.get('[data-test="arm-fix"]').text()).toContain("How to fix it: The provider does not know the model: fix the model's route in LiteLLM's config");
+    const a = w.get('[data-test="arm-A"]');
+    expect(a.get('.arm-status').text()).toBe('Running');
+    expect(a.find('[data-test="arm-reason"]').exists()).toBe(false);
+    await b.get('[data-test="resume-arm-B"]').trigger('click');
+    await settle();
+    expect(resumeArm).toHaveBeenCalledWith('exp_model', 'B');
+    await w.get('[data-test="pause-arm-A"]').trigger('click');
+    await settle();
+    expect(pauseArm).toHaveBeenCalledWith('exp_model', 'A');
+    const armEvent = w.findAll('[data-test="events"] li').find((li) => li.text().includes('Arm B paused'));
+    expect(armEvent?.attributes('data-tone')).toBe('pause');
+  });
+
+  it('shows a refused control with the API fix', async () => {
+    vi.spyOn(api, 'pauseArm').mockRejectedValue(new ApiError(404, 'unknown_arm', 'no arm A in exp_model', 'Name an arm by its letter (A or B) or its config hash.'));
+    const w = mount(RunView, { props: { experimentId: 'exp_model' } });
+    await settle();
+    await w.get('[data-test="pause-arm-A"]').trigger('click');
+    await settle();
+    expect(w.get('[data-test="arm-A"] [role="alert"]').text()).toBe('no arm A in exp_model. Name an arm by its letter (A or B) or its config hash.');
+  });
+});
+
+describe('RunView against the API, with claim events', () => {
+  it('counts the claims and lists them only on request', async () => {
+    const detail = (details as Record<string, ExperimentDetail>).exp_harness;
+    const claim = { at: '2026-11-05T13:42:00.000Z', kind: 'claim', trial_id: 'th_distress-12_a_1', attempt: 1, arm: 'A', config_hash: detail.config_hashes[0], detail: 'distress-12 on Own loop, prompt v1, attempt 1 claimed by ownloop-1' };
+    routeFetch({
+      '/api/experiments/exp_harness': { ...detail, events: [claim, ...detail.events] },
+      '/api/experiments/exp_harness/trials': (experimentTrials as Record<string, TrialRowSummary[]>).exp_harness,
+      '/api/harnesses': [],
+      '/api/prompts': [],
+      '/api/tasks': [],
+    });
+    const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    expect(w.text()).not.toContain('claimed by ownloop-1');
+    const toggle = w.get('[data-test="toggle-claims"]');
+    expect(toggle.text()).toBe('Show the 1 claim');
+    await toggle.trigger('click');
+    expect(w.text()).toContain('claimed by ownloop-1');
   });
 });

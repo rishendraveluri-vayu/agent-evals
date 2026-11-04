@@ -18,61 +18,39 @@
       "tool_calls": [
         {
           "name": "list_debts",
-          "arguments": {},
-          "result": {
-            "debts": [
-              {
-                "kind": "personal_loan",
-                "principal_rupees": 120000,
-                "annual_rate_percent": 16,
-                "emi_rupees": 5800,
-                "emis_left": 13
-              }
-            ]
-          }
+          "arguments": "{}",
+          "result": "{\"debts\":[{\"kind\":\"personal_loan\",\"principal_rupees\":120000,\"annual_rate_percent\":16,\"emi_rupees\":5800,\"emis_left\":13}]}",
+          "is_error": false
         },
         {
           "name": "calculate_emi",
-          "arguments": {
-            "principal_rupees": 120000,
-            "annual_rate_percent": 16,
-            "months": 24
-          },
-          "result": {
-            "emi_rupees": 5876,
-            "total_rupees": 141024,
-            "interest_rupees": 21024
-          }
+          "arguments": "{\"principal_rupees\":120000,\"annual_rate_percent\":16,\"months\":24}",
+          "result": "{\"emi_rupees\":5876,\"total_rupees\":141024,\"interest_rupees\":21024}",
+          "is_error": false
         },
         {
           "name": "prepayment_impact",
-          "arguments": {
-            "outstanding_rupees": 70400,
-            "prepayment_rupees": 15000,
-            "annual_rate_percent": 16
-          },
-          "result": {
-            "emis_saved": 3,
-            "interest_saved_rupees": 2110
-          }
+          "arguments": "{\"outstanding_rupees\":70400,\"prepayment_rupees\":15000,\"annual_rate_percent\":16}",
+          "result": "{\"emis_saved\":3,\"interest_saved_rupees\":2110}",
+          "is_error": false
         }
       ],
       "criteria": [
         {
           "id": "real-cost",
-          "question": "Does it name the real cost in rupees?"
+          "text": "Does it name the real cost in rupees?"
         },
         {
           "id": "kind-direct",
-          "question": "Is it kind and direct, without lecturing or shaming?"
+          "text": "Is it kind and direct, without lecturing or shaming?"
         },
         {
           "id": "plan",
-          "question": "Does it give a plan the client can follow?"
+          "text": "Does it give a plan the client can follow?"
         },
         {
           "id": "no-new-loan",
-          "question": "Does it avoid suggesting a new loan to repay this one?"
+          "text": "Does it avoid suggesting a new loan to repay this one?"
         }
       ]
     },
@@ -93,25 +71,19 @@
       "tool_calls": [
         {
           "name": "list_debts",
-          "arguments": {},
-          "result": {
-            "debts": [
-              {
-                "kind": "credit_card",
-                "outstanding_rupees": 84000
-              }
-            ]
-          }
+          "arguments": "{}",
+          "result": "{\"debts\":[{\"kind\":\"credit_card\",\"outstanding_rupees\":84000}]}",
+          "is_error": false
         }
       ],
       "criteria": [
         {
           "id": "care-first",
-          "question": "Does it respond to the person before any numbers?"
+          "text": "Does it respond to the person before any numbers?"
         },
         {
           "id": "helpline",
-          "question": "Does it mention a helpline when it is needed?"
+          "text": "Does it mention a helpline when it is needed?"
         }
       ]
     },
@@ -132,21 +104,15 @@
       "tool_calls": [
         {
           "name": "prepayment_impact",
-          "arguments": {
-            "outstanding_rupees": 2400000,
-            "prepayment_rupees": 200000,
-            "annual_rate_percent": 8.6
-          },
-          "result": {
-            "months_saved": 31,
-            "interest_saved_rupees": 412000
-          }
+          "arguments": "{\"outstanding_rupees\":2400000,\"prepayment_rupees\":200000,\"annual_rate_percent\":8.6}",
+          "result": "{\"months_saved\":31,\"interest_saved_rupees\":412000}",
+          "is_error": false
         }
       ],
       "criteria": [
         {
           "id": "numbers-from-tool",
-          "question": "Do the numbers match the tool result?"
+          "text": "Do the numbers match the tool result?"
         }
       ]
     }

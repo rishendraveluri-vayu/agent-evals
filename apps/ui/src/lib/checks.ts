@@ -1,6 +1,6 @@
 /** The checks the run page makes before anything starts, from the configs, their harnesses'
  *  capabilities and the chosen tasks. Each is pass or fail, with the evidence in words. */
-import { SETTING_NAMES, type Config, type ConfigDiffEntry, type Estimate, type Harness, type TaskInfo } from '../api/types';
+import { SETTING_NAMES, type ConfigView, type ConfigDiffEntry, type Estimate, type Harness, type TaskView } from '../api/types';
 import { money, wholeMoney } from './format';
 import { harnessName, harnessShort, settingLabel, splitName } from './names';
 
@@ -56,7 +56,7 @@ export function armsCheck(fullDiff: ConfigDiffEntry[], sameConfig: boolean): Che
   return { ok: false, title: 'The arms differ in more than one thing', detail: `They differ in ${diff.map((d) => d.path).join(', ')}, so a difference in results could not be pinned on one change.` };
 }
 
-export function capabilityCheck(configs: Config[], harnesses: Harness[]): Check {
+export function capabilityCheck(configs: ConfigView[], harnesses: Harness[]): Check {
   const problems: string[] = [];
   for (const c of configs) {
     const h = harnesses.find((x) => x.name === c.harness);
@@ -65,7 +65,8 @@ export function capabilityCheck(configs: Config[], harnesses: Harness[]): Check 
       continue;
     }
     for (const name of SETTING_NAMES) {
-      if (c.settings[name] !== undefined && c.settings[name] !== null && !h.capabilities.settings[name]?.supported) {
+      // Only what the config sets itself: the API leaves out, as null, whatever the harness cannot take.
+      if (c.settings_sources[name] === 'config' && c.settings[name] !== null && !h.capabilities.settings[name]?.supported) {
         problems.push(`${harnessShort(h.name)} cannot apply ${settingLabel(name).toLowerCase()}`);
       }
     }
@@ -76,12 +77,12 @@ export function capabilityCheck(configs: Config[], harnesses: Harness[]): Check 
   return { ok: true, title: `${who} ${names.length === 1 ? 'supports' : 'support'} every setting in ${configs.length === 1 ? 'the config' : 'both configs'}`, detail: 'Nothing will be silently ignored.' };
 }
 
-export function planCheck(commit: string | undefined): Check {
+export function planCheck(commit: string | null | undefined): Check {
   if (commit?.trim()) return { ok: true, title: 'The analysis plan was committed before the run', detail: `docs/experiment.md at commit ${commit.trim()}.` };
   return { ok: false, title: 'No analysis plan commit yet', detail: 'Commit the hypothesis and analysis plan in docs/experiment.md first, then give its commit here.' };
 }
 
-export function splitCheck(tasks: TaskInfo[], all: TaskInfo[]): Check {
+export function splitCheck(tasks: TaskView[], all: TaskView[]): Check {
   if (!tasks.length) return { ok: false, title: 'No tasks chosen', detail: 'Choose the tasks to run.' };
   const splits = new Set(tasks.map((t) => splitName(t.split)));
   if (splits.size > 1) return { ok: false, title: 'Discovery and held-out tasks are mixed', detail: 'A change found on the discovery tasks has to be measured on held-out tasks alone.' };
@@ -106,6 +107,6 @@ export function budgetCheck(budget: number | undefined, estimate: Estimate | nul
   return { ok: true, title: 'The spending limit covers the likely cost', detail: `${wholeMoney(budget)} against at most ${money(estimate.cost_usd.high)}.` };
 }
 
-export function harnessList(configs: Config[]): string {
+export function harnessList(configs: ConfigView[]): string {
   return [...new Set(configs.map((c) => harnessName(c.harness)))].join(' and ');
 }

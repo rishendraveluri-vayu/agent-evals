@@ -6,25 +6,31 @@ import { isFixtureMode } from './mode';
 import type {
   BlindItem,
   Compare,
-  Config,
-  ConfigCreate,
+  ConfigDetail,
   ConfigDiffEntry,
-  Criterion,
-  Estimate,
+  ConfigView,
+  ConflictCheckView,
+  CreateConfigRequest,
+  CreateExperimentRequest,
+  CreateLabelRequest,
   EstimateRequest,
-  Experiment,
-  ExperimentCreate,
+  EstimateResponse,
   ExperimentDetail,
-  ExperimentTrial,
+  ExperimentSummary,
   Harness,
   JudgeAgreement,
-  LabelCreate,
+  LabelCriterion,
+  LabelLine,
   LabelSet,
-  ModelInfo,
-  Prompt,
-  TaskInfo,
-  Toolset,
-  Trial,
+  ModelView,
+  PromptView,
+  RenderedPromptView,
+  SpendView,
+  SystemSpendRow,
+  TaskView,
+  ToolsetView,
+  TrialRowSummary,
+  TrialView,
 } from './types';
 
 type Method = 'GET' | 'POST';
@@ -47,16 +53,18 @@ async function call<T>(method: Method, path: string, body?: unknown): Promise<T>
   if (!response.ok) {
     let code = `http_${response.status}`;
     let message = `${method} ${path} failed with HTTP ${response.status}`;
+    let fix: string | null = null;
     try {
       const parsed: unknown = await response.json();
       if (isErrorBody(parsed)) {
         code = parsed.error;
         message = parsed.message;
+        fix = typeof parsed.fix === 'string' && parsed.fix ? parsed.fix : null;
       }
     } catch {
       // Not JSON, such as a proxy error page: keep the HTTP status as the message.
     }
-    throw new ApiError(response.status, code, message);
+    throw new ApiError(response.status, code, message, fix);
   }
   if (response.status === 204) return null as T;
   const text = await response.text();
@@ -128,21 +136,22 @@ export function normalizeSpan(raw: unknown): SpanView {
 
 /** A trial is either one recorded in an experiment (`GET /trials/:id` in the contract) or a
  *  gate or smoke run read from its folder (the existing FileTrialStore shape). */
-export type AnyTrial = { kind: 'experiment'; trial: Trial } | { kind: 'recorded'; detail: RecordedTrialDetail };
+export type AnyTrial = { kind: 'experiment'; trial: TrialView } | { kind: 'recorded'; detail: RecordedTrialDetail };
 
 function toAnyTrial(body: unknown): AnyTrial {
   const b = obj(body);
   if ('summary' in b && typeof b.summary === 'object') return { kind: 'recorded', detail: b as unknown as RecordedTrialDetail };
-  return { kind: 'experiment', trial: b as unknown as Trial };
+  return { kind: 'experiment', trial: b as unknown as TrialView };
 }
 
 // ------------------------------------------------------------------------------------ labels
 
-function criterion(c: unknown): Criterion {
-  if (typeof c === 'string') return c;
+/** A criterion as the contract has it (`{id, text}`); a bare string is read as its own id. */
+function criterion(c: unknown): LabelCriterion {
+  if (typeof c === 'string') return { id: c, text: c };
   const o = obj(c);
   const id = str(o.id) ?? str(o.criterion) ?? '';
-  return { id, question: str(o.question) ?? str(o.text) ?? id };
+  return { id, text: str(o.text) ?? str(o.question) ?? id };
 }
 
 /** Hermes names MCP tools `mcp__<server>__<tool>` (docs/hermes-notes.md). */
@@ -194,6 +203,7 @@ export function toBlindItem(raw: unknown): BlindItem {
       name: bareToolName(str(obj(t).name) ?? ''),
       arguments: obj(t).arguments ?? null,
       result: bareToolResult(obj(t).result ?? null),
+      is_error: typeof obj(t).is_error === 'boolean' ? (obj(t).is_error as boolean) : null,
     })),
     criteria: criteria.map(criterion),
   };
@@ -201,26 +211,47 @@ export function toBlindItem(raw: unknown): BlindItem {
 
 // ------------------------------------------------------------------------------------ the client
 
+const post = <T>(path: string, body?: unknown) => call<T>('POST', path, body);
+
 export const api = {
   harnesses: () => call<Harness[]>('GET', '/harnesses'),
-  prompts: () => call<Prompt[]>('GET', '/prompts'),
-  toolsets: () => call<Toolset[]>('GET', '/toolsets'),
-  tasks: () => call<TaskInfo[]>('GET', '/tasks'),
-  models: () => call<ModelInfo[]>('GET', '/models'),
+  prompts: () => call<PromptView[]>('GET', '/prompts'),
+  toolsets: () => call<ToolsetView[]>('GET', '/toolsets'),
+  tasks: () => call<TaskView[]>('GET', '/tasks'),
+  models: () => call<ModelView[]>('GET', '/models'),
 
-  configs: () => call<Config[]>('GET', '/configs'),
-  config: (hash: string) => call<Config>('GET', `/configs/${enc(hash)}`),
-  createConfig: (body: ConfigCreate) => call<Config>('POST', '/configs', body),
+  configs: () => call<ConfigView[]>('GET', '/configs'),
+  config: (hash: string) => call<ConfigDetail>('GET', `/configs/${enc(hash)}`),
+  createConfig: (body: CreateConfigRequest) => post<ConfigView>('/configs', body),
   configDiff: (a: string, b: string) => call<ConfigDiffEntry[]>('GET', `/configs/${enc(a)}/diff/${enc(b)}`),
 
-  estimate: (body: EstimateRequest) => call<Estimate>('POST', '/experiments/estimate', body),
-  createExperiment: (body: ExperimentCreate) => call<Experiment>('POST', '/experiments', body),
-  startExperiment: (id: string) => call<Experiment>('POST', `/experiments/${enc(id)}/start`),
-  cancelExperiment: (id: string) => call<Experiment>('POST', `/experiments/${enc(id)}/cancel`),
-  experiments: () => call<Experiment[]>('GET', '/experiments'),
+  /** Reads the rendered prompt; starts nothing. */
+  renderedPrompt: (hash: string) => call<RenderedPromptView>('GET', `/configs/${enc(hash)}/rendered-prompt`),
+  /** Queues a probe trial on the fake model when there is no rendered prompt yet (free, D33). */
+  renderPrompt: (hash: string) => post<RenderedPromptView>(`/configs/${enc(hash)}/rendered-prompt`),
+  /** The stored conflict check for the config as it is now; makes no call. */
+  conflictCheck: (hash: string) => call<ConflictCheckView>('GET', `/configs/${enc(hash)}/conflict-check`),
+  /** A REAL, PAID model call (D38), unless the same input was checked before. Only a person's click
+   *  calls this. */
+  runConflictCheck: (hash: string) => post<ConflictCheckView>(`/configs/${enc(hash)}/conflict-check`),
+
+  spend: () => call<SpendView>('GET', '/spend'),
+  systemSpend: (kind?: string) => call<SystemSpendRow[]>('GET', `/spend/system${query({ kind })}`),
+
+  estimate: (body: EstimateRequest) => post<EstimateResponse>('/experiments/estimate', body),
+  createExperiment: (body: CreateExperimentRequest) => post<ExperimentDetail>('/experiments', body),
+  startExperiment: (id: string) => post<ExperimentDetail>(`/experiments/${enc(id)}/start`),
+  pauseExperiment: (id: string) => post<ExperimentDetail>(`/experiments/${enc(id)}/pause`),
+  resumeExperiment: (id: string) => post<ExperimentDetail>(`/experiments/${enc(id)}/resume`),
+  /** Queued trials become cancelled; running ones finish and are kept. */
+  stopExperiment: (id: string) => post<ExperimentDetail>(`/experiments/${enc(id)}/stop`),
+  /** `arm` is the arm's config hash or its letter. */
+  pauseArm: (id: string, arm: string) => post<ExperimentDetail>(`/experiments/${enc(id)}/arms/${enc(arm)}/pause`),
+  resumeArm: (id: string, arm: string) => post<ExperimentDetail>(`/experiments/${enc(id)}/arms/${enc(arm)}/resume`),
+  experiments: () => call<ExperimentSummary[]>('GET', '/experiments'),
   experiment: (id: string) => call<ExperimentDetail>('GET', `/experiments/${enc(id)}`),
   experimentTrials: (id: string, filter: { status?: string; config?: string; task?: string } = {}) =>
-    call<ExperimentTrial[]>('GET', `/experiments/${enc(id)}/trials${query(filter)}`),
+    call<TrialRowSummary[]>('GET', `/experiments/${enc(id)}/trials${query(filter)}`),
   compare: (id: string) => call<Compare>('GET', `/experiments/${enc(id)}/compare`),
   exportUrl: (id: string, format: 'json' | 'csv') => `/api/experiments/${enc(id)}/export?format=${format}`,
 
@@ -229,6 +260,8 @@ export const api = {
     const body = await call<unknown>('GET', `/trials/${enc(id)}/spans`);
     return Array.isArray(body) ? body.map(normalizeSpan) : [];
   },
+  /** One stored file of a trial, parsed as JSON (such as checks.json). */
+  trialJson: (id: string, path: string) => call<unknown>('GET', `/trials/${enc(id)}/files/${path.split('/').map(enc).join('/')}`),
   trialFileUrl: (id: string, path: string) => `/api/trials/${enc(id)}/files/${path.split('/').map(enc).join('/')}`,
   /** Gate and smoke runs recorded outside an experiment (the folder store). */
   recordedTrials: async () => {
@@ -236,10 +269,11 @@ export const api = {
     return Array.isArray(body) ? (body as RecordedTrialSummary[]) : [];
   },
 
-  labelQueue: async (set: LabelSet) => {
-    const body = await call<unknown>('GET', `/labels/queue${query({ set })}`);
+  /** `experiment` limits the queue to one batch. */
+  labelQueue: async (set: LabelSet, experiment?: string): Promise<BlindItem[]> => {
+    const body = await call<unknown>('GET', `/labels/queue${query({ set, experiment })}`);
     return Array.isArray(body) ? body.map(toBlindItem) : [];
   },
-  saveLabel: (body: LabelCreate) => call<unknown>('POST', '/labels', body),
+  saveLabel: (body: CreateLabelRequest) => post<LabelLine>('/labels', body),
   judgeAgreement: (set: LabelSet) => call<JudgeAgreement | null>('GET', `/judge/agreement${query({ set })}`),
 };

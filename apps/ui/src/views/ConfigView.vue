@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, shallowRef, watch } from 'vue';
 import { api } from '../api/client';
-import { errorText } from '../api/errors';
-import { SETTING_NAMES, type Config, type ConfigDiffEntry, type Harness, type ModelInfo, type Prompt, type SettingName, type Settings, type Toolset } from '../api/types';
+import { ApiError, errorText } from '../api/errors';
+import { SETTING_NAMES, type ConfigDiffEntry, type ConfigView, type ConfigWarning, type Harness, type JsonObject, type ModelView, type PromptView, type SettingName, type ToolsetView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import { useLoad } from '../lib/async';
@@ -11,15 +11,19 @@ import { changedLineCount, lineChanges, sentenceChanges } from '../lib/diff';
 import { mdBlocks } from '../lib/markdown';
 import { shortHash, shortRef } from '../lib/format';
 import { BOOLEAN_SETTINGS, harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
+import { ignoredReasons, toggleValue } from '../lib/settings';
 import { href, navigate } from '../router';
 import { text } from '../trials';
 
+/** `fork`: start as a copy of that saved config and save the new one as its child (D34). */
+const props = defineProps<{ fork?: string | null }>();
+
 interface Loaded {
   harnesses: Harness[];
-  models: ModelInfo[];
-  prompts: Prompt[];
-  toolsets: Toolset[];
-  configs: Config[];
+  models: ModelView[];
+  prompts: PromptView[];
+  toolsets: ToolsetView[];
+  configs: ConfigView[];
 }
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
@@ -43,32 +47,44 @@ const form = reactive({
 const nameTouched = ref(false);
 const baseHash = ref('');
 const saving = ref(false);
-const saveError = ref<string | null>(null);
-const saved = ref<Config | null>(null);
-const apiDiff = ref<ConfigDiffEntry[] | null>(null);
+/** A refusal from POST /configs: its message, the API's fix, and the field it is about. */
+const refusal = ref<{ field: string | null; code: string; message: string; fix: string | null } | null>(null);
+const saved = ref<ConfigView | null>(null);
+const apiDiff = shallowRef<ConfigDiffEntry[] | null>(null);
 const showPrompt = ref(false);
 const showPromptDiff = ref(false);
+/** Model refusals learnt from a 400 this session, by model, for configs not saved yet. */
+const learnt = reactive<Record<string, Partial<Record<SettingName, string>>>>({});
 
 const versionNumber = (v: string) => Number(v.replace(/^v/, '')) || 0;
+const byAge = (configs: ConfigView[]) => [...configs].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
 
 /** A new config starts as a copy of the oldest saved one (the baseline) with the newest version
- *  of its prompt, so trying a new prompt is one click and the diff says exactly what moved. */
+ *  of its prompt, so trying a new prompt is one click and the diff says exactly what moved. A fork
+ *  starts as an exact copy of the config it forks. */
 watch(data, (d) => {
   if (!d || form.harness) return;
-  const base = d.configs[d.configs.length - 1];
+  const forked = props.fork ? d.configs.find((c) => c.hash === props.fork) : undefined;
+  const base = forked ?? byAge(d.configs)[0];
   baseHash.value = base?.hash ?? '';
   form.harness = base?.harness ?? d.harnesses[0]?.name ?? '';
   form.model = base?.model ?? d.models[0]?.name ?? '';
-  const promptId = base?.prompt.id ?? d.prompts[0]?.id;
+  const promptId = base?.prompt.id ?? d.prompts.find((p) => p.id !== 'client-sim' && p.id !== 'conflict-check')?.id ?? d.prompts[0]?.id;
   const newest = d.prompts.filter((p) => p.id === promptId).sort((a, b) => versionNumber(b.version) - versionNumber(a.version))[0];
-  form.prompt = newest?.sha256 ?? d.prompts[0]?.sha256 ?? '';
+  form.prompt = forked ? forked.prompt.sha256 : (newest?.sha256 ?? d.prompts[0]?.sha256 ?? '');
   form.toolset = base?.toolset.sha256 ?? d.toolsets[0]?.sha256 ?? '';
   for (const name of SETTING_NAMES) {
     const value = base?.settings[name];
-    if (BOOLEAN_SETTINGS.includes(name)) form.toggles[name] = value === true;
-    else form.numbers[name] = typeof value === 'number' ? String(value) : '';
+    // Only what the base config set itself is copied; defaults stay defaults.
+    const own = base?.settings_sources[name] === 'config';
+    if (BOOLEAN_SETTINGS.includes(name)) form.toggles[name] = toggleValue(value) === true;
+    else form.numbers[name] = own && typeof value === 'number' ? String(value) : '';
   }
   for (const [k, v] of Object.entries(base?.harness_options ?? {})) form.options[k] = text(v);
+  if (forked) {
+    form.name = `${forked.name}, fork`;
+    nameTouched.value = true;
+  }
 });
 
 const harness = computed(() => data.value?.harnesses.find((h) => h.name === form.harness) ?? null);
@@ -76,16 +92,28 @@ const model = computed(() => data.value?.models.find((m) => m.name === form.mode
 const prompt = computed(() => data.value?.prompts.find((p) => p.sha256 === form.prompt) ?? null);
 const toolset = computed(() => data.value?.toolsets.find((t) => t.sha256 === form.toolset) ?? null);
 const base = computed(() => data.value?.configs.find((c) => c.hash === baseHash.value) ?? null);
+const forkOf = computed(() => (props.fork ? (data.value?.configs.find((c) => c.hash === props.fork) ?? null) : null));
 const tools = computed(() => toolset.value?.servers.flatMap((s) => s.allowed_tools) ?? []);
+/** Task prompts only: the simulator's and the checker's prompts are not a config's to pick. */
+const taskPrompts = computed(() => data.value?.prompts.filter((p) => p.id !== 'client-sim' && p.id !== 'conflict-check') ?? []);
 
 const supported = (name: SettingName) => harness.value?.capabilities.settings[name]?.supported ?? false;
 
-/** The settings the form sets: numbers left empty are unset; toggles are always set. */
-const settings = computed<Settings>(() => {
-  const out: Settings = {};
+/** Every setting this harness or model ignores, with the reason to show by the greyed field. */
+const ignored = computed<Partial<Record<SettingName, string>>>(() => ({
+  ...ignoredReasons(form.harness, harness.value?.capabilities.settings, form.model, data.value?.configs ?? []),
+  ...(learnt[form.model] ?? {}),
+}));
+const isIgnored = (name: SettingName) => !!ignored.value[name];
+
+/** The settings the form sets: numbers left empty are unset; toggles are always set. A setting
+ *  the harness or the model ignores is never sent. */
+const settings = computed(() => {
+  const out: Partial<Record<SettingName, number | boolean | { enabled: boolean }>> = {};
   for (const name of SETTING_NAMES) {
-    if (!supported(name)) continue;
-    if (BOOLEAN_SETTINGS.includes(name)) out[name] = form.toggles[name] === true;
+    if (!supported(name) || isIgnored(name)) continue;
+    if (name === 'parallel_tool_calls') out[name] = form.toggles[name] === true;
+    else if (BOOLEAN_SETTINGS.includes(name)) out[name] = { enabled: form.toggles[name] === true };
     else {
       const raw = form.numbers[name]?.trim();
       if (raw) out[name] = Number(raw);
@@ -96,7 +124,7 @@ const settings = computed<Settings>(() => {
 
 const optionProps = computed(() => Object.entries(harness.value?.capabilities.harness_options_schema.properties ?? {}));
 const harnessOptions = computed(() => {
-  const out: Record<string, unknown> = {};
+  const out: JsonObject = {};
   for (const [k, schema] of optionProps.value) {
     const raw = form.options[k];
     if (raw === undefined || raw === '') continue;
@@ -113,11 +141,15 @@ watch(suggestedName, (n) => {
 const invalid = computed(() => {
   for (const name of SETTING_NAMES) {
     const raw = form.numbers[name]?.trim();
-    if (supported(name) && raw && !Number.isFinite(Number(raw))) return `${settingLabel(name)} must be a number.`;
+    if (supported(name) && !isIgnored(name) && raw && !Number.isFinite(Number(raw))) return `${settingLabel(name)} must be a number.`;
   }
   if (!form.name.trim()) return 'Give the config a name.';
   return null;
 });
+
+/** A saved config's own value for a setting, as the form compares it: unset when a default. */
+const ownValue = (c: ConfigView, name: SettingName) => (c.settings_sources[name] === 'config' ? c.settings[name] : undefined);
+const shown = (v: unknown) => (v === undefined ? 'unset' : typeof v === 'object' && v !== null && 'enabled' in v ? ((v as { enabled: boolean }).enabled ? 'on' : 'off') : text(v));
 
 /** What differs from the comparison config, in words. */
 const changes = computed(() => {
@@ -129,9 +161,9 @@ const changes = computed(() => {
   if (b.prompt.sha256 !== form.prompt) out.push(`Prompt: ${b.prompt.id === prompt.value?.id ? '' : `${b.prompt.id} `}${b.prompt.version} to ${prompt.value?.id === b.prompt.id ? '' : `${prompt.value?.id} `}${prompt.value?.version ?? '?'}`);
   if (b.toolset.sha256 !== form.toolset) out.push(`Toolset: ${b.toolset.id} ${b.toolset.version} to ${toolset.value?.id} ${toolset.value?.version}`);
   for (const name of SETTING_NAMES) {
-    const was = b.settings[name];
+    const was = ownValue(b, name);
     const now = settings.value[name];
-    if (was !== now) out.push(`${settingLabel(name)}: ${was === undefined ? 'unset' : text(was)} to ${now === undefined ? 'unset' : text(now)}`);
+    if (shown(was) !== shown(now)) out.push(`${settingLabel(name)}: ${shown(was)} to ${shown(now)}`);
   }
   const keys = new Set([...Object.keys(b.harness_options), ...Object.keys(harnessOptions.value)]);
   for (const k of keys) {
@@ -144,16 +176,23 @@ const changes = computed(() => {
 const sameAs = computed(() => {
   const d = data.value;
   if (!d) return null;
-  const same = (c: Config) =>
+  const same = (c: ConfigView) =>
     c.harness === form.harness &&
     c.model === form.model &&
     c.prompt.sha256 === form.prompt &&
     c.toolset.sha256 === form.toolset &&
-    JSON.stringify(Object.entries(c.settings).sort()) === JSON.stringify(Object.entries(settings.value).sort()) &&
+    SETTING_NAMES.every((name) => shown(ownValue(c, name)) === shown(settings.value[name])) &&
     JSON.stringify(Object.entries(c.harness_options).sort()) === JSON.stringify(Object.entries(harnessOptions.value).sort());
   return d.configs.find(same) ?? null;
 });
 const shownHash = computed(() => saved.value?.hash ?? sameAs.value?.hash ?? null);
+
+/** Warnings for this harness and model: from the saved config once saved, else from any saved
+ *  config with the same harness and model (the API works them out from those two alone). */
+const warnings = computed<ConfigWarning[]>(() => {
+  if (saved.value) return saved.value.warnings ?? [];
+  return data.value?.configs.find((c) => c.harness === form.harness && c.model === form.model && c.warnings?.length)?.warnings ?? [];
+});
 
 // The prompt against the previous version of the same prompt.
 const previousPrompt = computed(() => {
@@ -190,22 +229,22 @@ function settingNote(name: SettingName): string {
   }
 }
 
+/** What happens when a setting is left unset (D25, R11b): the platform's default, or nothing sent
+ *  so the harness's or provider's own default applies. */
+const PLATFORM_DEFAULT_WORDS: Partial<Record<SettingName, string>> = { max_output_tokens: '8,192', max_steps: '15', timeout_s: '300 s', parallel_tool_calls: 'Off' };
 function ifUnset(name: SettingName): string {
   const cap = harness.value?.capabilities.settings[name];
   const who = harness.value ? harnessShort(harness.value.name) : 'harness';
   if (!cap?.supported) return `Not supported by ${harness.value ? harnessName(harness.value.name) : 'this harness'}`;
-  if (BOOLEAN_SETTINGS.includes(name)) {
-    if (cap.default === true) return `On (${who} default)`;
-    if (cap.default === false) return 'Off';
-    return 'Not sent';
-  }
-  if (name === 'temperature' && (cap.default === null || cap.default === undefined)) return 'Not sent; provider default';
-  return 'Platform default';
+  if (isIgnored(name)) return `Not sent: ${modelName(form.model)} refuses it`;
+  if (name === 'memory' || name === 'skills' || name === 'compression') return cap.default === true ? `Off (${who} default is on)` : 'Off';
+  if (name === 'temperature') return cap.default === null || cap.default === undefined ? 'Not sent; provider default' : `Not sent; ${who} default ${text(cap.default)}`;
+  return `Platform default, ${PLATFORM_DEFAULT_WORDS[name] ?? 'set by the API'}`;
 }
 
 function effect(name: SettingName): { text: string; kind: 'yes' | 'no' | 'todo' | 'na' } {
   const cap = harness.value?.capabilities.settings[name];
-  if (!cap?.supported) return { text: '–', kind: 'na' };
+  if (!cap?.supported || isIgnored(name)) return { text: '–', kind: 'na' };
   if (name === 'timeout_s' || cap.native === 'wrapper' || cap.native === 'adapter watchdog') return { text: 'Not applicable', kind: 'na' };
   const e = cap.effect?.[form.model];
   const m = modelName(form.model);
@@ -218,11 +257,29 @@ function versionLine(h: Harness): string {
   return /^[0-9a-f]{40}$/.test(h.ref) ? `Pinned at ${shortRef(h.ref)}` : `${h.package} ${h.ref}`;
 }
 
+/** Which field a refusal is about, so its fix shows by that field: a setting it names, or the
+ *  harness, model, prompt or toolset by its code. */
+const FIELD_OF_CODE: Record<string, string> = {
+  unknown_harness: 'harness',
+  unknown_model: 'model',
+  unknown_prompt: 'prompt',
+  unknown_toolset: 'toolset',
+  invalid_harness_options: 'options',
+};
+function fieldOf(err: ApiError): string | null {
+  if (FIELD_OF_CODE[err.code]) return FIELD_OF_CODE[err.code];
+  if (err.code === 'unsupported_setting' || err.code === 'invalid_setting' || err.code === 'unknown_setting') {
+    const named = [...SETTING_NAMES].sort((a, b) => b.length - a.length).find((n) => new RegExp(`\\b${n}\\b`).test(err.message));
+    return named ?? null;
+  }
+  return null;
+}
+const refusalFor = (field: string) => (refusal.value?.field === field ? refusal.value : null);
 
 async function save(thenRun: boolean) {
   if (invalid.value || !harness.value || !prompt.value || !toolset.value) return;
   saving.value = true;
-  saveError.value = null;
+  refusal.value = null;
   try {
     const config = await api.createConfig({
       name: form.name.trim(),
@@ -232,12 +289,22 @@ async function save(thenRun: boolean) {
       toolset_sha256: form.toolset,
       settings: settings.value,
       harness_options: harnessOptions.value,
+      ...(forkOf.value ? { parent_hash: forkOf.value.hash } : {}),
     });
     saved.value = config;
     apiDiff.value = base.value && base.value.hash !== config.hash ? await api.configDiff(base.value.hash, config.hash) : [];
     if (thenRun) navigate(href.runNew(base.value && base.value.hash !== config.hash ? base.value.hash : undefined, config.hash));
   } catch (err) {
-    saveError.value = errorText(err);
+    if (err instanceof ApiError) {
+      const field = fieldOf(err);
+      refusal.value = { field, code: err.code, message: err.message, fix: err.fix };
+      // A model's refusal holds for every config on that model: grey the field from now on.
+      if (err.code === 'unsupported_setting' && field && supported(field as SettingName) && err.message.includes(form.model)) {
+        learnt[form.model] = { ...(learnt[form.model] ?? {}), [field]: err.fix ?? err.message };
+      }
+    } else {
+      refusal.value = { field: null, code: 'error', message: errorText(err), fix: null };
+    }
   } finally {
     saving.value = false;
   }
@@ -258,13 +325,18 @@ watch(
       aria-label="Breadcrumb"
       class="crumbs"
     >
-      <a :href="href.experiments()">Experiments</a> / New config
+      <a :href="href.experiments()">Experiments</a> / {{ fork ? 'Fork a config' : 'New config' }}
     </nav>
     <h1 tabindex="-1">
-      Define a config
+      {{ fork ? 'Fork a config' : 'Define a config' }}
     </h1>
     <p class="lede">
-      A config is one harness, one model, one prompt, one toolset and its settings. Saving it gives it a content hash, so every result points back to exactly what produced it.
+      <template v-if="forkOf">
+        A copy of <a :href="href.configPage(forkOf.hash)">{{ forkOf.name }}</a>. Change the one thing this fork is meant to test; saving records {{ forkOf.name }} as its parent.
+      </template>
+      <template v-else>
+        A config is one harness, one model, one prompt, one toolset and its settings. Saving it gives it a content hash, so every result points back to exactly what produced it.
+      </template>
     </p>
   </div>
 
@@ -310,6 +382,16 @@ watch(
               >{{ coverageText(h) }}</span>
             </label>
           </div>
+          <p
+            v-if="refusalFor('harness')"
+            class="refusal small"
+            role="alert"
+            data-test="refusal-harness"
+          >
+            {{ refusalFor('harness')?.message }}<template v-if="refusalFor('harness')?.fix">
+              <span class="block"><strong>Fix:</strong> {{ refusalFor('harness')?.fix }}</span>
+            </template>
+          </p>
         </fieldset>
 
         <fieldset class="block-set pair">
@@ -333,6 +415,12 @@ watch(
               v-if="model"
               class="secondary smaller"
             >Price per million tokens: {{ perMillion(model.input_per_mtok) }} in, {{ perMillion(model.output_per_mtok) }} out, from the LiteLLM config</span>
+            <span
+              v-if="refusalFor('model')"
+              class="refusal small"
+              role="alert"
+              data-test="refusal-model"
+            >{{ refusalFor('model')?.message }}<template v-if="refusalFor('model')?.fix"> <strong>Fix:</strong> {{ refusalFor('model')?.fix }}</template></span>
           </label>
           <label class="field">
             <span class="legend">Prompt</span>
@@ -342,11 +430,16 @@ watch(
               data-test="prompt-select"
             >
               <option
-                v-for="p in data.prompts"
+                v-for="p in taskPrompts"
                 :key="p.sha256"
                 :value="p.sha256"
               >{{ p.id }} {{ p.version }}</option>
             </select>
+            <span
+              v-if="refusalFor('prompt')"
+              class="refusal small"
+              role="alert"
+            >{{ refusalFor('prompt')?.message }}<template v-if="refusalFor('prompt')?.fix"> <strong>Fix:</strong> {{ refusalFor('prompt')?.fix }}</template></span>
           </label>
           <div
             v-if="previousPrompt && promptChanges.length"
@@ -488,76 +581,106 @@ watch(
                 </tr>
               </thead>
               <tbody>
-                <tr
+                <template
                   v-for="name in SETTING_NAMES"
                   :key="name"
-                  :data-test="`setting-${name}`"
-                  :class="{ 'row--unsupported': !supported(name) }"
                 >
-                  <th scope="row">
-                    <label
-                      :for="`setting-${name}`"
-                      class="strong"
-                    >{{ settingLabel(name) }}</label>
-                    <span
-                      v-if="settingNote(name)"
-                      class="secondary smaller block"
-                    >{{ settingNote(name) }}</span>
-                  </th>
-                  <td>
-                    <label
-                      v-if="BOOLEAN_SETTINGS.includes(name)"
-                      class="toggle"
-                    >
-                      <input
-                        :id="`setting-${name}`"
-                        v-model="form.toggles[name]"
-                        type="checkbox"
-                        :disabled="!supported(name)"
+                  <tr
+                    :data-test="`setting-${name}`"
+                    :class="{ 'row--unsupported': !supported(name) || isIgnored(name), 'row--refused': !!refusalFor(name) }"
+                  >
+                    <th scope="row">
+                      <label
+                        :for="`setting-${name}`"
+                        class="strong"
+                      >{{ settingLabel(name) }}</label>
+                      <span
+                        v-if="settingNote(name) && !isIgnored(name)"
+                        class="secondary smaller block"
+                      >{{ settingNote(name) }}</span>
+                      <span
+                        v-if="ignored[name]"
+                        class="smaller block ignored-reason"
+                        :data-test="`ignored-${name}`"
+                      >{{ ignored[name] }}</span>
+                    </th>
+                    <td>
+                      <label
+                        v-if="BOOLEAN_SETTINGS.includes(name)"
+                        class="toggle"
                       >
-                      <span>{{ !supported(name) ? 'Not available' : form.toggles[name] ? 'On' : 'Off' }}</span>
-                    </label>
-                    <input
-                      v-else
-                      :id="`setting-${name}`"
-                      v-model="form.numbers[name]"
-                      type="text"
-                      inputmode="decimal"
-                      class="num-input num"
-                      :disabled="!supported(name)"
-                      :placeholder="supported(name) ? 'Unset' : 'Not available'"
-                    >
-                  </td>
-                  <td class="secondary">
-                    {{ ifUnset(name) }}
-                  </td>
-                  <td>
-                    <span
-                      v-if="supported(name) && harness?.capabilities.settings[name].native"
-                      class="mono"
-                    >{{ harness?.capabilities.settings[name].native }}</span>
-                    <span
-                      v-else
-                      class="secondary"
-                    >–</span>
-                  </td>
-                  <!-- Each answer looks different, and the words carry it: a check for a change seen,
+                        <input
+                          :id="`setting-${name}`"
+                          v-model="form.toggles[name]"
+                          type="checkbox"
+                          :disabled="!supported(name) || isIgnored(name)"
+                        >
+                        <span>{{ !supported(name) || isIgnored(name) ? 'Not available' : form.toggles[name] ? 'On' : 'Off' }}</span>
+                      </label>
+                      <input
+                        v-else
+                        :id="`setting-${name}`"
+                        v-model="form.numbers[name]"
+                        type="text"
+                        inputmode="decimal"
+                        class="num-input num"
+                        :disabled="!supported(name) || isIgnored(name)"
+                        :placeholder="supported(name) && !isIgnored(name) ? 'Unset' : 'Not available'"
+                        :aria-invalid="refusalFor(name) ? 'true' : undefined"
+                        :aria-describedby="refusalFor(name) ? `refusal-${name}` : undefined"
+                      >
+                    </td>
+                    <td class="secondary">
+                      {{ ifUnset(name) }}
+                    </td>
+                    <td>
+                      <span
+                        v-if="supported(name) && !isIgnored(name) && harness?.capabilities.settings[name].native"
+                        class="mono"
+                      >{{ harness?.capabilities.settings[name].native }}</span>
+                      <span
+                        v-else
+                        class="secondary"
+                      >–</span>
+                    </td>
+                    <!-- Each answer looks different, and the words carry it: a check for a change seen,
                        an alert for none seen, plain grey for not checked. -->
-                  <td :data-test="`effect-${name}`">
-                    <span
-                      :class="['effect', `effect--${effect(name).kind}`]"
-                      :data-effect="effect(name).kind"
-                    ><AppIcon
-                      v-if="effect(name).kind === 'yes'"
-                      name="check"
-                      :size="12"
-                    /><AppIcon
-                      v-else-if="effect(name).kind === 'no'"
-                      name="alert"
-                      :size="14"
-                    />{{ effect(name).text }}</span>
-                  </td>
-                </tr>
+                    <td :data-test="`effect-${name}`">
+                      <span
+                        :class="['effect', `effect--${effect(name).kind}`]"
+                        :data-effect="effect(name).kind"
+                      ><AppIcon
+                        v-if="effect(name).kind === 'yes'"
+                        name="check"
+                        :size="12"
+                      /><AppIcon
+                        v-else-if="effect(name).kind === 'no'"
+                        name="alert"
+                        :size="14"
+                      />{{ effect(name).text }}</span>
+                    </td>
+                  </tr>
+                  <tr
+                    v-if="refusalFor(name)"
+                    class="refusal-row"
+                  >
+                    <td colspan="5">
+                      <p
+                        :id="`refusal-${name}`"
+                        class="refusal small"
+                        role="alert"
+                        :data-test="`refusal-${name}`"
+                      >
+                        The API refused {{ settingLabel(name).toLowerCase() }}: {{ refusalFor(name)?.message }}.
+                        <span
+                          v-if="refusalFor(name)?.fix"
+                          class="block"
+                          data-test="refusal-fix"
+                        ><strong>Fix:</strong> {{ refusalFor(name)?.fix }}</span>
+                      </p>
+                    </td>
+                  </tr>
+                </template>
               </tbody>
             </table>
           </div>
@@ -671,13 +794,30 @@ watch(
             </ul>
             <span class="secondary small block">{{ (apiDiff ? apiDiff.length : changes.length) ? 'Everything else is identical.' : 'Identical to it.' }}</span>
           </div>
+          <div
+            v-for="w in warnings"
+            :key="w.code"
+            class="warning small"
+            role="note"
+            data-test="config-warning"
+          >
+            <AppIcon
+              name="alert"
+              :size="16"
+            />
+            <span>{{ w.message }} <span class="block"><strong>How to avoid it:</strong> {{ w.fix }}</span></span>
+          </div>
           <p
-            v-if="saveError"
+            v-if="refusal"
             class="error small"
             role="alert"
             data-test="save-error"
           >
-            {{ saveError }}
+            {{ refusal.field ? `Not saved: the API refused ${refusal.field in ignored || (SETTING_NAMES as readonly string[]).includes(refusal.field) ? settingLabel(refusal.field).toLowerCase() : refusal.field}. See the field for how to fix it.` : refusal.message }}
+            <span
+              v-if="!refusal.field && refusal.fix"
+              class="block"
+            ><strong>Fix:</strong> {{ refusal.fix }}</span>
           </p>
           <p
             v-else-if="invalid"
@@ -690,7 +830,10 @@ watch(
             class="small saved"
             role="status"
           >
-            Saved as config <span class="mono">{{ shortHash(saved.hash) }}</span>.
+            Saved as config <span class="mono">{{ shortHash(saved.hash) }}</span>. <a
+              :href="href.configPage(saved.hash)"
+              data-test="open-saved"
+            >Open it</a> to see the rendered prompt and check it for conflicts.
           </p>
           <div class="divided buttons">
             <button
@@ -742,12 +885,83 @@ watch(
             </dd>
           </dl>
         </section>
+        <section
+          aria-labelledby="saved-configs"
+          class="panel panel--pad saved-list small"
+          data-test="saved-configs"
+        >
+          <h2
+            id="saved-configs"
+            class="pins-title"
+          >
+            Saved configs ({{ data.configs.length }})
+          </h2>
+          <p class="secondary smaller">
+            Open one to see its rendered prompt, check it for conflicts, or fork it.
+          </p>
+          <ul>
+            <li
+              v-for="c in [...data.configs].reverse()"
+              :key="c.hash"
+            >
+              <a :href="href.configPage(c.hash)">{{ c.name }}</a>
+              <span class="secondary block smaller"><span class="mono">{{ shortHash(c.hash) }}</span> · {{ harnessShort(c.harness) }} · {{ modelName(c.model) }}</span>
+            </li>
+          </ul>
+          <p
+            v-if="!data.configs.length"
+            class="secondary"
+          >
+            None yet: save the first one.
+          </p>
+        </section>
       </aside>
     </div>
   </LoadState>
 </template>
 
 <style scoped>
+.refusal {
+  display: block;
+  margin: 6px 0 0;
+  color: var(--error);
+}
+
+.refusal strong {
+  color: var(--ink);
+}
+
+.refusal-row td {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.ignored-reason {
+  margin-top: 2px;
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+.warning {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--rule-strong);
+  border-left: 4px solid var(--warning);
+  border-radius: 8px;
+}
+
+.saved-list ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
 .config-split {
   gap: 32px;
 }
