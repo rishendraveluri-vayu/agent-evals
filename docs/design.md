@@ -96,6 +96,8 @@ Added with D33 and D38 (migration `006_probes_and_system_spend.sql`; 005 is the 
 - **`system_spend`**, one row per model call the platform makes itself: kind, model, status (`pending` with a worst-case reservation before the call, then `done` or `failed`), cost and tokens from LiteLLM's spend log, and a `ref` to what it was for. Allowances are computed from it.
 - **`conflict_checks`**: findings cached by (input sha256, checker prompt sha256, model), where the input hashes the rendered prompt, our prompt and the settings, with the spend row that paid for them.
 
+Added with SP4's grading step (migration `007_grading.sql`; R14 "grading is its own step"): a `grading_jobs` table, one row per grading of one trial, holding the frozen grader specs with their hashes, any grader files, a claim lease and the task's outcome on that trial (pass, fail or incomplete); and `grades` gains the grader type, `required`, the reason, the spec hash, the framework version and the job. A grade is unique by (trial, grader id, grader version, run index), so a re-grade adds rows and never overwrites one. Views `current_grading` and `current_grades` give each trial's latest finished grading.
+
 Interim, not a design decision: until SP2, the API reads finished trial folders from `RUNS_DIR` through a `TrialStore` interface (`apps/api/src/trials/trial-store.ts`), so the trace view and spend chart work now. SP2's database store replaces the file store behind the same interface.
 
 Planned in the spec, not yet designed:
@@ -131,6 +133,15 @@ Decided:
 - **The domain is a personal-finance assistant** (D13, R6).
   - Every task needs a correct tool call and a response that fits the person's circumstances.
   - Rishi's example: debt taken on after a spouse's death should get a different answer from a loan for a phone bought because friends had one.
+
+Built on 4 Nov, where graders live (follows D1, D2, R10.2 and R14; the SPEC left the project's place to SP4):
+
+- **Graders are a Python project at the repo root, `graders/` (package `evals_graders`)**, outside every harness worker: adapters only report how a trial ended (R10.2), graders judge.
+- **A grader reads only the trial's stored files:** `result.json` (final answer, transcript, end state), the `execute_tool` spans in `trace.jsonl` (tool names, arguments, results, with Hermes's `mcp__finance__` prefix and wrapped results normalised) and `checks.json`. `evals-grade <out_dir> --task task.json` grades one folder from the command line.
+- **Grading is its own step after the trial (R14).** A `grader` compose service (`evals-grader`, same read-only runtime as a harness worker, trials network only, no mounts) claims grading jobs from the API, downloads the trial's files over HTTP, grades and reports (D2). A grader fix is `POST /experiments/:id/regrade`: new grade versions next to the old ones, no trial re-run (`docs/api-contract.md`, Grading).
+- **Every grade quotes its evidence verbatim** and carries a version: the hash of its spec (and grader file) plus the framework version, computed identically in Python and in the API.
+
+Built as a draft, open for Rishi (SP4 **[Rishi designs]**): the grader spec format, its nine types (number, tool_called, tool_not_called, regex_present, regex_absent, end_state, provenance, unit_test, and the reserved judge) and the outcome rule are in `docs/proposals/grader-format.md`, with the choices listed there.
 
 Open:
 

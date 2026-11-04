@@ -1,0 +1,33 @@
+[project]
+name = "evals-graders"
+version = "0.1.0"
+description = "Deterministic graders for agent-evals trials (SP4): read a trial's out/ folder, run a task's graders, report grades with quoted evidence."
+# Graders and stats are Python (D1). The standard library plus jsonschema, so the grader image
+# stays small and a grader fix is a small rebuild.
+requires-python = ">=3.12"
+dependencies = [
+    "jsonschema>=4.25.1",
+]
+
+[project.scripts]
+evals-grade = "evals_graders.cli:main"
+evals-grader = "evals_graders.worker:main"
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+]
+
+[tool.ruff]
+# Runs on 3.12 and up, so lint and format for 3.12 (the shared config targets 3.14).
+extend = "../ruff.toml"
+target-version = "py312"

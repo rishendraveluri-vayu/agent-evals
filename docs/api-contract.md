@@ -364,7 +364,13 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 
 - `GET /trials/:id` returns `{id, experiment_id, probe, task, config, repeat_index, attempt, status,
   label, end_state, result, runner_report, usage, timing, files: [{path, bytes, sha256}],
-  grades: []}`. A probe trial (D33) has `probe: true` and `experiment_id: null`.
+  grades, grading}`. A probe trial (D33) has `probe: true` and `experiment_id: null`. `grades` are
+  those of the trial's latest finished grading job (see Grading), each `{id, grader_id,
+  grader_version, kind, type, required, verdict, score, reason, evidence, judge_model, run_index,
+  created_at}`; `grading` is `{current, pending}`: the job those grades came from (`job_id,
+  status, reason, grader_source, source_note, task_sha256, framework_version, passed, outcome,
+  error, queued_at, graded_at`), and a newer job still queued, claimed or failed. Both are null
+  before the first grading.
 - `GET /trials/:id/spans` returns contract v2 spans in time order.
 - `GET /trials/:id/files/*path` streams one stored file (path traversal refused).
 - The existing folder-based `/trials` endpoints (`FileTrialStore`) stay for runs recorded
@@ -459,6 +465,63 @@ trial cannot read or change another trial's stored files (D3).
 6. A lease with no heartbeat for 60 s lapses: the API marks the attempt `abandoned`, revokes
    its keys, and queues the next attempt under the same cap (also while the experiment is
    paused; the attempt waits for the resume).
+
+## Grading (SP4, R14)
+
+Grading is its own step after the trial, so a grader fix re-grades old trials without re-running
+them. The grader worker (`evals-grader`, `graders/`, compose service `grader`) uses the worker
+token and talks to the API only over HTTP (D2). The grader format is a draft for Rishi:
+`docs/proposals/grader-format.md`. Types: `GraderClaimResponse`, `GradesReportResponse`,
+`RegradeResponse`, `Grade`, `TrialGrading` in `apps/api/src/contract.ts`. Tables: `grading_jobs`
+and `grades` (migration `007_grading.sql`).
+
+- **A grading job** is one grading of one trial with a frozen grader set: the task's grader specs,
+  each with the API's `spec_sha256` (canonical JSON of `{spec, files}`, where `files` holds the
+  sha256 of a unit_test's grader file, or null when it is missing), and the grader files
+  themselves. Jobs are queued, at claim time, for every `done` trial (never a probe, never an infra
+  failure) that has none; a task with no graders gets a `no_graders` job with nothing to claim.
+- **Which graders.** The current `tasks/<id>/task.json` when it differs from the trial's task only
+  in `graders`, `version` or `summary` (`grader_source: catalogue`), so a grader fix applies.
+  Otherwise, when the task itself changed (its messages, simulated client or client file) or is
+  gone, the trial's own task (`grader_source: trial_task`, with `source_note` saying why); its
+  unit_test files are then unknown (`null`), so those grades are `error`.
+- **A grade's version** is `sha256(canonical {"framework": <framework version>, "spec":
+  <spec_sha256>})`, the same in Python (`evals_graders.canonical`) and TypeScript
+  (`apps/api/src/grading/grading-core.ts`), checked by shared vectors in
+  `graders/tests/hash_vectors.json`.
+
+1. `POST /grader/claim` with `{worker_id}`. 204 when nothing needs grading, or 200 with
+   `{job_id, attempt, trial_id, lease_s: 120, task: {id, sha256, grader_source, note}, graders:
+   [{spec, spec_sha256}], grader_files: {<name>: {sha256, base64} | null}, trial: {files,
+   end_state, label}}`. `attempt` counts the job's claims. The claim is `FOR UPDATE SKIP LOCKED`
+   over queued jobs and claimed jobs whose lease has lapsed, so a crashed grader's job is claimed
+   again; after 3 lapsed claims the job is `failed` instead.
+2. The worker downloads `result.json`, `trace.jsonl`, `runner-report.json` and `checks.json` (those
+   in `trial.files`) with `GET /trials/:id/files/<path>` and checks each against the manifest's
+   sha256. A file that differs is reported as `error` grades; a network error or 5xx leaves the
+   job unreported, to lapse and be claimed again.
+3. `POST /grader/trials/:id/grades` with `{worker_id, job_id, attempt, framework_version, grades,
+   problems}`. `grades` has one entry per grader of the job, in order: `{grader_id, type, required,
+   verdict, score, reason, evidence, grader_version}`. Answers:
+   - 200 `{job_id, trial_id, status: "done", duplicate: false, passed, outcome, grades_stored,
+     grades_reused}`. The API computes `passed` and `outcome` itself: `pass` when every required
+     grader passed, `fail` when one failed, `incomplete` (passed null) otherwise.
+   - 200 with `duplicate: true`: the same job and claim reported again; nothing changes.
+   - 400 `grades_mismatch` (a grader missing, extra or out of order), `grader_version_mismatch`
+     (the version is not the one the job's spec and the reported framework version give),
+     `invalid_grade`, `invalid_report`.
+   - 404 `unknown_job`; 409 `claim_lost` (the lease lapsed and another claim holds the job, or it
+     is no longer claimed): drop it.
+   Grades are never overwritten. A grade is `(trial, grader_id, grader_version, run_index)`: the
+   same answer from the same version reuses its row; a different one (a flaky unit test, a judge
+   re-run) is the next `run_index`. The job keeps the ids of its grades.
+- `POST /experiments/:id/regrade` with `{}` or `{trial_ids: [...]}` (202) queues a `regrade` job for
+  every `done` trial of the experiment (or those named), with the graders as above, and supersedes
+  any job still queued for them. It returns `{experiment_id, trials, queued, no_graders,
+  superseded, from_trial_task}`. 404 `unknown_experiment`. Nothing is re-run; old grades stay.
+- Views: `current_grading` (each trial's latest `done` job, by queue order) and `current_grades`
+  (its grades). `GET /experiments/:id/compare` and the export still count every stored grade row
+  of a trial, all versions, until SP6 reads these (`docs/known-limits.md`).
 
 ## UI-only endpoints
 

@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-evals.local/graders/grader-spec.schema.json",
+  "title": "One entry of a task's `graders` list (DRAFT for Rishi, docs/proposals/grader-format.md)",
+  "description": "Each grader is {id, type, required, ...type fields}. The task passes when every required grader passes. Unknown fields are refused so a typo cannot silently weaken a grader.",
+  "type": "object",
+  "required": ["id", "type"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$"},
+    "type": {"enum": ["number", "tool_called", "tool_not_called", "regex_present", "regex_absent", "end_state", "provenance", "unit_test", "judge"]},
+    "required": {"type": "boolean", "default": true},
+    "description": {"type": "string", "maxLength": 500}
+  },
+  "allOf": [
+    {"if": {"properties": {"type": {"const": "number"}}}, "then": {"$ref": "#/$defs/number"}},
+    {"if": {"properties": {"type": {"const": "tool_called"}}}, "then": {"$ref": "#/$defs/tool_called"}},
+    {"if": {"properties": {"type": {"const": "tool_not_called"}}}, "then": {"$ref": "#/$defs/tool_not_called"}},
+    {"if": {"properties": {"type": {"const": "regex_present"}}}, "then": {"$ref": "#/$defs/regex"}},
+    {"if": {"properties": {"type": {"const": "regex_absent"}}}, "then": {"$ref": "#/$defs/regex"}},
+    {"if": {"properties": {"type": {"const": "end_state"}}}, "then": {"$ref": "#/$defs/end_state"}},
+    {"if": {"properties": {"type": {"const": "provenance"}}}, "then": {"$ref": "#/$defs/provenance"}},
+    {"if": {"properties": {"type": {"const": "unit_test"}}}, "then": {"$ref": "#/$defs/unit_test"}},
+    {"if": {"properties": {"type": {"const": "judge"}}}, "then": {"$ref": "#/$defs/judge"}}
+  ],
+  "$defs": {
+    "target": {
+      "description": "final_answer: the agent's last visible reply. agent_messages: each visible reply on its own. all_agent_text: every visible reply plus the arguments of every tool call, i.e. everything the agent wrote.",
+      "enum": ["final_answer", "agent_messages", "all_agent_text"],
+      "default": "final_answer"
+    },
+    "tolerance": {
+      "description": "abs in the value's own units, rel as a fraction of the expected value. With both, the looser one applies.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "abs": {"type": "number", "minimum": 0},
+        "rel": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "tool_name": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "description": "With or without Hermes's mcp__<server>__ prefix; both are normalised."},
+    "number": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected"],
+      "properties": {
+        "id": true, "type": true, "required": true, "description": true,
+        "expected": {
+          "oneOf": [
+            {"type": "number"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["from_tool", "field"],
+              "properties": {
+                "from_tool": {"$ref": "#/$defs/tool_name"},
+                "field": {"type": "string", "minLength": 1, "description": "A path into the tool's JSON result: total_interest, debts[0].interest_paid or debts.0.interest_paid."},
+                "call": {"enum": ["any", "first", "last"], "default": "any", "description": "Which call of the tool supplies the expected value, when it was called more than once."}
+              }
+            }
+          ]
+        },
+        "tolerance": {"$ref": "#/$defs/tolerance"},
+        "target": {"$ref": "#/$defs/target"},
+        "match": {"enum": ["amount", "any"], "default": "amount", "description": "amount: only rupee amounts (a ₹/Rs/INR marker, lakh or crore, or digit grouping). any: every number, e.g. the 28 in '28 months'."}
+      }
+    },
+    "tool_called": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tool"],
+      "properties": {
+        "id": true, "type": true, "required": true, "description": true,
+        "tool": {"$ref": "#/$defs/tool_name"},
+        "args": {"type": "object", "description": "A subset of the call's arguments that must match: numbers within tolerance, strings equal ignoring case and surrounding spaces, lists item by item."},
+        "tolerance": {"$ref": "#/$defs/tolerance"},
+        "min_calls": {"type": "integer", "minimum": 1, "default": 1, "description": "Calls that match args (all calls of the tool when args is absent)."},
+        "max_calls": {"type": "integer", "minimum": 1, "description": "Calls of the tool, with any arguments."},
+        "successful": {"type": "boolean", "default": false, "description": "Count only calls whose result was not an error."}
+      }
+    },
+    "tool_not_called": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tool"],
+      "properties": {
+        "id": true, "type": true, "required": true, "description": true,
+        "tool": {"$ref": "#/$defs/tool_name"},
+        "args": {"type": "object", "description": "When set, only a call matching these arguments fails the grader."},
+        "tolerance": {"$ref": "#/$defs/tolerance"}
+      }
+    },
+    "regex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pattern"],
+      "properties": {
+        "id": true, "type": true, "required": true, "description": true,
+        "pattern": {"type": "string", "minLength": 1, "description": "A Python regular expression."},
+        "target": {"$ref": "#/$defs/target"},
+        "case_sensitive": {"type": "boolean", "default": false}
+      }
+    },
+    "end_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["states"],
+      "properties": {
+        "id": true, "type": true, "required": true, "description": true,
+        "states": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["answered", "step_limit", "token_limit", "timeout", "agent_error", "harness_error"]}
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": true, "type": true, "required": true, "description": true,
+        "max_unsupported": {"type": "integer", "minimum": 0, "default": 0}
+      }
+    },
+    "unit_test": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": true, "type": true, "required": true, "description": true,
+        "file": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*\\.py$", "default": "grader.py", "description": "Next to task.json."},
+        "function": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$", "default": "grade"},
+        "timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 120, "default": 10}
+      }
+    },
+    "judge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rubric", "criteria"],
+      "description": "RESERVED. The interface only: the judge is built after Rishi writes the rubric, and returns not_implemented until then.",
+      "properties": {
+        "id": true, "type": true, "required": true, "description": true,
+        "rubric": {
+          "description": "The rubric, versioned like prompts: {id, version} of configs/rubrics/<id>.<version>.md, or that path as a string.",
+          "oneOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "object", "additionalProperties": false, "required": ["id", "version"], "properties": {"id": {"type": "string"}, "version": {"type": "string"}}}
+          ]
+        },
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {"type": "string", "minLength": 1},
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id"],
+                "properties": {"id": {"type": "string", "minLength": 1}, "text": {"type": "string"}, "required": {"type": "boolean"}}
+              }
+            ]
+          }
+        },
+        "model": {"type": "string", "description": "The pinned judge model; the experiment's judge model when absent."},
+        "reference": {"type": "object", "description": "Reference facts the judge grades against, not what the agent saw (review note 20)."}
+      }
+    }
+  }
+}

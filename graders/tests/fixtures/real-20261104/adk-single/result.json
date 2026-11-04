@@ -1,0 +1,128 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-adk-smoke-0c1824",
+ "end_state": "answered",
+ "end_detail": {
+  "harness_stop_reason": "STOP",
+  "exception_type": null,
+  "exception_message": null,
+  "last_message_excerpt": "I'm sorry your mother's treatment is adding this strain. Being behind on the card is stressful, but a clear order makes it manageable.\n\nYour three debts total ₹4,41,050. Minimums are ₹18,332.50 a month, so your ₹20,000 leaves about ₹1,667 extra each month.\n\n**Recommended order (highest interest first):**\n1. **Credit card** (42%, ₹84,250): cleared in about month 19. This is the most expensive debt, so it goes first.\n2. **Personal loan** (14.5%, ₹3,10,000): cleared in month 28.\n3. **Two-wheeler loan** (11%, ₹46,800): cleared in month 15 on its own schedule, so it is the first to close, and its minimum then goes to the next debt.\n\n**Totals:** You'd be debt-free in about **28 months**, paying roughly **₹1,01,341** in interest on top of the principal.\n\n**Steps I'd take now:**\n1. **Call Kaveri Bank about the card this week.** Ask about a hardship or payment-relief programme and whether late fees can be waived. Many banks offer this after a medical event. Also ask them to stop further card spending if you can.\n2. **Keep paying every minimum on time**, starting with the card's ₹4,212.50, so no new late marks pile up. Then put the extra toward the card as the plan above shows.\n3. **Don't take a new loan to clear these debts** unless you have checked the total cost first. Refinancing could help, but it's only worth it if the numbers clearly improve.\n\nThis plan assumes the ₹20,000 is steady and you don't pick up new card debt. If your medical costs keep rising, tell me, and we can check how much room is left in the budget."
+ },
+ "final_answer": "I'm sorry your mother's treatment is adding this strain. Being behind on the card is stressful, but a clear order makes it manageable.\n\nYour three debts total ₹4,41,050. Minimums are ₹18,332.50 a month, so your ₹20,000 leaves about ₹1,667 extra each month.\n\n**Recommended order (highest interest first):**\n1. **Credit card** (42%, ₹84,250): cleared in about month 19. This is the most expensive debt, so it goes first.\n2. **Personal loan** (14.5%, ₹3,10,000): cleared in month 28.\n3. **Two-wheeler loan** (11%, ₹46,800): cleared in month 15 on its own schedule, so it is the first to close, and its minimum then goes to the next debt.\n\n**Totals:** You'd be debt-free in about **28 months**, paying roughly **₹1,01,341** in interest on top of the principal.\n\n**Steps I'd take now:**\n1. **Call Kaveri Bank about the card this week.** Ask about a hardship or payment-relief programme and whether late fees can be waived. Many banks offer this after a medical event. Also ask them to stop further card spending if you can.\n2. **Keep paying every minimum on time**, starting with the card's ₹4,212.50, so no new late marks pile up. Then put the extra toward the card as the plan above shows.\n3. **Don't take a new loan to clear these debts** unless you have checked the total cost first. Refinancing could help, but it's only worth it if the numbers clearly improve.\n\nThis plan assumes the ₹20,000 is steady and you don't pick up new card debt. If your medical costs keep rising, tell me, and we can check how much room is left in the budget.",
+ "conversation": {
+  "agent_turns": 1,
+  "client_turns": 0,
+  "ended_by": null,
+  "transcript": [
+   {
+    "role": "user",
+    "content": "My mother's medical costs went up this year and I'm falling behind on my credit card. I can put about Rs 20,000 a month towards my debts. What should I pay off first, and how long will it take?",
+    "source": "task"
+   },
+   {
+    "role": "assistant",
+    "content": "I'm sorry your mother's treatment is adding this strain. Being behind on the card is stressful, but a clear order makes it manageable.\n\nYour three debts total ₹4,41,050. Minimums are ₹18,332.50 a month, so your ₹20,000 leaves about ₹1,667 extra each month.\n\n**Recommended order (highest interest first):**\n1. **Credit card** (42%, ₹84,250): cleared in about month 19. This is the most expensive debt, so it goes first.\n2. **Personal loan** (14.5%, ₹3,10,000): cleared in month 28.\n3. **Two-wheeler loan** (11%, ₹46,800): cleared in month 15 on its own schedule, so it is the first to close, and its minimum then goes to the next debt.\n\n**Totals:** You'd be debt-free in about **28 months**, paying roughly **₹1,01,341** in interest on top of the principal.\n\n**Steps I'd take now:**\n1. **Call Kaveri Bank about the card this week.** Ask about a hardship or payment-relief programme and whether late fees can be waived. Many banks offer this after a medical event. Also ask them to stop further card spending if you can.\n2. **Keep paying every minimum on time**, starting with the card's ₹4,212.50, so no new late marks pile up. Then put the extra toward the card as the plan above shows.\n3. **Don't take a new loan to clear these debts** unless you have checked the total cost first. Refinancing could help, but it's only worth it if the numbers clearly improve.\n\nThis plan assumes the ₹20,000 is steady and you don't pick up new card debt. If your medical costs keep rising, tell me, and we can check how much room is left in the budget.",
+    "source": "agent"
+   }
+  ]
+ },
+ "harness": {
+  "name": "adk",
+  "version": "google-adk 2.12.0 (litellm 1.106.1)",
+  "extra": {
+   "tool_names": [
+    "amortization_schedule",
+    "calculate_emi",
+    "debt_payoff_plan",
+    "fd_maturity",
+    "get_client_profile",
+    "inflation_adjusted_value",
+    "list_debts",
+    "list_transactions",
+    "loan_affordability",
+    "prepayment_impact",
+    "sip_future_value"
+   ],
+   "model_route": "LiteLlm(model='openai/claude-haiku-5-5'), litellm library",
+   "agent_name": "assistant",
+   "malformed_tool_call_retries": 3,
+   "scrubbed_env": []
+  }
+ },
+ "applied_settings": {
+  "temperature": {
+   "value": null,
+   "source": "harness_default"
+  },
+  "max_output_tokens": {
+   "value": 4096,
+   "source": "config"
+  },
+  "max_steps": {
+   "value": 12,
+   "source": "config"
+  },
+  "timeout_s": {
+   "value": 240,
+   "source": "config"
+  },
+  "parallel_tool_calls": {
+   "value": false,
+   "source": "platform_default"
+  },
+  "memory": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "off: the Runner gets no memory service, so nothing is stored or recalled. ADK has memory services; the adapter does not wire them yet"
+  },
+  "skills": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "off: the agent gets no skills toolset. ADK has skills support; the adapter does not wire it yet"
+  },
+  "compression": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "off: no events compaction and no context cache; the whole session history is sent each call"
+  },
+  "top_p": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  },
+  "seed": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  },
+  "tool_choice": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  }
+ },
+ "harness_usage": {
+  "model_calls": 3,
+  "input_tokens": 28557,
+  "output_tokens": 1344,
+  "cost_usd": null
+ },
+ "counts": {
+  "model_calls": 3,
+  "tool_calls": 2,
+  "tool_errors": 0,
+  "malformed_tool_calls": 0
+ },
+ "integrity": {
+  "before": {},
+  "after": {}
+ },
+ "timing": {
+  "started_at": "2026-11-04T08:36:28.631813Z",
+  "ended_at": "2026-11-04T08:36:40.515381Z",
+  "wall_s": 11.884
+ },
+ "artifacts": [
+  "artifacts/adk-session.json"
+ ]
+}

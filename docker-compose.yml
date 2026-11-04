@@ -182,6 +182,22 @@ services:
       dockerfile: workers/openai-agents/Dockerfile
     image: agent-evals/worker-openai-agents:dev
 
+  # SP4 (R14): grading is its own step after the trial. Claims done trials that need grading,
+  # downloads their files from the API over HTTP, runs the task's graders and reports the grades.
+  # The same runtime as a harness worker (read-only root, one tmpfs, trials network only, mounts
+  # nothing), so a task's unit_test grader can reach nothing but the API and LiteLLM.
+  grader:
+    <<: *worker-runtime
+    build: ./graders
+    image: agent-evals/grader:dev
+    restart: unless-stopped
+    environment:
+      EVALS_API_URL: http://api:3000/api
+      EVALS_WORKER_TOKEN: *worker-token
+    depends_on:
+      api:
+        condition: service_healthy
+
   # Smoke check only: proves the worker runtime settings give exactly the
   # access D3 allows. Run with `docker compose --profile smoke run --rm netcheck`.
   netcheck:
