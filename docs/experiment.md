@@ -15,7 +15,7 @@ Axis (D9, 3 Nov): the system prompt, v1 versus v2. v1 runs first on the discover
 Settled 5 Nov (D10, D41 to D44, D8, D46; details in `docs/proposals/stats.md` and `docs/proposals/judge-validation.md`):
 
 - Unit: the task. Metric: the task pass rate (every required grader passes; a trial with no outcome is counted apart).
-- Interval: two-level bootstrap (tasks, then trials), 95%. Test: sign-flip permutation on per-task differences, alpha 0.05.
+- Interval: bootstrap resampling tasks only (D10 revision), 95%. Test: sign-flip permutation on per-task differences, alpha 0.05.
 - Verdict: better, worse, practically equivalent (the whole interval within +/- 10 points), or no detectable difference.
 - Guardrail: B is not called better if its critical-failure rate rose beyond noise (each grader's severity set by Rishi in its task).
 - Per-task flags: Benjamini-Hochberg at q = 0.05; every task where B dropped is listed with what got worse and why.
