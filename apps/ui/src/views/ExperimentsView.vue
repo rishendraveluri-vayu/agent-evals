@@ -162,8 +162,9 @@ const attention = computed<Attention[]>(() => {
       to: '#/labels?set=tuning',
       icon: 'tag',
       infra: false,
-      title: `${plural(d.tuningToGo, 'tuning output')} to label`,
-      detail: 'Open coding before any rubric: your pass or fail, and a line on why.',
+      title: `${plural(d.tuningToGo, 'output')} waiting for a human label`,
+      titleNote: '(tuning set)',
+      detail: 'Open coding before any rubric: a person’s pass or fail, and a line on why.',
     });
   }
   if (d.heldoutToGo) {
@@ -172,9 +173,9 @@ const attention = computed<Attention[]>(() => {
       to: href.labels(),
       icon: 'tag',
       infra: false,
-      title: `${plural(d.heldoutToGo, 'held-out output')} to label`,
+      title: `${plural(d.heldoutToGo, 'held-out output')} waiting for a human label`,
       titleNote: `(${plural(d.heldoutChecksToGo, 'check')})`,
-      detail: "The judge's agreement with you is final once all of them are labelled.",
+      detail: "The judge's agreement with the human labels is final once all of them are labelled.",
     });
   }
   for (const h of d.harnesses) {
@@ -389,7 +390,7 @@ const rows = computed<Row[]>(() => {
           id="attention"
           class="attention-title"
         >
-          Needs you
+          Needs attention
         </h2>
         <a
           v-for="item in attention"
@@ -414,7 +415,7 @@ const rows = computed<Row[]>(() => {
           v-if="!attention.length"
           class="secondary small"
         >
-          Nothing needs you right now.
+          Nothing needs attention right now.
         </p>
       </section>
     </div>

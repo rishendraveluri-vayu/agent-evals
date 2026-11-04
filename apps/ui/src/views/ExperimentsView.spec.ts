@@ -52,12 +52,14 @@ describe('ExperimentsView in fixture mode', () => {
   it('lists what needs attention: a paused arm, a paused run, infra failures, labels to go, an inert setting', async () => {
     const w = mount(ExperimentsView);
     await settle();
+    // Neutral words: a reviewer reading the page is not the one asked to label.
+    expect(w.get('#attention').text()).toBe('Needs attention');
     const items = w.findAll('[data-test="attention"]');
     expect(items.map((a) => a.find('.attention-head').text())).toEqual([
       'Arm B of Model: Haiku 5.5 vs Gemini 3.8 Flash, discovery is paused',
       'Prompt v1 vs v2, discovery batch 3 is paused',
       '2 infra failures',
-      '3 held-out outputs to label (7 checks)',
+      '3 held-out outputs waiting for a human label (7 checks)',
       'Temperature looks inert on ADK',
     ]);
     // What paused each, in a phrase; the run page has the full reason and the fix.

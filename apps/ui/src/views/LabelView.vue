@@ -49,7 +49,17 @@ watch(data, (d, before) => {
   if (first) set.value = first.set;
 });
 
-const queue = computed(() => data.value?.[set.value] ?? null);
+/** Items saved this visit, by set: they leave their queue at once, so every "to go" count is right
+ *  without loading the queue again. */
+const savedIds = reactive<Record<LabelSet, string[]>>({ tuning: [], heldout: [], final: [] });
+/** What is still to label in a set: as loaded, less what was saved since. Skipped items stay. */
+const remainingOf = (s: LabelSet) => {
+  const q = data.value?.[s];
+  return q ? q.filter((i) => !savedIds[s].includes(i.item_id)) : null;
+};
+const queue = computed(() => remainingOf(set.value));
+/** The current item's place among those still to label: a save leaves it where it is (the next
+ *  item moves up), a skip moves past it. */
 const index = ref(0);
 const item = computed(() => queue.value?.[index.value] ?? null);
 const answers = reactive<Record<string, LabelValue | undefined>>({});
@@ -57,14 +67,17 @@ const note = ref('');
 const active = ref(0);
 const saving = ref(false);
 const saveError = ref<string | null>(null);
-const savedCount = ref(0);
+const savedCount = computed(() => savedIds[set.value].length);
 const skippedCount = ref(0);
+/** The longest note a label keeps here. */
+const NOTE_MAX = 500;
 const noteBox = ref<HTMLTextAreaElement | null>(null);
 const topOfItem = ref<HTMLElement | null>(null);
 
 const criteria = computed(() => item.value?.criteria ?? []);
 const allAnswered = computed(() => criteria.value.length > 0 && criteria.value.every((c) => answers[c.id]));
-const left = computed(() => (queue.value ? Math.max(0, queue.value.length - index.value) : 0));
+/** Still to label in this set, skipped ones included. */
+const left = computed(() => queue.value?.length ?? 0);
 const setFile = computed(() => SETS.find((s) => s.set === set.value)?.file ?? '');
 
 function reset() {
@@ -75,28 +88,31 @@ function reset() {
 }
 watch(set, () => {
   index.value = 0;
-  savedCount.value = 0;
   skippedCount.value = 0;
   reset();
 });
 
 /** "7 of 30": this item's place in the queue as it loaded. */
-const total = computed(() => queue.value?.length ?? 0);
-const position = computed(() => Math.min(index.value + 1, total.value));
+const total = computed(() => data.value?.[set.value]?.length ?? 0);
+const position = computed(() => Math.min(total.value - left.value + index.value + 1, total.value));
 
-/** The next item starts at its top, with focus on its heading for screen readers. */
-async function toNext() {
-  index.value += 1;
+/** The next item starts at its top, with focus on its heading for screen readers. After a save the
+ *  saved item has left the queue, so the next one is already at this place; a skip moves on. */
+async function toNext(skipped: boolean) {
+  if (skipped) index.value += 1;
   reset();
   await nextTick();
   topOfItem.value?.scrollIntoView?.({ block: 'start' });
   topOfItem.value?.focus({ preventScroll: true });
 }
 
-/** New trials may have finished since the queue loaded: fetch it again. */
+/** New trials may have finished since the queue loaded: fetch it again. The API's queue leaves out
+ *  what is labelled, so this visit's saves start afresh. */
 async function loadMore() {
   await reload();
+  for (const s of SETS) savedIds[s.set].splice(0);
   index.value = 0;
+  skippedCount.value = 0;
   reset();
 }
 
@@ -113,11 +129,13 @@ async function saveAndNext() {
   saving.value = true;
   saveError.value = null;
   try {
+    // Trimmed and capped; a note of only spaces is no note.
+    const text = note.value.trim().slice(0, NOTE_MAX);
     for (const c of criteria.value) {
-      await api.saveLabel({ item_id: current.item_id, set: set.value, criterion: c.id, value: answers[c.id] as LabelValue, note: note.value.trim() });
+      await api.saveLabel({ item_id: current.item_id, set: set.value, criterion: c.id, value: answers[c.id] as LabelValue, note: text });
     }
-    savedCount.value += 1;
-    await toNext();
+    savedIds[set.value].push(current.item_id);
+    await toNext(false);
   } catch (err) {
     saveError.value = errorText(err);
   } finally {
@@ -127,7 +145,7 @@ async function saveAndNext() {
 
 function skip() {
   skippedCount.value += 1;
-  void toNext();
+  void toNext(true);
 }
 
 /**
@@ -159,7 +177,7 @@ onMounted(() => window.addEventListener('keydown', onKey));
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 
 const setLabel = (s: LabelSet, name: string) => {
-  const q = data.value?.[s];
+  const q = remainingOf(s);
   return q ? `${name}, ${q.length} to go` : name;
 };
 const purpose = computed(() => SETS.find((s) => s.set === set.value)?.purpose ?? '');
@@ -174,6 +192,10 @@ function pretty(v: unknown): string {
   }
 }
 const paragraphs = (text: string) => text.split(/\n{2,}/);
+/** Where the tool calls go: before the agent's first reply, or after the conversation when the
+ *  agent never replied, so its work is shown either way. */
+const firstReply = computed(() => item.value?.transcript.findIndex((m) => m.role === 'assistant') ?? -1);
+const noteLeft = computed(() => NOTE_MAX - note.value.length);
 /** The agent's reply as it reads: bold, bullets and numbered steps, as text (no HTML). */
 const blocks = (text: string) => mdBlocks(text);
 </script>
@@ -295,8 +317,9 @@ const blocks = (text: string) => mdBlocks(text);
           :key="i"
         >
           <details
-            v-if="m.role === 'assistant' && i === item.transcript.findIndex((x) => x.role === 'assistant') && item.tool_calls.length"
+            v-if="i === firstReply && item.tool_calls.length"
             class="disclosure"
+            data-test="tool-calls"
           >
             <summary>
               <span class="summary-text">
@@ -352,6 +375,42 @@ const blocks = (text: string) => mdBlocks(text);
               </p>
             </template>
           </article>
+        </template>
+        <!-- The agent never replied: its tool calls are all it did, so they show open, after the client's words. -->
+        <template v-if="firstReply === -1">
+          <details
+            v-if="item.tool_calls.length"
+            class="disclosure"
+            open
+            data-test="tool-calls"
+          >
+            <summary>
+              <span class="summary-text">
+                <span class="strong">{{ item.tool_calls.length }} tool {{ item.tool_calls.length === 1 ? 'call' : 'calls' }}</span>
+                <span class="secondary small mono">{{ item.tool_calls.map((t) => t.name).join(', ') }}</span>
+              </span>
+            </summary>
+            <p class="secondary small gap-below">
+              Arguments and results, without timings or costs, which could hint at the config.
+            </p>
+            <div
+              v-for="(t, ti) in item.tool_calls"
+              :key="ti"
+              class="tool"
+            >
+              <span class="mono strong">{{ t.name }}</span>
+              <div class="tool-body">
+                <pre class="code-block">{{ pretty(t.arguments) }}</pre>
+                <pre class="code-block">{{ pretty(t.result) }}</pre>
+              </div>
+            </div>
+          </details>
+          <p
+            class="panel no-answer small"
+            data-test="no-answer"
+          >
+            <strong>The agent gave no final answer.</strong> {{ item.tool_calls.length ? 'Its tool calls above are all it did.' : 'It made no tool calls either.' }}
+          </p>
         </template>
       </section>
 
@@ -409,10 +468,16 @@ const blocks = (text: string) => mdBlocks(text);
             ref="noteBox"
             v-model="note"
             rows="2"
+            :maxlength="NOTE_MAX"
             placeholder="What made you decide, in a sentence"
+            aria-describedby="note-hint"
             data-test="label-note"
           />
-          <span class="secondary smaller">Enter saves; Shift+Enter for a new line.</span>
+          <span
+            id="note-hint"
+            class="secondary smaller"
+            data-test="note-hint"
+          >Enter saves; Shift+Enter for a new line. Optional, up to {{ NOTE_MAX }} characters<template v-if="noteLeft < 100">, {{ noteLeft }} left</template>.</span>
         </label>
         <p
           v-if="saveError"
@@ -613,6 +678,11 @@ kbd {
 
 .empty p {
   margin: 0 0 10px;
+}
+
+.no-answer {
+  padding: 12px 16px;
+  border-radius: 10px;
 }
 
 .answer--yes[aria-pressed='true'] {

@@ -277,6 +277,62 @@ describe('LabelView, the tuning batch against the API', () => {
     expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
   });
 
+  it('shows the tool calls of an agent that never answered, open, and says it gave no final answer', async () => {
+    const noAnswer = { ...tuningItem('t_none', ''), transcript: [{ role: 'user', content: 'I can put about ₹20,000 a month towards my debts.' }] };
+    routeFetch({
+      '/api/labels/queue?set=tuning': [noAnswer],
+      '/api/labels/queue?set=heldout': [],
+      '/api/labels/queue?set=final': [],
+    });
+    const w = mount(LabelView, { attachTo: document.body });
+    mounted.push(w);
+    await settle();
+    const tools = w.get('[data-test="tool-calls"]');
+    expect(tools.attributes('open')).toBeDefined();
+    expect(tools.get('summary').text()).toContain('2 tool calls');
+    expect(tools.text()).toContain('debt_payoff_plan');
+    expect(w.get('[data-test="no-answer"]').text()).toBe('The agent gave no final answer. Its tool calls above are all it did.');
+    expect(w.find('.bubble--agent').exists()).toBe(false);
+  });
+
+  it('counts down each set as labels are saved, without loading the queue again', async () => {
+    const { w, fetchMock } = mountTuning();
+    await settle();
+    const tuning = () => w.get('[data-test="set-tuning"]').text();
+    expect(tuning()).toBe('Tuning, 2 to go');
+    const loads = fetchMock.mock.calls.length;
+    key('1');
+    key('Enter', w.get('[data-test="label-note"]').element);
+    await settle();
+    expect(tuning()).toBe('Tuning, 1 to go');
+    expect(w.get('[data-test="progress"]').text()).toBe('2 of 2 · 1 saved');
+    // A skip leaves the item to go.
+    await w.findAll('.buttons button')[1].trigger('click');
+    await settle();
+    expect(tuning()).toBe('Tuning, 1 to go');
+    // Only the label was posted: the queue was not fetched again.
+    expect(fetchMock.mock.calls.slice(loads).every(([, init]) => init?.method === 'POST')).toBe(true);
+  });
+
+  it('trims the note, saves one of only spaces as no note, and caps it at 500 characters', async () => {
+    const { w, calls } = mountTuning();
+    await settle();
+    const note = w.get('[data-test="label-note"]');
+    expect(note.attributes('maxlength')).toBe('500');
+    expect(w.get('[data-test="note-hint"]').text()).toBe('Enter saves; Shift+Enter for a new line. Optional, up to 500 characters.');
+    await note.setValue('x'.repeat(450));
+    expect(w.get('[data-test="note-hint"]').text()).toContain('50 left');
+    key('1');
+    await note.setValue('   \n  ');
+    key('Enter', note.element);
+    await settle();
+    key('2');
+    await w.get('[data-test="label-note"]').setValue('  Too vague.  ');
+    key('Enter', w.get('[data-test="label-note"]').element);
+    await settle();
+    expect(calls.filter((c) => c.method === 'POST').map((c) => (c.body as { note: string }).note)).toEqual(['', 'Too vague.']);
+  });
+
   it('shows a refused label with the reason and stays on the item', async () => {
     routeFetch({
       '/api/labels/queue?set=tuning': [tuningItem('t_one', 'Answer.')],
