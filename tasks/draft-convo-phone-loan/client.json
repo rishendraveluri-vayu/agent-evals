@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "profile": {
+    "name": "Rohan Kulkarni",
+    "age": 27,
+    "city": "Bengaluru",
+    "occupation": "Customer support team lead at a software company",
+    "monthly_net_income": 58000,
+    "dependents": [],
+    "emergency_fund": 15000,
+    "risk_appetite": "moderate",
+    "goals": [
+      "Clear the personal loan",
+      "Build an emergency fund of three months' expenses"
+    ],
+    "notes": "SYNTHETIC EXAMPLE: an invented person with invented figures, for demos and tests only. In March 2026 he took a personal loan for a new phone and a Goa trip with college friends; the EMI now feels heavy, and he sends money home to his parents every month."
+  },
+  "debts": [
+    {
+      "name": "Personal loan",
+      "kind": "personal_loan",
+      "lender": "Tungabhadra Finance (fictional)",
+      "balance": 111637.62,
+      "annual_rate_pct": 18,
+      "minimum_payment": 7488.62,
+      "remaining_months": 17
+    }
+  ],
+  "transactions": [
+    {
+      "id": "t001",
+      "date": "2026-10-01",
+      "description": "Salary credit",
+      "category": "salary",
+      "direction": "credit",
+      "amount": 58000
+    },
+    {
+      "id": "t002",
+      "date": "2026-10-02",
+      "description": "Rent, his share of the flat",
+      "category": "rent",
+      "direction": "debit",
+      "amount": 14000
+    },
+    {
+      "id": "t003",
+      "date": "2026-10-05",
+      "description": "Personal loan EMI",
+      "category": "emi",
+      "direction": "debit",
+      "amount": 7488.62
+    },
+    {
+      "id": "t004",
+      "date": "2026-10-06",
+      "description": "Groceries",
+      "category": "groceries",
+      "direction": "debit",
+      "amount": 3150
+    },
+    {
+      "id": "t005",
+      "date": "2026-10-07",
+      "description": "Mobile and broadband",
+      "category": "utilities",
+      "direction": "debit",
+      "amount": 1199
+    },
+    {
+      "id": "t006",
+      "date": "2026-10-09",
+      "description": "Cab rides",
+      "category": "transport",
+      "direction": "debit",
+      "amount": 1840
+    },
+    {
+      "id": "t007",
+      "date": "2026-10-11",
+      "description": "Food delivery",
+      "category": "dining",
+      "direction": "debit",
+      "amount": 2260
+    },
+    {
+      "id": "t008",
+      "date": "2026-10-12",
+      "description": "Money sent home to parents",
+      "category": "family_support",
+      "direction": "debit",
+      "amount": 6000
+    },
+    {
+      "id": "t009",
+      "date": "2026-10-15",
+      "description": "Weekend outing with friends",
+      "category": "entertainment",
+      "direction": "debit",
+      "amount": 2900
+    },
+    {
+      "id": "t010",
+      "date": "2026-10-18",
+      "description": "Clothes",
+      "category": "shopping",
+      "direction": "debit",
+      "amount": 3400
+    },
+    {
+      "id": "t011",
+      "date": "2026-10-20",
+      "description": "Cab rides",
+      "category": "transport",
+      "direction": "debit",
+      "amount": 1420
+    },
+    {
+      "id": "t012",
+      "date": "2026-10-24",
+      "description": "Food delivery",
+      "category": "dining",
+      "direction": "debit",
+      "amount": 1730
+    },
+    {
+      "id": "t013",
+      "date": "2026-10-25",
+      "description": "Gym membership",
+      "category": "fitness",
+      "direction": "debit",
+      "amount": 1500
+    },
+    {
+      "id": "t014",
+      "date": "2026-10-27",
+      "description": "Concert tickets",
+      "category": "entertainment",
+      "direction": "debit",
+      "amount": 2600
+    },
+    {
+      "id": "t015",
+      "date": "2026-10-29",
+      "description": "Electricity, his share",
+      "category": "utilities",
+      "direction": "debit",
+      "amount": 780
+    },
+    {
+      "id": "t016",
+      "date": "2026-10-30",
+      "description": "Transfer to savings",
+      "category": "savings",
+      "direction": "debit",
+      "amount": 2000
+    }
+  ]
+}

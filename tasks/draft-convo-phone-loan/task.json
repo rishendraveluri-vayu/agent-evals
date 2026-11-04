@@ -1,0 +1,108 @@
+{
+  "id": "draft-convo-phone-loan",
+  "version": "1",
+  "split": "discovery",
+  "kind": "conversation",
+  "summary": "DRAFT for Rishi: Rohan regrets a loan he took for a phone and a Goa trip and asks what it really costs. Regret: kind and direct; terms from his file; a monthly extra needs the payoff plan.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "In March I took a personal loan for a new phone and a Goa trip because all my friends were going. Now the EMI eats a big part of my salary. How much is this loan really costing me?"
+    }
+  ],
+  "client_sim": {
+    "persona": "Rohan Kulkarni, 27, a customer support team lead in Bengaluru who shares a flat and sends money home to his parents every month. Easy-going, a little embarrassed about the loan, answers what he is asked, and gets defensive if he feels lectured.",
+    "hidden_facts": [
+      "He can put about Rs 3,000 a month extra towards the loan by cutting cab rides and food delivery",
+      "He feels embarrassed about the loan and does not want a lecture"
+    ],
+    "concerns": [
+      "How much more will this loan cost me, and can I finish it sooner?"
+    ],
+    "goal": "Know what the loan still costs him and a realistic way to finish it sooner",
+    "opening_message": "In March I took a personal loan for a new phone and a Goa trip because all my friends were going. Now the EMI eats a big part of my salary. How much is this loan really costing me?",
+    "max_client_turns": 4
+  },
+  "client_state": "client.json",
+  "required_tools": [
+    "list_debts"
+  ],
+  "graders": [
+    {
+      "id": "read-the-file",
+      "type": "required_tools",
+      "required": true
+    },
+    {
+      "id": "remaining-interest",
+      "type": "number",
+      "required": true,
+      "target": "agent_messages",
+      "expected": 15668.79,
+      "tolerance": {
+        "rel": 0.005
+      }
+    },
+    {
+      "id": "extra-payment-plan",
+      "type": "tool_called",
+      "required": true,
+      "tool": "debt_payoff_plan",
+      "args": {
+        "monthly_budget": 10488.62
+      },
+      "tolerance": {
+        "abs": 15
+      }
+    },
+    {
+      "id": "months-with-extra",
+      "type": "number",
+      "required": true,
+      "target": "agent_messages",
+      "expected": 12,
+      "match": "any",
+      "tolerance": {
+        "abs": 0
+      }
+    },
+    {
+      "id": "ends-answered",
+      "type": "end_state",
+      "required": true,
+      "states": [
+        "answered"
+      ]
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding plus proposed yes/no criteria (DRAFT for Rishi); optional until the rubric and D7 are settled.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "kind-and-direct",
+          "text": "Does the advisor name what the loan still costs in rupees, kindly and without lecturing or shaming him about the phone and the trip? Yes or no."
+        },
+        {
+          "id": "keeps-buffer",
+          "text": "Does the advisor avoid suggesting he use his ₹15,000 emergency fund to pay the loan down? Yes or no."
+        }
+      ]
+    }
+  ],
+  "judge_criteria_to_write": "Regret (R6): kind and direct, the real cost in rupees, a plan he can follow. From his file: balance 111637.62 at 18% with 17 months left, EMI 7488.62; interest still to pay 15668.79. With Rs 3,000 a month extra (debt_payoff_plan, budget 10488.62): debt-free in 12 months, interest 10917.46. Wrong-tool trap: prepayment_impact with 3000 treats it as one payment (saves 864.04, 0 months)."
+}

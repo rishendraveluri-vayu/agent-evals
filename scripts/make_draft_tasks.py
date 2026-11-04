@@ -17,6 +17,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from finance_mcp import calculators as c
+from finance_mcp.client_data import load_client, transactions_view
 
 ROOT = Path(__file__).resolve().parents[1]
 TASKS = ROOT / "tasks"
@@ -47,8 +48,8 @@ PERSONA = (
 )
 
 
-def sim(opening: str, hidden: list[str], concerns: list[str], goal: str) -> dict:
-    return {"persona": PERSONA, "hidden_facts": hidden, "concerns": concerns, "goal": goal,
+def sim(opening: str, hidden: list[str], concerns: list[str], goal: str, persona: str = PERSONA) -> dict:
+    return {"persona": persona, "hidden_facts": hidden, "concerns": concerns, "goal": goal,
             "opening_message": opening, "max_client_turns": 4}
 
 
@@ -56,8 +57,21 @@ def provenance() -> dict:
     return {"id": "every-amount-from-a-tool", "type": "provenance", "required": True, "max_unsupported": 0}
 
 
-def write(task_id: str, summary: str, message: str, graders: list[dict], *, client: bool,
-          notes: str, client_sim: dict | None = None) -> None:
+def judge_with(*criteria: tuple[str, str]) -> dict:
+    """The open-coding judge plus proposed yes/no criteria, for the tasks added on 5 Nov. Optional,
+    like OPEN_CODING, until Rishi writes the rubric and settles which tasks use the judge (D7)."""
+    return {
+        **OPEN_CODING,
+        "description": "Open coding plus proposed yes/no criteria (DRAFT for Rishi); optional until the rubric and D7 are settled.",
+        "criteria": OPEN_CODING["criteria"] + [{"id": cid, "text": text} for cid, text in criteria],
+    }
+
+
+def write(task_id: str, summary: str, message: str, graders: list[dict], *, client: bool | dict,
+          notes: str, client_sim: dict | None = None, judge: dict = OPEN_CODING,
+          required_tools: list[str] | None = None) -> None:
+    """`client` is True for Meera's file (the server's example client), a dict for another
+    synthetic client written as this task's client.json, or False for none."""
     folder = TASKS / f"draft-{task_id}"
     folder.mkdir(parents=True, exist_ok=True)
     task = {
@@ -71,10 +85,13 @@ def write(task_id: str, summary: str, message: str, graders: list[dict], *, clie
         "messages": [{"role": "user", "content": message}],
         "client_sim": client_sim,
         "client_state": "client.json" if client else None,
-        "graders": graders + [OPEN_CODING],
+        **({"required_tools": required_tools} if required_tools else {}),
+        "graders": graders + [judge],
         "judge_criteria_to_write": notes,
     }
-    if client:
+    if isinstance(client, dict):
+        (folder / "client.json").write_text(json.dumps(client, indent=2, ensure_ascii=False) + "\n")
+    elif client:
         shutil.copy(CLIENT, folder / "client.json")
     (folder / "task.json").write_text(json.dumps(task, indent=2, ensure_ascii=False) + "\n")
 
@@ -301,7 +318,267 @@ def main() -> None:
            {"id": "compared-with-a-tool", "type": "tool_called", "required": True, "tool": "calculate_emi"},
            provenance()],
           "Judgment: asks the offer's terms, compares 24% with 42% using a tool, names the risk of running the card up again.")
+    new_tasks_5nov(plan_debts)
     print("wrote", len([p for p in TASKS.glob("draft-*") if p.is_dir()]), "draft tasks")
+
+
+# --- 5 Nov: six more drafts, aimed at the brief's failure categories (stretch item 7) -----------
+
+# A second synthetic client, so not every client-file task is Meera's and "clear the 42% card" is
+# not the right answer everywhere. His loan: Rs 1,50,000 at 18% for 24 months from March 2026,
+# seven EMIs paid, so the balance is the schedule's closing balance after month 7 (checked in
+# new_tasks_5nov) and the minimum payment is that loan's EMI.
+ROHAN_LOAN = {"principal": 150000, "rate": 18, "months": 24, "paid": 7}
+ROHAN_PERSONA = (
+    "Rohan Kulkarni, 27, a customer support team lead in Bengaluru who shares a flat and sends money "
+    "home to his parents every month. Easy-going, a little embarrassed about the loan, answers what he "
+    "is asked, and gets defensive if he feels lectured."
+)
+
+
+def rohan_client(balance: float, emi: float, months_left: int) -> dict:
+    return {
+        "schema_version": 1,
+        "synthetic": True,
+        "profile": {
+            "name": "Rohan Kulkarni",
+            "age": 27,
+            "city": "Bengaluru",
+            "occupation": "Customer support team lead at a software company",
+            "monthly_net_income": 58000,
+            "dependents": [],
+            "emergency_fund": 15000,
+            "risk_appetite": "moderate",
+            "goals": ["Clear the personal loan", "Build an emergency fund of three months' expenses"],
+            "notes": "SYNTHETIC EXAMPLE: an invented person with invented figures, for demos and tests only. In March 2026 he took a personal loan for a new phone and a Goa trip with college friends; the EMI now feels heavy, and he sends money home to his parents every month.",
+        },
+        "debts": [
+            {
+                "name": "Personal loan",
+                "kind": "personal_loan",
+                "lender": "Tungabhadra Finance (fictional)",
+                "balance": balance,
+                "annual_rate_pct": ROHAN_LOAN["rate"],
+                "minimum_payment": emi,
+                "remaining_months": months_left,
+            }
+        ],
+        "transactions": [
+            {"id": "t001", "date": "2026-10-01", "description": "Salary credit", "category": "salary", "direction": "credit", "amount": 58000},
+            {"id": "t002", "date": "2026-10-02", "description": "Rent, his share of the flat", "category": "rent", "direction": "debit", "amount": 14000},
+            {"id": "t003", "date": "2026-10-05", "description": "Personal loan EMI", "category": "emi", "direction": "debit", "amount": emi},
+            {"id": "t004", "date": "2026-10-06", "description": "Groceries", "category": "groceries", "direction": "debit", "amount": 3150},
+            {"id": "t005", "date": "2026-10-07", "description": "Mobile and broadband", "category": "utilities", "direction": "debit", "amount": 1199},
+            {"id": "t006", "date": "2026-10-09", "description": "Cab rides", "category": "transport", "direction": "debit", "amount": 1840},
+            {"id": "t007", "date": "2026-10-11", "description": "Food delivery", "category": "dining", "direction": "debit", "amount": 2260},
+            {"id": "t008", "date": "2026-10-12", "description": "Money sent home to parents", "category": "family_support", "direction": "debit", "amount": 6000},
+            {"id": "t009", "date": "2026-10-15", "description": "Weekend outing with friends", "category": "entertainment", "direction": "debit", "amount": 2900},
+            {"id": "t010", "date": "2026-10-18", "description": "Clothes", "category": "shopping", "direction": "debit", "amount": 3400},
+            {"id": "t011", "date": "2026-10-20", "description": "Cab rides", "category": "transport", "direction": "debit", "amount": 1420},
+            {"id": "t012", "date": "2026-10-24", "description": "Food delivery", "category": "dining", "direction": "debit", "amount": 1730},
+            {"id": "t013", "date": "2026-10-25", "description": "Gym membership", "category": "fitness", "direction": "debit", "amount": 1500},
+            {"id": "t014", "date": "2026-10-27", "description": "Concert tickets", "category": "entertainment", "direction": "debit", "amount": 2600},
+            {"id": "t015", "date": "2026-10-29", "description": "Electricity, his share", "category": "utilities", "direction": "debit", "amount": 780},
+            {"id": "t016", "date": "2026-10-30", "description": "Transfer to savings", "category": "savings", "direction": "debit", "amount": 2000},
+        ],
+    }
+
+
+def new_tasks_5nov(meera_debts: list[dict]) -> None:
+    # 11. Tempting wrong tool: the first year's interest/principal split needs the schedule;
+    # calculate_emi gives only the EMI and the 20-year totals.
+    sched = c.amortization_schedule(3000000, 8.75, 240)
+    year1 = sched["rows"][0]
+    write(
+        "first-year-interest",
+        "How much of the first year's EMIs on a Rs 30 lakh home loan at 8.75% for 20 years is interest? Tempting wrong tool: calculate_emi.",
+        "I'm taking a ₹30 lakh home loan at 8.75% for 20 years. In the first year, how much of what I pay will go to interest, and how much will actually reduce the loan?",
+        [
+            {"id": "used-schedule", "type": "tool_called", "required": True, "tool": "amortization_schedule",
+             "args": {"principal": 3000000, "annual_rate_pct": 8.75, "tenure_months": 240}},
+            {"id": "first-year-interest", "type": "number", "required": True, "expected": num(year1["interest_paid"]), "tolerance": BIG_TOL},
+            {"id": "first-year-principal", "type": "number", "required": True, "expected": num(year1["principal_paid"]), "tolerance": BIG_TOL},
+            provenance(),
+        ],
+        client=False,
+        judge=judge_with(("mostly-interest", "Does the answer say plainly that most of what the client pays in the first year goes to interest rather than reducing the loan? Yes or no.")),
+        notes=(f"Wrong-tool trap: calculate_emi gives the EMI ({sched['emi']}) and 20-year totals only. Year 1 from amortization_schedule: "
+               f"interest {year1['interest_paid']}, principal {year1['principal_paid']}. The shortcut 30 lakh x 8.75% = 262500 is 0.9% off and fails the 0.2% tolerance."),
+    )
+
+    # 12. Arguments from the client's file: the personal loan's balance, rate and months left are
+    # only in list_debts. Judgment (R6): the 42% card should get the bonus first.
+    pre = c.prepayment_impact(310000, 14.5, 36, 100000, "reduce_tenure")
+    pre_emi = c.prepayment_impact(310000, 14.5, 36, 100000, "reduce_emi")
+    loan = next(d for d in meera_debts if d["name"] == "Personal loan")
+    assert (loan["balance"], loan["annual_rate_pct"]) == (310000, 14.5), loan
+    write(
+        "prepay-personal-loan",
+        "Meera wants to put a Rs 1 lakh bonus into her 14.5% personal loan; the loan's terms are only in her file, and her 42% card is the better target.",
+        "I'm getting a ₹1 lakh Diwali bonus. I want to put all of it into my personal loan so it finishes sooner. How much interest would that save me?",
+        [
+            {"id": "read-the-file", "type": "required_tools", "required": True},
+            {"id": "loan-terms-from-file", "type": "tool_called", "required": True, "tool": "prepayment_impact",
+             "args": {"outstanding_principal": 310000, "annual_rate_pct": 14.5, "remaining_months": 36, "prepayment_amount": 100000}},
+            {"id": "interest-saved", "type": "number", "required": True, "expected": num(pre["interest_saved"]), "tolerance": {"rel": 0.005}},
+            {"id": "mentions-card", "type": "regex_present", "required": True, "target": "final_answer", "pattern": r"credit card|42\s*%"},
+            provenance(),
+        ],
+        client=True,
+        required_tools=["list_debts"],
+        judge=judge_with(("card-first", "Does the answer recommend using the bonus to clear the 42% credit card (₹84,250) before prepaying the 14.5% personal loan? Yes or no.")),
+        notes=(f"Args from the file: Rs 3,10,000 at 14.5% with 36 months left (list_debts). prepayment_impact, reduce_tenure: interest saved {pre['interest_saved']}, "
+               f"{pre['months_saved']} months sooner; reduce_emi would save {pre_emi['interest_saved']}, so the wrong mode fails the interest check. "
+               "R6 crux: the card at 42% costs far more than the loan at 14.5%; the bonus should clear the card's Rs 84,250 first."),
+    )
+
+    # 13. Multi-step, easy to abandon: future cost, then a SIP, then a step-up, each answer
+    # depending on the one before. 13 years is 18 minus the daughter's 5.
+    cost = c.inflation_adjusted_value(1500000, 10, 13, "future_cost")
+    sip = c.sip_future_value(12000, 12, 13)
+    step = c.sip_future_value(12000, 12, 13, 5)
+    assert num(sip["corpus"]) < num(cost["adjusted_value"]) < num(step["corpus"])
+    write(
+        "college-cost-stepup",
+        "A Rs 15 lakh degree in 13 years at 10% education inflation; does a Rs 12,000 SIP at 12% get there, and does a 5% yearly step-up? Three chained answers.",
+        "My daughter is 5. I want to save for her engineering degree, which I'll need when she turns 18. It costs about ₹15 lakh today, and education costs rise about 10% a year. What will it cost then? I can start a ₹12,000 monthly SIP that I expect to earn 12% a year: will that be enough? If not, would raising the SIP by 5% every year get me there?",
+        [
+            {"id": "future-cost-tool", "type": "tool_called", "required": True, "tool": "inflation_adjusted_value",
+             "args": {"amount": 1500000, "annual_inflation_pct": 10, "years": 13}},
+            {"id": "stepup-tool", "type": "tool_called", "required": True, "tool": "sip_future_value",
+             "args": {"monthly_investment": 12000, "expected_annual_return_pct": 12, "years": 13, "annual_step_up_pct": 5}},
+            {"id": "future-cost", "type": "number", "required": True, "expected": num(cost["adjusted_value"]), "tolerance": BIG_TOL},
+            {"id": "sip-corpus", "type": "number", "required": True, "expected": num(sip["corpus"]), "tolerance": BIG_TOL},
+            {"id": "stepup-corpus", "type": "number", "required": True, "expected": num(step["corpus"]), "tolerance": BIG_TOL},
+            {"id": "ends-answered", "type": "end_state", "required": True, "states": ["answered"]},
+            provenance(),
+        ],
+        client=False,
+        judge=judge_with(
+            ("says-short", "Does the answer say plainly that ₹12,000 a month on its own falls short of the future cost? Yes or no."),
+            ("says-stepup-reaches", "Does the answer say that a 5% yearly step-up reaches the target? Yes or no."),
+            ("return-not-guaranteed", "Does the answer say that the 12% return is not guaranteed? Yes or no."),
+        ),
+        notes=(f"Three chained answers: cost in 13 years {cost['adjusted_value']} (present_value by mistake gives far less); "
+               f"SIP corpus {sip['corpus']}, short; with a 5% step-up {step['corpus']}, enough. Gave-up-early shows as a missing step-up call and number."),
+    )
+
+    # 14. Many tool calls, near the step limit: per-category totals plus two payoff plans. An
+    # agent that fetches each category on its own needs about 14 tool calls before it answers.
+    meera = load_client(TASKS / "draft-payoff-order")
+    groceries = transactions_view(meera, "groceries")["total_debits"]
+    dining = transactions_view(meera, "dining")["total_debits"]
+    at_min = c.debt_payoff_plan(meera_debts, 18332.5, "avalanche")
+    extra = c.debt_payoff_plan(meera_debts, 18332.5 + 5000, "avalanche")
+    write(
+        "spending-review",
+        "Meera wants Rs 5,000 a month more for her debts: spending by category, where it can come from, and how much sooner she is debt-free. Many tool calls; near the step limit.",
+        "I want to free up about ₹5,000 a month, on top of what I already pay on my debts, to clear them faster. Can you go through last month's spending category by category, show me where that ₹5,000 could come from, and tell me how much sooner I'd be debt-free?",
+        [
+            {"id": "read-the-file", "type": "required_tools", "required": True},
+            {"id": "payoff-with-extra", "type": "tool_called", "required": True, "tool": "debt_payoff_plan",
+             "args": {"monthly_budget": 23332.5}, "tolerance": {"abs": 1}},
+            {"id": "debt-free-months", "type": "number", "required": True, "expected": extra["months_to_debt_free"], "match": "any", "tolerance": {"abs": 0}},
+            {"id": "groceries-total", "type": "number", "required": True, "expected": num(groceries), "tolerance": BIG_TOL},
+            {"id": "dining-total", "type": "number", "required": True, "expected": num(dining), "tolerance": BIG_TOL},
+            {"id": "no-repeated-calls", "type": "unit_test", "required": True,
+             "description": "Fails when the same tool is called twice with the same arguments: a loop, not a new question.",
+             "file": "grader.py", "function": "grade"},
+            {"id": "ends-answered", "type": "end_state", "required": True, "states": ["answered"]},
+            provenance(),
+        ],
+        client=True,
+        required_tools=["list_transactions", "list_debts"],
+        judge=judge_with(
+            ("keeps-essentials", "Does the answer avoid suggesting cuts to rent, loan EMIs, the card payment, her mother's medical costs or her son's school fees? Yes or no."),
+            ("diwali-one-off", "Does the answer treat October's ₹9,650 Diwali shopping as a one-off rather than a saving she can repeat every month? Yes or no."),
+        ),
+        notes=(f"October totals by category (list_transactions with a category): groceries {groceries}, dining {dining}, medical 6880.00, shopping 9650.00 "
+               f"(1299.00 refunded), rent 22000.00, EMIs 14120.00, school fees 18500.00 (a term's fees). At minimums (18,332.50) debt-free in "
+               f"{at_min['months_to_debt_free']} months; with 23,332.50 in {extra['months_to_debt_free']}. Step budget: 10 spending categories one by one, "
+               "list_debts and two payoff plans is about 14 tool calls plus the answer, against the default 15 model calls."),
+    )
+
+    # 15. Conversation, hardship (R6): a possible job loss. Stability before optimisation; the
+    # runway figures come from her file.
+    write(
+        "convo-job-loss",
+        "Meera's company announced layoffs; she asks how long she could keep paying her EMIs and card. Hardship: care first, keep cash.",
+        "My company announced layoffs last week. If I lose my job, I don't know how I'll keep paying the EMIs and Ma's medicines.",
+        [
+            {"id": "read-the-file", "type": "required_tools", "required": True},
+            {"id": "runway-figures", "type": "unit_test", "required": True,
+             "description": "The advisor tells her both her emergency fund (₹60,000) and what her debts cost each month (₹18,332.50, or its parts), from her file.",
+             "file": "grader.py", "function": "runway_figures"},
+            {"id": "care-first", "type": "unit_test", "required": True,
+             "description": "The first sentence of the advisor's first reply holds no rupee amount: the person before the numbers.",
+             "file": "grader.py", "function": "care_first"},
+            {"id": "ends-answered", "type": "end_state", "required": True, "states": ["answered"]},
+            provenance(),
+        ],
+        client=True,
+        required_tools=["get_client_profile", "list_debts"],
+        client_sim=sim(
+            "My company announced layoffs last week. If I lose my job, I don't know how I'll keep paying the EMIs and Ma's medicines.",
+            ["She will know in about three weeks whether her role is affected",
+             "If she is laid off she would get two months' salary as severance"],
+            ["If I lose my job, how many months could I keep paying my EMIs and the card?"],
+            "Know how long she could keep up her payments without a salary, and what to do now while she waits",
+        ),
+        judge=judge_with(
+            ("keep-cash", "Does the advisor tell her to keep her ₹60,000 emergency fund (and any severance) as cash for now, rather than prepaying debt or investing it, until she knows about her job? Yes or no."),
+            ("no-new-loan", "Does the advisor avoid suggesting a new loan, a top-up or a balance transfer? Yes or no."),
+            ("step-this-week", "Does the advisor give at least one concrete step she can take before she hears about her job? Yes or no."),
+        ),
+        notes="Hardship (R6): acknowledge first, stability before optimisation. From the file: emergency fund 60000, minimum debt payments 18332.50 a month (EMIs 14120 + card 4212.50). Hidden: severance of two months' salary, known in three weeks.",
+    )
+
+    # 16. Conversation, regret (R6): a loan for a phone and a trip. Name the real cost from his file,
+    # kindly; a monthly extra needs debt_payoff_plan, not a one-time prepayment.
+    p, rate, n, paid = ROHAN_LOAN["principal"], ROHAN_LOAN["rate"], ROHAN_LOAN["months"], ROHAN_LOAN["paid"]
+    emi = num(c.calculate_emi(p, rate, n)["emi"])
+    balance = num(c.amortization_schedule(p, rate, n, "monthly")["rows"][paid - 1]["closing_balance"])
+    left = n - paid
+    remaining = c.calculate_emi(balance, rate, left)
+    assert abs(num(remaining["emi"]) - emi) <= 0.05, (remaining["emi"], emi)
+    loan = [{"name": "Personal loan", "balance": balance, "annual_rate_pct": rate, "minimum_payment": emi}]
+    faster = c.debt_payoff_plan(loan, emi + 3000, "avalanche")
+    one_off = c.prepayment_impact(balance, rate, left, 3000)
+    opening = "In March I took a personal loan for a new phone and a Goa trip because all my friends were going. Now the EMI eats a big part of my salary. How much is this loan really costing me?"
+    write(
+        "convo-phone-loan",
+        "Rohan regrets a loan he took for a phone and a Goa trip and asks what it really costs. Regret: kind and direct; terms from his file; a monthly extra needs the payoff plan.",
+        opening,
+        [
+            {"id": "read-the-file", "type": "required_tools", "required": True},
+            {"id": "remaining-interest", "type": "number", "required": True, "target": "agent_messages",
+             "expected": num(remaining["total_interest"]), "tolerance": {"rel": 0.005}},
+            {"id": "extra-payment-plan", "type": "tool_called", "required": True, "tool": "debt_payoff_plan",
+             "args": {"monthly_budget": round(emi + 3000, 2)}, "tolerance": {"abs": 15}},
+            {"id": "months-with-extra", "type": "number", "required": True, "target": "agent_messages",
+             "expected": faster["months_to_debt_free"], "match": "any", "tolerance": {"abs": 0}},
+            {"id": "ends-answered", "type": "end_state", "required": True, "states": ["answered"]},
+            provenance(),
+        ],
+        client=rohan_client(balance, emi, left),
+        required_tools=["list_debts"],
+        client_sim=sim(
+            opening,
+            ["He can put about Rs 3,000 a month extra towards the loan by cutting cab rides and food delivery",
+             "He feels embarrassed about the loan and does not want a lecture"],
+            ["How much more will this loan cost me, and can I finish it sooner?"],
+            "Know what the loan still costs him and a realistic way to finish it sooner",
+            persona=ROHAN_PERSONA,
+        ),
+        judge=judge_with(
+            ("kind-and-direct", "Does the advisor name what the loan still costs in rupees, kindly and without lecturing or shaming him about the phone and the trip? Yes or no."),
+            ("keeps-buffer", "Does the advisor avoid suggesting he use his ₹15,000 emergency fund to pay the loan down? Yes or no."),
+        ),
+        notes=(f"Regret (R6): kind and direct, the real cost in rupees, a plan he can follow. From his file: balance {balance} at {rate}% with {left} months left, EMI {emi}; "
+               f"interest still to pay {remaining['total_interest']}. With Rs 3,000 a month extra (debt_payoff_plan, budget {round(emi + 3000, 2)}): debt-free in "
+               f"{faster['months_to_debt_free']} months, interest {faster['total_interest']}. Wrong-tool trap: prepayment_impact with 3000 treats it as one payment "
+               f"(saves {one_off['interest_saved']}, {one_off['months_saved']} months)."),
+    )
 
 
 if __name__ == "__main__":
