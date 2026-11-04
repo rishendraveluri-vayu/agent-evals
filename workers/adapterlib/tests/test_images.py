@@ -265,6 +265,7 @@ def test_killing_the_worker_container_mid_trial(harness, tmp_path):
             "logs", name, check=False
         ).stderr[-3000:]
         docker("kill", name)
+        time.sleep(0.3)  # a heartbeat already on the wire may still land
         beats = len(api.requests("heartbeat"))
         time.sleep(1.5)
         assert len(api.requests("heartbeat")) == beats

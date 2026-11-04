@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import math
 import os
 import sys
 from pathlib import Path
@@ -28,7 +27,9 @@ def worker_spec(trial_id: str = "t_test_0001", attempt: int = 1, **changes: Any)
 
 
 def iso(ns: int) -> str:
-    return dt.datetime.fromtimestamp(ns / 1e9, dt.UTC).isoformat()
+    """Exact to the microsecond: a float timestamp can round a time out of a short turn."""
+    whole = dt.datetime.fromtimestamp(ns // 1_000_000_000, dt.UTC)
+    return whole.replace(microsecond=(ns // 1000) % 1_000_000).isoformat()
 
 
 def turn_window(trial_root: Path) -> tuple[int, int]:
@@ -44,10 +45,13 @@ def rows_in_turn(trial_root: Path, n: int = 2, spends: list[float] | None = None
     """`n` LiteLLM spend rows timed inside the first agent turn, as LiteLLM would log the
     agent's calls during it. Times are whole microseconds, as LiteLLM writes them."""
     start, end = turn_window(trial_root)
-    first_us = math.ceil(start / 1000)
+    # At least 1 us inside both ends: proxy.iso_to_ns goes through a float and can be off by a
+    # few hundred nanoseconds.
+    lo, hi = start // 1000 + 2, end // 1000 - 1
+    assert hi >= lo, f"agent turn too short to place calls in: {end - start} ns"
     rows = []
     for i in range(n):
-        t_us = min(first_us + i, end // 1000)
+        t_us = lo + (hi - lo) * (i + 1) // (n + 1)
         stamp = iso(t_us * 1000)
         spend = spends[i] if spends else 0.000034
         rows.append(spend_row(i + 1, stamp, stamp, spend=spend))

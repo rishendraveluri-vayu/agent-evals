@@ -365,6 +365,7 @@ def test_killed_worker_leaves_no_half_result_and_a_restart_claims_fresh_work(tmp
         first.kill()
         first.wait()
         log1.close()
+    time.sleep(0.3)  # a heartbeat already on the wire may still land
     beats = len(api.requests("heartbeat"))
     time.sleep(0.6)
     assert len(api.requests("heartbeat")) == beats, "a dead worker kept its lease alive"
