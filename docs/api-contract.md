@@ -103,11 +103,19 @@ trial cannot read or change another trial's stored files (D3).
 1. `POST /worker/claim` with `{worker_id, harness}`. Returns 204 when nothing is queued for
    that harness, or 200 with
    `{trial_id, attempt, experiment_id, spec, state_files: {"client.json": "<base64>"},
-   keys: {model, sim}, budgets: {trial_usd, sim_usd}, lease_s: 60, folder}`. `spec` is a
+   keys: {model, sim}, budgets: {trial_usd, sim_usd}, lease_s: 60, folder, sim_cache}`. `spec` is a
    complete contract v2 spec whose `model.base_url` is LiteLLM as seen from the worker.
    `folder` is where the API will store the attempt's files, relative to `runs/`; the worker
    does not use it. The claim is one `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP
    LOCKED)`, so two workers never get the same trial.
+
+   `sim_cache` (D22) is `{<cache key>: <reply>}`: every simulator reply stored so far for the
+   same task (sha256), simulator model, temperature, token cap and simulator prompt, from any
+   earlier trial, experiment or harness. Keys are `evals_adapter.sim.cache_key`, which hashes
+   those same values plus the visible transcript, so one key is one conversation state. It is
+   `{}` before any reply is stored, and `null` for a task without a simulated client. The
+   worker's runner writes it to `/trial/sim_cache.json`; a turn whose state is in it gets the
+   stored reply and makes no simulator call. The agent's own calls are never cached.
 2. `POST /worker/trials/:id/heartbeat` with `{worker_id, attempt}` every 10 s. 200 keeps the
    lease; 409 `claim_lost` means the API gave up on it (stop the trial, report nothing).
 3. `GET /worker/trials/:id/calls?role=agent|sim` returns LiteLLM's spend-log rows for that
@@ -142,7 +150,12 @@ trial cannot read or change another trial's stored files (D3).
    files: [{path, bytes, sha256}]}`. `files` names every file of `out/`, each already uploaded
    in step 4; `sha256` may be `sha256:<hex>` or bare hex and is stored as `sha256:<hex>`. The
    API re-hashes what it stored and flags any file that was not uploaded or differs (the
-   report is accepted, with the trial's `problems` saying so). Reporting the same attempt twice
+   report is accepted, with the trial's `problems` saying so). For a simulated-client trial
+   the API then reads the uploaded `sim_replies.jsonl` (`{key, reply, model, usage}` per line)
+   and adds its replies to the cache, scoped by the trial's spec; the first reply stored for a
+   key is kept, and a line that is not a `sha256:<hex>` key with a string reply, or is from
+   another model, is left out and noted in `problems`. The response's `sim_replies_stored`
+   counts the replies added. Reporting the same attempt twice
    is a no-op 200. The API revokes the trial's keys, stores the report, and sets the status:
    `done` for an `agent` label; for an `infra:*` label, `infra_failed` and, if this was
    attempt 1, a new `queued` attempt 2 (D16: re-queued once, never twice).

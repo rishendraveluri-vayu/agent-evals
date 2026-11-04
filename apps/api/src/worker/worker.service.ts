@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
+import { promises as fs } from 'node:fs';
 import type { IncomingMessage } from 'node:http';
 import type { ClaimResponse, HeartbeatRequest, HeartbeatResponse, ReportResponse, TrialStatus, UploadResponse } from '../contract';
 import { ApiError, badRequest, conflict, notFound } from '../common/api-error';
@@ -11,8 +12,9 @@ import { Db, type Queryable } from '../database/db.service';
 import { type ExperimentRow, finishIfDone, isSimTask } from '../experiments/experiments.service';
 import { LiteLlmClient, LiteLlmHttpError, type MintedKey } from '../litellm/litellm.client';
 import { FINISHED, HELD, LEASE_S, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
-import { MAX_FILE_BYTES, checkFiles, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
+import { MAX_FILE_BYTES, checkFiles, locate, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
 import { parseReport, spanRows, usageOf } from './report';
+import { SIM_REPLIES_FILE, type SimReplyRow, type SimScope, parseSimReplies, simScope } from './sim-cache';
 import { CLIENT_STATE_FILE, SIM_MAX_OUTPUT_TOKENS, SIM_TEMPERATURE, buildSpec } from './spec-builder';
 
 interface TrialRow {
@@ -25,6 +27,7 @@ interface TrialRow {
   status: TrialStatus;
   worker_id: string | null;
   reported_at: Date | null;
+  spec: unknown;
   folder: string | null;
   agent_key_token: string | null;
   sim_key_token: string | null;
@@ -33,6 +36,17 @@ interface TrialRow {
 
 const one = async <T>(q: Queryable, sql: string, params: unknown[]): Promise<T | undefined> =>
   ((await q.query(sql, params)).rows as T[])[0];
+
+/** Every stored simulator reply for this task, simulator model, settings and prompt (D22). */
+async function simCache(q: Queryable, scope: SimScope): Promise<Record<string, string>> {
+  const { rows } = await q.query<{ key: string; reply: string }>(
+    `SELECT key, reply FROM sim_replies
+     WHERE task_sha256 = $1 AND sim_model = $2 AND temperature = $3 AND max_output_tokens = $4 AND prompt_sha256 = $5
+     ORDER BY created_at, key`,
+    [scope.task_sha256, scope.sim_model, scope.temperature, scope.max_output_tokens, scope.prompt_sha256],
+  );
+  return Object.fromEntries(rows.map((r) => [r.key, r.reply]));
+}
 
 /** Reads and drops the rest of a refused upload's body, so the worker hears the refusal instead
  *  of a reset connection. */
@@ -201,6 +215,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
         ]);
         const stateFiles: Record<string, string> = {};
         if (task.client_state) stateFiles[CLIENT_STATE_FILE] = task.client_state.toString('base64');
+        const scope = simScope(task.sha256, spec);
         return {
           trial_id: t.id,
           attempt: t.attempt,
@@ -211,6 +226,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
           budgets: { trial_usd: exp.trial_budget_usd, sim_usd: exp.sim_budget_usd },
           lease_s: LEASE_S,
           folder,
+          sim_cache: scope ? await simCache(client, scope) : null,
         };
       } catch (err) {
         await this.litellm.deleteKeys(minted.map((k) => k.token)).catch(() => undefined);
@@ -315,6 +331,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     const { rows: spans, problems } = spanRows(body.spans);
     const bad = files.filter((f) => !f.ok);
     if (bad.length) problems.push(`${bad.length} of ${files.length} files not uploaded or different from what the API stored under ${folder}`);
+    const sim = await this.simReplies(trial, folder, files, problems);
     const label = body.runner_report.label as string;
     const status = statusForLabel(label);
     const usage = usageOf(body.runner_report, body.result, spans);
@@ -361,13 +378,24 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
         );
         stored = res.rowCount ?? 0;
       }
+      let simStored = 0;
+      if (sim && sim.rows.length) {
+        const res = await client.query(
+          `INSERT INTO sim_replies (key, task_sha256, sim_model, temperature, max_output_tokens, prompt_sha256, reply, usage, trial_id)
+           SELECT r.key, $2, $3, $4, $5, $6, r.reply, r.usage, $1
+           FROM jsonb_to_recordset($7::jsonb) AS r(key text, reply text, usage jsonb)
+           ON CONFLICT (key) DO NOTHING`,
+          [id, sim.scope.task_sha256, sim.scope.sim_model, sim.scope.temperature, sim.scope.max_output_tokens, sim.scope.prompt_sha256, JSON.stringify(sim.rows)],
+        );
+        simStored = res.rowCount ?? 0;
+      }
       let requeued: string | null = null;
       if (status === 'infra_failed') {
         const exp = (await one<{ status: ExperimentRow['status'] }>(client, 'SELECT status FROM experiments WHERE id = $1', [locked.experiment_id]))!;
         requeued = await requeue(client, id, locked.attempt, exp.status);
       }
       await finishIfDone(client, locked.experiment_id);
-      return { stored, requeued };
+      return { stored, requeued, simStored };
     });
     if (!outcome) return this.duplicate((await this.db.query<TrialRow>('SELECT * FROM trials WHERE id = $1', [id]))[0]);
     await this.revoke([{ id, agent_key_token: trial.agent_key_token, sim_key_token: trial.sim_key_token }]);
@@ -378,8 +406,33 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
       duplicate: false,
       requeued_trial_id: outcome.requeued,
       spans_stored: outcome.stored,
+      sim_replies_stored: outcome.simStored,
       problems,
     };
+  }
+
+  /**
+   * The new simulator replies a simulated-client trial reported in out/sim_replies.jsonl, to store
+   * for later trials (D22). Only a file the API holds intact is read; anything it cannot use is
+   * noted in `problems` and left out of the cache.
+   */
+  private async simReplies(
+    trial: TrialRow,
+    folder: string,
+    files: { path: string; ok?: boolean }[],
+    problems: string[],
+  ): Promise<{ scope: SimScope; rows: SimReplyRow[] } | null> {
+    const scope = simScope(trial.task_sha256, trial.spec);
+    const entry = files.find((f) => f.path === SIM_REPLIES_FILE);
+    if (!scope || !entry) return null;
+    const file = entry.ok ? await locate(this.config.runsDir, folder, SIM_REPLIES_FILE) : null;
+    if (!file) {
+      problems.push(`${SIM_REPLIES_FILE} was not stored intact; its simulator replies are not cached`);
+      return null;
+    }
+    const parsed = parseSimReplies(await fs.readFile(file, 'utf8'), scope.sim_model);
+    problems.push(...parsed.problems);
+    return { scope, rows: parsed.rows };
   }
 
   private async duplicate(trial: TrialRow): Promise<ReportResponse> {
@@ -388,6 +441,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
       [trial.experiment_id, trial.task_sha256, trial.config_hash, trial.repeat_index, trial.attempt + 1],
     );
     const [count] = await this.db.query<{ n: number }>('SELECT count(*)::int AS n FROM spans WHERE trial_id = $1', [trial.id]);
+    const [sim] = await this.db.query<{ n: number }>('SELECT count(*)::int AS n FROM sim_replies WHERE trial_id = $1', [trial.id]);
     return {
       trial_id: trial.id,
       attempt: trial.attempt,
@@ -395,6 +449,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
       duplicate: true,
       requeued_trial_id: next?.id ?? null,
       spans_stored: count?.n ?? 0,
+      sim_replies_stored: sim?.n ?? 0,
       problems: trial.problems,
     };
   }

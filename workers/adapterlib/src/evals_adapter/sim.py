@@ -5,9 +5,10 @@ and the agent's visible replies, never tool calls or results. Its replies are ca
 simulator settings and exact visible transcript, so every config in an experiment that reaches
 the same conversation state gets the same client reply. The agent's own calls are never cached.
 
-The cache crosses trials, so it cannot live in the wiped trial folder. The runner writes the
-known replies to /trial/sim_cache.json before the trial and stores new ones from
-/trial/out/sim_replies.jsonl after it.
+The cache crosses trials, so it cannot live in the wiped trial folder. The API keeps it: a claim
+carries the known replies for the trial's task, simulator and prompt, the runner writes them to
+/trial/sim_cache.json before the trial, and the API stores the new ones from the uploaded
+/trial/out/sim_replies.jsonl when the trial is reported (docs/api-contract.md).
 """
 
 from __future__ import annotations

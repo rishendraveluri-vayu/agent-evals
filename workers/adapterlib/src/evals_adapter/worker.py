@@ -731,7 +731,8 @@ class Worker:
             spec=spec,
             adapter_cmd=list(self.cfg.adapter_cmd),
             state_files=state,
-            # Not in the claim today (docs/api-contract.md): the D22 reply cache, if sent.
+            # D22: the simulator replies the API holds for this task, simulator and prompt. Its
+            # new replies go back in out/sim_replies.jsonl, which the API adds to the cache.
             sim_cache=claim.get("sim_cache"),
         )
         budgets = claim.get("budgets") or {}

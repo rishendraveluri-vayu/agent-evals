@@ -498,6 +498,11 @@ export interface ClaimResponse {
   lease_s: number;
   /** Where the API stores this attempt's uploaded files, relative to runs/. Workers never see runs/. */
   folder: string;
+  /**
+   * D22: every simulator reply stored so far for this task, simulator model, settings and prompt,
+   * as `{cache_key: reply}` (keys from evals_adapter.sim.cache_key). Null without a simulator.
+   */
+  sim_cache: Record<string, string> | null;
 }
 
 /** POST /worker/trials/:id/heartbeat. 409 `claim_lost` means stop and report nothing. */
@@ -545,6 +550,8 @@ export interface ReportResponse {
   /** The attempt queued after this one (infra failure on attempt 1), if any. */
   requeued_trial_id: string | null;
   spans_stored: number;
+  /** New simulator replies from out/sim_replies.jsonl now in the cache (D22); 0 for repeats. */
+  sim_replies_stored: number;
   problems: string[];
 }
 

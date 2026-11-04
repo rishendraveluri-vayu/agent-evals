@@ -77,11 +77,12 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
 
   /** Uploads the files the runner leaves in /trial/out, and returns their manifest. With `strict`,
    *  every upload must be accepted (201 new, 200 the same bytes again). */
-  async function writeFolder(c: ClaimResponse, worker: string, strict = true): Promise<{ path: string; bytes: number; sha256: string }[]> {
+  async function writeFolder(c: ClaimResponse, worker: string, strict = true, extra: Record<string, string> = {}): Promise<{ path: string; bytes: number; sha256: string }[]> {
     const files: Record<string, string> = {
       'result.json': JSON.stringify({ ...EXAMPLE_RESULT, trial_id: c.trial_id }),
       'trace.jsonl': EXAMPLE_SPANS.map((s) => JSON.stringify(s)).join('\n') + '\n',
       'artifacts/proxy/0001.request.json': '{"model":"fake/finance-emi"}',
+      ...extra,
     };
     const manifest = [];
     for (const [rel, text] of Object.entries(files)) {
@@ -92,8 +93,8 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     return manifest;
   }
 
-  async function report(c: ClaimResponse, worker: string, label = 'agent', expectStatus = 200): Promise<ReportResponse> {
-    const files = await writeFolder(c, worker, expectStatus === 200);
+  async function report(c: ClaimResponse, worker: string, label = 'agent', expectStatus = 200, extra: Record<string, string> = {}): Promise<ReportResponse> {
+    const files = await writeFolder(c, worker, expectStatus === 200, extra);
     const res = await request(env.http)
       .post(`/api/worker/trials/${c.trial_id}/report`)
       .set(auth)
@@ -484,6 +485,71 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     expect((res.body as ReportResponse).problems).toEqual([]);
     const view = (await request(env.http).get(`/api/trials/${c.trial_id}`).expect(200)).body as TrialView;
     expect(view.files.map((f) => [f.path, f.sha256, f.ok])).toEqual(files.map((f) => [f.path, `sha256:${f.sha256}`, true]));
+  });
+
+  it('hands later trials of a conversation task the simulator replies earlier trials stored (D22)', async () => {
+    // Earlier tests' experiments must not hold queued ownloop trials that would be claimed first.
+    for (const { id } of (await env.pool.query("SELECT id FROM experiments WHERE status = 'running'")).rows as { id: string }[]) await cancel(id);
+    const widow = cat.tasks['widow-loan'];
+    const exp = await experiment({ configs: [configA, configB], tasks: [widow], sim: 'claude-haiku-5-5' });
+    const key = (c: string): string => `sha256:${c.repeat(64)}`;
+    const jsonl = (rows: Record<string, unknown>[]): string => rows.map((r) => JSON.stringify(r)).join('\n') + '\n';
+
+    const first = (await claim('w-sim-1'))!;
+    expect(first.sim_cache).toEqual({});
+    const r1 = await report(first, 'w-sim-1', 'agent', 200, {
+      'sim_replies.jsonl': jsonl([
+        { key: key('1'), reply: 'Will I lose the house?', model: 'claude-haiku-5-5', usage: { prompt_tokens: 40, completion_tokens: 6 } },
+        { key: key('2'), reply: 'Thank you. [[END_CONVERSATION]]', model: 'claude-haiku-5-5', usage: null },
+        { key: 'not-a-key', reply: 'x', model: 'claude-haiku-5-5' },
+      ]),
+    });
+    expect(r1).toMatchObject({ status: 'done', sim_replies_stored: 2 });
+    expect(r1.problems).toEqual([expect.stringContaining('line 3 is not {key: sha256:<hex>, reply}') as string]);
+
+    // The second arm's trial reaches the same conversation states: it gets the first's replies, so
+    // its runner answers those turns from the cache instead of calling the simulator.
+    const second = (await claim('w-sim-2'))!;
+    expect(second.trial_id).not.toBe(first.trial_id);
+    expect(second.sim_cache).toEqual({ [key('1')]: 'Will I lose the house?', [key('2')]: 'Thank you. [[END_CONVERSATION]]' });
+    // Its new replies are added; a reply for a state already stored never replaces the first one.
+    const r2 = await report(second, 'w-sim-2', 'agent', 200, {
+      'sim_replies.jsonl': jsonl([
+        { key: key('1'), reply: 'a different reply', model: 'claude-haiku-5-5' },
+        { key: key('3'), reply: 'What about my EMI?', model: 'claude-haiku-5-5' },
+      ]),
+    });
+    expect(r2.sim_replies_stored).toBe(1);
+    expect(await report(second, 'w-sim-2')).toMatchObject({ duplicate: true, sim_replies_stored: 1 }); // a repeat stores nothing
+    const stored = (await env.pool.query('SELECT key, reply, trial_id FROM sim_replies WHERE task_sha256 = $1 ORDER BY key', [widow])).rows as { key: string; reply: string; trial_id: string }[];
+    expect(stored.map((r) => [r.key, r.reply, r.trial_id])).toEqual([
+      [key('1'), 'Will I lose the house?', first.trial_id],
+      [key('2'), 'Thank you. [[END_CONVERSATION]]', first.trial_id],
+      [key('3'), 'What about my EMI?', second.trial_id],
+    ]);
+    expect((await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body).toMatchObject({ status: 'done' });
+
+    // Another simulator model shares nothing, and a file the API does not hold intact is not read.
+    const other = await experiment({ tasks: [widow], sim: 'gemini-3.8-flash' });
+    const third = (await claim('w-sim-3'))!;
+    expect(third.sim_cache).toEqual({});
+    const files = await writeFolder(third, 'w-sim-3');
+    files.push({ path: 'sim_replies.jsonl', bytes: 10, sha256: '9'.repeat(64) });
+    const r3 = (
+      await request(env.http)
+        .post(`/api/worker/trials/${third.trial_id}/report`)
+        .set(auth)
+        .send({ worker_id: 'w-sim-3', attempt: 1, runner_report: runnerReport(third.trial_id, 1, 'agent', files), result: EXAMPLE_RESULT, spans: [], files })
+        .expect(200)
+    ).body as ReportResponse;
+    expect(r3.sim_replies_stored).toBe(0);
+    expect(r3.problems).toEqual(expect.arrayContaining([expect.stringContaining('sim_replies.jsonl was not stored intact') as string]));
+    expect((await request(env.http).get(`/api/experiments/${other.id}`).expect(200)).body).toMatchObject({ status: 'done' });
+
+    // A task without a simulated client gets no cache at all.
+    const plain = await experiment();
+    expect((await claim('w-sim-4'))!.sim_cache).toBeNull();
+    await cancel(plain.id);
   });
 
   it('passes LiteLLM spend-log rows for a trial key through to its worker', async () => {

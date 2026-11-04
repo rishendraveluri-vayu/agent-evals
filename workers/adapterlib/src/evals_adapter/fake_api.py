@@ -134,6 +134,10 @@ class FakeWorkerApi:
       an int is answered as that status without storing; "lose" (uploads) loses the claim.
     - a report must name exactly what was uploaded; with `strict_files` (the default) anything
       else is a 400, otherwise it is accepted and listed in `problems`, as the real API does.
+    - `sim_cache`: simulator replies by cache key, filled from each accepted report's uploaded
+      sim_replies.jsonl (first reply per key kept). With `serve_sim_cache`, every claim whose
+      task has a simulated client carries it, as the API's claim does (D22). The real API also
+      scopes the cache by task, simulator model, settings and prompt; tests here use one.
     """
 
     def __init__(
@@ -150,6 +154,9 @@ class FakeWorkerApi:
         self.max_file_bytes = MAX_FILE_BYTES
         self.strict_files = True
         self.files: dict[tuple[str, int], dict[str, bytes]] = {}
+        self.sim_cache: dict[str, str] = {}
+        self.handed: list[dict[str, Any]] = []  # the claims as sent
+        self.serve_sim_cache = False
         self.problems: dict[tuple[str, int], list[str]] = {}
         self.log: list[dict[str, Any]] = []
         self.accepted: dict[tuple[str, int], dict[str, Any]] = {}
@@ -259,6 +266,10 @@ class FakeWorkerApi:
                 item = self.claims.pop(0) if self.claims else 204
             if isinstance(item, dict):
                 self.experiments[item["trial_id"]] = item["spec"]["trial"].get("experiment_id")
+                if self.serve_sim_cache and item["spec"]["task"].get("client_sim"):
+                    with self._lock:
+                        item = {**item, "sim_cache": dict(self.sim_cache)}
+                self.handed.append(item)
                 self._record("claim", item["trial_id"], body, 200)
                 return 200, item
             self._record("claim", None, body, item)
@@ -303,6 +314,11 @@ class FakeWorkerApi:
                 duplicate = key in self.accepted
                 self.accepted.setdefault(key, body)
                 self.problems.setdefault(key, problems)
+                replies = self.files.get(key, {}).get("sim_replies.jsonl", b"")
+                for line in replies.decode("utf-8", "replace").splitlines():
+                    if line.strip():
+                        row = json.loads(line)
+                        self.sim_cache.setdefault(row["key"], row["reply"])
             self._record("report", trial_id, body, "drop" if fault == "drop" else 200)
             if fault == "drop":
                 return "drop"

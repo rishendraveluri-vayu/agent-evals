@@ -29,7 +29,7 @@ describeWithDb('migrations (real Postgres)', () => {
     const all = (await readMigrations()).map((m) => m.version);
     expect(await migrate(pool)).toEqual(all);
     expect(await tables()).toEqual(
-      expect.arrayContaining(['configs', 'experiments', 'grades', 'labels', 'prompts', 'schema_migrations', 'spans', 'tasks', 'toolsets', 'trials']),
+      expect.arrayContaining(['configs', 'experiments', 'grades', 'labels', 'prompts', 'schema_migrations', 'sim_replies', 'spans', 'tasks', 'toolsets', 'trials']),
     );
     expect(await migrate(pool)).toEqual([]);
   });

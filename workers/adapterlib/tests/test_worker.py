@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 import pytest
-from support import SCRIPTED_CMD, attrs, errors, read_jsonl
+from support import SCRIPTED_CMD, SimServer, attrs, client_sim, errors, read_jsonl
 from worker_support import (
     EXPERIMENT,
     LEAK_CMD,
@@ -359,6 +359,58 @@ def test_no_state_leaks_between_trials_on_a_host(tmp_path, api):
     assert not [p for p in seen["trial_listing"] if "leak" in p], seen["trial_listing"]
     assert seen["sleepers"] == []
     assert not any(alive(pid) for pid in wrote["spawned"])
+
+
+def test_a_second_trial_of_the_same_conversation_reuses_the_simulator_replies(tmp_path, api):
+    """D22 through the worker loop: trial 1's new simulator replies go to the API with its other
+    files; the API's claim for trial 2 of the same conversation task carries them, so trial 2 has
+    the same conversation without one simulator call."""
+    sim = SimServer(
+        ["Will I lose the house?", "OK. What should I do first?", "Thank you. [[END_CONVERSATION]]"]
+    )
+    api.calls = lambda trial_id, role: []
+    api.serve_sim_cache = True
+    turns = [{"reply": "{{last_user}}", "model_calls": 0}]
+    keys = {"model": "sk-trial-agent-fake", "sim": "sk-trial-sim-fake"}
+    try:
+        for n in (1, 2):
+            spec = worker_spec(f"t_sim_{n}", harness_options={"turns": turns})
+            spec["task"]["client_sim"] = client_sim(sim.url)
+            spec["task"]["messages"] = [{"role": "user", "content": "I don't know where to start."}]
+            api.claims.append(make_claim(spec, keys=keys))
+        worker = Worker(config(tmp_path, api))
+        worker.serve(max_trials=1)
+        calls_in_trial_1 = len(sim.requests)
+        worker.serve(exit_on_idle=True)
+    finally:
+        sim.close()
+    assert [o[2] for o in worker.outcomes] == ["reported", "reported"]
+    assert calls_in_trial_1 == 3
+    assert len(sim.requests) == 3, "trial 2 called the simulator"
+    assert {r["auth"] for r in sim.requests} == {"Bearer sk-trial-sim-fake"}
+
+    first, second = api.reports("t_sim_1")[0], api.reports("t_sim_2")[0]
+    replies = [json.loads(line) for line in api.stored("t_sim_1")["sim_replies.jsonl"].splitlines()]
+    assert [r["reply"] for r in replies] == [
+        "Will I lose the house?",
+        "OK. What should I do first?",
+        "Thank you. [[END_CONVERSATION]]",
+    ]
+    assert api.handed[0]["sim_cache"] == {}
+    assert api.handed[1]["sim_cache"] == {r["key"]: r["reply"] for r in replies}
+    assert "sim_replies.jsonl" not in api.stored("t_sim_2"), "trial 2 had no new replies"
+
+    def hits(body):
+        return [
+            attrs(s)["evals.sim.cache_hit"] for s in body["spans"] if s["name"] == "client_sim.turn"
+        ]
+
+    assert hits(first) == [False, False, False]
+    assert hits(second) == [True, True, True]
+    assert first["runner_report"]["label"] == second["runner_report"]["label"] == "agent"
+    transcript = first["result"]["conversation"]["transcript"]
+    assert second["result"]["conversation"]["transcript"] == transcript
+    assert transcript[-1]["content"] == "Thank you."
 
 
 def test_api_proxy_client_maps_keys_and_reads_calls_through_the_api(tmp_path, api):
