@@ -228,7 +228,7 @@ const rows = computed<Row[]>(() => {
       const sameTwice = twoArms(e) && e.config_hashes[0] === e.config_hashes[1];
       let status = 'Finished';
       let verdict: Verdict | null = null;
-      let detail = 'Verdict not computed yet';
+      let detail = 'Pass counts only: no verdict in this version yet';
       if (e.status === 'running') {
         status = 'Running';
         const left = timeLeft(e.estimate, done, total);
@@ -527,8 +527,12 @@ const rows = computed<Row[]>(() => {
                 <a
                   :href="r.to"
                   class="row-link"
-                >{{ r.e.name }}</a>
-                <span class="secondary block changes">Changes {{ r.axis }}</span>
+                >{{ r.e.example?.title ?? r.e.name }}</a>
+                <span class="secondary block changes"><span
+                  v-if="r.e.example"
+                  class="tag"
+                  data-test="example-tag"
+                >Shipped example</span><template v-if="r.e.example">{{ ' ' }}</template>Changes {{ r.axis }}</span>
               </td>
               <td class="c-arms">
                 <span class="arm"><span class="dot dot--a" />{{ r.a }}</span>

@@ -2,31 +2,24 @@
 /**
  * The front door: three ways in (a finished example, the guided builder, the full platform) and
  * the five steps a reviewer follows, each linking to its screen. It only reads: the newest saved
- * agent, so "Preview what reaches the model" can open a real one.
+ * agent, so "Preview what reaches the model" can open a real one. The example opens through
+ * #/example, which loads the shipped example the first time.
  */
 import { computed } from 'vue';
 import { api } from '../api/client';
 import type { ConfigView } from '../api/types';
 import { optional, useLoad } from '../lib/async';
-import { EXAMPLE_EXPERIMENT_ID, exampleHref } from '../lib/example';
 import { href } from '../router';
-
-/** The finished example's experiment id; null until it ships (lib/example.ts). */
-const props = withDefaults(defineProps<{ exampleExperimentId?: string | null }>(), { exampleExperimentId: EXAMPLE_EXPERIMENT_ID });
 
 const { data } = useLoad(() => optional(api.configs(), [] as ConfigView[]));
 const newest = computed(() => [...(data.value ?? [])].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0] ?? null);
-const example = computed(() => exampleHref(props.exampleExperimentId));
-const exampleReady = computed(() => !!props.exampleExperimentId);
 
 const doors = computed(() => [
   {
     key: 'example',
     title: 'See a finished example',
-    detail: exampleReady.value
-      ? 'A real A/B experiment, already run: its comparison, a trial’s trace and the grades.'
-      : 'A real A/B experiment, already run. Until it ships, this opens the experiments list.',
-    to: example.value,
+    detail: 'A real A/B experiment shipped with the repo, already run: how each version did per task, every trial’s trace and its grades. Nothing runs and nothing is spent.',
+    to: href.example(),
   },
   {
     key: 'build',
@@ -46,9 +39,9 @@ const steps = computed(() => [
   {
     key: 'example',
     title: 'Look at the finished example',
-    detail: 'Open its comparison: the verdict with its interval and the per-task differences. Then open one trial for its trace, step by step, and its grades.',
-    link: exampleReady.value ? 'Open the example' : 'Open the experiments',
-    to: example.value,
+    detail: 'Open its comparison: how each version did on each task. Then open one trial for its trace, step by step, and its grades.',
+    link: 'Open the example',
+    to: href.example(),
   },
   {
     key: 'build',

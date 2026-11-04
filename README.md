@@ -47,7 +47,10 @@ The home page offers:
    results, and open a failed trial to see why it failed.
 3. **The full platform.** Every experiment, config, task, harness and label, at full detail.
 
-To open a finished example without running anything, load one of the shipped examples (`examples/`): `curl -X POST http://127.0.0.1:3000/api/examples/harness-ownloop-vs-hermes-haiku/load`. `GET /api/examples` lists them. A loaded example is sample content and read-only; today's is a small draft stand-in (`docs/known-limits.md`).
+The first door opens `http://127.0.0.1:8080/#/example`. The first time, it copies the example shipped
+in `examples/` into your local database: rows are only inserted, the example is read-only, and
+nothing runs or is spent. `GET /api/examples` lists the shipped examples. Today's is a small draft
+stand-in until the real experiment is exported (`docs/known-limits.md`).
 
 ## What runs where
 

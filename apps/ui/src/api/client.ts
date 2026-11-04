@@ -17,6 +17,7 @@ import type {
   CreateLabelRequest,
   EstimateRequest,
   EstimateResponse,
+  ExampleView,
   ExperimentDetail,
   ExperimentSummary,
   Harness,
@@ -27,6 +28,7 @@ import type {
   LabelCriterion,
   LabelLine,
   LabelSet,
+  LoadExampleResponse,
   ModelView,
   PromptView,
   RegradeResponse,
@@ -269,6 +271,11 @@ export const api = {
   /** Queues new grade versions for the experiment's done trials; re-runs nothing. With a judge
    *  approved, its checks are paid model calls within the approval's budget. */
   regrade: (id: string, trialIds?: string[]) => post<RegradeResponse>(`/experiments/${enc(id)}/regrade`, trialIds ? { trial_ids: trialIds } : {}),
+  /** The finished examples shipped with the repo (examples/<name>/), and whether each is loaded. */
+  examples: () => call<ExampleView[]>('GET', '/examples'),
+  /** Copies a shipped example into this database: insert-only, read-only, nothing runs or is
+   *  spent; a second load changes nothing. */
+  loadExample: (name: string) => post<LoadExampleResponse>(`/examples/${enc(name)}/load`),
   exportUrl: (id: string, format: 'json' | 'csv') => `/api/experiments/${enc(id)}/export?format=${format}`,
 
   trial: async (id: string) => toAnyTrial(await call<unknown>('GET', `/trials/${enc(id)}`)),

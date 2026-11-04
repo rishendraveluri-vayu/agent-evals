@@ -264,6 +264,25 @@ describe('CompareView against the API: no statistics yet', () => {
     expect(w.text()).toContain('graded trials');
     expect(w.findAll('[data-test="forest-row"]')).toHaveLength(12);
     expect(w.text()).toContain('no interval');
+    // Not "pending": the verdict is not computed by this version at all.
+    expect(w.text()).toContain('does not compute the verdict and its interval yet');
+    expect(w.text()).not.toContain('has not reported');
+  });
+
+  it('labels a shipped example as read-only sample content, by its title, with no judge panel', async () => {
+    const detail = (details as Record<string, Record<string, unknown>>).exp_heldout;
+    routeFetch({
+      '/api/experiments/exp_heldout': { ...detail, example: { name: 'harness-ownloop-vs-hermes-haiku', title: 'Own loop vs Hermes on Claude Haiku 5.5', loaded_at: '2026-11-05T08:00:00.000Z' } },
+      '/api/experiments/exp_heldout/compare': compares.exp_heldout,
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('h1').text()).toBe('Own loop vs Hermes on Claude Haiku 5.5');
+    expect(w.get('[data-test="example-note"]').text()).toContain('read-only');
+    expect(w.find('[data-test="judge-panel"]').exists()).toBe(false);
   });
 });
 

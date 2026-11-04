@@ -111,7 +111,7 @@ const noVerdictText = computed(() => {
     const ran = (letter: 'A' | 'B') => (data.value?.compare.rows ?? []).filter((r) => r.arm === letter).reduce((sum, r) => sum + r.trials, 0);
     return `Not graded yet: A has ${ran('A')} finished ${ran('A') === 1 ? 'trial' : 'trials'}${arms.value[1] ? ` and B ${ran('B')}` : ''}, and grading runs as its own step. The interval and the verdict come after it.${more}`;
   }
-  return `A passed ${t.a.passed} of ${t.a.graded} graded trials${b}. The interval and the verdict come from the statistics step, which has not reported on this experiment yet.${more}`;
+  return `A passed ${t.a.passed} of ${t.a.graded} graded trials${b}. This version of the platform does not compute the verdict and its interval yet, so read these as counts, not a conclusion; the per-task results below are complete.${more}`;
 });
 
 /** Trials stopped on infra failures: listed, never dropped. When the trial list did not load,
@@ -523,11 +523,22 @@ const worthALook = computed(() => {
             aria-label="Breadcrumb"
             class="crumbs"
           >
-            <a :href="href.experiments()">Experiments</a> / {{ data.detail.name }}
+            <a :href="href.experiments()">Experiments</a> / {{ data.detail.example?.title ?? data.detail.name }}
           </nav>
           <h1 tabindex="-1">
-            {{ data.detail.name }}
+            {{ data.detail.example?.title ?? data.detail.name }}
           </h1>
+          <p
+            v-if="data.detail.example"
+            class="caveat example-note"
+            data-test="example-note"
+          >
+            <AppIcon
+              name="info"
+              :size="14"
+            />
+            <span><strong class="caveat-lead">Shipped example:</strong> a finished run that came with the repo, loaded into your local database as it was recorded. It is read-only: nothing here runs, regrades or judges it, and it is left out of your spend and the label queue.</span>
+          </p>
           <div
             class="arms-line small"
             data-test="arms-line"
@@ -792,7 +803,7 @@ const worthALook = computed(() => {
 
       <!-- How the judge checks get graded, by the verdict they feed; the task table stays last. -->
       <JudgePanel
-        v-if="judged.tasks || data.detail.judge"
+        v-if="!data.detail.example && (judged.tasks || data.detail.judge)"
         :experiment-id="data.detail.id"
         :judge="data.detail.judge ?? null"
         :judged-trials="judged.trials"

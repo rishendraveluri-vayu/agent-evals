@@ -1,7 +1,6 @@
 import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import configs from '../fixtures/configs.json';
-import { EXAMPLE_EXPERIMENT_ID } from '../lib/example';
 import { settle, useFixtures } from '../test/helpers';
 import StartView from './StartView.vue';
 
@@ -16,19 +15,9 @@ describe('The front door, in fixture mode', () => {
     expect(w.findAll('.door-title').map((t) => t.text())).toEqual(['See a finished example', 'Build your own, step by step', 'Go straight to the full platform']);
     expect(w.get('[data-test="door-build"]').attributes('href')).toBe('#/build');
     expect(w.get('[data-test="door-full"]').attributes('href')).toBe('#/experiments');
-    // No example ships yet: the slot is empty and the example door says where it goes instead.
-    expect(EXAMPLE_EXPERIMENT_ID).toBeNull();
-    expect(w.get('[data-test="door-example"]').attributes('href')).toBe('#/experiments');
-    expect(w.get('[data-test="door-example"]').text()).toContain('Until it ships, this opens the experiments list.');
-  });
-
-  it('opens the finished example’s comparison once its id is set', async () => {
-    const w = mount(StartView, { props: { exampleExperimentId: 'exp_heldout' } });
-    await settle();
-    expect(w.get('[data-test="door-example"]').attributes('href')).toBe('#/experiments/exp_heldout');
-    expect(w.get('[data-test="door-example"]').text()).not.toContain('Until it ships');
-    expect(w.get('[data-test="guide-example"] a').attributes('href')).toBe('#/experiments/exp_heldout');
-    expect(w.get('[data-test="guide-example"] a').text()).toBe('Open the example');
+    // The example opens through #/example, which loads the shipped example the first time.
+    expect(w.get('[data-test="door-example"]').attributes('href')).toBe('#/example');
+    expect(w.get('[data-test="door-example"]').text()).toContain('Nothing runs and nothing is spent.');
   });
 
   it('walks a reviewer through five steps, each linking to its screen', async () => {
@@ -43,7 +32,10 @@ describe('The front door, in fixture mode', () => {
       'Read the result',
     ]);
     const link = (key: string) => w.get(`[data-test="guide-${key}"] a`);
-    expect(link('example').attributes('href')).toBe('#/experiments');
+    expect(link('example').attributes('href')).toBe('#/example');
+    expect(link('example').text()).toBe('Open the example');
+    // No verdict is promised until the statistics step computes one.
+    expect(w.get('[data-test="guide-example"]').text()).not.toContain('verdict');
     expect(link('build').attributes('href')).toBe('#/build');
     expect(link('preview').attributes('href')).toBe(`#/configs/${encodeURIComponent(newest.hash)}`);
     expect(link('preview').text()).toBe(`Open the newest agent, ${newest.name}`);

@@ -10,6 +10,7 @@ import ExperimentsView from './views/ExperimentsView.vue';
 import HarnessesView from './views/HarnessesView.vue';
 import JudgeView from './views/JudgeView.vue';
 import LabelView from './views/LabelView.vue';
+import OpenExampleView from './views/OpenExampleView.vue';
 import RunView from './views/RunView.vue';
 import StartView from './views/StartView.vue';
 import TasksView from './views/TasksView.vue';
@@ -56,6 +57,7 @@ watch(
   >
     <StartView v-if="route.name === 'start'" />
     <BuildView v-else-if="route.name === 'build'" />
+    <OpenExampleView v-else-if="route.name === 'example'" />
     <ExperimentsView v-else-if="route.name === 'experiments'" />
     <ConfigView
       v-else-if="route.name === 'config'"

@@ -6,6 +6,7 @@ import { LABEL_SETS, type LabelSet } from './api/types';
 export type Route =
   | { name: 'start' }
   | { name: 'build' }
+  | { name: 'example' }
   | { name: 'experiments' }
   | { name: 'config'; fork: string | null }
   | { name: 'config-page'; hash: string }
@@ -35,6 +36,7 @@ export function parseHash(hash: string): Route {
   if (parts.length === 0) return { name: 'start' };
   if (first === 'experiments' && parts.length === 1) return { name: 'experiments' };
   if (first === 'build' && parts.length === 1) return { name: 'build' };
+  if (first === 'example' && parts.length === 1) return { name: 'example' };
   if (first === 'configs' && parts.length === 1) return { name: 'config', fork: params.get('fork') };
   if (first === 'configs' && second && parts.length === 2) return { name: 'config-page', hash: dec(second) };
   if (first === 'run' && parts.length === 1) return { name: 'run-new', a: params.get('a'), b: params.get('b') };
@@ -55,6 +57,7 @@ export function parseHash(hash: string): Route {
 export function sectionOf(route: Route): Section | null {
   switch (route.name) {
     case 'start':
+    case 'example':
       return 'start';
     case 'build':
       return 'build';
@@ -80,6 +83,8 @@ export const href = {
   start: () => '#/',
   /** Build an agent, step by step: the guided way to make a config. */
   build: () => '#/build',
+  /** The finished example shipped with the repo: loads it if needed, then opens its comparison. */
+  example: () => '#/example',
   experiments: () => '#/experiments',
   config: () => '#/configs',
   /** A new config that starts as a copy of `hash` and names it as its parent (D34). */
@@ -110,5 +115,13 @@ export const currentHash = ref(typeof window === 'undefined' ? '' : window.locat
 export function navigate(to: string): void {
   if (window.location.hash === to) return;
   window.location.hash = to;
+  currentHash.value = to;
+}
+
+/** Like navigate, but the current address is replaced rather than kept in history, so Back skips
+ *  a screen that only forwards (#/example). */
+export function replaceRoute(to: string): void {
+  if (window.location.hash === to) return;
+  window.location.replace(to);
   currentHash.value = to;
 }

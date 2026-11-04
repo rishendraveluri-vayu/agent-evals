@@ -19,6 +19,7 @@ import type {
   CreateLabelRequest,
   EstimateRequest,
   EstimateResponse,
+  ExampleView,
   ExperimentDetail,
   ExperimentStatus,
   ExperimentSummary,
@@ -26,6 +27,7 @@ import type {
   JudgeApprovalRequest,
   JudgeApprovalResponse,
   JudgeView,
+  LoadExampleResponse,
   ModelView,
   PromptView,
   RegradeResponse,
@@ -440,6 +442,26 @@ function conflictCheck(hash: string, post: boolean): ConflictCheckView {
   throw new ApiError(404, 'no_conflict_check', `no conflict check for config ${hash} yet`);
 }
 
+/** Sample mode's shipped example: one of the sample experiments, already in place, so "See a
+ *  finished example" opens its comparison. A live API answers from examples/<name>/. */
+const sampleExamples: ExampleView[] = [
+  {
+    name: 'sample-prompt-heldout',
+    title: 'Sample: prompt v1 vs v2 on the held-out tasks',
+    description: 'One of the sample experiments, standing in for the example a live API loads from examples/.',
+    experiment_id: 'exp_heldout',
+    loaded: true,
+    created_at: '2026-11-03T09:00:00.000Z',
+    counts: { configs: 2, tasks: 0, trials: 0, spans: 0, grades: 0, files: 0 },
+  },
+];
+
+function loadExample(name: string): LoadExampleResponse {
+  const example = sampleExamples.find((e) => e.name === name);
+  if (!example) throw new ApiError(404, 'unknown_example', `There is no example called ${name}.`);
+  return { name, experiment_id: example.experiment_id, created: false };
+}
+
 type Handler = (match: RegExpExecArray, params: URLSearchParams, body: unknown) => unknown;
 const id1 = (m: RegExpExecArray) => decodeURIComponent(m[1]);
 
@@ -498,6 +520,8 @@ const routes: [string, RegExp, Handler][] = [
   ['DELETE', /^\/experiments\/([^/]+)\/judge$/, (m) => revokeJudge(id1(m))],
   ['POST', /^\/experiments\/([^/]+)\/regrade$/, (m) => regrade(id1(m))],
   ['GET', /^\/experiments\/([^/]+)$/, (m) => ({ ...experimentDetail(id1(m)), judge: created.judges.get(id1(m)) ?? experimentDetail(id1(m)).judge ?? null })],
+  ['GET', /^\/examples$/, () => sampleExamples],
+  ['POST', /^\/examples\/([^/]+)\/load$/, (m) => loadExample(id1(m))],
   ['GET', /^\/trials$/, () => recordedTrialsJson],
   [
     'GET',
