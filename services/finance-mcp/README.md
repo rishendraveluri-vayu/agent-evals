@@ -287,6 +287,14 @@ FINANCE_MCP_UPDATE_SNAPSHOT=1 uv run pytest tests/test_mcp.py -k snapshot   # af
 - **Calculator tests** check values against an independent reference written with
   `fractions.Fraction`. They also pin widely published figures such as the ₹10 lakh / 9% /
   20-year EMI.
+- **Independent tests** (`tests/test_calculators_independent.py`, about 2,000 cases in a few
+  seconds): a second implementation of all eight calculators, written from the conventions
+  above with the standard library only and sharing no code with the server, is compared field
+  by field, key order included, over a grid of inputs for each calculator, refusals included.
+  Where it can, it is written differently (the SIP grows a year at a time in closed form; the
+  server goes month by month). Golden literals pin published figures (the ₹10 lakh and ₹50 lakh
+  EMIs, ₹10,000 and ₹5,000 SIPs, a ₹1 lakh FD, ₹1 lakh at 6% inflation) and a debt payoff
+  worked by hand. Turning the SIP into an annuity-immediate fails 145 of them.
 - **Compatibility tests.** `tests/test_compat_mcp1.py` runs an `mcp` 1.30.0 client from its own
   locked environment in `tests/compat/mcp1/`, because 1.x and 2.x cannot share one
   environment. `uv` builds that environment on first use, which needs network access once; the
