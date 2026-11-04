@@ -177,11 +177,16 @@ simulated-client task the API also summarises that file (profile and debts) into
   default applies").
 - `GET /configs`, `GET /configs/:hash` return `{hash, name, harness, harness_ref, model,
   prompt, toolset, settings, settings_sources, unsupported, warnings, harness_options, seed,
-  parent_hash, created_at}`; `seed` always has both lists, empty when nothing is seeded. `unsupported` and `warnings` are worked out from the stored
+  parent_hash, example_only, created_at}`; `seed` always has both lists, empty when nothing is seeded. `unsupported` and `warnings` are worked out from the stored
   capabilities, so every read has them, not only the POST. `GET /configs/:hash` adds
   `children: [{hash, name, created_at}]`, the configs forked from it, oldest first.
+  `example_only` (since 5 Nov) is true when the config came with a shipped example (an example
+  experiment uses it, or it is the parent, at any depth, of one that does) and no experiment of
+  this database's own uses it, unstarted and discarded ones included. Such a config was made
+  elsewhere with the files of its day: its prompt or toolset may not be in `GET /prompts` or
+  `GET /toolsets`, so the UI does not start a new config or a run from it unless asked to.
 - `GET /configs/:a/diff/:b` returns `[{path, a, b}]`: every field that differs (`unsupported`,
-  `warnings` and `parent_hash` are left out: derived, or not behaviour). Seeds show as
+  `warnings`, `parent_hash` and `example_only` are left out: derived, or not behaviour). Seeds show as
   `seed.memory` and `seed.skills`, each list compared whole.
 
 ## Pre-run checks: rendered prompt and conflict check (D33, D38)

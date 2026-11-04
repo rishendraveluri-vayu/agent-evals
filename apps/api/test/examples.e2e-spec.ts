@@ -11,6 +11,7 @@ import request from 'supertest';
 import type {
   ClaimResponse,
   CompareResponse,
+  ConfigView,
   ExampleView,
   ExperimentBundle,
   ExperimentDetail,
@@ -269,8 +270,9 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
     const own = (await request(source.http).get('/api/experiments').expect(200)).body as ExperimentSummary[];
     expect(own.find((e) => e.id === exp.id)?.example).toBeNull();
 
-    // The detail is the same but for the example mark (and `actual`, whose elapsed time is to now).
-    const strip = (d: ExperimentDetail): Partial<ExperimentDetail> => ({ ...d, example: undefined, actual: undefined });
+    // The detail is the same but for the example mark (and `actual`, whose elapsed time is to now),
+    // and its configs' example_only, which says where they came from: here, the example.
+    const strip = (d: ExperimentDetail): Partial<ExperimentDetail> => ({ ...d, example: undefined, actual: undefined, configs: d.configs.map((c) => ({ ...c, example_only: false })) });
     const there = (await request(target.http).get(`/api/experiments/${exp.id}`).expect(200)).body as ExperimentDetail;
     const here = (await request(source.http).get(`/api/experiments/${exp.id}`).expect(200)).body as ExperimentDetail;
     expect(strip(there)).toEqual(strip(here));
@@ -296,6 +298,28 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
 
     const list = (await request(target.http).get('/api/examples').expect(200)).body as ExampleView[];
     expect(list.find((e) => e.name === 'test-example')?.loaded).toBe(true);
+  });
+
+  it("marks the example's configs example-only until an experiment of your own uses one", async () => {
+    const flags = async (env: TestEnv): Promise<Record<string, boolean>> =>
+      Object.fromEntries(
+        ((await request(env.http).get('/api/configs').expect(200)).body as ConfigView[]).filter((c) => c.hash === configs.a || c.hash === configs.b).map((c) => [c.hash, c.example_only]),
+      );
+    // Where they were made they are that machine's own; here they came with the example.
+    expect(await flags(source)).toEqual({ [configs.a]: false, [configs.b]: false });
+    expect(await flags(target)).toEqual({ [configs.a]: true, [configs.b]: true });
+    expect(((await request(target.http).get(`/api/configs/${configs.b}`).expect(200)).body as ConfigView).example_only).toBe(true);
+    // Not behaviour: the diff is the same on both machines.
+    const diff = async (env: TestEnv): Promise<unknown> => (await request(env.http).get(`/api/configs/${configs.a}/diff/${configs.b}`).expect(200)).body;
+    expect(await diff(target)).toEqual(await diff(source));
+    // An experiment of your own on arm A makes A yours (even one discarded unstarted); B stays the example's.
+    const cat = await catalogue(target.http);
+    const mine = await request(target.http)
+      .post('/api/experiments')
+      .send({ name: 'mine on A', axis: 'none', config_hashes: [configs.a], task_sha256s: [cat.tasks['emi-basic']], n: 1, sim_model: null, budget_usd: 50 })
+      .expect(201);
+    await request(target.http).post(`/api/experiments/${(mine.body as ExperimentDetail).id}/discard`).expect(200);
+    expect(await flags(target)).toEqual({ [configs.a]: false, [configs.b]: true });
   });
 
   it('a second load is a no-op', async () => {

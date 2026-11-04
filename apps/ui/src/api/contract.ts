@@ -229,6 +229,12 @@ export interface ConfigView {
   seed: Seed;
   /** D34: the config this one was forked from, or null. */
   parent_hash: Sha256 | null;
+  /**
+   * True when the config came with a shipped example (SP7) and no experiment of this database's
+   * own uses it. Its prompt or toolset may be older than the catalogue's, so pickers do not
+   * default to it. Not part of the hash, and not diffed.
+   */
+  example_only: boolean;
   created_at: string;
 }
 
