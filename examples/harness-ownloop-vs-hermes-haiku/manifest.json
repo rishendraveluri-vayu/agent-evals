@@ -7,23 +7,14 @@
   "sample": true,
   "experiment_id": "e_0mw273dpt486807c2722a92dc",
   "experiment_name": "Label batch 1: open coding (R8, approved: 30 trials, cap $2)",
-  "created_at": "2026-11-04T14:11:32.275Z",
-  "finished_at": "2026-11-04T14:19:41.871Z",
-  "exported_at": "2026-11-04T16:24:04Z",
+  "created_at": "2026-11-04T14:11:32.275001+00:00",
+  "finished_at": "2026-11-04T14:19:41.871441+00:00",
+  "exported_at": "2026-11-04T18:02:32Z",
   "platform_commit": null,
-  "exported_from_commit": "bd57396d50131c3b3b69ca346e1b0b25ba8a2929",
-  "source": "assembled",
-  "schema_version": null,
-  "approximations": [
-    "rows assembled from an API without GET /experiments/:id/bundle; every content hash (tasks, prompts, toolsets, capabilities) was checked against the catalogue files it came from",
-    "grading_jobs: only each trial's latest finished job; its graders and grader_files are empty, claims is 1, worker_id, claimed_at and lease_until are null (that API does not serve them)",
-    "grades: spec_sha256 null; framework_version and job_id are the job's",
-    "experiment_arms: resumed_at and futility_checked_at null",
-    "experiment_events: data {}",
-    "experiments: cancelled_at, resumed_at and spend_guard_at from the events list",
-    "trials: seq rebuilt from the plan order (repeat, task, config), reported_at = finished_at, keys_revoked_at null",
-    "prompts, toolsets and tasks: first_seen_at is the load time"
-  ],
+  "exported_from_commit": "fde9b274e760f2ec5e20c47f8084565965424730",
+  "source": "bundle",
+  "schema_version": "011_examples",
+  "approximations": [],
   "summary": {
     "axis": "harness",
     "n": 1,
@@ -52,8 +43,8 @@
     "tasks": 15,
     "trials": 30,
     "spans": 418,
-    "grades": 128,
-    "grading_jobs": 30,
+    "grades": 256,
+    "grading_jobs": 60,
     "events": 0,
     "files": 638,
     "file_bytes": 6440492
@@ -97,8 +88,8 @@
   },
   "parts": {
     "rows.json.gz": {
-      "bytes": 205794,
-      "sha256": "sha256:c8dac21e9fc34fbd9a71bbf9f18965ea19c12a0f792c52b8a4afe9268de9b1d7"
+      "bytes": 225587,
+      "sha256": "sha256:33809edf2dc5926243e37e5652e8d231d7d55509a3910917d84200c4d92d948a"
     },
     "files.jsonl.gz": {
       "bytes": 1291335,
