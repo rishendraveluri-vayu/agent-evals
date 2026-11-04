@@ -10,6 +10,7 @@ This guide explains each of the five harnesses, how our adapter drives it, and w
 - §4.8: the own loop is the vanilla, most configurable baseline; the contradiction with §3.12 is gone.
 - §8.1: memory on-and-empty against on-and-seeded is comparable only with caveats (identical starting memory, writes during a trial).
 - Open questions answered: Hermes's parallel guidance (D33) and prompt-cache markers (D31). New decisions D32 to D39 (early stopping, lineage, two arms, the own loop's retry, per-arm pause, conflict checks, the Hermes verification run) are in `docs/decisions.md`; chapters change again when they are built.
+- Built from the review, against the fake model only: D33 and D31 on Hermes (§3.2, §3.3, §3.5, §3.11); the own loop's re-send on a cut-off reply, D36 (§4.4, §4.5); `client-sim.v4` with patience (§2.4); the finance tools' independent tests and `sip_future_value`'s lump sum (§2.5); and `checks.json`, number provenance and required tools, written by the runner after every trial (§2.8).
 
 ### Changes in v2 (4 Nov)
 
@@ -258,7 +259,7 @@ Gate tests prove a setting reaches the request. Effect checks prove it changes b
 
 **Where results live now** [src]. In an experiment, read a trial with `GET /api/trials/:id`: task, config, attempt, status, label, end state, `spec`, `result`, `runner_report`, `usage` (calls, tokens, `cost_usd`, `sim_cost_usd`, `complete`), timing, the file list and `grades` (empty until grading exists; R14 makes grading a step after the trial). Spans come from `GET /api/trials/:id/spans` in raw OpenTelemetry shape, and each stored file from `GET /api/trials/:id/files/<path>` (the folder `runs/<experiment_id>/<trial_id>/attempt-<n>/`). Per experiment: `GET /api/experiments/:id/trials?status=&config=&task=`, `/compare` (pass counts; `stats` is null until SP6) and `/export?format=json|csv`. Grade `done` rows; `infra_failed` and `abandoned` rows are reported, not scored.
 
-**The task file the engine reads** is `tasks/<id>/task.json`. The task format is yours to design (SP4); the engine needs only `id`, `version`, `split`, `messages`, `client_sim` (contract v2's object without `model`, which the experiment supplies), `client_state` (a file next to `task.json`, placed in the trial's state folder) and `graders`. Everything else is kept and passed through unread. Experiments reference a task by its sha256, so an edited task is a new task. The only task today is `tasks/engine-smoke-emi/`, a synthetic engine test that is not part of the task set [src].
+**The task file the engine reads** is `tasks/<id>/task.json`. The task format is yours to design (SP4); the engine needs only `id`, `version`, `split`, `messages`, `client_sim` (contract v2's object without `model`, which the experiment supplies), `client_state` (a file next to `task.json`, placed in the trial's state folder) and `graders`, plus an optional `required_tools` that the spec carries for `checks.json`. Everything else is kept and passed through unread. Experiments reference a task by its sha256, so an edited task is a new task. The only task today is `tasks/engine-smoke-emi/`, a synthetic engine test that is not part of the task set [src].
 
 | To grade | Read | Watch out for |
 | --- | --- | --- |
@@ -273,6 +274,7 @@ Gate tests prove a setting reaches the request. Effect checks prove it changes b
 | Inputs and ground truth | `spec` (the trial row, or `spec.json`) → `task`, `task.client_sim`, `seed`; the task's `client.json` in `tasks/<id>/` | Graders know every hidden fact; the agent and the simulator do not see each other's |
 | Settings in force | `result.json` → `applied_settings` | `harness_default` with value `null` means the harness sent nothing |
 | Self-edits | `result.json` → `integrity.before` and `after` | Hermes only today |
+| Numbers with no tool behind them; required tools | `checks.json` (the runner writes it after every trial, contract section 12): each money amount the agent wrote, `supported_by` `tool`, `client` (the client file), `user` or null, and `required_tools` called and missing; `runner-report.json` → `checks` | A heuristic: an example figure the agent picked shows as unsupported, and a round figure can match an unrelated number. On the 4 Nov run every single-prompt amount was backed by a tool, and 34 of the conversation amounts were not [ran, 4 Nov] |
 | Simulator turns | `client_sim.turn` spans; `sim-NNNN` bodies; `sim_replies.jsonl` | |
 
 **Harness extras** in `out/artifacts/`: Hermes's `hermes-system-prompt.txt`, `hermes-messages.json`, `hermes-config.yaml`, `hermes-logs/` (`agent.log` for repairs, `errors.log` for blocked seeds) and `hermes-sessions/` request dumps after a provider failure; LangGraph's `langgraph-messages.json` (every message with usage, finish reason and invalid tool calls); ADK's `adk-session.json` (every event ADK recorded) [src].

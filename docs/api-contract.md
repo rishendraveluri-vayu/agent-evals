@@ -44,6 +44,10 @@ and passed through unread:
  "graders": []}
 ```
 
+An optional `required_tools` (finance tool names, such as `["calculate_emi"]`) is copied into
+the spec's `task.required_tools`, a grader primitive: the runner's `checks.json` records which
+were called (docs/adapter-contract.md section 12). A name the finance server does not have, or a
+repeated one, is a task problem.
 `client_sim` is contract v2's object without `model` (the experiment supplies the simulator
 model) and without `client_summary` (the API builds it). `client_state` names a file next to
 `task.json` that the runner places in the trial's state folder for the finance MCP server. For a

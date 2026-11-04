@@ -62,6 +62,10 @@ describe('task files', () => {
     expect(checkTask(good)).toEqual([]);
   });
 
+  it('accepts required_tools naming finance tools (a grader primitive)', () => {
+    expect(checkTask({ ...good, required_tools: ['calculate_emi', 'list_debts'] })).toEqual([]);
+  });
+
   it.each<[string, Record<string, unknown>, string]>([
     ['bad split', { split: 'heldout' }, 'split'],
     ['no messages', { messages: [] }, 'messages'],
@@ -69,6 +73,9 @@ describe('task files', () => {
     ['simulator with a model', { client_sim: { persona: 'p', hidden_facts: [], concerns: ['c'], goal: 'g', opening_message: 'o', max_client_turns: 2, model: {} } }, 'model'],
     ['simulator missing a field', { client_sim: { persona: 'p' } }, 'goal'],
     ['state file with a path', { client_state: '../secret.json' }, 'client_state'],
+    ['an unknown required tool', { required_tools: ['calculate_emi', 'mcp__finance__list_debts'] }, 'required_tools'],
+    ['required tools that are not a list', { required_tools: 'calculate_emi' }, 'required_tools'],
+    ['a repeated required tool', { required_tools: ['calculate_emi', 'calculate_emi'] }, 'repeat'],
   ])('flags %s', (_what, change, word) => {
     expect(checkTask({ ...good, ...change }).join(' ')).toContain(word);
   });

@@ -211,6 +211,15 @@ export function checkTask(task: unknown): string[] {
     problems.push('client_state must be a file name next to task.json');
   }
   if (task.graders !== undefined && !Array.isArray(task.graders)) problems.push('graders must be a list');
+  const required = task.required_tools;
+  if (required !== undefined) {
+    const known: readonly string[] = FINANCE_TOOLS;
+    if (!Array.isArray(required) || required.some((t) => typeof t !== 'string' || !known.includes(t))) {
+      problems.push(`required_tools must be a list of finance tool names (${FINANCE_TOOLS.join(', ')})`);
+    } else if (new Set(required).size !== required.length) {
+      problems.push('required_tools must not repeat a tool');
+    }
+  }
   return problems;
 }
 

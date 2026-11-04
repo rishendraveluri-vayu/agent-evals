@@ -54,6 +54,13 @@ describe('buildSpec', () => {
     expect(spec.trial).toMatchObject({ id: 't_abc123', experiment_id: 'e_xyz', task_version: base.task.sha256, task_split: 'discovery', repeat_index: 2 });
   });
 
+  it("copies the task's required_tools into the spec, and leaves the field out without them", () => {
+    const withTools = buildSpec({ ...base, task: { ...base.task, body: { ...base.task.body, required_tools: ['calculate_emi'] } } });
+    expect(errors(withTools)).toBe('');
+    expect((withTools.task as { required_tools?: string[] }).required_tools).toEqual(['calculate_emi']);
+    expect(buildSpec(base).task).not.toHaveProperty('required_tools');
+  });
+
   it('writes bare hex where contract v2 wants it and every finance tool in the built-in toolset', () => {
     const spec = buildSpec(base) as { system_prompt: { sha256: string }; tools: { toolset: { sha256: string }; mcp_servers: { allowed_tools: string[] }[] } };
     expect(spec.system_prompt.sha256).toMatch(/^[0-9a-f]{64}$/);

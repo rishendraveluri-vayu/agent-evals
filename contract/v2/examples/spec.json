@@ -18,7 +18,10 @@
         "content": "What is my EMI on Rs 10 lakh at 9% for 20 years?"
       }
     ],
-    "client_sim": null
+    "client_sim": null,
+    "required_tools": [
+      "calculate_emi"
+    ]
   },
   "system_prompt": {
     "id": "finance-advisor",

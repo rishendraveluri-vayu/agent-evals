@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Any
 
 from evals_adapter.adapter import utc_iso
+from evals_adapter.checks import client_files, run_checks
+from evals_adapter.checks import read_spans as read_check_spans
 from evals_adapter.proxy import ProxyClient, TrialKey, merge_proxy_spans
 from evals_adapter.spec import CONTRACT_VERSION, END_STATES, TRIAL_DIR_ENV, TrialPaths, check_spec
 
@@ -201,9 +203,44 @@ def _schemas() -> dict[str, Any] | None:
         if (c / "result.schema.json").exists():
             return {
                 name: json.loads((c / f"{name}.schema.json").read_text())
-                for name in ("result", "span", "runner-report")
+                for name in ("result", "span", "runner-report", "checks")
+                if (c / f"{name}.schema.json").exists()
             }
     return None
+
+
+def write_checks(paths: TrialPaths, spec: dict[str, Any], result: dict[str, Any] | None) -> dict:
+    """Run the platform checks (evals_adapter.checks: number provenance, required tools) and
+    write out/checks.json. Returns the runner report's `checks` entry. A failure here is
+    recorded and never changes the trial's label."""
+    try:
+        checks = run_checks(spec, result, read_check_spans(paths.trace), client_files(paths.state))
+    except Exception as exc:  # noqa: BLE001
+        print(f"[evals-runner] checks failed: {exc!r}", file=sys.stderr)
+        return {
+            "path": None,
+            "valid": False,
+            "errors": [f"checks failed: {type(exc).__name__}: {exc}"[:500]],
+            "unsupported_amounts": None,
+            "missing_tools": None,
+        }
+    target = paths.out / "checks.json"
+    target.write_text(json.dumps(checks, ensure_ascii=False, indent=1), encoding="utf-8")
+    errors: list[str] = []
+    schema = (_schemas() or {}).get("checks")
+    if schema is not None:
+        import jsonschema
+
+        validator = jsonschema.Draft202012Validator(schema)
+        errors = [f"{list(e.absolute_path)}: {e.message}" for e in validator.iter_errors(checks)]
+    required = checks["required_tools"]
+    return {
+        "path": target.name,
+        "valid": not errors,
+        "errors": errors[:50],
+        "unsupported_amounts": checks["unsupported"],
+        "missing_tools": None if required is None else list(required["missing"]),
+    }
 
 
 def validate(paths: TrialPaths) -> dict[str, Any]:
@@ -462,6 +499,8 @@ def run_trial(
             "safety_net_s": net,
         },
     }
+    # After every trial, before the manifest so checks.json is listed and uploaded with the rest.
+    report["checks"] = write_checks(paths, spec, checked["raw_result"])
     report["files"] = manifest(paths)
     paths.runner_report.write_text(
         json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8"

@@ -31,6 +31,13 @@ Building the schemas and the shared library turned up these gaps. Each is small,
 9. **Each trial key only allows the spec's model**, so a harness cannot quietly call a different one.
 10. **LiteLLM facts are now checked** (section 6): spend logs per key, failures included, bodies stored, rows about 1 s after the call.
 
+## Changed after Rishi's review of harness guide v1 (4 Nov evening)
+
+1. **`checks.json`**, written by the runner after every trial: number provenance and required tool calls (section 12, `contract/v2/checks.schema.json`), summarised in `runner-report.json` `checks`.
+2. **`task.required_tools`** in the spec, optional (section 3).
+3. **The own loop re-sends a cut-off reply once** with the cap doubled (D36, section 5), with an `evals.token_cap_raised` span event (section 6).
+4. **The simulator's default prompt is `client-sim.v4`**, v3 plus patience (section 9).
+
 ## 1. The shape in one paragraph
 
 For each trial the runner wipes `/trial`, writes `/trial/spec.json` and any seeded state, and starts the adapter as a new process group, with the model key in an environment variable. The adapter, built on the shared adapter library:
@@ -63,7 +70,8 @@ The path is the same in every trial, because Hermes puts paths into its prompt.
 | `/trial/out/stdout.log`, `stderr.log` | runner | The adapter's full output, captured by the runner. |
 | `/trial/sim_cache.json` | runner | Known simulated-client replies for this task and simulator (D22). Read-only. |
 | `/trial/out/sim_replies.jsonl` | adapter | New client replies from this trial, for the runner to store: `{key, reply, model, usage}` per line, plus `error` on an empty reply, which is kept for the record and never cached (section 9). |
-| `/trial/out/runner-report.json` | runner | The runner's additions: label, exit status, proxy usage, log hashes, file manifest. |
+| `/trial/out/runner-report.json` | runner | The runner's additions: label, exit status, proxy usage, log hashes, file manifest, and a summary of `checks.json`. |
+| `/trial/out/checks.json` | runner | Platform checks after every trial: number provenance and required tool calls (section 12). |
 
 Everything else is read-only. Nothing in `/trial` survives to the next trial; everything that matters has been uploaded first (section 10).
 
@@ -122,6 +130,7 @@ Everything else is read-only. Nothing in `/trial` survives to the next trial; ev
 - **`system_prompt` and `tools.toolset`** reference versioned config objects stored in the database, with text or manifest, hash, author and date (R11). The UI diffs two versions, and an experiment can vary exactly one of them (D9: prompt v1 versus v2). `allowed_tools` lets a toolset version expose a subset of the finance server's tools, which is how a "missing tool" is represented and later added.
 - **`model`**: LiteLLM only (R10.3). The per-trial key is in the environment variable named by `api_key_env`, never `OPENAI_API_KEY` (D23). The adapter passes it explicitly to its model client and starts child processes with a minimal environment that leaves it out.
 - **`task.task_split`**: `discovery` or `held_out`, so the prompt experiment can show that the fix works on tasks not used to find the problem (D9).
+- **`task.required_tools`** (optional, 4 Nov): tools the agent must call for the task, named as the finance server names them (`["calculate_emi"]`). A grader primitive: the adapter ignores it, and the runner's `checks.json` records which were called and which were missing (section 12). The API copies it from `task.json` and refuses a task that names a tool the server does not have.
 - **`seed`**: config-given state in harness-neutral form, written natively by the adapter. It is never learned state (R10.8).
 
 ## 4. `capabilities.json` and how a new harness is added
@@ -332,3 +341,25 @@ The exact tables are SP2's data model, **[Rishi designs]**.
 5. Traces: OpenTelemetry spans (D12, amended).
 6. Effect checks at gate time (D24).
 7. Headline experiment: prompt v1 versus v2 on discovery and held-out tasks (D9).
+
+## 12. Platform checks after every trial: `checks.json` (4 Nov)
+
+Rishi's review notes 21 and 31: "if an agent shows a calculation without a tool call, should flag error or at the minimum highlight", and "if EMI was never calculated, grader will not flag issue". After every trial, whatever its label, the runner runs `evals_adapter.checks` and writes `/trial/out/checks.json` (schema `contract/v2/checks.schema.json`) before the file manifest, so it is listed in `runner-report.json` `files` and uploaded with the rest. The report's `checks` entry says whether the file validated, how many amounts were unsupported and which required tools were missing. A failure of the checks themselves is recorded there (`path: null`) and never changes the label. Run it on any finished trial folder with `python -m evals_adapter.checks <trial-dir>`.
+
+```json
+{"contract_version": "2", "trial_id": "t_01J...",
+ "amounts": [{"turn": 0, "text": "₹4.41 lakh", "value": 441000, "supported_by": "tool",
+              "match": {"value": 441000, "where": "tool:list_debts", "how": "exact", "precision": 1000}}],
+ "unsupported": 0, "tools_called": ["list_debts"],
+ "required_tools": {"required": ["list_debts"], "called": ["list_debts"], "missing": [], "only_errors": []}}
+```
+
+**Number provenance.**
+
+- **Amounts** are taken from every agent reply in `result.conversation.transcript`: a number with ₹, Rs, Rs. or INR before it or "rupees" after it; one with lakh, lac or crore after it (`₹4.41 lakh` is ₹4,41,000); one written in Indian grouping from one lakh up (`4,41,050`); and a bare number right after a marked amount in a range (`₹8,000–9,000`). k, thousand, million and L (`₹1.2L`) scale a marked amount. Percentages, months, years and plain numbers are not money.
+- **Sources**, in order of preference: `tool`, every number in an `execute_tool` span's `evals.tool.result` from the same agent turn or an earlier one; `client`, every number in the files of `/trial/state` (the task's client file); `user`, every number in a task or simulated-client message before the reply. Dates (`2026-10-25`) and numbers glued to letters (`t001`) are skipped; a lakh or crore word scales the number before it (`"11.59 lakh"` is 11,59,000).
+- **A match** is the amount at the precision it is written in: `exact`, `rounded` half-up, or `truncated` to the digits shown. "About ₹8,997" matches 8997.26, "₹1,667" matches 1667.50, "₹1.23 lakh" matches 1,23,456. Trailing zeros in a whole amount can also be rounding (`rounded`, with a coarser `precision`) when two significant digits remain and the number is within 1% of the amount: "about ₹49,500" matches 49,483.43, "₹31,000" does not match 31,330.07. The best match wins: exact, then rounded, truncated and trailing-zero rounding, and then tool, client, user.
+- **`unsupported`** counts amounts with `supported_by: null`: a figure the agent worked out itself (a sum of transactions, the difference between two plans, a month's interest), or one it picked as an example. It is a highlight for a reader and the judge, not a verdict; `docs/known-limits.md` lists how it can be wrong.
+- **On the 4 Nov real run** (`runs/20261104T083111Z-real/`, Haiku 5.5, five harnesses, read-only): 230 amounts in 10 trials with replies; every amount in the five single-prompt answers was backed by a tool result, and 34 in the five conversations were not (0 on ADK, 5 on the own loop, 7 on LangGraph, 8 on Hermes, 14 on the Agents SDK). `workers/adapterlib/tests/test_checks.py` pins the list.
+
+**Required tool calls.** With `task.required_tools` in the spec, `required_tools` lists the required names, those `called` (at least one `execute_tool` span), those `missing`, and those whose every call returned an error (`only_errors`). Names are compared without a harness prefix (Hermes's `mcp__finance__`). `tools_called` lists every tool the agent called, once, in first-call order. Without `required_tools`, `required_tools` is null.

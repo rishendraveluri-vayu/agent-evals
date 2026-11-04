@@ -61,6 +61,16 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 - It normalises only the trial folder path and Hermes's "Conversation started:" date line. Other per-run text in Hermes's prompt (kernel release, host, user name) is constant on one machine, so trials compared across machines will show it as unexpected differences. Real runs happen in one container image, which keeps them constant.
 - It compares the first request only. A difference that appears later in a trial (for example a tool result wrapped differently) is not caught here; the trace shows it.
 
+## Platform checks (`checks.json`, 4 Nov)
+
+Number provenance is a text heuristic for highlighting, not a grade. Where it is wrong:
+
+- **Unsupported but harmless.** A figure the agent picked as an example ("such as ₹3,000 or ₹5,000 a month", "about ₹2,000 on the card") has no number behind it and is counted as unsupported, the same as arithmetic done in prose. On the 4 Nov run 3 of the 34 unsupported amounts were examples of this kind (read by hand, not counted by code); the rest were arithmetic.
+- **Supported by coincidence.** A number anywhere in what the agent had read counts, whatever it meant, so a figure the agent worked out itself is "supported" if it happens to equal or round to an unrelated number. A figure shown with little precision matches widely: "₹5 lakh" matches any source from 4.5 to 5.49 lakh. Trailing zeros count as rounding only within 1% and with two significant digits left (on 4 Nov this stopped "roughly ₹31,000", the agent's own sum, from matching an unrelated 31,330.07), which narrows this but does not close it.
+- **Missed amounts.** Money written without a marker in Western grouping or as words ("441,050", "twenty thousand rupees") is not extracted, nor is the second end of a range written "between ₹2,000 and 3,000". Numbers glued to letters ("t001") and dates are not sources.
+- **Sources it does not see.** Tool results are read from the `execute_tool` spans, where strings are cut at 16,000 characters (`MAX_STRING_ATTR` in `trace.py`): numbers past the cut in a long amortisation page or transaction list are lost, and an amount quoting them shows as unsupported. Text the model wrote before a tool call is not in the transcript, so its amounts are not checked. Simulated-client hidden facts count only once the client has said them.
+- **Required tools** count a call that ran, even with wrong arguments; `only_errors` lists required tools whose every call failed. Calls in the trace come from the adapter's tool callbacks, so a call a harness ran without reporting it (none known) would be missed.
+
 ## Simulated client (D22)
 
 - The reply cache is filled per trial and stored by the API when the trial is reported (from its uploaded `out/sim_replies.jsonl`). Two trials running at the same time that reach the same new conversation state both call the simulator, and can get different replies; the first stored wins for later trials. At temperature 0 the replies should match, but that is not guaranteed. On Haiku 5.5 the simulator sends no temperature (D27), so it runs at the model's default and two such calls will usually differ: only the cache makes it repeatable, and only for states already stored.

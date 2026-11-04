@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-evals.local/contract/v2/checks.schema.json",
+  "title": "Platform checks (contract v2)",
+  "description": "Written by the runner to /trial/out/checks.json after every trial (evals_adapter.checks), never by the adapter. Number provenance: every money amount the agent wrote, and whether a tool result, the task's client file or a user message holds it at the precision shown. Required tool calls: which of the task's required_tools the agent called. Heuristics for a reader and a grader primitive, not a grade. See docs/adapter-contract.md section 12.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "trial_id", "amounts", "unsupported", "tools_called", "required_tools"],
+  "properties": {
+    "contract_version": {"const": "2"},
+    "trial_id": {"type": "string", "minLength": 1},
+    "amounts": {
+      "description": "Every money amount in the agent's replies, in order: ₹, Rs, INR or 'rupees' amounts, lakh and crore forms, and Indian digit grouping from one lakh up.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["turn", "text", "value", "supported_by", "match"],
+        "properties": {
+          "turn": {"description": "The agent turn the reply belongs to, from 0.", "type": "integer", "minimum": 0},
+          "text": {"description": "The amount as written, such as '₹4.41 lakh'.", "type": "string", "minLength": 1},
+          "value": {"description": "The amount in rupees.", "type": "number", "minimum": 0},
+          "supported_by": {
+            "description": "Where a matching number was: a tool result (tool), the task's client file (client), or a user or simulated-client message (user); null when nothing matched, a calculation with no tool behind it.",
+            "enum": ["tool", "client", "user", null]
+          },
+          "match": {
+            "oneOf": [
+              {"type": "null"},
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["value", "where", "how", "precision"],
+                "properties": {
+                  "value": {"description": "The matching number, in rupees.", "type": "number"},
+                  "where": {"description": "tool:<tool name>, client:<file name>, or <source>:<transcript index> for a message (task:0, client_sim:2).", "type": "string", "minLength": 1},
+                  "how": {"description": "exact; rounded half-up to the precision shown (or at trailing zeros, within 1%); truncated to the precision shown.", "enum": ["exact", "rounded", "truncated"]},
+                  "precision": {"description": "The step the amount was compared at, in rupees: 0.01 for '₹8,997.26', 1000 for '₹4.41 lakh'.", "type": "number", "exclusiveMinimum": 0}
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "unsupported": {"description": "How many amounts have supported_by null.", "type": "integer", "minimum": 0},
+    "tools_called": {"description": "Every tool the agent called, once each, in first-call order, with harness prefixes removed (Hermes's mcp__finance__).", "type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "required_tools": {
+      "description": "Null when the task lists no required_tools.",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required", "called", "missing", "only_errors"],
+          "properties": {
+            "required": {"type": "array", "items": {"type": "string", "minLength": 1}},
+            "called": {"description": "Required tools with at least one execute_tool span.", "type": "array", "items": {"type": "string"}},
+            "missing": {"description": "Required tools never called.", "type": "array", "items": {"type": "string"}},
+            "only_errors": {"description": "Called required tools whose every call returned an error.", "type": "array", "items": {"type": "string"}}
+          }
+        }
+      ]
+    }
+  }
+}

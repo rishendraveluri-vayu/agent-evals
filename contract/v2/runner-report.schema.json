@@ -200,6 +200,56 @@
         }
       }
     },
+    "checks": {
+      "description": "The platform checks the runner wrote to checks.json after the trial (docs/adapter-contract.md section 12): whether the file validated, how many money amounts had no tool, client-file or user number behind them, and which of the task's required tools were not called. Optional, so reports from before 4 Nov stay valid. path is null when the checks could not run; their failure never changes the label.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "valid",
+        "errors",
+        "unsupported_amounts",
+        "missing_tools"
+      ],
+      "properties": {
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unsupported_amounts": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "missing_tools": {
+          "description": "Null when the task lists no required_tools.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        }
+      }
+    },
     "timing": {
       "type": "object",
       "additionalProperties": false,
