@@ -1,0 +1,9 @@
+# A simulated client whose reply has no text, as Claude Haiku 5.5 gave on 4 Nov when its whole
+# 300-token cap went to reasoning. The adapter library must treat it as a simulator failure
+# (ended_by sim_error, label infra:sim_error), never as the client ending the conversation.
+# The client's own messages are the assistant messages in its request and the opening message
+# is the first, so step 0 is unused; every later turn gets the empty reply.
+description: The simulated client replies with no text at all.
+steps:
+  - text: "(unused: the opening message is step 0)"
+  - text: ""
