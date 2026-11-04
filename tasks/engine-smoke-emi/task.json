@@ -1,0 +1,12 @@
+{
+  "id": "engine-smoke-emi",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "ENGINE TEST ONLY, synthetic: one EMI question, used by scripts/sp3_kill_test.py with fake models. Not part of the task set and never used in a real experiment.",
+  "synthetic": true,
+  "messages": [{"role": "user", "content": "What is my EMI on Rs 10 lakh at 9% for 20 years?"}],
+  "client_sim": null,
+  "client_state": "client.json",
+  "graders": []
+}

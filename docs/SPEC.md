@@ -168,27 +168,27 @@ Each one has a done-when test. Scope stops growing once that test passes.
 **Done when:** a past result traces back to the exact config, task and code versions that produced it.
 **Needs:** D2.
 
-- [ ] **[Rishi designs]** Data model: tasks, configs, experiments, trials, traces
+- [x] **[Rishi designs]** Data model: tasks, configs, experiments, trials, traces (R14, `docs/proposals/data-model.md`)
 - [ ] Write the shared contract and generate types for both languages
-- [ ] Version configs by content hash, including the harness SHA and model pin
-- [ ] Add persistence and migrations
-- [ ] Add JSON or CSV export
+- [x] Version configs by content hash, including the harness SHA and model pin (`POST /api/configs`)
+- [x] Add persistence and migrations (Postgres, `apps/api/migrations/`)
+- [x] Add JSON or CSV export (`GET /api/experiments/:id/export`)
 
 ### SP3 Execution engine (Wed)
 
 **Done when:** killing a worker mid-run and resuming gives no lost, duplicated or mislabelled trials.
 **Needs:** SP1, SP2, D3.
 
-- [ ] Run tasks × configs × N trials
-- [ ] Implement isolation per D3: one trial folder at a fixed path, leftover-process sweep, wipe and empty check between trials, with a test proving no state leaks from one trial to the next in the same container
-- [ ] Use a fixed `HERMES_HOME` path per trial, because the path appears in the system prompt
+- [x] Run tasks × configs × N trials (`scripts/sp3_kill_test.py`: 20 trials over 2 harnesses)
+- [x] Implement isolation per D3: one trial folder at a fixed path, leftover-process sweep, wipe and empty check between trials, with a test proving no state leaks from one trial to the next in the same container (image tests in all five worker images; files reach the API over HTTP, so workers mount no shared folder)
+- [x] Use a fixed `HERMES_HOME` path per trial, because the path appears in the system prompt (`/trial` in every container)
 - [ ] Set LiteLLM per-call retries with backoff and a capped trial re-queue (D16), tested against the fake's forced 429s; update the config check
 - [ ] Handle timeouts, rate limits and retries: tested with the fake's forced faults, then seen on a signed-off real dev run (R9)
 - [ ] Separate infra failures from agent failures, including budget stops
-- [ ] Make trial claiming idempotent and runs resumable
+- [x] Make trial claiming idempotent and runs resumable (SKIP LOCKED claims, 60 s lease; passed the kill test on 4 Nov)
 - [ ] Show trials, estimated cost, time and whether N is enough before every run, and start only runs that can finish (R10.6)
-- [ ] Add a LiteLLM `max_budget` safety net per experiment and per trial, set well above the estimate; a trip is an infra event (R10.6)
-- [ ] Capture the full trace for every trial, including the rendered system prompt
+- [x] Add a LiteLLM `max_budget` safety net per experiment and per trial, set well above the estimate; a trip is an infra event (R10.6) (the API mints each trial key with a budget and refuses experiments below the estimate's high end)
+- [x] Capture the full trace for every trial, including the rendered system prompt (stored with the API; Hermes's rendered prompt is an artifact)
 
 ### SP4 Tasks and graders (Wed to Thu)
 
