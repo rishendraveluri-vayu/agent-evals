@@ -1,0 +1,129 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-langgraph-smoke-905856",
+ "end_state": "answered",
+ "end_detail": {
+  "harness_stop_reason": "stop",
+  "exception_type": null,
+  "exception_message": null,
+  "last_message_excerpt": "I'm sorry about your mother's medical costs. Falling behind on a card is stressful, so the priority is to stop the missed payments first.\n\nYour three debts total ₹4,41,050, with minimum payments of ₹18,332.50 a month. Your ₹20,000 covers those minimums with ₹1,667.50 to spare.\n\n**Plan (avalanche: highest interest rate first)**\n- **Credit card (42%):** Clear this first. It costs the most, and the extra money goes here. It is paid off in about month 19.\n- **Personal loan (14.5%):** Keep paying the minimum until the card is gone, then move the full ₹20,000 onto this loan.\n- **Two-wheeler loan (11%):** Keep paying the minimum. The model clears it around month 15, and its payment then rolls into the other debts.\n\n**Result:** Debt-free in about **28 months**, with roughly **₹1,01,341 in total interest** over that period.\n\n**Next steps**\n1. **This month:** Pay at least the minimum on all three, so nothing else goes overdue. If you're already behind, call Kaveri Bank before the due date and ask about a hardship programme or a temporary reduction in the card's minimum payment. Banks often have options for medical situations.\n2. **Avoid new card spending.** At 42%, any balance you carry grows quickly and would undo the plan.\n3. **Check your medical costs for any insurance claim or hospital payment plan** that could reduce what you're paying out of pocket. That may free up more of your budget.\n\nIf it would help, I can look at your recent transactions to see where the ₹20,000 is going, or run the numbers if your mother's costs change."
+ },
+ "final_answer": "I'm sorry about your mother's medical costs. Falling behind on a card is stressful, so the priority is to stop the missed payments first.\n\nYour three debts total ₹4,41,050, with minimum payments of ₹18,332.50 a month. Your ₹20,000 covers those minimums with ₹1,667.50 to spare.\n\n**Plan (avalanche: highest interest rate first)**\n- **Credit card (42%):** Clear this first. It costs the most, and the extra money goes here. It is paid off in about month 19.\n- **Personal loan (14.5%):** Keep paying the minimum until the card is gone, then move the full ₹20,000 onto this loan.\n- **Two-wheeler loan (11%):** Keep paying the minimum. The model clears it around month 15, and its payment then rolls into the other debts.\n\n**Result:** Debt-free in about **28 months**, with roughly **₹1,01,341 in total interest** over that period.\n\n**Next steps**\n1. **This month:** Pay at least the minimum on all three, so nothing else goes overdue. If you're already behind, call Kaveri Bank before the due date and ask about a hardship programme or a temporary reduction in the card's minimum payment. Banks often have options for medical situations.\n2. **Avoid new card spending.** At 42%, any balance you carry grows quickly and would undo the plan.\n3. **Check your medical costs for any insurance claim or hospital payment plan** that could reduce what you're paying out of pocket. That may free up more of your budget.\n\nIf it would help, I can look at your recent transactions to see where the ₹20,000 is going, or run the numbers if your mother's costs change.",
+ "conversation": {
+  "agent_turns": 1,
+  "client_turns": 0,
+  "ended_by": null,
+  "transcript": [
+   {
+    "role": "user",
+    "content": "My mother's medical costs went up this year and I'm falling behind on my credit card. I can put about Rs 20,000 a month towards my debts. What should I pay off first, and how long will it take?",
+    "source": "task"
+   },
+   {
+    "role": "assistant",
+    "content": "I'm sorry about your mother's medical costs. Falling behind on a card is stressful, so the priority is to stop the missed payments first.\n\nYour three debts total ₹4,41,050, with minimum payments of ₹18,332.50 a month. Your ₹20,000 covers those minimums with ₹1,667.50 to spare.\n\n**Plan (avalanche: highest interest rate first)**\n- **Credit card (42%):** Clear this first. It costs the most, and the extra money goes here. It is paid off in about month 19.\n- **Personal loan (14.5%):** Keep paying the minimum until the card is gone, then move the full ₹20,000 onto this loan.\n- **Two-wheeler loan (11%):** Keep paying the minimum. The model clears it around month 15, and its payment then rolls into the other debts.\n\n**Result:** Debt-free in about **28 months**, with roughly **₹1,01,341 in total interest** over that period.\n\n**Next steps**\n1. **This month:** Pay at least the minimum on all three, so nothing else goes overdue. If you're already behind, call Kaveri Bank before the due date and ask about a hardship programme or a temporary reduction in the card's minimum payment. Banks often have options for medical situations.\n2. **Avoid new card spending.** At 42%, any balance you carry grows quickly and would undo the plan.\n3. **Check your medical costs for any insurance claim or hospital payment plan** that could reduce what you're paying out of pocket. That may free up more of your budget.\n\nIf it would help, I can look at your recent transactions to see where the ₹20,000 is going, or run the numbers if your mother's costs change.",
+    "source": "agent"
+   }
+  ]
+ },
+ "harness": {
+  "name": "langgraph",
+  "version": "langgraph 1.2.16 (langchain 1.4.6, langchain-core 1.6.12, langchain-openai 1.7.2, langchain-mcp-adapters 0.3.2, mcp 1.30.0)",
+  "extra": {
+   "tool_names": [
+    "calculate_emi",
+    "amortization_schedule",
+    "prepayment_impact",
+    "debt_payoff_plan",
+    "sip_future_value",
+    "fd_maturity",
+    "inflation_adjusted_value",
+    "loan_affordability",
+    "get_client_profile",
+    "list_debts",
+    "list_transactions"
+   ]
+  }
+ },
+ "applied_settings": {
+  "temperature": {
+   "value": null,
+   "source": "harness_default"
+  },
+  "max_output_tokens": {
+   "value": 4096,
+   "source": "config"
+  },
+  "max_steps": {
+   "value": 12,
+   "source": "config"
+  },
+  "timeout_s": {
+   "value": 240,
+   "source": "config"
+  },
+  "parallel_tool_calls": {
+   "value": false,
+   "source": "platform_default"
+  },
+  "memory": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "create_agent has no memory unless a store and memory tools are added; the adapter adds neither"
+  },
+  "skills": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "LangGraph has no skills"
+  },
+  "compression": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "nothing compresses unless SummarizationMiddleware is added; the full history is sent"
+  },
+  "top_p": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  },
+  "seed": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  },
+  "tool_choice": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  },
+  "recursion_limit": {
+   "value": 9999,
+   "source": "harness_default",
+   "observed": "create_agent's default; counts graph supersteps, not model calls"
+  }
+ },
+ "harness_usage": {
+  "model_calls": 3,
+  "input_tokens": 16995,
+  "output_tokens": 1424,
+  "cost_usd": null
+ },
+ "counts": {
+  "model_calls": 3,
+  "tool_calls": 2,
+  "tool_errors": 0,
+  "malformed_tool_calls": 0
+ },
+ "integrity": {
+  "before": {},
+  "after": {}
+ },
+ "timing": {
+  "started_at": "2026-11-04T08:34:36.671750Z",
+  "ended_at": "2026-11-04T08:34:52.483555Z",
+  "wall_s": 15.812
+ },
+ "artifacts": [
+  "artifacts/langgraph-messages.json"
+ ]
+}

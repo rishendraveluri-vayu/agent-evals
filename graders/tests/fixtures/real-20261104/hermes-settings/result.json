@@ -1,0 +1,148 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-hermes-smoke-cef7ec",
+ "end_state": "harness_error",
+ "end_detail": {
+  "harness_stop_reason": "format_error",
+  "exception_type": "RuntimeError",
+  "exception_message": "HTTP 400: litellm.BadRequestError: AnthropicException - b'{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"`temperature` is deprecated for this model.\"},\"request_id\":\"req_011CghactEZ4sVLFfkH4FMPX\"}'. Received Model Group=claude-haiku-5-5\nAvailable Model Group Fallbacks=None",
+  "last_message_excerpt": null
+ },
+ "final_answer": null,
+ "conversation": {
+  "agent_turns": 1,
+  "client_turns": 0,
+  "ended_by": null,
+  "transcript": [
+   {
+    "role": "user",
+    "content": "My mother's medical costs went up this year and I'm falling behind on my credit card. I can put about Rs 20,000 a month towards my debts. What should I pay off first, and how long will it take?",
+    "source": "task"
+   }
+  ]
+ },
+ "harness": {
+  "name": "hermes",
+  "version": "6112c2adb9e1",
+  "extra": {
+   "mcp_tools_registered": [
+    "mcp__finance__amortization_schedule",
+    "mcp__finance__calculate_emi",
+    "mcp__finance__debt_payoff_plan",
+    "mcp__finance__fd_maturity",
+    "mcp__finance__get_client_profile",
+    "mcp__finance__inflation_adjusted_value",
+    "mcp__finance__list_debts",
+    "mcp__finance__list_transactions",
+    "mcp__finance__loan_affordability",
+    "mcp__finance__prepayment_impact",
+    "mcp__finance__sip_future_value"
+   ],
+   "tool_names": [
+    "mcp__finance__amortization_schedule",
+    "mcp__finance__calculate_emi",
+    "mcp__finance__debt_payoff_plan",
+    "mcp__finance__fd_maturity",
+    "mcp__finance__get_client_profile",
+    "mcp__finance__inflation_adjusted_value",
+    "mcp__finance__list_debts",
+    "mcp__finance__list_transactions",
+    "mcp__finance__loan_affordability",
+    "mcp__finance__prepayment_impact",
+    "mcp__finance__sip_future_value"
+   ],
+   "prompt_cache_markers": false
+  }
+ },
+ "applied_settings": {
+  "temperature": {
+   "value": 0.37,
+   "source": "config"
+  },
+  "max_output_tokens": {
+   "value": 777,
+   "source": "config"
+  },
+  "max_steps": {
+   "value": 12,
+   "source": "config"
+  },
+  "timeout_s": {
+   "value": 240,
+   "source": "config"
+  },
+  "parallel_tool_calls": {
+   "value": false,
+   "source": "platform_default"
+  },
+  "memory": {
+   "value": {
+    "enabled": false
+   },
+   "source": "platform_default"
+  },
+  "skills": {
+   "value": {
+    "enabled": false
+   },
+   "source": "platform_default"
+  },
+  "compression": {
+   "value": {
+    "enabled": false
+   },
+   "source": "platform_default"
+  },
+  "prompt_cache_markers": {
+   "value": false,
+   "source": "harness_default",
+   "observed": "Hermes adds cache_control markers for claude models on a host named litellm"
+  },
+  "api_max_retries": {
+   "value": 1,
+   "source": "platform_default",
+   "observed": "R10.11: one attempt"
+  },
+  "reasoning_effort": {
+   "value": null,
+   "source": "platform_default",
+   "observed": "kept off the wire"
+  }
+ },
+ "harness_usage": {
+  "model_calls": 1,
+  "input_tokens": null,
+  "output_tokens": null,
+  "cost_usd": null
+ },
+ "counts": {
+  "model_calls": 1,
+  "tool_calls": 0,
+  "tool_errors": 0,
+  "malformed_tool_calls": 0
+ },
+ "integrity": {
+  "before": {
+   "config.yaml": "sha256:22a20079c84d14c87fb1d09ec3080567f27c59611d7f9208cf11bdc59b6a5e00",
+   "SOUL.md": "sha256:36c1f5a2e92cd1d018311eaf4c8f1e8886672eae78212e033c681d0e3d5d506f",
+   "AGENTS.md": null
+  },
+  "after": {
+   "config.yaml": "sha256:22a20079c84d14c87fb1d09ec3080567f27c59611d7f9208cf11bdc59b6a5e00",
+   "SOUL.md": "sha256:36c1f5a2e92cd1d018311eaf4c8f1e8886672eae78212e033c681d0e3d5d506f",
+   "AGENTS.md": null
+  }
+ },
+ "timing": {
+  "started_at": "2026-11-04T08:34:25.350636Z",
+  "ended_at": "2026-11-04T08:34:31.229007Z",
+  "wall_s": 5.878
+ },
+ "artifacts": [
+  "artifacts/hermes-config.yaml",
+  "artifacts/hermes-logs",
+  "artifacts/hermes-messages.json",
+  "artifacts/hermes-sessions/request_dump_20261104_140429_111ee9_20261104_140431_174413.json",
+  "artifacts/hermes-system-prompt.txt"
+ ]
+}

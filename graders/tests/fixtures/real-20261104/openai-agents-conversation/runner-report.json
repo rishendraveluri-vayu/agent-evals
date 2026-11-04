@@ -1,0 +1,203 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-openai-agents-smoke-a6ff58",
+ "attempt": 1,
+ "harness": "openai-agents",
+ "label": "agent",
+ "end_state": "answered",
+ "adapter": {
+  "exit_code": 0,
+  "signal": null,
+  "result_valid": true,
+  "result_errors": [],
+  "trace_valid": true,
+  "trace_errors": [],
+  "leftover_processes": 0
+ },
+ "proxy_usage": {
+  "complete": true,
+  "model_calls": 10,
+  "failed_calls": 0,
+  "input_tokens": 81823,
+  "output_tokens": 9426,
+  "cost_usd": 0.0128953,
+  "last_status": "200"
+ },
+ "logs": {
+  "stdout": {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "truncated": false
+  },
+  "stderr": {
+   "path": "stderr.log",
+   "bytes": 200,
+   "sha256": "1b70df19e13b1eb9b5b3d4d31d5e7cea0aa7e5da1cdd9e8c549db2444922bada",
+   "truncated": false
+  }
+ },
+ "files": [
+  {
+   "path": "artifacts/proxy/0001.request.json",
+   "bytes": 16499,
+   "sha256": "00f26dffbb8d1144ddb7394e2528cec853207ef664a12d9356a34ae49adae5c7"
+  },
+  {
+   "path": "artifacts/proxy/0001.response.json",
+   "bytes": 3919,
+   "sha256": "7a1d5fe3eba6c62ba28810b75aff46e07ff7d9c6019ff717ab57ef48509140c6"
+  },
+  {
+   "path": "artifacts/proxy/0002.request.json",
+   "bytes": 17606,
+   "sha256": "1530b63162262f4cb3ab8108188c3159084c137068f8f3cb2bddc7bb35ccc744"
+  },
+  {
+   "path": "artifacts/proxy/0002.response.json",
+   "bytes": 3598,
+   "sha256": "e3cf43c88b91e06ad8459e276f2e4a6712d8fe51bf5b1ae5813e271f9e415206"
+  },
+  {
+   "path": "artifacts/proxy/0003.request.json",
+   "bytes": 19091,
+   "sha256": "0464920b0c56c8827c255584b100258f17cdee79c65a9499ef8180492e7eac24"
+  },
+  {
+   "path": "artifacts/proxy/0003.response.json",
+   "bytes": 3931,
+   "sha256": "343aa5e17ee122c1239d0b6c94f477383abdb4048ae9a8c3218e02df0a9df64a"
+  },
+  {
+   "path": "artifacts/proxy/0004.request.json",
+   "bytes": 22961,
+   "sha256": "014fd802e4de181722645aa6fa70d02048803913648adcca3a38cc0ec9e0ab87"
+  },
+  {
+   "path": "artifacts/proxy/0004.response.json",
+   "bytes": 5867,
+   "sha256": "ded098ec6a01fd6565ece3396bbb9910dd69709f541a385782c3121d330247ff"
+  },
+  {
+   "path": "artifacts/proxy/0005.request.json",
+   "bytes": 25131,
+   "sha256": "38bb6922db1b0be4dc051e46ff793ea3983c27dff13ac0f778392d6822362d49"
+  },
+  {
+   "path": "artifacts/proxy/0005.response.json",
+   "bytes": 10137,
+   "sha256": "457613299074de6b49cc38ec1d89eb1755409668c617936565be013b70538302"
+  },
+  {
+   "path": "artifacts/proxy/0006.request.json",
+   "bytes": 27111,
+   "sha256": "3980e66218d25ad1c9cdbd58c4f1d9a6197a6a8cd2b556f39544e8b2ab36c63c"
+  },
+  {
+   "path": "artifacts/proxy/0006.response.json",
+   "bytes": 8640,
+   "sha256": "0ef28ba1594dfa840c9846d1b0d91d31ec7fe04ba23cf41263747aa9d02882a9"
+  },
+  {
+   "path": "artifacts/proxy/0007.request.json",
+   "bytes": 29041,
+   "sha256": "c95e10a062772bcf5b8230b21f9178178f3fc1028cd1e8793198344818e86a57"
+  },
+  {
+   "path": "artifacts/proxy/0007.response.json",
+   "bytes": 9886,
+   "sha256": "dd88171a032b52d8db5dba318d20310dd7fe4e0f29dd8a5356fedf95eb559fe1"
+  },
+  {
+   "path": "artifacts/proxy/0008.request.json",
+   "bytes": 31225,
+   "sha256": "12d25fc2195447497564b7f538f437f3586c0cdc3daf10f3a34d8ae482ea7a92"
+  },
+  {
+   "path": "artifacts/proxy/0008.response.json",
+   "bytes": 14609,
+   "sha256": "3a7752f5260ea75bb282014cce594e86e6597e6aeeec5c3eb90f18f416114524"
+  },
+  {
+   "path": "artifacts/proxy/0009.request.json",
+   "bytes": 33272,
+   "sha256": "9d2f96d1d24a7e715bac9da07a63b98775ecc12d912fe149c129fd6fd3ee9ddb"
+  },
+  {
+   "path": "artifacts/proxy/0009.response.json",
+   "bytes": 10716,
+   "sha256": "e5ec9e097705241b1648ce259057e096411f76c6a615e69d15a08e5b590c1ebd"
+  },
+  {
+   "path": "artifacts/proxy/0010.request.json",
+   "bytes": 35127,
+   "sha256": "2ec6a08a1a3289975a7d45b281daa38370ddd7a8f909b9d615f3aab7fa3ba425"
+  },
+  {
+   "path": "artifacts/proxy/0010.response.json",
+   "bytes": 12299,
+   "sha256": "4930b3954d6978ef40af3e4c2d504234d79df0f8165db0c2cbcc1bdc5f856b48"
+  },
+  {
+   "path": "artifacts/proxy/sim-0001.request.json",
+   "bytes": 4648,
+   "sha256": "00a7e6b6953fea0b009080a41771755b9709ac8465e93ec5f620d1430e9b9ab0"
+  },
+  {
+   "path": "artifacts/proxy/sim-0001.response.json",
+   "bytes": 6149,
+   "sha256": "adda36884e3c8d36f2159c1182d424c53dafde9ae89e8ab9cc568fd094753692"
+  },
+  {
+   "path": "artifacts/proxy/sim-0002.request.json",
+   "bytes": 6575,
+   "sha256": "3f9bbbd166bc7864c02add421efd2bf4efa64d0f251272be6e187b93a936134b"
+  },
+  {
+   "path": "artifacts/proxy/sim-0002.response.json",
+   "bytes": 1380,
+   "sha256": "435df02c1613766011703c6927d9eaec8df184ce079604bf54a07fc160e7a1f3"
+  },
+  {
+   "path": "artifacts/proxy/sim-0003.request.json",
+   "bytes": 8218,
+   "sha256": "9500fc656dfbfdf5835f723bbb5c6a342c8b0ac3a9c62c9aa48c8edeb9b5a460"
+  },
+  {
+   "path": "artifacts/proxy/sim-0003.response.json",
+   "bytes": 1594,
+   "sha256": "0534c63ba90e7f271dcfd135f3f10c02e49639f0f8e7290df0eeee631518433c"
+  },
+  {
+   "path": "result.json",
+   "bytes": 13203,
+   "sha256": "a6659e490be029430a7a515858b735e45841c13927e5bf89a490c0232b71a7b8"
+  },
+  {
+   "path": "sim_replies.jsonl",
+   "bytes": 2731,
+   "sha256": "2cbaf83c13884a83540b99d95b43b5ad3de7c2660238261e082c2c7be6fae0d0"
+  },
+  {
+   "path": "stderr.log",
+   "bytes": 200,
+   "sha256": "1b70df19e13b1eb9b5b3d4d31d5e7cea0aa7e5da1cdd9e8c549db2444922bada"
+  },
+  {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "path": "trace.jsonl",
+   "bytes": 39470,
+   "sha256": "561b73f7a79015ff7da7a81c2a4a016b04f3522ef62dff418e0438e3ef2e4944"
+  }
+ ],
+ "timing": {
+  "started_at": "2026-11-04T08:38:28.772647Z",
+  "ended_at": "2026-11-04T08:39:32.091257Z",
+  "wall_s": 63.319,
+  "safety_net_s": 660.0
+ }
+}

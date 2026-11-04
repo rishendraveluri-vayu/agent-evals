@@ -1,0 +1,103 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-langgraph-smoke-905856",
+ "attempt": 1,
+ "harness": "langgraph",
+ "label": "agent",
+ "end_state": "answered",
+ "adapter": {
+  "exit_code": 0,
+  "signal": null,
+  "result_valid": true,
+  "result_errors": [],
+  "trace_valid": true,
+  "trace_errors": [],
+  "leftover_processes": 0
+ },
+ "proxy_usage": {
+  "complete": true,
+  "model_calls": 3,
+  "failed_calls": 0,
+  "input_tokens": 16995,
+  "output_tokens": 1424,
+  "cost_usd": 0.0024115,
+  "last_status": "200"
+ },
+ "logs": {
+  "stdout": {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "truncated": false
+  },
+  "stderr": {
+   "path": "stderr.log",
+   "bytes": 190,
+   "sha256": "d9326d5e0b5aaae3f70e87ccb64f409cca515324227f511df5272e0f6692509d",
+   "truncated": false
+  }
+ },
+ "files": [
+  {
+   "path": "artifacts/langgraph-messages.json",
+   "bytes": 10739,
+   "sha256": "6cfd4caa53a41388236a859dc2d7218fa2d10868abc2d09ab6887008a7eccbb4"
+  },
+  {
+   "path": "artifacts/proxy/0001.request.json",
+   "bytes": 16450,
+   "sha256": "01e742d7fe1215a81031119bd5e6bac2db187550099648ff35532efc789f52ab"
+  },
+  {
+   "path": "artifacts/proxy/0001.response.json",
+   "bytes": 4026,
+   "sha256": "0de38feb05ff307eb7f890f7ad88fe463f339cee630b9ffa3c70b1c0b446ab9e"
+  },
+  {
+   "path": "artifacts/proxy/0002.request.json",
+   "bytes": 18098,
+   "sha256": "7f1064c9f879c59014067c66984fb2ecc4933c0646bc8d9d54f9103f0fdc548f"
+  },
+  {
+   "path": "artifacts/proxy/0002.response.json",
+   "bytes": 4237,
+   "sha256": "247285cfc8f22138e88bac9002806a5cceced857a5b928a0edae18c549be11d5"
+  },
+  {
+   "path": "artifacts/proxy/0003.request.json",
+   "bytes": 20118,
+   "sha256": "af54fd058b9ce5c249da99a135c7cbd9dad849b170168f224d0ba54d8ba4e140"
+  },
+  {
+   "path": "artifacts/proxy/0003.response.json",
+   "bytes": 7923,
+   "sha256": "143444a120013fdad8d888c525151be0767b5fdb7f91303fb82023366fbf8afd"
+  },
+  {
+   "path": "result.json",
+   "bytes": 7751,
+   "sha256": "8571b3305264218df4f412f36f25a699a3959e952081cd005e53b0a4504166e6"
+  },
+  {
+   "path": "stderr.log",
+   "bytes": 190,
+   "sha256": "d9326d5e0b5aaae3f70e87ccb64f409cca515324227f511df5272e0f6692509d"
+  },
+  {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "path": "trace.jsonl",
+   "bytes": 10342,
+   "sha256": "1a0797b45aaed5331e80cba958216bc9f583351e93c91d8bfea019c52df62340"
+  }
+ ],
+ "timing": {
+  "started_at": "2026-11-04T08:34:35.300300Z",
+  "ended_at": "2026-11-04T08:34:52.541227Z",
+  "wall_s": 17.241,
+  "safety_net_s": 390.0
+ }
+}

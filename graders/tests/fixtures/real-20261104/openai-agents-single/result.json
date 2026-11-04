@@ -1,0 +1,129 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-openai-agents-smoke-f47fd9",
+ "end_state": "answered",
+ "end_detail": {
+  "harness_stop_reason": "stop",
+  "exception_type": null,
+  "exception_message": null,
+  "last_message_excerpt": "I'm sorry about your mother's medical costs. Carrying that while also falling behind on a card is a lot. Your ₹20,000 a month can clear all three debts in about 28 months, and the order matters.\n\n**Pay the credit card first.** At 42% a year, it is by far your most expensive debt. Your total balance is ₹4,41,050:\n\n- **Credit card** (₹84,250 at 42%): clears in about month 19\n- **Two-wheeler loan** (₹46,800 at 11%): clears in about month 15 on its regular EMI\n- **Personal loan** (₹3,10,000 at 14.5%): clears in about month 28\n\n**Plan:**\n1. **Keep paying the minimum on all three** (₹18,332.50 a month in total). Then put the remaining ₹1,667.50 a month, plus the two-wheeler EMI once it ends, onto the credit card. The plan assumes this.\n2. **Stop using the credit card** for new spending until it is cleared, so the balance keeps falling.\n3. **Call Kaveri Bank this week** if you are behind on the card. Ask about a hardship arrangement or a revised due date. Missed payments add fees and can hurt your CIBIL score, so it is better to talk to them before the next due date.\n\nOver the full plan you would pay about ₹1,01,341 in interest, with total payments of about ₹5,42,391. Interest is the main cost to cut, so if your mother's bills keep coming, let me know and we can see how much a change in the budget would save."
+ },
+ "final_answer": "I'm sorry about your mother's medical costs. Carrying that while also falling behind on a card is a lot. Your ₹20,000 a month can clear all three debts in about 28 months, and the order matters.\n\n**Pay the credit card first.** At 42% a year, it is by far your most expensive debt. Your total balance is ₹4,41,050:\n\n- **Credit card** (₹84,250 at 42%): clears in about month 19\n- **Two-wheeler loan** (₹46,800 at 11%): clears in about month 15 on its regular EMI\n- **Personal loan** (₹3,10,000 at 14.5%): clears in about month 28\n\n**Plan:**\n1. **Keep paying the minimum on all three** (₹18,332.50 a month in total). Then put the remaining ₹1,667.50 a month, plus the two-wheeler EMI once it ends, onto the credit card. The plan assumes this.\n2. **Stop using the credit card** for new spending until it is cleared, so the balance keeps falling.\n3. **Call Kaveri Bank this week** if you are behind on the card. Ask about a hardship arrangement or a revised due date. Missed payments add fees and can hurt your CIBIL score, so it is better to talk to them before the next due date.\n\nOver the full plan you would pay about ₹1,01,341 in interest, with total payments of about ₹5,42,391. Interest is the main cost to cut, so if your mother's bills keep coming, let me know and we can see how much a change in the budget would save.",
+ "conversation": {
+  "agent_turns": 1,
+  "client_turns": 0,
+  "ended_by": null,
+  "transcript": [
+   {
+    "role": "user",
+    "content": "My mother's medical costs went up this year and I'm falling behind on my credit card. I can put about Rs 20,000 a month towards my debts. What should I pay off first, and how long will it take?",
+    "source": "task"
+   },
+   {
+    "role": "assistant",
+    "content": "I'm sorry about your mother's medical costs. Carrying that while also falling behind on a card is a lot. Your ₹20,000 a month can clear all three debts in about 28 months, and the order matters.\n\n**Pay the credit card first.** At 42% a year, it is by far your most expensive debt. Your total balance is ₹4,41,050:\n\n- **Credit card** (₹84,250 at 42%): clears in about month 19\n- **Two-wheeler loan** (₹46,800 at 11%): clears in about month 15 on its regular EMI\n- **Personal loan** (₹3,10,000 at 14.5%): clears in about month 28\n\n**Plan:**\n1. **Keep paying the minimum on all three** (₹18,332.50 a month in total). Then put the remaining ₹1,667.50 a month, plus the two-wheeler EMI once it ends, onto the credit card. The plan assumes this.\n2. **Stop using the credit card** for new spending until it is cleared, so the balance keeps falling.\n3. **Call Kaveri Bank this week** if you are behind on the card. Ask about a hardship arrangement or a revised due date. Missed payments add fees and can hurt your CIBIL score, so it is better to talk to them before the next due date.\n\nOver the full plan you would pay about ₹1,01,341 in interest, with total payments of about ₹5,42,391. Interest is the main cost to cut, so if your mother's bills keep coming, let me know and we can see how much a change in the budget would save.",
+    "source": "agent"
+   }
+  ]
+ },
+ "harness": {
+  "name": "openai-agents",
+  "version": "0.24.0 (openai 3.35.1, mcp 2.3.0)",
+  "extra": {
+   "tool_names": [
+    "amortization_schedule",
+    "calculate_emi",
+    "debt_payoff_plan",
+    "fd_maturity",
+    "get_client_profile",
+    "inflation_adjusted_value",
+    "list_debts",
+    "list_transactions",
+    "loan_affordability",
+    "prepayment_impact",
+    "sip_future_value"
+   ],
+   "api": "chat_completions",
+   "conversation_carry": "result.to_input_list() plus the new user message"
+  }
+ },
+ "applied_settings": {
+  "temperature": {
+   "value": null,
+   "source": "harness_default"
+  },
+  "max_output_tokens": {
+   "value": 4096,
+   "source": "config"
+  },
+  "max_steps": {
+   "value": 12,
+   "source": "config"
+  },
+  "timeout_s": {
+   "value": 240,
+   "source": "config"
+  },
+  "parallel_tool_calls": {
+   "value": false,
+   "source": "platform_default"
+  },
+  "memory": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "a plain Agent has no memory; SDK sessions are opt-in and not used (earlier turns are carried in process as the input list)"
+  },
+  "skills": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "a plain Agent has no skills; they live in the opt-in SandboxAgent, which is not used"
+  },
+  "compression": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "the SDK never compresses; the full input list is sent on every call"
+  },
+  "top_p": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  },
+  "seed": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  },
+  "tool_choice": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  },
+  "tool_concurrency": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "the SDK runs every tool call of one model turn concurrently"
+  }
+ },
+ "harness_usage": {
+  "model_calls": 3,
+  "input_tokens": 17001,
+  "output_tokens": 1315,
+  "cost_usd": null
+ },
+ "counts": {
+  "model_calls": 3,
+  "tool_calls": 2,
+  "tool_errors": 0,
+  "malformed_tool_calls": 0
+ },
+ "integrity": {
+  "before": {},
+  "after": {}
+ },
+ "timing": {
+  "started_at": "2026-11-04T08:38:11.957234Z",
+  "ended_at": "2026-11-04T08:38:25.115037Z",
+  "wall_s": 13.158
+ },
+ "artifacts": []
+}
