@@ -1,16 +1,26 @@
 import { Injectable } from '@nestjs/common';
-import type { BundleTable, ExperimentBundle, Json, JsonObject } from '../contract';
+import type { BundleTable, ExperimentBundle, GradingJobStatus, GradingOutcome, Json, JsonObject, TrialGradingState, TrialStatus } from '../contract';
 import { BUNDLE_TABLES } from '../contract';
 import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.service';
 import { Db } from '../database/db.service';
-import { ExperimentsService } from './experiments.service';
+import { ExperimentsService, gradingState } from './experiments.service';
+
+/** A trial's outcome as the run grid and the comparison count it (TrialGradingState); null before it is done. */
+const outcomeOf = (r: ExportRow): TrialGradingState => gradingState({ ...r, status: r.status as TrialStatus });
 
 /**
  * Every trial row of an experiment (infra failures, abandoned and cancelled rows included,
- * CLAUDE.md: never dropped silently), joined with its config, task, grades and spend.
+ * CLAUDE.md: never dropped silently), joined with its config, task, grades and spend. A trial's
+ * `outcome` and grades are its current grading's (the latest finished grading job), as the
+ * comparison and the run grid count them; older grade versions stay in the database, in the JSON
+ * export's `grade_history` and in the bundle.
  */
 
 const PAGE = 200;
+
+/** One grade as the export shows it (grades `g`). */
+const GRADE_JSON = `json_build_object('grader_id', g.grader_id, 'grader_version', g.grader_version, 'kind', g.kind, 'required', g.required,
+  'verdict', g.verdict, 'score', g.score, 'evidence', g.evidence, 'judge_model', g.judge_model, 'run_index', g.run_index, 'job_id', g.job_id)`;
 
 interface ExportRow {
   id: string;
@@ -41,15 +51,36 @@ interface ExportRow {
   task_version: string;
   task_split: string;
   task_kind: string;
+  /** The current grading's grades: those of the latest finished grading job only. */
   grades: Json[];
+  /** Every stored grade of the trial, every version (JSON export only). */
+  grade_history: Json[];
+  /** The latest finished grading job (done or no_graders), as the compare and the run grid read it. */
+  graded_status: GradingJobStatus | null;
+  graded_outcome: GradingOutcome | null;
+  grading_job_id: string | null;
+  /** The latest grading job that was not superseded, finished or not. */
+  latest_job_status: GradingJobStatus | null;
+}
+
+/**
+ * The arm a trial ran in, by its config's place in the experiment: A, B. An A/A run (the same
+ * config twice) has its second arm's repeats after the first's (lib/arms.ts armIndexOf in the UI).
+ */
+export function armOf(configHashes: string[], n: number, configHash: string, repeatIndex: number): string {
+  const [a, b] = configHashes;
+  const i = configHashes.length === 2 && a === b ? (repeatIndex >= n ? 1 : 0) : configHashes.indexOf(configHash);
+  return i < 0 ? '' : String.fromCharCode(65 + i);
 }
 
 export const CSV_COLUMNS = [
   'experiment_id',
   'trial_id',
+  'arm',
   'repeat_index',
   'attempt',
   'status',
+  'outcome',
   'label',
   'end_state',
   'task_sha256',
@@ -115,11 +146,20 @@ export class ExportService {
                 t.claimed_at, t.finished_at, t.cost_usd, t.sim_cost_usd, t.input_tokens, t.output_tokens, t.model_calls,
                 t.proxy_complete, t.wall_s, t.folder, t.problems, t.result, t.runner_report, t.config_hash, t.task_sha256,
                 k.id AS task_id, k.version AS task_version, k.split AS task_split, k.kind AS task_kind,
-                coalesce((SELECT json_agg(json_build_object('grader_id', g.grader_id, 'grader_version', g.grader_version,
-                            'kind', g.kind, 'verdict', g.verdict, 'score', g.score, 'evidence', g.evidence,
-                            'judge_model', g.judge_model, 'run_index', g.run_index) ORDER BY g.id)
-                          FROM grades g WHERE g.trial_id = t.id), '[]'::json) AS grades
+                gd.id AS grading_job_id, gd.status AS graded_status, gd.outcome AS graded_outcome, gl.status AS latest_job_status,
+                coalesce((SELECT json_agg(${GRADE_JSON} ORDER BY g.id)
+                          FROM grades g WHERE g.trial_id = t.id AND g.id = ANY (gd.grade_ids)), '[]'::json) AS grades,
+                coalesce((SELECT json_agg(${GRADE_JSON} ORDER BY g.id)
+                          FROM grades g WHERE g.trial_id = t.id), '[]'::json) AS grade_history
          FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256
+         -- The current grading: the latest finished job, as TRIAL_SUMMARY_SELECT and the compare read it.
+         LEFT JOIN LATERAL (
+           SELECT j.id, j.status, j.outcome, j.grade_ids FROM grading_jobs j
+           WHERE j.trial_id = t.id AND j.status IN ('done', 'no_graders') ORDER BY j.created_at DESC, j.id DESC LIMIT 1
+         ) gd ON true
+         LEFT JOIN LATERAL (
+           SELECT j.status FROM grading_jobs j WHERE j.trial_id = t.id AND j.status <> 'superseded' ORDER BY j.created_at DESC, j.id DESC LIMIT 1
+         ) gl ON true
          WHERE t.experiment_id = $1 AND (t.seq, t.attempt) > ($2, $3)
          ORDER BY t.seq, t.attempt LIMIT ${PAGE}`,
         [experimentId, after, afterAttempt],
@@ -150,9 +190,11 @@ export class ExportService {
       const trial = {
         id: r.id,
         experiment_id: r.experiment_id,
+        arm: armOf(experiment.config_hashes, experiment.n, r.config_hash, r.repeat_index),
         repeat_index: r.repeat_index,
         attempt: r.attempt,
         status: r.status,
+        outcome: outcomeOf(r),
         label: r.label,
         end_state: r.end_state,
         task: { sha256: r.task_sha256, id: r.task_id, version: r.task_version, split: r.task_split, kind: r.task_kind },
@@ -169,7 +211,9 @@ export class ExportService {
         worker_id: r.worker_id,
         folder: r.folder,
         problems: r.problems,
+        grading_job_id: r.grading_job_id,
         grades: r.grades,
+        grade_history: r.grade_history,
         result: r.result,
         runner_report: r.runner_report,
       };
@@ -248,9 +292,11 @@ export class ExportService {
       const values: Record<(typeof CSV_COLUMNS)[number], unknown> = {
         experiment_id: r.experiment_id,
         trial_id: r.id,
+        arm: armOf(experiment.config_hashes, experiment.n, r.config_hash, r.repeat_index),
         repeat_index: r.repeat_index,
         attempt: r.attempt,
         status: r.status,
+        outcome: outcomeOf(r),
         label: r.label,
         end_state: r.end_state,
         task_sha256: r.task_sha256,

@@ -499,8 +499,18 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   whose outcome is `pass`, `graded` those with `pass` or `fail`, and `incomplete` those whose
   grading finished with no outcome (a required grader errored, was not applicable or is the
   unapproved judge). Older grade versions and optional graders do not count.
-- `GET /experiments/:id/export?format=json|csv` streams trials joined with configs, tasks,
-  grades and spend.
+- `GET /experiments/:id/export?format=json|csv` streams every trial row (infra failures,
+  abandoned and cancelled rows included) joined with its config, task, grades and spend. Each
+  row has `arm` (`A` or `B` by the config's place in the experiment; in a run of one config twice,
+  the second arm's repeats come after the first's) and `outcome`, the trial's current grading
+  exactly as the run grid (`grading` on `GET /experiments/:id/trials`) and the comparison count
+  it: `pass`, `fail` or `incomplete` from the latest finished grading job (`done` or
+  `no_graders`), `no_graders`, `waiting`, `grading_failed`, or empty for a trial that is not
+  done. Since 5 Nov `grades_passed`, `grades_total` and `grades_json` (CSV) and `grades` (JSON)
+  cover only that current grading's grades, so a regraded trial is not counted twice; the JSON
+  adds `grading_job_id` and `grade_history`, every stored grade version. Older versions also stay
+  in the database and in `GET /experiments/:id/bundle`. Each grade is `{grader_id,
+  grader_version, kind, required, verdict, score, evidence, judge_model, run_index, job_id}`.
 - `GET /experiments/:id/bundle` (SP7) returns every row needed to recreate the experiment in
   another database, read in one read-only snapshot: `{format: "agent-evals-bundle",
   format_version: 1, schema_version, exported_at, experiment_id, tables}` (`ExperimentBundle`).

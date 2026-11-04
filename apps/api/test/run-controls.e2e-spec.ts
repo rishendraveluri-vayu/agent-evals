@@ -465,4 +465,78 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
     const rows = await trials(exp.id);
     expect(rows.filter((t) => t.order_index === rows.find((x) => x.id === first.trial_id)!.order_index).map((t) => t.attempt)).toEqual([1, 2]);
   });
+
+  // ---- the export counts what the comparison counts ----
+
+  it('exports each trial with its arm and its current grading only, so a regrade is never counted twice', async () => {
+    const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 1 });
+    const armOf = new Map<string, string>();
+    for (let i = 0; i < 2; i++) {
+      const c = (await e.claim('w-export'))!;
+      armOf.set(c.trial_id, e.configOf(c) === A ? 'A' : 'B');
+      await e.report(c, 'w-export');
+    }
+    // First grading: A passes and B fails. A regrade with the same graders then flips both, so the
+    // first grader's new answer is a second grade row (run 1) beside the first (grades keep every version).
+    await e.grade('g-export', (id) => (armOf.get(id) === 'A' ? 'pass' : 'fail'));
+    await request(env.http).post(`/api/experiments/${exp.id}/regrade`).send({}).expect(202);
+    await e.grade('g-export', (id) => (armOf.get(id) === 'A' ? 'fail' : 'pass'));
+
+    const csv = (await request(env.http).get(`/api/experiments/${exp.id}/export?format=csv`).expect(200)).text;
+    const [header, ...lines] = parseCsv(csv);
+    const col = (name: string): number => header.indexOf(name);
+    expect(header.slice(0, 7)).toEqual(['experiment_id', 'trial_id', 'arm', 'repeat_index', 'attempt', 'status', 'outcome']);
+    const byArm = Object.fromEntries(lines.map((l) => [l[col('arm')], l]));
+    expect(Object.keys(byArm).sort()).toEqual(['A', 'B']);
+    // The task has two graders, so each trial has two current grades, not three.
+    expect([byArm.A[col('outcome')], byArm.A[col('grades_passed')], byArm.A[col('grades_total')]]).toEqual(['fail', '0', '2']);
+    expect([byArm.B[col('outcome')], byArm.B[col('grades_passed')], byArm.B[col('grades_total')]]).toEqual(['pass', '1', '2']);
+    expect((JSON.parse(byArm.B[col('grades_json')]) as unknown[]).length).toBe(2);
+
+    // The comparison counts the same: B passed once, A not at all.
+    const compare = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as { rows: { arm: string; passed: number; graded: number }[] };
+    expect(compare.rows.map((r) => [r.arm, r.passed, r.graded]).sort()).toEqual([['A', 0, 1], ['B', 1, 1]]);
+
+    // The JSON export too, with every older version kept apart in grade_history.
+    const json = JSON.parse((await request(env.http).get(`/api/experiments/${exp.id}/export?format=json`).expect(200)).text) as {
+      trials: { id: string; arm: string; outcome: string; grading_job_id: string; grades: { verdict: string; job_id: string }[]; grade_history: unknown[] }[];
+    };
+    for (const t of json.trials) {
+      expect(t.arm).toBe(armOf.get(t.id));
+      expect(t.outcome).toBe(t.arm === 'A' ? 'fail' : 'pass');
+      expect(t.grades).toHaveLength(2);
+      expect(t.grade_history).toHaveLength(3);
+      const [latest] = (await env.pool.query<{ id: string }>(`SELECT id FROM grading_jobs WHERE trial_id = $1 AND status = 'done' ORDER BY created_at DESC, id DESC LIMIT 1`, [t.id])).rows;
+      expect(t.grading_job_id).toBe(latest.id);
+    }
+  });
 });
+
+/** A small RFC 4180 reader for the export: quoted cells may hold commas, quotes and newlines. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (ch === '\n') {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else cell += ch;
+  }
+  if (cell || row.length) rows.push([...row, cell]);
+  return rows;
+}

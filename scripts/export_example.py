@@ -375,8 +375,11 @@ def assemble(api: Api, exp_id: str, repo: Path) -> dict[str, list]:
     d = api.json(f"/experiments/{q}")
     summaries = api.json(f"/experiments/{q}/trials")
     views = {s["id"]: api.json(f"/trials/{s['id']}") for s in summaries}
+    # Since 5 Nov the export's `grades` are the current grading's only and `grade_history` holds
+    # every version; an older API has `grades` alone, holding every version.
     every_grade = {
-        t["id"]: t["grades"] for t in api.json(f"/experiments/{q}/export?format=json")["trials"]
+        t["id"]: t.get("grade_history", t["grades"])
+        for t in api.json(f"/experiments/{q}/export?format=json")["trials"]
     }
     events = d["events"]
 
