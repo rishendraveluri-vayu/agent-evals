@@ -39,6 +39,8 @@ COPY --from=prod-deps /repo/node_modules ./node_modules
 COPY --from=prod-deps /repo/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build /repo/apps/api/dist ./apps/api/dist
 COPY apps/api/package.json ./apps/api/package.json
+# Plain SQL, applied in order at startup (src/database/migrate.ts reads ../../migrations).
+COPY apps/api/migrations ./apps/api/migrations
 WORKDIR /repo/apps/api
 USER node
 EXPOSE 3000
