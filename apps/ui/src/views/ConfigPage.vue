@@ -7,7 +7,7 @@
 import { computed, ref, shallowRef } from 'vue';
 import { api } from '../api/client';
 import { errorWithFix } from '../api/errors';
-import { SETTING_NAMES, type ConfigDiffEntry, type ConfigView, type Harness, type SettingName, type SpendView } from '../api/types';
+import { SETTING_NAMES, type ConfigDiffEntry, type ConfigView, type Harness, type RenderedPromptStatus, type SettingName, type SpendView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import ConflictCheck from '../components/ConflictCheck.vue';
 import LoadState from '../components/LoadState.vue';
@@ -71,7 +71,8 @@ async function toggleDiff() {
   }
 }
 
-const renderedReady = ref(false);
+/** Where the rendered prompt stands, as its panel read it: the conflict check waits for it. */
+const renderedStatus = ref<RenderedPromptStatus | 'unknown' | null>(null);
 const allowance = computed(() => data.value?.spend?.allowances.find((a) => a.kind === 'conflict_check') ?? null);
 /** After a paid check, the header's spend and this allowance are out of date: read them again. */
 async function refreshSpend() {
@@ -360,12 +361,12 @@ async function refreshSpend() {
           :config-hash="data.config.hash"
           :harness="data.config.harness"
           :prompt-name="`${data.config.prompt.id} ${data.config.prompt.version}`"
-          @ready="renderedReady = true"
+          @status="renderedStatus = $event"
         />
         <ConflictCheck
           :config-hash="data.config.hash"
           :harness="data.config.harness"
-          :rendered-ready="renderedReady"
+          :rendered-status="renderedStatus"
           :allowance="allowance"
           @spent="refreshSpend"
         />

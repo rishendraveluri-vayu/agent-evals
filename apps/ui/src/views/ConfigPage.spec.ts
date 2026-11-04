@@ -74,6 +74,14 @@ describe('ConfigPage: the rendered prompt (D33)', () => {
     expect(w.get('[data-test="check-skipped"]').text()).toContain('no call was made and it cost nothing');
   });
 
+  it('asks for no stored conflict check while the prompt is not rendered: the API could only refuse', async () => {
+    const stored = vi.spyOn(api, 'conflictCheck');
+    const w = mount(ConfigPage, { props: { configHash: v2.hash } });
+    await settle();
+    expect(w.find('[data-test="needs-render"]').exists()).toBe(true);
+    expect(stored).not.toHaveBeenCalled();
+  });
+
   it('renders a prompt not rendered yet with a free probe, and the conflict check waits for it', async () => {
     const render = vi.spyOn(api, 'renderPrompt').mockResolvedValue({ config_hash: v2.hash, status: 'queued', probe: { trial_id: 't_probe_new', status: 'queued', label: null, model: 'fake/finance-emi' }, cached: false, error: null, rendered: null });
     const w = mount(ConfigPage, { props: { configHash: v2.hash } });
@@ -130,6 +138,25 @@ describe('ConfigPage: the conflict check (D38)', () => {
     expect(panel.get('[data-test="check-cost"]').text()).toContain('This check cost $0.02 when it ran.');
     expect(spend).toHaveBeenCalledTimes(1);
     window.removeEventListener('evals:spend-changed', spend);
+  });
+
+  it('explains a check that failed for want of a key in plain words, with the raw error behind Details', async () => {
+    const raw =
+      'LiteLLM answered 401: {"error":{"message":"litellm.AuthenticationError: AnthropicException - x-api-key header is required"}} (recorded as system spend ss_1, $0)';
+    vi.spyOn(api, 'runConflictCheck').mockRejectedValue(new ApiError(502, 'checker_call_failed', raw));
+    const w = mount(ConfigPage, { props: { configHash: gemini.hash } });
+    await settle();
+    await w.get('[data-test="run-check"]').trigger('click');
+    await w.get('[data-test="confirm-run-check"]').trigger('click');
+    await settle();
+    expect(w.get('[data-test="check-error"]').text()).toBe(
+      'The prompt check needs an Anthropic key: add ANTHROPIC_API_KEY to .env and restart the stack (docker compose up -d). No check was stored.',
+    );
+    expect(w.get('[data-test="check-error-details"] pre').text()).toBe(raw);
+    // The panel says what happened: tried and failed, not "not checked yet".
+    expect(w.get('[data-test="check-state"]').text()).toBe('No check is stored for this config: the last try did not finish.');
+    expect(w.get('[data-test="run-check"]').text()).toBe('Try the check again…');
+    expect(w.find('[data-test="confirm-check"]').exists()).toBe(false);
   });
 
   it('shows a refused check with the API fix, such as an exhausted allowance', async () => {

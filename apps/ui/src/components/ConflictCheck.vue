@@ -8,37 +8,66 @@
 import { computed, ref, watch } from 'vue';
 import { api } from '../api/client';
 import { ApiError, errorText, errorWithFix } from '../api/errors';
-import type { AllowanceView, ConflictCheckView, ConflictSeverity } from '../api/types';
-import { money, plural, relative, shortHash, wholeMoney } from '../lib/format';
+import type { AllowanceView, ConflictCheckView, ConflictSeverity, RenderedPromptStatus } from '../api/types';
+import { money, plainText, plural, relative, shortHash, wholeMoney } from '../lib/format';
 import { harnessShort, modelName } from '../lib/names';
 import AllowanceMeter from './AllowanceMeter.vue';
 import AppIcon from './AppIcon.vue';
 
-const props = defineProps<{ configHash: string; harness: string; renderedReady: boolean; allowance: AllowanceView | null }>();
+/** `renderedStatus` is where the config's rendered prompt stands, as the Rendered prompt panel read
+ *  it: null while it is loading, `unknown` when it could not be read. The stored check is asked for
+ *  only once the rendered prompt is ready, since the check reads it: before that the API can only
+ *  answer 409, which would be noise on every visit. */
+const props = defineProps<{ configHash: string; harness: string; renderedStatus: RenderedPromptStatus | 'unknown' | null; allowance: AllowanceView | null }>();
 const emit = defineEmits<{ spent: [] }>();
 
 type State = { kind: 'loading' } | { kind: 'none' } | { kind: 'needs-render' } | { kind: 'error'; text: string } | { kind: 'ready'; check: ConflictCheckView };
 const state = ref<State>({ kind: 'loading' });
 const confirming = ref(false);
 const busy = ref(false);
-const runError = ref<string | null>(null);
+/** A run that did not give a check: what to do, in plain words, and the API's own message behind Details. */
+const runError = ref<{ text: string; raw: string | null } | null>(null);
+const renderedReady = computed(() => props.renderedStatus === 'ready');
 
+let loaded = false;
 async function load() {
+  loaded = true;
   try {
     state.value = { kind: 'ready', check: await api.conflictCheck(props.configHash) };
   } catch (err) {
     if (err instanceof ApiError && err.code === 'no_conflict_check') state.value = { kind: 'none' };
     else if (err instanceof ApiError && err.code === 'rendered_prompt_required') state.value = { kind: 'needs-render' };
-    else state.value = { kind: 'error', text: errorWithFix(err) };
+    else state.value = { kind: 'error', text: plainText(errorWithFix(err)) };
   }
 }
-void load();
 watch(
-  () => props.renderedReady,
-  (ready) => {
-    if (ready && state.value.kind === 'needs-render') void load();
+  () => props.renderedStatus,
+  (status) => {
+    if (status === null || loaded) return;
+    // Ready: read the stored check. Not rendered (yet): no check can exist, so ask nothing.
+    // Unknown: the rendered prompt could not be read, so ask, and say what the API answers.
+    if (status === 'ready' || status === 'unknown') void load();
+    else state.value = { kind: 'needs-render' };
   },
+  { immediate: true },
 );
+
+/** LiteLLM refusing the checker for want of a provider key (401, x-api-key, an authentication error). */
+const NO_KEY = /\b401\b|x-api-key|api[_ -]?key|authenticat/i;
+
+/** A failed run in words. The API's raw message stays behind Details. */
+function failureOf(err: unknown): { text: string; raw: string | null } {
+  if (err instanceof ApiError && err.code === 'checker_call_failed' && NO_KEY.test(err.message)) {
+    return { text: 'The prompt check needs an Anthropic key: add ANTHROPIC_API_KEY to .env and restart the stack (docker compose up -d). No check was stored.', raw: err.message };
+  }
+  if (err instanceof ApiError && err.code === 'checker_call_failed') {
+    return { text: `The call to ${modelName('claude-sonnet-5-5')} did not go through, so no check was stored. Try again later.`, raw: err.message };
+  }
+  if (err instanceof ApiError && err.code === 'checker_output_invalid') {
+    return { text: "The checker answered, but its reply could not be read, so no check was stored. The call was made and is counted in the platform's spend.", raw: err.message };
+  }
+  return { text: plainText(err instanceof ApiError ? errorWithFix(err) : errorText(err)), raw: null };
+}
 
 /** Only a person's click on the confirm button gets here. */
 async function run() {
@@ -50,7 +79,8 @@ async function run() {
     confirming.value = false;
     if (!check.cached) emit('spent');
   } catch (err) {
-    runError.value = err instanceof ApiError ? errorWithFix(err) : errorText(err);
+    runError.value = failureOf(err);
+    confirming.value = false;
     if (err instanceof ApiError && (err.code === 'checker_output_invalid' || err.code === 'checker_call_failed')) emit('spent');
   } finally {
     busy.value = false;
@@ -115,8 +145,11 @@ const who = computed(() => harnessShort(props.harness));
     </p>
 
     <template v-else-if="state.kind === 'none'">
-      <p class="small">
-        This config has not been checked yet.
+      <p
+        class="small"
+        data-test="check-state"
+      >
+        {{ runError ? 'No check is stored for this config: the last try did not finish.' : 'This config has not been checked yet.' }}
       </p>
       <div
         v-if="!confirming"
@@ -129,7 +162,7 @@ const who = computed(() => harnessShort(props.harness));
           data-test="run-check"
           @click="confirming = true"
         >
-          Check for conflicts…
+          {{ runError ? 'Try the check again…' : 'Check for conflicts…' }}
         </button>
         <span class="secondary smaller">A real, paid model call</span>
       </div>
@@ -255,14 +288,26 @@ const who = computed(() => harnessShort(props.harness));
       </p>
     </template>
 
-    <p
+    <div
       v-if="runError"
-      class="error small"
+      class="run-error"
       role="alert"
-      data-test="check-error"
     >
-      {{ runError }}
-    </p>
+      <p
+        class="error small"
+        data-test="check-error"
+      >
+        {{ runError.text }}
+      </p>
+      <details
+        v-if="runError.raw"
+        class="details small"
+        data-test="check-error-details"
+      >
+        <summary>Details</summary>
+        <pre class="code-block">{{ runError.raw }}</pre>
+      </details>
+    </div>
 
     <div
       v-if="allowanceNow"
@@ -374,5 +419,17 @@ const who = computed(() => harnessShort(props.harness));
 
 .error {
   color: var(--error);
+}
+
+.run-error {
+  margin: 8px 0;
+}
+
+.details > summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-2);
 }
 </style>

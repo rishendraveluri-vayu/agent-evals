@@ -16,7 +16,9 @@ import { bareToolName } from '../api/client';
 import AppIcon from './AppIcon.vue';
 
 const props = defineProps<{ configHash: string; harness: string; promptName: string }>();
-const emit = defineEmits<{ ready: [view: RenderedPromptView] }>();
+/** `status` says where the rendered prompt stands each time that changes, and `unknown` when it
+ *  could not be read, so the conflict check can wait for it without asking the API itself. */
+const emit = defineEmits<{ ready: [view: RenderedPromptView]; status: [status: RenderedPromptView['status'] | 'unknown'] }>();
 
 const view = ref<RenderedPromptView | null>(null);
 const loadError = ref<string | null>(null);
@@ -33,6 +35,7 @@ async function load() {
     loadError.value = null;
   } catch (err) {
     loadError.value = errorWithFix(err);
+    if (!view.value) emit('status', 'unknown');
   }
   schedule();
 }
@@ -58,6 +61,7 @@ async function render() {
 }
 
 watch(view, (v) => {
+  if (v) emit('status', v.status);
   if (v?.status === 'ready') emit('ready', v);
 });
 void load();
