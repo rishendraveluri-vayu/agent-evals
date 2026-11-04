@@ -1402,10 +1402,25 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
   border-spacing: 0;
 }
 
+/* Fixed columns, so the table never widens its column: a word breaks only when it is longer than
+   its column (a long value or source), never a short one such as Temperature. */
+.applied-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
 .applied-table th,
 .applied-table td {
   padding: 8px 14px;
   overflow-wrap: anywhere;
+}
+
+.applied-table th {
+  width: 38%;
+}
+
+.applied-table td.num {
+  width: 22%;
 }
 
 .setting-note {

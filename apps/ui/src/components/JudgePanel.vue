@@ -409,7 +409,7 @@ async function revoke() {
 .facts {
   margin: 0 0 12px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
   gap: 10px 20px;
 }
 
@@ -433,12 +433,13 @@ async function revoke() {
 
 .approve {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
 .fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
   gap: 12px 20px;
   max-width: 640px;
 }
@@ -447,6 +448,7 @@ async function revoke() {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 .budget {

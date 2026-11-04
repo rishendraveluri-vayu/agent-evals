@@ -4,7 +4,9 @@ Starts the Vite dev server in fixture mode (VITE_FIXTURES=1: sample data, no API
 calls) on a free port, opens each screen in headless Chromium at 390, 768, 1280 and 1440 px, and
 checks that the page is no wider than the window: `document.documentElement.scrollWidth` at most
 its `clientWidth`. Each screen is measured as it loads and again with every disclosure opened.
-Two extra cases type a very long, unbroken name into the Config screen and the guided builder,
+STATES adds screens in a state a click opens (the judge's approval form, settings refused by
+their fields, the prompt editor). Two extra cases type a very long, unbroken name into the Config
+screen and the guided builder,
 save it (sample mode keeps it in memory only) and measure the saved config's page. When a page
 is too wide, the elements that stick out are listed. Stops exactly the dev server it started.
 
@@ -53,6 +55,15 @@ SCREENS = {
     "harnesses": "#/harnesses",
 }
 OPTIONAL = {"run": "#/run", "run-progress": "#/experiments/exp_harness/run"}
+
+# Screens in a state a click or a typed value opens: name -> (route, steps). A step is
+# ("click", selector), ("fill", selector, value) or ("select", selector, value).
+STATES = {
+    "judge-form": ("#/experiments/exp_heldout?panel=judge", [("click", '[data-test="judge-approve-open"]'), ("select", '[data-test="judge-model-select"]', "claude-haiku-5-5"), ("fill", '[data-test="judge-budget-input"]', "25")]),
+    "config-problems": ("#/configs", [("fill", "#setting-max_steps", "1000000"), ("fill", "#setting-timeout_s", "soon"), ("fill", '[data-test="config-name"]', "")]),
+    "build-problems": ("#/build", [("fill", "#build-max_steps", "2.5"), ("fill", "#build-timeout_s", "86400000")]),
+    "prompt-editor": ("#/configs", [("click", '[data-test="new-prompt"]')]),
+}
 
 LONG_NAME = "N" * 400
 
@@ -158,15 +169,15 @@ def save_long_name(page: Page, base: str, where: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--widths", type=int, nargs="+", default=WIDTHS)
-    parser.add_argument("--screens", nargs="+", default=[*SCREENS, "long-name-config", "long-name-build"])
+    parser.add_argument("--screens", nargs="+", default=[*SCREENS, *STATES, "long-name-config", "long-name-build"])
     parser.add_argument("--shots", type=Path, help="save a full-page screenshot of each page here")
     parser.add_argument("--json", type=Path, help="write every measurement here")
     args = parser.parse_args()
 
     routes = {**SCREENS, **OPTIONAL}
-    unknown = [s for s in args.screens if s not in routes and not s.startswith("long-name-")]
+    unknown = [s for s in args.screens if s not in routes and s not in STATES and not s.startswith("long-name-")]
     if unknown:
-        raise SystemExit(f"unknown screens: {', '.join(unknown)}; known: {', '.join([*routes, 'long-name-config', 'long-name-build'])}")
+        raise SystemExit(f"unknown screens: {', '.join(unknown)}; known: {', '.join([*routes, *STATES, 'long-name-config', 'long-name-build'])}")
     if args.shots:
         args.shots.mkdir(parents=True, exist_ok=True)
 
@@ -194,6 +205,18 @@ def main() -> int:
                         # The saved config lives in this page's memory only: change the hash, never reload.
                         link = page.get_attribute('[data-test="open-saved"]' if name.endswith("config") else '[data-test="next-preview"]', "href")
                         page.evaluate("(h) => { window.location.hash = h; }", link)
+                    elif name in STATES:
+                        route, steps = STATES[name]
+                        page.goto(base + route)
+                        settle(page)
+                        for action, selector, *value in steps:
+                            if action == "click":
+                                page.click(selector)
+                            elif action == "fill":
+                                page.fill(selector, value[0])
+                            else:
+                                page.select_option(selector, value[0])
+                        page.wait_for_timeout(250)
                     else:
                         page.goto(base + routes[name])
                     settle(page)
