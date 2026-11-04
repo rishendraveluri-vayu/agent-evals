@@ -193,6 +193,12 @@ export interface EstimateRequest {
   task_sha256s: Sha256[];
   n: number;
   sim_model?: string | null;
+  /** Optional; defaults to the highest version of the `client-sim` prompt. */
+  sim_prompt_sha256?: Sha256 | null;
+  /** D34: the experiment this one follows from. */
+  parent_experiment_id?: string | null;
+  /** D34: reuse the parent's arm-A trials when nothing that matters differs (see BaselineDecision). */
+  reuse_baseline?: boolean | null;
 }
 
 export interface CostRange {
@@ -268,6 +274,15 @@ export interface CreateExperimentRequest {
   order_seed?: number | null;
   /** D32: left out (or null) for `{enabled: true, after: 3, min_passed: 1}`; `{enabled: false}` turns it off. */
   futility?: Partial<FutilityRule> | null;
+  /** D34: the experiment this one follows from. */
+  parent_experiment_id?: string | null;
+  /** D34: reuse the parent's arm-A trials as arm A when nothing that matters differs. */
+  reuse_baseline?: boolean | null;
+}
+
+/** POST /experiments/estimate: the estimate of what would run, and the baseline decision (D34). */
+export interface EstimateResponse extends Estimate {
+  baseline: BaselineDecision | null;
 }
 
 export const TRIAL_STATUSES = [
@@ -366,8 +381,22 @@ export interface ArmView {
   paused_reason: string | null;
   /** How to fix what paused the arm (D37), for the UI to show next to the reason. */
   fix: string | null;
-  /** Trial rows of this arm in this experiment, by status (`running` includes claimed). */
+  /**
+   * Trial rows of this arm, by status (`running` includes claimed): this experiment's, or for an
+   * arm reused from the parent (D34), the parent's trials it took.
+   */
   counts: { queued: number; running: number; done: number; infra_failed: number; abandoned: number; cancelled: number };
+  /** D34: the parent experiment whose finished trials this arm reuses, or null if it runs its own. */
+  reused_from: string | null;
+  reused_trials: number;
+}
+
+/** D34: whether arm A reuses the parent's trials, and why; null when reuse was not asked for. */
+export interface BaselineDecision {
+  applied: boolean;
+  /** "arm A reuses 6 finished trials of e_... " or "arm A runs again: the platform commit differs (...)". */
+  reason: string;
+  reused_trials: number;
 }
 
 /** GET /experiments/:id (and the POST /experiments response). */
@@ -381,6 +410,9 @@ export interface ExperimentDetail extends ExperimentSummary {
   order_seed: number | null;
   /** D32: the futility rule as resolved at creation; null for experiments made before it (no check). */
   futility: FutilityRule | null;
+  /** D34: the parent experiment, or null. */
+  parent_experiment_id: string | null;
+  baseline: BaselineDecision | null;
   budgets: { trial_usd: number; sim_usd: number };
   started_at: string | null;
   finished_at: string | null;

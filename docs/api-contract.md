@@ -124,13 +124,28 @@ simulated-client task the API also summarises that file (profile and debts) into
   there are any, otherwise the assumptions in `docs/cost.md` (64k input, 2.4k output per
   trial). Prices come from LiteLLM. No power estimate yet; SP6 adds `min_detectable_effect`.
 - `POST /experiments` with `{name, axis, config_hashes, task_sha256s, n, sim_model,
-  budget_usd, plan_commit, sim_prompt_sha256}` creates the experiment and all its trial rows
+  budget_usd, plan_commit, sim_prompt_sha256, order_seed, futility, parent_experiment_id,
+  reuse_baseline}` creates the experiment and all its trial rows
   (`queued`), records the platform commit (`EVALS_PLATFORM_COMMIT`), and sets a LiteLLM budget
   for the whole experiment. It returns the experiment. Nothing runs until it is started. The
   simulator prompt defaults to the highest version of `client-sim` (v2 since D27). The simulator
   runs at D22's temperature 0, except on a model that refuses temperature (Haiku 5.5), where its
   temperature is `null` and not sent (D27); the token cap is 300. `sim` in the experiment shows
   all three.
+- **Lineage and baseline reuse (D34).** `parent_experiment_id` (optional) names the experiment
+  this one follows from (400 `unknown_parent_experiment` if there is none). With
+  `reuse_baseline: true` (which needs a parent and two arms), arm A takes the parent's finished
+  arm-A trials instead of running again, only when all of these hold: the parent's arm-A config
+  hash is this arm A; the task hashes are the same set; both ran under the same, known platform
+  commit; the simulator model and prompt are the same; and the parent has at least N `done`
+  arm-A trials for every task (its own, or ones it reused itself). Then the first N per task (by
+  repeat, then attempt) are recorded on arm A, nothing is copied, only arm B is queued, and the
+  estimate and budget check cover arm B alone. Otherwise arm A is queued as usual. Either way a
+  `baseline` event and `baseline: {applied, reason, reused_trials}` in the detail say which
+  applied and why ("arm A runs again: the platform commit differs (parent old0000, now
+  abc1234)"). A reused arm shows `status: complete`, `reused_from` and `reused_trials`, its
+  counts are the reused trials, and compare's arm-A rows are those trials. The estimate endpoint
+  takes the same two fields and returns `baseline` too.
 - **Arms (D35).** `config_hashes` holds one config (a pilot) or two: arm A, then arm B. More is a
   400 `too_many_arms` (on the estimate too), with the fix "Run several A/B experiments against
   the same parent".

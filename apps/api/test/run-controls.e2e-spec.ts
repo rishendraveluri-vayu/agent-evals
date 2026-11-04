@@ -274,6 +274,73 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
     expect((await e.detail(exp.id)).status).toBe('running'); // acknowledged: it does not fire again
   });
 
+  // ---- D34: lineage and baseline reuse ----
+
+  it("reuses the parent's arm-A trials when everything matches, and runs only arm B (D34)", async () => {
+    const task = [cat.tasks['emi-basic']];
+    const parent = await e.experiment({ config_hashes: [A], task_sha256s: task, n: 2 });
+    await drain('w-base', () => ({}));
+    expect((await e.detail(parent.id)).status).toBe('done');
+    const parentTrials = (await trials(parent.id)).map((t) => t.id).sort();
+
+    const body = { config_hashes: [A, B], task_sha256s: task, n: 2, parent_experiment_id: parent.id, reuse_baseline: true };
+    const est = (await request(env.http).post('/api/experiments/estimate').send(body).expect(200)).body as { trials: number; baseline: { applied: boolean } };
+    expect(est).toMatchObject({ trials: 2, baseline: { applied: true, reused_trials: 2 } });
+
+    const child = await e.experiment(body);
+    expect(child).toMatchObject({ parent_experiment_id: parent.id, baseline: { applied: true, reused_trials: 2 }, estimate: { trials: 2 } });
+    expect(child.baseline!.reason).toBe(`arm A reuses 2 finished trials of ${parent.id} (N=2 for each of 1 tasks): same config, tasks, platform commit abc1234 and simulator`);
+    expect(child.arms[0]).toMatchObject({ arm: 'A', status: 'complete', reused_from: parent.id, reused_trials: 2, counts: { done: 2, queued: 0 } });
+    expect(child.arms[1]).toMatchObject({ arm: 'B', status: 'not_started', reused_from: null, counts: { queued: 2 } }); // the POST response, before the start
+    expect(child.events.find((x) => x.kind === 'baseline')).toMatchObject({ arm: 'A', config_hash: A, detail: child.baseline!.reason });
+    expect((await trials(child.id)).map((t) => t.config_hash)).toEqual([B, B]); // arm A is not queued again
+
+    await drain('w-base', () => ({}));
+    const cmp = (await request(env.http).get(`/api/experiments/${child.id}/compare`).expect(200)).body as { status: string; rows: { arm: string; trials: number }[] };
+    expect(cmp.status).toBe('complete');
+    expect(cmp.rows.map((r) => [r.arm, r.trials])).toEqual([
+      ['A', 2],
+      ['B', 2],
+    ]);
+    // The reused trials stay the parent's: nothing is copied or changed.
+    expect((await env.pool.query('SELECT reused_trial_ids FROM experiment_arms WHERE experiment_id = $1 AND arm = $2', [child.id, 'A'])).rows[0]).toEqual({
+      reused_trial_ids: expect.arrayContaining(parentTrials) as string[],
+    });
+    expect((await env.pool.query('SELECT count(*)::int AS n FROM trials WHERE experiment_id = $1', [parent.id])).rows[0]).toEqual({ n: 2 });
+  });
+
+  it('refuses the reuse and queues arm A again when the platform commit differs, saying why (D34)', async () => {
+    const task = [cat.tasks['emi-basic']];
+    const parent = await e.experiment({ config_hashes: [A], task_sha256s: task, n: 2 });
+    await drain('w-base2', () => ({}));
+    // The parent as if it had run under an older build of the platform.
+    await env.pool.query("UPDATE experiments SET platform_commit = 'old0000' WHERE id = $1", [parent.id]);
+    const child = await e.experiment({ config_hashes: [A, B], task_sha256s: task, n: 2, parent_experiment_id: parent.id, reuse_baseline: true });
+    expect(child.baseline).toEqual({ applied: false, reused_trials: 0, reason: 'arm A runs again: the platform commit differs (parent old0000, now abc1234)' });
+    expect(child.events.find((x) => x.kind === 'baseline')?.detail).toBe(child.baseline!.reason);
+    expect(child.arms.map((a) => [a.arm, a.status, a.reused_from])).toEqual([
+      ['A', 'not_started', null],
+      ['B', 'not_started', null],
+    ]);
+    expect((await trials(child.id)).map((t) => t.config_hash).sort()).toEqual([A, A, B, B].sort());
+
+    // More trials than the parent has finished: also run again.
+    await env.pool.query("UPDATE experiments SET platform_commit = 'abc1234' WHERE id = $1", [parent.id]);
+    const more = await e.experiment({ config_hashes: [A, B], task_sha256s: task, n: 3, parent_experiment_id: parent.id, reuse_baseline: true }, { start: false });
+    expect(more.baseline?.reason).toContain('the parent has fewer than N=3 finished arm-A trials for 1 of 1 tasks (as few as 2)');
+  });
+
+  it('records a parent without reuse, and refuses reuse it cannot do', async () => {
+    const task = [cat.tasks['emi-basic']];
+    const parent = await e.experiment({ config_hashes: [A], task_sha256s: task }, { start: false });
+    const child = await e.experiment({ config_hashes: [A, B], task_sha256s: task, parent_experiment_id: parent.id }, { start: false });
+    expect(child).toMatchObject({ parent_experiment_id: parent.id, baseline: null });
+    const post = (b: Record<string, unknown>) => request(env.http).post('/api/experiments').send({ name: 'x', axis: 'x', task_sha256s: task, n: 1, budget_usd: 5, ...b }).expect(400);
+    expect((await post({ config_hashes: [A, B], reuse_baseline: true })).body).toMatchObject({ error: 'invalid_experiment', fix: expect.any(String) as string });
+    expect((await post({ config_hashes: [A], reuse_baseline: true, parent_experiment_id: parent.id })).body).toMatchObject({ message: expect.stringContaining('two arms') as string });
+    expect((await post({ config_hashes: [A, B], parent_experiment_id: 'e_nope' })).body).toMatchObject({ error: 'unknown_parent_experiment' });
+  });
+
   it('keeps a re-queued attempt in its slot’s place, so it is claimed next', async () => {
     const exp: ExperimentDetail = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 3, order_seed: 7 });
     const first = (await e.claim('w-rq'))!;

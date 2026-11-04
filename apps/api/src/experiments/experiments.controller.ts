@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 import type {
   CompareResponse,
   CreateExperimentRequest,
-  Estimate,
+  EstimateResponse,
   EstimateRequest,
   ExperimentDetail,
   ExperimentSummary,
@@ -23,7 +23,7 @@ export class ExperimentsController {
   /** Trials, cost and time for a planned run, before anything is created (R10.6). */
   @Post('estimate')
   @HttpCode(200)
-  estimate(@Body() body: EstimateRequest): Promise<Estimate> {
+  estimate(@Body() body: EstimateRequest): Promise<EstimateResponse> {
     return this.experiments.estimate(body);
   }
 

@@ -5,6 +5,7 @@ import type {
   CreateExperimentRequest,
   Estimate,
   EstimateRequest,
+  EstimateResponse,
   ExperimentCounts,
   ExperimentDetail,
   ExperimentEvent,
@@ -27,6 +28,7 @@ import { LiteLlmClient } from '../litellm/litellm.client';
 import { SIM_MAX_OUTPUT_TOKENS, simTemperature } from '../worker/spec-builder';
 import { type CellInput, type Price, estimate } from './estimate';
 import { claimOrder, isSeed, newSeed } from './order';
+import { type BaselineOutcome, decideBaseline } from './baseline';
 import { resolveFutility } from './rules';
 import { type ArmRow, addEvent, pauseArm, pauseExperiment } from './run-state';
 
@@ -179,8 +181,84 @@ export class ExperimentsService {
     return { ...ordered, n, simModel: needsSim ? simModel : null, estimate: estimate({ cells, n, prices, simModel: needsSim ? simModel : null }) };
   }
 
-  async estimate(body: EstimateRequest): Promise<Estimate> {
-    return (await this.plan(body)).estimate;
+  /** The simulator prompt: the one named, else the highest version of client-sim (D27). */
+  private async simPromptFor(body: EstimateRequest, simModel: string | null): Promise<StoredPrompt | null> {
+    if (!simModel) return null;
+    if (body.sim_prompt_sha256 !== undefined && body.sim_prompt_sha256 !== null) {
+      const sha = normalizeSha(body.sim_prompt_sha256);
+      if (!sha) throw badRequest('invalid_experiment', 'sim_prompt_sha256 must be sha256:<64 hex>');
+      const p = await this.catalogue.prompt(sha);
+      if (!p) throw badRequest('unknown_prompt', `no prompt with ${sha}`);
+      return p;
+    }
+    const latest = await this.catalogue.latestPrompt('client-sim');
+    if (!latest) throw badRequest('unknown_prompt', 'no client-sim prompt under configs/prompts');
+    return latest;
+  }
+
+  /**
+   * The whole run as it would be created: the plan of both arms, the simulator prompt, the parent
+   * (D34), whether arm A reuses the parent's trials, and the estimate of what will actually run.
+   */
+  private async resolveRun(body: EstimateRequest): Promise<{
+    plan: Plan;
+    simPrompt: StoredPrompt | null;
+    parentId: string | null;
+    baseline: (BaselineOutcome & { requested: true }) | null;
+    run: Plan;
+  }> {
+    const plan = await this.plan(body);
+    const simPrompt = await this.simPromptFor(body, plan.simModel);
+    const parentId = body.parent_experiment_id ?? null;
+    if (parentId !== null && typeof parentId !== 'string') throw badRequest('invalid_experiment', 'parent_experiment_id must be an experiment id or null');
+    if (body.reuse_baseline !== undefined && body.reuse_baseline !== null && typeof body.reuse_baseline !== 'boolean') {
+      throw badRequest('invalid_experiment', 'reuse_baseline must be true or false');
+    }
+    let parent: ExperimentRow | null = null;
+    if (parentId) {
+      [parent] = await this.db.query<ExperimentRow>('SELECT * FROM experiments WHERE id = $1', [parentId]);
+      if (!parent) throw badRequest('unknown_parent_experiment', `no experiment ${parentId} to be the parent`, 'Name an experiment from GET /experiments, or leave parent_experiment_id out.');
+    }
+    if (!body.reuse_baseline) return { plan, simPrompt, parentId, baseline: null, run: plan };
+    if (!parent) throw badRequest('invalid_experiment', 'reuse_baseline needs parent_experiment_id', 'Name the parent experiment whose arm-A trials to reuse, or leave reuse_baseline out.');
+    if (plan.configs.length !== 2) {
+      throw badRequest('invalid_experiment', 'reuse_baseline needs two arms: the parent’s arm A and a new arm B', 'Add the new config as arm B, or leave reuse_baseline out.');
+    }
+    const [armA, armB] = plan.configs;
+    // The parent's finished arm-A trials: its own, and any it reused from its own parent.
+    const [parentArm] = await this.db.query<{ reused_trial_ids: string[] }>('SELECT reused_trial_ids FROM experiment_arms WHERE experiment_id = $1 AND position = 0', [parent.id]);
+    const finished = await this.db.query<{ id: string; task_sha256: string }>(
+      `SELECT id, task_sha256 FROM trials
+       WHERE status = 'done' AND config_hash = $2 AND task_sha256 = ANY($3) AND (experiment_id = $1 OR id = ANY($4))
+       ORDER BY task_sha256, repeat_index, attempt, id`,
+      [parent.id, armA.hash, plan.tasks.map((t) => t.sha256), parentArm?.reused_trial_ids ?? []],
+    );
+    const byTask = new Map<string, string[]>();
+    for (const t of finished) byTask.set(t.task_sha256, [...(byTask.get(t.task_sha256) ?? []), t.id]);
+    const outcome = decideBaseline({
+      parent: {
+        id: parent.id,
+        armA: parent.config_hashes[0],
+        tasks: parent.task_sha256s,
+        platformCommit: parent.platform_commit,
+        simModel: parent.sim_model,
+        simPromptSha256: parent.sim_prompt_sha256,
+      },
+      armA: armA.hash,
+      tasks: plan.tasks.map((t) => t.sha256),
+      platformCommit: this.config.platformCommit,
+      simModel: plan.simModel,
+      simPromptSha256: simPrompt?.sha256 ?? null,
+      n: plan.n,
+      finished: byTask,
+    });
+    const run = outcome.applied ? await this.plan({ ...body, config_hashes: [armB.hash] }) : plan;
+    return { plan, simPrompt, parentId, baseline: { ...outcome, requested: true }, run };
+  }
+
+  async estimate(body: EstimateRequest): Promise<EstimateResponse> {
+    const { run, baseline } = await this.resolveRun(body);
+    return { ...run.estimate, baseline: baseline ? { applied: baseline.applied, reason: baseline.reason, reused_trials: baseline.trialIds.length } : null };
   }
 
   async create(body: CreateExperimentRequest): Promise<ExperimentDetail> {
@@ -194,27 +272,17 @@ export class ExperimentsService {
     if (body.plan_commit !== undefined && body.plan_commit !== null && typeof body.plan_commit !== 'string') {
       throw badRequest('invalid_experiment', 'plan_commit must be a string or null');
     }
-    const plan = await this.plan(body);
+    const { plan, simPrompt, parentId, baseline, run } = await this.resolveRun(body);
     // R10.6: start only runs that can finish. The budget is a safety net, so it must cover
-    // the top of the estimate's range, not just the expected cost.
-    if (body.budget_usd < plan.estimate.cost_usd.high) {
+    // the top of the estimate's range, not just the expected cost. With arm A reused (D34),
+    // the estimate is of arm B alone.
+    if (body.budget_usd < run.estimate.cost_usd.high) {
       throw badRequest(
         'budget_below_estimate',
-        `budget_usd ${body.budget_usd} is below the estimate's high end ${plan.estimate.cost_usd.high} ` +
-          `(expected ${plan.estimate.cost_usd.expected}); raise the budget or shrink the run`,
+        `budget_usd ${body.budget_usd} is below the estimate's high end ${run.estimate.cost_usd.high} ` +
+          `(expected ${run.estimate.cost_usd.expected}); raise the budget or shrink the run`,
+        `Set budget_usd to at least ${run.estimate.cost_usd.high}, or lower n or the number of tasks.`,
       );
-    }
-    let simPrompt: StoredPrompt | null = null;
-    if (plan.simModel) {
-      if (body.sim_prompt_sha256 !== undefined && body.sim_prompt_sha256 !== null) {
-        const sha = normalizeSha(body.sim_prompt_sha256);
-        if (!sha) throw badRequest('invalid_experiment', 'sim_prompt_sha256 must be sha256:<64 hex>');
-        simPrompt = await this.catalogue.prompt(sha);
-        if (!simPrompt) throw badRequest('unknown_prompt', `no prompt with ${sha}`);
-      } else {
-        simPrompt = await this.catalogue.latestPrompt('client-sim');
-        if (!simPrompt) throw badRequest('unknown_prompt', 'no client-sim prompt under configs/prompts');
-      }
     }
 
     if (body.order_seed !== undefined && body.order_seed !== null && !isSeed(body.order_seed)) {
@@ -228,11 +296,12 @@ export class ExperimentsService {
     // D32: claims follow a seeded shuffle of (task, repeat) blocks with the arms in a random
     // order inside each block, so the arms alternate and any early batch is a random sample.
     // `seq` stays the slot's place in the plan (repeat, task, config), a stable number for paging.
-    const order = new Map(claimOrder(plan.tasks.map((t) => t.sha256), plan.configs.map((c) => c.hash), plan.n, seed).map((s, i) => [`${s.task}|${s.config}|${s.repeat}`, i]));
+    // With arm A reused (D34), only arm B's trials are queued.
+    const order = new Map(claimOrder(run.tasks.map((t) => t.sha256), run.configs.map((c) => c.hash), run.n, seed).map((s, i) => [`${s.task}|${s.config}|${s.repeat}`, i]));
     let seq = 0;
-    for (let r = 0; r < plan.n; r += 1) {
-      for (const t of plan.tasks) {
-        for (const c of plan.configs) {
+    for (let r = 0; r < run.n; r += 1) {
+      for (const t of run.tasks) {
+        for (const c of run.configs) {
           const at = order.get(`${t.sha256}|${c.hash}|${r}`) as number;
           slots.push({ id: newId('t'), task: t.sha256, config: c.hash, harness: c.harness, repeat: r, seq: seq++, order: at });
         }
@@ -242,8 +311,9 @@ export class ExperimentsService {
       await client.query(
         `INSERT INTO experiments (id, name, axis, config_hashes, task_sha256s, n, sim_model, sim_prompt_sha256,
                                   sim_temperature, sim_max_output_tokens, budget_usd, trial_budget_usd, sim_budget_usd,
-                                  platform_commit, plan_commit, estimate, status, order_seed, futility)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'created', $17, $18)`,
+                                  platform_commit, plan_commit, estimate, status, order_seed, futility,
+                                  parent_experiment_id, reuse_baseline, baseline_decision)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'created', $17, $18, $19, $20, $21)`,
         [
           id,
           name,
@@ -256,13 +326,16 @@ export class ExperimentsService {
           plan.simModel ? simTemperature(plan.simModel) : null, // null with a simulator: not sent (D27)
           plan.simModel ? SIM_MAX_OUTPUT_TOKENS : null,
           body.budget_usd,
-          plan.estimate.budgets.trial_usd,
-          plan.estimate.budgets.sim_usd,
+          run.estimate.budgets.trial_usd,
+          run.estimate.budgets.sim_usd,
           this.config.platformCommit,
           body.plan_commit ?? null,
-          JSON.stringify(plan.estimate),
+          JSON.stringify(run.estimate),
           seed,
           JSON.stringify(futility),
+          parentId,
+          baseline !== null,
+          baseline?.reason ?? null,
         ],
       );
       await client.query(
@@ -282,10 +355,21 @@ export class ExperimentsService {
         ],
       );
       await client.query(
-        `INSERT INTO experiment_arms (experiment_id, config_hash, arm, position)
-         SELECT $1, c.hash, chr(64 + c.ord::int), c.ord::int - 1 FROM unnest($2::text[]) WITH ORDINALITY AS c (hash, ord)`,
-        [id, plan.configs.map((c) => c.hash)],
+        `INSERT INTO experiment_arms (experiment_id, config_hash, arm, position, reused_trial_ids)
+         SELECT $1, c.hash, chr(64 + c.ord::int), c.ord::int - 1, CASE WHEN c.ord = 1 THEN $3::text[] ELSE '{}' END
+         FROM unnest($2::text[]) WITH ORDINALITY AS c (hash, ord)`,
+        [id, plan.configs.map((c) => c.hash), baseline?.applied ? baseline.trialIds : []],
       );
+      if (baseline) {
+        // D34: which applied, and why, for the events list and the UI.
+        await addEvent(client, {
+          experimentId: id,
+          kind: 'baseline',
+          detail: baseline.reason,
+          configHash: plan.configs[0].hash,
+          data: { parent_experiment_id: parentId, applied: baseline.applied, reused_trials: baseline.trialIds.length },
+        });
+      }
       // The whole experiment's budget, enforced by LiteLLM across every trial key (a team).
       // Inside the transaction: if LiteLLM refuses, nothing is stored.
       const teamId = await this.litellm.newTeam({ alias: `experiment:${id}`, maxBudgetUsd: body.budget_usd, experimentId: id });
@@ -442,6 +526,7 @@ export class ExperimentsService {
   async get(id: string): Promise<ExperimentDetail> {
     const r = await this.row(id);
     const extra = (await this.countsAndSpend([id])).get(id) as { counts: ExperimentCounts; spend: number };
+    const arms = await this.arms(r);
     const configs = await this.db.query<ConfigRow>(`${CONFIG_SELECT} WHERE c.hash = ANY($1)`, [r.config_hashes]);
     const tasks = await this.db.query<StoredTask>(
       'SELECT sha256, id, version, split, kind, summary, body, client_state_name, NULL AS client_state, client_state_sha256, source_path FROM tasks WHERE sha256 = ANY($1)',
@@ -460,12 +545,14 @@ export class ExperimentsService {
       plan_commit: r.plan_commit,
       order_seed: r.order_seed === null ? null : Number(r.order_seed),
       futility: r.futility,
+      parent_experiment_id: r.parent_experiment_id,
+      baseline: r.reuse_baseline ? { applied: arms[0]?.reused_trials > 0, reason: r.baseline_decision ?? '', reused_trials: arms[0]?.reused_trials ?? 0 } : null,
       budgets: { trial_usd: r.trial_budget_usd, sim_usd: r.sim_budget_usd },
       started_at: iso(r.started_at),
       finished_at: iso(r.finished_at),
       paused_at: iso(r.paused_at),
       paused_reason: r.paused_reason,
-      arms: await this.arms(r),
+      arms,
       tasks: r.task_sha256s.map((s) => tasks.find((t) => t.sha256 === s)).filter((t): t is StoredTask => !!t).map((t) => taskView(t)),
       configs: r.config_hashes.map((h) => configs.find((c) => c.hash === h)).filter((c): c is ConfigRow => !!c).map(configView),
       events: await this.events(r),
@@ -478,22 +565,27 @@ export class ExperimentsService {
       `SELECT a.*, c.name AS config_name FROM experiment_arms a JOIN configs c ON c.hash = a.config_hash WHERE a.experiment_id = $1 ORDER BY a.position`,
       [r.id],
     );
+    // An arm reused from the parent (D34) counts the parent's trials it took.
     const counts = await this.db.query<{ config_hash: string; status: TrialStatus; n: number }>(
-      'SELECT config_hash, status, count(*)::int AS n FROM trials WHERE experiment_id = $1 GROUP BY config_hash, status',
-      [r.id],
+      `SELECT config_hash, status, count(*)::int AS n FROM trials
+       WHERE experiment_id = $1 OR id = ANY($2) GROUP BY config_hash, status`,
+      [r.id, rows.flatMap((a) => a.reused_trial_ids)],
     );
     return rows.map((a) => {
       const c = { queued: 0, running: 0, done: 0, infra_failed: 0, abandoned: 0, cancelled: 0 };
       for (const row of counts.filter((x) => x.config_hash === a.config_hash)) c[row.status === 'claimed' ? 'running' : row.status] += row.n;
-      const status: ArmView['status'] = a.paused_at
-        ? 'paused'
-        : r.status === 'created'
-          ? 'not_started'
-          : c.queued + c.running > 0
-            ? 'active'
-            : c.cancelled > 0
-              ? 'stopped'
-              : 'complete';
+      const reused = a.reused_trial_ids.length > 0;
+      const status: ArmView['status'] = reused
+        ? 'complete'
+        : a.paused_at
+          ? 'paused'
+          : r.status === 'created'
+            ? 'not_started'
+            : c.queued + c.running > 0
+              ? 'active'
+              : c.cancelled > 0
+                ? 'stopped'
+                : 'complete';
       return {
         arm: a.arm,
         config_hash: a.config_hash,
@@ -503,6 +595,8 @@ export class ExperimentsService {
         paused_reason: a.paused_reason,
         fix: a.paused_fix,
         counts: c,
+        reused_from: reused ? r.parent_experiment_id : null,
+        reused_trials: a.reused_trial_ids.length,
       };
     });
   }
@@ -640,7 +734,8 @@ export class ExperimentsService {
        LEFT JOIN LATERAL (
          SELECT count(*)::int AS n, count(*) FILTER (WHERE verdict = 'pass')::int AS passed FROM grades WHERE trial_id = t.id
        ) g ON true
-       WHERE t.experiment_id = $1
+       -- D34: a reused arm A's rows are the parent's trials it took.
+       WHERE t.experiment_id = $1 OR t.id IN (SELECT unnest(reused_trial_ids) FROM experiment_arms WHERE experiment_id = $1)
        GROUP BY t.task_sha256, k.id, t.config_hash, c.name`,
       [id],
     );
