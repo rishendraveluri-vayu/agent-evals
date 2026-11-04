@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { ConfigDiffEntry, ConfigView, CreateConfigRequest, Json, JsonObject, SettingName, Settings, SettingsSources } from '../contract';
+import type { ConfigDetail, ConfigDiffEntry, ConfigView, CreateConfigRequest, Json, JsonObject, SettingName, Settings, SettingsSources } from '../contract';
 import { SETTING_NAMES } from '../contract';
 import { badRequest, notFound } from '../common/api-error';
 import { canonicalJson, hashCanonical, normalizeSha } from '../common/hashing';
@@ -60,6 +60,7 @@ export interface ConfigRow {
   settings: Settings;
   settings_sources: SettingsSources;
   harness_options: JsonObject;
+  parent_hash: string | null;
   created_at: Date;
 }
 
@@ -84,12 +85,13 @@ export function configView(r: ConfigRow): ConfigView {
     unsupported: unsupportedReasons(r.capabilities, r.harness, r.model),
     warnings: configWarnings(r.harness, r.model),
     harness_options: r.harness_options,
+    parent_hash: r.parent_hash,
     created_at: r.created_at.toISOString(),
   };
 }
 
-/** Fields that are derived or are not behaviour, left out of a diff. */
-const NOT_DIFFED = ['hash', 'created_at', 'unsupported', 'warnings'] as const;
+/** Fields that are derived or are not behaviour (lineage included), left out of a diff. */
+const NOT_DIFFED = ['hash', 'created_at', 'unsupported', 'warnings', 'parent_hash'] as const;
 
 /** Every leaf path where two values differ; objects are walked, arrays compared whole. */
 export function diffValues(a: unknown, b: unknown, prefix = ''): ConfigDiffEntry[] {
@@ -121,6 +123,13 @@ export class ConfigsService {
     if (!promptSha) throw badRequest('invalid_config', 'prompt_sha256 must be sha256:<64 hex>');
     const toolsetSha = normalizeSha(body.toolset_sha256);
     if (!toolsetSha) throw badRequest('invalid_config', 'toolset_sha256 must be sha256:<64 hex>');
+    let parentHash: string | null = null;
+    if (body.parent_hash !== undefined && body.parent_hash !== null) {
+      parentHash = normalizeSha(body.parent_hash);
+      if (!parentHash) throw badRequest('invalid_config', 'parent_hash must be sha256:<64 hex> or null', 'Give the hash of the config this one was forked from, or leave parent_hash out.');
+      const [parent] = await this.db.query('SELECT 1 FROM configs WHERE hash = $1', [parentHash]);
+      if (!parent) throw badRequest('unknown_parent', `no config ${parentHash} to be the parent`, 'Fork from a config in GET /configs, or leave parent_hash out.');
+    }
 
     const harnesses = await this.catalogue.harnesses();
     const harness = harnesses.find((h) => h.name === body.harness);
@@ -156,11 +165,19 @@ export class ConfigsService {
       settings,
       harness_options: harnessOptions,
     });
+    if (parentHash === hash) {
+      throw badRequest(
+        'same_as_parent',
+        `this config is identical to its parent ${parentHash}: a fork that changes nothing is the parent itself`,
+        'Change the one thing this fork is meant to test (a setting, the prompt, the model, ...), or use the parent as it is.',
+      );
+    }
+    // The first post of this content records the parent; a later post of the same content keeps it.
     const inserted = await this.db.query<{ hash: string }>(
       `INSERT INTO configs (hash, name, harness, harness_package, harness_ref, adapter_version, capabilities_sha256,
                             capabilities, model, api_format, prompt_sha256, toolset_sha256, settings, settings_sources,
-                            harness_options)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                            harness_options, parent_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        ON CONFLICT (hash) DO NOTHING RETURNING hash`,
       [
         hash,
@@ -178,9 +195,10 @@ export class ConfigsService {
         JSON.stringify(settings),
         JSON.stringify(settings_sources),
         JSON.stringify(harnessOptions),
+        parentHash,
       ],
     );
-    return { config: await this.get(hash), created: inserted.length === 1 };
+    return { config: configView(await this.row(hash)), created: inserted.length === 1 };
   }
 
   async list(): Promise<ConfigView[]> {
@@ -196,8 +214,14 @@ export class ConfigsService {
     return row;
   }
 
-  async get(hash: string): Promise<ConfigView> {
-    return configView(await this.row(hash));
+  /** The config with the configs forked from it (D34), oldest first. */
+  async get(hash: string): Promise<ConfigDetail> {
+    const row = await this.row(hash);
+    const children = await this.db.query<{ hash: string; name: string; created_at: Date }>(
+      'SELECT hash, name, created_at FROM configs WHERE parent_hash = $1 ORDER BY created_at, hash',
+      [row.hash],
+    );
+    return { ...configView(row), children: children.map((c) => ({ hash: c.hash, name: c.name, created_at: c.created_at.toISOString() })) };
   }
 
   async diff(a: string, b: string): Promise<ConfigDiffEntry[]> {
@@ -206,6 +230,6 @@ export class ConfigsService {
       for (const key of NOT_DIFFED) delete rest[key];
       return rest;
     };
-    return diffValues(strip(await this.get(a)), strip(await this.get(b)));
+    return diffValues(strip(configView(await this.row(a))), strip(configView(await this.row(b))));
   }
 }

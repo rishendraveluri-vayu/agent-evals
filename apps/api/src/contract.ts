@@ -130,6 +130,8 @@ export interface CreateConfigRequest {
   toolset_sha256: Sha256;
   settings?: Partial<Record<SettingName, Json>>;
   harness_options?: JsonObject;
+  /** D34: the config this one was forked from. Not part of the hash; the first post records it. */
+  parent_hash?: Sha256 | null;
 }
 
 export interface VersionRef {
@@ -166,7 +168,14 @@ export interface ConfigView {
   unsupported: Partial<Record<SettingName, string>>;
   warnings: ConfigWarning[];
   harness_options: JsonObject;
+  /** D34: the config this one was forked from, or null. */
+  parent_hash: Sha256 | null;
   created_at: string;
+}
+
+/** GET /configs/:hash: the config and the configs forked from it (D34), oldest first. */
+export interface ConfigDetail extends ConfigView {
+  children: { hash: Sha256; name: string; created_at: string }[];
 }
 
 /** GET /configs/:a/diff/:b */

@@ -181,6 +181,33 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
     await request(env.http).get(`/api/configs/sha256:${'f'.repeat(64)}`).expect(404);
   });
 
+  it('records a fork with its parent, lists the children on the parent, and keeps lineage out of the hash (D34)', async () => {
+    const base = { harness: 'ownloop', model: 'fake/finance-emi', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset };
+    const parent = ((await request(env.http).post('/api/configs').send({ ...base, name: 'parent', settings: { max_steps: 11 } }).expect(201)).body as { hash: string; parent_hash: null })
+      .hash;
+    const fork = (await request(env.http).post('/api/configs').send({ ...base, name: 'fork', settings: { max_steps: 12 }, parent_hash: parent.replace('sha256:', '') }).expect(201))
+      .body as { hash: string; parent_hash: string };
+    expect(fork.parent_hash).toBe(parent);
+    // The same content with no parent is the same config: lineage is not behaviour, and the first post's parent stays.
+    const again = (await request(env.http).post('/api/configs').send({ ...base, name: 'fork again', settings: { max_steps: 12 } }).expect(200)).body as { hash: string; parent_hash: string };
+    expect(again).toMatchObject({ hash: fork.hash, parent_hash: parent });
+
+    const detail = (await request(env.http).get(`/api/configs/${parent}`).expect(200)).body as { parent_hash: null; children: { hash: string; name: string }[] };
+    expect(detail.parent_hash).toBeNull();
+    expect(detail.children.map((c) => [c.hash, c.name])).toEqual([[fork.hash, 'fork']]);
+    expect(((await request(env.http).get(`/api/configs/${fork.hash}`).expect(200)).body as { children: unknown[] }).children).toEqual([]);
+    // The diff shows the name and the one change, not the lineage.
+    expect((await request(env.http).get(`/api/configs/${parent}/diff/${fork.hash}`).expect(200)).body).toEqual([
+      { path: 'name', a: 'parent', b: 'fork' },
+      { path: 'settings.max_steps', a: 11, b: 12 },
+    ]);
+
+    const same = await request(env.http).post('/api/configs').send({ ...base, name: 'no change', settings: { max_steps: 11 }, parent_hash: parent }).expect(400);
+    expect(same.body).toMatchObject({ error: 'same_as_parent', fix: expect.stringContaining('Change the one thing') as string });
+    const unknown = await request(env.http).post('/api/configs').send({ ...base, name: 'orphan', settings: { max_steps: 13 }, parent_hash: `sha256:${'e'.repeat(64)}` }).expect(400);
+    expect(unknown.body).toMatchObject({ error: 'unknown_parent', fix: expect.any(String) as string });
+  });
+
   it('flags a stored task whose state file changed without a task.json change', async () => {
     await fs.writeFile(path.join(env.tasksDir, 'emi-basic', 'client.json'), '{"name": "changed"}');
     try {

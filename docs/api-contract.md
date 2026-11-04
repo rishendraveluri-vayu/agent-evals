@@ -53,7 +53,11 @@ simulated-client task the API also summarises that file (profile and debts) into
 
 ## Configs
 
-- `POST /configs` with `{name, harness, model, prompt_sha256, toolset_sha256, settings, harness_options}`.
+- `POST /configs` with `{name, harness, model, prompt_sha256, toolset_sha256, settings, harness_options, parent_hash}`.
+  `parent_hash` (optional, D34) names the config this one was forked from: it must exist (400
+  `unknown_parent`), and a fork identical to its parent is a 400 `same_as_parent` ("change the one
+  thing this fork is meant to test"). Lineage is not behaviour, so it is not in the hash; the
+  first post of a config's content records its parent, and a later post of the same content keeps it.
   The API checks every set setting against the harness's capabilities (an unsupported one
   is a 400 `unsupported_setting` naming it) and against the model (D25): a setting the model
   refuses is a 400 `unsupported_setting` naming the model. The table of refused settings is
@@ -106,10 +110,11 @@ simulated-client task the API also summarises that file (profile and debts) into
   default applies").
 - `GET /configs`, `GET /configs/:hash` return `{hash, name, harness, harness_ref, model,
   prompt, toolset, settings, settings_sources, unsupported, warnings, harness_options,
-  created_at}`. `unsupported` and `warnings` are worked out from the stored capabilities, so
-  every read has them, not only the POST.
-- `GET /configs/:a/diff/:b` returns `[{path, a, b}]`: every field that differs (`unsupported`
-  and `warnings` are derived, so they are left out).
+  parent_hash, created_at}`. `unsupported` and `warnings` are worked out from the stored
+  capabilities, so every read has them, not only the POST. `GET /configs/:hash` adds
+  `children: [{hash, name, created_at}]`, the configs forked from it, oldest first.
+- `GET /configs/:a/diff/:b` returns `[{path, a, b}]`: every field that differs (`unsupported`,
+  `warnings` and `parent_hash` are left out: derived, or not behaviour).
 
 ## Experiments
 

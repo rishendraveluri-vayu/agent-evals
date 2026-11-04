@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
-import type { ConfigDiffEntry, ConfigView, CreateConfigRequest } from '../contract';
+import type { ConfigDetail, ConfigDiffEntry, ConfigView, CreateConfigRequest } from '../contract';
 import type { HttpResponse } from '../common/http';
 import { ConfigsService } from './configs.service';
 
@@ -21,7 +21,7 @@ export class ConfigsController {
   }
 
   @Get(':hash')
-  get(@Param('hash') hash: string): Promise<ConfigView> {
+  get(@Param('hash') hash: string): Promise<ConfigDetail> {
     return this.configs.get(hash);
   }
 
