@@ -226,7 +226,7 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
     expect(exp.status).toBe('done');
     const res = await request(source.http).get(`/api/experiments/${exp.id}/bundle`).expect(200);
     const bundle = res.body as ExperimentBundle;
-    expect(bundle).toMatchObject({ format: 'agent-evals-bundle', format_version: 1, experiment_id: exp.id, schema_version: '011_examples' });
+    expect(bundle).toMatchObject({ format: 'agent-evals-bundle', format_version: 1, experiment_id: exp.id, schema_version: '012_calibration' });
     const t = bundle.tables;
     expect(t.experiments).toHaveLength(1);
     expect(t.trials).toHaveLength(5); // 4 slots, one re-queued after an infra failure

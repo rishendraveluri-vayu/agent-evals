@@ -264,6 +264,12 @@ export interface EstimateRequest {
   parent_experiment_id?: string | null;
   /** D34: reuse the parent's arm-A trials when nothing that matters differs (see BaselineDecision). */
   reuse_baseline?: boolean | null;
+  /**
+   * D44: an A/A calibration run, the same config on both arms, to measure this setup's own noise;
+   * it should come out "no detectable difference". `config_hashes` must then name one config
+   * twice. Without it, the same config twice is refused. Otherwise an ordinary paid run.
+   */
+  calibration?: boolean | null;
 }
 
 export interface CostRange {
@@ -361,6 +367,8 @@ export interface CreateExperimentRequest {
   parent_experiment_id?: string | null;
   /** D34: reuse the parent's arm-A trials as arm A when nothing that matters differs. */
   reuse_baseline?: boolean | null;
+  /** D44: an A/A calibration run, the same config on both arms (as in EstimateRequest). */
+  calibration?: boolean | null;
 }
 
 /**
@@ -420,6 +428,8 @@ export interface ExperimentSummary {
   estimate: Estimate;
   budget_usd: number;
   created_at: string;
+  /** D44: an A/A calibration run (one config on both arms), to measure the setup's own noise. */
+  calibration: boolean;
   /**
    * Set when this experiment is a shipped example loaded by POST /examples/:name/load (SP7), so
    * the UI can label it as sample content; null for your own experiments. An example is
@@ -664,8 +674,201 @@ export interface CompareResponse {
   reason: string | null;
   arms: ArmView[];
   rows: CompareRow[];
-  /** SP6. Null until the stats exist. */
-  stats: null;
+  /** SP6: the verdict and its intervals, once every arm is complete and graded; null otherwise. */
+  stats: CompareStats | null;
+  /** Why `stats` is null, in plain words (grading still running, one arm, no task decided in both arms); null when it is set. */
+  stats_note: string | null;
+}
+
+// ---- Statistics (SP6: D10, D41, D42, D43, D44) ---------------------------------------
+// docs/design.md, "Statistics", says what each number is and why. Rates are proportions (0 to 1);
+// pass-rate differences are percentage points; cost, tokens and seconds are in their own units.
+
+/** An estimate and its 95% interval. */
+export interface StatsInterval {
+  estimate: number;
+  low: number;
+  high: number;
+}
+
+/**
+ * The verdict on B against A (D42, D10). `better`: interval above 0 and p < 0.05. `worse`:
+ * interval below 0 and p < 0.05. `equivalent`: the whole interval inside +/- the margin (10
+ * points). `no_detectable_difference`: anything else. `held_back`: the pass rate alone says
+ * better, but critical failures rose beyond noise, so B is not called better (the guardrail).
+ */
+export type CompareVerdict = 'better' | 'worse' | 'equivalent' | 'no_detectable_difference' | 'held_back';
+export type PassRateVerdict = Exclude<CompareVerdict, 'held_back'>;
+
+/** One arm's trials of a task, or of the tasks in the aggregate. */
+export interface StatsArmCounts {
+  passed: number;
+  /** Decided trials: pass or fail. */
+  graded: number;
+  /** Done trials with no outcome (a required check gave no verdict): left out, never a pass or fail. */
+  incomplete: number;
+}
+
+/** A task in the aggregate (both arms have a decided trial). */
+export interface StatsTask {
+  task: Sha256;
+  task_id: string;
+  a: StatsArmCounts;
+  b: StatsArmCounts;
+  /** B minus A in points, with Newcombe's 95% interval for two independent proportions (not corrected). */
+  diff: StatsInterval;
+  /** Fisher's exact test, two-sided. */
+  p_value: number;
+  /** The Benjamini-Hochberg adjusted p-value over the tasks in the aggregate. */
+  q_value: number;
+  /** D41: beyond noise after Benjamini-Hochberg at q = 0.05. A pointer to look at, not a verdict. */
+  beyond_noise: boolean;
+}
+
+/** A task left out of the aggregate: an arm has no decided trial. */
+export interface StatsExcludedTask {
+  task: Sha256;
+  task_id: string;
+  a: StatsArmCounts;
+  b: StatsArmCounts;
+  why: string;
+}
+
+/** D10: B is never called better while its critical failures rose beyond noise. */
+export interface CriticalGuardrail {
+  /**
+   * `no_critical_checks`: no required check in these tasks is marked critical, so nothing is
+   * claimed about safety. `no_decided_trials`: there are such checks, but no task with one has a
+   * decided trial in both arms. `rose`: B's critical-failure rate is higher and its interval lies
+   * above 0. `did_not_rise`: otherwise.
+   */
+  status: 'no_critical_checks' | 'no_decided_trials' | 'rose' | 'did_not_rise';
+  /** The required critical checks, as `task_id/grader_id`. */
+  checks: string[];
+  /** Tasks in its aggregate: those with a critical check and a decided trial in both arms. */
+  tasks: number;
+  /** Per arm: the mean over those tasks of the share of decided trials where a critical check failed. */
+  a: { rate: number; failed: number; graded: number } | null;
+  b: { rate: number; failed: number; graded: number } | null;
+  /** B minus A in points, the same task bootstrap as the pass rate. */
+  diff: StatsInterval | null;
+  /** True when the pass rate alone says better and this blocks it (verdict `held_back`). */
+  blocks_better: boolean;
+  text: string;
+}
+
+export interface RegressionGrader {
+  grader_id: string;
+  required: boolean;
+  severity: GraderSeverity | null;
+  /** This check's own pass or fail verdicts on the task's done trials, per arm. */
+  a: { passed: number; graded: number };
+  b: { passed: number; graded: number };
+}
+
+export interface RegressionTrial {
+  trial_id: string;
+  arm: 'A' | 'B';
+  /** The required checks that failed on it. */
+  failed_graders: string[];
+  /** Reserved for the failure-cause step (the brief's stretch item 7: wrong tool, made-up tool arguments, gave up early, ran out of steps, grader disagrees with the human label). Not filled yet. */
+  cause?: string | null;
+}
+
+/** D10: a task where B dropped (its difference is below 0) or a check's pass rate fell from A to B. */
+export interface Regression {
+  task: Sha256;
+  task_id: string;
+  a: StatsArmCounts;
+  b: StatsArmCounts;
+  /** As StatsTask; null when the task is not in the aggregate (an arm has no decided trial). */
+  diff: StatsInterval | null;
+  beyond_noise: boolean;
+  /** A check marked critical got worse. Critical ones come first. */
+  critical: boolean;
+  /** The checks whose pass rate fell, critical first. */
+  graders: RegressionGrader[];
+  /** The task's failed trials, arm B first. */
+  failed_trials: RegressionTrial[];
+}
+
+/** Cost, tokens and time next to quality: the same task bootstrap, with no verdict. */
+export interface CostStat {
+  /** cost_usd: LiteLLM's recorded cost of the agent's calls. tokens: input plus output. wall_s: the trial's run time. */
+  metric: 'cost_usd' | 'tokens' | 'wall_s';
+  /** Tasks with a value in both arms. */
+  tasks: number;
+  /** Mean over those tasks of each arm's mean per trial. */
+  a: number;
+  b: number;
+  /** B minus A, in the metric's unit. */
+  diff: StatsInterval;
+  /** (B - A) / A in percent; null when A's mean is 0. */
+  relative: StatsInterval | null;
+  /** Trials with a value, per arm. */
+  trials: { a: number; b: number };
+  /** wall_s: trials left out because LiteLLM retried one of their model calls, whose backoff waits would inflate the time. */
+  left_out_retried?: { a: number; b: number };
+  /** wall_s: trials kept whose record does not say whether a call was retried (recorded before 4 Nov, or no LiteLLM record). */
+  retries_unknown?: { a: number; b: number };
+  /** cost_usd: an arm ran on a fake model, whose prices are made up for testing. */
+  made_up_prices?: boolean;
+}
+
+/** D44: the latest finished A/A calibration run of either arm's config. */
+export interface AaCalibration {
+  experiment_id: string;
+  name: string;
+  config_hash: Sha256;
+  finished_at: string | null;
+  /** B minus A in points: what the setup's own noise looks like. */
+  diff: StatsInterval;
+  verdict: CompareVerdict;
+}
+
+export interface CompareStats {
+  /** Bumped when a change to the method can move a number. */
+  method_version: string;
+  measure: 'pass_rate';
+  /** 0.95 (D43). */
+  level: number;
+  /** 0.05 (D43). */
+  alpha: number;
+  /** D42: the equivalence margin, in points. */
+  margin_points: number;
+  method: 'paired_task_bootstrap';
+  /** Bootstrap resamples (10,000). */
+  resamples: number;
+  /** What seeds the random streams: the experiment id, so the same data always gives the same numbers. */
+  seed: string;
+  /** Over the tasks in the aggregate: `rate` is the mean of the per-task pass rates (equal weight per task); the counts are pooled. */
+  a: StatsArmCounts & { rate: number };
+  b: StatsArmCounts & { rate: number };
+  /** Mean over tasks of B minus A, in points, with the task bootstrap's 95% interval (D10). */
+  diff: StatsInterval;
+  /** The paired sign-flip permutation test on the per-task differences, two-sided. */
+  p_value: number;
+  test: { name: 'sign_flip'; exact: boolean; flips: number };
+  verdict: CompareVerdict;
+  /** The verdict from the pass rate alone, before the critical guardrail. */
+  pass_rate_verdict: PassRateVerdict;
+  /** The verdict in one or two plain sentences. */
+  verdict_text: string;
+  /** For no_detectable_difference: the largest difference, in points, the interval does not rule out. */
+  not_ruled_out_points: number | null;
+  /** The tasks in the aggregate, in the experiment's order. */
+  tasks: StatsTask[];
+  excluded_tasks: StatsExcludedTask[];
+  correction: 'benjamini_hochberg';
+  critical: CriticalGuardrail;
+  regressions: Regression[];
+  costs: CostStat[];
+  /** D44, on an ordinary A/B: the latest A/A calibration of either config; null when there is none. */
+  aa: AaCalibration | null;
+  /** D44, on a calibration run itself: whether it came out as it should (no difference found). */
+  calibration: { as_expected: boolean; text: string } | null;
+  /** SP5's judge agreement on held-out labels, for the caveat when the verdict rests on the judge; null until SP5 reports it. */
+  judge: { kappa: number; low: number; high: number; bar: number; tasks: number } | null;
 }
 
 // ---- Trials --------------------------------------------------------------------------

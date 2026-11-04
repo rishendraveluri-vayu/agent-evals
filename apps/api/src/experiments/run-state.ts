@@ -7,6 +7,12 @@ import type { Queryable } from '../database/db.service';
  * commit together.
  */
 
+/**
+ * SQL: trial `t` belongs to arm row `a` of experiment `e`. By config, except in an A/A calibration
+ * run (D44), where one config is both arms and arm B's repeats are n to 2n - 1.
+ */
+export const TRIAL_IN_ARM = `t.config_hash = a.config_hash AND (NOT e.calibration OR (t.repeat_index >= e.n) = (a.position = 1))`;
+
 /** An experiment_arms row (migration 005). */
 export interface ArmRow {
   experiment_id: string;
@@ -58,7 +64,9 @@ export async function pauseExperiment(q: Queryable, experimentId: string, kind: 
 
 /**
  * D37: pauses one arm. Claims skip its trials; its running trials finish; the other arm keeps
- * claiming. Returns false if the arm was already paused (the first reason is kept).
+ * claiming. Returns false if the arm was already paused (the first reason is kept). With `arm`
+ * (a letter) only that arm; without it every arm running the config, which in an A/A calibration
+ * run (D44) is both: a config error in one is a config error in the other.
  */
 export async function pauseArm(
   q: Queryable,
@@ -67,21 +75,23 @@ export async function pauseArm(
   reason: string,
   fix: string,
   trial: { id: string; attempt: number } | null = null,
+  arm: string | null = null,
 ): Promise<boolean> {
   const { rows } = await q.query<{ arm: string }>(
     `UPDATE experiment_arms SET paused_at = now(), paused_reason = $3, paused_fix = $4
-     WHERE experiment_id = $1 AND config_hash = $2 AND paused_at IS NULL RETURNING arm`,
-    [experimentId, configHash, reason, fix],
+     WHERE experiment_id = $1 AND config_hash = $2 AND ($5::text IS NULL OR arm = $5) AND paused_at IS NULL RETURNING arm`,
+    [experimentId, configHash, reason, fix, arm],
   );
   if (!rows.length) return false;
+  const letters = rows.map((r) => r.arm).sort();
   await addEvent(q, {
     experimentId,
     kind: 'arm_paused',
-    detail: `arm ${rows[0].arm} paused: ${reason}`,
+    detail: `${letters.length > 1 ? `arms ${letters.join(' and ')}` : `arm ${letters[0]}`} paused: ${reason}`,
     configHash,
     trialId: trial?.id ?? null,
     attempt: trial?.attempt ?? null,
-    data: { arm: rows[0].arm, reason, fix },
+    data: { arm: letters.join(','), reason, fix },
   });
   return true;
 }

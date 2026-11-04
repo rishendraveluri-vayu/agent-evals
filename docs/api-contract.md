@@ -335,11 +335,11 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   fresh-clone QA the slot was 8.0 s against 3.5 s of agent time. With no history a trial takes
   60 s on a real model and `fake_wall_s_per_trial` (10 s) on a `fake/*` one, which answers at once
   (60 s made a 30-trial fake run's estimate 30 min against 4 min 13 s). Each cell's `wall_s` is
-  that slot time. `basis` says all of this in words. No power estimate yet; SP6 adds
-  `min_detectable_effect`.
+  that slot time. `basis` says all of this in words. No power estimate yet (the smallest
+  difference a run can detect is not computed; docs/known-limits.md has the simulated power).
 - `POST /experiments` with `{name, axis, config_hashes, task_sha256s, n, sim_model,
   budget_usd, plan_commit, sim_prompt_sha256, order_seed, futility, parent_experiment_id,
-  reuse_baseline}` creates the experiment and all its trial rows
+  reuse_baseline, calibration}` creates the experiment and all its trial rows
   (`queued`), records the platform commit (`EVALS_PLATFORM_COMMIT`), and sets a LiteLLM budget
   for the whole experiment. It returns the experiment. Nothing runs until it is started.
   `name` is trimmed and must be 1 to 200 characters (`EXPERIMENT_NAME_MAX`); a longer one is a 400
@@ -376,6 +376,19 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   abc1234)"). A reused arm shows `status: complete`, `reused_from` and `reused_trials`, its
   counts are the reused trials, and compare's arm-A rows are those trials. The estimate endpoint
   takes the same two fields and returns `baseline` too.
+- **A/A calibration (D44, since 5 Nov).** `calibration: true` (here and on the estimate) marks a
+  run that puts one config on both arms, to measure this setup's own noise; it should come out
+  "no detectable difference". `config_hashes` must then name one config twice (`[h, h]`), else 400
+  `invalid_calibration`; a calibration cannot reuse a parent's trials (400
+  `invalid_calibration`). Without the flag, the same config twice stays a 400
+  `invalid_experiment` "config_hashes lists the same hash twice" (A30), whose `fix` now also
+  offers the calibration flag. A calibration is otherwise an ordinary run: the same estimate
+  (both arms), budget check and plan commit rules. Its arm B trials have repeats `n` to `2n - 1`
+  (arm A's are `0` to `n - 1`), which is how the arms, counts, events, export (`arm`) and
+  compare tell them apart; each arm can be paused and resumed by its letter, and a config error
+  pauses both (one config). `calibration` is on `GET /experiments` and the detail;
+  `experiments.calibration` is migration 012, whose check keeps the flag and "one config twice"
+  together.
 - **Arms (D35).** `config_hashes` holds one config (a pilot) or two: arm A, then arm B. More is a
   400 `too_many_arms` (on the estimate too), with the fix "Run several A/B experiments against
   the same parent".
@@ -496,18 +509,64 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   graders; `grading_failed` a done trial whose last grading job gave up (3 lapsed leases) with no
   finished job before it; `null` a trial that is not done (nothing to grade). `passed` is true or
   false with a `pass` or `fail`, else null.
-- `GET /experiments/:id/compare` returns `{experiment_id, status, reason, arms, rows, stats}`.
+- `GET /experiments/:id/compare` returns `{experiment_id, status, reason, arms, rows, stats,
+  stats_note}`.
   **No comparison until every arm is complete** (D37, D32): while `status` is `incomplete`,
   `reason` says why ("arm B is paused: ...", "the experiment was stopped before every trial ran
   (...); a verdict needs the full planned N (D32)", "the experiment is paused: ...", "arm A has 3
   trials queued or running", "the experiment has not been started") and `rows` is empty, so no
   pass counts are shown off a partial run. Once `complete`, `rows` holds per task and arm `{task,
   task_id, arm, config, config_name, passed, graded, incomplete, trials, infra_failed, abandoned}`
-  and, once SP6 exists, the intervals and verdict. Until then `stats` is `null`. Each done trial
+  and `stats` the verdict and its intervals (SP6, below). Each done trial
   counts by its latest finished grading job's outcome, as on the run grid: `passed` is the trials
   whose outcome is `pass`, `graded` those with `pass` or `fail`, and `incomplete` those whose
   grading finished with no outcome (a required grader errored, was not applicable or is the
   unapproved judge). Older grade versions and optional graders do not count.
+- **Statistics (SP6: D10, D41, D42, D43, D44, D50; `CompareStats` in `contract.ts`).** `stats` is
+  null, with `stats_note` saying why, for a pilot of one config, while any done trial's grading is
+  queued or running ("Grading is still running for 4 of 4 finished trials; ..."), or when no task
+  has a decided trial in both arms. Otherwise, from each done trial's current grading, B minus A:
+  - the task is the unit: per task and arm, pass rate = `passed / graded` (incomplete trials left
+    out and counted); a task with no decided trial in an arm is in `excluded_tasks` with `why`;
+  - `diff`: the mean over tasks of the per-task difference, in points, with a 95% interval from a
+    task bootstrap (10,000 resamples of the tasks, percentile method; D10 as revised 5 Nov:
+    trials are not resampled again inside tasks); `a` and `b` give each arm's mean task rate and
+    pooled counts;
+  - `p_value`: the paired sign-flip permutation test on the per-task differences, two-sided,
+    exact up to 30 tasks (`test.exact`, `test.flips` = 2^K), else 20,000 seeded flips;
+  - `verdict` (D42, D43, D50): `better` (interval above 0 and p < 0.05), `worse` (below 0 and p <
+    0.05), `equivalent` (the whole interval inside +/- `margin_points`, 10), else
+    `no_detectable_difference` with `not_ruled_out_points`; with fewer than 6 tasks in the
+    aggregate it is always `no_detectable_difference`. `held_back` when the pass rate alone says
+    better (`pass_rate_verdict`) but `critical` says critical failures rose. `verdict_text` says it
+    in a sentence;
+  - `tasks`: per task, counts, Newcombe's 95% interval (`diff`, points), Fisher's exact `p_value`,
+    the Benjamini-Hochberg `q_value` and `beyond_noise` at q = 0.05 (D41);
+  - `critical` (D10): each grader's `severity` is read from the grader specs of the grading that
+    produced the trial's grades (the task file it graded with). Per task with a required critical
+    check, the share of decided trials where one failed, compared like the pass rate. `status` is
+    `no_critical_checks` ("no check is marked critical"), `no_decided_trials`, `rose` (interval
+    above 0) or `did_not_rise`; `blocks_better` when it turns a better into `held_back`;
+  - `regressions` (D10): every task where B dropped (`diff` below 0) or a check's own pass rate
+    fell, critical first, with `graders` (id, required, severity, per-arm counts) and
+    `failed_trials` (arm B first, at most 10 per arm, each with the required checks it failed and
+    an optional `cause` reserved for the failure-cause step, not filled yet);
+  - `costs`: `cost_usd` (LiteLLM's recorded cost of the agent's calls; `made_up_prices` on a fake
+    model), `tokens` (input plus output) and `wall_s` (the trial's run time), each the same task
+    bootstrap over tasks with a value in both arms, as `diff` and `relative` (percent), no
+    verdict. **`wall_s` leaves out every trial in which LiteLLM retried a model call** (its spend
+    log's `attempted_retries`, as `proxy_usage.retried_calls` on the runner report or
+    `evals.proxy.attempts > 1` on any chat span, the simulated client's included): its backoff
+    waits would make that arm look slower (the grading guide's Retry Latency Skew).
+    `left_out_retried` counts them per arm and `retries_unknown` the trials kept whose record does
+    not say;
+  - `aa` (D44), on an ordinary A/B: the latest finished calibration run (`status: done`, not a
+    shipped example) of either arm's config, `{experiment_id, name, config_hash, finished_at, diff,
+    verdict}`, or null; `calibration`, on a calibration run: `{as_expected, text}`, whether it came
+    out with no difference found;
+  - `judge`: SP5's agreement, null until SP5 reports it.
+  `seed` is the experiment id, so the same data always gives the same numbers; results are cached
+  by the trials and their current grading jobs, so a regrade recomputes them.
 - `GET /experiments/:id/export?format=json|csv` streams every trial row (infra failures,
   abandoned and cancelled rows included) joined with its config, task, grades and spend. Each
   row has `arm` (`A` or `B` by the config's place in the experiment; in a run of one config twice,

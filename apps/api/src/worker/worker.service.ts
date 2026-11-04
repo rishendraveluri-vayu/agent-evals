@@ -16,7 +16,7 @@ import { FINISHED, HELD, LEASE_S, PAUSES_ARM, SWEEP_INTERVAL_MS, shouldRequeue, 
 import { MAX_FILE_BYTES, checkFiles, locate, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
 import { configErrorFix, configErrorReason, parseReport, spanRows, usageOf } from './report';
 import { applyRunRules } from '../experiments/rules';
-import { pauseArm } from '../experiments/run-state';
+import { TRIAL_IN_ARM, pauseArm } from '../experiments/run-state';
 import { SIM_REPLIES_FILE, type SimReplyRow, type SimScope, parseSimReplies, simScope } from './sim-cache';
 import { clientSummary } from './client-summary';
 import { CLIENT_STATE_FILE, SIM_MAX_OUTPUT_TOKENS, buildSpec } from './spec-builder';
@@ -159,8 +159,9 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
              -- SP7: a shipped example is never claimed (it is never running either: belt and braces).
              AND (e.id IS NULL OR e.example_name IS NULL)
              -- D37: a paused arm's trials wait; the other arm keeps claiming. A probe has no arm.
+             -- D44: in a calibration run one config is both arms, told apart by repeat.
              AND NOT EXISTS (SELECT 1 FROM experiment_arms a
-                             WHERE a.experiment_id = t.experiment_id AND a.config_hash = t.config_hash AND a.paused_at IS NOT NULL)
+                             WHERE a.experiment_id = t.experiment_id AND a.paused_at IS NOT NULL AND ${TRIAL_IN_ARM})
            -- Probes first (D33), then each experiment in its seeded claim order (D32).
            ORDER BY t.probe DESC, e.started_at, e.id, t.order_index, t.attempt, t.created_at
            LIMIT 1

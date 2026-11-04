@@ -1,7 +1,7 @@
 import type { Estimate, FutilityRule } from '../contract';
 import { badRequest } from '../common/api-error';
 import type { Queryable } from '../database/db.service';
-import { pauseExperiment } from './run-state';
+import { TRIAL_IN_ARM, pauseExperiment } from './run-state';
 
 /**
  * D32's automatic pauses. None of them looks at the difference between the arms: the verdict
@@ -91,7 +91,8 @@ export async function applyFutility(q: Queryable, experimentId: string): Promise
             count(t.id) FILTER (WHERE t.status = 'done' AND g.outcome IN ('pass', 'fail'))::int AS graded,
             count(t.id) FILTER (WHERE t.status = 'done' AND g.outcome = 'pass')::int AS passed
      FROM experiment_arms a
-     LEFT JOIN trials t ON t.experiment_id = a.experiment_id AND t.config_hash = a.config_hash
+     JOIN experiments e ON e.id = a.experiment_id
+     LEFT JOIN trials t ON t.experiment_id = a.experiment_id AND ${TRIAL_IN_ARM}
      LEFT JOIN LATERAL (
        SELECT j.outcome FROM grading_jobs j WHERE j.trial_id = t.id AND j.status = 'done' ORDER BY j.created_at DESC, j.id DESC LIMIT 1
      ) g ON true
@@ -102,7 +103,7 @@ export async function applyFutility(q: Queryable, experimentId: string): Promise
   );
   const due = arms.filter((a) => !a.reused && !a.futility_checked && a.graded >= rule.after);
   for (const a of due) {
-    await q.query('UPDATE experiment_arms SET futility_checked_at = now() WHERE experiment_id = $1 AND config_hash = $2', [experimentId, a.config_hash]);
+    await q.query('UPDATE experiment_arms SET futility_checked_at = now() WHERE experiment_id = $1 AND arm = $2', [experimentId, a.arm]);
   }
   const futileArms = due.filter((a) => futile(rule, a.graded, a.passed));
   if (!futileArms.length) return false;
@@ -147,7 +148,8 @@ export async function applyRunRules(q: Queryable, experimentId: string): Promise
             count(t.id) FILTER (WHERE t.status IN ('queued', 'claimed', 'running'))::int AS remaining,
             count(t.id) FILTER (WHERE t.cost_usd IS NOT NULL)::int AS reported,
             coalesce(sum(coalesce(t.cost_usd, 0) + coalesce(t.sim_cost_usd, 0)), 0)::float8 AS cost
-     FROM experiment_arms a LEFT JOIN trials t ON t.experiment_id = a.experiment_id AND t.config_hash = a.config_hash
+     FROM experiment_arms a JOIN experiments e ON e.id = a.experiment_id
+     LEFT JOIN trials t ON t.experiment_id = a.experiment_id AND ${TRIAL_IN_ARM}
      WHERE a.experiment_id = $1
      GROUP BY a.arm, a.config_hash, a.position
      ORDER BY a.position`,

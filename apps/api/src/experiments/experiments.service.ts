@@ -1,8 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
+  AaCalibration,
   ActualSoFar,
   ArmView,
   CompareResponse,
+  CompareRow,
   CreateExperimentRequest,
   Estimate,
   EstimateRequest,
@@ -14,6 +16,7 @@ import type {
   ExperimentStatus,
   ExperimentSummary,
   FutilityRule,
+  GraderSeverity,
   GradingJobStatus,
   GradingOutcome,
   StartExperimentRequest,
@@ -21,10 +24,11 @@ import type {
   TrialRowSummary,
   TrialStatus,
 } from '../contract';
-import { EXPERIMENT_NAME_MAX, TRIAL_STATUSES } from '../contract';
+import { EXPERIMENT_NAME_MAX, GRADER_SEVERITIES, TRIAL_STATUSES } from '../contract';
 import { badRequest, conflict, notFound } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
-import { normalizeSha } from '../common/hashing';
+import { hashCanonical, normalizeSha } from '../common/hashing';
+import { type AnalysisResult, STATS_METHOD_VERSION, type TaskInput, type TrialInput, analyse } from '../stats/analysis';
 import { newId } from '../common/ids';
 import { CatalogueService, type StoredPrompt, type StoredTask, taskView } from '../catalogue/catalogue.service';
 import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.service';
@@ -80,6 +84,18 @@ export interface ExperimentRow {
   example_name: string | null;
   example_title: string | null;
   example_loaded_at: Date | null;
+  // 012: D44, an A/A calibration run (one config on both arms; arm B's repeats are n to 2n - 1).
+  calibration: boolean;
+}
+
+/**
+ * Which arm a trial ran in (0 is A): by its config's place, or in an A/A calibration run (one
+ * config twice, D44) by its repeat, arm B's being n to 2n - 1. The UI's armIndexOf and the
+ * export's armOf read it the same way.
+ */
+export function armIndex(r: Pick<ExperimentRow, 'config_hashes' | 'n' | 'calibration'>, configHash: string, repeatIndex: number): number {
+  if (r.calibration) return repeatIndex >= r.n ? 1 : 0;
+  return r.config_hashes.indexOf(configHash);
 }
 
 const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
@@ -111,6 +127,8 @@ interface Plan {
   estimate: Estimate;
   /** Every model the run calls (the arms' and, when a task needs one, the simulator's) is `fake/*`. */
   fakeOnly: boolean;
+  /** D44: one config on both arms. */
+  calibration: boolean;
 }
 
 @Injectable()
@@ -127,7 +145,8 @@ export class ExperimentsService {
 
   private async plan(body: EstimateRequest): Promise<Plan> {
     if (typeof body !== 'object' || body === null) throw badRequest('invalid_experiment', 'the body must be a JSON object');
-    const configHashes = shaList(body.config_hashes, 'config_hashes');
+    const calibration = calibrationOf(body);
+    const configHashes = calibration ? calibrationHashes(body.config_hashes) : shaList(body.config_hashes, 'config_hashes');
     if (configHashes.length > MAX_ARMS) {
       // D35: two arms, A against B. A question with more arms is several A/B experiments.
       throw badRequest(
@@ -233,6 +252,7 @@ export class ExperimentsService {
       simModel: needsSim ? simModel : null,
       estimate: estimate({ cells, n, prices, simModel: needsSim ? simModel : null, workers }),
       fakeOnly: [...prices.keys()].every(isFakeModel),
+      calibration,
     };
   }
 
@@ -275,6 +295,9 @@ export class ExperimentsService {
       if (!parent) throw badRequest('unknown_parent_experiment', `no experiment ${parentId} to be the parent`, 'Name an experiment from GET /experiments, or leave parent_experiment_id out.');
     }
     if (!body.reuse_baseline) return { plan, simPrompt, parentId, baseline: null, run: plan };
+    if (plan.calibration) {
+      throw badRequest('invalid_calibration', 'an A/A calibration run cannot reuse a parent\'s trials: both of its arms must run side by side', 'Leave reuse_baseline out.');
+    }
     if (!parent) throw badRequest('invalid_experiment', 'reuse_baseline needs parent_experiment_id', 'Name the parent experiment whose arm-A trials to reuse, or leave reuse_baseline out.');
     // SP7: an example's trials stay apart from your own runs, so they are never your arm A.
     if (parent.example_name !== null) {
@@ -364,14 +387,18 @@ export class ExperimentsService {
     // order inside each block, so the arms alternate and any early batch is a random sample.
     // `seq` stays the slot's place in the plan (repeat, task, config), a stable number for paging.
     // With arm A reused (D34), only arm B's trials are queued.
-    const order = new Map(claimOrder(run.tasks.map((t) => t.sha256), run.configs.map((c) => c.hash), run.n, seed).map((s, i) => [`${s.task}|${s.config}|${s.repeat}`, i]));
+    // D44: an A/A calibration run has one config on both arms. The shuffle orders arms, so arm B gets
+    // its own key; its trials are told apart by repeat_index, which runs from n to 2n - 1.
+    const armKeys = run.configs.map((c, i) => (run.calibration && i === 1 ? `${c.hash}#B` : c.hash));
+    const order = new Map(claimOrder(run.tasks.map((t) => t.sha256), armKeys, run.n, seed).map((s, i) => [`${s.task}|${s.config}|${s.repeat}`, i]));
     let seq = 0;
     for (let r = 0; r < run.n; r += 1) {
       for (const t of run.tasks) {
-        for (const c of run.configs) {
-          const at = order.get(`${t.sha256}|${c.hash}|${r}`) as number;
-          slots.push({ id: newId('t'), task: t.sha256, config: c.hash, harness: c.harness, repeat: r, seq: seq++, order: at });
-        }
+        run.configs.forEach((c, i) => {
+          const at = order.get(`${t.sha256}|${armKeys[i]}|${r}`) as number;
+          const repeat = run.calibration && i === 1 ? run.n + r : r;
+          slots.push({ id: newId('t'), task: t.sha256, config: c.hash, harness: c.harness, repeat, seq: seq++, order: at });
+        });
       }
     }
     await this.db.tx(async (client) => {
@@ -379,8 +406,8 @@ export class ExperimentsService {
         `INSERT INTO experiments (id, name, axis, config_hashes, task_sha256s, n, sim_model, sim_prompt_sha256,
                                   sim_temperature, sim_max_output_tokens, budget_usd, trial_budget_usd, sim_budget_usd,
                                   platform_commit, plan_commit, estimate, status, order_seed, futility,
-                                  parent_experiment_id, reuse_baseline, baseline_decision)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'created', $17, $18, $19, $20, $21)`,
+                                  parent_experiment_id, reuse_baseline, baseline_decision, calibration)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'created', $17, $18, $19, $20, $21, $22)`,
         [
           id,
           name,
@@ -403,6 +430,7 @@ export class ExperimentsService {
           parentId,
           baseline !== null,
           baseline?.reason ?? null,
+          plan.calibration,
         ],
       );
       await client.query(
@@ -547,7 +575,12 @@ export class ExperimentsService {
   private async armRow(id: string, configHash: string): Promise<ArmRow> {
     const exp = await this.row(id);
     const hash = normalizeSha(configHash);
-    const [arm] = await this.db.query<ArmRow>('SELECT * FROM experiment_arms WHERE experiment_id = $1 AND (config_hash = $2 OR arm = $3)', [exp.id, hash, configHash.toUpperCase()]);
+    // By letter, or by hash: in a calibration run (D44) a hash names both arms, and this takes arm A.
+    const [arm] = await this.db.query<ArmRow>('SELECT * FROM experiment_arms WHERE experiment_id = $1 AND (config_hash = $2 OR arm = $3) ORDER BY position LIMIT 1', [
+      exp.id,
+      hash,
+      configHash.toUpperCase(),
+    ]);
     if (!arm) throw notFound('unknown_arm', `experiment ${id} has no arm ${configHash}`, `Use one of the experiment's config hashes: ${exp.config_hashes.join(', ')}.`);
     return arm;
   }
@@ -559,7 +592,16 @@ export class ExperimentsService {
     assertNotExample(exp, 'have an arm paused');
     if (exp.status === 'done' || exp.status === 'cancelled') throw conflict('experiment_finished', `experiment ${id} is ${exp.status}`);
     await this.db.tx((client) =>
-      pauseArm(client, id, arm.config_hash, 'paused by hand: this arm claims nothing more; its running trials finish', `POST /experiments/${id}/arms/${arm.config_hash}/resume to continue it.`),
+      pauseArm(
+        client,
+        id,
+        arm.config_hash,
+        'paused by hand: this arm claims nothing more; its running trials finish',
+        // D44: in a calibration run the hash names both arms, so the fix names the arm's letter.
+        `POST /experiments/${id}/arms/${exp.calibration ? arm.arm : arm.config_hash}/resume to continue it.`,
+        null,
+        arm.arm,
+      ),
     );
     return this.get(id);
   }
@@ -571,8 +613,8 @@ export class ExperimentsService {
     await this.db.tx(async (client) => {
       const { rowCount } = await client.query(
         `UPDATE experiment_arms SET paused_at = NULL, paused_reason = NULL, paused_fix = NULL, resumed_at = now()
-         WHERE experiment_id = $1 AND config_hash = $2 AND paused_at IS NOT NULL`,
-        [id, arm.config_hash],
+         WHERE experiment_id = $1 AND arm = $2 AND paused_at IS NOT NULL`,
+        [id, arm.arm],
       );
       if (rowCount) {
         await addEvent(client, { experimentId: id, kind: 'arm_resumed', detail: `arm ${arm.arm} resumed: its queued trials can be claimed`, configHash: arm.config_hash });
@@ -631,6 +673,7 @@ export class ExperimentsService {
       estimate: r.estimate,
       budget_usd: r.budget_usd,
       created_at: r.created_at.toISOString(),
+      calibration: r.calibration,
       example:
         r.example_name !== null
           ? { name: r.example_name, title: r.example_title ?? r.name, loaded_at: (r.example_loaded_at ?? r.created_at).toISOString() }
@@ -724,14 +767,16 @@ export class ExperimentsService {
       [r.id],
     );
     // An arm reused from the parent (D34) counts the parent's trials it took.
-    const counts = await this.db.query<{ config_hash: string; status: TrialStatus; n: number }>(
-      `SELECT config_hash, status, count(*)::int AS n FROM trials
-       WHERE experiment_id = $1 OR id = ANY($2) GROUP BY config_hash, status`,
-      [r.id, rows.flatMap((a) => a.reused_trial_ids)],
+    // D44: a calibration run's arms share one config; `second` says which arm (repeats n to 2n - 1 are B's).
+    const counts = await this.db.query<{ config_hash: string; second: boolean; status: TrialStatus; n: number }>(
+      `SELECT config_hash, ($3::boolean AND repeat_index >= $4) AS second, status, count(*)::int AS n FROM trials
+       WHERE experiment_id = $1 OR id = ANY($2) GROUP BY 1, 2, 3`,
+      [r.id, rows.flatMap((a) => a.reused_trial_ids), r.calibration, r.n],
     );
     return rows.map((a) => {
       const c = { queued: 0, running: 0, done: 0, infra_failed: 0, abandoned: 0, cancelled: 0 };
-      for (const row of counts.filter((x) => x.config_hash === a.config_hash)) c[row.status === 'claimed' ? 'running' : row.status] += row.n;
+      const mine = counts.filter((x) => x.config_hash === a.config_hash && (!r.calibration || x.second === (a.position === 1)));
+      for (const row of mine) c[row.status === 'claimed' ? 'running' : row.status] += row.n;
       const reused = a.reused_trial_ids.length > 0;
       const status: ArmView['status'] = reused
         ? 'complete'
@@ -765,11 +810,16 @@ export class ExperimentsService {
    */
   private async events(r: ExperimentRow): Promise<ExperimentEvent[]> {
     const events: ExperimentEvent[] = [];
-    const armOf = new Map(r.config_hashes.map((h, i) => [h, String.fromCharCode(65 + i)]));
-    const add = (at: Date | null, kind: ExperimentEventKind, detail: string, trial: { id: string; attempt: number; config_hash?: string } | null = null): void => {
+    // D44: in a calibration run one config is both arms, so only a trial's repeat says which.
+    const armOf = (configHash: string | null, repeat?: number): string | null => {
+      if (!configHash || (r.calibration && repeat === undefined)) return null;
+      const i = armIndex(r, configHash, repeat ?? 0);
+      return i < 0 ? null : String.fromCharCode(65 + i);
+    };
+    const add = (at: Date | null, kind: ExperimentEventKind, detail: string, trial: { id: string; attempt: number; config_hash?: string; repeat_index?: number } | null = null): void => {
       const configHash = trial?.config_hash ?? null;
       if (at) {
-        events.push({ at: at.toISOString(), kind, trial_id: trial?.id ?? null, attempt: trial?.attempt ?? null, arm: configHash ? (armOf.get(configHash) ?? null) : null, config_hash: configHash, detail });
+        events.push({ at: at.toISOString(), kind, trial_id: trial?.id ?? null, attempt: trial?.attempt ?? null, arm: armOf(configHash, trial?.repeat_index), config_hash: configHash, detail });
       }
     };
     const stored = await this.db.query<{ at: Date; kind: ExperimentEventKind; detail: string; config_hash: string | null; trial_id: string | null; attempt: number | null }>(
@@ -777,7 +827,7 @@ export class ExperimentsService {
       [r.id],
     );
     for (const s of stored) {
-      events.push({ at: s.at.toISOString(), kind: s.kind, trial_id: s.trial_id, attempt: s.attempt, arm: s.config_hash ? (armOf.get(s.config_hash) ?? null) : null, config_hash: s.config_hash, detail: s.detail });
+      events.push({ at: s.at.toISOString(), kind: s.kind, trial_id: s.trial_id, attempt: s.attempt, arm: armOf(s.config_hash), config_hash: s.config_hash, detail: s.detail });
     }
     add(r.created_at, 'created', `${r.config_hashes.length} configs x ${r.task_sha256s.length} tasks x N=${r.n}`);
     add(r.started_at, 'started', 'trials can be claimed');
@@ -802,9 +852,10 @@ export class ExperimentsService {
       task_id: string;
       config_hash: string;
       config_name: string;
+      repeat_index: number;
     }>(
       `SELECT t.id, t.attempt, t.status, t.label, t.worker_id, t.claimed_at, t.finished_at, t.reported_at, t.created_at,
-              t.problems, k.id AS task_id, t.config_hash, c.name AS config_name
+              t.problems, k.id AS task_id, t.config_hash, c.name AS config_name, t.repeat_index
        FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 JOIN configs c ON c.hash = t.config_hash
        WHERE t.experiment_id = $1`,
       [r.id],
@@ -868,13 +919,21 @@ export class ExperimentsService {
     const r = await this.row(id);
     const arms = await this.arms(r);
     const reason = this.incompleteReason(r, arms);
-    if (reason) return { experiment_id: id, status: 'incomplete', reason, arms, rows: [], stats: null };
+    if (reason) return { experiment_id: id, status: 'incomplete', reason, arms, rows: [], stats: null, stats_note: null };
+    const rows = await this.compareRows(r, arms);
+    const { stats, note } = await this.statsOf(r, arms);
+    return { experiment_id: id, status: 'complete', reason: null, arms, rows, stats, stats_note: note };
+  }
+
+  /** Per task and arm: the counts the comparison table shows (and SP6's statistics start from). */
+  private async compareRows(r: ExperimentRow, arms: ArmView[]): Promise<CompareRow[]> {
     const armOf = new Map(arms.map((a) => [a.config_hash, a.arm]));
     const rows = await this.db.query<{
       task: string;
       task_id: string;
       config: string;
       config_name: string;
+      second: boolean;
       trials: number;
       graded: number;
       passed: number;
@@ -885,7 +944,9 @@ export class ExperimentsService {
       // A trial's outcome is its latest finished grading job's, as on the run grid and the trial
       // page: pass when every required grader passed, fail when one failed, incomplete otherwise
       // (grader format, "The task's outcome"). Older grade versions and optional graders do not count.
+      // D44: a calibration run's one config is both arms; `second` is arm B (repeats n to 2n - 1).
       `SELECT t.task_sha256 AS task, k.id AS task_id, t.config_hash AS config, c.name AS config_name,
+              ($2::boolean AND t.repeat_index >= $3) AS second,
               count(*) FILTER (WHERE t.status = 'done')::int AS trials,
               count(*) FILTER (WHERE t.status = 'done' AND g.outcome IN ('pass', 'fail'))::int AS graded,
               count(*) FILTER (WHERE t.status = 'done' AND g.outcome = 'pass')::int AS passed,
@@ -901,20 +962,158 @@ export class ExperimentsService {
        ) g ON true
        -- D34: a reused arm A's rows are the parent's trials it took.
        WHERE t.experiment_id = $1 OR t.id IN (SELECT unnest(reused_trial_ids) FROM experiment_arms WHERE experiment_id = $1)
-       GROUP BY t.task_sha256, k.id, t.config_hash, c.name`,
-      [id],
+       GROUP BY t.task_sha256, k.id, t.config_hash, c.name, 5`,
+      [r.id, r.calibration, r.n],
     );
-    const order = (task: string, config: string): number => r.task_sha256s.indexOf(task) * 1000 + r.config_hashes.indexOf(config);
-    rows.sort((a, b) => order(a.task, a.config) - order(b.task, b.config));
-    return {
-      experiment_id: id,
-      status: 'complete',
-      reason: null,
-      arms,
-      rows: rows.map((row) => ({ ...row, arm: armOf.get(row.config) ?? '?' })),
-      stats: null,
-    };
+    const order = (row: { task: string; config: string; second: boolean }): number =>
+      r.task_sha256s.indexOf(row.task) * 1000 + (r.calibration ? Number(row.second) : r.config_hashes.indexOf(row.config));
+    rows.sort((a, b) => order(a) - order(b));
+    return rows.map(({ second, ...row }) => ({ ...row, arm: r.calibration ? (second ? 'B' : 'A') : (armOf.get(row.config) ?? '?') }));
   }
+
+  // ---- statistics (SP6) ----
+
+  /** Computed statistics, keyed by the experiment and the exact grading they rest on, so a regrade recomputes. */
+  private readonly statsCache = new Map<string, AnalysisResult>();
+
+  /**
+   * SP6: the verdict and intervals (stats/analysis.ts) from each done trial's current grading. Null,
+   * with a note, while grading is still running, for a pilot of one config, or when no task has a
+   * decided trial in both arms. Cached by the trials and grading jobs it reads.
+   */
+  private async statsOf(r: ExperimentRow, arms: ArmView[], withAa = true): Promise<AnalysisResult> {
+    if (arms.length < 2) return { stats: null, note: 'A pilot of one config has nothing to compare it with, so there is no verdict.' };
+    const trials = await this.db.query<StatsTrialRow>(
+      `SELECT t.id, t.task_sha256, t.config_hash, t.repeat_index, t.cost_usd, t.input_tokens, t.output_tokens, t.wall_s,
+              t.runner_report -> 'proxy_usage' ->> 'retried_calls' AS retried_calls,
+              gd.id AS job_id, gd.status AS job_status, gd.outcome, gd.graders, gd.grade_ids::text[] AS grade_ids,
+              gl.status AS latest_status, sp.attempts_known, sp.retried AS span_retried
+       FROM trials t
+       LEFT JOIN LATERAL (
+         SELECT j.id, j.status, j.outcome, j.graders, j.grade_ids FROM grading_jobs j
+         WHERE j.trial_id = t.id AND j.status IN ('done', 'no_graders') ORDER BY j.created_at DESC, j.id DESC LIMIT 1
+       ) gd ON true
+       LEFT JOIN LATERAL (
+         SELECT j.status FROM grading_jobs j WHERE j.trial_id = t.id AND j.status <> 'superseded' ORDER BY j.created_at DESC, j.id DESC LIMIT 1
+       ) gl ON true
+       -- D16: LiteLLM's retries, from each model call's span (the agent's and the simulated client's).
+       LEFT JOIN LATERAL (
+         SELECT bool_or(s.attributes ->> 'evals.proxy.attempts' ~ '^[0-9]+$') AS attempts_known,
+                bool_or(s.attributes ->> 'evals.proxy.attempts' ~ '^[0-9]+$' AND (s.attributes ->> 'evals.proxy.attempts')::int > 1) AS retried
+         FROM spans s WHERE s.trial_id = t.id AND s.name LIKE 'chat %'
+       ) sp ON true
+       WHERE t.status = 'done'
+         AND (t.experiment_id = $1 OR t.id IN (SELECT unnest(reused_trial_ids) FROM experiment_arms WHERE experiment_id = $1))
+       ORDER BY t.task_sha256, t.repeat_index, t.attempt, t.id`,
+      [r.id],
+    );
+    const waiting = trials.filter((t) => t.latest_status === null || t.latest_status === 'queued' || t.latest_status === 'claimed').length;
+    if (waiting) {
+      return { stats: null, note: `Grading is still running for ${waiting} of ${trials.length} finished ${trials.length === 1 ? 'trial' : 'trials'}; the verdict waits for every grade.` };
+    }
+    const key = `${STATS_METHOD_VERSION}|${r.id}|${hashCanonical(trials.map((t) => [t.id, t.job_id]))}`;
+    let result = this.statsCache.get(key);
+    if (!result) {
+      const gradeIds = trials.flatMap((t) => t.grade_ids ?? []);
+      const grades = gradeIds.length
+        ? await this.db.query<StatsGradeRow>('SELECT trial_id, grader_id, required, verdict FROM grades WHERE id = ANY($1::bigint[]) ORDER BY id', [gradeIds])
+        : [];
+      const configs = await this.db.query<{ model: string }>('SELECT model FROM configs WHERE hash = ANY($1)', [r.config_hashes.slice(0, 2)]);
+      const taskIds = new Map((await this.db.query<{ sha256: string; id: string }>('SELECT sha256, id FROM tasks WHERE sha256 = ANY($1)', [r.task_sha256s])).map((t) => [t.sha256, t.id]));
+      result = analyse({ seed: r.id, tasks: statsTasks(r, trials, grades, taskIds), madeUpPrices: configs.some((c) => isFakeModel(c.model)), calibration: r.calibration });
+      if (this.statsCache.size >= 200) this.statsCache.delete(this.statsCache.keys().next().value as string);
+      this.statsCache.set(key, result);
+    }
+    if (!result.stats || !withAa || r.calibration) return result;
+    return { ...result, stats: { ...result.stats, aa: await this.latestCalibration(r) } };
+  }
+
+  /** D44: the latest finished A/A calibration run of either arm's config, with its interval; null when there is none. */
+  private async latestCalibration(r: ExperimentRow): Promise<AaCalibration | null> {
+    const candidates = await this.db.query<ExperimentRow>(
+      `SELECT * FROM experiments
+       WHERE calibration AND status = 'done' AND example_name IS NULL AND id <> $2 AND config_hashes[1] = ANY($1)
+       ORDER BY finished_at DESC NULLS LAST, created_at DESC, id DESC LIMIT 5`,
+      [r.config_hashes.slice(0, 2), r.id],
+    );
+    for (const c of candidates) {
+      const arms = await this.arms(c);
+      if (this.incompleteReason(c, arms)) continue;
+      const { stats } = await this.statsOf(c, arms, false);
+      if (!stats) continue;
+      return { experiment_id: c.id, name: experimentTitle(c), config_hash: c.config_hashes[0], finished_at: iso(c.finished_at), diff: stats.diff, verdict: stats.verdict };
+    }
+    return null;
+  }
+}
+
+/** One done trial as the statistics read it. */
+interface StatsTrialRow {
+  id: string;
+  task_sha256: string;
+  config_hash: string;
+  repeat_index: number;
+  cost_usd: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  wall_s: number | null;
+  retried_calls: string | null;
+  job_id: string | null;
+  job_status: GradingJobStatus | null;
+  outcome: GradingOutcome | null;
+  /** The grader specs the job froze, from the task file it graded with: [{spec, spec_sha256}]. */
+  graders: { spec?: { id?: unknown; severity?: unknown } }[] | null;
+  grade_ids: string[] | null;
+  latest_status: GradingJobStatus | null;
+  attempts_known: boolean | null;
+  span_retried: boolean | null;
+}
+
+interface StatsGradeRow {
+  trial_id: string;
+  grader_id: string;
+  required: boolean;
+  verdict: string | null;
+}
+
+/**
+ * The analysis input from the trial rows: per task, in the experiment's order, each done trial's
+ * arm, outcome, grades with each grader's severity (read from the grader specs of the grading that
+ * produced them, i.e. the task file it graded with), cost, tokens, time, and whether LiteLLM
+ * retried one of its model calls (D16).
+ */
+export function statsTasks(r: Pick<ExperimentRow, 'task_sha256s' | 'config_hashes' | 'n' | 'calibration'>, trials: StatsTrialRow[], grades: StatsGradeRow[], taskIds: Map<string, string>): TaskInput[] {
+  const byTrial = new Map<string, StatsGradeRow[]>();
+  for (const g of grades) byTrial.set(g.trial_id, [...(byTrial.get(g.trial_id) ?? []), g]);
+  return r.task_sha256s.map((task) => ({
+    task,
+    task_id: taskIds.get(task) ?? task,
+    trials: trials
+      .filter((t) => t.task_sha256 === task)
+      .flatMap((t): TrialInput[] => {
+        const arm = armIndex(r, t.config_hash, t.repeat_index);
+        if (arm !== 0 && arm !== 1) return [];
+        const severity = new Map<string, GraderSeverity>();
+        for (const g of t.graders ?? []) {
+          const sev = g.spec?.severity;
+          if (typeof g.spec?.id === 'string' && (GRADER_SEVERITIES as readonly unknown[]).includes(sev)) severity.set(g.spec.id, sev as GraderSeverity);
+        }
+        const retriedCalls = t.retried_calls !== null && /^[0-9]+$/.test(t.retried_calls) ? Number(t.retried_calls) : null;
+        const retried = t.span_retried || (retriedCalls ?? 0) > 0 ? true : retriedCalls !== null || t.attempts_known ? false : null;
+        return [
+          {
+            trial_id: t.id,
+            arm: arm === 0 ? 'A' : 'B',
+            outcome: t.job_status === 'done' && (t.outcome === 'pass' || t.outcome === 'fail') ? t.outcome : 'incomplete',
+            grades: (byTrial.get(t.id) ?? []).map((g) => ({ grader_id: g.grader_id, required: g.required, verdict: g.verdict, severity: severity.get(g.grader_id) ?? null })),
+            cost_usd: t.cost_usd,
+            tokens: t.input_tokens === null && t.output_tokens === null ? null : (t.input_tokens ?? 0) + (t.output_tokens ?? 0),
+            wall_s: t.wall_s,
+            retried,
+          },
+        ];
+      }),
+  }));
 }
 
 export interface TrialSummaryRow {
@@ -1031,8 +1230,33 @@ function shaList(value: unknown, field: string): string[] {
     if (!sha) throw badRequest('invalid_experiment', `${field} holds ${String(v)}, which is not sha256:<64 hex>`);
     return sha;
   });
-  if (new Set(out).size !== out.length) throw badRequest('invalid_experiment', `${field} lists the same hash twice`);
+  if (new Set(out).size !== out.length) {
+    // A30: the same config twice is refused in plain words, unless the run is marked as an A/A calibration (D44).
+    const hint = field === 'config_hashes' ? 'Pick a different config for one arm, or mark the run as an A/A calibration (calibration: true) to measure the setup\'s own noise.' : undefined;
+    throw badRequest('invalid_experiment', `${field} lists the same hash twice`, hint);
+  }
   return out;
+}
+
+/** D44: `calibration`, true or false; left out or null is false. */
+export function calibrationOf(body: { calibration?: unknown }): boolean {
+  const c = body.calibration;
+  if (c === undefined || c === null) return false;
+  if (typeof c !== 'boolean') throw badRequest('invalid_experiment', 'calibration must be true or false');
+  return c;
+}
+
+/** D44: a calibration run names one config twice, arm A and arm B. */
+function calibrationHashes(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length !== 2) {
+    throw badRequest('invalid_calibration', 'an A/A calibration run names one config twice, for arm A and arm B', 'Send config_hashes as [h, h], or leave calibration out for an ordinary run.');
+  }
+  const [a, b] = value.map((v) => normalizeSha(v));
+  if (!a || !b) throw badRequest('invalid_experiment', `config_hashes holds ${String(a ? value[1] : value[0])}, which is not sha256:<64 hex>`);
+  if (a !== b) {
+    throw badRequest('invalid_calibration', 'an A/A calibration run puts the same config on both arms; these are two different configs', 'Name one config twice, or leave calibration out to compare two configs.');
+  }
+  return [a, b];
 }
 
 export function isSimTask(t: StoredTask): boolean {
