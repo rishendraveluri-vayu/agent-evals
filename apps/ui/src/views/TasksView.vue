@@ -1,0 +1,291 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue';
+import { api } from '../api/client';
+import type { Compare, Experiment, ExperimentDetail, TaskInfo } from '../api/types';
+import LoadState from '../components/LoadState.vue';
+import { armsOf } from '../lib/arms';
+import { optional, useLoad } from '../lib/async';
+import { clientKind, gradedBy, graderKinds, graderName, splitName } from '../lib/names';
+import { href } from '../router';
+
+const { data, error, loading } = useLoad(async () => {
+  const [tasks, experiments] = await Promise.all([api.tasks(), optional(api.experiments(), [] as Experiment[])]);
+  const latest = experiments
+    .filter((e) => e.status === 'done' && e.config_hashes.length === 2 && e.config_hashes[0] !== e.config_hashes[1])
+    .sort((a, b) => Date.parse(b.finished_at ?? b.created_at) - Date.parse(a.finished_at ?? a.created_at))[0];
+  let run: { detail: ExperimentDetail; compare: Compare } | null = null;
+  if (latest) {
+    const [detail, compare] = await Promise.all([optional(api.experiment(latest.id), null), optional(api.compare(latest.id), null)]);
+    if (detail && compare) run = { detail, compare };
+  }
+  return { tasks, run };
+});
+
+const split = ref<string>('all');
+const grader = ref('any');
+const showAll = ref(false);
+const LIMIT = 12;
+
+const tasks = computed(() => data.value?.tasks ?? []);
+const splits = computed(() => [...new Set(tasks.value.map((t) => t.split))]);
+const kinds = computed(() => [...new Set(tasks.value.flatMap((t) => graderKinds(t.graders)))]);
+const isCode = (t: TaskInfo) => !graderKinds(t.graders).includes('judge');
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+const arms = computed(() => (data.value?.run ? armsOf(data.value.run.detail, data.value.run.detail.configs) : []));
+
+const glance = computed(() => {
+  const all = tasks.value;
+  const bySplit = splits.value.map((s) => `${all.filter((t) => t.split === s).length} ${splitName(s)}`).join(', ');
+  const code = all.filter(isCode).length;
+  const single = all.filter((t) => clientKind(t.kind) === 'Single prompt').length;
+  const run = data.value?.run;
+  const stats = run?.compare.stats;
+  const separated = stats ? stats.tasks.filter((t) => t.significant).length : null;
+  const runSplit = run ? new Set(run.detail.tasks.map((t) => splitName(t.split))) : null;
+  return {
+    bySplit,
+    graded: `${code} code, ${all.length - code} judge`,
+    client: `${plural(single, 'single prompt', 'single prompts')}, ${plural(all.length - single, 'conversation', 'conversations')}`,
+    separatedLabel: arms.value.length === 2 ? `Separated ${arms.value[0].short} and ${arms.value[1].short}` : 'Separated the arms',
+    separated: separated !== null && stats ? `${separated} of ${stats.tasks.length}${runSplit?.size === 1 ? ` ${[...runSplit][0]}` : ''}` : 'No comparison yet',
+    separatedNote: stats ? (stats.correction ? `After correcting for ${stats.tasks.length} comparisons` : 'Before correcting for many comparisons') : 'Needs a finished experiment with statistics',
+  };
+});
+
+const lastRun = (t: TaskInfo) => {
+  const run = data.value?.run;
+  if (!run) return null;
+  const [ha, hb] = run.detail.config_hashes;
+  const rows = run.compare.rows.filter((r) => r.task === t.sha256 || r.task === t.id);
+  const a = rows.find((r) => r.config === ha);
+  const b = rows.find((r) => r.config === hb);
+  if (!a || !b) return null;
+  const stat = run.compare.stats?.tasks.find((x) => x.task === t.sha256 || x.task === t.id);
+  return { text: `${a.passed} to ${b.passed} of ${Math.max(a.graded, b.graded)}`, separates: !!stat?.significant, hasStats: !!stat };
+};
+
+const filtered = computed(() =>
+  tasks.value.filter((t) => (split.value === 'all' || t.split === split.value) && (grader.value === 'any' || graderKinds(t.graders).includes(grader.value))),
+);
+const shown = computed(() => (showAll.value ? filtered.value : filtered.value.slice(0, LIMIT)));
+const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+</script>
+
+<template>
+  <div class="page-head">
+    <h1 tabindex="-1">
+      Tasks
+    </h1>
+    <p class="lede">
+      {{ tasks.length || 'The' }} personal-finance tasks, each needing both a correct tool call and judgment. Tasks are files in the repo; this page shows how each is graded and where it sits in the experiment.
+    </p>
+  </div>
+
+  <LoadState
+    :loading="loading"
+    :error="error"
+    what="the tasks"
+  >
+    <section
+      aria-label="Task set at a glance"
+      class="stat-strip glance"
+      data-test="task-glance"
+    >
+      <div>
+        <span class="stat-label">Split</span>
+        <span class="glance-value">{{ glance.bySplit }}</span>
+        <span class="stat-note smaller">Prompt changes are made on discovery only</span>
+      </div>
+      <div>
+        <span class="stat-label">Graded by</span>
+        <span class="glance-value">{{ glance.graded }}</span>
+        <span class="stat-note smaller">Code means exact match, unit tests and state checks</span>
+      </div>
+      <div>
+        <span class="stat-label">Client</span>
+        <span class="glance-value">{{ glance.client }}</span>
+        <span class="stat-note smaller">Conversations use the simulated client</span>
+      </div>
+      <div>
+        <span class="stat-label">{{ glance.separatedLabel }}</span>
+        <span class="glance-value">{{ glance.separated }}</span>
+        <span class="stat-note smaller">{{ glance.separatedNote }}</span>
+      </div>
+    </section>
+
+    <div class="filters">
+      <div
+        role="group"
+        aria-label="Split"
+        class="seg"
+      >
+        <button
+          type="button"
+          :aria-pressed="split === 'all'"
+          @click="split = 'all'"
+        >
+          All
+        </button>
+        <button
+          v-for="s in splits"
+          :key="s"
+          type="button"
+          :aria-pressed="split === s"
+          @click="split = s"
+        >
+          {{ sentence(splitName(s)) }}
+        </button>
+      </div>
+      <label class="inline-field">Graded by
+        <select v-model="grader">
+          <option value="any">Any</option>
+          <option
+            v-for="k in kinds"
+            :key="k"
+            :value="k"
+          >{{ graderName(k) }}</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="table-wrap">
+      <table
+        class="table tasks"
+        data-test="tasks-table"
+      >
+        <thead>
+          <tr>
+            <th scope="col">
+              Task
+            </th>
+            <th scope="col">
+              What it checks
+            </th>
+            <th scope="col">
+              Split
+            </th>
+            <th scope="col">
+              Graded by
+            </th>
+            <th scope="col">
+              Client
+            </th>
+            <th
+              scope="col"
+              class="right"
+            >
+              Last run, A to B
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="t in shown"
+            :key="t.sha256"
+          >
+            <th scope="row">
+              <a
+                v-if="lastRun(t) && data?.run"
+                :href="href.compare(data.run.detail.id)"
+                class="mono task-link"
+              >{{ t.id }}</a>
+              <span
+                v-else
+                class="mono"
+              >{{ t.id }}</span>
+            </th>
+            <td class="what">
+              {{ t.summary }}
+            </td>
+            <td>{{ sentence(splitName(t.split)) }}</td>
+            <td class="secondary">
+              {{ gradedBy(t) }}
+            </td>
+            <td class="secondary">
+              {{ clientKind(t.kind) }}
+            </td>
+            <td class="right num">
+              <template v-if="lastRun(t)">
+                {{ lastRun(t)?.text }}
+                <span
+                  class="block smaller"
+                  :class="lastRun(t)?.separates ? 'separates' : 'secondary'"
+                >{{ lastRun(t)?.separates ? `Separates ${arms[0]?.short} and ${arms[1]?.short}` : lastRun(t)?.hasStats ? 'Within noise' : 'No interval yet' }}</span>
+              </template>
+              <span
+                v-else
+                class="secondary"
+              >Not in this run</span>
+            </td>
+          </tr>
+          <tr v-if="!shown.length">
+            <td
+              colspan="6"
+              class="secondary"
+            >
+              No task matches these filters.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <button
+      v-if="filtered.length > LIMIT"
+      type="button"
+      class="btn btn--quiet show-all"
+      :aria-expanded="showAll"
+      @click="showAll = !showAll"
+    >
+      {{ showAll ? `Show the first ${LIMIT}` : `Show all ${filtered.length} tasks` }}
+    </button>
+  </LoadState>
+</template>
+
+<style scoped>
+.glance {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.glance > div {
+  padding: 18px 22px;
+}
+
+.glance-value {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.tasks {
+  min-width: 1000px;
+}
+
+.what {
+  max-width: 420px;
+}
+
+.task-link {
+  color: var(--ink);
+}
+
+.block {
+  display: block;
+}
+
+.separates {
+  color: var(--pass);
+  font-weight: 500;
+}
+
+.show-all {
+  align-self: flex-start;
+}
+</style>
