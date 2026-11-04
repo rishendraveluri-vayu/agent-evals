@@ -31,7 +31,7 @@ status, plus `"fix": "<what to change>"` where the API can say how to put the re
 | --- | --- |
 | `GET /harnesses` | `[{name, package, ref, python, capabilities}]`, one per `workers/*/src/*/capabilities.json` (read-only mount). |
 | `GET /prompts` | `[{id, version, sha256, path, text}]` from `configs/prompts/<id>.<version>.md` (the leading `<!-- -->` review header stripped, as `prompt_text` does). |
-| `GET /toolsets` | `[{id, version, sha256, servers: [{name, allowed_tools}]}]`. One built-in toolset `finance/all` until more exist. |
+| `GET /toolsets` | `[{id, version, sha256, servers: [{name, allowed_tools}], manifest: [{server, server_version, tools: [{name, description, input_schema}]}]}]`. One built-in toolset `finance/all` until more exist. `sha256` is the canonical JSON hash of everything else in the entry, so it covers each tool's description and input schema and the server's version, not just the names (since 4 Nov; configs made before keep their names-only hash). |
 | `GET /tasks` | `[{sha256, id, version, split, kind, summary, graders}]` from `tasks/<id>/task.json`. |
 | `GET /models` | `[{name, provider, input_per_mtok, output_per_mtok}]` from LiteLLM's `/model/info`, real models only. |
 

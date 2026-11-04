@@ -24,7 +24,8 @@ const EXAMPLE_SPANS = readFileSync(path.join(EXAMPLES, 'trace.jsonl'), 'utf8')
   .filter(Boolean)
   .map((l) => JSON.parse(l) as Record<string, unknown>);
 const sha = (data: string | Buffer): string => createHash('sha256').update(data).digest('hex');
-const FRAMEWORK = '0.1.0';
+/** The Python framework's own version (graders/src/evals_graders/__init__.py), so the real grader's reports match. */
+const FRAMEWORK = /^FRAMEWORK_VERSION = "([^"]+)"/m.exec(readFileSync(path.join(REPO, 'graders/src/evals_graders/__init__.py'), 'utf8'))![1];
 
 /** A synthetic task with graders (test fixture, not part of the task set). The example trial's
  *  answer is "Your EMI is Rs 8,997.26." and its one tool call is calculate_emi. */

@@ -1,6 +1,8 @@
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import request from 'supertest';
+import { hashCanonical } from '../src/common/hashing';
+import type { ToolsetView } from '../src/contract';
 import { type TestEnv, bootEnv, catalogue, makeConfig } from './support/app';
 import { describeWithDb } from './support/db';
 
@@ -27,9 +29,14 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
     const prompts = (await request(env.http).get('/api/prompts').expect(200)).body as { id: string; version: string; text: string; path: string }[];
     expect(prompts.map((p) => `${p.id}.${p.version}`)).toEqual(expect.arrayContaining(['finance-advisor.v1', 'client-sim.v1', 'client-sim.v2']));
     expect(prompts.every((p) => !p.text.startsWith('<!--'))).toBe(true);
-    const toolsets = (await request(env.http).get('/api/toolsets').expect(200)).body as { id: string; version: string; servers: { allowed_tools: string[] }[] }[];
+    const toolsets = (await request(env.http).get('/api/toolsets').expect(200)).body as ToolsetView[];
     expect(toolsets).toHaveLength(1);
-    expect(toolsets[0]).toMatchObject({ id: 'finance', version: 'all' });
+    expect(toolsets[0]).toMatchObject({ id: 'finance', version: 'all', manifest: [{ server: 'finance', server_version: '0.2.0' }] });
+    // The hash covers the manifest, and the manifest is stored with it (migration 008).
+    const { sha256, ...content } = toolsets[0];
+    expect(sha256).toBe(hashCanonical(content));
+    const [row] = (await env.pool.query<{ manifest: unknown }>('SELECT manifest FROM toolsets WHERE sha256 = $1', [sha256])).rows;
+    expect(row.manifest).toEqual(toolsets[0].manifest);
     const tasks = (await request(env.http).get('/api/tasks').expect(200)).body as { id: string; kind: string; split: string; problems: string[] }[];
     expect(tasks.map((t) => [t.id, t.kind, t.split, t.problems.length])).toEqual([
       ['emi-basic', 'single_prompt', 'discovery', 0],

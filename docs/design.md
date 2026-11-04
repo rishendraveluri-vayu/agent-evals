@@ -74,7 +74,7 @@ Open:
 
 Tasks, configs, experiments, trials and traces. **[Rishi designs]** in SP2.
 
-Approved on 4 Nov (R14): `docs/proposals/data-model.md`. Content-addressed prompts, toolsets, tasks and configs; experiments freeze task hashes × config hashes × N; one trial row per (experiment, task, config, repeat, attempt) with a claim, heartbeat and idempotent report; spans and grades in their own tables; labels stay files; raw trial files stay under `runs/`.
+Approved on 4 Nov (R14): `docs/proposals/data-model.md`. Content-addressed prompts, toolsets (since 4 Nov the toolset hash covers the published tool manifest and the server version, not just the tool names), tasks and configs; experiments freeze task hashes × config hashes × N; one trial row per (experiment, task, config, repeat, attempt) with a claim, heartbeat and idempotent report; spans and grades in their own tables; labels stay files; raw trial files stay under `runs/`.
 
 Added with D22's reply cache (migration `002_sim_replies.sql`): a `sim_replies` table keyed by the simulator cache key, with the task sha256, simulator model, temperature, token cap and prompt sha256 it is scoped by and the trial that first produced each reply. A claim hands out every reply in its trial's scope; a report adds the trial's new ones, first reply per key kept. An empty reply is never cached (D26, 4 Nov): the adapter marks it with `error` in `sim_replies.jsonl`, the report skips it, and a claim leaves out any empty reply stored before that rule, so a trial re-queued after `infra:sim_error` asks the simulator again.
 

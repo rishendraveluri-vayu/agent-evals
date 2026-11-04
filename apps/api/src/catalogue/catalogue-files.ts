@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs';
+import { promises as fs, readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import type { HarnessView, Json, JsonObject, PromptView, TaskSplit, ToolsetView } from '../contract';
 import { hashCanonical, sha256Ref } from '../common/hashing';
@@ -147,9 +147,58 @@ export const FINANCE_TOOLS = [
   'list_transactions',
 ] as const;
 
-/** The one built-in toolset until more exist: every finance tool. */
-export function builtInToolsets(): ToolsetView[] {
-  const content = { id: 'finance', version: 'all', servers: [{ name: 'finance', allowed_tools: [...FINANCE_TOOLS] }] };
+/** One tool as the server publishes it: what a model is shown. */
+export interface PublishedTool {
+  name: string;
+  description: string | null;
+  input_schema: Json;
+}
+
+/** The finance MCP server as its tools are published: its version and every tool. */
+export interface FinanceServerManifest {
+  version: string;
+  tools: PublishedTool[];
+}
+
+/** The server's tool list, which its tests keep equal to what it serves (test_tools_manifest_snapshot). */
+export const FINANCE_MANIFEST_FILE = path.join('tests', 'snapshots', 'tools_manifest.json');
+/** The server's own version, which it reports in the MCP handshake (serverInfo.version). */
+export const FINANCE_VERSION_FILE = path.join('src', 'finance_mcp', '__init__.py');
+
+/**
+ * Reads the finance MCP server's published manifest and version from its folder
+ * (services/finance-mcp, or FINANCE_MCP_DIR in compose). Throws when either is missing or
+ * unreadable: a toolset whose tools are unknown must not get a hash.
+ */
+export function loadFinanceServer(dir: string): FinanceServerManifest {
+  const raw = JSON.parse(readFileSync(path.join(dir, FINANCE_MANIFEST_FILE), 'utf8')) as unknown;
+  if (!Array.isArray(raw)) throw new Error(`${FINANCE_MANIFEST_FILE} is not a list of tools`);
+  const tools = raw.map((t, i): PublishedTool => {
+    if (!isObject(t) || typeof t.name !== 'string' || !isObject(t.inputSchema)) {
+      throw new Error(`${FINANCE_MANIFEST_FILE}[${i}] is not a tool with a name and an inputSchema`);
+    }
+    return { name: t.name, description: typeof t.description === 'string' ? t.description : null, input_schema: t.inputSchema as Json };
+  });
+  const init = readFileSync(path.join(dir, FINANCE_VERSION_FILE), 'utf8');
+  const version = /^__version__\s*=\s*["']([^"']+)["']/m.exec(init)?.[1];
+  if (!version) throw new Error(`no __version__ in ${FINANCE_VERSION_FILE}`);
+  return { version, tools };
+}
+
+/**
+ * The one built-in toolset until more exist: every finance tool. Its sha256 covers the full
+ * published manifest, not just the names: each allowed tool's name, description and input
+ * schema, and the server's version, as canonical JSON. So a schema change (sip_future_value's
+ * lump_sum, 4 Nov) or a new server version is a new toolset, and a past result points at the
+ * exact tools its model was shown. Before 4 Nov the hash covered the names only.
+ */
+export function builtInToolsets(server: FinanceServerManifest): ToolsetView[] {
+  const allowed = [...FINANCE_TOOLS];
+  const byName = new Map(server.tools.map((t) => [t.name, t]));
+  const missing = allowed.filter((n) => !byName.has(n));
+  if (missing.length) throw new Error(`the finance server's manifest has no ${missing.join(', ')}`);
+  const manifest = [{ server: 'finance', server_version: server.version, tools: allowed.map((n) => byName.get(n) as PublishedTool) }];
+  const content = { id: 'finance', version: 'all', servers: [{ name: 'finance', allowed_tools: allowed }], manifest };
   return [{ ...content, sha256: hashCanonical(content) }];
 }
 

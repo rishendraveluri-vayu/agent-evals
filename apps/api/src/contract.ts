@@ -86,12 +86,22 @@ export interface ToolsetServer {
   allowed_tools: string[];
 }
 
+/** One published tool: what the model is shown. */
+export interface ToolsetTool {
+  name: string;
+  description: string | null;
+  input_schema: Json;
+}
+
 /** GET /toolsets */
 export interface ToolsetView {
   id: string;
   version: string;
+  /** Covers id, version, servers and manifest, as canonical JSON (since 4 Nov; names only before). */
   sha256: Sha256;
   servers: ToolsetServer[];
+  /** Per server: its version and each allowed tool's name, description and input schema. */
+  manifest: { server: string; server_version: string; tools: ToolsetTool[] }[];
 }
 
 export type TaskSplit = 'discovery' | 'held_out';

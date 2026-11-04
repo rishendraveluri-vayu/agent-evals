@@ -1,7 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020';
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
-import { builtInToolsets } from '../catalogue/catalogue-files';
+import { builtInToolsets, loadFinanceServer } from '../catalogue/catalogue-files';
 import { sha256Ref } from '../common/hashing';
 import { PLATFORM_DEFAULTS } from '../configs/settings';
 import { MODEL_KEY_ENV, SIM_KEY_ENV, SIM_MAX_OUTPUT_TOKENS, type SpecInputs, buildSpec, simTemperature } from './spec-builder';
@@ -9,7 +9,7 @@ import { MODEL_KEY_ENV, SIM_KEY_ENV, SIM_MAX_OUTPUT_TOKENS, type SpecInputs, bui
 const SCHEMA = JSON.parse(readFileSync(path.resolve(__dirname, '../../../../contract/v2/spec.schema.json'), 'utf8')) as object;
 const validate = new Ajv2020({ allErrors: true, strict: false }).compile(SCHEMA);
 
-const toolset = builtInToolsets()[0];
+const toolset = builtInToolsets(loadFinanceServer(path.resolve(__dirname, '../../../../services/finance-mcp')))[0];
 const base: SpecInputs = {
   trial: { id: 't_abc123', experimentId: 'e_xyz', repeatIndex: 2, attempt: 1 },
   config: {

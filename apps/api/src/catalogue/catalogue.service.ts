@@ -3,7 +3,7 @@ import type { HarnessView, JsonObject, ModelView, PromptView, TaskSplit, TaskVie
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { Db } from '../database/db.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
-import { type HarnessFile, type TaskFile, builtInToolsets, readHarnesses, readPrompts, readTasks } from './catalogue-files';
+import { type HarnessFile, type TaskFile, builtInToolsets, loadFinanceServer, readHarnesses, readPrompts, readTasks } from './catalogue-files';
 
 /** A task as stored: the row the engine builds specs from. */
 export interface StoredTask {
@@ -33,6 +33,8 @@ export interface StoredToolset {
   id: string;
   version: string;
   servers: { name: string; allowed_tools: string[] }[];
+  /** Null for a toolset stored before 4 Nov, whose hash covered the tool names only. */
+  manifest: JsonObject[] | null;
 }
 
 export function taskView(t: StoredTask, problems: string[] = []): TaskView {
@@ -87,12 +89,12 @@ export class CatalogueService {
   }
 
   async toolsets(): Promise<ToolsetView[]> {
-    const toolsets = builtInToolsets();
+    const toolsets = builtInToolsets(loadFinanceServer(this.config.financeMcpDir));
     if (this.db.configured) {
       for (const t of toolsets) {
         await this.db.query(
-          `INSERT INTO toolsets (sha256, id, version, servers) VALUES ($1, $2, $3, $4) ON CONFLICT (sha256) DO NOTHING`,
-          [t.sha256, t.id, t.version, JSON.stringify(t.servers)],
+          `INSERT INTO toolsets (sha256, id, version, servers, manifest) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (sha256) DO NOTHING`,
+          [t.sha256, t.id, t.version, JSON.stringify(t.servers), JSON.stringify(t.manifest)],
         );
       }
     }
@@ -168,7 +170,7 @@ export class CatalogueService {
 
   async toolset(sha256: string): Promise<StoredToolset | null> {
     await this.toolsets();
-    const rows = await this.db.query<StoredToolset>('SELECT sha256, id, version, servers FROM toolsets WHERE sha256 = $1', [sha256]);
+    const rows = await this.db.query<StoredToolset>('SELECT sha256, id, version, servers, manifest FROM toolsets WHERE sha256 = $1', [sha256]);
     return rows[0] ?? null;
   }
 

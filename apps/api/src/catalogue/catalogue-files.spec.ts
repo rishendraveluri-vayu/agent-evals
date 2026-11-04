@@ -1,7 +1,22 @@
 import { promises as fs, readFileSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { FINANCE_TOOLS, builtInToolsets, checkTask, parsePromptName, parsePyproject, promptText, readHarnesses, readPrompts, readTasks } from './catalogue-files';
+import { hashCanonical } from '../common/hashing';
+import type { Json } from '../contract';
+import {
+  FINANCE_TOOLS,
+  type FinanceServerManifest,
+  type PublishedTool,
+  builtInToolsets,
+  checkTask,
+  loadFinanceServer,
+  parsePromptName,
+  parsePyproject,
+  promptText,
+  readHarnesses,
+  readPrompts,
+  readTasks,
+} from './catalogue-files';
 
 const REPO = path.resolve(__dirname, '../../../..');
 
@@ -48,10 +63,52 @@ describe('the built-in toolset', () => {
     expect([...FINANCE_TOOLS]).toEqual(snapshot.map((t) => t.name));
   });
 
-  it('is finance/all with a content hash', () => {
-    const [t] = builtInToolsets();
+  const server = loadFinanceServer(path.join(REPO, 'services/finance-mcp'));
+
+  it('is finance/all with a content hash over the published manifest', () => {
+    const [t] = builtInToolsets(server);
     expect(t).toMatchObject({ id: 'finance', version: 'all', servers: [{ name: 'finance' }] });
     expect(t.sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(t.manifest).toHaveLength(1);
+    expect(t.manifest[0].server_version).toBe(server.version);
+    expect(t.manifest[0].tools.map((x) => x.name)).toEqual([...FINANCE_TOOLS]);
+    const sip = t.manifest[0].tools.find((x) => x.name === 'sip_future_value');
+    expect(Object.keys((sip?.input_schema as { properties: object }).properties)).toContain('lump_sum');
+    const { sha256, ...content } = t;
+    expect(sha256).toBe(hashCanonical(content));
+  });
+
+  it("changes its hash when a tool's description, input schema or the server version changes", () => {
+    const [base] = builtInToolsets(server);
+    const edit = (change: (s: FinanceServerManifest) => void): string => {
+      const copy = JSON.parse(JSON.stringify(server)) as FinanceServerManifest;
+      change(copy);
+      return builtInToolsets(copy)[0].sha256;
+    };
+    const sip = (s: FinanceServerManifest) => s.tools.find((x) => x.name === 'sip_future_value') as PublishedTool;
+    const hashes = [
+      edit((s) => (sip(s).description = `${sip(s).description} (edited)`)),
+      // The 4 Nov change: the SIP tool without its lump_sum parameter, as it was before.
+      edit((s) => delete (sip(s).input_schema as { properties: Record<string, unknown> }).properties.lump_sum),
+      edit((s) => (s.version = '0.1.0-old')),
+    ];
+    expect(new Set([base.sha256, ...hashes]).size).toBe(4);
+    // Key order inside a schema is not content: canonical JSON sorts it.
+    const reversed = (o: Record<string, Json>): Json => Object.fromEntries(Object.entries(o).reverse());
+    expect(edit((s) => (sip(s).input_schema = reversed(sip(s).input_schema as Record<string, Json>)))).toBe(base.sha256);
+    // The names-only hash of before 4 Nov is not what it is any more.
+    const namesOnly = hashCanonical({ id: 'finance', version: 'all', servers: [{ name: 'finance', allowed_tools: [...FINANCE_TOOLS] }] });
+    expect(base.sha256).not.toBe(namesOnly);
+  });
+
+  it('refuses a manifest that is missing a tool, or a server folder it cannot read', async () => {
+    expect(() => builtInToolsets({ ...server, tools: server.tools.slice(1) })).toThrow('calculate_emi');
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'evals-finance-'));
+    try {
+      expect(() => loadFinanceServer(dir)).toThrow();
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });
 
