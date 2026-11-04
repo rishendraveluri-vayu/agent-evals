@@ -34,6 +34,8 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D25 Unset settings | An unset sampling setting is not sent, so the harness or provider default applies, shown as a harness default; max output tokens defaults to 8,192, steps 15, timeout 300 s; a per-model table makes the API refuse at config time a setting the model rejects (temperature on Haiku 5.5) | Rishi | 4 Nov |
 | D26 Provider-error labels | New `infra:config_error` for 401/403/404 and 400s about the request setup (auth, unknown model, rejected parameter): not re-queued, and the experiment pauses. 429/5xx stay `infra:provider_error`, re-queued once. Budget stops are not re-queued. A context-too-long 400 is the agent's outcome | Rishi | 4 Nov |
 | D27 Simulator v2 | `client-sim.v2`: the simulator sees a short summary of the task's client file, never narrates or writes stage directions, and sends the end marker once its concern is answered (turn cap as backstop). It runs on Haiku 5.5 at the model's default temperature, the reply cache giving repeatability; this amends D22's temperature 0 | Rishi | 4 Nov |
+| D28 Harness-added tool text | D20 also covers tool descriptions: ADK's untrusted-description wrappers, identity line and fencing preamble are kept as it ships and recorded; the tool-parity gate removes only that declared wrapper before comparing | Rishi | 4 Nov |
+| D29 Malformed tool calls | Adapters follow D18 only through the framework's own documented opt-in switches (ADK's ReflectAndRetryModelPlugin, the Agents SDK's unknown-tool switch); no middleware of our own. LangGraph's malformed-only reply stays `agent_error`, the SDK keeps its default error text, and each difference is in `known_differences` | Rishi | 4 Nov |
 
 ## Open
 
