@@ -28,6 +28,7 @@ import type {
   PromptView,
   RenderedPromptView,
   SpendView,
+  StartExperimentRequest,
   SystemSpendRow,
   TaskView,
   ToolsetView,
@@ -244,7 +245,10 @@ export const api = {
 
   estimate: (body: EstimateRequest) => post<EstimateResponse>('/experiments/estimate', body),
   createExperiment: (body: CreateExperimentRequest) => post<ExperimentDetail>('/experiments', body),
-  startExperiment: (id: string) => post<ExperimentDetail>(`/experiments/${enc(id)}/start`),
+  /** `body.plan_commit` sets the plan commit of an experiment that has not started yet. */
+  startExperiment: (id: string, body?: StartExperimentRequest) => post<ExperimentDetail>(`/experiments/${enc(id)}/start`, body),
+  /** Marks an experiment that never started as cancelled; nothing is deleted. */
+  discardExperiment: (id: string) => post<ExperimentDetail>(`/experiments/${enc(id)}/discard`),
   pauseExperiment: (id: string) => post<ExperimentDetail>(`/experiments/${enc(id)}/pause`),
   resumeExperiment: (id: string) => post<ExperimentDetail>(`/experiments/${enc(id)}/resume`),
   /** Queued trials become cancelled; running ones finish and are kept. */

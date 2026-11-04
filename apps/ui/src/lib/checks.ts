@@ -53,7 +53,7 @@ export function armsCheck(fullDiff: ConfigDiffEntry[], sameConfig: boolean): Che
       detail: `Checked from the two saved configs: ${diff.map((d) => d.path).join(', ')}. Nothing else differs.`,
     };
   }
-  if (!diff.length) return { ok: false, title: 'The two configs do not differ', detail: 'Pick two different configs, or the same config twice for an A/A run.' };
+  if (!diff.length) return { ok: false, title: 'The two configs do not differ', detail: 'They differ only in name, so the run would compare an agent with itself. Pick two configs that differ in the one thing to compare.' };
   return { ok: false, title: 'The arms differ in more than one thing', detail: `They differ in ${diff.map((d) => d.path).join(', ')}, so a difference in results could not be pinned on one change.` };
 }
 
