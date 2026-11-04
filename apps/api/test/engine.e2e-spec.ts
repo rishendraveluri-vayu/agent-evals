@@ -883,15 +883,28 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     await cancel(exp.id);
   });
 
-  it('serves a blind label queue and appends labels to labels/<set>.jsonl', async () => {
-    const exp = await experiment();
+  it('serves a blind label queue of real-model outputs only, and appends labels to labels/<set>.jsonl', async () => {
+    // A fake model plays a script: its trials are nothing to label, in any set.
+    const fake = await experiment();
+    const f = (await claim('w-label'))!;
+    expect(f.experiment_id).toBe(fake.id);
+    await report(f, 'w-label');
+    for (const set of ['tuning', 'heldout', 'final']) {
+      expect((await request(env.http).get(`/api/labels/queue?set=${set}&experiment=${fake.id}`).expect(200)).body).toEqual([]);
+      const all = (await request(env.http).get(`/api/labels/queue?set=${set}`).expect(200)).body as { item_id: string }[];
+      expect(all.map((i) => i.item_id)).not.toContain(f.trial_id);
+    }
+
+    const haiku = await makeConfig(env.http, cat, { name: 'labelled arm', model: 'claude-haiku-5-5' });
+    const exp = await experiment({ configs: [haiku] });
     const c = (await claim('w-label'))!;
+    expect(c.experiment_id).toBe(exp.id);
     await report(c, 'w-label');
     const queue = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as Record<string, unknown>[];
     expect(queue).toHaveLength(1);
     const item = queue[0];
     expect(Object.keys(item).sort()).toEqual(['criteria', 'item_id', 'task_summary', 'tool_calls', 'transcript']);
-    expect(JSON.stringify(item)).not.toMatch(/ownloop|fake\/finance-emi|arm A|cost|wall_s/);
+    expect(JSON.stringify(item)).not.toMatch(/ownloop|claude-haiku|labelled arm|cost|wall_s/);
     expect(item.criteria).toEqual([
       { id: 'empathy', text: 'Acknowledges the client situation' },
       { id: 'no_jargon', text: 'no_jargon' },
