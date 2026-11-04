@@ -222,7 +222,13 @@ const facts = computed(() => {
     {
       k: 'Cost',
       v: money(v.cost),
-      n: v.cost === null ? 'Not logged' : v.costComplete === false ? "LiteLLM's log is incomplete" : `From LiteLLM${v.simCost ? `; the client's calls ${money(v.simCost)} more` : ''}`,
+      n: v.probe
+        ? 'Made-up money: a probe runs on the fake model'
+        : v.cost === null
+          ? 'Not logged'
+          : v.costComplete === false
+            ? "LiteLLM's log is incomplete"
+            : `From LiteLLM${v.simCost ? `; the client's calls ${money(v.simCost)} more` : ''}`,
     },
     {
       k: 'Model calls',
@@ -513,7 +519,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             aria-label="Breadcrumb"
             class="crumbs"
           >
-            <a :href="href.experiments()">Experiments</a> /
+            <a :href="vm.probe ? href.config() : href.experiments()">{{ vm.probe ? 'Configs' : 'Experiments' }}</a> /
             <template v-if="data.experiment">
               <a :href="href.compare(data.experiment.id)">{{ data.experiment.name }}</a> /
             </template>
@@ -1204,6 +1210,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 
 .fact-note {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .strong {
