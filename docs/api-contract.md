@@ -118,11 +118,20 @@ simulated-client task the API also summarises that file (profile and debts) into
 
 ## Experiments
 
-- `POST /experiments/estimate` with `{config_hashes, task_sha256s, n, sim_model}` returns
-  `{trials, cost_usd: {expected, low, high}, minutes, basis}`. `basis` says where per-trial
-  tokens came from: the mean of earlier finished trials of the same config and task when
-  there are any, otherwise the assumptions in `docs/cost.md` (64k input, 2.4k output per
-  trial). Prices come from LiteLLM. No power estimate yet; SP6 adds `min_detectable_effect`.
+- `POST /experiments/estimate` with `{config_hashes, task_sha256s, n, sim_model,
+  sim_prompt_sha256, parent_experiment_id, reuse_baseline}` returns `{trials, cost_usd:
+  {expected, low, high}, minutes, basis, basis_detail, budgets, baseline}`. **From history
+  (Rishi's guide review, item 8):** each config x task cell takes the mean tokens, cost and wall
+  time of earlier finished trials (`done`, LiteLLM's record complete) of the same config and task
+  (`source: config_task`), else of the same harness and model, any config or task
+  (`harness_model`), and only with neither the `docs/cost.md` assumptions (`assumption`: 64k
+  input, 2.4k output, 60 s per trial). The cost is LiteLLM's recorded mean cost where history has
+  it, else tokens at LiteLLM's prices. The simulator's cost per trial comes from the same cell,
+  else from earlier trials of the same task with the same simulator model, else the
+  assumptions. **Time** divides each harness's trial time by its live workers (a worker is live
+  if it asked for a trial, 204 included, or heartbeat in the last 60 s; none seen counts as one),
+  harnesses in parallel; `basis_detail.workers` is `{<harness>: {live, used}}`. `basis` says all
+  of this in words. No power estimate yet; SP6 adds `min_detectable_effect`.
 - `POST /experiments` with `{name, axis, config_hashes, task_sha256s, n, sim_model,
   budget_usd, plan_commit, sim_prompt_sha256, order_seed, futility, parent_experiment_id,
   reuse_baseline}` creates the experiment and all its trial rows
@@ -211,8 +220,12 @@ simulated-client task the API also summarises that file (profile and debts) into
 - `GET /experiments` returns `[{id, name, axis, status, config_hashes, n, counts, spend_usd,
   estimate, created_at}]`, where `counts` is `{queued, running, done, infra_failed,
   abandoned, cancelled}` and done is split by label.
-- `GET /experiments/:id` adds `tasks`, `configs`, `arms`, `order_seed`, `paused_at`,
-  `paused_reason` and `events`, newest first: `[{at, kind, trial_id, attempt, arm, config_hash,
+- `GET /experiments/:id` adds `actual` next to `estimate` (item 8): null until a trial has
+  finished, then `{finished_trials, spend_usd, cost_per_trial_usd, wall_s_per_trial,
+  elapsed_minutes, projected_spend_usd}` (elapsed from the start to the finish or now; the
+  projection is the spend guard's). Reused trials are the parent's spend, not this one's.
+- `GET /experiments/:id` also adds `tasks`, `configs`, `arms`, `order_seed`, `futility`,
+  `parent_experiment_id`, `baseline`, `paused_at`, `paused_reason` and `events`, newest first: `[{at, kind, trial_id, attempt, arm, config_hash,
   detail}]`. Claims, infra failures, config errors, re-queues, budget trips, abandons and file
   problems come from the trial rows; pauses and resumes (`paused`, `resumed`, `arm_paused`,
   `arm_resumed`, `futility_pause`, `infra_guard_pause`, `spend_guard_pause`) and the `baseline`

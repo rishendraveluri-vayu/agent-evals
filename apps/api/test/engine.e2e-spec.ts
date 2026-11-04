@@ -745,9 +745,33 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
       .post('/api/experiments/estimate')
       .send({ config_hashes: [configA], task_sha256s: [cat.tasks['emi-basic']], n: 1 })
       .expect(200);
-    const e = res.body as { basis: string; basis_detail: { cells: { source: string; input_tokens: number; wall_s: number }[] } };
-    expect(e.basis_detail.cells[0]).toMatchObject({ source: 'history', input_tokens: 1200, wall_s: 12.5 });
-    expect(e.basis).toContain('earlier finished trials');
+    const e = res.body as { basis: string; basis_detail: { cells: { source: string; input_tokens: number; wall_s: number; agent_usd_per_trial: number }[] } };
+    // LiteLLM's recorded cost of those trials, not tokens at today's price (item 8).
+    expect(e.basis_detail.cells[0]).toMatchObject({ source: 'config_task', input_tokens: 1200, wall_s: 12.5, agent_usd_per_trial: 0.00136 });
+    expect(e.basis).toContain('earlier finished trials of the same config and task');
+  });
+
+  it('estimates a new config from the same harness and model, and shows the estimate next to actual spend and time (item 8)', async () => {
+    const fresh = await makeConfig(env.http, cat, { name: 'never run', settings: { temperature: 1.3 } });
+    const res = await request(env.http).post('/api/experiments/estimate').send({ config_hashes: [fresh], task_sha256s: [cat.tasks['emi-basic']], n: 2 }).expect(200);
+    const e = res.body as { minutes: number; basis: string; basis_detail: { cells: { source: string; trials_seen: number }[]; workers: Record<string, { live: number; used: number }> } };
+    expect(e.basis_detail.cells[0].source).toBe('harness_model');
+    expect(e.basis_detail.cells[0].trials_seen).toBeGreaterThan(1);
+    expect(e.basis).toContain('of the same harness and model');
+    // Every worker id these tests claimed with counts as live: the time divides by them.
+    const live = (await env.pool.query("SELECT count(*)::int AS n FROM workers WHERE harness = 'ownloop' AND last_seen_at > now() - interval '60 seconds'")).rows[0] as { n: number };
+    expect(live.n).toBeGreaterThan(1);
+    expect(e.basis_detail.workers.ownloop).toEqual({ live: live.n, used: live.n });
+
+    for (const { id } of (await env.pool.query("SELECT id FROM experiments WHERE status IN ('running', 'paused')")).rows as { id: string }[]) await cancel(id);
+    const exp = await experiment({ configs: [fresh], n: 2 });
+    expect((await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body).toMatchObject({ actual: null });
+    await report((await claim('w-actual'))!, 'w-actual');
+    const detail = (await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body as ExperimentDetail;
+    expect(detail.estimate.trials).toBe(2);
+    expect(detail.actual).toMatchObject({ finished_trials: 1, spend_usd: 0.00136, cost_per_trial_usd: 0.00136, wall_s_per_trial: 12.5, projected_spend_usd: 0.00272 });
+    expect(detail.actual!.elapsed_minutes).toEqual(expect.any(Number));
+    await cancel(exp.id);
   });
 
   it('serves a blind label queue and appends labels to labels/<set>.jsonl', async () => {

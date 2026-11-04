@@ -134,6 +134,8 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     const workerId = b.worker_id;
     const harness = b.harness;
     const modelBaseUrl = this.litellm.workerBaseUrl; // fails early when LiteLLM is not configured
+    // Item 8: a worker that asks for work is live, whether or not it gets any.
+    await this.seen(workerId, harness);
     return this.db.tx(async (client) => {
       const t = await one<TrialRow>(
         client,
@@ -243,6 +245,15 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     });
   }
 
+  /** Records that a worker of this harness is alive now (the estimate's live workers, item 8). */
+  private async seen(workerId: string, harness: string): Promise<void> {
+    await this.db.query(
+      `INSERT INTO workers (worker_id, harness, last_seen_at) VALUES ($1, $2, now())
+       ON CONFLICT (worker_id) DO UPDATE SET harness = EXCLUDED.harness, last_seen_at = now()`,
+      [workerId, harness],
+    );
+  }
+
   // ---- heartbeat ----
 
   async heartbeat(id: string, body: unknown): Promise<HeartbeatResponse> {
@@ -250,12 +261,15 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     if (typeof b.worker_id !== 'string' || typeof b.attempt !== 'number') {
       throw badRequest('invalid_heartbeat', 'worker_id and attempt are required');
     }
-    const kept = await this.db.query(
+    const kept = await this.db.query<{ harness: string }>(
       `UPDATE trials SET heartbeat_at = now(), status = 'running'
-       WHERE id = $1 AND attempt = $2 AND worker_id = $3 AND status IN ('claimed', 'running') RETURNING id`,
+       WHERE id = $1 AND attempt = $2 AND worker_id = $3 AND status IN ('claimed', 'running') RETURNING harness`,
       [id, b.attempt, b.worker_id],
     );
-    if (kept.length) return { lease_s: LEASE_S };
+    if (kept.length) {
+      await this.seen(b.worker_id, kept[0].harness);
+      return { lease_s: LEASE_S };
+    }
     const [exists] = await this.db.query('SELECT 1 FROM trials WHERE id = $1', [id]);
     if (!exists) throw notFound('unknown_trial', `no trial ${id}`);
     throw conflict('claim_lost', `trial ${id} attempt ${b.attempt} is no longer held by ${b.worker_id}; stop it and report nothing`);

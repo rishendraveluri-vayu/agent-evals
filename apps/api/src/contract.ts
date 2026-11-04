@@ -211,8 +211,11 @@ export interface EstimateCell {
   config: Sha256;
   task: Sha256;
   model: string;
-  /** `history`: the mean of earlier finished trials of this config and task. */
-  source: 'history' | 'assumption';
+  /**
+   * Where the per-trial tokens, cost and time came from (item 8): earlier finished trials of the same
+   * config and task, else of the same harness and model, else the docs/cost.md assumptions.
+   */
+  source: 'config_task' | 'harness_model' | 'assumption';
   trials_seen: number;
   input_tokens: number;
   output_tokens: number;
@@ -239,6 +242,8 @@ export interface Estimate {
       low_factor: number;
       high_factor: number;
     };
+    /** Per harness: live workers seen in the last 60 s, and how many the time assumes (at least 1). */
+    workers?: Record<string, { live: number; used: number }>;
   };
   /** Per-trial LiteLLM key budgets this estimate implies (safety nets, R10.6). */
   budgets: { trial_usd: number; sim_usd: number };
@@ -391,6 +396,20 @@ export interface ArmView {
   reused_trials: number;
 }
 
+/** Item 8: actual spend and time of an experiment's trials so far (reused trials are the parent's, not counted). */
+export interface ActualSoFar {
+  /** Trials that ended: done, infra_failed or abandoned. */
+  finished_trials: number;
+  spend_usd: number;
+  /** Mean agent plus simulator cost of the trials with a recorded cost. */
+  cost_per_trial_usd: number | null;
+  wall_s_per_trial: number | null;
+  /** From the start to the finish (or now). */
+  elapsed_minutes: number | null;
+  /** Spend so far plus the queued and running trials at their arm's cost so far (the spend guard's number). */
+  projected_spend_usd: number;
+}
+
 /** D34: whether arm A reuses the parent's trials, and why; null when reuse was not asked for. */
 export interface BaselineDecision {
   applied: boolean;
@@ -413,6 +432,8 @@ export interface ExperimentDetail extends ExperimentSummary {
   /** D34: the parent experiment, or null. */
   parent_experiment_id: string | null;
   baseline: BaselineDecision | null;
+  /** Item 8: what the run actually cost and took so far, to read next to `estimate`; null until a trial finishes. */
+  actual: ActualSoFar | null;
   budgets: { trial_usd: number; sim_usd: number };
   started_at: string | null;
   finished_at: string | null;

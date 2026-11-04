@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
+  ActualSoFar,
   ArmView,
   CompareResponse,
   CreateExperimentRequest,
@@ -26,10 +27,10 @@ import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.se
 import { Db, type Queryable } from '../database/db.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
 import { SIM_MAX_OUTPUT_TOKENS, simTemperature } from '../worker/spec-builder';
-import { type CellInput, type Price, estimate } from './estimate';
+import { type CellInput, type History, LIVE_WORKER_S, type Price, estimate } from './estimate';
 import { claimOrder, isSeed, newSeed } from './order';
 import { type BaselineOutcome, decideBaseline } from './baseline';
-import { resolveFutility } from './rules';
+import { estimatePerTrial, projectedSpend, resolveFutility } from './rules';
 import { type ArmRow, addEvent, pauseArm, pauseExperiment } from './run-state';
 
 /** D35: arm A and arm B, or one config for a pilot. */
@@ -145,40 +146,61 @@ export class ExperimentsService {
       prices.set(model, { inputPerToken: found.inputPerToken, outputPerToken: found.outputPerToken });
     }
 
-    const history = await this.db.query<{
-      config_hash: string;
-      task_sha256: string;
-      trials: number;
-      input_tokens: number;
-      output_tokens: number;
-      wall_s: number | null;
-      sim_cost_usd: number | null;
-    }>(
-      `SELECT config_hash, task_sha256, count(*)::int AS trials, avg(input_tokens)::float8 AS input_tokens,
-              avg(output_tokens)::float8 AS output_tokens, avg(wall_s)::float8 AS wall_s, avg(sim_cost_usd)::float8 AS sim_cost_usd
-       FROM trials
-       WHERE status = 'done' AND input_tokens IS NOT NULL AND output_tokens IS NOT NULL AND proxy_complete IS NOT FALSE
-         AND config_hash = ANY($1) AND task_sha256 = ANY($2)
-       GROUP BY config_hash, task_sha256`,
+    // Item 8: the closest history there is. Finished trials only, with LiteLLM's full record.
+    type Row = { trials: number; input_tokens: number; output_tokens: number; wall_s: number | null; cost_usd: number | null };
+    const finished = `t.status = 'done' AND t.input_tokens IS NOT NULL AND t.output_tokens IS NOT NULL AND t.proxy_complete IS NOT FALSE`;
+    const means = `count(*)::int AS trials, avg(t.input_tokens)::float8 AS input_tokens, avg(t.output_tokens)::float8 AS output_tokens,
+                   avg(t.wall_s)::float8 AS wall_s, avg(t.cost_usd)::float8 AS cost_usd`;
+    const byCell = await this.db.query<Row & { config_hash: string; task_sha256: string; sim_cost_usd: number | null }>(
+      `SELECT t.config_hash, t.task_sha256, ${means}, avg(t.sim_cost_usd)::float8 AS sim_cost_usd
+       FROM trials t WHERE ${finished} AND t.config_hash = ANY($1) AND t.task_sha256 = ANY($2)
+       GROUP BY t.config_hash, t.task_sha256`,
       [configHashes, taskShas],
     );
+    const byHarnessModel = await this.db.query<Row & { harness: string; model: string }>(
+      `SELECT t.harness, c.model, ${means}
+       FROM trials t JOIN configs c ON c.hash = t.config_hash
+       WHERE ${finished} AND t.harness = ANY($1) AND c.model = ANY($2)
+       GROUP BY t.harness, c.model`,
+      [[...new Set(ordered.configs.map((c) => c.harness))], [...new Set(ordered.configs.map((c) => c.model))]],
+    );
+    const simByTask = needsSim
+      ? await this.db.query<{ task_sha256: string; sim_cost_usd: number }>(
+          `SELECT t.task_sha256, avg(t.sim_cost_usd)::float8 AS sim_cost_usd
+           FROM trials t JOIN experiments e ON e.id = t.experiment_id
+           WHERE t.status = 'done' AND t.sim_cost_usd IS NOT NULL AND e.sim_model = $1 AND t.task_sha256 = ANY($2)
+           GROUP BY t.task_sha256`,
+          [simModel, taskShas],
+        )
+      : [];
+    const workers = new Map(
+      (
+        await this.db.query<{ harness: string; live: number }>(
+          `SELECT harness, count(*)::int AS live FROM workers WHERE last_seen_at > now() - make_interval(secs => $1) GROUP BY harness`,
+          [LIVE_WORKER_S],
+        )
+      ).map((w) => [w.harness, w.live]),
+    );
+    const hist = (r: Row | undefined): History | null =>
+      r ? { trials: r.trials, inputTokens: r.input_tokens, outputTokens: r.output_tokens, wallS: r.wall_s, costUsd: r.cost_usd } : null;
     const cells: CellInput[] = [];
     for (const c of ordered.configs) {
       for (const t of ordered.tasks) {
-        const h = history.find((r) => r.config_hash === c.hash && r.task_sha256 === t.sha256);
+        const own = byCell.find((r) => r.config_hash === c.hash && r.task_sha256 === t.sha256);
+        const sim = isSimTask(t) ? (own?.sim_cost_usd ?? simByTask.find((r) => r.task_sha256 === t.sha256)?.sim_cost_usd ?? null) : null;
         cells.push({
           config: c.hash,
           task: t.sha256,
           model: c.model,
           harness: c.harness,
           simTurns: isSimTask(t) ? simTurns(t) : null,
-          history: h
-            ? { trials: h.trials, inputTokens: h.input_tokens, outputTokens: h.output_tokens, wallS: h.wall_s, simCostUsd: isSimTask(t) ? h.sim_cost_usd : null }
-            : null,
+          history: hist(own),
+          harnessModel: hist(byHarnessModel.find((r) => r.harness === c.harness && r.model === c.model)),
+          simCostUsd: sim,
         });
       }
     }
-    return { ...ordered, n, simModel: needsSim ? simModel : null, estimate: estimate({ cells, n, prices, simModel: needsSim ? simModel : null }) };
+    return { ...ordered, n, simModel: needsSim ? simModel : null, estimate: estimate({ cells, n, prices, simModel: needsSim ? simModel : null, workers }) };
   }
 
   /** The simulator prompt: the one named, else the highest version of client-sim (D27). */
@@ -547,6 +569,7 @@ export class ExperimentsService {
       futility: r.futility,
       parent_experiment_id: r.parent_experiment_id,
       baseline: r.reuse_baseline ? { applied: arms[0]?.reused_trials > 0, reason: r.baseline_decision ?? '', reused_trials: arms[0]?.reused_trials ?? 0 } : null,
+      actual: await this.actual(r),
       budgets: { trial_usd: r.trial_budget_usd, sim_usd: r.sim_budget_usd },
       started_at: iso(r.started_at),
       finished_at: iso(r.finished_at),
@@ -556,6 +579,41 @@ export class ExperimentsService {
       tasks: r.task_sha256s.map((s) => tasks.find((t) => t.sha256 === s)).filter((t): t is StoredTask => !!t).map((t) => taskView(t)),
       configs: r.config_hashes.map((h) => configs.find((c) => c.hash === h)).filter((c): c is ConfigRow => !!c).map(configView),
       events: await this.events(r),
+    };
+  }
+
+  /** Item 8: spend and time so far, beside the estimate; null until a trial has finished. */
+  private async actual(r: ExperimentRow): Promise<ActualSoFar | null> {
+    const byArm = await this.db.query<{ config_hash: string; finished: number; remaining: number; reported: number; cost: number; wall_s: number | null; walled: number }>(
+      `SELECT config_hash,
+              count(*) FILTER (WHERE status IN ('done', 'infra_failed', 'abandoned'))::int AS finished,
+              count(*) FILTER (WHERE status IN ('queued', 'claimed', 'running'))::int AS remaining,
+              count(*) FILTER (WHERE cost_usd IS NOT NULL)::int AS reported,
+              coalesce(sum(coalesce(cost_usd, 0) + coalesce(sim_cost_usd, 0)), 0)::float8 AS cost,
+              sum(wall_s)::float8 AS wall_s, count(wall_s)::int AS walled
+       FROM trials WHERE experiment_id = $1 GROUP BY config_hash`,
+      [r.id],
+    );
+    const finished = byArm.reduce((s, a) => s + a.finished, 0);
+    if (!finished) return null;
+    const spent = byArm.reduce((s, a) => s + a.cost, 0);
+    const reported = byArm.reduce((s, a) => s + a.reported, 0);
+    const walled = byArm.reduce((s, a) => s + a.walled, 0);
+    const end = r.finished_at ?? r.cancelled_at ?? new Date();
+    const round = (v: number, places: number): number => Math.round(v * 10 ** places) / 10 ** places;
+    return {
+      finished_trials: finished,
+      spend_usd: round(spent, 6),
+      cost_per_trial_usd: reported ? round(spent / reported, 6) : null,
+      wall_s_per_trial: walled ? round(byArm.reduce((s, a) => s + (a.wall_s ?? 0), 0) / walled, 1) : null,
+      elapsed_minutes: r.started_at ? round((end.getTime() - r.started_at.getTime()) / 60_000, 1) : null,
+      projected_spend_usd: round(
+        projectedSpend(
+          spent,
+          byArm.map((a) => ({ remaining: a.remaining, meanCost: a.reported ? a.cost / a.reported : null, estimatePerTrial: estimatePerTrial(r.estimate, a.config_hash) })),
+        ),
+        6,
+      ),
     };
   }
 
