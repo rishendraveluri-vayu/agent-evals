@@ -156,6 +156,15 @@ describe('LabelView against the API', () => {
     ]);
     expect(w.get('[data-test="queue-empty"]').text()).toContain('All 1 in this queue done: 1 saved.');
   });
+
+  it('says, when the queue is empty, which trials never join it', async () => {
+    routeFetch({ '/api/labels/queue?set=heldout': [], '/api/labels/queue?set=tuning': [] });
+    const w = mount(LabelView);
+    await settle();
+    expect(w.get('[data-test="queue-empty"] p').text()).toBe(
+      "Nothing to label in this set yet. Trials that finish later join the queue, except trials on a fake model (their replies are a script, not an agent's) and the shipped example's, which are never labelled here.",
+    );
+  });
 });
 
 /** Two tuning items in the shape GET /labels/queue sends today (4 Nov batch, the draft tasks), plus
