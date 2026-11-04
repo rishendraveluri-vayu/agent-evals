@@ -105,6 +105,6 @@ def prepare(
             name = unit_file(spec) if isinstance(spec, dict) else None
             if name:
                 files[name] = file_sha256(task_dir / name) if task_dir else None
-            sha = spec_sha256(spec if isinstance(spec, dict) else {"invalid": spec}, files)
+            sha = spec_sha256(spec, files)
         out.append(Prepared(spec, sha, grader_version(sha, framework_version), tuple(found)))
     return out

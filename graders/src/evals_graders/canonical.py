@@ -90,7 +90,7 @@ def hash_canonical(value: Any) -> str:
     return sha256_ref(canonical_json(value))
 
 
-def spec_sha256(spec: dict[str, Any], files: dict[str, str | None] | None = None) -> str:
+def spec_sha256(spec: Any, files: dict[str, str | None] | None = None) -> str:
     """The grader spec, plus the sha256 of each file it runs (a unit_test's grader.py)."""
     return hash_canonical({"spec": spec, "files": files or {}})
 

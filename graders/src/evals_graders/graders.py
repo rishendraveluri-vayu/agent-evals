@@ -120,10 +120,11 @@ def _leaf_quote(call: ToolCall, field: str, value: float) -> str | None:
     if not call.result_text:
         return None
     leaf = re.split(r"\.|\[\d+\]", field.rstrip("]"))[-1] or field
-    pattern = re.compile(r'"' + re.escape(leaf) + r'"\s*:\s*(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)')
+    num = r"(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)"
+    pattern = re.compile(r'"' + re.escape(leaf) + r'"\s*:\s*(?:' + num + r'|"' + num + r'")')
     for m in pattern.finditer(call.result_text):
         try:
-            if float(m.group(1)) == value:
+            if float(m.group(1) or m.group(2)) == value:
                 return m.group(0)
         except ValueError:
             continue
@@ -161,23 +162,35 @@ def _expected_values(
             )
             continue
         ok, value = _path(c.result, field)
-        if not ok or isinstance(value, bool) or not isinstance(value, int | float):
+        number = _number(value) if ok else None  # a numeric string ("8997.26") counts
+        if number is None:
             misses.append(f"span {c.span_id}: no number at {field!r}")
             continue
         ev = {"source": "tool_result", "span_id": c.span_id, "tool": c.name, "field": field}
-        quote = _leaf_quote(c, field, float(value))
+        quote = _leaf_quote(c, field, number)
         if quote:
             ev["quote"] = quote
-        values.append((float(value), ev))
+        values.append((number, ev))
     if not values:
         return [], f"no usable {tool} result: " + "; ".join(misses)
     return values, None
 
 
+def _cut_short(ctx: Context, expected: Any) -> bool:
+    """Every unreadable result of the expected tool was cut by the trace's attribute limit: the
+    platform's limit, not the agent's failure."""
+    if not isinstance(expected, dict):
+        return False
+    tool = normalise_tool_name(expected["from_tool"])
+    unread = [c for c in ctx.calls if c.name == tool and c.result is None]
+    return bool(unread) and all(c.truncated for c in unread)
+
+
 def grade_number(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
     expected, why = _expected_values(ctx, spec["expected"])
     if not expected:
-        return _grade("fail", why or "no expected value")
+        verdict = "error" if _cut_short(ctx, spec["expected"]) else "fail"
+        return _grade(verdict, why or "no expected value")
     tolerance = spec.get("tolerance", DEFAULT_NUMBER_TOLERANCE)
     pieces = _texts(ctx, spec.get("target", "final_answer"))
     if not pieces:

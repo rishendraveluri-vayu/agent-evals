@@ -98,6 +98,31 @@ def test_number_from_tool_pass_and_wrong_value_fails(tmp_path):
     assert g["verdict"] == "fail" and "₹9,200" in g["reason"]
 
 
+def test_number_from_tool_reads_a_numeric_string(tmp_path):
+    """contract/v2's example tool returns {"emi": "8997.26"}."""
+    spec = {"id": "e", "type": "number", "expected": {"from_tool": "calculate_emi", "field": "emi"}}
+    out = make_trial(
+        tmp_path, "Your EMI is Rs 8,997.26.", [("calculate_emi", {}, {"emi": "8997.26"})]
+    )
+    g = one(out, spec)
+    assert g["verdict"] == "pass"
+    assert g["evidence"][1]["quote"] == '"emi": "8997.26"'
+    bad = make_trial(
+        tmp_path / "b", "Your EMI is Rs 8,997.", [("calculate_emi", {}, {"emi": "n/a"})]
+    )
+    g = one(bad, spec)
+    assert g["verdict"] == "fail" and "no number at 'emi'" in g["reason"]
+
+
+def test_a_tool_result_cut_short_in_the_trace_is_an_error_not_a_fail(tmp_path):
+    cut = '{"emi": 8997.26, "schedule": [1, 2, 3...[truncated 120 chars]'
+    out = make_trial(tmp_path, "Your EMI is ₹8,997.", [("calculate_emi", EMI_ARGS, cut)])
+    spec = {"id": "e", "type": "number", "expected": {"from_tool": "calculate_emi", "field": "emi"}}
+    g = one(out, spec)
+    assert g["verdict"] == "error" and g["score"] is None
+    assert "cut short in the trace" in g["reason"]
+
+
 def test_number_from_tool_fails_when_the_tool_was_never_called(tmp_path):
     """Review note 21: an EMI the agent worked out itself has no tool value behind it."""
     out = make_trial(tmp_path, "Your EMI is ₹8,997 a month.")
