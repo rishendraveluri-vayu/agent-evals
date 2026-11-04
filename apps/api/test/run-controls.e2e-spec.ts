@@ -485,7 +485,7 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
     const csv = (await request(env.http).get(`/api/experiments/${exp.id}/export?format=csv`).expect(200)).text;
     const [header, ...lines] = parseCsv(csv);
     const col = (name: string): number => header.indexOf(name);
-    expect(header.slice(0, 7)).toEqual(['experiment_id', 'trial_id', 'arm', 'repeat_index', 'attempt', 'status', 'outcome']);
+    expect(header.slice(0, 7)).toEqual(['experiment_id', 'experiment_title', 'trial_id', 'arm', 'repeat_index', 'attempt', 'status']);
     const byArm = Object.fromEntries(lines.map((l) => [l[col('arm')], l]));
     expect(Object.keys(byArm).sort()).toEqual(['A', 'B']);
     // The task has two graders, so each trial has two current grades, not three.
