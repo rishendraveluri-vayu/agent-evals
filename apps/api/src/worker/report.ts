@@ -1,5 +1,6 @@
 import type { JsonObject, ReportRequest } from '../contract';
 import { badRequest } from '../common/api-error';
+import { normalizeSha } from '../common/hashing';
 import { isLabel } from '../trials/status';
 import { plainValue } from '../trials/trial-store';
 
@@ -9,6 +10,14 @@ type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const int = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) ? v : null);
+
+/**
+ * A reported file hash, stored as `sha256:<hex>` whether it came as that or as bare hex (any case).
+ * Anything else is kept as sent (trimmed, lower case) so the file check can flag it.
+ */
+export function reportedSha(raw: string): string {
+  return normalizeSha(raw) ?? raw.trim().toLowerCase();
+}
 
 /** The body's shape. A bad span or file is not a reason to refuse a whole trial's report. */
 export function parseReport(body: unknown): ReportRequest {
@@ -26,7 +35,7 @@ export function parseReport(body: unknown): ReportRequest {
     if (!isObj(f) || typeof f.path !== 'string' || int(f.bytes) === null || typeof f.sha256 !== 'string') {
       throw badRequest('invalid_report', `files[${i}] must be {path, bytes, sha256}`);
     }
-    return { path: f.path, bytes: f.bytes as number, sha256: f.sha256.toLowerCase() };
+    return { path: f.path, bytes: f.bytes as number, sha256: reportedSha(f.sha256) };
   });
   return {
     worker_id: body.worker_id,

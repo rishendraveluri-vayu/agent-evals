@@ -379,6 +379,21 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     expect(detail.events.some((e) => e.kind === 'file_problem')).toBe(true);
   });
 
+  it('takes reported file hashes as sha256:<hex> or bare hex and stores them as sha256:<hex>', async () => {
+    await experiment();
+    const c = (await claim('w-hash'))!;
+    const files = await writeFolder(c);
+    const mixed = files.map((f, i) => ({ ...f, sha256: i % 2 ? `sha256:${f.sha256}` : f.sha256.toUpperCase() }));
+    const res = await request(env.http)
+      .post(`/api/worker/trials/${c.trial_id}/report`)
+      .set(auth)
+      .send({ worker_id: 'w-hash', attempt: 1, runner_report: runnerReport(c.trial_id, 1, 'agent', files), result: EXAMPLE_RESULT, spans: [], files: mixed })
+      .expect(200);
+    expect((res.body as ReportResponse).problems).toEqual([]);
+    const view = (await request(env.http).get(`/api/trials/${c.trial_id}`).expect(200)).body as TrialView;
+    expect(view.files.map((f) => [f.path, f.sha256, f.ok])).toEqual(files.map((f) => [f.path, `sha256:${f.sha256}`, true]));
+  });
+
   it('passes LiteLLM spend-log rows for a trial key through to its worker', async () => {
     const exp = await experiment();
     const c = (await claim('w-calls'))!;

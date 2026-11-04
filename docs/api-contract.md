@@ -7,7 +7,8 @@ Vue UI. Change it only by editing this file in the same commit as the code.
 **As built (4 Nov):** every path below is served under `/api` (a worker calls `POST /api/worker/claim`). Each attempt is its own trial row with its own id, so a re-queued attempt gets a new `trial_id`; its folder is `runs/<experiment_id>/<trial_id>/attempt-<n>/`. A config's model and price are looked up with LiteLLM's `/model_group/info`, because `/model/info` expands the `fake/*` wildcard into about 220 names and never lists `fake/*` itself; `POST /configs` returns 400 `unknown_model` for a model LiteLLM does not serve. Experiment trials' spans come back in the raw OpenTelemetry shape. A report whose file hashes do not match is accepted and flagged, not refused. Shared request and response types: `apps/api/src/contract.ts`.
 
 All bodies are JSON. Times are RFC 3339 UTC. Money is USD as a number. Hashes are
-`sha256:<hex>`. Errors are `{"error": "<code>", "message": "<plain words>"}` with a 4xx/5xx
+`sha256:<hex>`; every hash the API takes in, a worker's report included, may also be bare hex
+(any case), and the API stores and returns it as `sha256:<hex>`. Errors are `{"error": "<code>", "message": "<plain words>"}` with a 4xx/5xx
 status. The trial spec, result, span and runner-report shapes are contract v2
 (`contract/v2/*.schema.json`); this API carries them unchanged.
 

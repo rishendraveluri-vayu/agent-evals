@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import type { StoredFile } from '../contract';
+import { normalizeSha } from '../common/hashing';
 
 /**
  * Trial folders on the shared runs volume: `runs/<experiment_id>/<trial_id>/attempt-<n>/`
@@ -40,7 +41,8 @@ export async function locate(runsDir: string, folder: string, rel: string): Prom
   return null;
 }
 
-async function hashFile(file: string): Promise<{ bytes: number; sha256: string }> {
+/** Size and `sha256:<hex>` of a file on disk. */
+export async function hashFile(file: string): Promise<{ bytes: number; sha256: string }> {
   const hash = createHash('sha256');
   let bytes = 0;
   for await (const chunk of createReadStream(file)) {
@@ -48,22 +50,28 @@ async function hashFile(file: string): Promise<{ bytes: number; sha256: string }
     bytes += buf.length;
     hash.update(buf);
   }
-  return { bytes, sha256: hash.digest('hex') };
+  return { bytes, sha256: `sha256:${hash.digest('hex')}` };
 }
 
-/** Checks each reported file against the folder: present, same size, same sha256. */
+/**
+ * Checks each reported file against the folder: present, same size, same sha256. Reported hashes
+ * may be `sha256:<hex>` or bare hex; both are compared, and stored, as `sha256:<hex>`.
+ */
 export async function checkFiles(runsDir: string, folder: string, files: { path: string; bytes: number; sha256: string }[]): Promise<StoredFile[]> {
   const out: StoredFile[] = [];
   for (const f of files) {
-    const entry: StoredFile = { path: f.path, bytes: f.bytes, sha256: f.sha256 };
+    const sha256 = normalizeSha(f.sha256);
+    const entry: StoredFile = { path: f.path, bytes: f.bytes, sha256: sha256 ?? f.sha256 };
     const file = await locate(runsDir, folder, f.path);
     if (!file) {
       entry.ok = false;
       entry.problem = safeRelPath(f.path) ? 'missing from the runs volume' : 'path leaves the trial folder';
     } else {
       const seen = await hashFile(file);
-      entry.ok = seen.bytes === f.bytes && seen.sha256 === f.sha256;
-      if (!entry.ok) entry.problem = `on disk: ${seen.bytes} bytes, sha256 ${seen.sha256}`;
+      entry.ok = sha256 !== null && seen.bytes === f.bytes && seen.sha256 === sha256;
+      if (!entry.ok) {
+        entry.problem = sha256 === null ? `sha256 ${f.sha256} is neither sha256:<hex> nor 64 hex digits; on disk: ${seen.sha256}` : `on disk: ${seen.bytes} bytes, ${seen.sha256}`;
+      }
     }
     out.push(entry);
   }

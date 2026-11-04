@@ -356,6 +356,7 @@ export interface CompareResponse {
 export interface StoredFile {
   path: string;
   bytes: number;
+  /** `sha256:<hex>`, whichever form the report used. */
   sha256: string;
   /** The API found the file on the runs volume with this size and hash. */
   ok?: boolean;
@@ -516,6 +517,7 @@ export interface ReportRequest {
   runner_report: JsonObject;
   result: JsonObject | null;
   spans: JsonObject[];
+  /** `sha256` may be `sha256:<hex>` or bare hex; the API stores `sha256:<hex>`. */
   files: { path: string; bytes: number; sha256: string }[];
 }
 
