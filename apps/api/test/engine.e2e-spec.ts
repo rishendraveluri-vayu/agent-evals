@@ -870,7 +870,8 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
 
     const left = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as { criteria: { id: string }[] }[];
     expect(left[0].criteria.map((x) => x.id)).toEqual(['no_jargon']);
-    expect((await request(env.http).get(`/api/labels/queue?set=heldout&experiment=${exp.id}`).expect(200)).body).toHaveLength(1);
+    // The sets are disjoint: a trial with a tuning label is never offered for the held-out set.
+    expect((await request(env.http).get(`/api/labels/queue?set=heldout&experiment=${exp.id}`).expect(200)).body).toHaveLength(0);
     const agreement = await request(env.http).get('/api/judge/agreement?set=heldout').expect(200);
     expect(agreement.text).toBe('null');
   });

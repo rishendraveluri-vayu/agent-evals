@@ -58,6 +58,23 @@ export interface Settings {
 export type SettingSource = 'config' | 'platform_default' | 'harness_default' | 'unsupported';
 export type SettingsSources = Record<SettingName, SettingSource>;
 
+// ---- Seeds (contract v2 spec `seed`) -------------------------------------------------
+
+/** A seeded skill, which the adapter writes in its harness's own form (Hermes: skills/<name>/SKILL.md). */
+export interface SeedSkill {
+  /** Lower-case letters, digits and hyphens, starting with a letter or digit. */
+  name: string;
+  description: string;
+  body: string;
+}
+
+/** Config-given starting state, never learned state (R10.8). Both lists are empty for no seed. */
+export interface Seed {
+  /** Memory entries, in order; each at least one character. */
+  memory: string[];
+  skills: SeedSkill[];
+}
+
 // ---- Catalogue -----------------------------------------------------------------------
 
 /** GET /harnesses */
@@ -79,6 +96,24 @@ export interface PromptView {
   sha256: Sha256;
   path: string;
   text: string;
+}
+
+/** POST /prompts: a new version of an existing prompt, written as configs/prompts/<id>.v<n>.md. */
+export interface CreatePromptRequest {
+  /** An existing prompt id, as in GET /prompts. */
+  id: string;
+  /** The version the text was edited from (an existing version of `id`), named in the file's header. */
+  base_version: string;
+  /** The prompt text, at most 50 KB (UTF-8). */
+  text: string;
+}
+
+/** POST /prompts: 201 with the new version, or 200 with an existing version of the same text. */
+export interface CreatedPrompt {
+  id: string;
+  version: string;
+  sha256: Sha256;
+  path: string;
 }
 
 export interface ToolsetServer {
@@ -130,6 +165,12 @@ export interface CreateConfigRequest {
   toolset_sha256: Sha256;
   settings?: Partial<Record<SettingName, Json>>;
   harness_options?: JsonObject;
+  /**
+   * Seeded memory and skills (D39), in contract v2's seed shape; either list may be left out.
+   * Part of the hash when not empty. Needs the harness to support the feature and the config to
+   * turn it on.
+   */
+  seed?: { memory?: string[]; skills?: SeedSkill[] } | null;
   /** D34: the config this one was forked from. Not part of the hash; the first post records it. */
   parent_hash?: Sha256 | null;
 }
@@ -168,6 +209,8 @@ export interface ConfigView {
   unsupported: Partial<Record<SettingName, string>>;
   warnings: ConfigWarning[];
   harness_options: JsonObject;
+  /** What every trial of this config starts with: both lists empty when nothing is seeded. */
+  seed: Seed;
   /** D34: the config this one was forked from, or null. */
   parent_hash: Sha256 | null;
   created_at: string;
@@ -523,17 +566,95 @@ export interface StoredFile {
   problem?: string;
 }
 
+/** SP4 (docs/proposals/grader-format.md, a draft for Rishi). */
+export type GradeVerdict = 'pass' | 'fail' | 'not_applicable' | 'error' | 'not_implemented';
+/** The data model's coarse family: exact (number, regex), state (tool calls, end state,
+ *  provenance), unit (unit_test), judge; invalid for a spec naming no known type. */
+export type GradeKind = 'exact' | 'unit' | 'state' | 'judge' | 'invalid';
+export type GradingOutcome = 'pass' | 'fail' | 'incomplete';
+export type GradingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'superseded' | 'no_graders';
+
 export interface Grade {
   id: number;
   grader_id: string;
+  /** sha256 of the grader spec (and its file) plus the framework version. */
   grader_version: string;
-  kind: 'exact' | 'unit' | 'state' | 'judge';
-  verdict: string | null;
+  kind: GradeKind;
+  /** The grader type: number, tool_called, regex_absent, unit_test, judge, ... */
+  type: string | null;
+  required: boolean;
+  verdict: GradeVerdict | null;
   score: number | null;
+  reason: string | null;
+  /** [{source, quote?, span_id?, ...}]: each quote is verbatim from its source. */
   evidence: Json;
   judge_model: string | null;
   run_index: number;
   created_at: string;
+}
+
+/** One grading job of a trial, as GET /trials/:id shows it. */
+export interface TrialGradingJob {
+  job_id: string;
+  status: GradingJobStatus;
+  reason: 'trial_done' | 'regrade';
+  grader_source: 'catalogue' | 'trial_task';
+  source_note: string | null;
+  task_sha256: Sha256;
+  framework_version: string | null;
+  /** True when every required grader passed, false when one failed, null when incomplete. */
+  passed: boolean | null;
+  outcome: GradingOutcome | null;
+  error: string | null;
+  queued_at: string;
+  graded_at: string | null;
+}
+
+export interface TrialGrading {
+  /** The job whose grades are shown: the latest finished one. Null until first graded. */
+  current: TrialGradingJob | null;
+  /** A newer job, queued or claimed (a regrade on its way), if any. */
+  pending: TrialGradingJob | null;
+}
+
+/** POST /grader/claim, 200 (204 when nothing needs grading). */
+export interface GraderClaimResponse {
+  job_id: string;
+  /** How many times this job has been claimed; a report must name it. */
+  attempt: number;
+  trial_id: string;
+  lease_s: number;
+  task: { id: string; sha256: Sha256; grader_source: 'catalogue' | 'trial_task'; note: string | null };
+  graders: { spec: Json; spec_sha256: Sha256 }[];
+  grader_files: Record<string, { sha256: Sha256; base64: string } | null>;
+  /** Download each file with GET /trials/:id/files/<path> and check it against this manifest. */
+  trial: { files: StoredFile[]; end_state: string | null; label: string | null };
+}
+
+/** POST /grader/trials/:id/grades */
+export interface GradesReportResponse {
+  job_id: string;
+  trial_id: string;
+  status: 'done';
+  duplicate: boolean;
+  passed: boolean | null;
+  outcome: GradingOutcome;
+  grades_stored: number;
+  grades_reused: number;
+}
+
+/** POST /experiments/:id/regrade */
+export interface RegradeResponse {
+  experiment_id: string;
+  /** Done trials considered. */
+  trials: number;
+  queued: number;
+  /** Trials whose task has no graders: recorded, nothing to claim. */
+  no_graders: number;
+  /** Queued jobs replaced by these ones before anyone claimed them. */
+  superseded: number;
+  /** How many took their graders from the trial's own task, since the task changed beyond its graders. */
+  from_trial_task: number;
 }
 
 /** GET /trials/:id for a trial made in an experiment, or a probe trial (D33: `experiment_id` null, `probe` true). */
@@ -579,7 +700,9 @@ export interface TrialView {
   };
   worker_id: string | null;
   files: StoredFile[];
+  /** The grades of the latest finished grading job (SP4); older versions stay in the database. */
   grades: Grade[];
+  grading: TrialGrading;
   problems: string[];
 }
 

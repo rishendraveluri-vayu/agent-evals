@@ -102,7 +102,10 @@ export class LabelsService {
     const set = labelSet(setInput);
     await this.importFile(set);
     const params: unknown[] = [set];
-    let where = `t.status = 'done' AND NOT t.probe AND t.label = 'agent' AND t.result IS NOT NULL`;
+    // The sets stay disjoint: a trial labelled in one set never appears in another, so tuning
+    // labels can never leak into the held-out agreement (SP5, CLAUDE.md: never tune on held-out).
+    let where = `t.status = 'done' AND NOT t.probe AND t.label = 'agent' AND t.result IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM labels o WHERE o.trial_id = t.id AND o.label_set <> $1)`;
     if (experimentId) {
       params.push(experimentId);
       where += ` AND t.experiment_id = $${params.length}`;
