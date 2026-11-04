@@ -39,7 +39,6 @@ const config = (over: Partial<ConfigView>): ConfigView => ({
   unsupported: {},
   warnings: [],
   harness_options: {},
-  seed: { memory: [], skills: [] },
   parent_hash: null,
   created_at: '2026-11-01T00:00:00Z',
   ...over,

@@ -187,7 +187,6 @@ function createConfig(body: CreateConfigRequest): ConfigView {
     unsupported,
     warnings: [],
     harness_options: body.harness_options ?? {},
-    seed: { memory: body.seed?.memory ?? [], skills: body.seed?.skills ?? [] },
     parent_hash: parent?.hash ?? null,
     created_at: meta.now,
   };
