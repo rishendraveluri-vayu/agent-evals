@@ -1,0 +1,10 @@
+# Like finance-length, but the answer is cut off (finish_reason: length) every time, so a
+# harness that re-sends with a raised cap is cut off again. For the own loop's D36 test: the
+# second cut-off ends the turn as token_limit.
+description: Calls calculate_emi, then every answer is cut off at the output token cap.
+steps:
+  - tool_calls:
+      - name: calculate_emi
+        arguments: {principal: 1000000, annual_rate_pct: 9, tenure_months: 240}
+  - text: "Your EMI would be about Rs 8,997 a month for 20 years, and the total interest is about Rs 11.59 lakh."
+    fault: {kind: length}

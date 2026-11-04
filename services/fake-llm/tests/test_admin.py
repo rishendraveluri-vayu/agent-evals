@@ -22,6 +22,8 @@ EXAMPLES = {
     "finance-malformed",
     "finance-timeout",
     "finance-429",
+    "finance-length",
+    "finance-length-always",
     "sim-client",
     "sim-empty",
 }
@@ -122,6 +124,8 @@ def test_register_replace_and_list_scripts(client):
         {"name": "args", "steps": [{"tool_calls": [{"name": "f", "arguments": 3}]}]},
         {"name": "neg", "steps": [{"text": "x", "delay_ms": -1}]},
         {"name": "fault-times-needs-body", "steps": [{"fault": {"kind": "500", "times": 1}}]},
+        {"name": "len", "steps": [{"tool_calls": [{"name": "f"}], "fault": {"kind": "length"}}]},
+        {"name": "len-empty", "steps": [{"text": "", "fault": {"kind": "length"}}]},
     ],
 )
 def test_invalid_scripts_are_rejected(client, definition):

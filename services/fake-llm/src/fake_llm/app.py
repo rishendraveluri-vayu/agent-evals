@@ -140,6 +140,7 @@ async def chat_completions(request: Request) -> Any:
         step_index=step_index,
         body=body,
         malformed=kind == "malformed_tool_call",
+        cut=kind == "length",
     )
     model = body.get("model") if isinstance(body.get("model"), str) else script.name
     meta = ResponseMeta(id=f"chatcmpl-{uuid.uuid4().hex}", created=int(time.time()), model=model)

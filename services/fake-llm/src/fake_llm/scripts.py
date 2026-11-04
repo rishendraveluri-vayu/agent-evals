@@ -20,7 +20,7 @@ MARKER_RE = re.compile(rf"\[\[fake-script:({NAME_PATTERN})\]\]")
 LAST_USER_PLACEHOLDER = "{{last_user_message}}"
 SCRIPT_SUFFIXES = (".yaml", ".yml", ".json")
 
-FAULT_KINDS = ("429", "500", "timeout", "broken_stream", "malformed_tool_call")
+FAULT_KINDS = ("429", "500", "timeout", "broken_stream", "malformed_tool_call", "length")
 STEP_KEYS = {"text", "tool_calls", "delay_ms", "chunk_delay_ms", "fault"}
 FAULT_KEYS = {"kind", "times", "retry_after", "seconds"}
 SCRIPT_KEYS = {"name", "description", "steps"}
@@ -73,7 +73,7 @@ def _number(value: Any, field: str, *, minimum: float = 0) -> float:
     return value
 
 
-def _parse_fault(data: Any, where: str, has_tool_calls: bool) -> Fault:
+def _parse_fault(data: Any, where: str, has_tool_calls: bool, has_text: bool) -> Fault:
     if not isinstance(data, dict):
         raise ScriptError(f"{where}.fault must be an object")
     unknown = set(data) - FAULT_KEYS
@@ -87,6 +87,8 @@ def _parse_fault(data: Any, where: str, has_tool_calls: bool) -> Fault:
         raise ScriptError(f"{where}.fault.times must be an integer >= 1, got {times!r}")
     if kind == "malformed_tool_call" and not has_tool_calls:
         raise ScriptError(f"{where}: malformed_tool_call needs a step with tool_calls")
+    if kind == "length" and not has_text:
+        raise ScriptError(f"{where}: length needs a step with non-empty text")
     return Fault(
         kind=kind,
         times=times,
@@ -126,7 +128,7 @@ def _parse_step(data: Any, where: str) -> Step:
     )
     fault = None
     if data.get("fault") is not None:
-        fault = _parse_fault(data["fault"], where, bool(tool_calls))
+        fault = _parse_fault(data["fault"], where, bool(tool_calls), bool(text))
     # A step needs something to serve, unless its fault fires forever and never serves it.
     never_serves = fault is not None and fault.times is None and fault.kind in ("429", "500")
     if text is None and not tool_calls and not never_serves:
