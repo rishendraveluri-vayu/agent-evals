@@ -224,7 +224,7 @@ export interface CreateExperimentRequest {
   sim_model?: string | null;
   budget_usd: number;
   plan_commit?: string | null;
-  /** Optional; defaults to the highest version of the `client-sim` prompt (v2 since D27). */
+  /** Optional; defaults to the highest version of the `client-sim` prompt (v4 since 4 Nov). */
   sim_prompt_sha256?: Sha256 | null;
 }
 
