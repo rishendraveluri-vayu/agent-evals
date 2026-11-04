@@ -6,7 +6,7 @@ import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
 import { armsOf, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
-import { clientKind, gradedBy, graderKinds, graderName, splitName } from '../lib/names';
+import { clientKind, experimentName, gradedBy, graderKinds, graderName, splitName } from '../lib/names';
 import { href } from '../router';
 
 const { data, error, loading } = useLoad(async () => {
@@ -46,8 +46,12 @@ const glance = computed(() => {
     graded: `${code} code, ${all.length - code} judge`,
     client: `${plural(single, 'single prompt', 'single prompts')}, ${plural(all.length - single, 'conversation', 'conversations')}`,
     separatedLabel: arms.value.length === 2 ? `Separated ${arms.value[0].short} and ${arms.value[1].short}` : 'Separated the arms',
-    separated: separated !== null && stats ? `${separated} of ${stats.tasks.length}${runSplit?.size === 1 ? ` ${[...runSplit][0]}` : ''}` : 'No comparison yet',
-    separatedNote: stats ? (stats.correction ? `After correcting for ${stats.tasks.length} comparisons` : 'Before correcting for many comparisons') : 'Needs a finished experiment with statistics',
+    separated: separated !== null && stats ? `${separated} of ${stats.tasks.length}${runSplit?.size === 1 ? ` ${[...runSplit][0]}` : ''}` : 'Not computed',
+    separatedNote: stats
+      ? stats.correction
+        ? `After correcting for ${stats.tasks.length} comparisons`
+        : 'Before correcting for many comparisons'
+      : 'Which tasks tell the arms apart needs the statistics step, not built in this version',
   };
 });
 
@@ -56,7 +60,8 @@ const runCaption = computed(() => {
   const run = data.value?.run;
   if (!run) return '';
   const n = run.detail.n;
-  return `Last run: ${run.detail.name}, ${n} ${n === 1 ? 'trial' : 'trials'} per arm. No clear difference is not the same as unchanged.`;
+  const tail = run.compare.stats ? ' No clear difference is not the same as unchanged.' : ' Pass counts only: this version does not compute a verdict per task.';
+  return `Last run: ${experimentName(run.detail)}, ${n} ${n === 1 ? 'trial' : 'trials'} per arm.${tail}`;
 });
 
 const lastRun = (t: TaskView) => {

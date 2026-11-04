@@ -1,11 +1,15 @@
 import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
-import { settle, useFixtures } from '../test/helpers';
+import compares from '../fixtures/compares.json';
+import details from '../fixtures/experiment-details.json';
+import experiments from '../fixtures/experiments.json';
+import tasks from '../fixtures/tasks.json';
+import { routeFetch, settle, useFixtures } from '../test/helpers';
 import TasksView from './TasksView.vue';
 
-useFixtures();
-
 describe('TasksView in fixture mode', () => {
+  useFixtures();
+
   it('sums up the task set and how many tasks separated the last two arms', async () => {
     const w = mount(TasksView);
     await settle();
@@ -49,5 +53,25 @@ describe('TasksView in fixture mode', () => {
     await w.findAll('.seg button').find((b) => b.text() === 'Discovery')?.trigger('click');
     expect(rows()).toHaveLength(12);
     expect(rows()[0].text()).toContain('Not in this run');
+  });
+});
+
+describe('TasksView against the API: a shipped example, no statistics', () => {
+  it('names the last run by its example title and promises no per-task verdict', async () => {
+    const example = { name: 'harness-ownloop-vs-hermes-haiku', title: 'Draft stand-in: own loop vs Hermes on Claude Haiku 5.5 (15 draft tasks, one trial each)', loaded_at: '2026-11-05T08:00:00.000Z' };
+    const working = 'Label batch 1: open coding (R8, approved: 30 trials, cap $2)';
+    const summary = (experiments as { id: string }[]).find((e) => e.id === 'exp_heldout');
+    routeFetch({
+      '/api/tasks': tasks,
+      '/api/experiments': [{ ...summary, name: working, example }],
+      '/api/experiments/exp_heldout': { ...(details as Record<string, object>).exp_heldout, name: working, example },
+      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null },
+    });
+    const w = mount(TasksView);
+    await settle();
+    const caption = w.get('[data-test="run-caption"]').text();
+    expect(caption).toBe(`Last run: ${example.title}, 5 trials per arm. Pass counts only: this version does not compute a verdict per task.`);
+    expect(w.text()).not.toContain('Label batch 1');
+    expect(w.get('[data-test="task-glance"]').text()).toContain('needs the statistics step, not built in this version');
   });
 });
