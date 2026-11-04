@@ -81,6 +81,13 @@ Added with D26 (migration `003_experiment_pause.sql`): an experiment status `pau
 
 Added with D27 (migration `004_sim_temperature_optional.sql`): `sim_replies.temperature` may be null, for a simulator that sends no temperature (Haiku 5.5); claims select replies with `IS NOT DISTINCT FROM`, so a null temperature is its own cache scope. The spec's `client_sim` gains an optional `client_summary`, built by the API from the task's client file at claim time and not stored separately.
 
+Added with D33 and D38 (migration `006_probes_and_system_spend.sql`; 005 is the run-controls work):
+
+- **Probe trials.** `trials.experiment_id` may be null, and a `probe` flag marks a trial run outside any experiment to render a config's system prompt on the fake model (a check constraint ties the two). At most one live probe per config (a partial unique index). Probes are claimed through the normal worker protocol, ahead of experiment trials, and left out of estimates, the label queue and trial spend. They run a built-in task row, `prompt-probe`, that is not in the task catalogue.
+- **`rendered_prompts`**, one row per config hash: the normalised system text, its sha256, the tool names, our prompt's offsets and the harness's own text, from the config's first usable probe.
+- **`system_spend`**, one row per model call the platform makes itself: kind, model, status (`pending` with a worst-case reservation before the call, then `done` or `failed`), cost and tokens from LiteLLM's spend log, and a `ref` to what it was for. Allowances are computed from it.
+- **`conflict_checks`**: findings cached by (input sha256, checker prompt sha256, model), where the input hashes the rendered prompt, our prompt and the settings, with the spend row that paid for them.
+
 Interim, not a design decision: until SP2, the API reads finished trial folders from `RUNS_DIR` through a `TrialStore` interface (`apps/api/src/trials/trial-store.ts`), so the trace view and spend chart work now. SP2's database store replaces the file store behind the same interface.
 
 Planned in the spec, not yet designed:

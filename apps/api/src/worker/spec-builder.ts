@@ -32,7 +32,8 @@ export const CLIENT_STATE_FILE = 'client.json';
 export interface SpecInputs {
   trial: {
     id: string;
-    experimentId: string;
+    /** Null for a probe trial (D33); contract v2 allows it outside an experiment. */
+    experimentId: string | null;
     repeatIndex: number;
     attempt: number;
   };
@@ -48,7 +49,8 @@ export interface SpecInputs {
   task: {
     id: string;
     sha256: string;
-    split: 'discovery' | 'held_out';
+    /** Null outside an experiment (a probe), as contract v2's task_split allows. */
+    split: 'discovery' | 'held_out' | null;
     body: JsonObject;
     /** D27: the client file's summary for the simulator (client-summary.ts); null without one. */
     clientSummary?: string | null;

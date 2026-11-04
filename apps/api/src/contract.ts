@@ -387,10 +387,12 @@ export interface Grade {
   created_at: string;
 }
 
-/** GET /trials/:id for a trial made in an experiment. */
+/** GET /trials/:id for a trial made in an experiment, or a probe trial (D33: `experiment_id` null, `probe` true). */
 export interface TrialView {
   id: string;
-  experiment_id: string;
+  experiment_id: string | null;
+  /** A probe trial renders a config's prompt on the fake model; it is never counted in experiment results. */
+  probe: boolean;
   task: { sha256: Sha256; id: string; version: string; split: TaskSplit; kind: string; summary: string };
   config: {
     hash: Sha256;
@@ -498,7 +500,8 @@ export interface ClaimRequest {
 export interface ClaimResponse {
   trial_id: string;
   attempt: number;
-  experiment_id: string;
+  /** Null for a probe trial (D33), which belongs to no experiment. */
+  experiment_id: string | null;
   /** A complete contract v2 spec; `model.base_url` is LiteLLM as seen from the worker. */
   spec: JsonObject;
   /** File name in /trial/state to base64 content. */
@@ -604,4 +607,113 @@ export interface LabelLine {
   value: LabelValue;
   note: string | null;
   labelled_at: string;
+}
+
+// ---- Pre-run checks and spend (D33, D38) -----------------------------------------------
+
+/**
+ * POST /configs/:hash/rendered-prompt starts a probe trial when there is no rendered prompt and
+ * no live probe (or the last probe failed); GET only reads. `none` is GET's answer before any
+ * probe; `queued` and `running` come with 202 from POST.
+ */
+export type RenderedPromptStatus = 'none' | 'queued' | 'running' | 'ready' | 'failed';
+
+export interface RenderedPrompt {
+  /** sha256 of `system_text`. */
+  sha256: Sha256;
+  /** The system message(s) of the first request, with the date line and the probe model normalised. */
+  system_text: string;
+  /** Tool names in the request's order. */
+  tools: string[];
+  /** Our task prompt's place in `system_text`: UTF-16 offsets (JavaScript string indices), end exclusive. Null if not found verbatim. */
+  ours: { start: number; end: number } | null;
+  /** `system_text` with our task prompt replaced by `<<OUR TASK PROMPT>>`. */
+  harness_text: string;
+  normalised: string[];
+  /** Why the text may differ from what the real model will get. */
+  caveats: string[];
+  /** The probe trial it was read from (GET /trials/:id shows its trace). */
+  trial_id: string;
+  created_at: string;
+}
+
+export interface RenderedPromptView {
+  config_hash: Sha256;
+  status: RenderedPromptStatus;
+  probe: { trial_id: string; status: TrialStatus; label: string | null; model: string } | null;
+  /** True when the rendered prompt was already stored for this config, so nothing ran. */
+  cached: boolean;
+  /** Why the last probe gave no rendered prompt (status `failed`). */
+  error: string | null;
+  rendered: RenderedPrompt | null;
+}
+
+export type ConflictSeverity = 'high' | 'medium' | 'low';
+
+export interface ConflictFinding {
+  harness_says: string;
+  we_say: string;
+  why_it_matters: string;
+  severity: ConflictSeverity;
+}
+
+export interface AllowanceView {
+  kind: string;
+  limit_usd: number;
+  /** Settled costs plus the worst-case reservation of any call not settled yet. */
+  used_usd: number;
+  remaining_usd: number;
+  calls: number;
+  /** D38: past half, Claude tells Rishi. */
+  half_reached: boolean;
+}
+
+/** POST /configs/:hash/conflict-check, and GET for the stored result without a call. */
+export interface ConflictCheckView {
+  config_hash: Sha256;
+  rendered_sha256: Sha256;
+  /** Hash of everything the checker is given: the rendered prompt, our prompt and the settings. */
+  input_sha256: Sha256;
+  checker: VersionRef;
+  model: string;
+  conflicts: ConflictFinding[];
+  notes: string;
+  /** What the check cost when it ran (null if LiteLLM never reported it); 0 when skipped. */
+  cost_usd: number | null;
+  /** True when this request returned a stored result and made no call. */
+  cached: boolean;
+  /** `no_harness_text`: the harness adds no system text of its own, so no call was made. */
+  skipped: 'no_harness_text' | null;
+  spend_id: string | null;
+  checked_at: string;
+  allowance: AllowanceView;
+}
+
+/** GET /spend: trial spend and the platform's own calls, separately (D38). */
+export interface SpendView {
+  /** Experiment trials, agent and simulator calls. Probe trials (fake model) are not counted. */
+  trials_usd: number;
+  /** Platform-made calls with a known cost. */
+  system_usd: number;
+  total_usd: number;
+  system_by_kind: Record<string, { usd: number; calls: number }>;
+  allowances: AllowanceView[];
+}
+
+/** GET /spend/system: one row per platform-made call, newest first. */
+export interface SystemSpendRow {
+  id: string;
+  kind: string;
+  model: string;
+  status: 'pending' | 'done' | 'failed';
+  reserved_usd: number;
+  cost_usd: number | null;
+  /** Where `cost_usd` came from; `no_call` means the key was never minted, so nothing was sent. Null while pending. */
+  cost_source: 'spend_log' | 'response_header' | 'unknown' | 'no_call' | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  ref: string;
+  error: string | null;
+  created_at: string;
+  settled_at: string | null;
 }

@@ -18,7 +18,9 @@ status. The trial spec, result, span and runner-report shapes are contract v2
   time (agent key, plus a simulator key when the task has a client simulator), each limited
   to that trial's model and given a budget, and revokes them when the trial is reported or
   its claim lapses. Workers never see the master key, so nothing an agent runs can read it
-  (R10.3 tightened; D2).
+  (R10.3 tightened; D2). For a call the platform makes itself (the conflict check, D38) it
+  mints a key for that one call, limited to the checker model with a $0.10 budget, makes the
+  call with that key (never the master key), and revokes it straight after.
 - Workers hold only a worker token (`EVALS_WORKER_TOKEN`), sent as `Authorization: Bearer`.
   Provider keys live only in LiteLLM.
 
@@ -80,6 +82,121 @@ simulated-client task the API also summarises that file (profile and debts) into
   prompt, toolset, settings, settings_sources, harness_options, created_at}`.
 - `GET /configs/:a/diff/:b` returns `[{path, a, b}]`: every field that differs.
 
+## Pre-run checks: rendered prompt and conflict check (D33, D38)
+
+Harnesses such as Hermes wrap our task prompt in text of their own (harness guide 3.3), and ours
+can quietly contradict it. Before a run, a config's screen shows the full system prompt the
+model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictCheckView` in
+`apps/api/src/contract.ts`.
+
+### Rendered prompt
+
+- `POST /configs/:hash/rendered-prompt` makes sure the config has a rendered prompt.
+  - Stored already (one per config hash, never re-made): 200, `status: "ready"`, `cached: true`.
+  - Otherwise, if the config has no probe trial yet, or its last probe gave no prompt, the API
+    queues a **probe trial** and answers 202 with `status: "queued"`. While a probe is queued
+    or running, a POST answers 202 with that probe (`queued` or `running`); there is at most one
+    live probe per config, so a second click queues nothing.
+  - Once the probe has reported, the next call reads the prompt from it: 200 with `status:
+    "ready"`, `cached: false` (stored from then on), or `status: "failed"` with `error` saying
+    why, in which case a POST queues a new probe.
+- `GET /configs/:hash/rendered-prompt` returns the same view without starting anything;
+  `status: "none"` before the first probe. The UI polls this one.
+- Body: `{config_hash, status, probe: {trial_id, status, label, model} | null, cached, error,
+  rendered}` where `rendered` is null until ready, then:
+
+  | Field | Meaning |
+  | --- | --- |
+  | `system_text` | The system message of the probe's stored first request (`artifacts/proxy/0001.request.json`, written from LiteLLM's spend log, so exactly what the model received). Several leading system messages are joined by a blank line. Normalised the way `evals_adapter.invariance.normalise` does: Hermes's `Conversation started: ...` line becomes `Conversation started: <date>`, and every mention of the probe model (Hermes's `Model:` line) becomes `<model>`. |
+  | `sha256` | Of `system_text`. The conflict-check cache keys on it. |
+  | `tools` | Tool names in the request's order, e.g. `mcp__finance__calculate_emi`. |
+  | `ours` | `{start, end}`: our task prompt's place in `system_text`, as JavaScript string indices (UTF-16 code units), end exclusive. It is found verbatim, then without its trailing newline. Null if not found. |
+  | `harness_text` | `system_text` with our prompt replaced by `<<OUR TASK PROMPT>>`: the harness's own text, and where ours sits in it. Equal to the marker alone when the harness adds nothing (own loop, Agents SDK). |
+  | `normalised`, `caveats` | What was normalised, and why the text may differ from what the real model gets (see below). |
+  | `trial_id`, `created_at` | The probe it came from; `GET /trials/:id` shows its trace. |
+
+- **A probe trial** runs the config once through the harness's own worker and the normal
+  claim and report protocol, with exactly two changes: the model is `fake/finance-emi` (the
+  fake model through LiteLLM, so it costs nothing real; its key is limited to that model with a
+  $0.50 budget of made-up fake money), and the task is the built-in `prompt-probe` task (one EMI
+  question, no client file, not in `GET /tasks`). Its row has `probe: true` and
+  `experiment_id: null`, it is stored under `runs/probes/<trial_id>/attempt-1/`, and it is
+  claimed ahead of queued experiment trials for the same harness. It is never re-queued, never
+  pauses anything, and is never counted in experiment results, estimates, the label queue or
+  `trials_usd`.
+- **Caveat on every rendered prompt:** text a harness adds only for some model names is
+  missing, because the probe ran on the fake model. Hermes adds tool-use guidance for model
+  names containing `gpt`, `gemini`, `qwen`, `deepseek` and a few others, and Google guidance for
+  `gemini` (`agent/system_prompt.py:580`); a Hermes config on Gemini really gets more text than
+  its rendered prompt shows (`docs/known-limits.md`).
+- A probe that cannot give a prompt says why in `error`: it stored no first request (it never
+  reached the model; its label and end state are named), the file is not intact or not JSON,
+  LiteLLM cut the body short (`MAX_STRING_LENGTH_PROMPT_IN_DB`), the request has no system
+  message, or the worker's lease lapsed.
+
+### Conflict check
+
+- `POST /configs/:hash/conflict-check` (200) checks our task prompt and the config's settings
+  against the harness's own text. It needs a ready rendered prompt (409
+  `rendered_prompt_required` otherwise).
+  - **Input.** System message: the highest version of `configs/prompts/conflict-check.v<n>.md`
+    (review header stripped). User message: `<harness_text>`, `<task_prompt>` and `<settings>`
+    blocks (the config's resolved settings as JSON).
+  - **Call.** `claude-sonnet-5-5` through LiteLLM's `/v1/chat/completions`, with a key the API
+    mints for this call (model-limited, budget $0.10) and revokes after. `max_tokens: 2000`;
+    temperature is not sent and no thinking setting is sent, so the model's defaults apply
+    (D38). Thinking counts towards `max_tokens`, so a long think can cut the reply short; that
+    reply is refused, not repaired.
+  - **Reply.** JSON only: `{conflicts: [{harness_says, we_say, why_it_matters, severity:
+    high|medium|low}], notes}`. A code fence or prose around the object is tolerated; anything
+    else (no object, no `conflicts` list, a missing field, another severity) is 502
+    `checker_output_invalid`, recorded as spend and not cached, so the next POST calls again.
+    A LiteLLM or provider error is 502 `checker_call_failed`, also recorded.
+  - **Cache.** By (`input_sha256`, checker prompt sha256, model), where `input_sha256` hashes
+    the rendered prompt's sha256, our prompt's sha256 and the settings: everything the checker
+    is given. The same input never pays twice; a hit returns `cached: true` and makes no call.
+    *Deviation from the brief, for Rishi:* the brief keyed the cache on the rendered prompt sha,
+    checker version and model only. The settings are part of the checker's input, so two configs
+    with the same rendered prompt and different settings (say `max_steps` 5 and 15) would
+    otherwise share findings that name the other's settings.
+  - **One at a time.** Only one check runs anywhere at once (a Postgres advisory lock); a
+    second one meanwhile gets 409 `conflict_check_busy`, and on retry finds the cache. Two clicks
+    never both pay.
+  - **No harness text.** When `harness_text` is only the marker (the harness adds nothing), the
+    answer is 200 with `skipped: "no_harness_text"`, no conflicts, `cost_usd: 0`, and no call.
+    When our prompt was not found in the rendered prompt, 409 `task_prompt_not_located`.
+  - **Allowance (D38).** Before the call the API reserves the check's worst case: input
+    characters ÷ 2 as tokens at the input price plus 2,000 output tokens at the output price
+    (about $0.03 today), at LiteLLM's prices for the model. If settled spend plus open
+    reservations plus this one would pass the allowance (`EVALS_CONFLICT_CHECK_ALLOWANCE_USD`,
+    default 2), the answer is 402 `allowance_exhausted`, and nothing is minted, called or
+    recorded. A cached result is still returned, since it costs nothing.
+  - **Spend.** Each call is one `system_spend` row (kind `conflict_check`): written `pending`
+    with the reservation before the call, then settled with the cost and tokens from LiteLLM's
+    spend log for the key (waiting up to 10 s for the row), else from the
+    `x-litellm-response-cost` header (`cost_source` says which). A cost never reported stays
+    null and its reservation keeps counting against the allowance.
+- `GET /configs/:hash/conflict-check` returns the stored result for the config as it is now,
+  without a call; 404 `no_conflict_check` before any.
+- Body: `{config_hash, rendered_sha256, input_sha256, checker: {id, version, sha256}, model,
+  conflicts, notes, cost_usd, cached, skipped, spend_id, checked_at, allowance}`. `cost_usd` is
+  what the check cost when it ran (also on a cached answer; `cached: true` means this request
+  spent nothing). `allowance` is `{kind, limit_usd, used_usd, remaining_usd, calls,
+  half_reached}`; `used_usd` counts settled costs and open reservations.
+
+## Spend
+
+- `GET /spend` returns `{trials_usd, system_usd, total_usd, system_by_kind: {<kind>: {usd,
+  calls}}, allowances: [{kind, limit_usd, used_usd, remaining_usd, calls, half_reached}]}`.
+  `trials_usd` is every experiment trial's agent and simulator cost (fake-model experiment
+  trials included, at the made-up fake prices, as in each experiment's `spend_usd`); probe trials
+  are left out. `system_usd` is the platform's own calls with a known cost, shown as its own line
+  (D38).
+- `GET /spend/system?kind=conflict_check` returns one row per platform-made call, newest first:
+  `{id, kind, model, status: pending|done|failed, reserved_usd, cost_usd, cost_source, input_tokens,
+  output_tokens, ref, error, created_at, settled_at}`. `ref` names what it was for
+  (`config:<hash>`). `scripts/log_system_spend.py` appends the settled rows to `docs/cost.md`.
+
 ## Experiments
 
 - `POST /experiments/estimate` with `{config_hashes, task_sha256s, n, sim_model}` returns
@@ -118,9 +235,9 @@ simulated-client task the API also summarises that file (profile and debts) into
 
 ## Trials
 
-- `GET /trials/:id` returns `{id, experiment_id, task, config, repeat_index, attempt, status,
+- `GET /trials/:id` returns `{id, experiment_id, probe, task, config, repeat_index, attempt, status,
   label, end_state, result, runner_report, usage, timing, files: [{path, bytes, sha256}],
-  grades: []}`.
+  grades: []}`. A probe trial (D33) has `probe: true` and `experiment_id: null`.
 - `GET /trials/:id/spans` returns contract v2 spans in time order.
 - `GET /trials/:id/files/*path` streams one stored file (path traversal refused).
 - The existing folder-based `/trials` endpoints (`FileTrialStore`) stay for runs recorded
@@ -140,6 +257,12 @@ trial cannot read or change another trial's stored files (D3).
    `folder` is where the API will store the attempt's files, relative to `runs/`; the worker
    does not use it. The claim is one `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP
    LOCKED)`, so two workers never get the same trial.
+
+   A probe trial (D33, see Pre-run checks) is claimed the same way, ahead of queued experiment
+   trials for that harness, with `experiment_id: null` (also in `spec.trial`, with `task_split:
+   null`, as contract v2 allows outside an experiment), `spec.model.name: "fake/finance-emi"`,
+   `budgets: {trial_usd: 0.5, sim_usd: 0}`, `folder: "probes/<trial_id>/attempt-1"` and
+   `sim_cache: null`. Workers need no change for it.
 
    `sim_cache` (D22) is `{<cache key>: <reply>}`: every simulator reply stored so far for the
    same task (sha256), simulator model, temperature (a `null` one, not sent, is its own scope),
@@ -194,7 +317,8 @@ trial cannot read or change another trial's stored files (D3).
    attempt 1, a new `queued` attempt 2 (D16: re-queued once, never twice), except for the two
    labels that are never re-queued (D26): `infra:config_error`, which also pauses the
    experiment, and `infra:budget_net`. `infra:provider_error`, `infra:adapter_crash` and
-   `infra:timeout_kill` are re-queued once.
+   `infra:timeout_kill` are re-queued once. A probe trial is never re-queued and pauses nothing
+   (nor is a lapsed one); `POST /configs/:hash/rendered-prompt` probes again.
 6. A lease with no heartbeat for 60 s lapses: the API marks the attempt `abandoned`, revokes
    its keys, and queues the next attempt under the same cap (also while the experiment is
    paused; the attempt waits for the resume).

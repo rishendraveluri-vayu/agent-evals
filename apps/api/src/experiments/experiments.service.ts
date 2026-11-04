@@ -131,7 +131,7 @@ export class ExperimentsService {
       `SELECT config_hash, task_sha256, count(*)::int AS trials, avg(input_tokens)::float8 AS input_tokens,
               avg(output_tokens)::float8 AS output_tokens, avg(wall_s)::float8 AS wall_s, avg(sim_cost_usd)::float8 AS sim_cost_usd
        FROM trials
-       WHERE status = 'done' AND input_tokens IS NOT NULL AND output_tokens IS NOT NULL AND proxy_complete IS NOT FALSE
+       WHERE status = 'done' AND NOT probe AND input_tokens IS NOT NULL AND output_tokens IS NOT NULL AND proxy_complete IS NOT FALSE
          AND config_hash = ANY($1) AND task_sha256 = ANY($2)
        GROUP BY config_hash, task_sha256`,
       [configHashes, taskShas],

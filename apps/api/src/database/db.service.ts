@@ -69,6 +69,27 @@ export class Db implements OnApplicationBootstrap {
     }
   }
 
+  /**
+   * Runs `fn` while this session holds the advisory lock `key`, or returns `{held: false}` at once
+   * when another session holds it. The lock is held on its own connection, so `fn` uses the pool
+   * as usual; if the process dies, Postgres drops the connection and the lock with it.
+   */
+  async withTryLock<T>(key: number, fn: () => Promise<T>): Promise<{ held: true; value: T } | { held: false }> {
+    await this.readyOr503();
+    const client = await this.requirePool().connect();
+    try {
+      const { rows } = await client.query<{ ok: boolean }>('SELECT pg_try_advisory_lock($1) AS ok', [key]);
+      if (!rows[0]?.ok) return { held: false };
+      try {
+        return { held: true, value: await fn() };
+      } finally {
+        await client.query('SELECT pg_advisory_unlock($1)', [key]).catch(() => undefined);
+      }
+    } finally {
+      client.release();
+    }
+  }
+
   private async readyOr503(): Promise<void> {
     try {
       await this.ready();
