@@ -49,6 +49,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D40 Agent builder for reviewers | A guided "Build an agent" page (agent type with an explainer per harness, model, prompt, a few settings, then try it on the free fake model or evaluate it) and a short demo guide, on the existing API. No accounts, logins, per-account API keys or hosted demo: the brief does not ask for them (Rishi, asked whether to build a shared demo login on our keys: "They did not ask"). Reviewers run the platform locally; fake models need no key. Rishi: "They did not ask for a full login and all so we don't complicate it, maybe ask Friday evening if needed": revisit Friday evening | Rishi | 4 Nov |
 | D10 Unit of analysis and the verdict | The task is the unit: per-task pass-rate difference B minus A, two-level bootstrap interval (tasks, then trials), sign-flip permutation test; the headline is the task pass rate (decision 2 of the stats proposal); a critical-failure guardrail and a regression list with severity and cause sit beside it | Rishi | 5 Nov |
 | D41 Per-task flags: multiple-comparison correction | Benjamini-Hochberg at 5% false discovery rate marks a task's difference as beyond noise; every task where B dropped is listed either way | Rishi | 5 Nov |
+| D42 Equivalence margin | +/- 10 points of pass rate: "practically equivalent" when the whole 95% interval of B minus A lies inside it | Rishi | 5 Nov |
 
 ## Open
 
@@ -232,6 +233,13 @@ What would change it: a write-up that must quote individual tasks as findings (t
 - Why not no correction: with 20 tasks about one looks different by chance in every experiment, which is what the brief means by "make it clear when a difference is just noise".
 - What protects us from BH's looser flags: every task where B dropped is shown with its counts and its interval whether flagged or not; a flag is a pointer, not a verdict; the verdict and the critical guardrail are separate tests; and the A/A calibration run shows how many tasks BH flags when nothing changed.
 - Assumptions under it: BH holds for independent tests or positively dependent ones (tasks sharing a harness and model tend to move together, which is positive dependence); per-task p-values come from that task's trials only, so a task with few trials can never reach a small p-value, and the write-up says how many trials each task had.
+
+### D42: An equivalence margin of +/- 10 points (5 Nov)
+Options: +/- 10 points; +/- 5 points; no margin (three outcomes only).
+Choice: +/- 10 points of task pass rate. The verdict has four outcomes: better, worse, practically equivalent (the whole 95% interval of B minus A inside +/- 10 points), or no detectable difference (with the smallest difference that could exist undetected). Fixed in the analysis plan before the run.
+Why: Rishi picked it from the three. Without a margin the platform cannot tell "the same" from "too few trials to tell"; +/- 5 would rarely be reachable at our sizes (an unmeasured estimate of +/- 10 to 15 points interval width at about 20 tasks and 10 trials each).
+What would change it: the pilot's measured interval width; a domain reason to call a smaller change material (a money-advice task where 5 points matters).
+To explain it: equivalence is a claim about the whole interval, not the point estimate: B at -2 points with an interval of -14 to +10 is "no detectable difference", not "equivalent", because a 14-point drop is still possible.
 
 ## Entry template
 

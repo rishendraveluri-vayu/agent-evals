@@ -54,7 +54,7 @@ so it does not fit N > 1; a mixed-effects logistic model is the heavier alternat
 | B is better | interval above 0 and permutation p < 0.05 |
 | B is worse | interval below 0 and p < 0.05 |
 | No detectable difference | otherwise, with the sentence "a difference smaller than X points could exist undetected", X from §6 |
-| (optional) Practically equivalent | the whole interval inside +/- delta, a margin set before the run |
+| Practically equivalent | the whole interval inside +/- 10 points of pass rate (D42), checked before "no detectable difference" |
 
 **Calibration, every time:** an A/A run (the same config twice) must come out "no detectable
 difference", and its interval width shows the setup's own noise. The Compare screen draws it under
@@ -102,5 +102,6 @@ Any change after seeing results is recorded there as a deviation (CLAUDE.md).
 3. **Settled 5 Nov (D41):** Benjamini-Hochberg at q = 0.05 for the per-task flags; the trade-off is
    written out under D41 in `docs/decisions.md`. Holm was the first proposal; it was dropped because
    at N = 5 to 10 trials per task it cannot flag a task, and a flag here means "look here".
-4. An equivalence margin delta, or none.
+4. **Settled 5 Nov (D42):** an equivalence margin of +/- 10 points of pass rate, fixed in the
+   analysis plan before the run.
 5. Alpha 0.05 and 95% intervals (proposed).
