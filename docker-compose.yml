@@ -4,6 +4,10 @@
 # folder the repo was cloned into.
 name: agent-evals
 
+# The worker token, one variable with one default for the API and every worker, so a worker is
+# let in out of the box. scripts/check_compose.py checks the two still match.
+x-worker-token: &worker-token ${EVALS_WORKER_TOKEN:-wt-local-dev-only}
+
 x-worker-runtime: &worker-runtime
   # D3: every harness worker runs like this. Read-only root, one writable
   # trial folder, no extra privileges, and only the internal trials network.
@@ -26,14 +30,9 @@ x-harness-worker: &harness-worker
     # Only the worker token. The trial's LiteLLM keys arrive in each claim; the master key and
     # provider keys never reach a worker (D2, R10.3).
     EVALS_API_URL: http://api:3000/api
-    EVALS_WORKER_TOKEN: ${EVALS_WORKER_TOKEN:-wt-local-dev-only}
-  volumes:
-    # Trial folders are stored at runs/<experiment>/<trial>/attempt-<n>/, which the API reads.
-    # The worker runs as uid 10001, so runs/ must be writable by it: RUNS_GID is a group that
-    # can write runs/ on the host (for example `stat -c %g runs`, with runs/ group-writable).
-    - ./runs:/runs
-  group_add:
-    - "${RUNS_GID:-1000}"
+    EVALS_WORKER_TOKEN: *worker-token
+  # No volumes. The worker uploads each trial's files to the API, which alone writes runs/
+  # (D2), so no trial can read or change another trial's stored files (D3).
   depends_on:
     api:
       condition: service_healthy
@@ -106,10 +105,11 @@ services:
       LITELLM_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local-dev-only}
       # Workers send this as Authorization: Bearer on /api/worker/*.
-      EVALS_WORKER_TOKEN: ${EVALS_WORKER_TOKEN:-local-dev-worker-token}
+      EVALS_WORKER_TOKEN: *worker-token
       # Recorded on every experiment; set it to `git rev-parse HEAD` when starting a real run.
       EVALS_PLATFORM_COMMIT: ${EVALS_PLATFORM_COMMIT:-}
-      # Trial folders: SP1 gate and smoke runs, and experiment attempts written by workers.
+      # Trial folders: SP1 gate and smoke runs, and experiment attempts, which the API writes
+      # from the files workers upload (runs/<experiment>/<trial>/attempt-<n>/).
       RUNS_DIR: /runs
       # The catalogue is read from git: adapters' capabilities, prompts and tasks.
       WORKERS_DIR: /repo/workers
@@ -118,7 +118,9 @@ services:
       # Rishi's hand labels: the labelling view appends here, nothing else writes them.
       LABELS_DIR: /repo/labels
     volumes:
-      - ./runs:/runs:ro
+      # Read-write: the API stores uploaded trial files here. It runs as uid 1000 (node), so
+      # runs/ must be writable by that user on the host, as labels/ already is.
+      - ./runs:/runs
       - ./workers:/repo/workers:ro
       - ./configs:/repo/configs:ro
       - ./tasks:/repo/tasks:ro

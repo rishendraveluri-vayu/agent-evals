@@ -6,7 +6,9 @@ runs the same loop with the own loop against the fake model server.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import random
 import shlex
 import signal
@@ -17,7 +19,7 @@ import time
 from pathlib import Path
 
 import pytest
-from support import SCRIPTED_CMD, attrs, errors, read_jsonl
+from support import SCRIPTED_CMD, SimServer, attrs, client_sim, errors, read_jsonl
 from worker_support import (
     EXPERIMENT,
     LEAK_CMD,
@@ -43,6 +45,8 @@ from evals_adapter.worker import (
     files_manifest,
 )
 
+FAR = time.monotonic() + 3600  # an upload deadline that never passes in a test
+
 QUICK = {"turns": [{"reply": "Your EMI is Rs 8,997.26.", "model_calls": 2}]}
 SLOW = {"turns": [{"sleep_s": 60, "reply": "never sent"}]}
 
@@ -63,7 +67,6 @@ def config(tmp_path: Path, api: FakeWorkerApi, cmd: list[str] = SCRIPTED_CMD, **
         "adapter_cmd": cmd,
         "worker_id": "w-test",
         "trial_root": tmp_path / "trial",
-        "runs_dir": tmp_path / "runs",
         "heartbeat_s": 0.2,
         "idle_base_s": 0.01,
         "idle_max_s": 0.05,
@@ -75,6 +78,7 @@ def config(tmp_path: Path, api: FakeWorkerApi, cmd: list[str] = SCRIPTED_CMD, **
 
 
 def attempt_dir(tmp_path: Path, trial_id: str = "t_test_0001", attempt: int = 1) -> Path:
+    """Where the fake API stores an attempt's uploads, as the API does under runs/."""
     return tmp_path / "runs" / EXPERIMENT / trial_id / f"attempt-{attempt}"
 
 
@@ -84,7 +88,7 @@ def serve_in_thread(worker: Worker, **kw) -> threading.Thread:
     return thread
 
 
-def test_claim_run_store_report(tmp_path, api):
+def test_claim_run_upload_report(tmp_path, api):
     spec = worker_spec(harness_options=QUICK)
     api.claims.append(make_claim(spec, state_files={"client.json": b'{"name": "Meera"}'}))
     worker = Worker(config(tmp_path, api))
@@ -104,15 +108,23 @@ def test_claim_run_store_report(tmp_path, api):
     for span in body["spans"]:
         assert errors("span", span) == [], span
 
-    # Stored whole, at the contract's path, and the manifest matches what is on disk (the fake
-    # API checked every hash before answering 200).
+    # Every file of out/ went to the API before the report, each with its hash, and the report
+    # names exactly those files (the fake API checked every hash before answering 200).
+    uploads = api.requests("upload")
+    assert [u["status"] for u in uploads] == [201] * len(uploads)
+    stored = api.stored("t_test_0001")
+    assert sorted(stored) == [row["path"] for row in body["files"]]
+    for u in uploads:
+        data = stored[u["body"]["path"]]
+        assert u["body"]["sha256"] == "sha256:" + hashlib.sha256(data).hexdigest()
+        assert u["body"]["query"]["worker_id"] == "w-test" and u["body"]["query"]["attempt"] == "1"
+    assert max(u["t"] for u in uploads) < api.requests("report")[0]["t"]
     folder = attempt_dir(tmp_path)
     assert body["files"] == files_manifest(folder)
     paths = {row["path"] for row in body["files"]}
     assert {"result.json", "trace.jsonl", "runner-report.json", "stdout.log", "stderr.log"} <= paths
     assert json.loads((folder / "runner-report.json").read_text()) == report
     assert [r["status"] for r in api.requests("report")] == [200]
-    assert not list(folder.parent.glob(".attempt-*")), "partial folder left behind"
     # D3: nothing of the trial is left in the trial folder.
     assert list((tmp_path / "trial").iterdir()) == []
 
@@ -205,21 +217,93 @@ def test_a_refused_report_is_not_retried(tmp_path, api):
     worker.serve(exit_on_idle=True)
     assert worker.outcomes == [("t_test_0001", 1, "failed")]
     assert [r["status"] for r in api.requests("report")] == [400]
-    assert attempt_dir(tmp_path).is_dir(), "the stored folder stays, nothing is deleted"
+    assert api.stored("t_test_0001"), "the uploaded files stay with the API, nothing is deleted"
     assert list((tmp_path / "trial").iterdir()) == []
 
 
-def test_an_existing_attempt_folder_is_never_overwritten(tmp_path, api):
-    folder = attempt_dir(tmp_path)
-    folder.mkdir(parents=True)
-    (folder / "result.json").write_text("an earlier result")
+def test_uploads_are_retried_after_a_dropped_answer_and_a_5xx(tmp_path, api):
+    # The first upload is stored but its answer is lost, so it is sent again, refused once with a
+    # 503, and sent a third time, when the API answers it as a repeat of what it holds.
+    api.upload_faults = ["drop", 503]
+    api.claims.append(make_claim(worker_spec(harness_options=QUICK)))
+    worker = Worker(config(tmp_path, api))
+    worker.serve(exit_on_idle=True)
+    assert worker.outcomes == [("t_test_0001", 1, "reported")]
+    sent = api.requests("upload")
+    assert [u["status"] for u in sent[:4]] == ["drop", 503, 200, 201]
+    assert len({u["body"]["path"] for u in sent[:3]}) == 1
+    assert sent[3]["body"]["path"] != sent[0]["body"]["path"]
+    (body,) = api.reports()
+    assert sorted(api.stored("t_test_0001")) == [row["path"] for row in body["files"]]
+
+
+def test_a_file_the_api_already_holds_differently_is_never_overwritten(tmp_path, api):
+    api.files[("t_test_0001", 1)] = {"result.json": b"an earlier result"}
     api.claims.append(make_claim(worker_spec(harness_options=QUICK)))
     worker = Worker(config(tmp_path, api))
     worker.serve(exit_on_idle=True)
     assert worker.outcomes == [("t_test_0001", 1, "failed")]
     assert api.reports() == []
-    assert (folder / "result.json").read_text() == "an earlier result"
-    assert sorted(p.name for p in folder.iterdir()) == ["result.json"]
+    conflicts = [u for u in api.requests("upload") if u["status"] == 409]
+    assert [u["body"]["path"] for u in conflicts] == ["result.json"]
+    assert api.stored("t_test_0001")["result.json"] == b"an earlier result"
+    assert list((tmp_path / "trial").iterdir()) == []
+
+
+def test_claim_lost_during_the_upload_stops_without_a_report(tmp_path, api):
+    api.upload_faults = [None, "lose"]
+    api.claims.append(make_claim(worker_spec(harness_options=QUICK)))
+    worker = Worker(config(tmp_path, api))
+    worker.serve(exit_on_idle=True)
+    assert worker.outcomes == [("t_test_0001", 1, "stopped")]
+    assert [u["status"] for u in api.requests("upload")] == [201, 409]
+    assert api.reports() == []
+    assert list((tmp_path / "trial").iterdir()) == []
+
+
+def test_only_regular_files_are_uploaded_and_names_survive_the_url(tmp_path, api):
+    """A trial could leave a symlink in out/ pointing at the worker's environment or another
+    file; the worker sends regular files only, and never follows a link."""
+    out = tmp_path / "out"
+    (out / "artifacts" / "deep").mkdir(parents=True)
+    (out / "result.json").write_text("{}")
+    (out / "artifacts" / "deep" / "a b%#?.txt").write_text("odd name")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("EVALS_WORKER_TOKEN=leaked")
+    (out / "artifacts" / "link.txt").symlink_to(secret)
+    (out / "artifacts" / "linked-dir").symlink_to(tmp_path)
+    os.mkfifo(out / "artifacts" / "pipe")
+    worker = Worker(config(tmp_path, api))
+    api.experiments["t_x"] = EXPERIMENT
+    rows = worker.upload("t_x", 1, out, TrialControl(), FAR)
+    assert [r["path"] for r in rows] == ["artifacts/deep/a b%#?.txt", "result.json"]
+    assert api.stored("t_x") == {"artifacts/deep/a b%#?.txt": b"odd name", "result.json": b"{}"}
+    assert b"leaked" not in b"".join(api.stored("t_x").values())
+
+
+def test_a_file_over_the_limit_is_not_sent_but_flagged(tmp_path, api):
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "small.txt").write_text("small")
+    (out / "big.bin").write_bytes(b"x" * 200)
+    api.experiments["t_x"] = EXPERIMENT
+    api.strict_files = False
+    worker = Worker(config(tmp_path, api, max_file_bytes=100))
+    rows = worker.upload("t_x", 1, out, TrialControl(), FAR)
+    assert [r["path"] for r in rows] == ["big.bin", "small.txt"]
+    assert rows[0]["bytes"] == 200 and rows[0]["sha256"] == hashlib.sha256(b"x" * 200).hexdigest()
+    assert sorted(api.stored("t_x")) == ["small.txt"]
+    assert [u["body"]["path"] for u in api.requests("upload")] == ["small.txt"]
+    # The API's own limit is enforced too: a 413 is logged and the file stays in the manifest.
+    api.max_file_bytes = 100
+    rows = Worker(config(tmp_path, api)).upload("t_y", 1, out, TrialControl(), FAR)
+    assert [r["path"] for r in rows] == ["big.bin", "small.txt"]
+    assert [u["status"] for u in api.requests("upload", trial_id="t_y")] == [201]
+    # The report then names the file the API does not hold, and the API flags it.
+    ApiClient(api.url, FAKE_WORKER_TOKEN).report(
+        "t_y", {"worker_id": "w-test", "attempt": 1, "files": rows}
+    )
+    assert api.problems[("t_y", 1)] == ["big.bin not uploaded"]
 
 
 def test_adapter_crash_is_stored_and_reported_as_infra(tmp_path, api):
@@ -275,6 +359,58 @@ def test_no_state_leaks_between_trials_on_a_host(tmp_path, api):
     assert not [p for p in seen["trial_listing"] if "leak" in p], seen["trial_listing"]
     assert seen["sleepers"] == []
     assert not any(alive(pid) for pid in wrote["spawned"])
+
+
+def test_a_second_trial_of_the_same_conversation_reuses_the_simulator_replies(tmp_path, api):
+    """D22 through the worker loop: trial 1's new simulator replies go to the API with its other
+    files; the API's claim for trial 2 of the same conversation task carries them, so trial 2 has
+    the same conversation without one simulator call."""
+    sim = SimServer(
+        ["Will I lose the house?", "OK. What should I do first?", "Thank you. [[END_CONVERSATION]]"]
+    )
+    api.calls = lambda trial_id, role: []
+    api.serve_sim_cache = True
+    turns = [{"reply": "{{last_user}}", "model_calls": 0}]
+    keys = {"model": "sk-trial-agent-fake", "sim": "sk-trial-sim-fake"}
+    try:
+        for n in (1, 2):
+            spec = worker_spec(f"t_sim_{n}", harness_options={"turns": turns})
+            spec["task"]["client_sim"] = client_sim(sim.url)
+            spec["task"]["messages"] = [{"role": "user", "content": "I don't know where to start."}]
+            api.claims.append(make_claim(spec, keys=keys))
+        worker = Worker(config(tmp_path, api))
+        worker.serve(max_trials=1)
+        calls_in_trial_1 = len(sim.requests)
+        worker.serve(exit_on_idle=True)
+    finally:
+        sim.close()
+    assert [o[2] for o in worker.outcomes] == ["reported", "reported"]
+    assert calls_in_trial_1 == 3
+    assert len(sim.requests) == 3, "trial 2 called the simulator"
+    assert {r["auth"] for r in sim.requests} == {"Bearer sk-trial-sim-fake"}
+
+    first, second = api.reports("t_sim_1")[0], api.reports("t_sim_2")[0]
+    replies = [json.loads(line) for line in api.stored("t_sim_1")["sim_replies.jsonl"].splitlines()]
+    assert [r["reply"] for r in replies] == [
+        "Will I lose the house?",
+        "OK. What should I do first?",
+        "Thank you. [[END_CONVERSATION]]",
+    ]
+    assert api.handed[0]["sim_cache"] == {}
+    assert api.handed[1]["sim_cache"] == {r["key"]: r["reply"] for r in replies}
+    assert "sim_replies.jsonl" not in api.stored("t_sim_2"), "trial 2 had no new replies"
+
+    def hits(body):
+        return [
+            attrs(s)["evals.sim.cache_hit"] for s in body["spans"] if s["name"] == "client_sim.turn"
+        ]
+
+    assert hits(first) == [False, False, False]
+    assert hits(second) == [True, True, True]
+    assert first["runner_report"]["label"] == second["runner_report"]["label"] == "agent"
+    transcript = first["result"]["conversation"]["transcript"]
+    assert second["result"]["conversation"]["transcript"] == transcript
+    assert transcript[-1]["content"] == "Thank you."
 
 
 def test_api_proxy_client_maps_keys_and_reads_calls_through_the_api(tmp_path, api):
@@ -338,8 +474,6 @@ def worker_process(tmp_path: Path, api: FakeWorkerApi, worker_id: str, *args: st
             "evals_adapter.worker",
             "--trial-root",
             str(tmp_path / "trial"),
-            "--runs-dir",
-            str(tmp_path / "runs"),
             "--heartbeat-s",
             "0.2",
             *args,

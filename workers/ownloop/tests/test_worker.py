@@ -1,5 +1,5 @@
 """The SP3 worker loop with the own loop's real adapter: claim from a fake API, run against the
-fake model server (as the gate tests do), store, report. No real model is called."""
+fake model server (as the gate tests do), upload, report. No real model is called."""
 
 import sys
 
@@ -48,7 +48,6 @@ def test_worker_claims_runs_and_reports_a_real_trial(tmp_path, fake):
             adapter_cmd=[sys.executable, "-m", "ownloop.adapter"],
             worker_id="w-ownloop",
             trial_root=trial_root,
-            runs_dir=runs,
             heartbeat_s=0.5,
         )
     )
@@ -69,6 +68,8 @@ def test_worker_claims_runs_and_reports_a_real_trial(tmp_path, fake):
     assert len(chats) == 2 == report["proxy_usage"]["model_calls"]
     assert report["proxy_usage"]["complete"] is True
     assert all(c["parentSpanId"] == turn["spanId"] for c in chats)
+    # Uploaded to the API, which stores them under runs/; the worker never wrote there itself.
     folder = runs / "e_worker" / "t_worker_1" / "attempt-1"
     assert body["files"] == files_manifest(folder)
+    assert sorted(api.stored("t_worker_1")) == [row["path"] for row in body["files"]]
     assert list(trial_root.iterdir()) == []

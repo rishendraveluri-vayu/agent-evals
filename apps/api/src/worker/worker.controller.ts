@@ -1,5 +1,6 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
-import type { ClaimResponse, HeartbeatResponse, ReportResponse } from '../contract';
+import { Body, Controller, Get, Headers, HttpCode, Param, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
+import type { IncomingMessage } from 'node:http';
+import type { ClaimResponse, HeartbeatResponse, ReportResponse, UploadResponse } from '../contract';
 import type { HttpResponse } from '../common/http';
 import { WorkerAuthGuard } from './worker-auth.guard';
 import { WorkerService } from './worker.service';
@@ -29,6 +30,24 @@ export class WorkerController {
   @Get('trials/:id/calls')
   calls(@Param('id') id: string, @Query('role') role?: string): Promise<unknown[]> {
     return this.worker.calls(id, role);
+  }
+
+  /**
+   * One file of the trial's out/ folder, as raw bytes, before the report. 201 stored, 200 the same
+   * bytes were already stored; never overwritten. Workers do not mount runs/ (D2, D3).
+   */
+  @Put('trials/:id/files/*path')
+  async upload(
+    @Param('id') id: string,
+    @Param('path') rel: string | string[],
+    @Query() query: Record<string, unknown>,
+    @Headers() headers: Record<string, string | string[] | undefined>,
+    @Req() req: IncomingMessage,
+    @Res({ passthrough: true }) res: HttpResponse,
+  ): Promise<UploadResponse> {
+    const stored = await this.worker.upload(id, Array.isArray(rel) ? rel.join('/') : rel, query, headers, req);
+    res.status(stored.duplicate ? 200 : 201);
+    return stored;
   }
 
   /** Reporting the same attempt twice is a no-op 200. */

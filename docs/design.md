@@ -75,6 +75,8 @@ Tasks, configs, experiments, trials and traces. **[Rishi designs]** in SP2.
 
 Approved on 4 Nov (R14): `docs/proposals/data-model.md`. Content-addressed prompts, toolsets, tasks and configs; experiments freeze task hashes × config hashes × N; one trial row per (experiment, task, config, repeat, attempt) with a claim, heartbeat and idempotent report; spans and grades in their own tables; labels stay files; raw trial files stay under `runs/`.
 
+Added with D22's reply cache (migration `002_sim_replies.sql`): a `sim_replies` table keyed by the simulator cache key, with the task sha256, simulator model, temperature, token cap and prompt sha256 it is scoped by and the trial that first produced each reply. A claim hands out every reply in its trial's scope; a report adds the trial's new ones, first reply per key kept.
+
 Interim, not a design decision: until SP2, the API reads finished trial folders from `RUNS_DIR` through a `TrialStore` interface (`apps/api/src/trials/trial-store.ts`), so the trace view and spend chart work now. SP2's database store replaces the file store behind the same interface.
 
 Planned in the spec, not yet designed:
@@ -97,6 +99,7 @@ Decided (D3; Rishi delegated the call to "simpler and more robust"):
 - **Every writable path lives in one trial folder at a fixed path.** That covers the Hermes home, `HOME`, `TMPDIR` and tool state such as the finance ledger. Because only one trial runs in a container at a time, the paths are the same in every trial, so prompts that carry them stay identical.
 - **Between trials, the runner kills every leftover process, wipes the folder and checks it is empty.** Hermes's scratch-prune child deliberately outlives its parent, which is why the sweep is needed.
 - **The root filesystem is read-only**, so nothing can persist outside the trial folder.
+- **Workers mount nothing from the host.** After a trial the worker uploads each file of `out/` to the API (`PUT /api/worker/trials/:id/files/*path` with its sha256), and the API alone writes `runs/<experiment>/<trial>/attempt-<n>/`. A trial therefore cannot read or change an earlier trial's stored files (D2, D3; `docs/api-contract.md`, worker protocol).
 - **A worker crash kills its own trial.** The trial's claim then lapses and it is re-run once, never twice.
 - **Each trial gets its own LiteLLM virtual key and budget**, since the key is readable inside the container.
 

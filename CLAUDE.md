@@ -63,6 +63,7 @@ pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build   # apps/
 cd services/fake-llm && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run pytest -q
 
 uv run --no-project --with pyyaml==6.0.3 python scripts/check_litellm_config.py   # no cache, no dropped params, prices set
+uv run --no-project --with pyyaml==6.0.3 python scripts/check_compose.py         # API and workers share one worker token
 
 cd workers/adapterlib && uv sync --locked && uv run pytest -q     # contract schemas, adapter library, runner
 cd workers/ownloop && uv sync --locked && uv run pytest -q        # own loop gate tests (needs uv sync in services/fake-llm and services/finance-mcp)

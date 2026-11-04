@@ -43,7 +43,7 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 
 ## Trial isolation (D3)
 
-- Consecutive trials in one harness container are separated by a process sweep, a folder wipe and a read-only root filesystem, not by a fresh container. A harness that writes somewhere we did not anticipate, such as a writable mount outside the trial folder, could carry state from one trial to the next. The SP3 leak test checks the known paths only.
+- Consecutive trials in one harness container are separated by a process sweep, a folder wipe and a read-only root filesystem, not by a fresh container. A harness that writes somewhere we did not anticipate could carry state from one trial to the next. The SP3 leak test checks the known paths only. Worker containers mount nothing from the host (trial files are uploaded to the API, which alone writes `runs/`), so the only writable places are the trial folder and `/dev/shm`, both wiped between trials; the image test checks that trial 2 sees no `/runs` and none of trial 1's files.
 
 ## Cost tracking
 
@@ -63,7 +63,8 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 
 ## Simulated client (D22)
 
-- The reply cache is filled per trial and stored by the runner afterwards. Two trials running at the same time that reach the same new conversation state both call the simulator, and can get different replies; the first stored wins for later trials. At temperature 0 the replies should match, but that is not guaranteed.
+- The reply cache is filled per trial and stored by the API when the trial is reported (from its uploaded `out/sim_replies.jsonl`). Two trials running at the same time that reach the same new conversation state both call the simulator, and can get different replies; the first stored wins for later trials. At temperature 0 the replies should match, but that is not guaranteed.
+- The API trusts the replies a trial reports in `out/sim_replies.jsonl`. That file is written inside the trial folder, which the adapter process and anything it runs can also write (a harness with a shell or file tool turned on), so an agent could add a forged reply under a future conversation state's key and it would be served to later trials of the same task and simulator. Forging needs the key, a hash of the exact future transcript, so an accident is very unlikely, but nothing checks it. A check against the simulator key's LiteLLM spend log, which holds the real responses, would close it; not built.
 - The simulator's own calls go through a separate key, so they are not in the agent's spans or counts. Their cost is not yet added to the trial's spend.
 
 ## Fake model server (tests and CI only)

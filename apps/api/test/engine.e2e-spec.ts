@@ -1,6 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020';
 import { createHash } from 'node:crypto';
 import { promises as fs, readFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import * as path from 'node:path';
 import request from 'supertest';
 import type { ClaimResponse, ExperimentDetail, ReportResponse, TrialView } from '../src/contract';
@@ -17,7 +18,7 @@ const EXAMPLE_SPANS = readFileSync(path.join(EXAMPLES, 'trace.jsonl'), 'utf8')
   .filter(Boolean)
   .map((l) => JSON.parse(l) as Record<string, unknown>);
 
-const sha = (data: string): string => createHash('sha256').update(data).digest('hex');
+const sha = (data: string | Buffer): string => createHash('sha256').update(data).digest('hex');
 
 describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () => {
   let env: TestEnv;
@@ -64,25 +65,36 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     return res.body as ClaimResponse;
   }
 
-  /** Writes the trial folder the way the runner leaves /trial/out, and returns its manifest. */
-  async function writeFolder(c: ClaimResponse): Promise<{ path: string; bytes: number; sha256: string }[]> {
-    const out = path.join(env.runsDir, c.folder, 'out');
+  /** PUTs one file of the trial's out/ folder, as the worker does before its report. */
+  function upload(c: { trial_id: string; attempt: number }, worker: string, rel: string, data: string | Buffer, hash: string = sha(data)) {
+    return request(env.http)
+      .put(`/api/worker/trials/${c.trial_id}/files/${rel}?worker_id=${encodeURIComponent(worker)}&attempt=${c.attempt}`)
+      .set(auth)
+      .set('Content-Type', 'application/octet-stream')
+      .set('X-Content-Sha256', hash)
+      .send(Buffer.from(data));
+  }
+
+  /** Uploads the files the runner leaves in /trial/out, and returns their manifest. With `strict`,
+   *  every upload must be accepted (201 new, 200 the same bytes again). */
+  async function writeFolder(c: ClaimResponse, worker: string, strict = true, extra: Record<string, string> = {}): Promise<{ path: string; bytes: number; sha256: string }[]> {
     const files: Record<string, string> = {
       'result.json': JSON.stringify({ ...EXAMPLE_RESULT, trial_id: c.trial_id }),
       'trace.jsonl': EXAMPLE_SPANS.map((s) => JSON.stringify(s)).join('\n') + '\n',
       'artifacts/proxy/0001.request.json': '{"model":"fake/finance-emi"}',
+      ...extra,
     };
     const manifest = [];
     for (const [rel, text] of Object.entries(files)) {
-      await fs.mkdir(path.dirname(path.join(out, rel)), { recursive: true });
-      await fs.writeFile(path.join(out, rel), text);
+      const res = await upload(c, worker, rel, text);
+      if (strict && res.status !== 201 && res.status !== 200) throw new Error(`upload ${rel}: ${res.status} ${JSON.stringify(res.body)}`);
       manifest.push({ path: rel, bytes: Buffer.byteLength(text), sha256: sha(text) });
     }
     return manifest;
   }
 
-  async function report(c: ClaimResponse, worker: string, label = 'agent', expectStatus = 200): Promise<ReportResponse> {
-    const files = await writeFolder(c);
+  async function report(c: ClaimResponse, worker: string, label = 'agent', expectStatus = 200, extra: Record<string, string> = {}): Promise<ReportResponse> {
+    const files = await writeFolder(c, worker, expectStatus === 200, extra);
     const res = await request(env.http)
       .post(`/api/worker/trials/${c.trial_id}/report`)
       .set(auth)
@@ -364,7 +376,7 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
   it('accepts a report whose files do not match, and says so instead of dropping the trial', async () => {
     const exp = await experiment();
     const c = (await claim('w-files'))!;
-    const files = await writeFolder(c);
+    const files = await writeFolder(c, 'w-files');
     files[0] = { ...files[0], sha256: '0'.repeat(64) };
     files.push({ path: 'missing.log', bytes: 1, sha256: '1'.repeat(64) });
     const res = await request(env.http)
@@ -377,6 +389,167 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     expect(view.files.filter((f) => !f.ok).map((f) => f.path)).toEqual(['result.json', 'missing.log']);
     const detail = (await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body as ExperimentDetail;
     expect(detail.events.some((e) => e.kind === 'file_problem')).toBe(true);
+  });
+
+  it('stores uploaded files under runs/<experiment>/<trial>/attempt-<n>/, whole, hashed and never overwritten', async () => {
+    const exp = await experiment();
+    const c = (await claim('w-up'))!;
+    const stored = path.join(env.runsDir, c.folder);
+    const first = await upload(c, 'w-up', 'artifacts/proxy/0001.request.json', '{"a":1}').expect(201);
+    expect(first.body).toEqual({ path: 'artifacts/proxy/0001.request.json', bytes: 7, sha256: `sha256:${sha('{"a":1}')}`, duplicate: false });
+    expect(await fs.readFile(path.join(stored, 'artifacts/proxy/0001.request.json'), 'utf8')).toBe('{"a":1}');
+    // The same bytes again (a retried upload) are a no-op; different bytes never replace them.
+    expect((await upload(c, 'w-up', 'artifacts/proxy/0001.request.json', '{"a":1}', `sha256:${sha('{"a":1}')}`).expect(200)).body).toMatchObject({ duplicate: true });
+    expect((await upload(c, 'w-up', 'artifacts/proxy/0001.request.json', '{"a":2}').expect(409)).body).toMatchObject({ error: 'file_conflict' });
+    expect(await fs.readFile(path.join(stored, 'artifacts/proxy/0001.request.json'), 'utf8')).toBe('{"a":1}');
+    // The hash header is checked against the bytes, in either form; a mismatch stores nothing.
+    expect((await upload(c, 'w-up', 'stdout.log', 'hello', sha('other')).expect(400)).body).toMatchObject({ error: 'hash_mismatch' });
+    await expect(fs.stat(path.join(stored, 'stdout.log'))).rejects.toThrow();
+    await upload(c, 'w-up', 'stdout.log', 'hello', sha('hello').toUpperCase()).expect(201);
+    // Paths that leave the attempt folder are refused, and nothing lands outside it.
+    for (const bad of ['..%2F..%2Fescape.txt', 'a/../../escape.txt', '.%2E/escape.txt', 'a%00b']) {
+      expect((await upload(c, 'w-up', bad, 'x').expect(400)).body).toMatchObject({ error: 'invalid_path' });
+    }
+    await expect(fs.stat(path.join(env.runsDir, exp.id, 'escape.txt'))).rejects.toThrow();
+    await expect(fs.stat(path.join(env.runsDir, exp.id, c.trial_id, 'escape.txt'))).rejects.toThrow();
+    // A file in the way of a folder, and the other refusals.
+    await upload(c, 'w-up', 'stdout.log/inner', 'x').expect(409);
+    const put = (headers: Record<string, string>) =>
+      request(env.http).put(`/api/worker/trials/${c.trial_id}/files/x.txt?worker_id=w-up&attempt=1`).set(auth).set(headers).send(Buffer.from('x'));
+    expect((await put({ 'Content-Type': 'application/octet-stream' }).expect(400)).body).toMatchObject({ error: 'invalid_upload' });
+    await put({ 'Content-Type': 'application/json', 'X-Content-Sha256': sha('x') }).expect(415);
+    await request(env.http).put(`/api/worker/trials/${c.trial_id}/files/x.txt?worker_id=w-up&attempt=1`).set('Content-Type', 'application/octet-stream').send(Buffer.from('x')).expect(401);
+    expect((await upload(c, 'someone-else', 'x.txt', 'x').expect(409)).body).toMatchObject({ error: 'claim_lost' });
+    expect((await upload({ ...c, attempt: 2 }, 'w-up', 'x.txt', 'x').expect(409)).body).toMatchObject({ error: 'attempt_mismatch' });
+    await upload({ trial_id: 't_nope', attempt: 1 }, 'w-up', 'x.txt', 'x').expect(404);
+    // No temporary files are left next to the attempt folder.
+    expect((await fs.readdir(path.dirname(stored))).sort()).toEqual(['attempt-1']);
+    await cancel(exp.id);
+  });
+
+  it('refuses a file over 64 MB from its Content-Length, before reading it', async () => {
+    await experiment();
+    const c = (await claim('w-big-file'))!;
+    const { port } = (env.app.getHttpServer() as { address(): { port: number } }).address();
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          method: 'PUT',
+          path: `/api/worker/trials/${c.trial_id}/files/huge.bin?worker_id=w-big-file&attempt=1`,
+          headers: { ...auth, 'Content-Type': 'application/octet-stream', 'Content-Length': String(64 * 1024 * 1024 + 1), 'X-Content-Sha256': sha('') },
+        },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+          req.destroy();
+        },
+      );
+      req.on('error', reject);
+      req.flushHeaders(); // headers only: the body is never sent
+    });
+    expect(status).toBe(413);
+    await expect(fs.stat(path.join(env.runsDir, c.folder, 'huge.bin'))).rejects.toThrow();
+  });
+
+  it('after the report, takes the same bytes again but no new or changed file', async () => {
+    await experiment();
+    const c = (await claim('w-after'))!;
+    await report(c, 'w-after');
+    const result = JSON.stringify({ ...EXAMPLE_RESULT, trial_id: c.trial_id });
+    expect((await upload(c, 'w-after', 'result.json', result).expect(200)).body).toMatchObject({ duplicate: true });
+    expect((await upload(c, 'w-after', 'result.json', '{}').expect(409)).body).toMatchObject({ error: 'file_conflict' });
+    expect((await upload(c, 'w-after', 'late.log', 'late').expect(409)).body).toMatchObject({ error: 'already_reported' });
+  });
+
+  it('refuses uploads for a lapsed claim', async () => {
+    const exp = await experiment();
+    const c = (await claim('w-lapsed'))!;
+    await lapse(c.trial_id);
+    await env.worker.sweep();
+    expect((await upload(c, 'w-lapsed', 'result.json', '{}').expect(409)).body).toMatchObject({ error: 'claim_lost' });
+    await cancel(exp.id);
+  });
+
+  it('takes reported file hashes as sha256:<hex> or bare hex and stores them as sha256:<hex>', async () => {
+    await experiment();
+    const c = (await claim('w-hash'))!;
+    const files = await writeFolder(c, 'w-hash');
+    const mixed = files.map((f, i) => ({ ...f, sha256: i % 2 ? `sha256:${f.sha256}` : f.sha256.toUpperCase() }));
+    const res = await request(env.http)
+      .post(`/api/worker/trials/${c.trial_id}/report`)
+      .set(auth)
+      .send({ worker_id: 'w-hash', attempt: 1, runner_report: runnerReport(c.trial_id, 1, 'agent', files), result: EXAMPLE_RESULT, spans: [], files: mixed })
+      .expect(200);
+    expect((res.body as ReportResponse).problems).toEqual([]);
+    const view = (await request(env.http).get(`/api/trials/${c.trial_id}`).expect(200)).body as TrialView;
+    expect(view.files.map((f) => [f.path, f.sha256, f.ok])).toEqual(files.map((f) => [f.path, `sha256:${f.sha256}`, true]));
+  });
+
+  it('hands later trials of a conversation task the simulator replies earlier trials stored (D22)', async () => {
+    // Earlier tests' experiments must not hold queued ownloop trials that would be claimed first.
+    for (const { id } of (await env.pool.query("SELECT id FROM experiments WHERE status = 'running'")).rows as { id: string }[]) await cancel(id);
+    const widow = cat.tasks['widow-loan'];
+    const exp = await experiment({ configs: [configA, configB], tasks: [widow], sim: 'claude-haiku-5-5' });
+    const key = (c: string): string => `sha256:${c.repeat(64)}`;
+    const jsonl = (rows: Record<string, unknown>[]): string => rows.map((r) => JSON.stringify(r)).join('\n') + '\n';
+
+    const first = (await claim('w-sim-1'))!;
+    expect(first.sim_cache).toEqual({});
+    const r1 = await report(first, 'w-sim-1', 'agent', 200, {
+      'sim_replies.jsonl': jsonl([
+        { key: key('1'), reply: 'Will I lose the house?', model: 'claude-haiku-5-5', usage: { prompt_tokens: 40, completion_tokens: 6 } },
+        { key: key('2'), reply: 'Thank you. [[END_CONVERSATION]]', model: 'claude-haiku-5-5', usage: null },
+        { key: 'not-a-key', reply: 'x', model: 'claude-haiku-5-5' },
+      ]),
+    });
+    expect(r1).toMatchObject({ status: 'done', sim_replies_stored: 2 });
+    expect(r1.problems).toEqual([expect.stringContaining('line 3 is not {key: sha256:<hex>, reply}') as string]);
+
+    // The second arm's trial reaches the same conversation states: it gets the first's replies, so
+    // its runner answers those turns from the cache instead of calling the simulator.
+    const second = (await claim('w-sim-2'))!;
+    expect(second.trial_id).not.toBe(first.trial_id);
+    expect(second.sim_cache).toEqual({ [key('1')]: 'Will I lose the house?', [key('2')]: 'Thank you. [[END_CONVERSATION]]' });
+    // Its new replies are added; a reply for a state already stored never replaces the first one.
+    const r2 = await report(second, 'w-sim-2', 'agent', 200, {
+      'sim_replies.jsonl': jsonl([
+        { key: key('1'), reply: 'a different reply', model: 'claude-haiku-5-5' },
+        { key: key('3'), reply: 'What about my EMI?', model: 'claude-haiku-5-5' },
+      ]),
+    });
+    expect(r2.sim_replies_stored).toBe(1);
+    expect(await report(second, 'w-sim-2')).toMatchObject({ duplicate: true, sim_replies_stored: 1 }); // a repeat stores nothing
+    const stored = (await env.pool.query('SELECT key, reply, trial_id FROM sim_replies WHERE task_sha256 = $1 ORDER BY key', [widow])).rows as { key: string; reply: string; trial_id: string }[];
+    expect(stored.map((r) => [r.key, r.reply, r.trial_id])).toEqual([
+      [key('1'), 'Will I lose the house?', first.trial_id],
+      [key('2'), 'Thank you. [[END_CONVERSATION]]', first.trial_id],
+      [key('3'), 'What about my EMI?', second.trial_id],
+    ]);
+    expect((await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body).toMatchObject({ status: 'done' });
+
+    // Another simulator model shares nothing, and a file the API does not hold intact is not read.
+    const other = await experiment({ tasks: [widow], sim: 'gemini-3.8-flash' });
+    const third = (await claim('w-sim-3'))!;
+    expect(third.sim_cache).toEqual({});
+    const files = await writeFolder(third, 'w-sim-3');
+    files.push({ path: 'sim_replies.jsonl', bytes: 10, sha256: '9'.repeat(64) });
+    const r3 = (
+      await request(env.http)
+        .post(`/api/worker/trials/${third.trial_id}/report`)
+        .set(auth)
+        .send({ worker_id: 'w-sim-3', attempt: 1, runner_report: runnerReport(third.trial_id, 1, 'agent', files), result: EXAMPLE_RESULT, spans: [], files })
+        .expect(200)
+    ).body as ReportResponse;
+    expect(r3.sim_replies_stored).toBe(0);
+    expect(r3.problems).toEqual(expect.arrayContaining([expect.stringContaining('sim_replies.jsonl was not stored intact') as string]));
+    expect((await request(env.http).get(`/api/experiments/${other.id}`).expect(200)).body).toMatchObject({ status: 'done' });
+
+    // A task without a simulated client gets no cache at all.
+    const plain = await experiment();
+    expect((await claim('w-sim-4'))!.sim_cache).toBeNull();
+    await cancel(plain.id);
   });
 
   it('passes LiteLLM spend-log rows for a trial key through to its worker', async () => {

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { ApiError } from '../common/api-error';
-import { parseReport, spanRows, usageOf } from './report';
+import { parseReport, reportedSha, spanRows, usageOf } from './report';
 
 const EXAMPLES = path.resolve(__dirname, '../../../../contract/v2/examples');
 const exampleSpans = readFileSync(path.join(EXAMPLES, 'trace.jsonl'), 'utf8')
@@ -25,6 +25,18 @@ describe('parseReport', () => {
     ['a bad file entry', { files: [{ path: 'a' }] }],
   ])('refuses %s', (_what, change) => {
     expect(() => parseReport({ ...ok, ...change })).toThrow(ApiError);
+  });
+
+  it('takes file hashes as sha256:<hex> or bare hex and keeps them as sha256:<hex>', () => {
+    const hex = 'ab'.repeat(32);
+    const files = [
+      { path: 'a.json', bytes: 1, sha256: hex },
+      { path: 'b.json', bytes: 1, sha256: `sha256:${hex}` },
+      { path: 'c.json', bytes: 1, sha256: ` SHA256:${hex.toUpperCase()} ` },
+      { path: 'd.json', bytes: 1, sha256: 'md5:abc' },
+    ];
+    expect(parseReport({ ...ok, files }).files.map((f) => f.sha256)).toEqual([`sha256:${hex}`, `sha256:${hex}`, `sha256:${hex}`, 'md5:abc']);
+    expect(reportedSha(hex.toUpperCase())).toBe(`sha256:${hex}`);
   });
 });
 
