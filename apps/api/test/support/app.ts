@@ -9,6 +9,7 @@ import type { App } from 'supertest/types';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
 import { PG_POOL } from '../../src/database/pg-pool';
+import { WorkerService } from '../../src/worker/worker.service';
 import { type TestDatabase, createDatabase } from './db';
 import { LiteLlmStub, STUB_MASTER_KEY } from './litellm-stub';
 
@@ -60,6 +61,7 @@ export interface TestEnv {
   stub: LiteLlmStub;
   db: TestDatabase;
   pool: Pool;
+  worker: WorkerService;
   tasksDir: string;
   labelsDir: string;
   runsDir: string;
@@ -108,6 +110,7 @@ export async function bootEnv(): Promise<TestEnv> {
     stub,
     db,
     pool: app.get<Pool>(PG_POOL),
+    worker: app.get(WorkerService),
     tasksDir,
     labelsDir,
     runsDir,

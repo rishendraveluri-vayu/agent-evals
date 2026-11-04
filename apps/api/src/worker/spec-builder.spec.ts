@@ -1,0 +1,96 @@
+import Ajv2020 from 'ajv/dist/2020';
+import { readFileSync } from 'node:fs';
+import * as path from 'node:path';
+import { builtInToolsets } from '../catalogue/catalogue-files';
+import { sha256Ref } from '../common/hashing';
+import { PLATFORM_DEFAULTS } from '../configs/settings';
+import { MODEL_KEY_ENV, SIM_KEY_ENV, type SpecInputs, buildSpec } from './spec-builder';
+
+const SCHEMA = JSON.parse(readFileSync(path.resolve(__dirname, '../../../../contract/v2/spec.schema.json'), 'utf8')) as object;
+const validate = new Ajv2020({ allErrors: true, strict: false }).compile(SCHEMA);
+
+const toolset = builtInToolsets()[0];
+const base: SpecInputs = {
+  trial: { id: 't_abc123', experimentId: 'e_xyz', repeatIndex: 2, attempt: 1 },
+  config: {
+    id: 'c_0123456789ab',
+    hash: `sha256:${'a'.repeat(64)}`,
+    model: 'claude-haiku-5-5',
+    apiFormat: 'openai_chat',
+    settings: { ...PLATFORM_DEFAULTS, memory: null, skills: null, compression: null },
+    settingsSources: {
+      temperature: 'platform_default',
+      max_output_tokens: 'platform_default',
+      max_steps: 'platform_default',
+      timeout_s: 'platform_default',
+      parallel_tool_calls: 'platform_default',
+      memory: 'unsupported',
+      skills: 'unsupported',
+      compression: 'unsupported',
+    },
+    harnessOptions: {},
+  },
+  task: {
+    id: 'emi-basic-01',
+    sha256: `sha256:${'b'.repeat(64)}`,
+    split: 'discovery',
+    body: { id: 'emi-basic-01', messages: [{ role: 'user', content: 'EMI on 10 lakh at 9% for 20 years?' }], client_sim: null, extra: 'kept' },
+  },
+  prompt: { id: 'finance-advisor', version: 'v1', sha256: sha256Ref('Be kind.\n'), text: 'Be kind.\n' },
+  toolset,
+  sim: null,
+  modelBaseUrl: 'http://litellm:4000/v1',
+};
+
+function errors(spec: unknown): string {
+  return validate(spec) ? '' : JSON.stringify(validate.errors);
+}
+
+describe('buildSpec', () => {
+  it('builds a spec that validates against contract/v2/spec.schema.json', () => {
+    const spec = buildSpec(base);
+    expect(errors(spec)).toBe('');
+    expect(spec.model).toEqual({ name: 'claude-haiku-5-5', base_url: 'http://litellm:4000/v1', api_key_env: MODEL_KEY_ENV, api_format: 'openai_chat' });
+    expect(spec.trial).toMatchObject({ id: 't_abc123', experiment_id: 'e_xyz', task_version: base.task.sha256, task_split: 'discovery', repeat_index: 2 });
+  });
+
+  it('writes bare hex where contract v2 wants it and every finance tool in the built-in toolset', () => {
+    const spec = buildSpec(base) as { system_prompt: { sha256: string }; tools: { toolset: { sha256: string }; mcp_servers: { allowed_tools: string[] }[] } };
+    expect(spec.system_prompt.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(spec.tools.toolset.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(spec.tools.mcp_servers[0].allowed_tools).toHaveLength(11);
+  });
+
+  it('gives a simulated-client task the experiment simulator, at temperature 0 (D22)', () => {
+    const simPrompt = { id: 'client-sim', version: 'v1', sha256: sha256Ref('You are {{persona}}.\n'), text: 'You are {{persona}}.\n' };
+    const spec = buildSpec({
+      ...base,
+      task: {
+        ...base.task,
+        body: {
+          messages: [{ role: 'user', content: 'Where do I start?' }],
+          client_sim: {
+            persona: 'Meera, 41 (invented test persona)',
+            hidden_facts: ['Take-home Rs 92,000'],
+            concerns: ['Can I keep the house?'],
+            goal: 'Know whether she can keep the house',
+            opening_message: 'Where do I start?',
+            max_client_turns: 3,
+            notes: 'not a contract field',
+          },
+        },
+      },
+      sim: { model: 'claude-haiku-5-5', temperature: 0, maxOutputTokens: 300, prompt: simPrompt },
+    });
+    expect(errors(spec)).toBe('');
+    const sim = (spec.task as { client_sim: { model: { api_key_env: string; temperature: number }; notes?: string } }).client_sim;
+    expect(sim.model.api_key_env).toBe(SIM_KEY_ENV);
+    expect(sim.model.temperature).toBe(0);
+    expect(sim.notes).toBeUndefined();
+  });
+
+  it('refuses a simulated-client task when the experiment has no simulator', () => {
+    const body = { messages: [{ role: 'user', content: 'x' }], client_sim: { persona: 'p' } };
+    expect(() => buildSpec({ ...base, task: { ...base.task, body } })).toThrow('no simulator model');
+  });
+});
