@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
-import type { CreateLabelRequest, JsonObject, LabelCriterion, LabelLine, LabelQueueItem, LabelSet } from '../contract';
+import type { CreateLabelRequest, JsonObject, LabelCriterion, LabelLine, LabelQueueItem, LabelSet, TaskSplit } from '../contract';
 import { LABEL_SETS } from '../contract';
 import { badRequest, notFound } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
@@ -37,6 +37,11 @@ export function judgeCriteria(task: JsonObject): LabelCriterion[] {
  *  harness cannot be told from it. */
 export function bareToolName(name: string): string {
   return name.replace(/^mcp__[a-z0-9_]+?__/, '');
+}
+
+/** D52: the task split a label set draws from. */
+export function splitFor(set: LabelSet): TaskSplit {
+  return set === 'tuning' ? 'discovery' : 'held_out';
 }
 
 function labelSet(value: unknown): LabelSet {
@@ -109,7 +114,10 @@ export class LabelsService {
     // his own runs, and an example's trials keep the ids they had on the machine they came from.
     // A trial whose agent ran on a fake model (`fake/*`) played a script: there is no agent output
     // to judge, so it is left out too.
-    let where = `t.status = 'done' AND NOT t.probe AND t.label = 'agent' AND t.result IS NOT NULL
+    // D52: the sets follow the task split, so no task is both tuned on and scored on: tuning takes
+    // trials of discovery tasks only; held-out and final take trials of held-out tasks only.
+    params.push(splitFor(set));
+    let where = `k.split = $${params.length} AND t.status = 'done' AND NOT t.probe AND t.label = 'agent' AND t.result IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM labels o WHERE o.trial_id = t.id AND o.label_set <> $1)
       AND ${NOT_EXAMPLE_TRIAL('t')}
       AND NOT EXISTS (SELECT 1 FROM configs fc WHERE fc.hash = t.config_hash AND fc.model LIKE 'fake/%')`;
@@ -166,11 +174,18 @@ export class LabelsService {
     if (typeof body.criterion !== 'string' || !body.criterion) throw badRequest('invalid_label', 'criterion is required');
     if (body.value !== 'yes' && body.value !== 'no' && body.value !== 'unsure') throw badRequest('invalid_label', 'value must be yes, no or unsure');
     if (body.note !== undefined && body.note !== null && typeof body.note !== 'string') throw badRequest('invalid_label', 'note must be text');
-    const [trial] = await this.db.query<{ id: string; body: JsonObject }>(
-      `SELECT t.id, k.body FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 WHERE t.id = $1 AND t.status = 'done'`,
+    const [trial] = await this.db.query<{ id: string; body: JsonObject; split: string; task_id: string }>(
+      `SELECT t.id, k.body, k.split, k.id AS task_id FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 WHERE t.id = $1 AND t.status = 'done'`,
       [body.item_id],
     );
     if (!trial) throw notFound('unknown_item', `no finished trial ${body.item_id} to label`);
+    if (trial.split !== splitFor(set)) {
+      throw badRequest(
+        'wrong_split',
+        `${trial.task_id} is a ${trial.split === 'held_out' ? 'held-out' : 'discovery'} task, and the ${set} set takes ${splitFor(set) === 'held_out' ? 'held-out' : 'discovery'} tasks only`,
+        'Label it in the set its task belongs to: tuning for discovery tasks, held-out or final for held-out tasks.',
+      );
+    }
     const criteria = judgeCriteria(trial.body);
     if (!criteria.some((c) => c.id === body.criterion)) {
       throw badRequest('unknown_criterion', `${body.criterion} is not one of this task's criteria: ${criteria.map((c) => c.id).join(', ') || 'none'}`);

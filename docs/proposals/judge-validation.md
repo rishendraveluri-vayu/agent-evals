@@ -27,9 +27,9 @@ the judge's known error**, so the result we state is "after allowing for the jud
 
 | Set | Size | From | Used for |
 | --- | --- | --- | --- |
-| Tuning | about 20 | smoke trials | Tuning the rubric. Never counted in the reported agreement |
-| Held-out | about 40 | pilot trials | The agreement numbers and the trust decision |
-| Final | about 20 | the real experiment | Checking that agreement holds on the final model's outputs |
+| Tuning | 20 (D48) | trials of discovery tasks only (D52) | Tuning the rubric. Never counted in the reported agreement |
+| Held-out | 40 | trials of held-out tasks only, before the final run (D52) | The agreement numbers and the trust decision |
+| Final | 20 | the real experiment, held-out tasks (D52) | Checking that agreement holds on the final model's outputs |
 
 Sampling is **stratified**: across both arms, across tasks, and across the judge's own verdict, so
 there are enough judge-passes and judge-fails to estimate both kinds of error. Order is shuffled.

@@ -938,8 +938,12 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
 
     const left = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as { criteria: { id: string }[] }[];
     expect(left[0].criteria.map((x) => x.id)).toEqual(['no_jargon']);
-    // The sets are disjoint: a trial with a tuning label is never offered for the held-out set.
+    // The sets follow the task split (D52): emi-basic is a discovery task, so its trials are tuning
+    // material only, never held-out or final, and a held-out label on one is refused.
     expect((await request(env.http).get(`/api/labels/queue?set=heldout&experiment=${exp.id}`).expect(200)).body).toHaveLength(0);
+    expect((await request(env.http).get(`/api/labels/queue?set=final&experiment=${exp.id}`).expect(200)).body).toHaveLength(0);
+    const wrong = await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'heldout', criterion: 'empathy', value: 'yes' }).expect(400);
+    expect(wrong.body).toMatchObject({ error: 'wrong_split' });
     const agreement = await request(env.http).get('/api/judge/agreement?set=heldout').expect(200);
     expect(agreement.text).toBe('null');
 

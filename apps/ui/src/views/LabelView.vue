@@ -26,10 +26,10 @@ const SETS: { set: LabelSet; name: string; file: string; purpose: string }[] = [
     set: 'tuning',
     name: 'Tuning',
     file: 'labels/tuning.jsonl',
-    purpose: 'Open coding before any rubric: your pass or fail and a line on why. These shape the rubric and never count towards the judge’s reported agreement.',
+    purpose: 'Open coding before any rubric: your pass or fail and a line on why. Trials of discovery tasks only. These shape the rubric and never count towards the judge’s reported agreement.',
   },
-  { set: 'heldout', name: 'Held-out', file: 'labels/heldout.jsonl', purpose: 'Your judgments are the ground truth the judge is measured against.' },
-  { set: 'final', name: 'Final run', file: 'labels/final.jsonl', purpose: 'Labels from the real experiment, to check the judge on the final model’s outputs.' },
+  { set: 'heldout', name: 'Held-out', file: 'labels/heldout.jsonl', purpose: 'Your judgments are the ground truth the judge is measured against. Trials of held-out tasks only, so the judge is never scored on a task its rubric was tuned on.' },
+  { set: 'final', name: 'Final run', file: 'labels/final.jsonl', purpose: 'Labels from the real experiment, to check the judge on the final model’s outputs. Trials of held-out tasks only.' },
 ];
 const VALUES: { value: LabelValue; text: string; key: string }[] = [
   { value: 'yes', text: 'Yes', key: '1' },

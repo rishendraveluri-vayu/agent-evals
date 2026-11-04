@@ -61,6 +61,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D15 Hermes settings for the headline experiment | Compression, memory and skills off in both arms; prompt-cache markers off (D31); Tool Search off (R10.7) | Rishi | 5 Nov |
 | D50 Minimum tasks for a verdict | 6 tasks in the aggregate; below it the verdict is "no detectable difference" with "too few tasks for any verdict" | Rishi | 5 Nov |
 | D51 Fake models for reviewers | Kept as a test tool on the full Config screen, clearly labelled; they replay one script whatever the task, so their trials fail and show no A/B difference. Reviewers see real results in the shipped example and run agents with their own key | Rishi | 5 Nov |
+| D52 Label sets and the task split | Tuning labels come from discovery-task trials only; held-out and final labels from held-out-task trials only; the queue and POST /labels enforce it | Rishi | 5 Nov |
 
 ## Open
 
@@ -301,6 +302,12 @@ Options: a floor of 6 tasks; a floor of 8; no floor.
 Choice: 6. Below 6 tasks in the aggregate the verdict is "no detectable difference", with a sentence that there are too few tasks for any verdict. Better or worse cannot happen below 6 anyway: the sign-flip test's smallest two-sided p-value is 2 / 2^K, which is above 0.05 at K = 5.
 Why: Rishi picked it. "Practically equivalent" (D42) has no permutation test behind it, and the percentile interval under-covers with few tasks. SP6's simulation (tasks-only bootstrap, N = 10, 1,000 runs per row) called a real +15-point effect "equivalent" in 3.9% of runs at K = 4, 1.4% at K = 6, 1.1% at K = 8, 0.6% at K = 10 and 12, 0% at K = 20; a 95% interval should allow at most 2.5%.
 Also measured, power to call a real +15 "better": 0% at K = 4, 10.5% at 6, 30.4% at 8, 49.9% at 10, 54.7% at 12, 85.4% at 20. The headline compares on held-out tasks only, so the split decides this.
+
+### D52: The label sets follow the task split (5 Nov)
+Options: follow the task split; disjoint tasks assigned at random to sets; keep the sets disjoint by trial only.
+Choice: the tuning set takes trials of discovery tasks only; the held-out and final sets take trials of held-out tasks only. The label queue offers only those, and `POST /labels` refuses a label in the wrong set (400 `wrong_split`).
+Why: Rishi picked it. Disjoint by trial alone let one task appear in both tuning and held-out, so the judge could be tuned on a task's outputs and scored on more of the same task's, which flatters its agreement. Following the split also matches the experiment: the v2 prompt and the rubric are both shaped on discovery tasks, and both are measured on held-out ones.
+What would change it: too few held-out-task trials for 40 held-out labels before the final run (then label held-out tasks from a v1 run on them, still never a discovery task).
 
 ## Entry template
 

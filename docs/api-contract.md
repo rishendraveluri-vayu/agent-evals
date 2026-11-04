@@ -791,7 +791,9 @@ field is left (a key inside a binary file cannot be scrubbed, so it fails the ex
   transcript, tool_calls, criteria, second_look}` with no harness, model, arm, timing, cost or
   grade. Only trials whose agent ran on a real model are items: a `fake/*` model plays a script,
   so its output is nothing to label (since 5 Nov). Probe trials and shipped examples are left out
-  too. **Second look (D46):** fresh criteria come first; a criterion labelled only "unsure" in the
+  too. **The sets follow the task split (D52):** `tuning` offers trials of discovery tasks only;
+  `heldout` and `final` offer trials of held-out tasks only, so no task is both tuned on and scored
+  on; `POST /labels` refuses a label in the wrong set with 400 `wrong_split`. **Second look (D46):** fresh criteria come first; a criterion labelled only "unsure" in the
   set comes back once, after every fresh item, as an item with `second_look: true` holding just
   those criteria. An item with fresh criteria shows those first and its second look on a later
   load, so no item is in the queue twice.
