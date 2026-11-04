@@ -64,7 +64,7 @@ describe('worstCaseUsd', () => {
     // Sonnet 5.5: $2 in, $10 out per million tokens.
     const usd = worstCaseUsd(10_000, { inputPerToken: 0.000002, outputPerToken: 0.00001 });
     expect(usd).toBeCloseTo(5_000 * 0.000002 + CHECKER_MAX_TOKENS * 0.00001, 9);
-    expect(usd).toBeCloseTo(0.03, 9);
+    expect(usd).toBeCloseTo(0.07, 9);
   });
 });
 
