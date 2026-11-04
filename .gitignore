@@ -30,3 +30,6 @@ workers/hermes/.hermes-agent/
 # Trial folders from local runs (read by the API's interim trace view)
 runs/*
 !runs/.gitkeep
+
+# Agent worktrees (local only)
+.claude/worktrees/
