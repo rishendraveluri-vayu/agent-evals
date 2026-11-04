@@ -11,6 +11,7 @@ import { changedLineCount, lineChanges, sentenceChanges } from '../lib/diff';
 import { mdBlocks } from '../lib/markdown';
 import { shortHash, shortRef } from '../lib/format';
 import { BOOLEAN_SETTINGS, harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
+import { agentModels, fakeDoes, isFake } from '../lib/models';
 import { ignoredReasons, toggleValue } from '../lib/settings';
 import { href, navigate } from '../router';
 import { text } from '../trials';
@@ -68,7 +69,7 @@ watch(data, (d) => {
   const base = forked ?? byAge(d.configs)[0];
   baseHash.value = base?.hash ?? '';
   form.harness = base?.harness ?? d.harnesses[0]?.name ?? '';
-  form.model = base?.model ?? d.models[0]?.name ?? '';
+  form.model = base?.model ?? d.models[0]?.name ?? agentModels([]).fake[0]?.name ?? '';
   const promptId = base?.prompt.id ?? d.prompts.find((p) => p.id !== 'client-sim' && p.id !== 'conflict-check')?.id ?? d.prompts[0]?.id;
   const newest = d.prompts.filter((p) => p.id === promptId).sort((a, b) => versionNumber(b.version) - versionNumber(a.version))[0];
   form.prompt = forked ? forked.prompt.sha256 : (newest?.sha256 ?? d.prompts[0]?.sha256 ?? '');
@@ -94,6 +95,7 @@ const toolset = computed(() => data.value?.toolsets.find((t) => t.sha256 === for
 const base = computed(() => data.value?.configs.find((c) => c.hash === baseHash.value) ?? null);
 const forkOf = computed(() => (props.fork ? (data.value?.configs.find((c) => c.hash === props.fork) ?? null) : null));
 const tools = computed(() => toolset.value?.servers.flatMap((s) => s.allowed_tools) ?? []);
+const modelGroups = computed(() => agentModels(data.value?.models ?? []));
 /** Task prompts only: the simulator's and the checker's prompts are not a config's to pick. */
 const taskPrompts = computed(() => data.value?.prompts.filter((p) => p.id !== 'client-sim' && p.id !== 'conflict-check') ?? []);
 
@@ -405,16 +407,30 @@ watch(
               v-model="form.model"
               data-test="model-select"
             >
-              <option
-                v-for="m in data.models"
-                :key="m.name"
-                :value="m.name"
-              >{{ modelName(m.name) }}</option>
+              <optgroup label="Real models: each call costs money">
+                <option
+                  v-for="m in modelGroups.real"
+                  :key="m.name"
+                  :value="m.name"
+                >{{ modelName(m.name) }}</option>
+              </optgroup>
+              <optgroup label="Fake models: scripted replies, free">
+                <option
+                  v-for="m in modelGroups.fake"
+                  :key="m.name"
+                  :value="m.name"
+                >{{ modelName(m.name) }}: {{ m.does }}</option>
+              </optgroup>
             </select>
             <span
-              v-if="model"
+              v-if="isFake(form.model)"
               class="secondary smaller"
-            >Price per million tokens: {{ perMillion(model.input_per_mtok) }} in, {{ perMillion(model.output_per_mtok) }} out, from the LiteLLM config</span>
+              data-test="fake-model-note"
+            >Fake: the fake LLM server plays a script ({{ fakeDoes(form.model) }}). No real model and no real spend; LiteLLM still counts made-up prices, so budgets and spend work as they would.</span>
+            <span
+              v-else-if="model"
+              class="secondary smaller"
+            >Price per million tokens: {{ perMillion(model.input_per_mtok) }} in, {{ perMillion(model.output_per_mtok) }} out, from the LiteLLM config. A real model: each call costs money.</span>
             <span
               v-if="refusalFor('model')"
               class="refusal small"
