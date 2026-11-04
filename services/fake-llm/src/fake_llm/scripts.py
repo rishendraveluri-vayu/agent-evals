@@ -20,9 +20,11 @@ MARKER_RE = re.compile(rf"\[\[fake-script:({NAME_PATTERN})\]\]")
 LAST_USER_PLACEHOLDER = "{{last_user_message}}"
 SCRIPT_SUFFIXES = (".yaml", ".yml", ".json")
 
-FAULT_KINDS = ("429", "500", "timeout", "broken_stream", "malformed_tool_call")
+# Faults that answer with an HTTP error status instead of serving the step.
+STATUS_FAULTS = ("400", "401", "403", "404", "429", "500", "502", "503")
+FAULT_KINDS = (*STATUS_FAULTS, "timeout", "broken_stream", "malformed_tool_call")
 STEP_KEYS = {"text", "tool_calls", "delay_ms", "chunk_delay_ms", "fault"}
-FAULT_KEYS = {"kind", "times", "retry_after", "seconds"}
+FAULT_KEYS = {"kind", "times", "retry_after", "seconds", "message"}
 SCRIPT_KEYS = {"name", "description", "steps"}
 
 
@@ -42,6 +44,7 @@ class Fault:
     times: int | None = None  # None means the fault fires on every attempt
     retry_after: float = 1.0  # 429 only
     seconds: float = 30.0  # timeout only
+    message: str | None = None  # status faults only: replaces the default error message
 
 
 @dataclass(frozen=True)
@@ -87,11 +90,15 @@ def _parse_fault(data: Any, where: str, has_tool_calls: bool) -> Fault:
         raise ScriptError(f"{where}.fault.times must be an integer >= 1, got {times!r}")
     if kind == "malformed_tool_call" and not has_tool_calls:
         raise ScriptError(f"{where}: malformed_tool_call needs a step with tool_calls")
+    message = data.get("message")
+    if message is not None and (kind not in STATUS_FAULTS or not isinstance(message, str)):
+        raise ScriptError(f"{where}.fault.message must be a string, on a status fault only")
     return Fault(
         kind=kind,
         times=times,
         retry_after=_number(data.get("retry_after", 1), f"{where}.fault.retry_after"),
         seconds=_number(data.get("seconds", 30), f"{where}.fault.seconds"),
+        message=message,
     )
 
 
@@ -128,7 +135,7 @@ def _parse_step(data: Any, where: str) -> Step:
     if data.get("fault") is not None:
         fault = _parse_fault(data["fault"], where, bool(tool_calls))
     # A step needs something to serve, unless its fault fires forever and never serves it.
-    never_serves = fault is not None and fault.times is None and fault.kind in ("429", "500")
+    never_serves = fault is not None and fault.times is None and fault.kind in STATUS_FAULTS
     if text is None and not tool_calls and not never_serves:
         raise ScriptError(f"{where} needs 'text' or 'tool_calls'")
     return Step(

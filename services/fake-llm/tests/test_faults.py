@@ -66,6 +66,43 @@ def test_500_always(client):
         assert response.json()["error"]["type"] == "server_error"
 
 
+@pytest.mark.parametrize(
+    ("kind", "error_type"),
+    [
+        ("400", "invalid_request_error"),
+        ("401", "invalid_request_error"),
+        ("403", "invalid_request_error"),
+        ("404", "invalid_request_error"),
+        ("502", "server_error"),
+        ("503", "server_error"),
+    ],
+)
+def test_status_faults(client, kind, error_type):
+    register(client, f"status-{kind}", [{"fault": {"kind": kind}}])
+    response = client.post("/v1/chat/completions", json=chat_body(f"status-{kind}"))
+    assert response.status_code == int(kind)
+    error = response.json()["error"]
+    assert error["type"] == error_type
+    assert error["message"].endswith("(fake-llm forced fault).")
+    assert "retry-after" not in response.headers  # only a 429 says when to come back
+    assert captured(client)[-1]["fault"] == kind
+
+
+def test_status_fault_message_override(client):
+    register(client, "rejected", [{"fault": {"kind": 400, "message": "`temperature` is bad."}}])
+    response = client.post("/v1/chat/completions", json=chat_body("rejected"))
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "`temperature` is bad."
+
+
+def test_503_twice_script_then_tool_call(client):
+    responses = [
+        client.post("/v1/chat/completions", json=chat_body("finance-503-twice")) for _ in range(3)
+    ]
+    assert [r.status_code for r in responses] == [503, 503, 200]
+    assert responses[2].json()["choices"][0]["finish_reason"] == "tool_calls"
+
+
 def test_malformed_tool_call_arguments(client):
     register(
         client,
