@@ -5,7 +5,7 @@ import { agreementWords, armsOf, checksToGo, headline, judgeCaveat, methodName, 
 import { coverage, coverageText } from './capabilities';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, splitCheck } from './checks';
 import { sentenceChanges } from './diff';
-import { identParts, money, relative, shortHash, signed, splitIdents, wholeMoney, wilson } from './format';
+import { harnessVersion, identParts, money, plainText, relative, shortHash, shortVersion, signed, splitIdents, wholeMoney, wilson } from './format';
 import { mdBlocks } from './markdown';
 import { alsoGradedBy, isJudged as taskIsJudged, modelName } from './names';
 import { domainFor, ticksFor, verdictTone } from './scale';
@@ -75,6 +75,24 @@ describe('format', () => {
   it('gives relative times in words', () => {
     expect(relative(new Date(Date.now() - 2 * 3600_000).toISOString())).toBe('2 h ago');
     expect(relative(new Date(Date.now() - 30 * 3600_000).toISOString())).toBe('Yesterday');
+  });
+
+  it('shortens a sha256 version and a harness version to one short token', () => {
+    const rubric = `sha256:bbc7aa5${'0'.repeat(57)}`;
+    expect(shortVersion(rubric)).toBe('bbc7aa5');
+    expect(shortVersion('v3')).toBe('v3');
+    expect(shortVersion('6112c2a0aa0b1ac1e4fa6d2bd0c13b1a7fb0e6f3')).toBe('6112c2a');
+    // The own loop reports its version with its libraries: no dangling "0.1.0 (" any more.
+    expect(harnessVersion('0.1.0 (openai 2.1.0, mcp 1.9.0)')).toBe('0.1.0');
+    expect(harnessVersion('6112c2a0aa0b1ac1e4fa6d2bd0c13b1a7fb0e6f3')).toBe('6112c2a');
+    expect(harnessVersion('6112c2a')).toBe('6112c2a');
+  });
+
+  it('drops the authors\' internal references from API text, and nothing else', () => {
+    expect(plainText('judging is not approved for this experiment (R8), so the judge was not called')).toBe('judging is not approved for this experiment, so the judge was not called');
+    expect(plainText('a verdict needs the full planned N (D32)')).toBe('a verdict needs the full planned N');
+    expect(plainText('defaults (D25, R11b) and memory (R10.8) and graders (SP4)')).toBe('defaults and memory and graders');
+    expect(plainText('2 trials (one per arm) at $0.30 (A/A)')).toBe('2 trials (one per arm) at $0.30 (A/A)');
   });
 
   it('names models the way people say them', () => {

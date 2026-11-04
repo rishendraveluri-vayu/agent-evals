@@ -115,6 +115,26 @@ export function shortRef(ref: string): string {
   return /^[0-9a-f]{40}$/.test(ref) ? ref.slice(0, 7) : ref;
 }
 
+/** A version as it reads: a sha256 (a judge's rubric, a grader's files) as its first 7 hex, a
+ *  40-character git SHA shortened, anything else as it is. */
+export function shortVersion(version: string): string {
+  return /^(sha256:)?[0-9a-f]{64}$/.test(version) ? shortHash(version) : shortRef(version);
+}
+
+/** A harness version as one short token: a git SHA to 7 characters, and a version with its
+ *  libraries in brackets ("0.1.0 (openai 2.1.0, mcp 1.9.0)") to the version alone. */
+export function harnessVersion(version: string): string {
+  if (/^[0-9a-f]{7,40}$/.test(version)) return version.slice(0, 7);
+  return version.split(' (')[0].trim() || version;
+}
+
+/** Text from the API without the authors' internal references to their own decision log: "(R8)",
+ *  "(D32)", "(SP4)", "(D25, R11b)", "(R10.8)". The sentence reads the same without them. */
+export function plainText(text: string): string {
+  const ref = '(?:R|D|SP|A)\\d+[a-z]?(?:\\.\\d+)?';
+  return text.replace(new RegExp(`\\s*\\((?:${ref})(?:,\\s*${ref})*\\)`, 'g'), '');
+}
+
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }

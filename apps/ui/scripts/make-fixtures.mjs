@@ -106,9 +106,11 @@ const harnesses = [
   {
     name: 'adk', package: 'google-adk', ref: '2.12.0', python: '3.12',
     capabilities: capabilities('adk', 'google-adk', '2.12.0', {
-      temperature: s(true, 'probe:2026-11-04', { native: 'generate_content_config.temperature', default: null, observed: 'Not sent unless set', effect: { [GEMINI]: { status: 'inert', evidence: 'effect check 2026-11-04: no change between 0 and 1' } } }),
-      max_output_tokens: pending('generate_content_config.max_output_tokens'), max_steps: pending('RunConfig.max_llm_calls'),
-      timeout_s: watchdog, parallel_tool_calls: pending('LiteLlm(parallel_tool_calls=)'),
+      // The natives as workers/adk/src/adk_adapter/capabilities.json words them: long, so the
+      // settings tables are drawn at the width the live API gives them.
+      temperature: s(true, 'probe:2026-11-04', { native: 'generate_content_config.temperature, sent as temperature', default: null, observed: 'Not sent unless set', effect: { [GEMINI]: { status: 'inert', evidence: 'effect check 2026-11-04: no change between 0 and 1' } } }),
+      max_output_tokens: pending('generate_content_config.max_output_tokens, sent as max_completion_tokens'), max_steps: pending('RunConfig.max_llm_calls, set each turn to the steps left'),
+      timeout_s: watchdog, parallel_tool_calls: pending('LiteLlm(parallel_tool_calls=...), passed through to the request'),
       memory: pending(''), skills: pending(''), compression: pending(''),
     }, ['Wraps every tool description in untrusted-content markers and adds an identity line.']),
   },
@@ -726,13 +728,13 @@ const trial = {
       judge_model: null, run_index: 0, created_at: at(118),
     },
     {
-      id: 102, grader_id: 'fd-tax', grader_version: 'v3', kind: 'judge', type: 'judge', required: true, verdict: 'fail', score: 0,
+      id: 102, grader_id: 'fd-tax', grader_version: sha('rubric:fd-tax:v3'), kind: 'judge', type: 'judge', required: true, verdict: 'fail', score: 0,
       reason: 'The profile shows a 30% slab, but the comparison uses the pre-tax FD amount. After tax the FD gives about ₹6,47,600, which changes the comparison.',
       evidence: [{ source: 'final_answer', quote: 'an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870' }],
       judge_model: HAIKU, run_index: 0, created_at: at(118),
     },
     {
-      id: 103, grader_id: 'horizon', grader_version: 'v3', kind: 'judge', type: 'judge', required: true, verdict: 'pass', score: 1,
+      id: 103, grader_id: 'horizon', grader_version: sha('rubric:horizon:v3'), kind: 'judge', type: 'judge', required: true, verdict: 'pass', score: 1,
       reason: 'The recommendation is built around the stated deadline.',
       evidence: [{ source: 'final_answer', quote: "Since you'll need this in about five years for a flat" }],
       judge_model: HAIKU, run_index: 0, created_at: at(118),

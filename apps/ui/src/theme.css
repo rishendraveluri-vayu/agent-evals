@@ -128,6 +128,8 @@ body {
   font-family: 'IBM Plex Sans', system-ui, sans-serif;
   font-size: 15px;
   line-height: 1.5;
+  /* A word longer than its line breaks rather than widening the page. */
+  overflow-wrap: break-word;
 }
 
 a {
@@ -147,12 +149,21 @@ a:hover {
   outline-offset: 2px;
 }
 
+/* A screen's heading takes focus when the screen opens (App.vue), so a screen reader starts there.
+   It is not a control and is never reached with Tab, so it shows no ring; every control keeps
+   its keyboard ring above. */
+h1[tabindex='-1']:focus,
+h2[tabindex='-1']:focus {
+  outline: none;
+}
+
 h1,
 h2,
 h3 {
   font-weight: 600;
   line-height: 1.25;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 p {
@@ -205,6 +216,17 @@ pre,
 code,
 .mono {
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+/* Hashes, ids, paths and code have no spaces to break at: they wrap anywhere rather than widen
+   the page. A short identifier that must stay whole says so with white-space: nowrap (crumbs,
+   caveats and table cells below). */
+pre,
+code,
+kbd,
+.mono,
+.wrap-anywhere {
+  overflow-wrap: anywhere;
 }
 
 .mono {
@@ -265,11 +287,13 @@ code,
   color: var(--ink-2);
   font-size: 16px;
   max-width: 72ch;
+  overflow-wrap: anywhere;
 }
 
 .crumbs {
   font-size: 14px;
   color: var(--ink-2);
+  overflow-wrap: anywhere;
 }
 
 .crumbs a {
@@ -288,6 +312,12 @@ code,
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
+}
+
+/* A long name in the heading wraps inside its column rather than pushing the row wider. */
+.head-row > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .split {

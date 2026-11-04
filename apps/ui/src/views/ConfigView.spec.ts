@@ -48,6 +48,18 @@ describe('ConfigView in fixture mode', () => {
     expect(w.find('.pill--pass').exists()).toBe(false);
   });
 
+  it('labels every settings cell by its column, so a narrow screen can stack each setting as a block', async () => {
+    const w = mount(ConfigView);
+    await settle();
+    const heads = w.findAll('[data-test="settings-table"] thead th').map((h) => h.text());
+    expect(heads).toEqual(['Setting', 'Value', 'If unset', 'Reaches the model as', 'Changes behaviour?']);
+    for (const row of w.findAll('[data-test^="setting-"]').filter((r) => r.element.tagName === 'TR')) {
+      expect(row.findAll('td').map((td) => td.attributes('data-label') ?? '')).toEqual(['', 'If unset', 'Reaches the model as', 'Changes behaviour?']);
+    }
+    // No fixed minimum width: the table fits its column, and long call paths wrap.
+    expect(w.find('.table-scroll').exists()).toBe(false);
+  });
+
   it('greys out what the harness or the model ignores, with the reason, and never sends it', async () => {
     const create = vi.spyOn(api, 'createConfig');
     const w = mount(ConfigView);

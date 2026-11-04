@@ -734,7 +734,9 @@ watch(
           <p class="hint">
             What {{ harness ? harnessShort(harness.name) : 'the harness' }} does when a setting is left unset is shown next to it, and so is how the value actually reaches the model.
           </p>
-          <div class="table-scroll">
+          <!-- Wide: one row per setting, every column fitting. Narrow (a phone, a tablet, the
+               form beside the summary): each setting is a block, its columns labelled lines. -->
+          <div class="settings-box">
             <table
               class="table settings"
               data-test="settings-table"
@@ -782,7 +784,7 @@ watch(
                         :data-test="`ignored-${name}`"
                       >{{ ignored[name] }}</span>
                     </th>
-                    <td>
+                    <td class="c-value">
                       <label
                         v-if="BOOLEAN_SETTINGS.includes(name)"
                         class="toggle"
@@ -808,10 +810,16 @@ watch(
                         :aria-describedby="refusalFor(name) ? `refusal-${name}` : undefined"
                       >
                     </td>
-                    <td class="secondary">
+                    <td
+                      class="secondary"
+                      data-label="If unset"
+                    >
                       {{ ifUnset(name) }}
                     </td>
-                    <td>
+                    <td
+                      class="c-native"
+                      data-label="Reaches the model as"
+                    >
                       <span
                         v-if="supported(name) && !isIgnored(name) && harness?.capabilities.settings[name].native"
                         class="mono"
@@ -823,7 +831,10 @@ watch(
                     </td>
                     <!-- Each answer looks different, and the words carry it: a check for a change seen,
                        an alert for none seen, plain grey for not checked. -->
-                    <td :data-test="`effect-${name}`">
+                    <td
+                      :data-test="`effect-${name}`"
+                      data-label="Changes behaviour?"
+                    >
                       <span
                         :class="['effect', `effect--${effect(name).kind}`]"
                         :data-effect="effect(name).kind"
@@ -1515,8 +1526,8 @@ watch(
   margin-bottom: 12px;
 }
 
-.table-scroll {
-  overflow-x: auto;
+.settings-box {
+  container-type: inline-size;
 }
 
 /* Whether a setting changed behaviour: ink with a check when a change was seen (as Probed on
@@ -1541,14 +1552,10 @@ watch(
   color: var(--ink-2);
 }
 
-@media (min-width: 641px) {
-  .effect {
-    white-space: nowrap;
-  }
-}
-
-.settings {
-  min-width: 760px;
+/* Every column fits: the natives (long call paths) wrap anywhere, the rest between words. */
+.settings .mono {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .settings tr > :first-child {
@@ -1557,6 +1564,67 @@ watch(
 
 .settings tr > :last-child {
   padding-right: 0;
+}
+
+.c-native {
+  max-width: 260px;
+}
+
+@container (max-width: 699px) {
+  .settings,
+  .settings tbody,
+  .settings tr,
+  .settings th,
+  .settings td {
+    display: block;
+  }
+
+  .settings thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .settings tbody tr {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  .settings tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .settings tbody tr > *,
+  .settings tbody tr > :first-child,
+  .settings tbody tr > :last-child {
+    padding: 4px 0;
+    border-bottom: 0;
+  }
+
+  .c-native {
+    max-width: none;
+  }
+
+  /* Each column a labelled line: its label on the left, its value on the right. */
+  .settings td[data-label] {
+    display: grid;
+    grid-template-columns: 9em minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .settings td[data-label]::before {
+    content: attr(data-label);
+    font-size: 13px;
+    color: var(--ink-2);
+    padding-top: 1px;
+  }
+
+  .refusal-row td {
+    padding-top: 0;
+  }
 }
 
 .row--unsupported th label {

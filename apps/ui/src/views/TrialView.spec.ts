@@ -46,7 +46,7 @@ describe('TrialView in fixture mode', () => {
     expect(grades).toHaveLength(3);
     expect(grades[1].text()).toContain('fd-tax');
     expect(grades[1].text()).toContain('Fail');
-    expect(grades[1].get('[data-test="grade-kind"]').text()).toBe('Judge claude-haiku-5-5, rubric v3');
+    expect(grades[1].get('[data-test="grade-kind"]').text()).toBe('Judge claude-haiku-5-5, rubric 5123602');
     expect(grades[1].get('[data-test="grade-kind"] .mono').text()).toBe('claude-haiku-5-5');
     expect(grades[0].get('[data-test="grade-kind"]').text()).toBe('Exact match, number');
     const at = w.findAll('[data-test="tool-call"] .at');
@@ -190,9 +190,10 @@ describe('TrialView against the API: blind labelling', () => {
     await settle();
     const grades = w.findAll('[data-test="grade"]');
     expect(grades).toHaveLength(3);
-    for (const g of [grades[1], grades[2]]) {
-      // Title, Pass or Fail, and the judge's model and rubric stay; quotes and rationale go.
-      expect(g.get('[data-test="grade-kind"]').text()).toBe('Judge claude-haiku-5-5, rubric v3');
+    for (const [g, rubric] of [[grades[1], '5123602'], [grades[2], '728a3f4']] as const) {
+      // Title, Pass or Fail, and the judge's model and rubric stay; quotes and rationale go. The
+      // rubric's version is a sha256, shown short.
+      expect(g.get('[data-test="grade-kind"]').text()).toBe(`Judge claude-haiku-5-5, rubric ${rubric}`);
       expect(g.find('.pill').exists()).toBe(true);
       expect(g.find('blockquote').exists()).toBe(false);
       expect(g.get('[data-test="hidden-reasons"]').text()).toBe("The judge's reasons for this task are hidden while 1 of its held-out outputs is still to label.");

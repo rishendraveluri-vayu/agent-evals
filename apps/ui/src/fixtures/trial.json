@@ -254,7 +254,7 @@
     {
       "id": 102,
       "grader_id": "fd-tax",
-      "grader_version": "v3",
+      "grader_version": "sha256:5123602b3aa221e4d8483b7a23ff155b87501417c7dcd4bb96bf69a970315496",
       "kind": "judge",
       "type": "judge",
       "required": true,
@@ -274,7 +274,7 @@
     {
       "id": 103,
       "grader_id": "horizon",
-      "grader_version": "v3",
+      "grader_version": "sha256:728a3f47f09272c710522c7d7276dae4fde4d0ca2a9842effa0a7c67de8880cb",
       "kind": "judge",
       "type": "judge",
       "required": true,

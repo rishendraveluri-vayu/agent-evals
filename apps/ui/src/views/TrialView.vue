@@ -9,7 +9,7 @@ import SpanTimeline from '../components/SpanTimeline.vue';
 import { armIndexOf, armsOf } from '../lib/arms';
 import { gradeView, markAmounts, outcomeOf, provenanceOf, type AmountCheck, type GradeView, type ProvenanceView } from '../lib/grading';
 import { optional, useLoad } from '../lib/async';
-import { capitalise, count, money, seconds } from '../lib/format';
+import { capitalise, count, money, seconds, shortVersion } from '../lib/format';
 import { endStateName, graderName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
 import { href } from '../router';
 import { text, timelineRows, type SpanView } from '../trials';
@@ -433,7 +433,7 @@ const files = computed(() => {
 const fileUrl = (path: string) => api.trialFileUrl(props.trialId, path);
 
 const gradeKind = (g: GradeView) => {
-  if (g.kind === 'judge') return `Judge, rubric ${g.graderVersion}`;
+  if (g.kind === 'judge') return `Judge, rubric ${shortVersion(g.graderVersion)}`;
   const type = g.type && g.type !== g.kind ? `, ${g.type.replace(/_/g, ' ')}` : '';
   return `${graderName(g.kind)}${type}${g.required ? '' : ', not required'}`;
 };
@@ -857,7 +857,8 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             <span
               class="secondary smaller"
               data-test="grade-kind"
-            ><template v-if="g.judgeModel">Judge <span class="mono">{{ g.judgeModel }}</span>, rubric {{ g.graderVersion }}</template><template v-else>{{ gradeKind(g) }}</template><template v-if="g.score !== null && g.verdict === 'other'">, score {{ g.score }}</template></span>
+              :title="g.kind === 'judge' ? `Rubric version ${g.graderVersion}` : undefined"
+            ><template v-if="g.judgeModel">Judge <span class="mono">{{ g.judgeModel }}</span>, rubric <span class="mono">{{ shortVersion(g.graderVersion) }}</span></template><template v-else>{{ gradeKind(g) }}</template><template v-if="g.score !== null && g.verdict === 'other'">, score {{ g.score }}</template></span>
             <p
               v-if="isJudge(g) && hiddenReasons"
               class="small hidden-reasons"
@@ -1318,6 +1319,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 .applied-table th,
 .applied-table td {
   padding: 8px 14px;
+  overflow-wrap: anywhere;
 }
 
 .setting-note {

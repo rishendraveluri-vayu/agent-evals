@@ -248,7 +248,7 @@ async function refreshSpend() {
         <p class="secondary small settings-intro">
           Every setting, with where its value comes from. A setting {{ harnessShort(data.config.harness) }} or {{ modelName(data.config.model) }} ignores is greyed out, with the reason.
         </p>
-        <div class="table-scroll">
+        <div class="settings-box">
           <table
             class="table settings"
             data-test="config-settings"
@@ -279,10 +279,13 @@ async function refreshSpend() {
                 <th scope="row">
                   {{ r.label }}
                 </th>
-                <td class="num">
+                <td
+                  class="num"
+                  data-label="Value"
+                >
                   {{ r.value }}
                 </td>
-                <td>
+                <td data-label="Where it comes from">
                   {{ r.source }}
                   <span
                     v-if="r.reason"
@@ -290,7 +293,7 @@ async function refreshSpend() {
                     data-test="ignored-reason"
                   >{{ r.reason }}</span>
                 </td>
-                <td>
+                <td data-label="Reaches the model as">
                   <span
                     v-if="r.native && !r.ignored"
                     class="mono"
@@ -450,8 +453,68 @@ async function refreshSpend() {
   padding-top: 18px;
 }
 
-.table-scroll {
-  overflow-x: auto;
+.settings-box {
+  container-type: inline-size;
+}
+
+/* Every column fits: the natives (long call paths) wrap anywhere, the rest between words. */
+.settings .mono {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Narrow: each setting is a block, its columns labelled lines. */
+@container (max-width: 559px) {
+  .settings,
+  .settings tbody,
+  .settings tr,
+  .settings th,
+  .settings td {
+    display: block;
+  }
+
+  .settings thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .settings tbody tr {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  .settings tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .settings tbody tr > *,
+  .settings tbody tr > :first-child,
+  .settings tbody tr > :last-child {
+    padding: 3px 0;
+    border-bottom: 0;
+  }
+
+  .settings tbody th {
+    font-weight: 600;
+  }
+
+  /* Each column a labelled line: its label on the left, its value on the right. */
+  .settings td[data-label] {
+    display: grid;
+    grid-template-columns: 10.5em minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .settings td[data-label]::before {
+    content: attr(data-label);
+    font-size: 13px;
+    color: var(--ink-2);
+    padding-top: 1px;
+  }
 }
 
 .row--ignored th,

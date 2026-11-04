@@ -232,7 +232,13 @@ function diffConfigs(a: ConfigView, b: ConfigView): ConfigDiffEntry[] {
       out.push({ path, a: (x ?? null) as ConfigDiffEntry['a'], b: (y ?? null) as ConfigDiffEntry['b'] });
     }
   };
-  const fields = (c: ConfigView) => ({ harness: c.harness, harness_ref: c.harness_ref, model: c.model, prompt: c.prompt, toolset: c.toolset, settings: c.settings, harness_options: c.harness_options });
+  // As the API diffs (NOT_DIFFED in apps/api/src/configs/configs.service.ts): every field but the
+  // derived ones and the lineage, so the name, capabilities_sha256 and settings_sources show too.
+  const fields = (c: ConfigView) => {
+    const rest: Partial<ConfigView> = { ...c };
+    for (const key of ['hash', 'created_at', 'unsupported', 'warnings', 'parent_hash'] as const) delete rest[key];
+    return rest;
+  };
   walk('', fields(a), fields(b));
   return out;
 }

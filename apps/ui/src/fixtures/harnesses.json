@@ -315,7 +315,7 @@
         "temperature": {
           "supported": true,
           "evidence": "probe:2026-11-04",
-          "native": "generate_content_config.temperature",
+          "native": "generate_content_config.temperature, sent as temperature",
           "default": null,
           "observed": "Not sent unless set",
           "effect": {
@@ -328,12 +328,12 @@
         "max_output_tokens": {
           "supported": true,
           "evidence": "none",
-          "native": "generate_content_config.max_output_tokens"
+          "native": "generate_content_config.max_output_tokens, sent as max_completion_tokens"
         },
         "max_steps": {
           "supported": true,
           "evidence": "none",
-          "native": "RunConfig.max_llm_calls"
+          "native": "RunConfig.max_llm_calls, set each turn to the steps left"
         },
         "timeout_s": {
           "supported": true,
@@ -344,7 +344,7 @@
         "parallel_tool_calls": {
           "supported": true,
           "evidence": "none",
-          "native": "LiteLlm(parallel_tool_calls=)"
+          "native": "LiteLlm(parallel_tool_calls=...), passed through to the request"
         },
         "memory": {
           "supported": true,
@@ -372,7 +372,7 @@
       ]
     },
     "adapter_version": "0.1.0",
-    "capabilities_sha256": "sha256:9e2c8bc831f7d387b5227a469a5eff059c79b32707176f38bacc27ea76473fc1"
+    "capabilities_sha256": "sha256:e3c34d260865a6583204af4e446a13f68f3b86238d32d18a86decde338f0fa33"
   },
   {
     "name": "openai-agents",
