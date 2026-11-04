@@ -40,4 +40,17 @@ describe('AppHeader spend (5 Nov QA, major 6)', () => {
     expect(meter.get('.allowance-label').isVisible()).toBe(true);
     expect(meter.attributes('title')).toBe('Conflict-check allowance: $0 of $2 used, $2.00 left');
   });
+
+  it('keeps a short allowance where the meter does not fit, and names each phone figure on screen (QA round 3, minor 15)', async () => {
+    answer({ trials_usd: 0.44, fake_trials_usd: 0, system_usd: 0.02, judge_usd: 0, judge_approvals: 0, total_usd: 0.46, system_by_kind: {}, allowances: [{ ...allowance, used_usd: 0.5, remaining_usd: 1.5 }] });
+    const w = mount(AppHeader, { props: { section: null } });
+    await settle();
+    const short = w.get('[data-test="header-allowance-short"]');
+    expect(short.text()).toBe('Checks $0.50 of $2');
+    expect(short.attributes('aria-label')).toBe('Conflict-check allowance: $0.50 of $2 used, $1.50 left');
+    const phone = w.get('[data-test="spend-compact"]');
+    expect(phone.findAll('span[aria-hidden="true"]').map((s) => s.text())).toEqual(['Trials $0.44', 'Platform $0.02', 'Checks $0.50 of $2']);
+    expect(phone.attributes('aria-label')).toContain("trials on real models $0.44, the platform's own calls $0.02");
+    expect(phone.text()).not.toContain(' + ');
+  });
 });

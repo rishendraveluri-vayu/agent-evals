@@ -94,7 +94,8 @@ describe('App in fixture mode', () => {
     expect(wrapper.get('[data-test="spend-trials"]').text()).toBe('$55.88');
     expect(wrapper.get('[data-test="spend-platform"]').text()).toBe('$0.02');
     expect(wrapper.get('[data-test="spend"]').text()).toContain('of $150');
-    expect(wrapper.get('[data-test="spend-compact"]').text()).toBe('$55.88 + $0.02');
+    // A phone names each figure on screen, not only in a tooltip (QA round 3, minor 15).
+    expect(wrapper.get('[data-test="spend-compact"]').text()).toBe('Trials $55.88Platform $0.02Checks $0.02 of $2');
     const meter = wrapper.get('[data-test="allowance"] [role="img"]');
     expect(meter.attributes('aria-label')).toBe('Conflict checks: $0.02 of $2 used, $1.98 left, 1 call');
   });

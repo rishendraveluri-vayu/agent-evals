@@ -42,10 +42,10 @@ const spendWords = computed(() => {
   const fake = typeof v.fake_trials_usd === 'number' && v.fake_trials_usd > 0 ? `. Fake-model trials are free: their made-up prices (${money(v.fake_trials_usd)}) are not counted` : '';
   return `Spent ${money(v.total_usd)}${budget.value ? ` of ${wholeMoney(budget.value)}` : ''}: trials on real models ${money(v.trials_usd)}, the platform's own calls ${money(v.system_usd)}${judge}${fake}`;
 });
-/** "$0.44 + $0.02": trials, then the platform's calls, for the phone header. */
-const compactSpend = computed(() => {
-  const v = spendView.value;
-  return v ? `${money(v.trials_usd)} + ${money(v.system_usd)}` : '';
+/** The conflict-check allowance in words, for its tooltip and screen readers. */
+const allowanceWords = computed(() => {
+  const a = allowance.value;
+  return a ? `Conflict-check allowance: ${money(a.used_usd)} of ${wholeMoney(a.limit_usd)} used, ${money(a.remaining_usd)} left` : '';
 });
 
 async function loadSpend() {
@@ -189,18 +189,22 @@ onMounted(async () => {
           class="num ink"
           data-test="spend-platform"
         >{{ money(spendView.system_usd) }}</span></span><template v-if="budget"><span class="secondary">of {{ wholeMoney(budget) }}</span></template></span>
+        <!-- A phone: each figure with its name on a line of its own, readable without a tooltip. -->
         <span
-          class="num ink phone-only"
-          role="img"
-          :aria-label="spendWords"
+          class="phone-only phone-spend"
+          role="group"
+          :aria-label="`${spendWords}${allowance ? `. ${allowanceWords}` : ''}`"
           data-test="spend-compact"
-        >{{ compactSpend }}</span>
+        ><span aria-hidden="true">Trials <span class="num ink">{{ money(spendView.trials_usd) }}</span></span><span aria-hidden="true">Platform <span class="num ink">{{ money(spendView.system_usd) }}</span></span><span
+          v-if="allowance"
+          aria-hidden="true"
+        >Checks <span class="num ink">{{ money(allowance.used_usd) }}</span> of {{ wholeMoney(allowance.limit_usd) }}</span></span>
         <!-- The meter's name is visible, not only in its title: "$0 of $2 used" alone says nothing. -->
         <span
           v-if="allowance"
           class="wide-only header-allowance"
           data-test="header-allowance"
-          :title="`Conflict-check allowance: ${money(allowance.used_usd)} of ${wholeMoney(allowance.limit_usd)} used, ${money(allowance.remaining_usd)} left`"
+          :title="allowanceWords"
         ><span
           class="allowance-label"
           aria-hidden="true"
@@ -209,6 +213,15 @@ onMounted(async () => {
           label="Conflict checks"
           compact
         /></span>
+        <!-- Narrower desktops and tablets: the same allowance, short. -->
+        <span
+          v-if="allowance"
+          class="mid-only header-allowance header-allowance--short"
+          role="img"
+          :aria-label="allowanceWords"
+          :title="allowanceWords"
+          data-test="header-allowance-short"
+        ><span aria-hidden="true">Checks <span class="num ink">{{ money(allowance.used_usd) }}</span> of {{ wholeMoney(allowance.limit_usd) }}</span></span>
       </span>
       <span
         v-if="fixtures"
@@ -363,8 +376,18 @@ onMounted(async () => {
   color: var(--ink-2);
 }
 
-.phone-only {
+.phone-only,
+.mid-only {
   display: none;
+}
+
+/* Trials, platform and conflict checks, one short line each. */
+.phone-spend {
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: right;
 }
 
 .health {
@@ -396,7 +419,8 @@ onMounted(async () => {
 
 /* The header stays one row on a desktop with the live API's words in it (spend, allowance, health):
    below 1600 px the theme button is its icon, its name kept for screen readers and as a tooltip,
-   and below 1400 px the conflict-check allowance leaves the header (the config page shows it). */
+   and below 1400 px the conflict-check allowance is said short ("Checks $0 of $2"), without its
+   meter. A phone lists trials, platform and checks on a line each. */
 @media (max-width: 1599px) {
   .theme {
     justify-content: center;
@@ -419,6 +443,10 @@ onMounted(async () => {
   .header-allowance {
     display: none;
   }
+
+  .mid-only.header-allowance--short {
+    display: inline-flex;
+  }
 }
 
 /* A phone gets two rows: the brand, the spend, the sample flag and the theme button, then the
@@ -440,12 +468,13 @@ onMounted(async () => {
     font-size: 13px;
   }
 
-  .wide-only {
+  .wide-only,
+  .mid-only.header-allowance--short {
     display: none;
   }
 
   .phone-only {
-    display: inline;
+    display: inline-flex;
   }
 
   .theme {
