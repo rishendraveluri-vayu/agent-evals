@@ -14,7 +14,7 @@ import AppIcon from '../components/AppIcon.vue';
 import InfoTip from '../components/InfoTip.vue';
 import LoadState from '../components/LoadState.vue';
 import { useLoad } from '../lib/async';
-import { axisPhrase } from '../lib/checks';
+import { autoConfigName, axisPhrase, changeWords, configChanges, type NameContent } from '../lib/checks';
 import { baselineFor, missingKey } from '../lib/runSetup';
 import { plainText, shortHash, shortRef } from '../lib/format';
 import { harnessFacts, harnessTagline, memoryLine } from '../lib/harnessInfo';
@@ -179,7 +179,12 @@ async function savePrompt() {
 
 // ---------------------------------------------------------------- save
 
-const suggestedName = computed(() => (harness.value && model.value && prompt.value ? `${harnessShort(harness.value.name)}, ${modelName(model.value.name)}, ${prompt.value.id} ${prompt.value.version}` : ''));
+/** "Own loop, Claude Haiku 5.5, finance-advisor v1, max steps 12": made from what the agent holds,
+ *  as on the full Config screen (lib/checks.ts autoConfigName), so two agents one thing apart never
+ *  share a name; a typed name is kept. */
+const suggestedName = computed(() =>
+  harness.value && model.value && prompt.value ? autoConfigName({ harness: harness.value.name, model: model.value.name, prompt: prompt.value, settings: settings.value as NameContent['settings'] }) : '',
+);
 watch(suggestedName, (n) => {
   if (!nameTouched.value) form.name = n;
 });
@@ -256,11 +261,25 @@ const baseline = computed<{ config: ConfigView; axis: string } | null>(() => {
   return mine ? baselineFor(data.value?.configs ?? [], mine.hash) : null;
 });
 
-/** Arm A is the baseline and arm B the agent: the comparison reads B minus A. With no baseline,
- *  the Run screen runs this agent on its own (a pilot) and says how to make one. */
+/** The baseline is a fork of this agent: then this agent is the baseline (arm A) and the fork the
+ *  change being tried (arm B), as the fork's own "Save and set up a run" sets it up. */
+const baselineIsFork = computed(() => !!saved.value && baseline.value?.config.parent_hash === saved.value.config.hash);
+/** What the two agents differ in, with both values, arm A's first: "Claude Haiku 5.5 vs Claude Sonnet 5.5". */
+const baselineChange = computed(() => {
+  const mine = saved.value?.config;
+  const other = baseline.value?.config;
+  if (!mine || !other) return '';
+  const [a, b] = baselineIsFork.value ? [mine, other] : [other, mine];
+  const changes = configChanges(a, b);
+  return changes.length === 1 ? changeWords(changes[0]) : '';
+});
+
+/** Arm A is the baseline and arm B the agent being tried: the comparison reads B minus A. With no
+ *  baseline, the Run screen runs this agent on its own (a pilot) and says how to make one. */
 const runLink = computed(() => {
   const mine = saved.value?.config;
   if (!mine) return href.runNew();
+  if (baselineIsFork.value && baseline.value) return href.runNew(mine.hash, baseline.value.config.hash);
   return href.runNew(baseline.value?.config.hash, mine.hash);
 });
 
@@ -410,7 +429,7 @@ const noKeys = computed(() => realModels.value.length > 0 && realModels.value.ev
           role="note"
           data-test="no-keys"
         >
-          No provider key is set in <span class="mono">.env</span>, so no real model can run yet. You can still build and save an agent here for free. To run something without a key, pick a fake model (scripted replies, no spend) on the <a :href="href.config()">full Config screen</a>.
+          No provider key is set in <span class="mono">.env</span>, so no real model can run yet. You can still build and save an agent here, and preview what reaches the model, for free. Fake models run without a key, from the <a :href="href.config()">full Config screen</a>, but they make the same scripted calls whatever the task, so most trials fail: they exist to test the platform, not to judge an agent.
         </p>
         <p
           v-else
@@ -756,7 +775,12 @@ const noKeys = computed(() => realModels.value.length > 0 && realModels.value.ev
                 class="secondary small block"
                 data-test="next-evaluate-words"
               >
-                Against {{ baseline.config.name }}, which differs from it only in {{ axisPhrase(baseline.axis) }}: that agent is arm A, the baseline, and this one arm B.
+                <template v-if="baselineIsFork">
+                  Against {{ baseline.config.name }}, a fork of this agent that differs from it only in {{ axisPhrase(baseline.axis) }}{{ baselineChange ? ` (${baselineChange})` : '' }}: this agent is arm A, the baseline, and the fork arm B, the change being tried.
+                </template>
+                <template v-else>
+                  Against {{ baseline.config.name }}, which differs from it only in {{ axisPhrase(baseline.axis) }}{{ baselineChange ? ` (${baselineChange})` : '' }}: that agent is arm A, the baseline, and this one arm B, the agent being tried.
+                </template>
                 The Run screen shows the trials, models and cost before anything starts.
               </span>
             </li>
@@ -765,12 +789,12 @@ const noKeys = computed(() => realModels.value.length > 0 && realModels.value.ev
                 :href="href.fork(saved.config.hash)"
                 class="next-link"
                 data-test="next-fork"
-              >Make a baseline to compare with</a>
+              >Fork it to try one change</a>
               <span
                 class="secondary small block"
                 data-test="next-evaluate-words"
               >
-                A comparison needs a baseline: a saved agent that differs from this one in just one thing, so any difference in results comes from that one change. None does yet. Fork this agent, change one setting, the prompt or the model, and save; then evaluate the fork against this one.
+                A comparison needs two agents that differ in just one thing, so any difference in results comes from that one change. None differs from this one that way yet. Fork it, change one setting, the prompt or the model, and press Save and set up a run: this agent is then arm A, the baseline, and the fork arm B, the change being tried.
                 Or <a
                   :href="runLink"
                   data-test="next-evaluate"

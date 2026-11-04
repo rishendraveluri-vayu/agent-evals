@@ -236,7 +236,7 @@ describe('Build an agent, in fixture mode', () => {
     expect(evaluate.startsWith('#/run?')).toBe(true);
     expect(q.get('a')).toBe(OWN_LOOP.hash);
     expect(q.get('b')).toMatch(new RegExp(`^sha256:${hash}`));
-    expect(view.get('[data-test="next-evaluate-words"]').text()).toContain('Against Own loop, prompt v1, which differs from it only in the harness');
+    expect(view.get('[data-test="next-evaluate-words"]').text()).toContain('Against Own loop, prompt v1, which differs from it only in the harness (Own loop vs LangGraph): that agent is arm A, the baseline, and this one arm B, the agent being tried.');
     expect(view.get('[data-test="all-settings"]').attributes('href')).toBe(`#/configs?fork=${encodeURIComponent(q.get('b') ?? '')}`);
     // A different choice is a different agent: the next steps wait for it to be saved.
     await pickHarness(view, 'adk');
@@ -253,11 +253,13 @@ describe('Build an agent, in fixture mode', () => {
     await view.get('[data-test="save-agent"]').trigger('click');
     await settle();
     const fork = view.get('[data-test="next-fork"]');
-    expect(fork.text()).toBe('Make a baseline to compare with');
+    expect(fork.text()).toBe('Fork it to try one change');
     expect(fork.attributes('href')).toMatch(/^#\/configs\?fork=sha256%3A/);
     const words = view.get('[data-test="next-evaluate-words"]').text();
-    expect(words).toContain('A comparison needs a baseline: a saved agent that differs from this one in just one thing');
-    expect(words).toContain('Fork this agent, change one setting, the prompt or the model, and save');
+    expect(words).toContain('A comparison needs two agents that differ in just one thing');
+    // The words say what the fork's "Save and set up a run" does: this agent is A, the fork B (QA round 3, minor 13).
+    expect(words).toContain('Fork it, change one setting, the prompt or the model, and press Save and set up a run: this agent is then arm A, the baseline, and the fork arm B, the change being tried.');
+    expect(words).not.toContain('evaluate the fork against this one');
     expect(words).not.toMatch(/sha256|capabilities/);
     // A pilot is still one click away: this agent alone, with no arm A picked for it.
     const evaluate = view.get('[data-test="next-evaluate"]').attributes('href') ?? '';
@@ -287,7 +289,8 @@ describe('Build an agent, in fixture mode', () => {
     expect(view.get('[data-test="model-gemini-3.8-flash"] [data-test="needs-key"]').text()).toBe('needs GEMINI_API_KEY in .env');
     expect(view.get('[data-test="model-cost-note"]').text()).toContain('ANTHROPIC_API_KEY is not set in .env, so this model cannot run yet. Saving is free and works anyway; before a run, add the key, then run docker compose up -d.');
     const noKeys = view.get('[data-test="no-keys"]');
-    expect(noKeys.text()).toContain('pick a fake model (scripted replies, no spend) on the full Config screen');
+    // As the README says: fake models need no key, but they are for testing the platform (round 3).
+    expect(noKeys.text()).toContain('Fake models run without a key, from the full Config screen, but they make the same scripted calls whatever the task, so most trials fail: they exist to test the platform, not to judge an agent.');
     expect(noKeys.get('a').attributes('href')).toBe('#/configs');
     expect(view.get('[data-test="save-agent"]').attributes('disabled')).toBeUndefined();
   });
@@ -346,5 +349,49 @@ describe('Build an agent, in fixture mode', () => {
     const v3 = (await api.prompts()).find((p) => p.id === 'finance-advisor' && p.version === 'v3');
     expect(create.mock.calls[0][0].prompt_sha256).toBe(v3?.sha256);
     expect(v3?.sha256).toMatch(/^sha256:/);
+  });
+});
+
+describe('Build an agent, fresh-clone QA round 3', () => {
+  it('names the agent from what it holds, a changed setting included (M1)', async () => {
+    const view = await open();
+    await pickHarness(view, 'ownloop');
+    const name = () => (view.get('[data-test="agent-name"]').element as HTMLInputElement).value;
+    expect(name()).toMatch(/^Own loop, .+, finance-advisor v\d+$/);
+    await setNumber(view, 'max_steps', '12');
+    expect(name()).toMatch(/^Own loop, .+, finance-advisor v\d+, max steps 12$/);
+    await view.get('[data-test="agent-name"]').setValue('Mine');
+    await setNumber(view, 'max_steps', '10');
+    expect(name()).toBe('Mine');
+  });
+
+  it('makes this agent arm A and its fork arm B when the baseline is a fork of it, and says so (minor 13)', async () => {
+    const base = configs.find((c) => c.name === 'Prompt v1 on Hermes')!;
+    const mine = { ...base, hash: `sha256:a11ce${'0'.repeat(59)}`, name: 'mine', parent_hash: null, created_at: '2026-11-05T14:00:00.000Z' };
+    const fork = { ...mine, hash: `sha256:f0f0f${'0'.repeat(59)}`, name: 'the fork', model: 'gemini-3.8-flash', parent_hash: mine.hash, created_at: '2026-11-05T14:05:00.000Z' };
+    vi.spyOn(api, 'createConfig').mockResolvedValue(mine as never);
+    const view = await open();
+    vi.spyOn(api, 'configs').mockResolvedValue([mine, fork] as never);
+    await view.get('[data-test="agent-name"]').setValue('mine');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    const q = new URLSearchParams((view.get('[data-test="next-evaluate"]').attributes('href') ?? '').split('?')[1]);
+    expect(q.get('a')).toBe(mine.hash);
+    expect(q.get('b')).toBe(fork.hash);
+    expect(view.get('[data-test="next-evaluate-words"]').text()).toContain(
+      'Against the fork, a fork of this agent that differs from it only in the model (Claude Haiku 5.5 vs Gemini 3.8 Flash): this agent is arm A, the baseline, and the fork arm B, the change being tried.',
+    );
+  });
+
+  it('says why a setting is greyed out in sentences, never "memory: off: the Runner …" (minor 17)', async () => {
+    const harnesses = await api.harnesses();
+    const adk = harnesses.find((h) => h.name === 'adk')!;
+    adk.capabilities.settings.memory = { ...adk.capabilities.settings.memory, supported: false, observed: 'off: the Runner gets no memory service, so nothing is stored or recalled. ADK has memory services; the adapter does not wire them yet' };
+    vi.spyOn(api, 'harnesses').mockResolvedValue(harnesses);
+    const view = await open();
+    await pickHarness(view, 'adk');
+    expect(view.get('[data-test="reason-memory"]').text()).toBe(
+      'Google ADK does not support memory. The Runner gets no memory service, so nothing is stored or recalled. ADK has memory services; the adapter does not wire them yet.',
+    );
   });
 });
