@@ -174,6 +174,7 @@ function createConfig(body: CreateConfigRequest): ConfigView {
   const config: ConfigView = {
     hash,
     name: body.name,
+    seed: { memory: body.seed?.memory ?? [], skills: body.seed?.skills ?? [] },
     harness: harness.name,
     harness_ref: harness.ref,
     adapter_version: harness.adapter_version,

@@ -208,7 +208,7 @@ describe('RunView, a finished run in fixture mode', () => {
 
 describe('RunView against the API, with a slot that gave up', () => {
   it('says the slot gave up, never that it was re-queued, and splits the tally', async () => {
-    const detail = { ...(details as Record<string, ExperimentDetail>).exp_harness, status: 'done' };
+    const detail = { ...(details as unknown as Record<string, ExperimentDetail>).exp_harness, status: 'done' };
     const trials = ((experimentTrials as Record<string, TrialRowSummary[]>).exp_harness)
       .filter((t) => t.id !== 'th_emi-basic-01_b_4_attempt2')
       .map((t) => {
@@ -236,7 +236,7 @@ describe('RunView against the API, with a slot that gave up', () => {
 
 describe('RunView against the API, with infra failures in both arms', () => {
   it('counts them per arm', async () => {
-    const detail = (details as Record<string, ExperimentDetail>).exp_harness;
+    const detail = (details as unknown as Record<string, ExperimentDetail>).exp_harness;
     const base = (experimentTrials as Record<string, TrialRowSummary[]>).exp_harness;
     const first = base.find((t) => t.id === 'th_distress-12_a_1') as TrialRowSummary;
     const trials = [
@@ -252,7 +252,7 @@ describe('RunView against the API, with infra failures in both arms', () => {
 
 describe('RunView against the API, with one slot re-queued and one that gave up', () => {
   it('tells them apart in the grid and the legend: an outline with "!", and a filled cell with "–"', async () => {
-    const detail = (details as Record<string, ExperimentDetail>).exp_harness;
+    const detail = (details as unknown as Record<string, ExperimentDetail>).exp_harness;
     const trials = ((experimentTrials as Record<string, TrialRowSummary[]>).exp_harness)
       .filter((t) => t.id !== 'th_emi-basic-01_b_4_attempt2')
       .map((t) => (t.id === 'th_emi-basic-01_b_4' ? { ...t, status: 'abandoned' } : t));
@@ -280,7 +280,7 @@ describe('RunView against the API, with one slot re-queued and one that gave up'
 
 describe('RunView against the API, with no simulated client', () => {
   it('leaves the simulated client line out', async () => {
-    const detail = { ...(details as Record<string, ExperimentDetail>).exp_harness, sim_model: null };
+    const detail = { ...(details as unknown as Record<string, ExperimentDetail>).exp_harness, sim_model: null };
     routeFetch({ '/api/experiments/exp_harness': detail, '/api/experiments/exp_harness/trials': (experimentTrials as Record<string, TrialRowSummary[]>).exp_harness, '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] });
     const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
     await settle();
@@ -293,8 +293,8 @@ describe('RunView run controls (D32, D37)', () => {
   useFixtures();
 
   it('pauses a running experiment through the client, and asks before stopping it', async () => {
-    const pause = vi.spyOn(api, 'pauseExperiment').mockResolvedValue((details as Record<string, ExperimentDetail>).exp_harness);
-    const stop = vi.spyOn(api, 'stopExperiment').mockResolvedValue((details as Record<string, ExperimentDetail>).exp_harness);
+    const pause = vi.spyOn(api, 'pauseExperiment').mockResolvedValue((details as unknown as Record<string, ExperimentDetail>).exp_harness);
+    const stop = vi.spyOn(api, 'stopExperiment').mockResolvedValue((details as unknown as Record<string, ExperimentDetail>).exp_harness);
     const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
     await settle();
     await w.get('[data-test="pause"]').trigger('click');
@@ -313,7 +313,7 @@ describe('RunView run controls (D32, D37)', () => {
   });
 
   it('shows what paused the whole run, the full reason, and resumes it through the client', async () => {
-    const resume = vi.spyOn(api, 'resumeExperiment').mockResolvedValue((details as Record<string, ExperimentDetail>).exp_futility);
+    const resume = vi.spyOn(api, 'resumeExperiment').mockResolvedValue((details as unknown as Record<string, ExperimentDetail>).exp_futility);
     const w = mount(RunView, { props: { experimentId: 'exp_futility' } });
     await settle();
     expect(w.get('[data-test="run-title"]').text()).toBe('Paused: 6 of 40 trials done');
@@ -331,8 +331,8 @@ describe('RunView run controls (D32, D37)', () => {
   });
 
   it('says which arm is paused, why and how to fix it, and resumes or pauses an arm through the client', async () => {
-    const resumeArm = vi.spyOn(api, 'resumeArm').mockResolvedValue((details as Record<string, ExperimentDetail>).exp_model);
-    const pauseArm = vi.spyOn(api, 'pauseArm').mockResolvedValue((details as Record<string, ExperimentDetail>).exp_model);
+    const resumeArm = vi.spyOn(api, 'resumeArm').mockResolvedValue((details as unknown as Record<string, ExperimentDetail>).exp_model);
+    const pauseArm = vi.spyOn(api, 'pauseArm').mockResolvedValue((details as unknown as Record<string, ExperimentDetail>).exp_model);
     const w = mount(RunView, { props: { experimentId: 'exp_model' } });
     await settle();
     expect(w.find('[data-test="pause-banner"]').exists()).toBe(false);
@@ -367,7 +367,7 @@ describe('RunView run controls (D32, D37)', () => {
 
 describe('RunView against the API, with claim events', () => {
   it('counts the claims and lists them only on request', async () => {
-    const detail = (details as Record<string, ExperimentDetail>).exp_harness;
+    const detail = (details as unknown as Record<string, ExperimentDetail>).exp_harness;
     const claim = { at: '2026-11-05T13:42:00.000Z', kind: 'claim', trial_id: 'th_distress-12_a_1', attempt: 1, arm: 'A', config_hash: detail.config_hashes[0], detail: 'distress-12 on Own loop, prompt v1, attempt 1 claimed by ownloop-1' };
     routeFetch({
       '/api/experiments/exp_harness': { ...detail, events: [claim, ...detail.events] },
