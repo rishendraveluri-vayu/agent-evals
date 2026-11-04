@@ -1497,7 +1497,7 @@
   "exp_futility": {
     "experiment_id": "exp_futility",
     "status": "incomplete",
-    "reason": "the experiment is paused: futility check (D32): arm B passed 0 of its first 3 finished trials, fewer than the 1 the rule asks for (passed means label agent and end state answered until graders exist (SP4)). Review those trials, then resume or stop; the check runs once per arm and never compares the arms",
+    "reason": "the experiment is paused: futility check (D32): arm B passed 0 of its first 3 graded trials, fewer than the 1 the rule asks for (passed means the grading outcome is pass; a trial whose grading is incomplete or not finished yet is not counted). Review those trials, then resume or stop; the check runs once per arm and never compares the arms",
     "arms": [
       {
         "arm": "A",

@@ -25,10 +25,9 @@ const FIELDS = {
   counts: ['queued', 'running', 'done', 'infra_failed', 'abandoned', 'cancelled', 'by_label', 'done_by_end_state'],
   arm: ['arm', 'config_hash', 'config_name', 'status', 'paused_at', 'paused_reason', 'fix', 'counts', 'reused_from', 'reused_trials'],
   event: ['at', 'kind', 'trial_id', 'attempt', 'arm', 'config_hash', 'detail'],
-  // `passed` is the UI's own field (src/api/pending.ts): not in the contract yet.
   trialRow: [
     'id', 'experiment_id', 'task_sha256', 'task_id', 'config_hash', 'config_name', 'harness', 'model', 'repeat_index', 'order_index', 'attempt', 'status',
-    'label', 'end_state', 'cost_usd', 'input_tokens', 'output_tokens', 'model_calls', 'wall_s', 'worker_id', 'claimed_at', 'finished_at', 'passed',
+    'label', 'end_state', 'cost_usd', 'input_tokens', 'output_tokens', 'model_calls', 'wall_s', 'worker_id', 'claimed_at', 'finished_at', 'passed', 'grading',
   ],
   compare: ['experiment_id', 'status', 'reason', 'arms', 'rows', 'stats'],
   compareRow: ['task', 'task_id', 'arm', 'config', 'config_name', 'passed', 'graded', 'trials', 'infra_failed', 'abandoned'],

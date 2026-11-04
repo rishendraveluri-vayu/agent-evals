@@ -189,39 +189,107 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
     return i;
   }
 
-  it('pauses after 3 finished trials per arm when an arm passed none, once per arm, never on the A/B difference (D32)', async () => {
+  type Verdict = 'pass' | 'fail' | 'incomplete';
+  /**
+   * Claims, reports and grades one trial at a time until nothing is claimable, as a worker and the
+   * grader would; `verdict` picks each trial's grading outcome. The futility check runs on the
+   * grades report, so a pause stops the next claim.
+   */
+  async function drainGraded(worker: string, verdict: (config: string, i: number) => Verdict): Promise<number> {
+    let i = 0;
+    const outcome = new Map<string, Verdict>();
+    for (let c = await e.claim(worker); c; c = await e.claim(worker)) {
+      outcome.set(c.trial_id, verdict(e.configOf(c), i++));
+      await e.report(c, worker, 'agent');
+      await e.grade(`g-${worker}`, (id) => outcome.get(id) ?? 'pass');
+    }
+    return i;
+  }
+
+  it('pauses after 3 graded trials per arm when an arm passed none, once per arm, never on the A/B difference (D32)', async () => {
     const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 4, order_seed: 3 });
     expect(exp.futility).toEqual({ enabled: true, after: 3, min_passed: 1 });
-    // Arm A answers every time; arm B always hits the step limit, so it passes nothing.
-    const ran = await drain('w-fut', (config) => (config === B ? { end_state: 'step_limit' } : {}));
+    // Every trial answers; arm A's graders pass and arm B's fail, so arm B passes nothing.
+    const ran = await drainGraded('w-fut', (config) => (config === B ? 'fail' : 'pass'));
     let d = await e.detail(exp.id);
     expect(d.status).toBe('paused');
     expect(ran).toBeLessThan(8);
     expect(d.arms.find((a) => a.config_hash === B)!.counts.done).toBe(3);
     const pause = d.events.find((x) => x.kind === 'futility_pause')!;
     expect(pause.detail).toBe(d.paused_reason);
-    expect(pause.detail).toContain('futility check (D32): arm B passed 0 of its first 3 finished trials');
-    expect(pause.detail).toContain('passed means label agent and end state answered until graders exist (SP4)');
+    expect(pause.detail).toContain('futility check (D32): arm B passed 0 of its first 3 graded trials');
+    expect(pause.detail).toContain('passed means the grading outcome is pass; a trial whose grading is incomplete or not finished yet is not counted');
+    expect(pause.detail).not.toContain('SP4');
     expect(pause.detail).not.toContain('arm A');
 
     // After review, resuming runs the rest; the check does not fire again for arm B.
     await request(env.http).post(`/api/experiments/${exp.id}/resume`).expect(200);
-    await drain('w-fut', (config) => (config === B ? { end_state: 'step_limit' } : {}));
+    await drainGraded('w-fut', (config) => (config === B ? 'fail' : 'pass'));
     d = await e.detail(exp.id);
     expect(d.status).toBe('done');
     expect(d.events.filter((x) => x.kind === 'futility_pause')).toHaveLength(1);
   });
 
+  it('counts only graded outcomes: an answer is not a pass, and an ungraded or incomplete trial is not counted (D32)', async () => {
+    const exp = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 6 });
+    const reportOne = async (): Promise<string> => {
+      const c = (await e.claim('w-fut-g'))!;
+      await e.report(c, 'w-fut-g', 'agent'); // end state answered: it used to count as a pass
+      return c.trial_id;
+    };
+    const first = [await reportOne(), await reportOne(), await reportOne()];
+    // Three finished, none graded yet: nothing to judge, so it keeps running.
+    expect((await e.detail(exp.id)).status).toBe('running');
+    let rows = (await trials(exp.id)).filter((t) => first.includes(t.id));
+    expect(rows.map((t) => [t.grading, t.passed])).toEqual([
+      ['waiting', null],
+      ['waiting', null],
+      ['waiting', null],
+    ]);
+    // Two incomplete and one fail: one graded, still too few.
+    const verdicts: Record<string, Verdict> = { [first[0]]: 'incomplete', [first[1]]: 'incomplete', [first[2]]: 'fail' };
+    await e.grade('g-fut', (id) => verdicts[id] ?? 'pass');
+    expect((await e.detail(exp.id)).status).toBe('running');
+    rows = (await trials(exp.id)).filter((t) => first.includes(t.id));
+    expect(rows.map((t) => [t.id, t.grading, t.passed])).toEqual(
+      expect.arrayContaining([
+        [first[0], 'incomplete', null],
+        [first[1], 'incomplete', null],
+        [first[2], 'fail', false],
+      ]),
+    );
+    // Two more fails make three graded, none passed: the grades report pauses the run.
+    const more = [await reportOne(), await reportOne()];
+    expect((await e.detail(exp.id)).status).toBe('running');
+    await e.grade('g-fut', (id) => (more.includes(id) ? 'fail' : 'pass'));
+    const d = await e.detail(exp.id);
+    expect(d.status).toBe('paused');
+    expect(d.paused_reason).toContain('arm A passed 0 of its first 3 graded trials');
+    expect(await e.claim('w-fut-g')).toBeNull();
+    // A queued trial has nothing to grade.
+    expect((await trials(exp.id)).find((t) => t.status === 'queued')).toMatchObject({ grading: null, passed: null });
+    await request(env.http).post(`/api/experiments/${exp.id}/stop`).expect(200);
+  });
+
+  it('says a done trial of a task with no graders has none, in the trial list', async () => {
+    const exp = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['widow-loan']], n: 1, sim_model: 'claude-haiku-5-5', futility: { enabled: false } });
+    const c = (await e.claim('w-nog'))!;
+    await e.report(c, 'w-nog', 'agent');
+    await e.grade('g-nog');
+    const [row] = await trials(exp.id);
+    expect(row).toMatchObject({ status: 'done', grading: 'no_graders', passed: null });
+  });
+
   it('takes a stricter futility rule, or none', async () => {
     const off = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 3, futility: { enabled: false } });
-    await drain('w-fut-off', () => ({ end_state: 'step_limit' }));
+    await drainGraded('w-fut-off', () => 'fail');
     expect((await e.detail(off.id)).status).toBe('done');
 
     const strict = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 4, futility: { after: 2, min_passed: 2 } });
-    await drain('w-fut-strict', (_c, i) => (i === 0 ? {} : { end_state: 'timeout' }));
+    await drainGraded('w-fut-strict', (_c, i) => (i === 0 ? 'pass' : 'fail'));
     const d = await e.detail(strict.id);
     expect(d.status).toBe('paused');
-    expect(d.paused_reason).toContain('arm A passed 1 of its first 2 finished trials, fewer than the 2 the rule asks for');
+    expect(d.paused_reason).toContain('arm A passed 1 of its first 2 graded trials, fewer than the 2 the rule asks for');
 
     const bad = await request(env.http)
       .post('/api/experiments')

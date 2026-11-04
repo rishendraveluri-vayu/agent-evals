@@ -1,6 +1,10 @@
 import request from 'supertest';
-import type { ClaimResponse, ExperimentDetail, ReportResponse } from '../../src/contract';
+import type { ClaimResponse, ExperimentDetail, GraderClaimResponse, ReportResponse } from '../../src/contract';
+import { graderVersion } from '../../src/grading/grading-core';
 import { type TestEnv, auth, runnerReport } from './app';
+
+/** Any framework version will do: the grade's version is computed from it and the spec. */
+const GRADER_FRAMEWORK = 'test-grader-0';
 
 /**
  * Worker-side helpers for the run-control tests: create and start experiments, claim like a
@@ -55,5 +59,43 @@ export function engine(env: TestEnv) {
     for (const { id } of rows) await request(env.http).post(`/api/experiments/${id}/cancel`).expect(200);
   }
 
-  return { experiment, claim, report, detail, configOf, quiesce };
+  /**
+   * Grades every done trial waiting for grading, as the grader worker would (SP4), and returns the
+   * ids graded. `verdict` picks each trial's outcome: `pass` or `fail` on its first grader (taken
+   * as required), `incomplete` as an `error` on it; any other grader is optional and not
+   * implemented. Trials it does not know pass.
+   */
+  async function grade(worker: string, verdict: (trialId: string) => 'pass' | 'fail' | 'incomplete' = () => 'pass'): Promise<string[]> {
+    const graded: string[] = [];
+    for (;;) {
+      const res = await request(env.http).post('/api/grader/claim').set(auth).send({ worker_id: worker });
+      if (res.status === 204) return graded;
+      if (res.status !== 200) throw new Error(`grader claim: ${res.status} ${JSON.stringify(res.body)}`);
+      const job = res.body as GraderClaimResponse;
+      const v = verdict(job.trial_id);
+      const grades = job.graders.map((g, i) => {
+        const spec = g.spec as { id: string; type?: string };
+        const first = i === 0;
+        const word = first ? (v === 'incomplete' ? 'error' : v) : 'not_implemented';
+        return {
+          grader_id: spec.id,
+          type: spec.type ?? 'exact_number',
+          required: first,
+          verdict: word,
+          score: word === 'pass' ? 1 : word === 'fail' ? 0 : null,
+          reason: `${spec.id}: ${word}`,
+          evidence: [],
+          grader_version: graderVersion(g.spec_sha256, GRADER_FRAMEWORK),
+        };
+      });
+      const out = await request(env.http)
+        .post(`/api/grader/trials/${job.trial_id}/grades`)
+        .set(auth)
+        .send({ worker_id: worker, job_id: job.job_id, attempt: job.attempt, framework_version: GRADER_FRAMEWORK, grades });
+      if (out.status !== 200) throw new Error(`grades: ${out.status} ${JSON.stringify(out.body)}`);
+      graded.push(job.trial_id);
+    }
+  }
+
+  return { experiment, claim, report, detail, configOf, quiesce, grade };
 }

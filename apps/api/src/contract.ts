@@ -306,9 +306,10 @@ export interface Estimate {
 }
 
 /**
- * D32's futility check, once per arm: when an arm has `after` finished trials (status `done`), it
- * pauses the experiment if fewer than `min_passed` of them passed. Until graders exist (SP4),
- * "passed" means label `agent` and end state `answered`.
+ * D32's futility check, once per arm: when an arm has `after` graded trials, it pauses the
+ * experiment if fewer than `min_passed` of them passed. Graded means the trial's current grading
+ * outcome (SP4) is `pass` or `fail`; a trial whose grading is `incomplete` or not done yet is not
+ * counted. The check runs after each trial report and each grades report.
  */
 export interface FutilityRule {
   enabled: boolean;
@@ -565,7 +566,23 @@ export interface TrialRowSummary {
   worker_id: string | null;
   claimed_at: string | null;
   finished_at: string | null;
+  /** The trial's current grading (SP4): true when every required grader passed, false when one failed, else null. */
+  passed: boolean | null;
+  /** Where grading stands for the run grid and D32's futility check (see TrialGradingState). */
+  grading: TrialGradingState;
 }
+
+/**
+ * A trial row's grading, from its grading jobs (SP4):
+ * - `pass`, `fail`, `incomplete`: the outcome of its latest finished grading job (incomplete: a
+ *   required grader gave no verdict);
+ * - `waiting`: done, and its grading is queued or running, or not queued yet;
+ * - `no_graders`: done, and its task has no graders;
+ * - `grading_failed`: done, and its last grading job gave up (its lease lapsed 3 times) with no
+ *   finished job before it; a regrade queues it again;
+ * - `null`: not done (queued, running, an infra failure, cancelled), so there is nothing to grade.
+ */
+export type TrialGradingState = GradingOutcome | 'waiting' | 'no_graders' | 'grading_failed' | null;
 
 /** GET /experiments/:id/compare */
 export interface CompareRow {

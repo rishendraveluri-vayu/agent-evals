@@ -7,21 +7,23 @@ import { pauseExperiment } from './run-state';
  * D32's automatic pauses. None of them looks at the difference between the arms: the verdict
  * uses the full planned N, so nothing here stops or decides on an apparent win or loss.
  *
- * - Futility, once per arm: after the arm's first `after` finished trials (a random sample, D32's
+ * - Futility, once per arm: after the arm's first `after` graded trials (a random sample, D32's
  *   order), an arm that passed fewer than `min_passed` pauses the run for review.
  * - Infra guard: more than 30% infra failures among at least 5 trials finished since the run
  *   started or last resumed.
  * - Spend guard, once per experiment: spend so far plus the remaining trials at the cost of those
  *   finished passes the experiment budget.
  *
- * Until graders exist (SP4), "passed" means label `agent` and end state `answered`.
+ * "Passed" is the trial's grading outcome (SP4): a `pass` counts as a pass and a `fail` as a fail;
+ * a trial whose grading is `incomplete`, or has not finished yet, is not counted at all. Grading
+ * runs after the trial, so the futility check runs again after each grades report.
  */
 
 export const FUTILITY_DEFAULT: FutilityRule = { enabled: true, after: 3, min_passed: 1 };
 
 export const INFRA_GUARD = { min_finished: 5, max_rate: 0.3 } as const;
 
-export const PASSED_MEANS = 'passed means label agent and end state answered until graders exist (SP4)';
+export const PASSED_MEANS = 'passed means the grading outcome is pass; a trial whose grading is incomplete or not finished yet is not counted';
 
 /** The rule from a request: defaults for anything left out; `{"enabled": false}` turns it off. */
 export function resolveFutility(input: unknown): FutilityRule {
@@ -73,74 +75,84 @@ export function estimatePerTrial(e: Estimate | null, config: string): number {
   return cells.reduce((s, c) => s + c.agent_usd_per_trial + c.sim_usd_per_trial, 0) / cells.length;
 }
 
+/**
+ * D32's futility check for one experiment, inside the caller's transaction: once per arm, when the
+ * arm has `after` graded trials (outcome pass or fail), it pauses the run if fewer than
+ * `min_passed` of them passed. Locks the experiment row; does nothing unless it is running.
+ * Returns true if it paused the run. Called after every trial report and every grades report.
+ */
+export async function applyFutility(q: Queryable, experimentId: string): Promise<boolean> {
+  const { rows: exps } = await q.query<{ status: string; futility: FutilityRule | null }>('SELECT status, futility FROM experiments WHERE id = $1 FOR UPDATE', [experimentId]);
+  const exp = exps[0];
+  const rule = exp?.futility;
+  if (!exp || exp.status !== 'running' || !rule?.enabled) return false;
+  const { rows: arms } = await q.query<{ arm: string; config_hash: string; reused: boolean; futility_checked: boolean; graded: number; passed: number }>(
+    `SELECT a.arm, a.config_hash, cardinality(a.reused_trial_ids) > 0 AS reused, a.futility_checked_at IS NOT NULL AS futility_checked,
+            count(t.id) FILTER (WHERE t.status = 'done' AND g.outcome IN ('pass', 'fail'))::int AS graded,
+            count(t.id) FILTER (WHERE t.status = 'done' AND g.outcome = 'pass')::int AS passed
+     FROM experiment_arms a
+     LEFT JOIN trials t ON t.experiment_id = a.experiment_id AND t.config_hash = a.config_hash
+     LEFT JOIN LATERAL (
+       SELECT j.outcome FROM grading_jobs j WHERE j.trial_id = t.id AND j.status = 'done' ORDER BY j.created_at DESC, j.id DESC LIMIT 1
+     ) g ON true
+     WHERE a.experiment_id = $1
+     GROUP BY a.arm, a.config_hash, a.reused_trial_ids, a.futility_checked_at, a.position
+     ORDER BY a.position`,
+    [experimentId],
+  );
+  const due = arms.filter((a) => !a.reused && !a.futility_checked && a.graded >= rule.after);
+  for (const a of due) {
+    await q.query('UPDATE experiment_arms SET futility_checked_at = now() WHERE experiment_id = $1 AND config_hash = $2', [experimentId, a.config_hash]);
+  }
+  const futileArms = due.filter((a) => futile(rule, a.graded, a.passed));
+  if (!futileArms.length) return false;
+  const what = futileArms.map((a) => `arm ${a.arm} passed ${a.passed} of its first ${a.graded} graded trials`).join('; ');
+  const reason =
+    `futility check (D32): ${what}, fewer than the ${rule.min_passed} the rule asks for (${PASSED_MEANS}). ` +
+    'Review those trials, then resume or stop; the check runs once per arm and never compares the arms';
+  return pauseExperiment(q, experimentId, 'futility_pause', reason, {
+    rule: { ...rule },
+    arms: futileArms.map((a) => ({ arm: a.arm, config_hash: a.config_hash, graded: a.graded, passed: a.passed })),
+  });
+}
+
 const pct = (x: number): string => `${Math.round(x * 100)}%`;
 const usd = (x: number): string => `$${x.toFixed(4)}`;
 
 /**
  * Runs the three checks for one experiment, inside the caller's transaction, after a report or a
- * lapse has changed its trials. Locks the experiment row so two reports never both pause it.
+ * lapse has changed its trials (a grades report runs the futility check alone: applyFutility). Locks the experiment row so two reports never both pause it.
  * Does nothing unless the experiment is running. Returns the kind of pause, if one happened.
  */
 export async function applyRunRules(q: Queryable, experimentId: string): Promise<string | null> {
   const { rows: exps } = await q.query<{
     status: string;
-    futility: FutilityRule | null;
     budget_usd: number;
     estimate: Estimate | null;
     spend_guard_at: Date | null;
     window_start: Date | null;
   }>(
-    `SELECT status, futility, budget_usd, estimate, spend_guard_at, coalesce(resumed_at, started_at) AS window_start
+    `SELECT status, budget_usd, estimate, spend_guard_at, coalesce(resumed_at, started_at) AS window_start
      FROM experiments WHERE id = $1 FOR UPDATE`,
     [experimentId],
   );
   const exp = exps[0];
   if (!exp || exp.status !== 'running') return null;
 
-  const { rows: arms } = await q.query<{
-    arm: string;
-    config_hash: string;
-    reused: boolean;
-    futility_checked: boolean;
-    done: number;
-    passed: number;
-    remaining: number;
-    reported: number;
-    cost: number;
-  }>(
-    `SELECT a.arm, a.config_hash, cardinality(a.reused_trial_ids) > 0 AS reused, a.futility_checked_at IS NOT NULL AS futility_checked,
-            count(t.id) FILTER (WHERE t.status = 'done')::int AS done,
-            count(t.id) FILTER (WHERE t.status = 'done' AND t.label = 'agent' AND t.end_state = 'answered')::int AS passed,
+  // Futility, once per arm, on the arm's first `after` graded trials.
+  if (await applyFutility(q, experimentId)) return 'futility_pause';
+
+  const { rows: arms } = await q.query<{ arm: string; config_hash: string; remaining: number; reported: number; cost: number }>(
+    `SELECT a.arm, a.config_hash,
             count(t.id) FILTER (WHERE t.status IN ('queued', 'claimed', 'running'))::int AS remaining,
             count(t.id) FILTER (WHERE t.cost_usd IS NOT NULL)::int AS reported,
             coalesce(sum(coalesce(t.cost_usd, 0) + coalesce(t.sim_cost_usd, 0)), 0)::float8 AS cost
      FROM experiment_arms a LEFT JOIN trials t ON t.experiment_id = a.experiment_id AND t.config_hash = a.config_hash
      WHERE a.experiment_id = $1
-     GROUP BY a.arm, a.config_hash, a.reused_trial_ids, a.futility_checked_at, a.position
+     GROUP BY a.arm, a.config_hash, a.position
      ORDER BY a.position`,
     [experimentId],
   );
-
-  // Futility, once per arm, on the arm's first `after` finished trials.
-  const rule = exp.futility;
-  if (rule?.enabled) {
-    const due = arms.filter((a) => !a.reused && !a.futility_checked && a.done >= rule.after);
-    for (const a of due) {
-      await q.query('UPDATE experiment_arms SET futility_checked_at = now() WHERE experiment_id = $1 AND config_hash = $2', [experimentId, a.config_hash]);
-    }
-    const futileArms = due.filter((a) => futile(rule, a.done, a.passed));
-    if (futileArms.length) {
-      const what = futileArms.map((a) => `arm ${a.arm} passed ${a.passed} of its first ${a.done} finished trials`).join('; ');
-      const reason =
-        `futility check (D32): ${what}, fewer than the ${rule.min_passed} the rule asks for (${PASSED_MEANS}). ` +
-        'Review those trials, then resume or stop; the check runs once per arm and never compares the arms';
-      await pauseExperiment(q, experimentId, 'futility_pause', reason, {
-        rule: { ...rule },
-        arms: futileArms.map((a) => ({ arm: a.arm, config_hash: a.config_hash, finished: a.done, passed: a.passed })),
-      });
-      return 'futility_pause';
-    }
-  }
 
   // Infra guard, over the trials finished since the run started or last resumed.
   // An abandoned attempt has no label, so it counts under its status.

@@ -383,19 +383,22 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 - An experiment's `status` is `created`, `running`, `paused`, `done` or `cancelled`. `paused` is
   the whole experiment, by hand or by D32's futility check and guards (below); `paused_at` and
   `paused_reason` are the latest. A re-queued attempt made while paused waits, queued.
-- **Automatic pauses (D32).** Checked after every report and every lapsed lease, only while the
-  experiment is `running`. Each pauses the whole experiment with an event whose `detail` is the
+- **Automatic pauses (D32).** Checked after every report and every lapsed lease (the futility
+  check also after every grades report), only while the experiment is `running`. Each pauses the whole experiment with an event whose `detail` is the
   `paused_reason`; resume or stop after review. None of them looks at the difference between the
   arms: the verdict uses the full planned N, so nothing stops or decides on an apparent win.
   - **Futility**, `futility: {enabled, after, min_passed}` on `POST /experiments` (left out:
     `{enabled: true, after: 3, min_passed: 1}`; `{"enabled": false}` turns it off; shown resolved
-    as `futility` in the detail). Once per arm: when the arm has `after` finished (`done`) trials,
-    it pauses the run if fewer than `min_passed` of them passed. Event `futility_pause`, for
-    example "futility check (D32): arm B passed 0 of its first 3 finished trials, fewer than the 1
-    the rule asks for (passed means label agent and end state answered until graders exist
-    (SP4)) ...". Until graders exist (SP4), **passed means label `agent` and end state
-    `answered`**. The first batch is a random sample because of the claim order. An arm whose
-    trials are reused from the parent is not checked.
+    as `futility` in the detail). Once per arm: when the arm has `after` graded trials, it pauses
+    the run if fewer than `min_passed` of them passed. **Passed is the grading outcome** (SP4,
+    since 4 Nov): a trial whose current grading outcome is `pass` counts as a pass and `fail` as a
+    fail; one whose grading is `incomplete`, has not finished, or has no graders is not counted at
+    all. Grading runs after the trial, so the check runs on the grades report too
+    (`applyFutility` in `apps/api/src/experiments/rules.ts`). Event `futility_pause`, for example
+    "futility check (D32): arm B passed 0 of its first 3 graded trials, fewer than the 1 the rule
+    asks for (passed means the grading outcome is pass; a trial whose grading is incomplete or not
+    finished yet is not counted) ...". The first batch is a random sample because of the claim
+    order. An arm whose trials are reused from the parent is not checked.
   - **Infra guard**: more than 30% infra failures (`infra_failed` or `abandoned`) among at least 5
     trials finished since the run started or was last resumed. Event `infra_guard_pause`, naming
     the failure labels. The count starts again at each resume.
@@ -458,7 +461,14 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
     | `unknown_model` (400) | LiteLLM serves no such model, or serves it without a price (its spend could not be capped or counted) |
     | `judge_already_approved` (409) | the experiment has an active approval: revoke it first. Two approvals at once: one wins, the other's key is deleted and it gets this 409 |
     | `no_judge_approval` (404) | revoke with no active approval |
-- `GET /experiments/:id/trials?status=&config=&task=` returns trial summaries.
+- `GET /experiments/:id/trials?status=&config=&task=` returns trial summaries
+  (`TrialRowSummary`). Each has `grading` (`TrialGradingState`) and `passed`, so the run grid
+  agrees with the trial page: `pass`, `fail` or `incomplete` is the outcome of the trial's latest
+  finished grading job (as `grading.current` in `GET /trials/:id`); `waiting` is a done trial
+  whose grading is queued, running or not queued yet; `no_graders` a done trial of a task with no
+  graders; `grading_failed` a done trial whose last grading job gave up (3 lapsed leases) with no
+  finished job before it; `null` a trial that is not done (nothing to grade). `passed` is true or
+  false with a `pass` or `fail`, else null.
 - `GET /experiments/:id/compare` returns `{experiment_id, status, reason, arms, rows, stats}`.
   **No comparison until every arm is complete** (D37, D32): while `status` is `incomplete`,
   `reason` says why ("arm B is paused: ...", "the experiment was stopped before every trial ran

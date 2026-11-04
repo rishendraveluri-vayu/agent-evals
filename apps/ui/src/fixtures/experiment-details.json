@@ -393,7 +393,7 @@
     "started_at": "2026-11-05T13:44:00.000Z",
     "finished_at": null,
     "paused_at": "2026-11-05T13:54:00.000Z",
-    "paused_reason": "futility check (D32): arm B passed 0 of its first 3 finished trials, fewer than the 1 the rule asks for (passed means label agent and end state answered until graders exist (SP4)). Review those trials, then resume or stop; the check runs once per arm and never compares the arms",
+    "paused_reason": "futility check (D32): arm B passed 0 of its first 3 graded trials, fewer than the 1 the rule asks for (passed means the grading outcome is pass; a trial whose grading is incomplete or not finished yet is not counted). Review those trials, then resume or stop; the check runs once per arm and never compares the arms",
     "order_seed": 404,
     "futility": {
       "enabled": true,
@@ -526,7 +526,7 @@
         "attempt": null,
         "arm": null,
         "config_hash": null,
-        "detail": "futility check (D32): arm B passed 0 of its first 3 finished trials, fewer than the 1 the rule asks for (passed means label agent and end state answered until graders exist (SP4)). Review those trials, then resume or stop; the check runs once per arm and never compares the arms"
+        "detail": "futility check (D32): arm B passed 0 of its first 3 graded trials, fewer than the 1 the rule asks for (passed means the grading outcome is pass; a trial whose grading is incomplete or not finished yet is not counted). Review those trials, then resume or stop; the check runs once per arm and never compares the arms"
       },
       {
         "at": "2026-11-05T13:44:00.000Z",

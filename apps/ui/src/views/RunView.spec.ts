@@ -318,7 +318,7 @@ describe('RunView run controls (D32, D37)', () => {
     await settle();
     expect(w.get('[data-test="run-title"]').text()).toBe('Paused: 6 of 40 trials done');
     const banner = w.get('[data-test="pause-banner"]');
-    expect(banner.get('h2').text()).toBe('The futility check: arm B passed 0 of its first 3 finished trials');
+    expect(banner.get('h2').text()).toBe('The futility check: arm B passed 0 of its first 3 graded trials');
     expect(banner.text()).toContain('Review those trials, then resume or stop; the check runs once per arm and never compares the arms');
     expect(w.find('[data-test="pause"]').exists()).toBe(false);
     await w.get('[data-test="resume"]').trigger('click');

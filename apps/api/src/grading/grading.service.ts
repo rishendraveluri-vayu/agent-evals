@@ -18,6 +18,7 @@ import { newId } from '../common/ids';
 import { type TaskFile, readTasks } from '../catalogue/catalogue-files';
 import { Db, type Queryable } from '../database/db.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
+import { applyFutility } from '../experiments/rules';
 import {
   GRADING_LEASE_S,
   type GraderEntry,
@@ -300,6 +301,10 @@ export class GradingService {
          WHERE id = $1`,
         [jobId, report.framework_version, passed, outcome, ids, JSON.stringify(report.problems)],
       );
+      // D32: the futility check counts graded trials, and grading comes after the trial, so it
+      // runs again now (only while the experiment is running; once per arm).
+      const owner = await one<{ experiment_id: string | null }>(client, 'SELECT experiment_id FROM trials WHERE id = $1', [trialId]);
+      if (owner?.experiment_id) await applyFutility(client, owner.experiment_id);
       return { fresh, reused: ids.length - fresh };
     });
     if (!stored) return this.duplicate((await this.db.query<JobRow>('SELECT * FROM grading_jobs WHERE id = $1', [jobId]))[0]);

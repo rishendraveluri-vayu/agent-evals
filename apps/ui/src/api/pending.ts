@@ -6,15 +6,8 @@
  * When the API adds one of these to apps/api/src/contract.ts, copy the file over ./contract.ts
  * (contract.spec.ts fails until you do) and delete the field here: a field declared in both with
  * a different type is a compile error, so nothing is left half-merged.
+ *
+ * Nothing is pending today: a trial row's `passed` and `grading`, which the run grid colours its
+ * cells by, have been in the contract since 4 Nov.
  */
 import './contract';
-
-declare module './contract' {
-  interface TrialRowSummary {
-    /**
-     * NOT IN THE CONTRACT: whether every grade passed, null when not graded. The run grid colours
-     * a cell pass or fail by it; until the API sends it, a done trial shows as "done, not graded".
-     */
-    passed?: boolean | null;
-  }
-}

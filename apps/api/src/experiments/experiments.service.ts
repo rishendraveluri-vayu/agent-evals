@@ -14,6 +14,9 @@ import type {
   ExperimentStatus,
   ExperimentSummary,
   FutilityRule,
+  GradingJobStatus,
+  GradingOutcome,
+  TrialGradingState,
   TrialRowSummary,
   TrialStatus,
 } from '../contract';
@@ -851,16 +854,65 @@ export interface TrialSummaryRow {
   worker_id: string | null;
   claimed_at: Date | null;
   finished_at: Date | null;
+  /** The latest finished grading job (done or no_graders), as GET /trials/:id's `grading.current`. */
+  graded_status: GradingJobStatus | null;
+  graded_passed: boolean | null;
+  graded_outcome: GradingOutcome | null;
+  /** The latest grading job that was not superseded, finished or not. */
+  latest_job_status: GradingJobStatus | null;
 }
 
 export const TRIAL_SUMMARY_SELECT = `
   SELECT t.id, t.experiment_id, t.task_sha256, k.id AS task_id, t.config_hash, c.name AS config_name, c.harness, c.model,
          t.repeat_index, t.order_index, t.attempt, t.status, t.label, t.end_state, t.cost_usd, t.input_tokens, t.output_tokens,
-         t.model_calls, t.wall_s, t.worker_id, t.claimed_at, t.finished_at
-  FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 JOIN configs c ON c.hash = t.config_hash`;
+         t.model_calls, t.wall_s, t.worker_id, t.claimed_at, t.finished_at,
+         gd.status AS graded_status, gd.passed AS graded_passed, gd.outcome AS graded_outcome, gl.status AS latest_job_status
+  FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 JOIN configs c ON c.hash = t.config_hash
+  LEFT JOIN LATERAL (
+    SELECT j.status, j.passed, j.outcome FROM grading_jobs j
+    WHERE j.trial_id = t.id AND j.status IN ('done', 'no_graders') ORDER BY j.created_at DESC, j.id DESC LIMIT 1
+  ) gd ON true
+  LEFT JOIN LATERAL (
+    SELECT j.status FROM grading_jobs j WHERE j.trial_id = t.id AND j.status <> 'superseded' ORDER BY j.created_at DESC, j.id DESC LIMIT 1
+  ) gl ON true`;
+
+/** Where a trial's grading stands (contract TrialGradingState): its current outcome, or why there is none. */
+export function gradingState(r: Pick<TrialSummaryRow, 'status' | 'graded_status' | 'graded_outcome' | 'latest_job_status'>): TrialGradingState {
+  if (r.status !== 'done') return null;
+  if (r.graded_status === 'done') return r.graded_outcome ?? 'incomplete';
+  if (r.graded_status === 'no_graders') return 'no_graders';
+  if (r.latest_job_status === 'failed') return 'grading_failed';
+  return 'waiting';
+}
 
 export function trialRowSummary(r: TrialSummaryRow): TrialRowSummary {
-  return { ...r, claimed_at: iso(r.claimed_at), finished_at: iso(r.finished_at) };
+  const grading = gradingState(r);
+  return {
+    id: r.id,
+    experiment_id: r.experiment_id,
+    task_sha256: r.task_sha256,
+    task_id: r.task_id,
+    config_hash: r.config_hash,
+    config_name: r.config_name,
+    harness: r.harness,
+    model: r.model,
+    repeat_index: r.repeat_index,
+    order_index: r.order_index,
+    attempt: r.attempt,
+    status: r.status,
+    label: r.label,
+    end_state: r.end_state,
+    cost_usd: r.cost_usd,
+    input_tokens: r.input_tokens,
+    output_tokens: r.output_tokens,
+    model_calls: r.model_calls,
+    wall_s: r.wall_s,
+    worker_id: r.worker_id,
+    claimed_at: iso(r.claimed_at),
+    finished_at: iso(r.finished_at),
+    passed: grading === 'pass' || grading === 'fail' ? r.graded_passed : null,
+    grading,
+  };
 }
 
 function shaList(value: unknown, field: string): string[] {

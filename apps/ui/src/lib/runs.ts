@@ -4,8 +4,8 @@ import type { ExperimentEvent, ExperimentEventKind } from '../api/types';
 /** The kinds that pause the whole experiment. */
 export const EXPERIMENT_PAUSES: ExperimentEventKind[] = ['paused', 'futility_pause', 'infra_guard_pause', 'spend_guard_pause'];
 
-/** "futility check (D32): arm B passed 0 of its first 3 finished trials, fewer than ..." becomes
- *  "the futility check: arm B passed 0 of its first 3 finished trials": what paused it, in a
+/** "futility check (D32): arm B passed 0 of its first 3 graded trials, fewer than ..." becomes
+ *  "the futility check: arm B passed 0 of its first 3 graded trials": what paused it, in a
  *  phrase short enough for a list. The full reason is always shown where there is room. */
 export function pauseCause(reason: string): string {
   const r = reason.trim();

@@ -145,6 +145,8 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 ## Run screen and engine (fresh-clone QA fixes, 4 Nov night)
 
 - **The time estimate uses each trial's claim-to-report time.** It leaves out time a trial waits in the queue and the start of a worker that has just come up, and it averages over every earlier trial of the cell, including ones run while other experiments shared the workers. With no history it assumes 10 s a trial on a fake model (measured on the own loop only) and 60 s on a real one (A25).
+- **The run grid and the futility check read each trial's grading outcome; Compare does not yet.** Since 4 Nov `GET /experiments/:id/trials` carries each trial's `grading` (its latest finished grading job's outcome, required graders only), and the run grid and D32's futility check use it. Compare still counts every stored grade row and ignores `required` (Deterministic graders, above). On a task with an optional judge that answers `not_implemented` (15 of the 18 tasks have one), a trial whose required graders all pass is a pass on the run grid and not a pass on Compare. Which pass rule Compare uses is SP6's call (`docs/proposals/stats.md`, decision 2); until then read pass counts from the run grid or `GET /trials/:id`.
+- **The futility check fires only while the run is running.** Grading lags the trials, so a fast run (fake models, many workers) can finish before its first `after` trials per arm are graded, and then the check never fires. That can only miss a pause, never add one.
 
 ## To check before submission
 
