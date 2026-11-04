@@ -9,7 +9,10 @@ Checks, with compose's `${NAME:-default}` filled in the way compose fills it:
 - no worker (nor netcheck, which checks the worker runtime) mounts runs/ or anything else
   from the host: workers upload trial files to the API (D2), so a trial cannot read or
   change another trial's stored folder (D3);
-- the API mounts runs/ read-write, since it alone stores the uploaded files.
+- the API mounts runs/ read-write, since it alone stores the uploaded files;
+- provider keys reach LiteLLM only: no other service names ANTHROPIC_API_KEY or GEMINI_API_KEY
+  except the API's set/unset flags (`ANTHROPIC_KEY_SET: ${ANTHROPIC_API_KEY:+1}`), which are
+  "1" with a key and empty without one, never the key itself.
 """
 
 import re
@@ -20,18 +23,25 @@ import yaml
 
 COMPOSE = Path(__file__).resolve().parent.parent / "docker-compose.yml"
 TOKEN = "EVALS_WORKER_TOKEN"
-VAR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:?-)([^}]*))?\}")
+VAR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:?[-+])([^}]*))?\}")
+# Each provider key LiteLLM holds, and the flag the API gets instead of it.
+PROVIDER_KEYS = {"ANTHROPIC_API_KEY": "ANTHROPIC_KEY_SET", "GEMINI_API_KEY": "GEMINI_KEY_SET"}
 
 
 def interpolate(value: str, env: dict[str, str]) -> str:
-    """`${NAME}`, `${NAME:-default}` (unset or empty) and `${NAME-default}` (unset), as compose."""
+    """`${NAME}`, `${NAME:-default}` (unset or empty), `${NAME-default}` (unset), `${NAME:+word}`
+    (word when set and not empty) and `${NAME+word}` (word when set), as compose fills them."""
 
     def fill(m: re.Match) -> str:
-        name, op, default = m.group(1), m.group(2), m.group(3) or ""
+        name, op, word = m.group(1), m.group(2), m.group(3) or ""
         if op == ":-":
-            return env.get(name) or default
+            return env.get(name) or word
         if op == "-":
-            return env.get(name, default)
+            return env.get(name, word)
+        if op == ":+":
+            return word if env.get(name) else ""
+        if op == "+":
+            return word if name in env else ""
         return env.get(name, "")
 
     return VAR.sub(fill, value)
@@ -113,8 +123,40 @@ def runs_problems(cfg: dict) -> list[str]:
     return found
 
 
+def key_problems(cfg: dict) -> list[str]:
+    """Provider keys go to LiteLLM alone; the API gets a set/unset flag per key, never the key."""
+    found = []
+    services = cfg.get("services") or {}
+    secret = "sk-check-secret-value"
+    for name, service in services.items():
+        if name == "litellm":
+            continue
+        for var, value in environment(service).items():
+            for key in PROVIDER_KEYS:
+                if var == key:
+                    found.append(f"{name} sets {key}; only LiteLLM may hold a provider key")
+                elif secret in interpolate(value, {key: secret}):
+                    found.append(
+                        f"{name}'s {var} would carry the value of {key}; "
+                        f"pass a flag (${{{key}:+1}}) instead"
+                    )
+    api = environment(services.get("api") or {})
+    for key, flag in PROVIDER_KEYS.items():
+        raw = api.get(flag)
+        if raw is None:
+            found.append(f"the api does not set {flag}, so it cannot tell that {key} is missing")
+            continue
+        with_key, without = interpolate(raw, {key: secret}), interpolate(raw, {})
+        if not with_key or secret in with_key or without:
+            found.append(
+                f"the api's {flag} must be non-empty with {key} set and empty without it "
+                f"(got {with_key!r} and {without!r})"
+            )
+    return found
+
+
 def problems(cfg: dict) -> list[str]:
-    return token_problems(cfg) + runs_problems(cfg)
+    return token_problems(cfg) + runs_problems(cfg) + key_problems(cfg)
 
 
 def main(argv: list[str]) -> int:

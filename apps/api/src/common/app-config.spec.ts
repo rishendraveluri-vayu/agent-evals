@@ -14,3 +14,11 @@ describe('readAppConfig: the conflict-check allowance (D38)', () => {
     expect(() => readAppConfig({ EVALS_CONFLICT_CHECK_ALLOWANCE_USD: '-1' })).toThrow('non-negative');
   });
 });
+
+describe('readAppConfig: which provider keys are set', () => {
+  it('reads the flags compose passes: 1 is set, empty is not, absent is unknown', () => {
+    expect(readAppConfig({ ANTHROPIC_KEY_SET: '1', GEMINI_KEY_SET: '' }).providerKeys).toEqual({ anthropic: true, gemini: false });
+    expect(readAppConfig({ GEMINI_KEY_SET: ' ' }).providerKeys).toEqual({ anthropic: null, gemini: false });
+    expect(readAppConfig({}).providerKeys).toEqual({ anthropic: null, gemini: null });
+  });
+});

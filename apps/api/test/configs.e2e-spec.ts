@@ -11,11 +11,15 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
   let cat: Awaited<ReturnType<typeof catalogue>>;
 
   beforeAll(async () => {
+    // As compose passes them (`${ANTHROPIC_API_KEY:+1}`): an Anthropic key is set, a Gemini one is not.
+    Object.assign(process.env, { ANTHROPIC_KEY_SET: '1', GEMINI_KEY_SET: '' });
     env = await bootEnv();
     cat = await catalogue(env.http);
   });
 
   afterAll(async () => {
+    delete process.env.ANTHROPIC_KEY_SET;
+    delete process.env.GEMINI_KEY_SET;
     await env.close();
   });
 
@@ -49,6 +53,18 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
     expect(models.map((m) => m.name)).toEqual(['claude-haiku-5-5', 'gemini-3.8-flash', 'unpriced-model']);
     expect(models[0]).toMatchObject({ provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5 });
     expect(models[1]).toMatchObject({ provider: 'gemini', input_per_mtok: 0.75 });
+  });
+
+  it('says per model whether its provider key is set, from the flags compose passes, never the key', async () => {
+    const res = await request(env.http).get('/api/models').expect(200);
+    const models = res.body as { name: string; key_set: boolean | null }[];
+    expect(models.map((m) => [m.name, m.key_set])).toEqual([
+      ['claude-haiku-5-5', true],
+      ['gemini-3.8-flash', false],
+      // An openai/ route: the API is told about no key for it, so it does not guess.
+      ['unpriced-model', null],
+    ]);
+    expect(res.text).not.toMatch(/sk-|api_key/i);
   });
 
   it('returns one hash for the same config posted twice: 201, then 200 with the stored config', async () => {

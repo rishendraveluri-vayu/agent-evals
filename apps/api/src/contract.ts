@@ -162,6 +162,12 @@ export interface ModelView {
   provider: string | null;
   input_per_mtok: number | null;
   output_per_mtok: number | null;
+  /**
+   * Whether the provider's key (ANTHROPIC_API_KEY, GEMINI_API_KEY) is set for LiteLLM, as compose
+   * tells the API (`ANTHROPIC_KEY_SET`, `GEMINI_KEY_SET`: a flag, never the key). `null` when the
+   * API was not told (run outside compose), for a provider it knows no key for, and for `fake/*`.
+   */
+  key_set: boolean | null;
 }
 
 // ---- Configs -------------------------------------------------------------------------

@@ -29,6 +29,10 @@ status, plus `"fix": "<what to change>"` where the API can say how to put the re
   the grader worker in each grading claim for that experiment's trials. It is kept in
   `judge_approvals`, because every claim hands it out again; no UI-facing route returns it.
   Revoking deletes it in LiteLLM, so it stops working at once.
+- **Provider keys (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) are LiteLLM's alone.** The API gets
+  one flag per key instead (`ANTHROPIC_KEY_SET`, `GEMINI_KEY_SET`: `1` or empty), so `GET
+  /models` can say which models cannot run yet; `scripts/check_compose.py` fails if any other
+  service would receive a key's value.
 - Workers hold only a worker token (`EVALS_WORKER_TOKEN`), sent as `Authorization: Bearer`.
   Provider keys live only in LiteLLM.
 
@@ -41,7 +45,7 @@ status, plus `"fix": "<what to change>"` where the API can say how to put the re
 | `POST /prompts` | `{id, base_version, text}` writes the next version of an existing prompt and returns `{id, version, sha256, path}` (below). |
 | `GET /toolsets` | `[{id, version, sha256, servers: [{name, allowed_tools}], manifest: [{server, server_version, tools: [{name, description, input_schema}]}]}]`. One built-in toolset `finance/all` until more exist. `sha256` is the canonical JSON hash of everything else in the entry, so it covers each tool's description and input schema and the server's version, not just the names (since 4 Nov; configs made before keep their names-only hash). |
 | `GET /tasks` | `[{sha256, id, version, split, kind, summary, graders}]` from `tasks/<id>/task.json`. |
-| `GET /models` | `[{name, provider, input_per_mtok, output_per_mtok}]` from LiteLLM's `/model/info`, real models only. |
+| `GET /models` | `[{name, provider, input_per_mtok, output_per_mtok, key_set}]` from LiteLLM's `/model/info`, real models only. `key_set` says whether the provider's key is in `.env` for LiteLLM: compose passes the API a flag per key (`ANTHROPIC_KEY_SET: ${ANTHROPIC_API_KEY:+1}`, likewise `GEMINI_KEY_SET`), `1` when set and empty when not, never the key. It is `null` when the API was not told (the flag is absent, as outside compose) and for a provider it has no flag for (`gemini` and `vertex_ai` read the Gemini flag). |
 
 **New prompt version** (`POST /prompts`, for the UI's prompt editor). The API writes
 `configs/prompts/<id>.v<n>.md`, where `n` is the highest `v<number>` version of `id` plus one
