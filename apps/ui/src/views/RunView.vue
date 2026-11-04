@@ -10,7 +10,7 @@ import { optional, useLoad } from '../lib/async';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, contentDiff, planCheck, splitCheck, type Check } from '../lib/checks';
 import { changedLineCount, lineChanges, sentenceChanges, type LineChange } from '../lib/diff';
 import { capitalise, clock, minutes, money, plainText, plural, shortHash, wholeMoney } from '../lib/format';
-import { infraReason, modelName, splitName } from '../lib/names';
+import { experimentName, infraReason, modelName, splitName } from '../lib/names';
 import { href, navigate } from '../router';
 import { eventView, pauseCause } from '../lib/runs';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
@@ -768,7 +768,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
         aria-label="Breadcrumb"
         class="crumbs"
       >
-        <a :href="href.experiments()">Experiments</a> / {{ data?.experiment?.name ?? (setup.name || 'New experiment') }}
+        <a :href="href.experiments()">Experiments</a> / {{ data?.experiment ? experimentName(data.experiment) : setup.name || 'New experiment' }}
       </nav>
       <h1
         tabindex="-1"
