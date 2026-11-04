@@ -33,16 +33,18 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
   // A shipped example has no judge panel and its trials are never in the label queue, so its page
   // does not fetch the held-out queue (every held-out output, a large reply) or the agreement.
   const detailP = api.experiment(props.experimentId);
-  const blindP = detailP.then((d) =>
-    d.example ? ([null, [] as BlindItem[]] as const) : Promise.all([optional(api.judgeAgreement('heldout'), null), optional(api.labelQueue('heldout'), [] as BlindItem[])]),
-  );
-  const [detail, compare, trials, [judge, queue]] = await Promise.all([
+  const blindP = detailP.then(async (d): Promise<{ judge: JudgeAgreement | null; queue: BlindItem[] }> => {
+    if (d.example) return { judge: null, queue: [] };
+    const [judge, queue] = await Promise.all([optional(api.judgeAgreement('heldout'), null), optional(api.labelQueue('heldout'), [] as BlindItem[])]);
+    return { judge, queue };
+  });
+  const [detail, compare, trials, blind] = await Promise.all([
     detailP,
     api.compare(props.experimentId),
     optional(api.experimentTrials(props.experimentId), [] as TrialRowSummary[]),
     blindP,
   ]);
-  return { detail, compare, trials, judge, queue: [...queue] };
+  return { detail, compare, trials, ...blind };
 });
 
 const arms = computed(() => (data.value ? armsOf(data.value.detail, data.value.detail.configs) : []));

@@ -62,9 +62,9 @@ const ITALIC = [/(?<![*\w\\])\*(?=[^\s*])([^\n*]+?)(?<=[^\s*])\*(?![*\w])/g, /(?
  */
 export function inlineStyles(text: string): InlineStyles {
   const n = text.length;
-  const hidden: boolean[] = Array(n).fill(false);
-  const bold: boolean[] = Array(n).fill(false);
-  const italic: boolean[] = Array(n).fill(false);
+  const hidden = new Array<boolean>(n).fill(false);
+  const bold = new Array<boolean>(n).fill(false);
+  const italic = new Array<boolean>(n).fill(false);
   const replace = new Map<number, string>();
   const mark = (re: RegExp, width: number, style: boolean[]) => {
     for (const m of text.matchAll(re)) {
