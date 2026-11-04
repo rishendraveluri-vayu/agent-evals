@@ -69,8 +69,8 @@ async function requeue(q: Queryable, trialId: string, attempt: number, experimen
   if (!shouldRequeue(attempt, experimentStatus, label)) return null;
   const next = await one<{ id: string }>(
     q,
-    `INSERT INTO trials (id, experiment_id, task_sha256, config_hash, repeat_index, attempt, seq, harness, status)
-     SELECT $2, experiment_id, task_sha256, config_hash, repeat_index, attempt + 1, seq, harness, 'queued'
+    `INSERT INTO trials (id, experiment_id, task_sha256, config_hash, repeat_index, attempt, seq, order_index, harness, status)
+     SELECT $2, experiment_id, task_sha256, config_hash, repeat_index, attempt + 1, seq, order_index, harness, 'queued'
      FROM trials WHERE id = $1
      ON CONFLICT (experiment_id, task_sha256, config_hash, repeat_index, attempt) DO NOTHING
      RETURNING id`,

@@ -231,11 +231,16 @@ export class ExperimentsService {
         ],
       );
       await client.query(
-        `INSERT INTO trials (id, experiment_id, task_sha256, config_hash, repeat_index, attempt, seq, harness, status)
-         SELECT s.id, $1, s.task, s.config, s.repeat, 1, s.seq, s.harness, 'queued'
+        `INSERT INTO trials (id, experiment_id, task_sha256, config_hash, repeat_index, attempt, seq, order_index, harness, status)
+         SELECT s.id, $1, s.task, s.config, s.repeat, 1, s.seq, s.seq, s.harness, 'queued'
          FROM unnest($2::text[], $3::text[], $4::text[], $5::int[], $6::int[], $7::text[])
               AS s(id, task, config, repeat, seq, harness)`,
         [id, slots.map((s) => s.id), slots.map((s) => s.task), slots.map((s) => s.config), slots.map((s) => s.repeat), slots.map((s) => s.seq), slots.map((s) => s.harness)],
+      );
+      await client.query(
+        `INSERT INTO experiment_arms (experiment_id, config_hash, arm, position)
+         SELECT $1, c.hash, chr(64 + c.ord::int), c.ord::int - 1 FROM unnest($2::text[]) WITH ORDINALITY AS c (hash, ord)`,
+        [id, plan.configs.map((c) => c.hash)],
       );
       // The whole experiment's budget, enforced by LiteLLM across every trial key (a team).
       // Inside the transaction: if LiteLLM refuses, nothing is stored.
