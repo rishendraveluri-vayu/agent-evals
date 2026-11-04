@@ -19,11 +19,11 @@ const base: SpecInputs = {
     apiFormat: 'openai_chat',
     settings: { ...PLATFORM_DEFAULTS, memory: null, skills: null, compression: null },
     settingsSources: {
-      temperature: 'platform_default',
+      temperature: 'harness_default',
       max_output_tokens: 'platform_default',
       max_steps: 'platform_default',
       timeout_s: 'platform_default',
-      parallel_tool_calls: 'platform_default',
+      parallel_tool_calls: 'harness_default',
       memory: 'unsupported',
       skills: 'unsupported',
       compression: 'unsupported',

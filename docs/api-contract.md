@@ -52,7 +52,24 @@ state folder for the finance MCP server.
 
 - `POST /configs` with `{name, harness, model, prompt_sha256, toolset_sha256, settings, harness_options}`.
   The API checks every set setting against the harness's capabilities (an unsupported one
-  is a 400 `unsupported_setting` naming it), fills `settings_sources`, and computes
+  is a 400 `unsupported_setting` naming it) and against the model (D25): a setting the model
+  refuses is a 400 `unsupported_setting` naming the model. The table of refused settings is
+  `MODEL_REJECTS` in `apps/api/src/configs/settings.ts`; today it holds one entry,
+  `claude-haiku-5-5` refuses `temperature` (the provider's 400 "`temperature` is deprecated for
+  this model", 4 Nov). It then fills every setting the config leaves out (or sets to null), with
+  its source in `settings_sources`:
+
+  | Setting | Left unset | Source |
+  | --- | --- | --- |
+  | `temperature`, `parallel_tool_calls` | `null`: not sent, so the harness's or provider's default applies (D25) | `harness_default` |
+  | `max_output_tokens` | 8192 | `platform_default` |
+  | `max_steps` | 15 | `platform_default` |
+  | `timeout_s` | 300 | `platform_default` |
+  | `memory`, `skills`, `compression` | `{"enabled": false}` | `platform_default` |
+  | any setting the harness cannot take | `null` | `unsupported` |
+  | any setting the model refuses | `null`, never a platform default | `harness_default` |
+
+  It then computes
   `hash = sha256(canonical JSON of harness ref, adapter version, capabilities sha256, model,
   prompt sha256, toolset sha256, settings, harness_options)`. Posting the same content twice
   returns the same config (200, not a duplicate).

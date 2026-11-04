@@ -89,11 +89,11 @@ Everything else is read-only. Nothing in `/trial` survives to the next trial; ev
     "api_format": "openai_chat"
   },
   "settings": {
-    "temperature": 0.2,
-    "max_output_tokens": 1024,
+    "temperature": null,
+    "max_output_tokens": 8192,
     "max_steps": 15,
     "timeout_s": 300,
-    "parallel_tool_calls": false,
+    "parallel_tool_calls": null,
     "memory": {"enabled": false},
     "skills": {"enabled": false},
     "compression": {"enabled": false}
@@ -113,10 +113,11 @@ Everything else is read-only. Nothing in `/trial` survives to the next trial; ev
 }
 ```
 
-- **`settings_sources`** says, for each setting, `config`, `platform_default` or `unsupported`. The adapter library copies it into `applied_settings`.
+- **`settings_sources`** says, for each setting, `config`, `platform_default`, `harness_default` or `unsupported`. The adapter library copies it into `applied_settings`.
 - **`settings` is the full, resolved set** (R10.4), filled by the API from the config and the platform defaults. **A platform default is applied only to settings the harness supports.** For an unsupported setting the field is `null`, and the harness's own behaviour is recorded and shown (section 5). A config that explicitly sets an unsupported setting is rejected at submission.
+- **An unset setting is not sent (D25).** `temperature` and `parallel_tool_calls` have no platform default: left unset, they are `null` with source `harness_default`, and **every adapter leaves a `null` setting out of every request**, so the harness's or provider's own default applies (the gate test `test_unset_not_sent` checks the wire for each harness). The platform defaults are `max_output_tokens` 8192, `max_steps` 15, `timeout_s` 300, and `memory`, `skills` and `compression` off. A setting the model refuses (the API's `MODEL_REJECTS` table: `temperature` on `claude-haiku-5-5`) cannot be set in a config for that model and is never filled with a default.
 - **`max_steps` counts the agent's model calls** across the whole trial, conversation included (D17). **`timeout_s`** is enforced by the adapter library's wrapper (R10.6). The runner's safety net is `timeout_s × 1.5 + 30 s` (D23).
-- **`parallel_tool_calls`** defaults to false where supported (D19).
+- **`parallel_tool_calls`** is a config setting (D19). Since D25 it is not sent unless the config sets it, so the harness's or provider's default applies; set it to `false` to force one tool call per turn.
 - **`memory`, `skills` and `compression`** are common settings (D23). Harness detail lives in `harness_options`, validated against the adapter's schema.
 - **`system_prompt` and `tools.toolset`** reference versioned config objects stored in the database, with text or manifest, hash, author and date (R11). The UI diffs two versions, and an experiment can vary exactly one of them (D9: prompt v1 versus v2). `allowed_tools` lets a toolset version expose a subset of the finance server's tools, which is how a "missing tool" is represented and later added.
 - **`model`**: LiteLLM only (R10.3). The per-trial key is in the environment variable named by `api_key_env`, never `OPENAI_API_KEY` (D23). The adapter passes it explicitly to its model client and starts child processes with a minimal environment that leaves it out.
@@ -238,7 +239,7 @@ Nothing is truncated or dropped. Every trial, including infra failures, keeps it
 
 **Gate tests.** All run through LiteLLM against the fake model server, with no real calls:
 
-1. **Settings test.** Each supported setting appears in the captured request.
+1. **Settings test.** Each supported setting appears in the captured request, and an unset `temperature` or `parallel_tool_calls` (null, `harness_default`) does not appear at all (D25).
 2. **Step test.** A script that keeps calling tools ends in `step_limit`, and the proxy's call count is no more than `max_steps` plus the declared extra.
 3. **Tool test.** The first request's `tools` array, normalised, equals the toolset snapshot apart from the declared rewrites.
 4. **Timeout test.** A `timeout` fault gives `end_state: timeout` within `timeout_s` plus a small margin.

@@ -117,7 +117,7 @@ export class ConfigsService {
     const harness = await this.catalogue.harness(body.harness);
     if (!harness) throw badRequest('unknown_harness', `no harness named ${body.harness} under workers/`);
     const caps = harness.capabilities as { settings?: Record<string, { supported?: unknown }>; model_api_formats?: unknown; harness_options_schema?: unknown };
-    const { settings, settings_sources } = resolveSettings(body.settings, caps, harness.name);
+    const { settings, settings_sources } = resolveSettings(body.settings, caps, harness.name, body.model);
     const harnessOptions = checkHarnessOptions(body.harness_options, caps.harness_options_schema, harness.name);
 
     const prompt = await this.catalogue.prompt(promptSha);

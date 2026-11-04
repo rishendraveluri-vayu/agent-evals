@@ -99,6 +99,16 @@ def test_applied_settings_show_sources_and_harness_defaults(tmp_path):
     assert applied["top_p"] == {"value": 1.0, "source": "harness_default"}
 
 
+def test_an_unset_setting_is_shown_as_the_harness_default(tmp_path):
+    """D25: the API sends an unset temperature as null with source harness_default."""
+    spec = make_spec(
+        **{"settings.temperature": None, "settings_sources.temperature": "harness_default"}
+    )
+    report, result, _ = run(tmp_path, spec)
+    assert report["label"] == "agent", report
+    assert result["applied_settings"]["temperature"] == {"value": None, "source": "harness_default"}
+
+
 def test_setting_the_harness_cannot_take_is_refused(tmp_path):
     spec = make_spec(
         **{"settings.parallel_tool_calls": False, "settings_sources.parallel_tool_calls": "config"}

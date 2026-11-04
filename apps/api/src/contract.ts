@@ -39,7 +39,10 @@ export interface Toggle {
   enabled: boolean;
 }
 
-/** Resolved settings: an unsupported setting is null. */
+/**
+ * Resolved settings: an unsupported setting is null (source `unsupported`), and so is one that is
+ * not sent (source `harness_default`, D25): the harness's or provider's own default applies.
+ */
 export interface Settings {
   temperature: number | null;
   max_output_tokens: number | null;
@@ -51,7 +54,7 @@ export interface Settings {
   compression: Toggle | null;
 }
 
-export type SettingSource = 'config' | 'platform_default' | 'unsupported';
+export type SettingSource = 'config' | 'platform_default' | 'harness_default' | 'unsupported';
 export type SettingsSources = Record<SettingName, SettingSource>;
 
 // ---- Catalogue -----------------------------------------------------------------------

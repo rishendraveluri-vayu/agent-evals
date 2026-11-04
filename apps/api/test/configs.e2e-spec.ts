@@ -71,6 +71,34 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
     expect(res.body).toEqual({ error: 'unsupported_setting', message: expect.stringContaining('memory') as string });
   });
 
+  it('leaves an unset temperature and parallel_tool_calls unsent, shown as the harness default (D25)', async () => {
+    const res = await request(env.http)
+      .post('/api/configs')
+      .send({ name: 'unset', harness: 'ownloop', model: 'fake/finance-emi', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset, settings: {} })
+      .expect(201);
+    const c = res.body as { settings: Record<string, unknown>; settings_sources: Record<string, string> };
+    expect(c.settings).toMatchObject({ temperature: null, parallel_tool_calls: null, max_output_tokens: 8192, max_steps: 15, timeout_s: 300 });
+    expect(c.settings_sources).toMatchObject({
+      temperature: 'harness_default',
+      parallel_tool_calls: 'harness_default',
+      max_output_tokens: 'platform_default',
+      max_steps: 'platform_default',
+      timeout_s: 'platform_default',
+    });
+  });
+
+  it('refuses a setting the model rejects with 400 unsupported_setting naming the model (temperature on Haiku 5.5)', async () => {
+    const base = { name: 'haiku', harness: 'ownloop', model: 'claude-haiku-5-5', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset };
+    const res = await request(env.http).post('/api/configs').send({ ...base, settings: { temperature: 0.37 } }).expect(400);
+    expect(res.body).toEqual({ error: 'unsupported_setting', message: expect.stringContaining('claude-haiku-5-5 refuses temperature') as string });
+    const ok = (await request(env.http).post('/api/configs').send({ ...base, settings: { max_steps: 12 } }).expect(201)).body as {
+      settings: Record<string, unknown>;
+      settings_sources: Record<string, string>;
+    };
+    expect(ok.settings).toMatchObject({ temperature: null, max_steps: 12 });
+    expect(ok.settings_sources.temperature).toBe('harness_default');
+  });
+
   it('accepts memory for Hermes, which supports it, and checks harness options against its schema', async () => {
     const base = { name: 'h', harness: 'hermes', model: 'fake/finance-emi', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset };
     await request(env.http).post('/api/configs').send({ ...base, settings: { memory: { enabled: true } }, harness_options: { prompt_cache_markers: false } }).expect(201);
@@ -94,10 +122,10 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
 
   it('diffs two configs field by field', async () => {
     const a = await makeConfig(env.http, cat, { settings: { temperature: 0.1 } });
-    const b = await makeConfig(env.http, cat, { settings: { temperature: 0.9 }, model: 'claude-haiku-5-5' });
+    const b = await makeConfig(env.http, cat, { settings: { temperature: 0.9 }, model: 'gemini-3.8-flash' });
     const diff = (await request(env.http).get(`/api/configs/${a}/diff/${b}`).expect(200)).body as { path: string; a: unknown; b: unknown }[];
     expect(diff).toEqual([
-      { path: 'model', a: 'fake/finance-emi', b: 'claude-haiku-5-5' },
+      { path: 'model', a: 'fake/finance-emi', b: 'gemini-3.8-flash' },
       { path: 'settings.temperature', a: 0.1, b: 0.9 },
     ]);
     expect((await request(env.http).get(`/api/configs/${a}/diff/${a}`).expect(200)).body).toEqual([]);

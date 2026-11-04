@@ -52,12 +52,20 @@ def test_test_spec_and_fixture_capabilities_validate():
         {"model.api_key_env": "lower-case"},
         {"trial.config_hash": "abc"},
         {"trial.task_split": "train"},
-        {"settings_sources.temperature": "harness_default"},
+        {"settings_sources.temperature": "made_up"},
         {"task.messages": []},
     ],
 )
 def test_spec_schema_rejects(change):
     assert errors("spec", make_spec(**change)) != []
+
+
+def test_spec_schema_takes_an_unset_setting_as_harness_default():
+    """D25: an unset temperature is null in the spec with source harness_default (not sent)."""
+    spec = make_spec(
+        **{"settings.temperature": None, "settings_sources.temperature": "harness_default"}
+    )
+    assert errors("spec", spec) == []
 
 
 def test_spec_schema_rejects_a_key_in_the_file():

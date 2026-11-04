@@ -111,15 +111,15 @@ Workers mount nothing from the host, so a trial cannot read another trial's stor
 
 ### 2.2 Settings, end states and labels
 
-**Settings.** The spec carries the full resolved set. An unsupported setting arrives as `null` with source `unsupported`; a non-null value for one makes the library refuse the trial [src]. `POST /api/configs` rejects a config that sets one (400 `unsupported_setting`) and fills every unset, supported setting with a platform default. Those defaults are in `apps/api/src/configs/settings.ts`, which marks them "not yet a decision of Rishi's" [src]:
+**Settings.** The spec carries the full resolved set. An unsupported setting arrives as `null` with source `unsupported`; a non-null value for one makes the library refuse the trial [src]. `POST /api/configs` rejects a config that sets one (400 `unsupported_setting`), and one that sets a setting the model refuses (D25: `temperature` on Haiku 5.5, a 400 `unsupported_setting` naming the model). An unset `temperature` or `parallel_tool_calls` is not sent: `null`, source `harness_default`. Every other unset, supported setting gets D25's platform default, in `apps/api/src/configs/settings.ts` [src]:
 
-| Setting | Meaning | Gate default | API platform default (provisional) |
+| Setting | Meaning | Gate default | API platform default (D25) |
 | --- | --- | --- | --- |
-| `temperature` | Sampling temperature | 0.2 | 0.2. **A null or missing value gets 0.2**, so a config cannot leave temperature unsent (question 15) |
-| `max_output_tokens` | Output cap per model call | 1024 | 1024 |
+| `temperature` | Sampling temperature | 0.2 | Not sent; refused in a config for Haiku 5.5 |
+| `max_output_tokens` | Output cap per model call | 1024 | 8192 |
 | `max_steps` | Agent model calls across the whole trial, conversation included (D17) | 10 | 15 |
 | `timeout_s` | Whole-trial wall clock, enforced by the library's watchdog | 60 | 300 |
-| `parallel_tool_calls` | Several tool calls in one model turn (D19) | false | false |
+| `parallel_tool_calls` | Several tool calls in one model turn (D19) | false | Not sent |
 | `memory`, `skills`, `compression` | Harness features (D23); detail in `harness_options` | off | off where supported |
 
 `applied_settings` records each setting's value and source (`config`, `platform_default`, `harness_default`, `unsupported`). Adapters add rows such as Hermes's `reasoning_effort`, LangGraph's `recursion_limit` and the Agents SDK's `tool_concurrency` [ran].

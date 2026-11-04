@@ -4,20 +4,37 @@ import { SETTING_NAMES } from '../contract';
 import { badRequest } from '../common/api-error';
 
 /**
- * Platform defaults, applied only to settings the harness supports (contract v2 section 3).
- * Not yet a decision of Rishi's: these are the values of the contract's own spec example
- * (docs/adapter-contract.md section 3), the closest thing the docs have to defaults.
+ * Platform defaults (D25, 4 Nov), applied only to settings the harness supports (contract v2
+ * section 3). A null default means "not sent": the setting stays null in the spec with source
+ * `harness_default`, the adapter leaves it out of every request, and the harness's or provider's
+ * own default applies, which the trial records in `applied_settings`.
  */
 export const PLATFORM_DEFAULTS: Settings = {
-  temperature: 0.2,
-  max_output_tokens: 1024,
+  temperature: null, // D25: not sent
+  max_output_tokens: 8192, // D25
   max_steps: 15,
   timeout_s: 300,
-  parallel_tool_calls: false, // D19
+  parallel_tool_calls: null, // D25: not sent
   memory: { enabled: false }, // R3, R10.8: nothing learns unless the config says so
   skills: { enabled: false },
   compression: { enabled: false },
 };
+
+/**
+ * Settings a model refuses outright, by the model's LiteLLM name, each with its evidence (D25).
+ * A config for that model cannot set them (400 `unsupported_setting` naming the model), no
+ * platform default is filled in for them, and a simulator on that model is not sent them either.
+ */
+export const MODEL_REJECTS: Readonly<Record<string, Partial<Record<SettingName, string>>>> = {
+  'claude-haiku-5-5': {
+    temperature: 'the provider answered 400 "`temperature` is deprecated for this model" on 4 Nov (request req_011CghaVC7rWXY8fBDCspAvF)',
+  },
+};
+
+/** Why `model` refuses the setting, or null if it takes it. */
+export function modelRejects(model: string, name: SettingName): string | null {
+  return MODEL_REJECTS[model]?.[name] ?? null;
+}
 
 type Caps = { settings?: Record<string, { supported?: unknown }> };
 
@@ -55,15 +72,20 @@ export function supports(caps: Caps, name: SettingName): boolean {
 }
 
 /**
- * Checks what a config sets against the harness's capabilities, then fills the full set.
- * A setting the config leaves out (or sets to null) takes the platform default if the harness
- * supports it, and is null with source `unsupported` if not. Setting an unsupported one is a
- * 400 `unsupported_setting` naming it (R10.4).
+ * Checks what a config sets against the harness's capabilities and the model, then fills the
+ * full set. A setting the config leaves out (or sets to null):
+ * - is null with source `unsupported` if the harness cannot take it;
+ * - is null with source `harness_default` (not sent, D25) if its platform default is null or the
+ *   model refuses it;
+ * - otherwise takes the platform default.
+ * Setting one the harness cannot take, or one the model refuses, is a 400 `unsupported_setting`
+ * naming the harness or the model (R10.4, D25).
  */
 export function resolveSettings(
   given: unknown,
   caps: Caps,
   harness: string,
+  model: string,
 ): { settings: Settings; settings_sources: SettingsSources } {
   if (given !== undefined && given !== null && (typeof given !== 'object' || Array.isArray(given))) {
     throw badRequest('invalid_setting', 'settings must be an object');
@@ -79,8 +101,12 @@ export function resolveSettings(
   for (const name of SETTING_NAMES) {
     const value = input[name];
     const set = value !== undefined && value !== null;
+    const rejected = modelRejects(model, name);
     if (set && !supports(caps, name)) {
       throw badRequest('unsupported_setting', `${harness} does not support ${name}, so a config cannot set it`);
+    }
+    if (set && rejected) {
+      throw badRequest('unsupported_setting', `${model} refuses ${name}: ${rejected}. Leave ${name} unset for ${model}`);
     }
     if (set) {
       const problem = settingProblem(name, value);
@@ -92,6 +118,9 @@ export function resolveSettings(
     } else if (set) {
       settings[name] = value;
       sources[name] = 'config';
+    } else if (PLATFORM_DEFAULTS[name] === null || rejected) {
+      settings[name] = null;
+      sources[name] = 'harness_default';
     } else {
       settings[name] = PLATFORM_DEFAULTS[name];
       sources[name] = 'platform_default';

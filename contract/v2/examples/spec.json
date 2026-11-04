@@ -33,11 +33,11 @@
     "api_format": "openai_chat"
   },
   "settings": {
-    "temperature": 0.2,
-    "max_output_tokens": 1024,
+    "temperature": null,
+    "max_output_tokens": 8192,
     "max_steps": 15,
     "timeout_s": 20,
-    "parallel_tool_calls": false,
+    "parallel_tool_calls": null,
     "memory": {
       "enabled": false
     },
@@ -49,11 +49,11 @@
     }
   },
   "settings_sources": {
-    "temperature": "config",
+    "temperature": "harness_default",
     "max_output_tokens": "platform_default",
     "max_steps": "platform_default",
     "timeout_s": "platform_default",
-    "parallel_tool_calls": "platform_default",
+    "parallel_tool_calls": "harness_default",
     "memory": "platform_default",
     "skills": "platform_default",
     "compression": "config"
