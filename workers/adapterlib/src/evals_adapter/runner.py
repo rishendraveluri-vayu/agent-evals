@@ -16,6 +16,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -271,19 +272,73 @@ def _harness_calls(paths: TrialPaths) -> int:
         return 0
 
 
+# D26: which provider 400s are the agent's outcome and which are the platform's setup. Both are
+# matched against the error the adapter reported (end_detail), case-insensitively; the context
+# check runs first. A 400 that matches neither stays the agent's outcome, as before D26.
+CONTEXT_TOO_LONG = re.compile(
+    r"prompt is too long|context[ _-]?length|context[ _-]?window|maximum context"
+    r"|input token count|too many input tokens|input is too long",
+    re.IGNORECASE,
+)
+SETUP_400 = re.compile(
+    # authentication and the account: a key, its workspace or its permissions
+    r"api[ _-]?key|workspace|authenticat|unauthori[sz]ed|permission"
+    # an unknown model
+    r"|(unknown|invalid|unsupported) model|model[^.]{0,60}(not found|does not exist|not available)"
+    # a rejected or unsupported parameter
+    r"|deprecated for this model|unsupported (parameter|value|argument)|not supported"
+    r"|does not support|extra inputs are not permitted|unrecognized request argument"
+    r"|maximum allowed number of output tokens",
+    re.IGNORECASE,
+)
+CONFIG_STATUSES = ("401", "403", "404")
+
+
+def _error_text(result: dict[str, Any]) -> str:
+    detail = result.get("end_detail") or {}
+    parts = (detail.get("harness_stop_reason"), detail.get("exception_message"))
+    return " ".join(str(p) for p in parts if p)
+
+
+def provider_label(last_status: str | None, result: dict[str, Any]) -> str | None:
+    """D26: the infra label for a `harness_error`, from LiteLLM's last status for the agent key
+    and the error the adapter reported, or None when the ending stays the agent's outcome.
+
+    - budget stop: infra:budget_net;
+    - 429 or 5xx: infra:provider_error (the API re-queues it once);
+    - 401, 403, 404: infra:config_error (the API never re-queues it and pauses the experiment);
+    - 400: a context-too-long error stays the agent's; one about the request setup (auth, an
+      unknown model, a rejected or unsupported parameter) is infra:config_error; any other 400
+      stays the agent's.
+    """
+    if last_status is None:
+        return None
+    if last_status == "budget_exceeded":
+        return "infra:budget_net"
+    if last_status == "429" or last_status.startswith("5"):
+        return "infra:provider_error"
+    if last_status in CONFIG_STATUSES:
+        return "infra:config_error"
+    if last_status == "400":
+        text = _error_text(result)
+        if CONTEXT_TOO_LONG.search(text):
+            return None
+        if SETUP_400.search(text):
+            return "infra:config_error"
+    return None
+
+
 def label(launch_info: dict[str, Any], checked: dict[str, Any], proxy_usage: dict | None) -> str:
-    """Contract section 7."""
+    """Contract section 7, with D26's provider-error labels."""
     if launch_info["signal"] is not None:
         return "infra:timeout_kill"
     result = checked["result"]
     if launch_info["exit_code"] != 0 or result is None:
         return "infra:adapter_crash"
     if result["end_state"] == "harness_error":
-        last = (proxy_usage or {}).get("last_status")
-        if last in ("budget_exceeded",):
-            return "infra:budget_net"
-        if last is not None and (last == "429" or last.startswith("5")):
-            return "infra:provider_error"
+        infra = provider_label((proxy_usage or {}).get("last_status"), result)
+        if infra is not None:
+            return infra
     return "agent"
 
 

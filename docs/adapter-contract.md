@@ -228,12 +228,16 @@ Standard tools can read it directly. Our own UI renders it as the trial timeline
 | What happened | Adapter output | Runner label |
 | --- | --- | --- |
 | A run ended in any way the adapter understood | exit 0, valid `result.json` | agent outcome by `end_state`. Graded, except as the analysis plan says for `timeout`. |
-| An error persisted after LiteLLM's retries (D16) | exit 0, `harness_error` with exception detail | `infra:provider_error` if the proxy's last status was 429 or 5xx. Re-queued, capped. |
-| A spend safety net tripped | exit 0, `harness_error` | `infra:budget_net`. Investigate, never routine (R10.6). |
+| An error persisted after LiteLLM's retries (D16) | exit 0, `harness_error` with exception detail | `infra:provider_error` if the proxy's last status was 429 or 5xx. Re-queued once. |
+| The request setup is wrong (D26): a key, an unknown model, a refused setting | exit 0, `harness_error` with exception detail | `infra:config_error` if the proxy's last status was 401, 403 or 404, or a 400 whose error (in `end_detail`) is about authentication, an unknown model or a rejected or unsupported parameter. Never re-queued; the API pauses the experiment. |
+| The prompt is over the model's context window | exit 0, `harness_error` | `agent`: a 400 for context too long is the agent's outcome (D26), and so is any 400 that matches neither pattern. |
+| A spend safety net tripped | exit 0, `harness_error` | `infra:budget_net`. Never re-queued (D26). Investigate, never routine (R10.6). |
 | The adapter crashed, or the result is missing or invalid | non-zero exit | `infra:adapter_crash`. The trace so far and full logs are kept. |
 | A safety-net timeout fired | killed (process group, R10.12) | `infra:timeout_kill` |
 
 Nothing is truncated or dropped. Every trial, including infra failures, keeps its spans, result (if any) and full logs (R11).
+
+**How a provider error is labelled (D26).** `evals_adapter.runner.provider_label` reads LiteLLM's last status for the **agent** key (`proxy_usage.last_status`) and the error the adapter reported (`end_detail.harness_stop_reason` and `exception_message`). The status decides first: a budget stop is `infra:budget_net`, 429 or 5xx `infra:provider_error`, 401, 403 or 404 `infra:config_error`. For a 400, the message is checked for a context-too-long error first (`agent`), then for a setup error (`infra:config_error`); both pattern lists are in `runner.py`. With no LiteLLM record the label stays `agent`. The tests use the exact 4 Nov messages: the unscoped-key 400 ("This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header ...") and the temperature 400 ("`temperature` is deprecated for this model"), as the own loop, Hermes and the Agents SDK reported them.
 
 ## 8. Gate tests and effect checks (R7, R10.5, D24)
 

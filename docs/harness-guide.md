@@ -141,9 +141,10 @@ Workers mount nothing from the host, so a trial cannot read another trial's stor
 
 | Label | When |
 | --- | --- |
-| `agent` | Any understood ending, graded by `end_state`. **Today this includes a provider 400** (section 2.9) |
-| `infra:provider_error` | `harness_error` and LiteLLM's last status for the **agent** key was 429 or 5xx |
-| `infra:budget_net` | `harness_error` and the key's budget was exceeded |
+| `agent` | Any understood ending, graded by `end_state`. Includes a context-too-long 400 and any 400 the setup patterns do not match (D26) |
+| `infra:provider_error` | `harness_error` and LiteLLM's last status for the **agent** key was 429 or 5xx. Re-queued once |
+| `infra:config_error` | `harness_error` and the status was 401, 403 or 404, or a 400 about auth, an unknown model or a refused parameter (D26; both 4 Nov 400s). Never re-queued; the experiment pauses |
+| `infra:budget_net` | `harness_error` and the key's budget was exceeded. Never re-queued (D26) |
 | `infra:adapter_crash` | Non-zero exit, or a missing or invalid result |
 | `infra:timeout_kill` | The safety net killed the process group |
 
