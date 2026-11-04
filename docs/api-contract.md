@@ -55,7 +55,7 @@ simulated-client task the API also summarises that file (profile and debts) into
 
 ## Configs
 
-- `POST /configs` with `{name, harness, model, prompt_sha256, toolset_sha256, settings, harness_options, parent_hash}`.
+- `POST /configs` with `{name, harness, model, prompt_sha256, toolset_sha256, settings, harness_options, seed, parent_hash}`.
   `parent_hash` (optional, D34) names the config this one was forked from: it must exist (400
   `unknown_parent`), and a fork identical to its parent is a 400 `same_as_parent` ("change the one
   thing this fork is meant to test"). Lineage is not behaviour, so it is not in the hash; the
@@ -79,10 +79,27 @@ simulated-client task the API also summarises that file (profile and debts) into
   | any setting the harness cannot take | `null` | `unsupported` |
   | any setting the model refuses | `null`, never a platform default | `harness_default` |
 
+  **Seeds (D39).** `seed` (optional) is the state every trial of the config starts with, in
+  contract v2's seed shape (`contract/v2/spec.schema.json`, `seed`):
+  `{"memory": ["a fact", ...], "skills": [{"name", "description", "body"}]}`. Either list may be
+  left out (it is then empty); a skill name is lower-case letters, digits and hyphens, and two
+  skills cannot share one. Config-given state only, never learned state (R10.8). The claim copies
+  it into the trial's `spec.seed`, which the adapter writes natively (Hermes: `memories/MEMORY.md`
+  and `skills/<name>/SKILL.md`). Refusals, each with a `fix`:
+
+  | `error` | When | `fix` |
+  | --- | --- | --- |
+  | `invalid_seed` | not the seed shape (an unknown key, an empty memory entry, a bad skill name, two skills with one name) | the shape to send |
+  | `unsupported_seed` | a non-empty list for a feature the harness cannot take (capabilities, as for settings) | "ownloop has no memory to seed: remove seed.memory, or pick a harness that takes it (hermes)." |
+  | `seed_feature_off` | a non-empty list while the config's resolved setting turns the feature off (memory and skills are off unless set) | "Set settings.memory to {"enabled": true}, or remove seed.memory." |
+
   It then computes
   `hash = sha256(canonical JSON of harness ref, adapter version, capabilities sha256, model,
-  prompt sha256, toolset sha256, settings, harness_options)`. Posting the same content twice
-  returns the same config (200, not a duplicate).
+  prompt sha256, toolset sha256, settings, harness_options, seed)`. An empty seed (both lists
+  empty, or `seed` left out) is left out of the hashed JSON, so a config without seeds keeps the
+  hash it had before seeds existed, and any seed gives a different hash. Memory entries keep
+  their order, and so do skills. Posting the same content twice returns the same config (200,
+  not a duplicate).
 
   **Refusals carry a fix** (D25 follow-up, Rishi's guide review item 1). Every 400 for a refused
   setting has a `fix` the Config screen shows by the field:
@@ -111,12 +128,13 @@ simulated-client task the API also summarises that file (profile and debts) into
   model's refusal ("Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's
   default applies").
 - `GET /configs`, `GET /configs/:hash` return `{hash, name, harness, harness_ref, model,
-  prompt, toolset, settings, settings_sources, unsupported, warnings, harness_options,
-  parent_hash, created_at}`. `unsupported` and `warnings` are worked out from the stored
+  prompt, toolset, settings, settings_sources, unsupported, warnings, harness_options, seed,
+  parent_hash, created_at}`; `seed` always has both lists, empty when nothing is seeded. `unsupported` and `warnings` are worked out from the stored
   capabilities, so every read has them, not only the POST. `GET /configs/:hash` adds
   `children: [{hash, name, created_at}]`, the configs forked from it, oldest first.
 - `GET /configs/:a/diff/:b` returns `[{path, a, b}]`: every field that differs (`unsupported`,
-  `warnings` and `parent_hash` are left out: derived, or not behaviour).
+  `warnings` and `parent_hash` are left out: derived, or not behaviour). Seeds show as
+  `seed.memory` and `seed.skills`, each list compared whole.
 
 ## Pre-run checks: rendered prompt and conflict check (D33, D38)
 

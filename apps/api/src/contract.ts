@@ -58,6 +58,23 @@ export interface Settings {
 export type SettingSource = 'config' | 'platform_default' | 'harness_default' | 'unsupported';
 export type SettingsSources = Record<SettingName, SettingSource>;
 
+// ---- Seeds (contract v2 spec `seed`) -------------------------------------------------
+
+/** A seeded skill, which the adapter writes in its harness's own form (Hermes: skills/<name>/SKILL.md). */
+export interface SeedSkill {
+  /** Lower-case letters, digits and hyphens, starting with a letter or digit. */
+  name: string;
+  description: string;
+  body: string;
+}
+
+/** Config-given starting state, never learned state (R10.8). Both lists are empty for no seed. */
+export interface Seed {
+  /** Memory entries, in order; each at least one character. */
+  memory: string[];
+  skills: SeedSkill[];
+}
+
 // ---- Catalogue -----------------------------------------------------------------------
 
 /** GET /harnesses */
@@ -130,6 +147,12 @@ export interface CreateConfigRequest {
   toolset_sha256: Sha256;
   settings?: Partial<Record<SettingName, Json>>;
   harness_options?: JsonObject;
+  /**
+   * Seeded memory and skills (D39), in contract v2's seed shape; either list may be left out.
+   * Part of the hash when not empty. Needs the harness to support the feature and the config to
+   * turn it on.
+   */
+  seed?: { memory?: string[]; skills?: SeedSkill[] } | null;
   /** D34: the config this one was forked from. Not part of the hash; the first post records it. */
   parent_hash?: Sha256 | null;
 }
@@ -168,6 +191,8 @@ export interface ConfigView {
   unsupported: Partial<Record<SettingName, string>>;
   warnings: ConfigWarning[];
   harness_options: JsonObject;
+  /** What every trial of this config starts with: both lists empty when nothing is seeded. */
+  seed: Seed;
   /** D34: the config this one was forked from, or null. */
   parent_hash: Sha256 | null;
   created_at: string;

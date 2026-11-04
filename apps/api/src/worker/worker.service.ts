@@ -202,6 +202,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
           settings: cfg.settings,
           settingsSources: cfg.settings_sources,
           harnessOptions: cfg.harness_options,
+          seed: cfg.seed,
         },
         task: { id: task.id, sha256: task.sha256, split: exp ? task.split : null, body: task.body, clientSummary: withSim ? clientSummary(task.client_state) : null },
         prompt,

@@ -78,3 +78,5 @@ Each is a migration under `apps/api/migrations/`; `docs/design.md` section 3 say
   `spend_guard_at`; an `experiment_events` table for pauses, resumes, stops and the baseline
   decision; and a `workers` table of when each worker was last seen. The trial status machine is
   unchanged: a paused arm's trials stay `queued`, and a stop cancels the queued ones.
+- `008_config_seed.sql` (D39): `configs.seed`, seeded memory and skills, in the hash when not
+  empty.
