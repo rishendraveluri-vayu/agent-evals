@@ -104,6 +104,17 @@ About $0.01 per trial per judge pass on Claude Sonnet 5.5 (estimate; measured on
 120 trials x 3 test-retest passes on the labelled subset is a few dollars. Every judge run is signed
 off with an estimate first (R8).
 
+## Built so far (4 Nov night): the arithmetic only
+
+`stats/` (package `evals_stats`, `evals-agreement`) computes what §3 and §5 report: per criterion
+the 2x2 table, Cohen's kappa, sensitivity, specificity, false passes and false fails with
+percentile bootstrap intervals; the same per arm and the false-pass gap between arms with its
+interval; the Rogan-Gladen corrected rate with a joint bootstrap; test-retest stability and
+Rishi's self-agreement. Each formula is pinned by a hand-worked synthetic example. No threshold
+from §4 is in the code, and "not sure" labels need `--human-unsure exclude|no` every time
+(decision 3). Test-retest needs every regrade's judge answers; `GET /trials/:id` shows only the
+current grading, so that read is still to build.
+
 ## Decisions for Rishi
 
 1. The trust thresholds in §4 (kappa, its lower bound, test-retest).

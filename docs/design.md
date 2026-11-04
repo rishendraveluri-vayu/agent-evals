@@ -153,6 +153,8 @@ Open:
 - D7: which tasks use the judge.
 - D8: the judge threshold, and what happens below it.
 
+The agreement arithmetic is a Python project at the repo root, `stats/` (package `evals_stats`, standard library only, D1), which SP6's comparison will join. It reads labels from `labels/` and grades from the API, and calls no model.
+
 Results go in `docs/judge-validation.md`.
 
 ## 6. Statistical method and choice of N

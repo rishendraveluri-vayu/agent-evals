@@ -53,7 +53,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [services/fake-llm, services/finance-mcp, workers/adapterlib, graders]
+        project: [services/fake-llm, services/finance-mcp, workers/adapterlib, graders, stats]
     defaults:
       run:
         working-directory: ${{ matrix.project }}
