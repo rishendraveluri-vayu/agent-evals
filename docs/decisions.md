@@ -53,7 +53,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D43 Significance level | Alpha 0.05 and 95% intervals throughout (verdict, critical guardrail, equivalence, BH q = 0.05) | Rishi | 5 Nov |
 | D44 A/A calibration | An explicit calibration run: the same config on both arms only when the run is marked "A/A calibration"; the comparison of an A/B shows the latest A/A interval for its configs; each one is a paid run signed off like any other | Rishi | 5 Nov |
 | D8 Judge trust bar | A judge criterion counts in the headline only when, on the held-out labels, kappa >= 0.6 with its 95% interval's lower end >= 0.4, no false-pass gap between arms, and test-retest agreement >= 90%; below it, it stays visible in trials and the report | Rishi | 5 Nov |
-| D45 Judge model | Gemini 3.8 Flash, pinned for the experiment; needs billing on the Gemini key (today it gets 429 quota errors) | Rishi | 5 Nov |
+| D45 Judge model | Gemini 3.8 Flash, pinned for the experiment (billing enabled 5 Nov and checked with one call) | Rishi | 5 Nov |
 
 ## Open
 
@@ -260,7 +260,7 @@ What would change it: more held-out labels (a tighter interval would allow a str
 Options: Claude Sonnet 5.5 (proposed); Claude Opus 5.5; Gemini 3.8 Flash.
 Choice: Gemini 3.8 Flash, pinned for the whole experiment. Every judging run still needs Rishi's approval with a model and a budget (`POST /experiments/:id/judge`).
 Why: Rishi picked it. It is the cheapest ($0.75 / $3.75 per MTok, listed to rise to $1.50 / $7.50 from 1 Jan 2027) and from a different family than the Claude agents, so a judge preferring its own family's writing cannot tilt a comparison of Claude configs.
-Blocker: the Gemini key's project is not on a paid tier. On 4 Nov every Gemini call failed with 503 "high demand", then 429 "You exceeded your current quota, please check your plan and billing details" (`docs/cost.md`). The judge cannot run until billing is on. One call also took 3 minutes before a 503, against the judge's 300 s timeout (A22).
+Unblocked 5 Nov: Rishi enabled billing; one check call answered in 2.4 s for $0.000235 (`docs/cost.md`). Before that, the Gemini key's project was not on a paid tier. On 4 Nov every Gemini call failed with 503 "high demand", then 429 "You exceeded your current quota, please check your plan and billing details" (`docs/cost.md`). The judge cannot run until billing is on. One call also took 3 minutes before a 503, against the judge's 300 s timeout (A22).
 What would change it: Gemini still failing or too slow with billing on (then Sonnet 5.5, the proposal's choice); the judge missing the trust bar (D8) where a stronger judge would pass.
 Not yet run: the judge has never met a real model; its JSON answer format, the 8,000-token cap and the quote check are tested against a stub and the fake server only (`docs/known-limits.md`).
 
