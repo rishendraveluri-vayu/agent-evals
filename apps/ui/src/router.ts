@@ -4,6 +4,8 @@ import { ref } from 'vue';
 import { LABEL_SETS, type LabelSet } from './api/types';
 
 export type Route =
+  | { name: 'start' }
+  | { name: 'build' }
   | { name: 'experiments' }
   | { name: 'config'; fork: string | null }
   | { name: 'config-page'; hash: string }
@@ -18,7 +20,7 @@ export type Route =
   | { name: 'tasks' }
   | { name: 'not-found'; path: string };
 
-export type Section = 'experiments' | 'configs' | 'tasks' | 'harnesses' | 'labels';
+export type Section = 'start' | 'build' | 'experiments' | 'configs' | 'tasks' | 'harnesses' | 'labels';
 
 const dec = (s: string) => decodeURIComponent(s);
 const enc = encodeURIComponent;
@@ -29,7 +31,10 @@ export function parseHash(hash: string): Route {
   const params = new URLSearchParams(search);
   const parts = path.split('/').filter(Boolean);
   const [first, second, third] = parts;
-  if (parts.length === 0 || (first === 'experiments' && parts.length === 1)) return { name: 'experiments' };
+  // The front door (three ways in) is the root; the full platform starts at #/experiments.
+  if (parts.length === 0) return { name: 'start' };
+  if (first === 'experiments' && parts.length === 1) return { name: 'experiments' };
+  if (first === 'build' && parts.length === 1) return { name: 'build' };
   if (first === 'configs' && parts.length === 1) return { name: 'config', fork: params.get('fork') };
   if (first === 'configs' && second && parts.length === 2) return { name: 'config-page', hash: dec(second) };
   if (first === 'run' && parts.length === 1) return { name: 'run-new', a: params.get('a'), b: params.get('b') };
@@ -49,6 +54,10 @@ export function parseHash(hash: string): Route {
 
 export function sectionOf(route: Route): Section | null {
   switch (route.name) {
+    case 'start':
+      return 'start';
+    case 'build':
+      return 'build';
     case 'config':
     case 'config-page':
       return 'configs';
@@ -67,7 +76,11 @@ export function sectionOf(route: Route): Section | null {
 }
 
 export const href = {
-  experiments: () => '#/',
+  /** The front door: a finished example, the guided builder, or the full platform. */
+  start: () => '#/',
+  /** Build an agent, step by step: the guided way to make a config. */
+  build: () => '#/build',
+  experiments: () => '#/experiments',
   config: () => '#/configs',
   /** A new config that starts as a copy of `hash` and names it as its parent (D34). */
   fork: (hash: string) => `#/configs?fork=${enc(hash)}`,

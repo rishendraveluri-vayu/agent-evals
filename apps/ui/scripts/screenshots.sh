@@ -57,7 +57,9 @@ fi
 
 # name, hash route
 SCREENS=(
-  "main|#/"
+  "start|#/"
+  "build|#/build"
+  "main|#/experiments"
   "config|#/configs"
   "run|#/run"
   "run-progress|#/experiments/exp_harness/run"

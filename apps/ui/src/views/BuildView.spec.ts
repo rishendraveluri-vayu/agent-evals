@@ -1,0 +1,268 @@
+import { mount, type VueWrapper } from '@vue/test-utils';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { api } from '../api/client';
+import { ApiError } from '../api/errors';
+import configs from '../fixtures/configs.json';
+import prompts from '../fixtures/prompts.json';
+import toolsets from '../fixtures/toolsets.json';
+import { settle, useFixtures } from '../test/helpers';
+import BuildView from './BuildView.vue';
+
+useFixtures();
+
+const V2 = prompts.find((p) => p.version === 'v2')!;
+const V1 = prompts.find((p) => p.version === 'v1')!;
+const HERMES_V1 = configs.find((c) => c.name === 'Prompt v1 on Hermes')!;
+
+let w: VueWrapper | null = null;
+afterEach(() => {
+  w?.unmount();
+  w = null;
+  vi.restoreAllMocks();
+});
+
+async function open() {
+  w = mount(BuildView, { attachTo: document.body });
+  await settle();
+  return w;
+}
+
+async function pickHarness(view: VueWrapper, name: string) {
+  await view.get(`[data-test="harness-${name}"] input`).setValue(true);
+  await settle();
+}
+
+async function setNumber(view: VueWrapper, name: string, value: string) {
+  await view.get(`#build-${name}`).setValue(value);
+  await settle();
+}
+
+describe('Build an agent, in fixture mode', () => {
+  it('offers one card per harness and marks the one chosen, with the name following the choices', async () => {
+    const view = await open();
+    const cards = view.findAll('[data-test^="harness-"][class~="tile"]');
+    expect(cards.map((c) => c.attributes('data-test'))).toEqual(['harness-hermes', 'harness-ownloop', 'harness-langgraph', 'harness-adk', 'harness-openai-agents']);
+    expect(view.get('[data-test="harness-hermes"]').classes()).toContain('tile--on');
+    expect(view.get('[data-test="harness-ownloop"]').text()).toContain('Adds nothing: the vanilla baseline.');
+    expect((view.get('[data-test="agent-name"]').element as HTMLInputElement).value).toBe('Hermes, Claude Haiku 5.5, finance-advisor v2');
+    await pickHarness(view, 'ownloop');
+    expect(view.get('[data-test="harness-ownloop"]').classes()).toContain('tile--on');
+    expect(view.get('[data-test="harness-hermes"]').classes()).not.toContain('tile--on');
+    expect(view.get('[data-test="build-summary"]').text()).toContain('Agent type Own loop');
+    expect((view.get('[data-test="agent-name"]').element as HTMLInputElement).value).toBe('Own loop, Claude Haiku 5.5, finance-advisor v2');
+    // A name typed by hand is kept when a choice changes.
+    await view.get('[data-test="agent-name"]').setValue('My agent');
+    await pickHarness(view, 'langgraph');
+    expect((view.get('[data-test="agent-name"]').element as HTMLInputElement).value).toBe('My agent');
+  });
+
+  it('opens a harness note from its i button, closes it with Escape and puts focus back', async () => {
+    const view = await open();
+    const button = view.get('[data-test="harness-hermes"] [data-test="info-button"]');
+    const note = view.get('[data-test="harness-hermes"] [data-test="info-note"]');
+    expect(button.element.tagName).toBe('BUTTON');
+    expect(button.attributes('aria-label')).toBe('About Hermes Agent');
+    expect(button.attributes('aria-expanded')).toBe('false');
+    expect(button.attributes('aria-controls')).toBe(note.attributes('id'));
+    expect((note.element as HTMLElement).style.display).toBe('none');
+    // The i is outside the card's label: opening the note does not pick the harness.
+    await pickHarness(view, 'ownloop');
+    (button.element as HTMLButtonElement).focus();
+    await button.trigger('click');
+    expect(button.attributes('aria-expanded')).toBe('true');
+    expect((note.element as HTMLElement).style.display).toBe('');
+    expect(view.get('[data-test="harness-ownloop"]').classes()).toContain('tile--on');
+    expect(note.text()).toContain('About 4,500 characters of its own around yours');
+    expect(note.get('[data-test="note-memory"]').text()).toBe('Memory, skills and compression, off unless turned on.');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await settle();
+    expect(button.attributes('aria-expanded')).toBe('false');
+    expect((note.element as HTMLElement).style.display).toBe('none');
+    expect(document.activeElement).toBe(button.element);
+  });
+
+  it('says what each harness adds to the prompt and what memory it has, from the guide and its capabilities', async () => {
+    const view = await open();
+    const own = view.get('[data-test="harness-ownloop"] [data-test="info-note"]');
+    expect(own.text()).toContain('Nothing: your prompt is the whole system prompt.');
+    expect(own.get('[data-test="note-memory"]').text()).toBe('None.');
+    expect(view.get('[data-test="harness-adk"] [data-test="info-note"]').text()).toContain('every tool description fenced');
+  });
+
+  it('closes an open note on a click outside it, without moving focus there', async () => {
+    const view = await open();
+    const button = view.get('[data-test="harness-adk"] [data-test="info-button"]');
+    await button.trigger('click');
+    expect(button.attributes('aria-expanded')).toBe('true');
+    view.get('h1').element.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    await settle();
+    expect(button.attributes('aria-expanded')).toBe('false');
+  });
+
+  it('lists real models only, each with its price, and says plainly that running one costs money', async () => {
+    const view = await open();
+    const radios = view.findAll('[data-test="model-radio"]').map((r) => (r.element as HTMLInputElement).value);
+    expect(radios).toEqual(['claude-haiku-5-5', 'gemini-3.8-flash']);
+    expect(radios.some((m) => m.startsWith('fake/'))).toBe(false);
+    expect(view.text().toLowerCase()).not.toContain('fake');
+    expect(view.get('[data-test="model-claude-haiku-5-5"]').text()).toContain('$0.10 in, $0.50 out per million tokens');
+    const note = view.get('[data-test="model-cost-note"]');
+    expect(note.text()).toContain('costs money');
+    expect(note.text()).toContain('ANTHROPIC_API_KEY');
+    expect(note.text()).toContain('the Run screen shows the trials, models and cost before anything starts');
+    await view.get('[data-test="model-gemini-3.8-flash"] input').setValue(true);
+    await settle();
+    expect(view.get('[data-test="model-cost-note"]').text()).toContain('GEMINI_API_KEY');
+  });
+
+  it('greys out a setting the harness cannot honour, with the reason, and never sends it', async () => {
+    const create = vi.spyOn(api, 'createConfig');
+    const view = await open();
+    expect(view.get('#build-memory').attributes('disabled')).toBeUndefined();
+    await pickHarness(view, 'ownloop');
+    const memory = view.get('[data-test="setting-memory"]');
+    expect(memory.get('input').attributes('disabled')).toBeDefined();
+    expect(memory.classes()).toContain('setting--off');
+    expect(memory.get('[data-test="reason-memory"]').text()).toBe('Own loop does not support memory');
+    expect(memory.text()).toContain('Not available');
+    // Each setting has its own i, saying what it does in a line.
+    const steps = view.get('[data-test="setting-max_steps"] [data-test="info-button"]');
+    expect(steps.attributes('aria-label')).toBe('About max steps');
+    expect(view.get('[data-test="setting-max_steps"] [data-test="info-note"]').text()).toBe('The most model calls the agent may make in one trial; it stops there. Default 15.');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(create).toHaveBeenCalledTimes(1);
+    const body = create.mock.calls[0][0];
+    expect(body.harness).toBe('ownloop');
+    expect(body.settings).toEqual({ parallel_tool_calls: false });
+  });
+
+  it('saves through POST /configs with the choices, and only the settings it set', async () => {
+    const create = vi.spyOn(api, 'createConfig');
+    const view = await open();
+    await setNumber(view, 'max_steps', '9');
+    await view.get('#build-memory').setValue(true);
+    await view.get('#build-parallel_tool_calls').setValue(true);
+    await settle();
+    await view.get('[data-test="agent-name"]').setValue('  Hermes with memory  ');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][0]).toEqual({
+      name: 'Hermes with memory',
+      harness: 'hermes',
+      model: 'claude-haiku-5-5',
+      prompt_sha256: V2.sha256,
+      toolset_sha256: toolsets[0].sha256,
+      settings: { max_steps: 9, parallel_tool_calls: true, memory: { enabled: true } },
+    });
+    expect(view.get('[data-test="saved-status"]').text()).toMatch(/^Saved as Hermes with memory, [0-9a-f]{7}\.$/);
+  });
+
+  it('refuses a number that is not one, and says which step to fix', async () => {
+    const create = vi.spyOn(api, 'createConfig');
+    const view = await open();
+    await setNumber(view, 'timeout_s', 'soon');
+    expect(view.get('[data-test="save-blocked"]').text()).toBe('Timeout must be a number above 0 (step 4).');
+    expect(view.get('[data-test="save-agent"]').attributes('disabled')).toBeDefined();
+    await view.get('form').trigger('submit');
+    await settle();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('shows the API refusal and its fix when saving fails', async () => {
+    vi.spyOn(api, 'createConfig').mockRejectedValueOnce(new ApiError(400, 'unsupported_setting', 'hermes does not support max_steps', 'Leave it unset.'));
+    const view = await open();
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(view.get('[data-test="save-error"]').text()).toContain('hermes does not support max_steps');
+    expect(view.get('[data-test="save-error"]').text()).toContain('Leave it unset.');
+    expect(view.find('[data-test="next-steps"]').exists()).toBe(false);
+  });
+
+  it('after saving, links to the preview, to a run against the one baseline that differs in one thing, and to all settings', async () => {
+    const view = await open();
+    expect(view.get('[data-test="all-settings"]').attributes('href')).toBe('#/configs');
+    // LangGraph with prompt v1 and the sample baseline's numbers: only the harness differs from it.
+    await pickHarness(view, 'langgraph');
+    await view.get('[data-test="prompt-select"]').setValue(V1.sha256);
+    await setNumber(view, 'max_steps', '12');
+    await setNumber(view, 'max_output_tokens', '1024');
+    await setNumber(view, 'timeout_s', '180');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    const status = view.get('[data-test="saved-status"]').text();
+    const hash = /([0-9a-f]{7})\.$/.exec(status)?.[1];
+    expect(hash).toBeTruthy();
+    const preview = view.get('[data-test="next-preview"]');
+    expect(preview.text()).toBe('See what reaches the model');
+    expect(preview.attributes('href')).toMatch(new RegExp(`^#/configs/sha256%3A${hash}`));
+    expect(view.get('[data-test="next-steps"]').text()).toContain('A free preview of exactly what the model receives');
+    const evaluate = view.get('[data-test="next-evaluate"]').attributes('href') ?? '';
+    const q = new URLSearchParams(evaluate.split('?')[1]);
+    expect(evaluate.startsWith('#/run?')).toBe(true);
+    expect(q.get('a')).toBe(HERMES_V1.hash);
+    expect(q.get('b')).toMatch(new RegExp(`^sha256:${hash}`));
+    expect(view.get('[data-test="next-evaluate-words"]').text()).toContain('Against Prompt v1 on Hermes, which differs from it only in the harness');
+    expect(view.get('[data-test="all-settings"]').attributes('href')).toBe(`#/configs?fork=${encodeURIComponent(q.get('b') ?? '')}`);
+    // A different choice is a different agent: the next steps wait for it to be saved.
+    await pickHarness(view, 'adk');
+    expect(view.find('[data-test="next-steps"]').exists()).toBe(false);
+    expect(view.get('[data-test="all-settings"]').attributes('href')).toBe('#/configs');
+  });
+
+  it('with no saved agent one change away, leaves the baseline to the Run screen', async () => {
+    const view = await open();
+    // Harness, model and steps all differ from every saved agent.
+    await pickHarness(view, 'openai-agents');
+    await view.get('[data-test="model-gemini-3.8-flash"] input').setValue(true);
+    await setNumber(view, 'max_steps', '7');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    const evaluate = view.get('[data-test="next-evaluate"]').attributes('href') ?? '';
+    const q = new URLSearchParams(evaluate.split('?')[1]);
+    expect(q.get('a')).toBeNull();
+    expect(q.get('b')).toMatch(/^sha256:/);
+    expect(view.get('[data-test="next-evaluate-words"]').text()).toContain('the Run screen starts arm A, the baseline, on the oldest saved agent');
+  });
+
+  it('says so when the same agent was saved before, instead of claiming a new one', async () => {
+    const view = await open();
+    await pickHarness(view, 'ownloop');
+    await view.get('[data-test="model-gemini-3.8-flash"] input').setValue(true);
+    await settle();
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(view.get('[data-test="saved-status"]').text()).toMatch(/^Saved as Own loop, Gemini 3.8 Flash, finance-advisor v2/);
+    await view.get('[data-test="agent-name"]').setValue('Same agent again');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(view.get('[data-test="saved-status"]').text()).toMatch(/^This agent was already saved as Own loop, Gemini 3\.8 Flash, finance-advisor v2, [0-9a-f]{7}; nothing new was written\.$/);
+  });
+
+  it('writes a new prompt as the next version through POST /prompts, then uses it', async () => {
+    const createPrompt = vi.spyOn(api, 'createPrompt');
+    const create = vi.spyOn(api, 'createConfig');
+    const view = await open();
+    expect(view.get('[data-test="prompt-text"]').text()).toContain('You are a personal finance advisor');
+    await view.get('[data-test="prompt-mode-write"]').trigger('click');
+    expect(view.get('[data-test="prompt-mode-write"]').attributes('aria-pressed')).toBe('true');
+    const draft = view.get('[data-test="prompt-draft"]');
+    expect((draft.element as HTMLTextAreaElement).value).toBe(V2.text);
+    expect(view.get('[data-test="save-prompt"]').attributes('disabled')).toBeDefined();
+    expect(view.get('[data-test="save-blocked"]').text()).toBe('Save your prompt first, or go back to a saved one (step 3).');
+    await draft.setValue(`${V2.text}\n\nAlways end with one next step.`);
+    expect(view.get('[data-test="save-prompt"]').text()).toBe('Save prompt as v3');
+    await view.get('[data-test="save-prompt"]').trigger('click');
+    await settle();
+    expect(createPrompt).toHaveBeenCalledWith({ id: 'finance-advisor', base_version: 'v2', text: `${V2.text}\n\nAlways end with one next step.` });
+    expect(view.get('[data-test="prompt-saved"]').text()).toBe('Saved as finance-advisor v3 and picked for this agent.');
+    expect(view.get('[data-test="prompt-text"]').text()).toContain('Always end with one next step.');
+    expect((view.get('[data-test="agent-name"]').element as HTMLInputElement).value).toBe('Hermes, Claude Haiku 5.5, finance-advisor v3');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    const v3 = (await api.prompts()).find((p) => p.id === 'finance-advisor' && p.version === 'v3');
+    expect(create.mock.calls[0][0].prompt_sha256).toBe(v3?.sha256);
+    expect(v3?.sha256).toMatch(/^sha256:/);
+  });
+});

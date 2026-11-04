@@ -282,16 +282,25 @@ const rows = computed<Row[]>(() => {
         Each experiment changes one thing and measures whether the agent got better, worse or stayed the same, and how sure we can be.
       </p>
     </div>
-    <a
-      :href="href.config()"
-      class="btn"
-    >
-      <AppIcon
-        name="plus"
-        :size="16"
-      />
-      New experiment
-    </a>
+    <div class="head-actions">
+      <a
+        :href="href.build()"
+        class="btn btn--quiet"
+        data-test="build-agent"
+      >
+        Build an agent, step by step
+      </a>
+      <a
+        :href="href.config()"
+        class="btn"
+      >
+        <AppIcon
+          name="plus"
+          :size="16"
+        />
+        New experiment
+      </a>
+    </div>
   </div>
 
   <LoadState
@@ -582,6 +591,12 @@ const rows = computed<Row[]>(() => {
 </template>
 
 <style scoped>
+.head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .lead-row {
   display: flex;
   flex-wrap: wrap;

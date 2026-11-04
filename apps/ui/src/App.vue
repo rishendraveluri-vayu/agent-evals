@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue';
 import AppHeader from './components/AppHeader.vue';
 import { currentHash, href, parseHash, sectionOf } from './router';
+import BuildView from './views/BuildView.vue';
 import CompareView from './views/CompareView.vue';
 import ConfigPage from './views/ConfigPage.vue';
 import ConfigView from './views/ConfigView.vue';
@@ -10,6 +11,7 @@ import HarnessesView from './views/HarnessesView.vue';
 import JudgeView from './views/JudgeView.vue';
 import LabelView from './views/LabelView.vue';
 import RunView from './views/RunView.vue';
+import StartView from './views/StartView.vue';
 import TasksView from './views/TasksView.vue';
 import TrialsView from './views/TrialsView.vue';
 import TrialView from './views/TrialView.vue';
@@ -52,7 +54,9 @@ watch(
     class="page-main"
     tabindex="-1"
   >
-    <ExperimentsView v-if="route.name === 'experiments'" />
+    <StartView v-if="route.name === 'start'" />
+    <BuildView v-else-if="route.name === 'build'" />
+    <ExperimentsView v-else-if="route.name === 'experiments'" />
     <ConfigView
       v-else-if="route.name === 'config'"
       :key="`config-${route.fork}`"
