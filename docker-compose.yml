@@ -1,5 +1,6 @@
-# One command: `docker compose up`. Defaults below work without a .env for
-# local runs; real provider keys are only needed for signed-off real runs (R8).
+# One command: `docker compose up`. Defaults below work without a .env: you can look around,
+# open the finished example, build and save agents, and test the platform on the fake models.
+# Running an agent on a real model needs its provider key in .env, and each such run is paid.
 # The project name is fixed so network and volume names do not depend on the
 # folder the repo was cloned into.
 name: agent-evals
@@ -9,8 +10,8 @@ name: agent-evals
 x-worker-token: &worker-token ${EVALS_WORKER_TOKEN:-wt-local-dev-only}
 
 x-worker-runtime: &worker-runtime
-  # D3: every harness worker runs like this. Read-only root, one writable
-  # trial folder, no extra privileges, and only the internal trials network.
+  # Every harness worker runs like this, so one trial cannot see or change another: a read-only
+  # root, one writable trial folder, no extra privileges, and only the internal trials network.
   read_only: true
   tmpfs:
     - /trial:size=512m,uid=10001,gid=10001,mode=0700
@@ -20,19 +21,19 @@ x-worker-runtime: &worker-runtime
   networks: [trials]
 
 x-harness-worker: &harness-worker
-  # SP3: one long-lived worker per harness, one trial at a time (D3). Scale a harness with
+  # One long-lived worker per harness, one trial at a time, isolated as above. Scale a harness with
   # `--scale worker-<harness>=N`; each replica's id defaults to its hostname. No init: the worker
   # is PID 1, reaps the trial's orphans itself, and makes itself non-dumpable so a trial cannot
   # read the worker token from its environment (an init would hold a readable copy).
   <<: *worker-runtime
   restart: unless-stopped
   environment:
-    # Only the worker token. The trial's LiteLLM keys arrive in each claim; the master key and
-    # provider keys never reach a worker (D2, R10.3).
+    # Only the worker token. The trial's LiteLLM keys arrive in each claim; LiteLLM's master key
+    # and the provider keys never reach a worker.
     EVALS_API_URL: http://api:3000/api
     EVALS_WORKER_TOKEN: *worker-token
-  # No volumes. The worker uploads each trial's files to the API, which alone writes runs/
-  # (D2), so no trial can read or change another trial's stored files (D3).
+  # No volumes. The worker uploads each trial's files to the API, which alone writes runs/, so
+  # no trial can read or change another trial's stored files.
   depends_on:
     api:
       condition: service_healthy
@@ -108,15 +109,17 @@ services:
       EVALS_WORKER_TOKEN: *worker-token
       # Recorded on every experiment; set it to `git rev-parse HEAD` when starting a real run.
       EVALS_PLATFORM_COMMIT: ${EVALS_PLATFORM_COMMIT:-}
-      # D38: the standing allowance for pre-run conflict checks on Claude Sonnet 5.5, in USD.
+      # The standing allowance, in USD, for the paid conflict checks run on Claude Sonnet 5.5
+      # before a run; each check still asks first, with its cost.
       EVALS_CONFLICT_CHECK_ALLOWANCE_USD: ${EVALS_CONFLICT_CHECK_ALLOWANCE_USD:-2}
       # Whether each provider key is set in .env, so the UI can say which models cannot run before
       # a run fails. `${VAR:+1}` is 1 when the key is set and not empty, else empty: a flag, never
       # the key, which only LiteLLM holds. scripts/check_compose.py checks both.
       ANTHROPIC_KEY_SET: ${ANTHROPIC_API_KEY:+1}
       GEMINI_KEY_SET: ${GEMINI_API_KEY:+1}
-      # Trial folders: SP1 gate and smoke runs, and experiment attempts, which the API writes
-      # from the files workers upload (runs/<experiment>/<trial>/attempt-<n>/).
+      # Trial folders: the adapters' gate and smoke runs, and every experiment attempt, which the
+      # API writes from the files workers upload (runs/<experiment>/<trial>/attempt-<n>/).
+      # `docker compose down -v` wipes the database, not these files.
       RUNS_DIR: /runs
       # The catalogue is read from git: adapters' capabilities, prompts and tasks.
       WORKERS_DIR: /repo/workers
@@ -125,9 +128,10 @@ services:
       # The finance MCP server's published tool manifest and version: the toolset's sha256
       # covers both, so a tool schema change is a new toolset.
       FINANCE_MCP_DIR: /repo/services/finance-mcp
-      # Rishi's hand labels: the labelling view appends here, nothing else writes them.
+      # Human labels: the Labels screen appends a person's own judgments here; nothing else
+      # writes them.
       LABELS_DIR: /repo/labels
-      # Shipped example experiments (SP7), loaded on request by POST /api/examples/:name/load.
+      # The shipped example experiments, loaded when you open one from the home page.
       EXAMPLES_DIR: /repo/examples
     volumes:
       # Read-write: the API stores uploaded trial files here. It runs as uid 1000 (node), so
@@ -135,8 +139,9 @@ services:
       - ./runs:/runs
       - ./workers:/repo/workers:ro
       - ./configs:/repo/configs:ro
-      # Read-write over the read-only configs/ above: POST /api/prompts adds new version files
-      # here (never overwriting one). Like runs/, it must be writable by uid 1000 on the host.
+      # Read-write over the read-only configs/ above: saving a new prompt version on the Config
+      # screen adds its file here (never overwriting one). Like runs/, it must be writable by
+      # uid 1000 on the host.
       - ./configs/prompts:/repo/configs/prompts
       - ./tasks:/repo/tasks:ro
       - ./services/finance-mcp:/repo/services/finance-mcp:ro
@@ -198,7 +203,7 @@ services:
       dockerfile: workers/openai-agents/Dockerfile
     image: agent-evals/worker-openai-agents:dev
 
-  # SP4 (R14): grading is its own step after the trial. Claims done trials that need grading,
+  # Grading is its own step after the trial. The grader claims finished trials that need grading,
   # downloads their files from the API over HTTP, runs the task's graders and reports the grades.
   # The same runtime as a harness worker (read-only root, one tmpfs, trials network only, mounts
   # nothing), so a task's unit_test grader can reach nothing but the API and LiteLLM.
@@ -214,8 +219,8 @@ services:
       api:
         condition: service_healthy
 
-  # Smoke check only: proves the worker runtime settings give exactly the
-  # access D3 allows. Run with `docker compose --profile smoke run --rm netcheck`.
+  # Smoke check only: proves the worker runtime settings give exactly the access a trial is
+  # meant to have. Run with `docker compose --profile smoke run --rm netcheck`.
   netcheck:
     <<: *worker-runtime
     build: ./workers/base

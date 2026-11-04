@@ -12,7 +12,9 @@ Checks, with compose's `${NAME:-default}` filled in the way compose fills it:
 - the API mounts runs/ read-write, since it alone stores the uploaded files;
 - provider keys reach LiteLLM only: no other service names ANTHROPIC_API_KEY or GEMINI_API_KEY
   except the API's set/unset flags (`ANTHROPIC_KEY_SET: ${ANTHROPIC_API_KEY:+1}`), which are
-  "1" with a key and empty without one, never the key itself.
+  "1" with a key and empty without one, never the key itself;
+- the comments are in plain words, since a reviewer reads the file: no decision-log ids (R8,
+  D3, SP4, A14), no raw API paths (POST /...) and no names of the people who built it.
 """
 
 import re
@@ -155,13 +157,29 @@ def key_problems(cfg: dict) -> list[str]:
     return found
 
 
+# A decision-log id, a raw API path, or the author's name: shorthand a reviewer cannot follow.
+SHORTHAND = re.compile(r"\b(?:R\d+[a-z]?|D\d+|SP\d+|A\d{1,2})\b|\b(?:GET|POST|PUT|DELETE) /|\bRishi\b")
+
+
+def comment_problems(text: str) -> list[str]:
+    """Each comment line that uses internal shorthand, by its line number."""
+    found = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        comment = line.split("#", 1)[1] if "#" in line else ""
+        hit = SHORTHAND.search(comment)
+        if hit:
+            found.append(f"line {number}: the comment says {hit.group(0)!r}; say it in plain words")
+    return found
+
+
 def problems(cfg: dict) -> list[str]:
     return token_problems(cfg) + runs_problems(cfg) + key_problems(cfg)
 
 
 def main(argv: list[str]) -> int:
     path = Path(argv[0]) if argv else COMPOSE
-    found = problems(yaml.safe_load(path.read_text()))
+    text = path.read_text()
+    found = problems(yaml.safe_load(text)) + comment_problems(text)
     for item in found:
         print(f"FAIL: {item}")
     if not found:
