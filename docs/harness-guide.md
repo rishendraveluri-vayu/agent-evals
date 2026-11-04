@@ -4,6 +4,13 @@ For Rishi, 4 Nov 2026 (R13). **Version 2**, written from the repo at commit `3a4
 
 This guide explains each of the five harnesses, how our adapter drives it, and what that means for designing tasks, graders, the judge rubric and the prompt v1 vs v2 experiment (D9). It focuses on what the model actually sees, what each setting really does, where a harness hides or adds things, what a grader can read, and what could confound a comparison.
 
+### Changes in v3 (4 Nov evening, from Rishi's review of v1; `docs/reviews/harness-guide-v1-rishi.md`)
+
+- §3.12: the prompt's effect on Hermes is measured inside Hermes's own text and can interact with it; it does not cancel.
+- §4.8: the own loop is the vanilla, most configurable baseline; the contradiction with §3.12 is gone.
+- §8.1: memory on-and-empty against on-and-seeded is comparable only with caveats (identical starting memory, writes during a trial).
+- Open questions answered: Hermes's parallel guidance (D33) and prompt-cache markers (D31). New decisions D32 to D39 (early stopping, lineage, two arms, the own loop's retry, per-arm pause, conflict checks, the Hermes verification run) are in `docs/decisions.md`; chapters change again when they are built.
+
 ### Changes in v2 (4 Nov)
 
 - Chapters 5 to 7 now describe the built adapters: their code, `capabilities.json`, gate and probe results, and the real run.
@@ -501,7 +508,7 @@ One more: **prompt-cache markers.** Hermes adds them for model names containing 
 
 **Axes you can test on Hermes:**
 
-- **System prompt (D9).** Clean: v1 vs v2 differ only in the prompt lines [ran], and Hermes's own text cancels in the paired difference.
+- **System prompt (D9).** The first requests differ only in the prompt lines [ran], but the effect measured is the prompt's effect *inside Hermes*, not the prompt's effect in general. Hermes's own text does not cancel: v2 can interact with it, for example a warmth line pulling against Hermes's "be direct, a one-line question gets a one-line answer", and the same change can have a different effect on another harness (corrected after Rishi's review, 4 Nov). The pre-run conflict check (D33) lists such contradictions for each version before any spend.
 - **Toolset version** ("missing tool"), through `tools.include` [src].
 - **Temperature, parallel tool calls, step budget.** They reach the wire [ran]; their effect is unchecked (D24). Temperature cannot vary on Haiku 5.5 [ran, 4 Nov].
 - **Memory on and empty vs on and seeded**, the cleanest memory axis [src]. **Skills seeded vs none**, remembering the "MUST load" instruction. **Compression** only matters past about 64k tokens.
@@ -583,7 +590,7 @@ At the limit the loop stops right after running the last tool calls. It makes no
 
 ### 4.8 Implications for eval design
 
-- **The cleanest arm for D9.** Our prompt is the whole system prompt, so a v1 vs v2 difference is the prompt's alone. On Hermes it measures the prompt inside 4,500 characters of Hermes guidance. LangGraph and the Agents SDK were byte-identical to the own loop on the real single trial, apart from tool results as lists of parts [ran, 4 Nov], so they are near-clean arms too. Which harness the headline uses is still open (D9).
+- **The vanilla baseline, and in some ways the most configurable harness.** Our prompt is the whole system prompt, so a v1 vs v2 difference here is the prompt's alone, with nothing of the harness's to interact with. On Hermes the same change is measured inside 4,500 characters of Hermes guidance, and can interact with it (section 3.12). LangGraph and the Agents SDK were byte-identical to the own loop on the real single trial, apart from tool results as lists of parts [ran, 4 Nov], so they are near-clean arms too. Which harness the headline uses is still open (D9).
 - **The baseline for harness overhead:** the gap to the own loop on the same task and model is "what the harness does".
 - **No memory or skills axes.**
 - **`step_limit` trials have no answer** in a single-prompt task, unlike Hermes.
@@ -905,7 +912,7 @@ At `max_turns` 3 the SDK makes exactly 3 calls and raises `MaxTurnsExceeded`: 0 
 | Comparison | Comparable? | Condition |
 | --- | --- | --- |
 | One axis within one harness (prompt v1 vs v2 on Hermes, or on the own loop) | **Yes** | The invariance diff shows only the axis changed; arms interleaved in time on Hermes. Not the temperature axis on Haiku 5.5 |
-| Memory on and empty vs on and seeded (Hermes) | **Yes** | Both arms have the same tool and guidance |
+| Memory on and empty vs on and seeded (Hermes) | **With caveats** | Both arms have the same tool and guidance, but the memory a trial starts with must be identical across its runs, and writes during a trial change it: check the seed hashes and `integrity` before and after every trial (Rishi, 4 Nov) |
 | Memory off vs on, skills off vs on (Hermes) | Partly | The tools and prompt also change; report it as a bundle |
 | Quality across harnesses, same model and task | With caveats | Differences include prompt text, tool presentation, error handling and limit behaviour (8.2). Rankings are more trustworthy than absolute gaps. On the one real single trial each, all five made the same calls and gave the same numbers [ran, 4 Nov, n = 1] |
 | Cost and tokens across harnesses | Only from the proxy | First-call input +32% on Hermes and +74% on ADK over the own loop on Haiku 5.5 [ran, 4 Nov]; Hermes's prompt caching on Claude in containers lowers its cost |
@@ -958,8 +965,8 @@ Raised by the sources and not settled in `docs/decisions.md`. Listed, not answer
 **Hermes**
 
 1. **D15, Hermes design calls.** Compression on or off where configs use it? Tool Search must be off for MCP tools (R10.7) and is: is that part of D15 closed? In skills-on configs, allow `skill_manage` writes or stage them (`skills.write_approval`)? The adapter allows writes today.
-2. **Hermes's switchable guidance.** "Finishing the job" and "Parallel tool calls" are config switches, on by default. Keep them as shipped (the spirit of D20) or turn them off as harness options? The parallel section contradicts `parallel_tool_calls: false`.
-3. **Hermes prompt-cache markers.** Keep the default or turn them off? In engine containers they will be on for Claude (host `litellm`); the 4 Nov run had them off. It affects cost and latency only.
+2. ~~Hermes's switchable guidance.~~ Answered by D33: the "Parallel tool calls" section follows our `parallel_tool_calls` setting; the rest stays as shipped, and the pre-run conflict check shows it.
+3. ~~Hermes prompt-cache markers.~~ Answered by D31: off in every Hermes config, like every other harness.
 4. **Hermes and `max_output_tokens`.** Hermes retries a truncated reply with a bigger cap. Is the setting still "supported", and what should D24's token check expect?
 5. **Memory seed format.** Seeds go to `MEMORY.md` ("your personal notes"), never `USER.md` ("who the user is"). Which header should client facts appear under?
 6. **Background review.** R3 asks for a configurable setting, off by default. The adapter turns Hermes's background review off in every config, with no way to turn it on. Is "always off" enough?
