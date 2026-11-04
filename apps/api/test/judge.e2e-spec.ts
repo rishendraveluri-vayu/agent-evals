@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import request from 'supertest';
+import { APP_CONFIG, type AppConfig } from '../src/common/app-config';
 import type { ExperimentDetail, GraderClaimResponse, JudgeApprovalResponse, JudgeRevokeResponse, Json, SpendView } from '../src/contract';
 import { graderVersion, specSha256 } from '../src/grading/grading-core';
 import { type TestEnv, auth, bootEnv, catalogue, makeConfig } from './support/app';
@@ -132,6 +133,32 @@ describeWithDb('LLM judge approval and its key (e2e, real Postgres)', () => {
     // the limit itself is allowed
     await approve(exp.id, { model: 'fake/judge', budget_usd: 20 }).expect(201);
     await revoke(exp.id).expect(200);
+  });
+
+  it('refuses a judge model whose provider key is not set, naming the variable, and mints nothing (QA round 3)', async () => {
+    // As compose passes the flags: an Anthropic key is set, a Gemini one is not.
+    const keys = env.app.get<AppConfig>(APP_CONFIG).providerKeys;
+    const was = { ...keys };
+    Object.assign(keys, { anthropic: true, gemini: false });
+    try {
+      const { exp } = await finishedExperiment();
+      const before = env.stub.keys.size;
+      const res = await approve(exp.id, { model: 'gemini-3.8-flash', budget_usd: 1 }).expect(400);
+      expect(res.body).toEqual({
+        error: 'provider_key_missing',
+        message: 'gemini-3.8-flash needs GEMINI_API_KEY, which is not set in .env, so every judge call would fail',
+        fix: 'Add GEMINI_API_KEY to .env, run docker compose up -d, then approve the judge again; or pick a fake model, which needs no key.',
+      });
+      expect(env.stub.keys.size).toBe(before);
+      expect((await detail(exp.id)).judge).toBeNull();
+      // A model whose key is set, or a fake one, is approved as before.
+      await approve(exp.id, { model: 'claude-haiku-5-5', budget_usd: 1 }).expect(201);
+      await revoke(exp.id).expect(200);
+      await approve(exp.id, { model: 'fake/judge', budget_usd: 1 }).expect(201);
+      await revoke(exp.id).expect(200);
+    } finally {
+      Object.assign(keys, was);
+    }
   });
 
   it('approves judging with one key, limited to the model and capped at the budget, and never shows the key', async () => {

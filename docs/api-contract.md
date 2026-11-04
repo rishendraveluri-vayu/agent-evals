@@ -482,6 +482,7 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
     | `unknown_experiment` (404) | no such experiment (approve and revoke) |
     | `invalid_judge` (400) | not an object; `model` missing or empty; `budget_usd` not a number above 0 and at most 20 |
     | `unknown_model` (400) | LiteLLM serves no such model, or serves it without a price (its spend could not be capped or counted) |
+    | `provider_key_missing` (400) | the model's provider key is known not to be set (`ANTHROPIC_KEY_SET` or `GEMINI_KEY_SET` empty, as `key_set: false` on `GET /models`), so every judge call would fail. The message and the fix name the variable (`GEMINI_API_KEY`): add it to `.env`, run `docker compose up -d`, approve again, or pick a fake model. No key is minted. When the API was not told (the flag absent), it does not refuse |
     | `judge_already_approved` (409) | the experiment has an active approval: revoke it first. Two approvals at once: one wins, the other's key is deleted and it gets this 409 |
     | `no_judge_approval` (404) | revoke with no active approval |
 - `GET /experiments/:id/trials?status=&config=&task=` returns trial summaries

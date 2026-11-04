@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { JudgeApprovalResponse, JudgeRevokeResponse, JudgeView } from '../contract';
+import { missingKeyVar } from '../catalogue/catalogue.service';
 import { badRequest, conflict, notFound } from '../common/api-error';
+import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { newId } from '../common/ids';
 import { Db } from '../database/db.service';
 import { type ExampleMark, assertNotExample } from '../examples/example-guard';
@@ -37,6 +39,7 @@ export class JudgeService {
   constructor(
     private readonly db: Db,
     private readonly litellm: LiteLlmClient,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   private async experiment(id: string): Promise<ExampleMark> {
@@ -69,6 +72,15 @@ export class JudgeService {
         'unknown_model',
         route ? `LiteLLM serves ${model} without a price, so its spend could not be capped or counted` : `LiteLLM serves no model ${model}`,
         'Pick a model from GET /api/models (or a fake/* model), or add it with its prices to services/litellm/config.yaml.',
+      );
+    }
+    // A key LiteLLM does not have would fail every judge call: refuse before a key is minted.
+    const keyVar = missingKeyVar(model, route.provider, this.config.providerKeys);
+    if (keyVar) {
+      throw badRequest(
+        'provider_key_missing',
+        `${model} needs ${keyVar}, which is not set in .env, so every judge call would fail`,
+        `Add ${keyVar} to .env, run docker compose up -d, then approve the judge again; or pick a fake model, which needs no key.`,
       );
     }
     const already = conflict(

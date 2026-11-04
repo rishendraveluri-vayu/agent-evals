@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import type { CreatePromptRequest, CreatedPrompt, HarnessView, JsonObject, ModelView, PromptView, TaskSplit, TaskView, ToolsetView } from '../contract';
 import { badRequest, conflict } from '../common/api-error';
-import { APP_CONFIG, type AppConfig, type ProviderKeyName } from '../common/app-config';
+import { APP_CONFIG, type AppConfig, PROVIDER_KEYS, type ProviderKeyName } from '../common/app-config';
 import { sha256Ref } from '../common/hashing';
 import { Db } from '../database/db.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
@@ -284,4 +284,15 @@ export function keySet(model: string, provider: string | null, keys: AppConfig['
   if (model.startsWith('fake/')) return null;
   const name = provider ? PROVIDER_OF[provider] : undefined;
   return name ? keys[name] : null;
+}
+
+/**
+ * The .env variable a model's provider key comes from, when the API knows that key is not set
+ * (`keySet` is false): "ANTHROPIC_API_KEY". Null when it is set, when the model needs none (a fake
+ * one), or when the API was not told.
+ */
+export function missingKeyVar(model: string, provider: string | null, keys: AppConfig['providerKeys']): string | null {
+  if (keySet(model, provider, keys) !== false) return null;
+  const name = provider ? PROVIDER_OF[provider] : undefined;
+  return name ? PROVIDER_KEYS[name].key : null;
 }
