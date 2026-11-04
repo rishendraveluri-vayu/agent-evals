@@ -9,6 +9,7 @@ import { newId } from '../common/ids';
 import type { StoredTask } from '../catalogue/catalogue.service';
 import { CONFIG_SELECT, type ConfigRow, configId } from '../configs/configs.service';
 import { Db, type Queryable } from '../database/db.service';
+import { NOT_EXAMPLE_TRIAL } from '../examples/example-guard';
 import { type ExperimentRow, finishIfDone, isSimTask } from '../experiments/experiments.service';
 import { LiteLlmClient, LiteLlmHttpError, type MintedKey } from '../litellm/litellm.client';
 import { FINISHED, HELD, LEASE_S, PAUSES_ARM, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
@@ -155,6 +156,8 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
          WHERE id = (
            SELECT t.id FROM trials t LEFT JOIN experiments e ON e.id = t.experiment_id
            WHERE t.status = 'queued' AND t.harness = $1 AND (t.probe OR e.status = 'running')
+             -- SP7: a shipped example is never claimed (it is never running either: belt and braces).
+             AND (e.id IS NULL OR e.example_name IS NULL)
              -- D37: a paused arm's trials wait; the other arm keeps claiming. A probe has no arm.
              AND NOT EXISTS (SELECT 1 FROM experiment_arms a
                              WHERE a.experiment_id = t.experiment_id AND a.config_hash = t.config_hash AND a.paused_at IS NOT NULL)
@@ -524,9 +527,11 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
         `WITH lapsed AS (
            UPDATE trials SET status = 'abandoned', finished_at = now()
            WHERE id IN (
-             SELECT id FROM trials
-             WHERE status IN ('claimed', 'running') AND heartbeat_at < now() - make_interval(secs => $1::double precision)
-             FOR UPDATE SKIP LOCKED)
+             SELECT t.id FROM trials t
+             WHERE t.status IN ('claimed', 'running') AND t.heartbeat_at < now() - make_interval(secs => $1::double precision)
+               -- SP7: a shipped example's rows are never changed, whatever state it was shipped in.
+               AND ${NOT_EXAMPLE_TRIAL('t')}
+             FOR UPDATE OF t SKIP LOCKED)
            RETURNING id, experiment_id, attempt)
          SELECT l.id, l.experiment_id, l.attempt, e.status FROM lapsed l LEFT JOIN experiments e ON e.id = l.experiment_id`,
         [LEASE_S],

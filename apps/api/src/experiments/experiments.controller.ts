@@ -4,6 +4,7 @@ import type {
   CompareResponse,
   CreateExperimentRequest,
   EstimateResponse,
+  ExperimentBundle,
   EstimateRequest,
   ExperimentDetail,
   ExperimentSummary,
@@ -101,6 +102,12 @@ export class ExperimentsController {
   @Get(':id/compare')
   compare(@Param('id') id: string): Promise<CompareResponse> {
     return this.experiments.compare(id);
+  }
+
+  /** SP7: every row needed to recreate the experiment elsewhere (scripts/export_example.py). Read-only. */
+  @Get(':id/bundle')
+  bundle(@Param('id') id: string): Promise<ExperimentBundle> {
+    return this.exporter.bundle(id);
   }
 
   @Get(':id/export')

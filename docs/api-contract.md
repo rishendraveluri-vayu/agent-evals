@@ -403,8 +403,10 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   queued or running), `paused`, `stopped` (some of its trials were cancelled) or `complete`
   (every slot has a final attempt: done, or an infra failure that is not re-queued).
 - `GET /experiments` returns `[{id, name, axis, status, config_hashes, n, counts, spend_usd,
-  estimate, created_at}]`, where `counts` is `{queued, running, done, infra_failed,
-  abandoned, cancelled}` and done is split by label.
+  estimate, created_at, example}]`, where `counts` is `{queued, running, done, infra_failed,
+  abandoned, cancelled}` and done is split by label. `example` is `{name, title, loaded_at}` for
+  a shipped example loaded with `POST /examples/:name/load` (sample content, read-only; see
+  Shipped examples below) and null for your own experiments; the detail has it too.
 - `GET /experiments/:id` adds `actual` next to `estimate` (item 8): null until a trial has
   finished, then `{finished_trials, spend_usd, cost_per_trial_usd, wall_s_per_trial,
   elapsed_minutes, projected_spend_usd}` (elapsed from the start to the finish or now; the
@@ -456,6 +458,18 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   SP6 exists, the intervals and verdict. Until then `stats` is `null`.
 - `GET /experiments/:id/export?format=json|csv` streams trials joined with configs, tasks,
   grades and spend.
+- `GET /experiments/:id/bundle` (SP7) returns every row needed to recreate the experiment in
+  another database, read in one read-only snapshot: `{format: "agent-evals-bundle",
+  format_version: 1, schema_version, exported_at, experiment_id, tables}` (`ExperimentBundle`).
+  `tables` holds, in insert order, `prompts`, `toolsets`, `tasks`, `configs` (the experiment's
+  and the configs they were forked from), `experiments`, `experiment_arms`, `experiment_events`,
+  `trials`, `spans`, `grading_jobs` and `grades` (every version). Each row is the table's own
+  columns as Postgres's `to_jsonb` writes them (so `tasks.client_state` is hex, `\x...`), except:
+  `spans` rows are `{trial_id, raw}` (the other columns are read from `raw` again on load),
+  `experiment_events` rows have no `id`, and a trial's `agent_key_token` and `sim_key_token` and
+  the experiment's `litellm_team_id` are never included. `schema_version` is the latest migration
+  applied. The trials' files are not inline: fetch each with `GET /trials/:id/files/<path>`, as
+  listed in the trial's `files`. 404 `unknown_experiment`. `scripts/export_example.py` reads this.
 
 ## Trials
 
@@ -645,6 +659,65 @@ key (`010_judge.sql`; approving and revoking are under Experiments).
 - Views: `current_grading` (each trial's latest `done` job, by queue order) and `current_grades`
   (its grades). `GET /experiments/:id/compare` and the export still count every stored grade row
   of a trial, all versions, until SP6 reads these (`docs/known-limits.md`).
+
+## Shipped examples (SP7)
+
+A finished experiment can ship with the repo as sample content, so a reviewer who runs `docker
+compose up` can open a solved example (comparison, trials, traces, grades) without running or
+spending anything. Types: `ExampleView`, `ExampleCounts`, `LoadExampleResponse`, `ExampleRef`,
+`ExperimentBundle`. Column: `experiments.example_name`, `example_title`, `example_loaded_at`
+(migration `011_examples.sql`, with a check that an example is `done` or `cancelled`).
+
+**Export** (only GET requests to the API): `python3 scripts/export_example.py <experiment_id>
+--name <slug> --title "<one line>" [--description "..."] [--api http://127.0.0.1:3001/api]`
+writes `examples/<slug>/`:
+
+| File | Holds |
+| --- | --- |
+| `manifest.json` | `format: "agent-evals-example"`, `format_version: 1`, `name`, `title`, `description`, `sample: true`, `experiment_id`, `experiment_name`, `created_at`, `finished_at`, `exported_at`, `platform_commit` (the experiment's), `exported_from_commit` (the checkout that exported it), `source` (`bundle`, or `assembled` for an API without the bundle route; then `approximations` lists what could not be recovered exactly), `summary`, `counts` (`configs, tasks, trials, spans, grades, grading_jobs, events, files, file_bytes`), `missing_files`, `scrubbed`, `secret_check`, and `parts` (each part's `bytes` and `sha256`) |
+| `rows.json.gz` | `{format: "agent-evals-bundle", format_version, schema_version, experiment_id, tables}`, as from `GET /experiments/:id/bundle` |
+| `files.jsonl.gz` | one line per stored trial file: `{trial_id, path, bytes, sha256, encoding: "utf8" \| "base64", content}` |
+
+It refuses an experiment that is not `done` or `cancelled`, has trials queued or running, or has
+an arm that reuses its parent's trials (a parent link alone is cleared and noted). Every file is
+checked against its trial's listed sha256. **Secrets:** wherever they appear in rows or files,
+fields named `authorization`, `api_key`, `user_api_key`, `token`, `key_token`, `agent_key_token`,
+`sim_key_token`, `master_key`, `worker_token`, `password` and the like are emptied, and any
+`sk-...` key, `Bearer` token, compose's default secrets and the value of every `*KEY`, `*TOKEN`,
+`*PASSWORD` or `*SECRET` variable in the environment or the repo's `.env` are replaced with
+`[scrubbed]`. A file that had to change gets its new size and sha256 in its trial's listings.
+Then a separate check reads everything about to be written and fails the export, writing
+nothing, if any `sk-[A-Za-z0-9_-]{8,}`, Bearer token, known secret value or non-empty secret
+field is left (a key inside a binary file cannot be scrubbed, so it fails the export).
+
+**Routes:**
+
+- `GET /examples` returns `[{name, title, description, experiment_id, loaded, created_at,
+  counts: {configs, tasks, trials, spans, grades, files}}]`, one per `examples/<name>/manifest.json`
+  the API can read (`EXAMPLES_DIR`, the repo's `examples/` by default; compose mounts it
+  read-only at `/repo/examples`). `loaded` is true once this database holds the example. A folder
+  whose manifest cannot be read is left out and logged.
+- `POST /examples/:name/load` imports the example and answers 200 `{name, experiment_id,
+  created}`; `created: false` means it was already loaded and nothing changed (a second load is a
+  no-op). The load only inserts, in one transaction: the rows, with new ids for grades and stored
+  events (a grading job's `grade_ids` follow), and each trial file under `runs/<its folder>/`,
+  never replacing a file. Content-addressed rows already here (prompts, toolsets, tasks, configs)
+  are kept and shared when their content is the same. Refusals, each with a `fix`:
+
+  | `error` | When |
+  | --- | --- |
+  | `invalid_example_name` (400) | the name is not lower-case letters, digits and hyphens |
+  | `unknown_example` (404) | no `examples/<name>/manifest.json` |
+  | `example_invalid` (422) | the manifest or a part does not check out: wrong format, a part's sha256 differs, a file's bytes differ from its line or its trial's listing, rows that refer outside the example, an unfinished trial or grading job, counts that differ from the manifest, or columns this database does not have |
+  | `example_conflict` (409) | the experiment id is already here as an experiment of its own (the machine it was exported from) or as another example; a trial or grading job id is already here; a shared row is here with other content; or a different file is already where a trial file goes. Nothing is changed |
+
+- **An example is read-only and apart from your own work.** These answer 409 `example_read_only`
+  (with a `fix`) for a loaded example: `start`, `pause`, `resume`, `stop`, `cancel`, both arm
+  routes, `regrade` and `POST /experiments/:id/judge`, and `POST /experiments` with
+  `reuse_baseline` and the example as parent. Nothing claims its trials or grading jobs, and no
+  grading job is queued for its trials. Its trials are left out of `GET /spend`'s `trials_usd`,
+  the estimate's history and the labelling queue. Every read works on it as on any experiment
+  (detail, trials, compare, export, trial view, spans, files).
 
 ## UI-only endpoints
 

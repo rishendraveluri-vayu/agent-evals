@@ -122,6 +122,8 @@ services:
       FINANCE_MCP_DIR: /repo/services/finance-mcp
       # Rishi's hand labels: the labelling view appends here, nothing else writes them.
       LABELS_DIR: /repo/labels
+      # Shipped example experiments (SP7), loaded on request by POST /api/examples/:name/load.
+      EXAMPLES_DIR: /repo/examples
     volumes:
       # Read-write: the API stores uploaded trial files here. It runs as uid 1000 (node), so
       # runs/ must be writable by that user on the host, as labels/ already is.
@@ -134,6 +136,8 @@ services:
       - ./tasks:/repo/tasks:ro
       - ./services/finance-mcp:/repo/services/finance-mcp:ro
       - ./labels:/repo/labels
+      # Read-only: a load copies an example's trial files into runs/, never the other way.
+      - ./examples:/repo/examples:ro
     depends_on:
       postgres:
         condition: service_healthy
