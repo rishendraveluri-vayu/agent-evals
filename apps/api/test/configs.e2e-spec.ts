@@ -32,7 +32,7 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
     const toolsets = (await request(env.http).get('/api/toolsets').expect(200)).body as ToolsetView[];
     expect(toolsets).toHaveLength(1);
     expect(toolsets[0]).toMatchObject({ id: 'finance', version: 'all', manifest: [{ server: 'finance', server_version: '0.2.0' }] });
-    // The hash covers the manifest, and the manifest is stored with it (migration 008).
+    // The hash covers the manifest, and the manifest is stored with it (migration 009).
     const { sha256, ...content } = toolsets[0];
     expect(sha256).toBe(hashCanonical(content));
     const [row] = (await env.pool.query<{ manifest: unknown }>('SELECT manifest FROM toolsets WHERE sha256 = $1', [sha256])).rows;

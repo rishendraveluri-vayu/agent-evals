@@ -22,7 +22,7 @@ database keeps their paths and hashes.
 | Table | Key | Holds | Why |
 | --- | --- | --- | --- |
 | `prompts` | `sha256` | id, version, text | Prompts are first-class and versioned (R11c). |
-| `toolsets` | `sha256` | id, version, MCP servers, allowed tools, and (since 4 Nov, migration 008) the published manifest the hash covers: server versions and each tool's name, description and input schema | The tools axis (R11c). |
+| `toolsets` | `sha256` | id, version, MCP servers, allowed tools, and (since 4 Nov, migration 009) the published manifest the hash covers: server versions and each tool's name, description and input schema | The tools axis (R11c). |
 | `tasks` | `sha256` of the task file | task id, version, split (discovery / held-out), messages, client_sim, grader specs, source path | A task file edit makes a new version; old results keep pointing at the old one. |
 | `configs` | `hash` | name, harness, harness ref (pinned SHA or package version), adapter version, model name and pin, prompt sha, toolset sha, settings, harness options | Content hash over everything that can change behaviour, so a result reproduces (SP2). |
 | `experiments` | `id` | name, axis, config hashes (A, B), task hashes, N, platform commit, plan commit (`experiment.md`), estimate, budget cap, status, timestamps | The frozen plan. Changing anything makes a new experiment. |
