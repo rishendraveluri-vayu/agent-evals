@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { api } from '../api/client';
-import type { Compare, Experiment, ExperimentDetail, TaskInfo } from '../api/types';
+import type { Compare, ExperimentSummary, ExperimentDetail, TaskView } from '../api/types';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
 import { armsOf, type Verdict } from '../lib/arms';
@@ -10,10 +10,9 @@ import { clientKind, gradedBy, graderKinds, graderName, splitName } from '../lib
 import { href } from '../router';
 
 const { data, error, loading } = useLoad(async () => {
-  const [tasks, experiments] = await Promise.all([api.tasks(), optional(api.experiments(), [] as Experiment[])]);
-  const latest = experiments
-    .filter((e) => e.status === 'done' && e.config_hashes.length === 2 && e.config_hashes[0] !== e.config_hashes[1])
-    .sort((a, b) => Date.parse(b.finished_at ?? b.created_at) - Date.parse(a.finished_at ?? a.created_at))[0];
+  const [tasks, experiments] = await Promise.all([api.tasks(), optional(api.experiments(), [] as ExperimentSummary[])]);
+  // The list is newest first.
+  const latest = experiments.find((e) => e.status === 'done' && e.config_hashes.length === 2 && e.config_hashes[0] !== e.config_hashes[1]);
   let run: { detail: ExperimentDetail; compare: Compare } | null = null;
   if (latest) {
     const [detail, compare] = await Promise.all([optional(api.experiment(latest.id), null), optional(api.compare(latest.id), null)]);
@@ -28,7 +27,7 @@ const grader = ref('any');
 const tasks = computed(() => data.value?.tasks ?? []);
 const splits = computed(() => [...new Set(tasks.value.map((t) => t.split))]);
 const kinds = computed(() => [...new Set(tasks.value.flatMap((t) => graderKinds(t.graders)))]);
-const isCode = (t: TaskInfo) => !graderKinds(t.graders).includes('judge');
+const isCode = (t: TaskView) => !graderKinds(t.graders).includes('judge');
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 const arms = computed(() => (data.value?.run ? armsOf(data.value.run.detail, data.value.run.detail.configs) : []));
@@ -60,7 +59,7 @@ const runCaption = computed(() => {
   return `Last run: ${run.detail.name}, ${n} ${n === 1 ? 'trial' : 'trials'} per arm. No clear difference is not the same as unchanged.`;
 });
 
-const lastRun = (t: TaskInfo) => {
+const lastRun = (t: TaskView) => {
   const run = data.value?.run;
   if (!run) return null;
   const [ha, hb] = run.detail.config_hashes;

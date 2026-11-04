@@ -18,7 +18,7 @@ function span(id: string, parent: string | null, name: string, start: number, en
 
 function trial(over: Partial<TrialSummary>): TrialSummary {
   return {
-    trialId: 't', harness: 'hermes', model: 'fake/x', taskId: 'task', configHash: 'h', promptVersion: 'v1',
+    experiment_id: null, trialId: 't', harness: 'hermes', model: 'fake/x', taskId: 'task', configHash: 'h', promptVersion: 'v1',
     toolsetVersion: 'v1', label: 'agent', endState: 'answered', startedAt: null, wallS: 1, proxyCalls: 2,
     proxyCostUsd: 0.01, proxyInputTokens: 1, proxyOutputTokens: 1, proxyComplete: true, harnessCalls: 2,
     toolCalls: 1, toolErrors: 0, malformedToolCalls: 0, agentTurns: 1, clientTurns: 0, ...over,

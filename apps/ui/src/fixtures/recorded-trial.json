@@ -1,5 +1,7 @@
 {
+  "experiment_id": null,
   "summary": {
+    "experiment_id": null,
     "trialId": "gate-hermes-emi-01",
     "harness": "hermes",
     "model": "fake/scripted",

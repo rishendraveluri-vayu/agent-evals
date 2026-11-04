@@ -3,17 +3,19 @@
  *
  * - Request and response shapes are the API's own: ./contract.ts is a verbatim copy of
  *   apps/api/src/contract.ts (contract.spec.ts keeps the two identical), re-exported here.
- * - ./pending.ts adds, as optional fields, what the run-controls and lineage API adds once it
- *   lands (another branch today).
+ * - ./pending.ts adds, as an optional field, the one thing a screen reads that no contract has
+ *   yet: a trial row's pass or fail, for the run grid.
  * - Below are the UI's readings of what the contract carries as loose JSON, each typed from the
- *   schema that defines it, and three shapes the contract does not define yet (SP5, SP6 and the
- *   grading module's checks.json), each marked PROVISIONAL.
+ *   schema that defines it, and two shapes the contract does not define yet (SP5's agreement and
+ *   SP6's stats), each marked PROVISIONAL. Grades and checks.json are read in lib/grading.ts.
  */
-import type { CompareResponse, CompareRow, HarnessView, LabelCriterion, Sha256 } from './contract';
-import type { ArmView } from './pending';
+import type { ArmView, CompareResponse, HarnessView, LabelCriterion, Sha256 } from './contract';
+import './pending';
 
 export * from './contract';
-export type { ActualSoFar, ArmStatus, ArmView, BaselineDecision, ConfigWarning, FutilityRule, PendingEventKind } from './pending';
+
+/** An arm's status, as `ArmView.status`. */
+export type ArmStatus = ArmView['status'];
 
 // ---------------------------------------------------------------------------------------------
 // capabilities.json (contract/v2/capabilities.schema.json), which GET /harnesses carries as JSON
@@ -99,15 +101,8 @@ export interface CompareStats {
   judge: { kappa: number; low: number; high: number; bar: number; tasks: number } | null;
 }
 
-/** The compare response as the screen reads it: the contract's, with SP6's stats once they exist,
- *  and the run-controls API's completeness fields (D37: no comparison until every arm is complete). */
-export type Compare = Omit<CompareResponse, 'stats' | 'rows'> & {
-  rows: (CompareRow & { arm?: string })[];
-  stats: CompareStats | null;
-  status?: 'complete' | 'incomplete';
-  reason?: string | null;
-  arms?: ArmView[];
-};
+/** The compare response as the screen reads it: the contract's, with SP6's stats once they exist. */
+export type Compare = Omit<CompareResponse, 'stats'> & { stats: CompareStats | null };
 
 // ---------------------------------------------------------------------------------------------
 // GET /judge/agreement: SP5, which returns null until then

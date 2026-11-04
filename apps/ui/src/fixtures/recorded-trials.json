@@ -1,5 +1,6 @@
 [
   {
+    "experiment_id": null,
     "trialId": "gate-hermes-emi-01",
     "harness": "hermes",
     "model": "fake/scripted",
@@ -24,6 +25,7 @@
     "clientTurns": 0
   },
   {
+    "experiment_id": null,
     "trialId": "gate-ownloop-emi-01",
     "harness": "ownloop",
     "model": "fake/scripted",

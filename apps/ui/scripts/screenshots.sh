@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# Screenshots of every screen in fixture mode, for the UI critique rounds. No API, no LLM calls.
+# Screenshots of every screen, for the UI critique rounds. No LLM calls: in fixture mode there is
+# no API at all, and against a real API the pages only read (GET); nothing on a page is clicked.
 #
-#   scripts/screenshots.sh <output-folder>
+#   scripts/screenshots.sh <output-folder>                      # fixture mode
+#   API_TARGET=http://127.0.0.1:3001 SCREENS_FILE=screens.txt \
+#     scripts/screenshots.sh <output-folder>                    # against a running API
+#
+# SCREENS_FILE holds one `name|#/route` per line (the fixture list below is the default).
+# SETTLE_MS (default 1500) is how long each page gets to load before it is measured.
 #
 # Starts the Vite dev server with VITE_FIXTURES=1 on a free port (never 3000, 3001, 4000 or
 # 8080), measures each page's full height with headless Chrome (scripts/measure-pages.mjs), then
@@ -29,7 +35,12 @@ done
 [ -n "$PORT" ] || { echo "no free port found" >&2; exit 1; }
 
 cd "$UI_DIR"
-VITE_FIXTURES=1 node node_modules/vite/bin/vite.js --host 127.0.0.1 --port "$PORT" --strictPort >"$WORK/vite.log" 2>&1 &
+if [ -n "${API_TARGET:-}" ]; then
+  # The dev server forwards /api to the API, as nginx does in Docker (vite.config.ts).
+  API_PROXY_TARGET="$API_TARGET" node node_modules/vite/bin/vite.js --host 127.0.0.1 --port "$PORT" --strictPort >"$WORK/vite.log" 2>&1 &
+else
+  VITE_FIXTURES=1 node node_modules/vite/bin/vite.js --host 127.0.0.1 --port "$PORT" --strictPort >"$WORK/vite.log" 2>&1 &
+fi
 VITE_PID=$!
 echo "dev server pid $VITE_PID on port $PORT"
 stop_server() {
@@ -58,6 +69,10 @@ SCREENS=(
   "tasks|#/tasks"
 )
 DARK=(main compare trial)
+if [ -n "${SCREENS_FILE:-}" ]; then
+  mapfile -t SCREENS < <(grep -v '^\s*\(#\|$\)' "$SCREENS_FILE")
+  DARK=(${DARK_SCREENS:-})
+fi
 
 : >"$WORK/jobs.tsv"
 for entry in "${SCREENS[@]}"; do
@@ -75,7 +90,7 @@ for entry in "${SCREENS[@]}"; do
   done
 done
 
-node scripts/measure-pages.mjs "$CHROME" "$WORK/measure-profile" "$WORK/jobs.tsv" "$WORK/metrics.tsv"
+SETTLE_MS="${SETTLE_MS:-1500}" node scripts/measure-pages.mjs "$CHROME" "$WORK/measure-profile" "$WORK/jobs.tsv" "$WORK/metrics.tsv"
 {
   printf 'page\twidth\theight\tscroll_width\theader_height\n'
   cat "$WORK/metrics.tsv"

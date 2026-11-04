@@ -1,5 +1,166 @@
 [
   {
+    "id": "exp_model",
+    "name": "Model: Haiku 5.5 vs Gemini 3.8 Flash, discovery",
+    "axis": "model",
+    "status": "running",
+    "config_hashes": [
+      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+      "sha256:c58e2d17c3b413b9ebcb277b97c0bb05868fad56b847b86f7a6e5ab1c005cc80"
+    ],
+    "task_sha256s": [
+      "sha256:59c93e4f9789961f4d3d8248319ef4246b87b9e2240b16621558915178bcb037",
+      "sha256:55aecb3bae9801efa7989a9d840f6c688dce123d72c0e720f1e045b9290fa2a5",
+      "sha256:29ff8880a50964a6bfd92a5cc89f871f0223828ee57d5d3b5ebef1e51ab79749",
+      "sha256:f0e920310fa748380d2d3b3ecb138b5c31567759735b216d9b4147e86a9a7218"
+    ],
+    "n": 3,
+    "counts": {
+      "queued": 15,
+      "running": 2,
+      "done": 6,
+      "infra_failed": 1,
+      "abandoned": 0,
+      "cancelled": 0,
+      "by_label": {
+        "agent": 6,
+        "infra:config_error": 1
+      },
+      "done_by_end_state": {
+        "answered": 6
+      }
+    },
+    "spend_usd": 0.8608,
+    "estimate": {
+      "trials": 24,
+      "cost_usd": {
+        "expected": 4.1,
+        "low": 2.05,
+        "high": 8.2
+      },
+      "minutes": 12,
+      "basis": "Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.",
+      "basis_detail": {
+        "cells": [],
+        "prices": {
+          "claude-haiku-5-5": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "gemini-3.8-flash": {
+            "input_per_mtok": 0.75,
+            "output_per_mtok": 3.75
+          }
+        },
+        "assumptions": {
+          "input_tokens_per_trial": 64000,
+          "output_tokens_per_trial": 2400,
+          "wall_s_per_trial": 60,
+          "sim_input_tokens_per_call": 2000,
+          "sim_output_tokens_per_call": 150,
+          "low_factor": 0.5,
+          "high_factor": 2
+        },
+        "workers": {
+          "hermes": {
+            "live": 2,
+            "used": 2
+          }
+        }
+      },
+      "budgets": {
+        "trial_usd": 0.5,
+        "sim_usd": 0.1
+      }
+    },
+    "budget_usd": 20,
+    "created_at": "2026-11-05T13:56:00.000Z"
+  },
+  {
+    "id": "exp_futility",
+    "name": "Prompt v1 vs v2, discovery batch 3",
+    "axis": "prompt",
+    "status": "paused",
+    "config_hashes": [
+      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+      "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325"
+    ],
+    "task_sha256s": [
+      "sha256:0b76eda76be6564bbaa2250304c4cbf823fd216b4d9549fb213d7b9e9f9a2a36",
+      "sha256:e4f7b607260bf192b077e92d5dcaae4c576f00c080c1f0883d6f4641b18f84fa",
+      "sha256:8f07c26f3197e6367b0d005370444484a0647aea5453bd414b9f6e2b1428967e",
+      "sha256:1ff67c1591b5971dd2e15ff0a14491e43908b5dcdb2716cdb590e42b583ecddd"
+    ],
+    "n": 5,
+    "counts": {
+      "queued": 34,
+      "running": 0,
+      "done": 6,
+      "infra_failed": 0,
+      "abandoned": 0,
+      "cancelled": 0,
+      "by_label": {
+        "agent": 6
+      },
+      "done_by_end_state": {
+        "answered": 6
+      }
+    },
+    "spend_usd": 0.921,
+    "estimate": {
+      "trials": 40,
+      "cost_usd": {
+        "expected": 6.4,
+        "low": 3.2,
+        "high": 12.8
+      },
+      "minutes": 22,
+      "basis": "Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.",
+      "basis_detail": {
+        "cells": [],
+        "prices": {
+          "claude-haiku-5-5": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "gemini-3.8-flash": {
+            "input_per_mtok": 0.75,
+            "output_per_mtok": 3.75
+          }
+        },
+        "assumptions": {
+          "input_tokens_per_trial": 64000,
+          "output_tokens_per_trial": 2400,
+          "wall_s_per_trial": 60,
+          "sim_input_tokens_per_call": 2000,
+          "sim_output_tokens_per_call": 150,
+          "low_factor": 0.5,
+          "high_factor": 2
+        },
+        "workers": {
+          "hermes": {
+            "live": 2,
+            "used": 2
+          }
+        }
+      },
+      "budgets": {
+        "trial_usd": 0.5,
+        "sim_usd": 0.1
+      }
+    },
+    "budget_usd": 20,
+    "created_at": "2026-11-05T13:43:00.000Z"
+  },
+  {
+    "id": "exp_harness",
+    "name": "Harness: own loop vs Hermes",
+    "axis": "harness",
+    "status": "running",
+    "config_hashes": [
+      "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
+      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8"
+    ],
     "task_sha256s": [
       "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
       "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
@@ -14,28 +175,21 @@
       "sha256:924c8f26ddd6933aa36a956ab55875ee3e106d751564c9f1cf4d9be98b6306ea",
       "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b"
     ],
-    "budget_usd": 40,
-    "plan_commit": "3e1a9f0",
-    "platform_commit": "c4d2e19",
-    "sim_model": "claude-haiku-5-5",
-    "started_at": "2026-11-05T13:41:00.000Z",
-    "finished_at": null,
-    "id": "exp_harness",
-    "name": "Harness: own loop vs Hermes",
-    "axis": "harness",
-    "status": "running",
-    "config_hashes": [
-      "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8"
-    ],
     "n": 5,
     "counts": {
-      "queued": 54,
+      "queued": 56,
       "running": 4,
       "done": 60,
       "infra_failed": 2,
       "abandoned": 0,
-      "cancelled": 0
+      "cancelled": 0,
+      "by_label": {
+        "agent": 60,
+        "infra:provider_error": 2
+      },
+      "done_by_end_state": {
+        "answered": 60
+      }
     },
     "spend_usd": 11.2,
     "estimate": {
@@ -46,16 +200,56 @@
         "high": 27
       },
       "minutes": 38,
-      "basis": "Mean tokens of the pilot trials (40 trials on Hermes with Claude Haiku 5.5); prices from LiteLLM",
-      "concurrency": 4,
-      "min_detectable_effect": {
-        "points": 10,
-        "power": 0.8
+      "basis": "Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.",
+      "basis_detail": {
+        "cells": [],
+        "prices": {
+          "claude-haiku-5-5": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "gemini-3.8-flash": {
+            "input_per_mtok": 0.75,
+            "output_per_mtok": 3.75
+          }
+        },
+        "assumptions": {
+          "input_tokens_per_trial": 64000,
+          "output_tokens_per_trial": 2400,
+          "wall_s_per_trial": 60,
+          "sim_input_tokens_per_call": 2000,
+          "sim_output_tokens_per_call": 150,
+          "low_factor": 0.5,
+          "high_factor": 2
+        },
+        "workers": {
+          "ownloop": {
+            "live": 2,
+            "used": 2
+          },
+          "hermes": {
+            "live": 2,
+            "used": 2
+          }
+        }
+      },
+      "budgets": {
+        "trial_usd": 0.5,
+        "sim_usd": 0.1
       }
     },
+    "budget_usd": 40,
     "created_at": "2026-11-05T13:38:00.000Z"
   },
   {
+    "id": "exp_heldout",
+    "name": "Prompt v1 vs v2, held-out",
+    "axis": "prompt",
+    "status": "done",
+    "config_hashes": [
+      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+      "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325"
+    ],
     "task_sha256s": [
       "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
       "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
@@ -70,20 +264,6 @@
       "sha256:924c8f26ddd6933aa36a956ab55875ee3e106d751564c9f1cf4d9be98b6306ea",
       "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b"
     ],
-    "budget_usd": 40,
-    "plan_commit": "3e1a9f0",
-    "platform_commit": "c4d2e19",
-    "sim_model": "claude-haiku-5-5",
-    "started_at": "2026-11-05T11:23:00.000Z",
-    "finished_at": "2026-11-05T12:08:00.000Z",
-    "id": "exp_heldout",
-    "name": "Prompt v1 vs v2, held-out",
-    "axis": "prompt",
-    "status": "done",
-    "config_hashes": [
-      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-      "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325"
-    ],
     "n": 5,
     "counts": {
       "queued": 0,
@@ -91,7 +271,14 @@
       "done": 120,
       "infra_failed": 2,
       "abandoned": 0,
-      "cancelled": 0
+      "cancelled": 0,
+      "by_label": {
+        "agent": 120,
+        "infra:provider_error": 2
+      },
+      "done_by_end_state": {
+        "answered": 120
+      }
     },
     "spend_usd": 18.4,
     "estimate": {
@@ -102,16 +289,52 @@
         "high": 27
       },
       "minutes": 38,
-      "basis": "Mean tokens of the pilot trials (40 trials on Hermes with Claude Haiku 5.5); prices from LiteLLM",
-      "concurrency": 4,
-      "min_detectable_effect": {
-        "points": 10,
-        "power": 0.8
+      "basis": "Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.",
+      "basis_detail": {
+        "cells": [],
+        "prices": {
+          "claude-haiku-5-5": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "gemini-3.8-flash": {
+            "input_per_mtok": 0.75,
+            "output_per_mtok": 3.75
+          }
+        },
+        "assumptions": {
+          "input_tokens_per_trial": 64000,
+          "output_tokens_per_trial": 2400,
+          "wall_s_per_trial": 60,
+          "sim_input_tokens_per_call": 2000,
+          "sim_output_tokens_per_call": 150,
+          "low_factor": 0.5,
+          "high_factor": 2
+        },
+        "workers": {
+          "hermes": {
+            "live": 4,
+            "used": 4
+          }
+        }
+      },
+      "budgets": {
+        "trial_usd": 0.5,
+        "sim_usd": 0.1
       }
     },
+    "budget_usd": 40,
     "created_at": "2026-11-05T11:18:00.000Z"
   },
   {
+    "id": "exp_discovery",
+    "name": "Prompt v1 vs v2, discovery",
+    "axis": "prompt",
+    "status": "done",
+    "config_hashes": [
+      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+      "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325"
+    ],
     "task_sha256s": [
       "sha256:59c93e4f9789961f4d3d8248319ef4246b87b9e2240b16621558915178bcb037",
       "sha256:55aecb3bae9801efa7989a9d840f6c688dce123d72c0e720f1e045b9290fa2a5",
@@ -122,20 +345,6 @@
       "sha256:53c3cfcfd9f97c6b2f85fa1b12c4413b930d8cd7f4feebe889abe31bdfe2c517",
       "sha256:8124f96f1f634931209dee1f008e440fbbd358c5a89b9f013876e98422e2bef0"
     ],
-    "budget_usd": 40,
-    "plan_commit": "3e1a9f0",
-    "platform_commit": "c4d2e19",
-    "sim_model": "claude-haiku-5-5",
-    "started_at": "2026-11-04T13:13:00.000Z",
-    "finished_at": "2026-11-04T13:48:00.000Z",
-    "id": "exp_discovery",
-    "name": "Prompt v1 vs v2, discovery",
-    "axis": "prompt",
-    "status": "done",
-    "config_hashes": [
-      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-      "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325"
-    ],
     "n": 5,
     "counts": {
       "queued": 0,
@@ -143,7 +352,13 @@
       "done": 80,
       "infra_failed": 0,
       "abandoned": 0,
-      "cancelled": 0
+      "cancelled": 0,
+      "by_label": {
+        "agent": 80
+      },
+      "done_by_end_state": {
+        "answered": 80
+      }
     },
     "spend_usd": 12.1,
     "estimate": {
@@ -154,12 +369,52 @@
         "high": 18
       },
       "minutes": 26,
-      "basis": "Mean tokens of the pilot trials (40 trials on Hermes with Claude Haiku 5.5); prices from LiteLLM",
-      "concurrency": 4
+      "basis": "Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.",
+      "basis_detail": {
+        "cells": [],
+        "prices": {
+          "claude-haiku-5-5": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "gemini-3.8-flash": {
+            "input_per_mtok": 0.75,
+            "output_per_mtok": 3.75
+          }
+        },
+        "assumptions": {
+          "input_tokens_per_trial": 64000,
+          "output_tokens_per_trial": 2400,
+          "wall_s_per_trial": 60,
+          "sim_input_tokens_per_call": 2000,
+          "sim_output_tokens_per_call": 150,
+          "low_factor": 0.5,
+          "high_factor": 2
+        },
+        "workers": {
+          "hermes": {
+            "live": 4,
+            "used": 4
+          }
+        }
+      },
+      "budgets": {
+        "trial_usd": 0.5,
+        "sim_usd": 0.1
+      }
     },
+    "budget_usd": 40,
     "created_at": "2026-11-04T13:08:00.000Z"
   },
   {
+    "id": "exp_aa",
+    "name": "A/A check, Hermes",
+    "axis": "none",
+    "status": "done",
+    "config_hashes": [
+      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8"
+    ],
     "task_sha256s": [
       "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
       "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
@@ -172,20 +427,6 @@
       "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
       "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15"
     ],
-    "budget_usd": 40,
-    "plan_commit": "3e1a9f0",
-    "platform_commit": "c4d2e19",
-    "sim_model": "claude-haiku-5-5",
-    "started_at": "2026-11-04T11:13:00.000Z",
-    "finished_at": "2026-11-04T11:58:00.000Z",
-    "id": "exp_aa",
-    "name": "A/A check, Hermes",
-    "axis": "none",
-    "status": "done",
-    "config_hashes": [
-      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8"
-    ],
     "n": 5,
     "counts": {
       "queued": 0,
@@ -193,7 +434,13 @@
       "done": 100,
       "infra_failed": 0,
       "abandoned": 0,
-      "cancelled": 0
+      "cancelled": 0,
+      "by_label": {
+        "agent": 100
+      },
+      "done_by_end_state": {
+        "answered": 100
+      }
     },
     "spend_usd": 9.1,
     "estimate": {
@@ -204,12 +451,51 @@
         "high": 13.2
       },
       "minutes": 32,
-      "basis": "Mean tokens of the pilot trials (40 trials on Hermes with Claude Haiku 5.5); prices from LiteLLM",
-      "concurrency": 4
+      "basis": "Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.",
+      "basis_detail": {
+        "cells": [],
+        "prices": {
+          "claude-haiku-5-5": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "gemini-3.8-flash": {
+            "input_per_mtok": 0.75,
+            "output_per_mtok": 3.75
+          }
+        },
+        "assumptions": {
+          "input_tokens_per_trial": 64000,
+          "output_tokens_per_trial": 2400,
+          "wall_s_per_trial": 60,
+          "sim_input_tokens_per_call": 2000,
+          "sim_output_tokens_per_call": 150,
+          "low_factor": 0.5,
+          "high_factor": 2
+        },
+        "workers": {
+          "hermes": {
+            "live": 4,
+            "used": 4
+          }
+        }
+      },
+      "budgets": {
+        "trial_usd": 0.5,
+        "sim_usd": 0.1
+      }
     },
+    "budget_usd": 40,
     "created_at": "2026-11-04T11:08:00.000Z"
   },
   {
+    "id": "exp_pilot",
+    "name": "Pilot on Haiku 5.5",
+    "axis": "none",
+    "status": "done",
+    "config_hashes": [
+      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8"
+    ],
     "task_sha256s": [
       "sha256:59c93e4f9789961f4d3d8248319ef4246b87b9e2240b16621558915178bcb037",
       "sha256:55aecb3bae9801efa7989a9d840f6c688dce123d72c0e720f1e045b9290fa2a5",
@@ -220,19 +506,6 @@
       "sha256:53c3cfcfd9f97c6b2f85fa1b12c4413b930d8cd7f4feebe889abe31bdfe2c517",
       "sha256:8124f96f1f634931209dee1f008e440fbbd358c5a89b9f013876e98422e2bef0"
     ],
-    "budget_usd": 40,
-    "plan_commit": "3e1a9f0",
-    "platform_commit": "c4d2e19",
-    "sim_model": "claude-haiku-5-5",
-    "started_at": "2026-11-03T13:03:00.000Z",
-    "finished_at": "2026-11-03T13:48:00.000Z",
-    "id": "exp_pilot",
-    "name": "Pilot on Haiku 5.5",
-    "axis": "none",
-    "status": "done",
-    "config_hashes": [
-      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8"
-    ],
     "n": 5,
     "counts": {
       "queued": 0,
@@ -240,7 +513,13 @@
       "done": 40,
       "infra_failed": 0,
       "abandoned": 0,
-      "cancelled": 0
+      "cancelled": 0,
+      "by_label": {
+        "agent": 40
+      },
+      "done_by_end_state": {
+        "answered": 40
+      }
     },
     "spend_usd": 3.3,
     "estimate": {
@@ -251,9 +530,41 @@
         "high": 5.2
       },
       "minutes": 14,
-      "basis": "Assumptions in docs/cost.md: 64k input and 2.4k output tokens per trial",
-      "concurrency": 4
+      "basis": "Tokens per trial: the docs/cost.md assumptions (64k input, 2.4k output per trial) for all 8 config x task cells. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost.",
+      "basis_detail": {
+        "cells": [],
+        "prices": {
+          "claude-haiku-5-5": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "gemini-3.8-flash": {
+            "input_per_mtok": 0.75,
+            "output_per_mtok": 3.75
+          }
+        },
+        "assumptions": {
+          "input_tokens_per_trial": 64000,
+          "output_tokens_per_trial": 2400,
+          "wall_s_per_trial": 60,
+          "sim_input_tokens_per_call": 2000,
+          "sim_output_tokens_per_call": 150,
+          "low_factor": 0.5,
+          "high_factor": 2
+        },
+        "workers": {
+          "hermes": {
+            "live": 4,
+            "used": 4
+          }
+        }
+      },
+      "budgets": {
+        "trial_usd": 0.5,
+        "sim_usd": 0.1
+      }
     },
+    "budget_usd": 40,
     "created_at": "2026-11-03T12:58:00.000Z"
   }
 ]

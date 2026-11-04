@@ -2,8 +2,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { api } from '../api/client';
 import { isFixtureMode } from '../api/mode';
+import type { SpendView } from '../api/types';
 import { fetchHealth, type HealthResult } from '../health';
 import { money, wholeMoney } from '../lib/format';
+import AllowanceMeter from './AllowanceMeter.vue';
 import { setTheme, theme } from '../lib/theme';
 import { href, type Section } from '../router';
 import AppIcon from './AppIcon.vue';
@@ -12,8 +14,11 @@ const props = defineProps<{ section: Section | null }>();
 
 const fixtures = isFixtureMode();
 const health = ref<HealthResult | null>(null);
-const spend = ref<number | null>(null);
+/** GET /spend: trial spend and the platform's own calls, kept apart (D38). */
+const spendView = ref<SpendView | null>(null);
+const spend = computed(() => spendView.value?.total_usd ?? null);
 const budget = ref<number | null>(null);
+const allowance = computed(() => spendView.value?.allowances.find((a) => a.kind === 'conflict_check') ?? null);
 
 const links: { section: Section; label: string; to: string }[] = [
   { section: 'experiments', label: 'Experiments', to: href.experiments() },
@@ -26,9 +31,27 @@ const links: { section: Section; label: string; to: string }[] = [
 const dbWords: Record<string, string> = { up: 'up', down: 'down', not_configured: 'not configured' };
 const spentShare = computed(() => (spend.value !== null && budget.value ? Math.min(100, (spend.value / budget.value) * 100) : 0));
 const dark = computed(() => theme.value === 'dark');
-const spendWords = computed(() => (spend.value === null ? '' : `${money(spend.value)} spent${budget.value ? ` of ${wholeMoney(budget.value)}` : ''}`));
-/** "$54 of $150": whole dollars for the phone header, where there is no room for cents. */
-const compactSpend = computed(() => (spend.value === null ? '' : `$${Math.round(spend.value)}${budget.value ? ` of ${wholeMoney(budget.value)}` : ''}`));
+const spendWords = computed(() => {
+  const v = spendView.value;
+  if (!v) return '';
+  return `Spent ${money(v.total_usd)}${budget.value ? ` of ${wholeMoney(budget.value)}` : ''}: trials ${money(v.trials_usd)}, the platform's own calls ${money(v.system_usd)}`;
+});
+/** "$0.44 + $0.02": trials, then the platform's calls, for the phone header. */
+const compactSpend = computed(() => {
+  const v = spendView.value;
+  return v ? `${money(v.trials_usd)} + ${money(v.system_usd)}` : '';
+});
+
+async function loadSpend() {
+  try {
+    const v = await api.spend();
+    // Anything but the contract's shape (an old API, a proxy page) shows no spend rather than a wrong one.
+    spendView.value = v && typeof v.trials_usd === 'number' && typeof v.system_usd === 'number' && Array.isArray(v.allowances) ? v : null;
+  } catch {
+    spendView.value = null;
+  }
+}
+const onSpendChanged = () => void loadSpend();
 
 /** On a phone the nav is one row that scrolls sideways; the current section is kept in view, with
  *  8 px to spare past its right edge. Only the nav scrolls (never scrollIntoView, which can move
@@ -54,7 +77,10 @@ watch(
 );
 
 let resizes: ResizeObserver | null = null;
-onBeforeUnmount(() => resizes?.disconnect());
+onBeforeUnmount(() => {
+  resizes?.disconnect();
+  window.removeEventListener('evals:spend-changed', onSpendChanged);
+});
 
 onMounted(async () => {
   void showCurrent();
@@ -71,12 +97,8 @@ onMounted(async () => {
     if (Number.isFinite(envBudget) && envBudget > 0) budget.value = envBudget;
     void fetchHealth().then((h) => (health.value = h));
   }
-  try {
-    const experiments = await api.experiments();
-    spend.value = experiments.reduce((sum, e) => sum + (e.spend_usd ?? 0), 0);
-  } catch {
-    spend.value = null;
-  }
+  window.addEventListener('evals:spend-changed', onSpendChanged);
+  await loadSpend();
 });
 </script>
 
@@ -122,24 +144,41 @@ onMounted(async () => {
     </nav>
     <div class="right">
       <span
-        v-if="spend !== null"
+        v-if="spendView"
         class="spend"
         data-test="spend"
       >
-        <span class="wide-only">Spend</span>
         <span
           v-if="budget"
           class="meter spend-meter wide-only"
           role="img"
           :aria-label="spendWords"
         ><span :style="{ width: `${spentShare}%` }" /></span>
-        <span class="num ink wide-only">{{ money(spend) }}<template v-if="budget"> of {{ wholeMoney(budget) }}</template></span>
+        <span
+          class="wide-only spend-split"
+          :aria-label="spendWords"
+          role="group"
+        ><span>Trials <span
+          class="num ink"
+          data-test="spend-trials"
+        >{{ money(spendView.trials_usd) }}</span></span><span>Platform <span
+          class="num ink"
+          data-test="spend-platform"
+        >{{ money(spendView.system_usd) }}</span></span><template v-if="budget"><span class="secondary">of {{ wholeMoney(budget) }}</span></template></span>
         <span
           class="num ink phone-only"
           role="img"
           :aria-label="spendWords"
           data-test="spend-compact"
         >{{ compactSpend }}</span>
+        <AllowanceMeter
+          v-if="allowance"
+          :allowance="allowance"
+          label="Conflict checks"
+          compact
+          class="wide-only header-allowance"
+          :title="`Conflict-check allowance (D38): ${money(allowance.used_usd)} of ${wholeMoney(allowance.limit_usd)} used, ${money(allowance.remaining_usd)} left`"
+        />
       </span>
       <span
         v-if="fixtures"
@@ -264,7 +303,17 @@ onMounted(async () => {
 }
 
 .spend-meter {
-  width: 96px;
+  width: 64px;
+}
+
+.spend-split {
+  display: inline-flex;
+  gap: 10px;
+}
+
+.header-allowance {
+  padding-left: 10px;
+  border-left: 1px solid var(--rule);
 }
 
 .ink {

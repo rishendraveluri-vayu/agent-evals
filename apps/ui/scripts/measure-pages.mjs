@@ -95,8 +95,8 @@ try {
     const loaded = once('Page.loadEventFired', sessionId);
     await send('Page.navigate', { url: job.url }, sessionId);
     await loaded;
-    // The fixtures load lazily and the fonts swap in: give the page a moment to settle.
-    await sleep(1500);
+    // The fixtures (or the API's answers) load and the fonts swap in: give the page a moment to settle.
+    await sleep(Number(process.env.SETTLE_MS) || 1500);
     const { result } = await send(
       'Runtime.evaluate',
       {
