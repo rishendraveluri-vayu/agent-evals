@@ -1751,6 +1751,14 @@ const worthALook = computed(() => {
     flex: 1 1 auto;
   }
 
+  /* The counts always start a line of their own, even on a task with no interval to draw. */
+  .table.forest tbody tr::after {
+    content: '';
+    order: 3;
+    flex: 0 0 100%;
+    margin-top: -4px;
+  }
+
   .table.forest .c-grader::before {
     content: '·';
     padding: 0 8px;
