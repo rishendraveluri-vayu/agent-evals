@@ -9,6 +9,7 @@ import VerdictTag from '../components/VerdictTag.vue';
 import { armsOf, axisWords, checksToGo, doneCount, excludesZero, headline, intervalText, judgeCaveat, NBSP, pointsWithInterval, setupOf, timeLeft, totalTrials, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { capitalise, identParts, minutes, money, percent, plainText, plural, relative, signed } from '../lib/format';
+import { isFake } from '../lib/models';
 import { pauseCause } from '../lib/runs';
 import { alsoGradedBy, experimentName, harnessShort, isJudged, modelName, settingLabel, splitName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
@@ -237,6 +238,16 @@ interface Row {
   verdict: Verdict | null;
   detail: string;
   estimate: string;
+  /** Under the spend of a run on a fake model: its prices are made up for testing, not money. */
+  fakePrices: string;
+}
+
+/** "Made-up prices: fake model", or which arm's are, as the comparison says it; '' on real models. */
+function fakePricesWords(arms: { key: string; config?: { model: string } }[]): string {
+  const fake = arms.filter((a) => isFake(a.config?.model));
+  if (!fake.length) return '';
+  if (fake.length === arms.length) return 'Made-up prices: fake model';
+  return `Made-up prices in arm ${fake.map((a) => a.key.toUpperCase()).join(' and ')}: fake model`;
 }
 
 const rows = computed<Row[]>(() => {
@@ -292,6 +303,7 @@ const rows = computed<Row[]>(() => {
         verdict,
         detail,
         estimate: e.estimate ? `of ${money(e.estimate.cost_usd.expected)} estimated` : '',
+        fakePrices: fakePricesWords(arms),
       };
     });
 });
@@ -631,7 +643,12 @@ const rows = computed<Row[]>(() => {
                 <span class="result-detail detail">{{ r.detail }}</span>
               </td>
               <td class="right num c-spend">
-                {{ money(r.e.spend_usd) }}<span class="secondary block estimate">{{ r.estimate }}</span>
+                {{ money(r.e.spend_usd) }}<span class="secondary block estimate">{{ r.estimate }}</span><span
+                  v-if="r.fakePrices"
+                  class="secondary block estimate"
+                  data-test="fake-prices"
+                  title="A fake model's replies are scripted and its prices invented for testing: these amounts show how the platform counts, not what a real model would cost."
+                >{{ r.fakePrices }}</span>
               </td>
               <td class="right secondary c-updated">
                 {{ relative(r.updated) }}

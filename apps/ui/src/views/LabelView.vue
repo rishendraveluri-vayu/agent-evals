@@ -277,7 +277,7 @@ const blocks = (text: string) => mdBlocks(text);
     >
       <p>
         {{ total ? `All ${total} in this queue done${savedCount ? `: ${savedCount} saved` : ''}${skippedCount ? `, ${skippedCount} skipped` : ''}.` : 'Nothing to label in this set yet.' }}
-        Trials that finish later join the queue.
+        Trials that finish later join the queue, except trials on a fake model (their replies are a script, not an agent's) and the shipped example's, which are never labelled here.
       </p>
       <button
         type="button"

@@ -9,7 +9,9 @@ yet (see Status).
 Five harnesses plug in through one adapter contract: Hermes Agent, LangGraph, Google ADK, the
 OpenAI Agents SDK and a plain tool-calling loop. Every model call goes through a LiteLLM proxy,
 where spend, tokens, latency and settings are recorded. The task set is a personal-finance
-assistant with calculator tools and simulated clients.
+assistant with calculator tools and simulated clients. Today it holds 15 draft tasks (their
+summaries still start "DRAFT") and 2 engine tests that check the platform, not an agent; the
+task set is being finished.
 
 > **Status, 4 Nov 2026.** The platform runs end to end: configs, runs with N trials, isolation,
 > retries, traces, deterministic graders, the judge's plumbing and blind labelling. Still being
@@ -31,19 +33,23 @@ Then open **http://127.0.0.1:8080**. Every port binds to localhost only. If a po
 and pass the same variables to every later `docker compose` command and to the checks under
 Develop and test.
 
-**Keys.** You need no key to look around, open the finished example, build and save an agent, or
-preview what reaches the model. Running an agent on tasks needs a real model, so it needs a
-provider key: copy `.env.example` to `.env`, add `ANTHROPIC_API_KEY` (Claude) and/or
-`GEMINI_API_KEY`, then run `docker compose up -d` again. Every run shows its trials, models and
-most it can cost before it starts, and asks you to confirm a paid run.
+**Without a key** you can build, save and preview an agent (see exactly what reaches the model),
+and open the finished example, which is read-only: nothing in it runs again. You can also run
+agents on **fake models** (`fake/...`), which the full platform's Config screen offers: a scripted
+local server answers at made-up prices, so a run needs no key and spends nothing. A fake model
+makes the same scripted calls whatever the task (one always works out the same EMI), so most of
+its trials fail: such a run tests the platform (queueing, retries, traces, grading), not an agent.
 
-**Fake models are for tests, not a demo.** The full platform's Configs screen also offers fake
-models (`fake/...`), served by a scripted local server at made-up prices, so the platform can be
-tested end to end with no key and no spend. They make the same scripted calls whatever the task
-(one always works out the same EMI), so they fail most tasks: a run on them shows the machinery
-(queueing, retries, traces, grading), not how good an agent is.
+**With a key** you can run agents on real models. Copy `.env.example` to `.env`, add
+`ANTHROPIC_API_KEY` (Claude) and/or `GEMINI_API_KEY`, then run `docker compose up -d` again. A
+real run costs money: every run shows its trials, models and the most it can cost before it
+starts, and asks you to confirm.
 
-Stop it with `docker compose down`; add `-v` to wipe the local database too.
+Stop it with `docker compose down`. `docker compose down -v` also wipes the local database
+(configs, experiments, grades), but not the files the stack writes into the repo folder: trial
+files stay in `./runs/` (delete what is inside it to remove them; one fake run of 150 trials
+left about 22 MB there in testing), your labels in `./labels/`, and prompt versions you saved in
+`configs/prompts/`.
 
 ## Three ways in
 
@@ -57,8 +63,9 @@ The home page offers:
 2. **Build your own, step by step.** Pick an agent type (each has an "i" that says what it is and
    what it adds to your prompt), a model, the instructions and a few settings. Preview exactly
    what reaches the model, for free. Then evaluate it against a baseline: run it, compare the
-   results, and open a failed trial to see why it failed. Running it needs a provider key (see
-   Keys); without one you can build, save and preview, but not run.
+   results, and open a failed trial to see why it failed. Running it on a real model needs a
+   provider key (see Run it); without one you can build, save and preview it, and run on a fake
+   model from the full Config screen to see the platform work, not the agent.
 3. **The full platform.** Every experiment, config, task, harness and label, at full detail.
 
 The first door opens `http://127.0.0.1:8080/#/example`. The first time, it copies the example shipped

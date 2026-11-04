@@ -8,7 +8,7 @@ import LoadState from '../components/LoadState.vue';
 import { ApiError } from '../api/errors';
 import { armIndexOf, armsOf, namedByHash, timeLeft, totalTrials } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
-import { armValue, armsCheck, axisFromDiff, budgetCheck, capabilityCheck, changesWords, configChanges, contentDiff, keysCheck, planCheck, runAutoName, RUN_NAME_MAX, splitCheck, type Check } from '../lib/checks';
+import { armDifferences, armValue, armsCheck, axisChange, axisFromDiff, budgetCheck, capabilityCheck, changeWords, changesWords, contentDiff, keysCheck, planCheck, runAutoName, RUN_NAME_MAX, splitCheck, type Check } from '../lib/checks';
 import { changedLineCount, lineChanges, sentenceChanges, type LineChange } from '../lib/diff';
 import { capitalise, clock, minutes, money, plainText, plural, shortHash, wholeMoney } from '../lib/format';
 import { experimentName, infraReason, modelName, splitName } from '../lib/names';
@@ -313,7 +313,7 @@ const armDiff = computed<{ summary: string; lines: LineChange[]; fields: LineCha
     const changed = changedLineCount(lineChanges(pa.text, pb.text));
     return { summary: `The system prompt, ${changed} ${changed === 1 ? 'line' : 'lines'} changed. Nothing else differs.`, lines: sentenceChanges(pa.text, pb.text), fields: [] };
   }
-  const changes = ca && cb ? configChanges(ca, cb) : [];
+  const changes = ca && cb ? armDifferences(ca, cb) : [];
   return {
     summary: `${changes.length ? changesWords(changes) : `${content.length} ${content.length === 1 ? 'field differs' : 'fields differ'}`}.${changes.length === 1 ? ' Nothing else differs.' : ''}`,
     lines: [],
@@ -692,36 +692,39 @@ const rerunHref = computed(() => {
 });
 const pausedArms = computed(() => armCards.value.filter((a) => a.view.status === 'paused'));
 
-/** What the two arms differ in, with both values, once both configs are known. */
+/** What the two arms differ in, with both values, once both configs are known: the one rule the
+ *  comparison's header reads too (armDifferences in lib/arms.ts). */
 const armChanges = computed(() => {
   const [a, b] = hashes.value.map(configOf);
-  return a && b && a.hash !== b.hash ? configChanges(a, b) : [];
+  return a && b && a.hash !== b.hash ? armDifferences(a, b) : [];
 });
-/** An arm's own side of what differs ("max steps 10"), when the two configs share a name, so the
- *  name alone would not tell the arms apart; '' otherwise. */
+/** The arms' names come from armsOf, as on the comparison ("Max steps 10", "Prompt v2"). When two
+ *  configs share a name and the arms are named by their configs (they differ in several things),
+ *  each arm's own values say which is which: "max steps 10, temperature not sent". '' otherwise. */
 function armDistinct(i: number): string {
   const [a, b] = hashes.value.map(configOf);
-  if (!a || !b || a.name.trim() !== b.name.trim()) return '';
+  const arm = arms.value[i];
+  if (!a || !b || !arm || a.name.trim() !== b.name.trim() || !namedByHash(arm)) return '';
   return armChanges.value.map((c) => armValue(c, i === 0 ? 'a' : 'b')).join(', ');
 }
-/** The run grid's arm heading: the arm's label, or its value of the one setting that differs
- *  ("Max steps 10") when the label would be its hash alone. */
-function armHeading(arm: (typeof arms.value)[number], i: number): string {
-  const [c] = armChanges.value;
-  if (armChanges.value.length === 1 && namedByHash(arm) && c) return capitalise(armValue(c, i === 0 ? 'a' : 'b'));
-  return arm.label;
+/** An arm card's name: its config's, then the arm's own name when the two configs share theirs. */
+function armCardName(letter: string, configName: string): string {
+  const i = letter.charCodeAt(0) - 65;
+  const [a, b] = hashes.value.map(configOf);
+  const arm = arms.value[i];
+  if (!a || !b || a.name.trim() !== b.name.trim() || !arm) return configName;
+  const own = namedByHash(arm) ? armDistinct(i) : arm.label;
+  return own ? `${configName} (${own})` : configName;
 }
 
 /** "A: Prompt v2, config 7f3a9c2", or "A: Prompt v1 on Hermes, config 3b81e04" when the arm would
- *  otherwise be named by its hash alone, so the hash is never said twice; with its own value of
- *  what differs when the two names are the same ("…, max steps 10, config 2cc0564"). An id that is
- *  not a saved agent is said so. */
+ *  otherwise be named by its hash alone, so the hash is never said twice; with its own values when
+ *  that name is the other arm's too. An id that is not a saved agent is said so. */
 const armLine = (arm: (typeof arms.value)[number], i: number): string => {
   if (!arm.config && draft) return 'no saved agent with id';
+  if (!namedByHash(arm)) return `${arm.label}, config`;
   const distinct = armDistinct(i);
-  const own = distinct ? ` (${distinct})` : '';
-  if (!namedByHash(arm)) return `${arm.label}${own}, config`;
-  return arm.config?.name ? `${arm.config.name}${own}, config` : 'config';
+  return arm.config?.name ? `${arm.config.name}${distinct ? ` (${distinct})` : ''}, config` : 'config';
 };
 
 /** The run's name: a shipped example's own title, else the name it was given. */
@@ -823,7 +826,9 @@ const checksSummary = computed(() => {
 
 const diffSummary = computed(() => {
   if (sameConfig.value) return 'How the two arms differ: nothing, the same config twice';
-  const words = changesWords(armChanges.value);
+  const [a, b] = hashes.value.map(configOf);
+  const one = a && b && a.hash !== b.hash ? axisChange(a, b) : null;
+  const words = one ? changeWords(one) : changesWords(armChanges.value);
   if (words) return `How the two arms differ: ${words}`;
   const n = contentDiff(diff.value).length;
   return `How the two arms differ: ${n} ${n === 1 ? 'field' : 'fields'}`;
@@ -1680,8 +1685,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
             :data-test="`arm-${card.view.arm}`"
           >
             <div class="arm-card-head">
-              <span class="arm"><span :class="`dot dot--${card.key}`" /><span><strong>Arm {{ card.view.arm }}</strong>: {{ card.view.config_name }}<template v-if="armDistinct(card.view.arm.charCodeAt(0) - 65)">
-                ({{ armDistinct(card.view.arm.charCodeAt(0) - 65) }})</template></span></span>
+              <span class="arm"><span :class="`dot dot--${card.key}`" /><span><strong>Arm {{ card.view.arm }}</strong>: {{ armCardName(card.view.arm, card.view.config_name) }}</span></span>
               <span
                 class="pill pill--small pill--outline arm-status"
                 :data-status="card.shownStatus"
@@ -1862,7 +1866,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                       <span class="arm"><span :class="`dot dot--${arm.key}`" /><span><span class="arm-letter">{{ arm.key.toUpperCase() }}</span><span
                         class="arm-rest"
                         data-test="arm-rest"
-                      >, {{ armHeading(arm, i) }}</span></span></span>
+                      >, {{ arm.label }}</span></span></span>
                     </th>
                   </tr>
                 </thead>

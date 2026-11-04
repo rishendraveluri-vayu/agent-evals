@@ -15,7 +15,7 @@ import RenderedPrompt from '../components/RenderedPrompt.vue';
 import { optional, useLoad } from '../lib/async';
 import { plainText, relative, shortHash, shortRef } from '../lib/format';
 import { harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
-import { changeWords, configChanges, contentDiff } from '../lib/checks';
+import { armDifferences, contentDiff } from '../lib/checks';
 import { missingKey, needsKeyWords } from '../lib/runSetup';
 import { settingValue, sourceWords } from '../lib/settings';
 import { href } from '../router';
@@ -81,12 +81,12 @@ const rows = computed(() => {
 
 const showDiff = ref(false);
 const diff = shallowRef<ConfigDiffEntry[] | null>(null);
-/** What this config changes from its parent, in words with both values ("Max steps 12 vs 10"),
- *  once both are known; the API's field paths stay in a Details disclosure. */
+/** What this config changes from its parent, in words with both values ("Max steps: 10 to 12",
+ *  the parent's first), by the comparison's own rule; the API's field paths stay in Details. */
 const parentChanges = computed(() => {
   const p = parent.value;
   const c = data.value?.config;
-  return p && c && 'harness' in p && diff.value ? configChanges(p, c).map(changeWords) : null;
+  return p && c && 'harness' in p && diff.value ? armDifferences(p, c).map((d) => `${d.what}: ${d.a} to ${d.b}`) : null;
 });
 /** The API's diff without bookkeeping (where a setting's value came from), for Details. */
 const parentFields = computed(() => contentDiff(diff.value ?? []));
@@ -277,7 +277,7 @@ async function refreshSpend() {
               </li>
             </ul>
             <p class="small secondary">
-              The parent's value comes first. Everything else is identical.
+              Everything else is identical.
             </p>
             <details
               class="smaller parent-fields"

@@ -162,7 +162,7 @@ describe('RunView, a running experiment in fixture mode', () => {
     const diff = w.get('[data-test="diff-details"]');
     expect(diff.attributes('open')).toBeUndefined();
     // What differs, in words with both values (QA round 3, M1).
-    expect(diff.get('summary').text()).toBe('How the two arms differ: Own loop vs Hermes Agent');
+    expect(diff.get('summary').text()).toBe('How the two arms differ: Own loop 0.1.0 vs Hermes Agent 6112c2a');
   });
 
   it('gives pass and fail cells equal weight and reads the legend in two rows: outcomes, then only the infra states shown', async () => {
@@ -701,14 +701,14 @@ describe('RunView drafts: N, refusals and the name (QA major 12)', () => {
     const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
     await settle();
     const name = () => (w.get('[data-test="run-name"]').element as HTMLInputElement).value;
-    expect(name()).toBe('Prompt v1 vs v2 on Hermes with Claude Haiku 5.5, held-out');
+    expect(name()).toBe('System prompt v1 vs v2 on Hermes with Claude Haiku 5.5, held-out');
     const all = w.findAll('.seg button').find((b) => b.text() === 'All')!;
     await all.trigger('click');
     await settle();
-    expect(name()).toBe('Prompt v1 vs v2 on Hermes with Claude Haiku 5.5, all tasks');
+    expect(name()).toBe('System prompt v1 vs v2 on Hermes with Claude Haiku 5.5, all tasks');
     await w.findAll('[data-test="task-pick"] input')[0].setValue(false);
     await settle();
-    expect(name()).toBe('Prompt v1 vs v2 on Hermes with Claude Haiku 5.5, 23 tasks');
+    expect(name()).toBe('System prompt v1 vs v2 on Hermes with Claude Haiku 5.5, 23 tasks');
   });
 
   it('says the task list scrolls, and how many tasks are in view, until it reaches the end', async () => {
@@ -868,14 +868,14 @@ describe('RunView never defaults to a shipped example’s config (QA blocker 1, 
     expect(w.get('[data-test="example-arms"]').text()).toContain("To run it again, fork it on its page; the fork gets today's files.");
     const arms = w.findAll('[data-test="check"]')[0];
     expect(arms.text()).toContain('The arms differ in more than one thing');
-    expect(arms.text()).toContain("They differ in the Own loop capabilities file, the finance all toolset's content, max steps 15 vs 12 and timeout 300 s vs 180 s");
+    expect(arms.text()).toContain('They differ in harness capabilities file old-cap vs 17ae974, tools all (e8a3303) vs all (e4c1f08), max steps 15 vs 12 and timeout 300 s vs 180 s');
     expect(arms.get('[data-test="check-link"]').attributes('href')).toBe(`#/configs?fork=${encodeURIComponent(mine.hash)}`);
     // Raw paths and hashes only inside a closed Details.
     const details = arms.get('[data-test="check-details"]');
     expect(details.attributes('open')).toBeUndefined();
     expect(details.text()).toContain('capabilities_sha256');
     expect(arms.text().replace(details.text(), '')).not.toMatch(/sha256|settings\./);
-    expect(w.get('[data-test="arm-diff-summary"]').text()).toBe("The Own loop capabilities file, the finance all toolset's content, max steps 15 vs 12 and timeout 300 s vs 180 s.");
+    expect(w.get('[data-test="arm-diff-summary"]').text()).toBe('Harness capabilities file old-cap vs 17ae974, tools all (e8a3303) vs all (e4c1f08), max steps 15 vs 12 and timeout 300 s vs 180 s.');
     expect(w.get('[data-test="arm-diff-details"]').attributes('open')).toBeUndefined();
     expect(w.get('[data-test="start"]').attributes('disabled')).toBeDefined();
   });
@@ -1005,7 +1005,8 @@ describe('RunView, fresh-clone QA round 3', () => {
     expect(name).toMatch(/^Max steps 10 vs 12 on Own loop with Fake model finance-emi, /);
     expect(name).not.toMatch(/(.+) vs \1/);
     const arms = w.findAll('[data-test="start-arms"] .arm').map((a) => a.text());
-    expect(arms).toEqual(['A: Prompt v1 on Own loop, Fake model finance-emi (max steps 10), config 2cc0564', 'B: Prompt v1 on Own loop, Fake model finance-emi (max steps 12), config fb19a82']);
+    // Named as the comparison names them (armsOf): by the setting's value, never the shared name twice.
+    expect(arms).toEqual(['A: Max steps 10, config 2cc0564', 'B: Max steps 12, config fb19a82']);
     // The check says the change in words and both values; the field path only behind Details (minor 4).
     const check = w.findAll('[data-test="check"]')[0];
     expect(check.text()).toContain('Only the max steps setting differs between the arms');

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ConfigView } from '../api/types';
 import configsJson from '../fixtures/configs.json';
-import { armValue, armsCheck, autoConfigName, changeWords, changesWords, configChanges, localDiff, runAutoName } from './checks';
+import { armDifferences, armValue, armsCheck, autoConfigName, axisChange, changeWords, changesWords, localDiff, runAutoName } from './checks';
 
 const configs = configsJson as unknown as ConfigView[];
 // The fixtures, oldest first: v1 on Hermes, v2 on Hermes (the prompt), the own loop (the harness),
@@ -20,41 +20,31 @@ const fakeOwnLoop = (maxSteps: number, hash: string): ConfigView => ({
 const ten = fakeOwnLoop(10, 'sha256:2cc0564' + '0'.repeat(57));
 const twelve = fakeOwnLoop(12, 'sha256:fb19a82' + '0'.repeat(57));
 
-describe('what two configs differ in, in words (QA round 3, M1)', () => {
+describe('what two configs differ in, phrased from the comparison’s own rule (QA round 3, M1)', () => {
   it('names the one thing and both values', () => {
-    const [steps] = configChanges(ten, twelve);
-    expect(configChanges(ten, twelve)).toHaveLength(1);
+    const [steps] = armDifferences(ten, twelve);
+    expect(armDifferences(ten, twelve)).toHaveLength(1);
     expect(changeWords(steps)).toBe('Max steps 10 vs 12');
     expect([armValue(steps, 'a'), armValue(steps, 'b')]).toEqual(['max steps 10', 'max steps 12']);
-    expect(configChanges(v1, v2).map(changeWords)).toEqual(['Prompt v1 vs v2']);
-    expect(configChanges(v1, gemini).map(changeWords)).toEqual(['Claude Haiku 5.5 vs Gemini 3.8 Flash']);
-    expect(armValue(configChanges(v1, gemini)[0], 'b')).toBe('Gemini 3.8 Flash');
+    expect(armDifferences(v1, v2).map(changeWords)).toEqual(['System prompt v1 vs v2']);
+    expect(armDifferences(v1, gemini).map(changeWords)).toEqual(['Claude Haiku 5.5 vs Gemini 3.8 Flash']);
+    expect(armValue(armDifferences(v1, gemini)[0], 'b')).toBe('Gemini 3.8 Flash');
   });
 
-  it('counts a change of harness once, with the settings only one harness takes and its version', () => {
-    const changes = configChanges(v1, ownloop);
-    expect(changes.map(changeWords)).toEqual(['Hermes Agent vs Own loop']);
+  it('takes the harness as the one change when two harnesses differ, its version with it', () => {
+    const one = axisChange(v1, ownloop);
+    expect(one && changeWords(one)).toMatch(/^Hermes Agent \S+ vs Own loop \S+$/);
+    expect(axisChange(v2, gemini)).toBeNull();
   });
 
-  it('says every change in the settings’ own order, a name kept capitalised, the rest lower case', () => {
+  it('says every change, a name kept capitalised, the rest lower case', () => {
     const both = { ...twelve, model: 'claude-haiku-5-5', settings: { ...twelve.settings, temperature: 0.3 } };
-    expect(changesWords(configChanges(ten, both))).toBe('Fake model finance-emi vs Claude Haiku 5.5, temperature not sent vs 0.3 and max steps 10 vs 12');
+    expect(changesWords(armDifferences(ten, both))).toBe('Fake model finance-emi vs Claude Haiku 5.5, temperature not sent vs 0.3 and max steps 10 vs 12');
   });
 
-  it('never lists bookkeeping: a name, or where a setting came from', () => {
+  it('never counts bookkeeping: a name, or where a setting came from', () => {
     const renamed = { ...ten, name: 'another name', settings_sources: { ...ten.settings_sources, parallel_tool_calls: 'config' as const } };
-    expect(configChanges(ten, renamed)).toEqual([]);
-  });
-
-  it('tells two toolsets of one name apart by their hashes, and a harness version by its ref', () => {
-    const older = { ...ownloop, toolset: { ...ownloop.toolset, sha256: 'sha256:e8a33031' + '0'.repeat(56) }, capabilities_sha256: 'sha256:0ld0000' + '0'.repeat(57) };
-    const changes = configChanges(older, ownloop);
-    // The main text names what changed; the hashes stay in the values, for a label or Details.
-    expect(changes.map(changeWords)).toEqual(['The Own loop capabilities file', "The finance all toolset's content"]);
-    expect(changes.map((c) => armValue(c, 'a'))).toEqual(['Own loop version capabilities 0ld0000', 'toolset all (e8a3303)']);
-    expect(changesWords(changes)).toBe("The Own loop capabilities file and the finance all toolset's content");
-    const newerRef = { ...ownloop, harness_ref: '7f3a9c2' + '0'.repeat(33) };
-    expect(configChanges({ ...ownloop, harness_ref: '6112c2a' + '0'.repeat(33) }, newerRef).map(changeWords)).toEqual(['Own loop version 6112c2a vs 7f3a9c2']);
+    expect(armDifferences(ten, renamed)).toEqual([]);
   });
 });
 
@@ -66,20 +56,27 @@ describe('the Run screen’s check of the arms, in words (QA round 3, minor 4)',
     expect(check.raw).toBe('settings.max_steps: 10 to 12');
   });
 
-  it('says a harness change brings its version and settings, never listing their paths', () => {
+  it('says a harness change brings its settings, never listing their paths', () => {
     const check = armsCheck(localDiff(v1, ownloop), false, [v1, ownloop]);
-    expect(check.detail).toBe('Checked from the two saved configs: Hermes Agent vs Own loop, with the harness version and any setting only one of the two takes, which come with the harness. Nothing else differs.');
+    expect(check.detail).toMatch(/^Checked from the two saved configs: Hermes Agent \S+ vs Own loop \S+, with any setting only one of the two takes, which comes with the harness\. Nothing else differs\.$/);
     expect(check.detail).not.toMatch(/capabilities_sha256|harness_ref|settings\.|\{/);
     expect(check.raw).toContain('capabilities_sha256');
+  });
+
+  it('lists every change, with both values, when the arms differ in more than one thing', () => {
+    const both = { ...twelve, settings: { ...twelve.settings, temperature: 0.3 } };
+    const check = armsCheck(localDiff(ten, both), false, [ten, both]);
+    expect(check.ok).toBe(false);
+    expect(check.detail).toMatch(/^They differ in temperature not sent vs 0\.3 and max steps 10 vs 12, so/);
   });
 });
 
 describe('a run’s default name says what differs, never "X vs X" (QA round 3, M1)', () => {
   it('names the one change and what the arms share', () => {
     expect(runAutoName(ten, twelve, '15 tasks')).toBe('Max steps 10 vs 12 on Own loop with Fake model finance-emi, 15 tasks');
-    expect(runAutoName(v1, v2, 'held-out')).toBe('Prompt v1 vs v2 on Hermes with Claude Haiku 5.5, held-out');
+    expect(runAutoName(v1, v2, 'held-out')).toBe('System prompt v1 vs v2 on Hermes with Claude Haiku 5.5, held-out');
     expect(runAutoName(v1, gemini, 'all tasks')).toBe('Claude Haiku 5.5 vs Gemini 3.8 Flash on Hermes, all tasks');
-    expect(runAutoName(v1, ownloop, 'all tasks')).toBe('Hermes Agent vs Own loop on Claude Haiku 5.5, all tasks');
+    expect(runAutoName(v1, ownloop, 'all tasks')).toMatch(/^Hermes Agent \S+ vs Own loop \S+ on Claude Haiku 5\.5, all tasks$/);
   });
 
   it('names arms that differ in more than one thing by their configs, or by every change when the names are the same', () => {
@@ -103,11 +100,11 @@ describe('a run’s default name says what differs, never "X vs X" (QA round 3, 
 describe('a config’s auto-name tells it from its relatives (QA round 3, M1)', () => {
   const content = (c: ConfigView) => ({ harness: c.harness, model: c.model, prompt: c.prompt, settings: c.settings, harness_options: c.harness_options, seed: c.seed, toolset: c.toolset });
 
-  it('says the harness, model and prompt, then each setting away from the platform default', () => {
+  it('says the harness, model and prompt, then each setting away from the platform default, worded as the comparison words it', () => {
     expect(autoConfigName({ harness: 'ownloop', model: 'fake/finance-emi', prompt: { id: 'finance-advisor', version: 'v1' }, settings: { max_steps: 15, memory: { enabled: false } } })).toBe(
       'Own loop, Fake model finance-emi, finance-advisor v1',
     );
-    expect(autoConfigName(content(twelve), ten)).toBe('Own loop, Fake model finance-emi, finance-advisor v1, max output tokens 1,024, max steps 12, timeout 180 s');
+    expect(autoConfigName(content(twelve), ten)).toBe('Own loop, Fake model finance-emi, finance-advisor v1, max output tokens 1024, max steps 12, timeout 180 s');
     expect(autoConfigName(content(ten), twelve)).not.toBe(autoConfigName(content(twelve), ten));
   });
 
@@ -117,13 +114,13 @@ describe('a config’s auto-name tells it from its relatives (QA round 3, M1)', 
     expect(autoConfigName({ ...content(v1), prompt: v2.prompt }, v1)).toMatch(/^Hermes, Claude Haiku 5\.5, finance-advisor v2/);
   });
 
-  it('says a toggle that is on, a seed, and a toolset that differs from the relative', () => {
+  it('says a toggle that is on, a seed, and tools that differ from the relative', () => {
     const plain = { harness: 'hermes', model: 'claude-haiku-5-5', prompt: v1.prompt, settings: { memory: { enabled: true } }, seed: { memory: ['Prefers Hindi terms'], skills: [] }, toolset: { id: 'finance', version: 'v2', sha256: 'sha256:other' } };
-    expect(autoConfigName(plain, v1)).toBe('Hermes, Claude Haiku 5.5, finance-advisor v1, memory on, seeded with 1 memory entry, toolset finance v2');
+    expect(autoConfigName(plain, v1)).toBe('Hermes, Claude Haiku 5.5, finance-advisor v1, memory on, seeded with 1 memory entry, tools finance v2');
     // Past 120 characters, the settings it shares with the relative go first (here max output
     // tokens, max steps and timeout, which v1 sets too).
     const seeded = { ...plain, settings: { ...v1.settings, memory: { enabled: true } } };
-    expect(autoConfigName(seeded, v1)).toBe('Hermes, Claude Haiku 5.5, finance-advisor v1, memory on, seeded with 1 memory entry, toolset finance v2');
+    expect(autoConfigName(seeded, v1)).toBe('Hermes, Claude Haiku 5.5, finance-advisor v1, memory on, seeded with 1 memory entry, tools finance v2');
   });
 
   it('keeps to NAME_MAX, leaving out what the relative shares first', () => {

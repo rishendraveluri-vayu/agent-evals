@@ -4,9 +4,10 @@ import { api } from '../api/client';
 import type { Compare, ExperimentSummary, ExperimentDetail, TaskView } from '../api/types';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { armsOf, type Verdict } from '../lib/arms';
+import { armsOf, armState, noDiffWords, passedText, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { clientKind, experimentName, gradedBy, graderKinds, graderName, splitName } from '../lib/names';
+import { isEngineTest } from '../lib/runSetup';
 import { href } from '../router';
 
 const { data, error, loading } = useLoad(async () => {
@@ -31,6 +32,15 @@ const isCode = (t: TaskView) => !graderKinds(t.graders).includes('judge');
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 const arms = computed(() => (data.value?.run ? armsOf(data.value.run.detail, data.value.run.detail.configs) : []));
+
+/** "15 personal-finance tasks and 2 engine tests": the engine tests check the platform, not an
+ *  agent, so they are not counted as tasks. */
+const taskCount = computed(() => {
+  if (!tasks.value.length) return 'The personal-finance tasks';
+  const engine = tasks.value.filter(isEngineTest).length;
+  const real = plural(tasks.value.length - engine, 'personal-finance task', 'personal-finance tasks');
+  return engine ? `${real} and ${plural(engine, 'engine test', 'engine tests')} (checks of the platform, not of an agent)` : real;
+});
 
 const glance = computed(() => {
   const all = tasks.value;
@@ -64,17 +74,22 @@ const runCaption = computed(() => {
   return `Last run: ${experimentName(run.detail)}, ${n} ${n === 1 ? 'trial' : 'trials'} per arm.${tail}`;
 });
 
-const lastRun = (t: TaskView) => {
+/** A task's result in the last run, as its comparison writes it: each arm's passes ("2 of 3",
+ *  "1 undecided"), and the verdict, or with no difference to show, how the arms stand
+ *  ("Undecided", "B undecided"). */
+const lastRun = (t: TaskView): { a: string; b: string; verdict: Verdict; label?: string } | null => {
   const run = data.value?.run;
   if (!run) return null;
-  const [ha, hb] = run.detail.config_hashes;
   const rows = run.compare.rows.filter((r) => r.task === t.sha256 || r.task === t.id);
-  const a = rows.find((r) => r.config === ha);
-  const b = rows.find((r) => r.config === hb);
+  const a = rows.find((r) => r.arm === 'A');
+  const b = rows.find((r) => r.arm === 'B');
   if (!a || !b) return null;
   const stat = run.compare.stats?.tasks.find((x) => x.task === t.sha256 || x.task === t.id);
-  const verdict: Verdict = !stat ? 'pending' : stat.significant ? (stat.diff.estimate >= 0 ? 'better' : 'worse') : 'none';
-  return { a: `${a.passed}/${a.graded}`, b: `${b.passed}/${b.graded}`, verdict };
+  const words = { a: passedText(a), b: passedText(b) };
+  if (stat) return { ...words, verdict: stat.significant ? (stat.diff.estimate >= 0 ? 'better' : 'worse') : 'none' };
+  // No statistics: a difference only when both arms have outcomes; otherwise say how they stand.
+  const both = a.graded && b.graded;
+  return { ...words, verdict: 'pending', label: both ? undefined : noDiffWords([armState(a), armState(b)]).tag };
 };
 
 const filtered = computed(() =>
@@ -100,7 +115,7 @@ const groups = computed(() => {
       Tasks
     </h1>
     <p class="lede">
-      {{ tasks.length || 'The' }} personal-finance tasks, each needing both a correct tool call and judgment. Tasks are files in the repo; this page shows how each is graded and where it sits in the experiment.
+      {{ taskCount }}, each needing both a correct tool call and judgment. Tasks are files in the repo; this page shows how each is graded and where it sits in the experiment.
     </p>
   </div>
 
@@ -264,7 +279,10 @@ const groups = computed(() => {
             </td>
             <td class="right num">
               <template v-if="lastRun(t)">
-                <VerdictTag :verdict="lastRun(t)?.verdict ?? 'pending'" />
+                <VerdictTag
+                  :verdict="lastRun(t)?.verdict ?? 'pending'"
+                  :label="lastRun(t)?.label"
+                />
                 <span
                   class="result-detail arm-counts"
                   data-test="last-run"

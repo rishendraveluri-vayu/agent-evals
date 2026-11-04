@@ -80,10 +80,10 @@ describe('ConfigView in fixture mode', () => {
     const w = mount(ConfigView);
     await settle();
     // Made from what it holds: the harness, model and prompt, then each setting away from its default.
-    expect((w.get('[data-test="config-name"]').element as HTMLInputElement).value).toBe('Hermes, Gemini 3.8 Flash, finance-advisor v2, max output tokens 1,024, max steps 12, timeout 180 s');
+    expect((w.get('[data-test="config-name"]').element as HTMLInputElement).value).toBe('Hermes, Gemini 3.8 Flash, finance-advisor v2, max output tokens 1024, max steps 12, timeout 180 s');
     // On Claude Haiku 5.5 it is exactly the saved "Prompt v2 on Hermes".
     await haiku(w);
-    expect((w.get('[data-test="config-name"]').element as HTMLInputElement).value).toBe('Hermes, Claude Haiku 5.5, finance-advisor v2, max output tokens 1,024, max steps 12, timeout 180 s');
+    expect((w.get('[data-test="config-name"]').element as HTMLInputElement).value).toBe('Hermes, Claude Haiku 5.5, finance-advisor v2, max output tokens 1024, max steps 12, timeout 180 s');
     expect(w.get('[data-test="config-name"]').attributes('maxlength')).toBe('120');
     expect(w.get('[data-test="same-as"]').text()).toContain('Same content as “Prompt v2 on Hermes”: saving returns that config, under its own name.');
     await w.get('[data-test="config-name"]').setValue('My better name');
@@ -344,12 +344,12 @@ describe('ConfigView, forking a config', () => {
     expect(w.get('[data-test="config-hash"]').text()).toBe('3b81e04');
     // Named from what it holds, never the parent's name with ", fork" (QA round 3, M1).
     const name = () => (w.get('[data-test="config-name"]').element as HTMLInputElement).value;
-    expect(name()).toBe('Hermes, Claude Haiku 5.5, finance-advisor v1, max output tokens 1,024, max steps 12, timeout 180 s');
+    expect(name()).toBe('Hermes, Claude Haiku 5.5, finance-advisor v1, max output tokens 1024, max steps 12, timeout 180 s');
     await w.get('[data-test="model-select"]').setValue('gemini-3.8-flash');
     await settle();
     expect(w.get('[data-test="config-changes"]').text()).toBe('Model: Claude Haiku 5.5 to Gemini 3.8 Flash');
     // The name follows the change, so the fork never keeps the parent's now-wrong model.
-    expect(name()).toBe('Hermes, Gemini 3.8 Flash, finance-advisor v1, max output tokens 1,024, max steps 12, timeout 180 s');
+    expect(name()).toBe('Hermes, Gemini 3.8 Flash, finance-advisor v1, max output tokens 1024, max steps 12, timeout 180 s');
     expect(name()).not.toContain('Haiku');
     await w.get('[data-test="save-config"]').trigger('click');
     await settle();

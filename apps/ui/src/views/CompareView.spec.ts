@@ -608,3 +608,195 @@ describe('CompareView: the judge panel, in fixture mode', () => {
     expect(w.find('[data-test="judge-panel"]').exists()).toBe(false);
   });
 });
+
+describe('CompareView: what arms A and B differ in, by name and value (QA round 3, M1)', () => {
+  type Config = Record<string, unknown> & { settings: Record<string, unknown>; settings_sources: Record<string, unknown>; prompt: unknown };
+  const detail = (details as unknown as Record<string, Record<string, unknown> & { configs: Config[] }>).exp_heldout;
+  const [c1, c2] = detail.configs;
+  function mountWith(configs: Config[], over: Record<string, unknown> = {}, compare: unknown = { ...(compares.exp_heldout as object), stats: null }) {
+    routeFetch({
+      '/api/experiments/exp_heldout': { ...detail, configs, ...over },
+      '/api/experiments/exp_heldout/compare': compare,
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': null,
+      '/api/labels/queue?set=heldout': [],
+      '/api/models': [],
+    });
+    return mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+  }
+  const differences = (w: VueWrapper) => w.findAll('[data-test="arm-difference"]').map((li) => li.text());
+
+  it('says a prompt change by version, next to the arm names', async () => {
+    const w = mountWith(detail.configs);
+    await settle();
+    expect(differences(w)).toEqual(['System prompt: v1 in A, v2 in B']);
+    expect(inOrder(w, ['[data-test="arms-line"]', '[data-test="arm-differences"]', '[data-test="meta-line"]'])).toBe(true);
+  });
+
+  it('names two configs with one name by the setting that differs, and says both values', async () => {
+    const name = 'Prompt v1 on Own loop, Fake model finance-emi';
+    const a = { ...c1, name, settings: { ...c1.settings, max_steps: 10 } };
+    const b = { ...c2, name, prompt: c1.prompt, settings: { ...c1.settings, max_steps: 12 } };
+    const w = mountWith([a, b], { axis: 'max_steps', name: `${name} vs ${name}, 12 tasks` });
+    await settle();
+    expect(w.findAll('[data-test="arm-name"]').map((x) => x.text())).toEqual(['A: Max steps 10 (config 3b81e04)', 'B: Max steps 12 (config 7f3a9c2)']);
+    expect(differences(w)).toEqual(['Max steps: 10 in A, 12 in B']);
+  });
+
+  it('tells two arms apart by their config names when the axis would name them alike', async () => {
+    // Two prompts both at v1, with different text: the prompt names them alike, so the config names do.
+    const w = mountWith([c1, { ...c2, prompt: { ...(c2.prompt as object), version: 'v1' } }]);
+    await settle();
+    expect(w.findAll('[data-test="arm-name"]').map((x) => x.text())).toEqual(['A: Prompt v1 on Hermes (config 3b81e04)', 'B: Prompt v2 on Hermes (config 7f3a9c2)']);
+    expect(differences(w)).toEqual(['System prompt: v1 (5c0f1a2) in A, v1 (9d24e7b) in B']);
+  });
+
+  it('says a model change in model names, and leaves the model off the shared line', async () => {
+    const w = mountWith([c1, { ...c2, prompt: c1.prompt, model: 'claude-sonnet-5-5' }], { axis: 'model' });
+    await settle();
+    expect(differences(w)).toEqual(['Model: Claude Haiku 5.5 in A, Claude Sonnet 5.5 in B']);
+    expect(w.get('[data-test="setup"]').text()).toBe('Hermes 6112c2a, prompt v1');
+  });
+
+  it('says a harness change with both versions, and the settings one harness cannot take, on one line', async () => {
+    const off = { enabled: false };
+    const own = {
+      ...c1,
+      harness: 'ownloop',
+      harness_ref: '0.1.0',
+      capabilities_sha256: 'sha256:aaaa',
+      settings: { ...c1.settings, memory: null, skills: null, compression: null },
+      settings_sources: { ...c1.settings_sources, memory: 'unsupported', skills: 'unsupported', compression: 'unsupported' },
+    };
+    const hermes = { ...c2, prompt: c1.prompt, settings: { ...c1.settings, memory: off, skills: off, compression: off } };
+    const w = mountWith([own, hermes], { axis: 'harness' });
+    await settle();
+    expect(differences(w)).toEqual(['Harness: Own loop 0.1.0 in A, Hermes Agent 6112c2a in B', 'Memory, skills and compression: not supported in A, off in B']);
+    expect(w.get('[data-test="setup"]').text()).toBe('Claude Haiku 5.5, prompt v1');
+  });
+
+  it('says nothing differs in an A/A run', async () => {
+    const aa = (details as unknown as Record<string, Record<string, unknown>>).exp_aa;
+    routeFetch({
+      '/api/experiments/exp_aa': aa,
+      '/api/experiments/exp_aa/compare': (compares as Record<string, unknown>).exp_aa,
+      '/api/experiments/exp_aa/trials': (experimentTrials as Record<string, unknown>).exp_aa ?? [],
+      '/api/judge/agreement?set=heldout': null,
+      '/api/labels/queue?set=heldout': [],
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_aa' } });
+    await settle();
+    expect(w.get('[data-test="arm-differences"]').text()).toBe('What differs Nothing: both arms run the same config, so any difference between them is the noise of the setup.');
+  });
+});
+
+describe('CompareView: the judge on a model whose key is not set (QA round 3, minor 1)', () => {
+  it('says which key the model needs and keeps Approve off, as the Build and Run screens do', async () => {
+    const { calls } = routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': null,
+      '/api/labels/queue?set=heldout': [],
+      '/api/models': [
+        { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 1, output_per_mtok: 5, key_set: false },
+        { name: 'gemini-3.8-flash', provider: 'gemini', input_per_mtok: 0.75, output_per_mtok: 3.75, key_set: true },
+      ],
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    await w.get('[data-test="judge-approve-open"]').trigger('click');
+    await settle();
+    expect(w.findAll('[data-test="judge-model-select"] option').map((o) => o.text())).toEqual(['Pick a model', 'Claude Haiku 5.5 (needs ANTHROPIC_API_KEY in .env)', 'Gemini 3.8 Flash']);
+    await w.get('[data-test="judge-model-select"]').setValue('claude-haiku-5-5');
+    await w.get('[data-test="judge-budget-input"]').setValue('2');
+    expect(w.get('[data-test="judge-key-problem"]').text()).toBe('Claude Haiku 5.5 needs ANTHROPIC_API_KEY in .env, then docker compose up -d. Until then the judge cannot call it, so judging stays off.');
+    const go = w.get('[data-test="judge-approve-go"]');
+    expect(go.attributes('disabled')).toBeDefined();
+    expect(go.attributes('aria-describedby')).toBe('judge-key-problem');
+    // Said once, under the model, not again under the buttons.
+    expect(w.find('[data-test="judge-approve-blocked"]').exists()).toBe(false);
+    await w.get('[data-test="judge-approve"]').trigger('submit');
+    await settle();
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+    // A model whose key is set can be approved.
+    await w.get('[data-test="judge-model-select"]').setValue('gemini-3.8-flash');
+    expect(w.find('[data-test="judge-key-problem"]').exists()).toBe(false);
+    expect(w.get('[data-test="judge-approve-go"]').attributes('disabled')).toBeUndefined();
+  });
+});
+
+describe('CompareView: a link to an experiment that does not exist (QA round 3, minor 6)', () => {
+  useFixtures();
+
+  it('says so under a breadcrumb, with a way out, not as a load error', async () => {
+    const w = mount(CompareView, { props: { experimentId: 'e_doesnotexist' } });
+    await settle();
+    expect(w.find('[data-test="load-error"]').exists()).toBe(false);
+    const page = w.get('[data-test="not-found"]');
+    expect(page.get('nav').text()).toBe('Experiments / Not found');
+    expect(page.get('h1').text()).toBe('No experiment with that id');
+    expect(page.text()).toContain('Nothing is saved as e_doesnotexist');
+    expect(page.findAll('a').map((a) => a.attributes('href'))).toEqual(['#/experiments', '#/experiments', '#/run']);
+  });
+
+  it('keeps a plain load error for anything else', async () => {
+    vi.spyOn(api, 'experiment').mockRejectedValueOnce(new ApiError(0, 'unreachable', 'The API could not be reached'));
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.find('[data-test="not-found"]').exists()).toBe(false);
+    expect(w.get('[data-test="load-error"]').text()).toContain('The API could not be reached');
+  });
+});
+
+describe('CompareView: a stopped run and a run on fake models (QA round 3, minors 9 and 12)', () => {
+  const detail = (details as unknown as Record<string, Record<string, unknown> & { configs: { model: string }[] }>).exp_heldout;
+  const stopped = {
+    experiment_id: 'exp_heldout',
+    status: 'incomplete',
+    reason: "the experiment was stopped before every trial ran (40 of arm A's trials cancelled, 41 of arm B's trials cancelled); a verdict needs the full planned N (D32)",
+    arms: [],
+    rows: [],
+    stats: null,
+  };
+  function mountWith(over: Record<string, unknown>, compare: unknown) {
+    routeFetch({
+      '/api/experiments/exp_heldout': { ...detail, ...over },
+      '/api/experiments/exp_heldout/compare': compare,
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': null,
+      '/api/labels/queue?set=heldout': [],
+      '/api/models': [],
+    });
+    return mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+  }
+
+  it('says once that a verdict needs the full planned N', async () => {
+    const w = mountWith({}, stopped);
+    await settle();
+    const text = w.get('[data-test="incomplete-reason"]').text();
+    expect(text).toBe(
+      "The experiment was stopped before every trial ran (40 of arm A's trials cancelled, 41 of arm B's trials cancelled). A verdict needs the full planned N, so no pass counts are shown off a partial run.",
+    );
+    expect(text.match(/full planned N/g)).toHaveLength(1);
+  });
+
+  it('says in the verdict box that a fake run gives scripted test outputs, so most trials fail', async () => {
+    const w = mountWith({ configs: detail.configs.map((c) => ({ ...c, model: 'fake/finance-emi' })) }, { ...(compares.exp_heldout as object), stats: null });
+    await settle();
+    const note = w.get('[data-test="verdict"] [data-test="fake-run-note"]').text();
+    expect(note).toBe('Scripted test outputs: Both arms ran on a fake model, which makes the same calls whatever the task, so most trials fail. The counts test the platform, not an agent.');
+  });
+
+  it('says it of a stopped run too, and of one fake arm alone', async () => {
+    const w = mountWith({ configs: detail.configs.map((c, i) => (i ? { ...c, model: 'fake/finance-emi' } : c)) }, stopped);
+    await settle();
+    expect(w.get('[data-test="fake-run-note"]').text()).toContain('Arm B ran on a fake model, which makes the same calls whatever the task, so most of its trials fail.');
+  });
+
+  it('says nothing of the kind on real models', async () => {
+    const w = mountWith({}, { ...(compares.exp_heldout as object), stats: null });
+    await settle();
+    expect(w.find('[data-test="fake-run-note"]').exists()).toBe(false);
+  });
+});

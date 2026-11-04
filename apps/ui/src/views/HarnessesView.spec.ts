@@ -43,6 +43,17 @@ describe('HarnessesView in fixture mode', () => {
     }
   });
 
+  it('has a card per harness, with every setting, for screens the table would not fit', async () => {
+    const w = mount(HarnessesView);
+    await settle();
+    const cards = w.findAll('[data-test="harness-card"]');
+    expect(cards.map((c) => c.get('h3').text())).toEqual(['Hermes Agent 6112c2a', 'Own loop 0.1.0', 'LangGraph 1.2.16', 'Google ADK 2.12.0', 'OpenAI Agents SDK 0.24.0']);
+    for (const card of cards) expect(card.findAll('dt')).toHaveLength(8);
+    // The same words as the table's cell.
+    expect(w.get('[data-test="card-hermes-max_steps"] dd').text()).toBe(w.get('[data-test="cell-hermes-max_steps"]').text());
+    expect(w.get('[data-test="card-hermes-max_steps"] dt').text()).toBe('Max steps');
+  });
+
   it('marks a probed setting with a check and ink, not green', async () => {
     const w = mount(HarnessesView);
     await settle();

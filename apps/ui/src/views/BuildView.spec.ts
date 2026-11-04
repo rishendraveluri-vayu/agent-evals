@@ -236,7 +236,7 @@ describe('Build an agent, in fixture mode', () => {
     expect(evaluate.startsWith('#/run?')).toBe(true);
     expect(q.get('a')).toBe(OWN_LOOP.hash);
     expect(q.get('b')).toMatch(new RegExp(`^sha256:${hash}`));
-    expect(view.get('[data-test="next-evaluate-words"]').text()).toContain('Against Own loop, prompt v1, which differs from it only in the harness (Own loop vs LangGraph): that agent is arm A, the baseline, and this one arm B, the agent being tried.');
+    expect(view.get('[data-test="next-evaluate-words"]').text()).toContain('Against Own loop, prompt v1, which differs from it only in the harness (Own loop 0.1.0 vs LangGraph 1.2.16): that agent is arm A, the baseline, and this one arm B, the agent being tried.');
     expect(view.get('[data-test="all-settings"]').attributes('href')).toBe(`#/configs?fork=${encodeURIComponent(q.get('b') ?? '')}`);
     // A different choice is a different agent: the next steps wait for it to be saved.
     await pickHarness(view, 'adk');

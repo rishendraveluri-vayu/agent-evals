@@ -14,6 +14,7 @@ import { optional, useLoad } from '../lib/async';
 import { money, plainText, plural, relative, wholeMoney } from '../lib/format';
 import { isFake } from '../lib/models';
 import { modelName } from '../lib/names';
+import { missingKey } from '../lib/runSetup';
 import AppIcon from './AppIcon.vue';
 
 const props = defineProps<{
@@ -56,9 +57,19 @@ const budgetProblem = computed(() => {
   if (budgetValue.value <= 0 || budgetValue.value > BUDGET_MAX) return `The budget must be above $0 and at most $${BUDGET_MAX}.`;
   return null;
 });
+/** The .env variable a listed model needs and lacks (GET /models' key_set), as the Build and Run
+ *  screens read it: null when it is set or the API could not tell. */
+const keyOf = (name: string) => missingKey(name, models.value ?? []);
+/** "needs ANTHROPIC_API_KEY in .env, then docker compose up -d", for the picked model. */
+const keyProblem = computed(() => {
+  const key = model.value ? keyOf(model.value) : null;
+  return key ? `${modelName(model.value)} needs ${key} in .env, then docker compose up -d. Until then the judge cannot call it, so judging stays off.` : null;
+});
+
 /** Why "Approve and judge" is off, in words; null when it is on. */
 const approveBlocked = computed(() => {
   if (!model.value) return 'Pick the model the judge calls.';
+  if (keyProblem.value) return keyProblem.value;
   if (budgetProblem.value) return budgetProblem.value;
   if (!budget.value.trim()) return `Give a budget: the most judging may spend, at most $${BUDGET_MAX}.`;
   return null;
@@ -321,12 +332,18 @@ async function revoke() {
                 v-for="m in models ?? []"
                 :key="m.name"
                 :value="m.name"
-              >{{ modelName(m.name) }}</option>
+              >{{ modelName(m.name) }}{{ keyOf(m.name) ? ` (needs ${keyOf(m.name)} in .env)` : '' }}</option>
             </select>
             <span
               v-if="models && !models.length"
               class="secondary smaller"
             >No real model is set up in LiteLLM, so there is none to pick.</span>
+            <span
+              v-else-if="keyProblem"
+              id="judge-key-problem"
+              class="problem smaller"
+              data-test="judge-key-problem"
+            >{{ keyProblem }}</span>
           </label>
           <label class="field">
             <span class="strong small">Budget, in dollars</span>
@@ -430,7 +447,7 @@ async function revoke() {
               type="submit"
               class="btn"
               :disabled="busy || !!approveBlocked"
-              :aria-describedby="approveBlocked ? 'judge-approve-blocked' : undefined"
+              :aria-describedby="keyProblem ? 'judge-key-problem' : approveBlocked ? 'judge-approve-blocked' : undefined"
               data-test="judge-approve-go"
             >
               Approve and judge
@@ -445,8 +462,9 @@ async function revoke() {
               Cancel
             </button>
           </div>
+          <!-- A missing key is said once, under the model it belongs to. -->
           <p
-            v-if="approveBlocked"
+            v-if="approveBlocked && approveBlocked !== keyProblem"
             id="judge-approve-blocked"
             class="secondary smaller"
             data-test="judge-approve-blocked"

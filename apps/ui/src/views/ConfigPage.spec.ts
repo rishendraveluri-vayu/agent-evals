@@ -42,8 +42,8 @@ describe('ConfigPage: what the config is', () => {
     await lineage.get('[data-test="compare-parent"]').trigger('click');
     await settle();
     expect(diff).toHaveBeenCalledWith(v1.hash, v2.hash);
-    // In words with both values; the field paths only behind Details (QA round 3, minor 3).
-    expect(w.get('[data-test="parent-diff"]').text()).toBe('Prompt v1 vs v2');
+    // In words with both values, as the comparison words them; the field paths only behind Details (QA round 3, minor 3).
+    expect(w.get('[data-test="parent-diff"]').text()).toBe('System prompt: v1 to v2');
     expect(w.get('[data-test="parent-fields"]').attributes('open')).toBeUndefined();
     expect(w.get('[data-test="parent-fields"]').text()).toContain('prompt.version: v1 to v2');
     expect(w.get('[data-test="fork"]').attributes('href')).toBe(`#/configs?fork=${encodeURIComponent(v2.hash)}`);

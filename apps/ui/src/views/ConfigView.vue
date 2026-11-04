@@ -9,8 +9,8 @@ import { optional, useLoad } from '../lib/async';
 import { coverageText } from '../lib/capabilities';
 import { changedLineCount, lineChanges, sentenceChanges } from '../lib/diff';
 import { mdBlocks } from '../lib/markdown';
-import { plainText, shortHash, shortRef, splitIdents } from '../lib/format';
-import { autoConfigName, configChanges, contentDiff, PLATFORM_DEFAULTS } from '../lib/checks';
+import { harnessVersion, plainText, shortHash, shortRef, splitIdents } from '../lib/format';
+import { autoConfigName, contentDiff, PLATFORM_DEFAULTS } from '../lib/checks';
 import { BOOLEAN_SETTINGS, harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
 import { agentModels, fakeDoes, isFake } from '../lib/models';
 import { NAME_MAX, settingProblem } from '../lib/limits';
@@ -310,8 +310,11 @@ const changes = computed(() => {
   if (b.harness !== form.harness) out.push(`Harness: ${harnessShort(b.harness)} to ${harnessShort(form.harness)}`);
   // The same harness at another version (a shipped example's config was made elsewhere): said in
   // words, since the saved config gets today's.
-  const version = content.value ? configChanges(b, content.value).find((c) => c.key === 'harness_version') : undefined;
-  if (version) out.push(version.differs ? `${harnessShort(form.harness)} capabilities file: today's, not the one ${b.name} was made with` : `${version.label}: ${version.a} to ${version.b}`);
+  const h = harness.value;
+  if (h && b.harness === h.name) {
+    if (b.harness_ref !== h.ref) out.push(`${harnessShort(h.name)} version: ${harnessVersion(b.harness_ref)} to ${harnessVersion(h.ref)}`);
+    else if (b.adapter_version !== h.adapter_version || b.capabilities_sha256 !== h.capabilities_sha256) out.push(`${harnessShort(h.name)} adapter files: today's, not the ones ${b.name} was made with`);
+  }
   if (b.model !== form.model) out.push(`Model: ${modelName(b.model)} to ${modelName(form.model)}`);
   if (b.prompt.sha256 !== form.prompt) out.push(`Prompt: ${b.prompt.id === prompt.value?.id ? '' : `${b.prompt.id} `}${b.prompt.version} to ${prompt.value?.id === b.prompt.id ? '' : `${prompt.value?.id} `}${prompt.value?.version ?? '?'}`);
   if (b.toolset.sha256 !== form.toolset) {

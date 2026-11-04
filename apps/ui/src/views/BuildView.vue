@@ -14,7 +14,7 @@ import AppIcon from '../components/AppIcon.vue';
 import InfoTip from '../components/InfoTip.vue';
 import LoadState from '../components/LoadState.vue';
 import { useLoad } from '../lib/async';
-import { autoConfigName, axisPhrase, changeWords, configChanges, type NameContent } from '../lib/checks';
+import { autoConfigName, axisChange, axisPhrase, changeWords, type NameContent } from '../lib/checks';
 import { baselineFor, missingKey } from '../lib/runSetup';
 import { plainText, shortHash, shortRef } from '../lib/format';
 import { harnessFacts, harnessTagline, memoryLine } from '../lib/harnessInfo';
@@ -270,8 +270,8 @@ const baselineChange = computed(() => {
   const other = baseline.value?.config;
   if (!mine || !other) return '';
   const [a, b] = baselineIsFork.value ? [mine, other] : [other, mine];
-  const changes = configChanges(a, b);
-  return changes.length === 1 ? changeWords(changes[0]) : '';
+  const one = axisChange(a, b);
+  return one ? changeWords(one) : '';
 });
 
 /** Arm A is the baseline and arm B the agent being tried: the comparison reads B minus A. With no
