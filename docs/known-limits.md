@@ -142,6 +142,14 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 
 - **Memory is never written within one trial.** In 20 memory-on trials on Haiku 5.5, Hermes did not call its `memory` tool once. Each trial is a fresh session, so a memory-on vs memory-off comparison on these tasks measures the extra tool schema and prompt text, and a seeded config measures the seeded facts. It does not measure whether Hermes saves the right things for later. Testing that needs a task that runs two sessions on one home, which we have not built.
 
+## Shipped examples (SP7, 4 Nov)
+
+- **The shipped example is a draft stand-in, not a result.** `examples/harness-ownloop-vs-hermes-haiku/` is the first label batch (`e_0mw273dpt486807c2722a92dc`): own loop vs Hermes on Claude Haiku 5.5, 15 draft tasks, **one trial per task and arm**, 30 trials, $0.14. It was run for open coding, not sized for a comparison, so its compare page shows what the platform records, not which harness is better. Only the rule-based graders ran (no judge was approved), so 20 of its 30 trials are `incomplete`: a required judge grade is missing. It is to be replaced by Friday's real experiment, exported the same way.
+- **Its rows were assembled, not read whole.** It was exported from an API built before `GET /experiments/:id/bundle`, so the script rebuilt the rows from the routes that API has and the repo's catalogue files (every task, prompt, toolset and capabilities hash checked, the capabilities file found in git history). What could not be recovered exactly is listed in its manifest's `approximations`: grading jobs hold only each trial's latest finished job, with empty `graders`; grades have no `spec_sha256`; arms have no `resumed_at` or `futility_checked_at`; `seq` is rebuilt from the plan order. None of these is shown in the UI or used by a loaded example, which is never re-graded. Once the live API is rebuilt with the bundle route, `scripts/export_example.py ... --replace` exports it exactly (`source: "bundle"`).
+- Its experiment has no `platform_commit` (`EVALS_PLATFORM_COMMIT` was unset when it ran), so its manifest's `exported_from_commit` is the checkout that exported it, not the code that ran it.
+- An experiment whose arm A reuses its parent's trials (D34) cannot be exported yet: the bundle would need the parent's trials too. A parent link alone is cleared from the shipped row and noted in the manifest.
+- The secret check matches LiteLLM's `sk-` keys, Bearer tokens, a fixed list of secret field names and the values of secret-looking variables in the exporting machine's environment and `.env`. A secret in any other shape (a provider key with another prefix in a free-text log, say) is caught only if its value is in that environment.
+
 ## To check before submission
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted
