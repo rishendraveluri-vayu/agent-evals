@@ -7,6 +7,7 @@ import { badRequest, notFound } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { sha256Hex } from '../common/hashing';
 import { Db } from '../database/db.service';
+import { NOT_EXAMPLE_TRIAL } from '../examples/example-guard';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -104,8 +105,11 @@ export class LabelsService {
     const params: unknown[] = [set];
     // The sets stay disjoint: a trial labelled in one set never appears in another, so tuning
     // labels can never leak into the held-out agreement (SP5, CLAUDE.md: never tune on held-out).
+    // A shipped example's trials (SP7) are not labelled here: labels/ holds Rishi's judgments of
+    // his own runs, and an example's trials keep the ids they had on the machine they came from.
     let where = `t.status = 'done' AND NOT t.probe AND t.label = 'agent' AND t.result IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM labels o WHERE o.trial_id = t.id AND o.label_set <> $1)`;
+      AND NOT EXISTS (SELECT 1 FROM labels o WHERE o.trial_id = t.id AND o.label_set <> $1)
+      AND ${NOT_EXAMPLE_TRIAL('t')}`;
     if (experimentId) {
       params.push(experimentId);
       where += ` AND t.experiment_id = $${params.length}`;

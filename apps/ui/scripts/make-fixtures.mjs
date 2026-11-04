@@ -321,7 +321,7 @@ const exp = (o) => ({
   sim: { prompt: { id: 'client-sim', version: 'v3', sha256: named('44ac8b0') }, temperature: null, max_output_tokens: 2048 },
   platform_commit: 'c4d2e19', plan_commit: '3e1a9f0', budgets: { trial_usd: 0.5, sim_usd: 0.1 },
   started_at: null, finished_at: null, paused_at: null, paused_reason: null,
-  order_seed: null, futility: FUTILITY, parent_experiment_id: null, baseline: null, actual: null, arms: [], judge: null, ...o,
+  order_seed: null, futility: FUTILITY, parent_experiment_id: null, baseline: null, actual: null, arms: [], judge: null, example: null, ...o,
 });
 const ev = (minutesAgo, kind, detail, extra = {}) => ({ at: at(minutesAgo), kind, trial_id: null, attempt: null, arm: null, config_hash: null, detail, ...extra });
 const where = (t) => `${t.task_id} on ${t.config_name}, attempt ${t.attempt}`;
@@ -618,7 +618,7 @@ const compares = {
 };
 
 const configByHash = Object.fromEntries(configs.map((c) => [c.hash, c]));
-const SUMMARY_KEYS = ['id', 'name', 'axis', 'status', 'config_hashes', 'task_sha256s', 'n', 'counts', 'spend_usd', 'estimate', 'budget_usd', 'created_at'];
+const SUMMARY_KEYS = ['id', 'name', 'axis', 'status', 'config_hashes', 'task_sha256s', 'n', 'counts', 'spend_usd', 'estimate', 'budget_usd', 'created_at', 'example'];
 const experimentSummaries = experiments.map((e) => Object.fromEntries(SUMMARY_KEYS.map((k) => [k, e[k]])));
 const experimentDetails = Object.fromEntries(experiments.map((e) => [e.id, {
   ...e,

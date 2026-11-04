@@ -3,6 +3,12 @@
 Assumes `docker compose up -d --wait` has run. Standard library only.
 Run: python3 scripts/smoke.py
 
+Ports follow the same variables as docker-compose.yml (UI_PORT, API_PORT, LITELLM_PORT), so
+a stack started on other ports is checked where it runs; SMOKE_UI_URL, SMOKE_API_URL and
+SMOKE_LITELLM_URL override them. The one `docker compose exec` goes to the compose project in
+COMPOSE_PROJECT_NAME (the compose file's own name, agent-evals, when unset): set it when the
+stack was started with `-p <name>`, so the check never reaches into another copy of the stack.
+
 Checks:
 - the UI serves its page, and proxies /api/health to the API with the database up;
 - LiteLLM routes a fake model to the fake server, both plain and streamed;
@@ -14,9 +20,14 @@ import os
 import sys
 import urllib.request
 
-UI = os.environ.get("SMOKE_UI_URL", "http://127.0.0.1:8080")
-API = os.environ.get("SMOKE_API_URL", "http://127.0.0.1:3000")
-LITELLM = os.environ.get("SMOKE_LITELLM_URL", "http://127.0.0.1:4000")
+def _port(name: str, default: str) -> str:
+    return os.environ.get(name) or default
+
+
+UI = os.environ.get("SMOKE_UI_URL", f"http://127.0.0.1:{_port('UI_PORT', '8080')}")
+API = os.environ.get("SMOKE_API_URL", f"http://127.0.0.1:{_port('API_PORT', '3000')}")
+LITELLM = os.environ.get("SMOKE_LITELLM_URL", f"http://127.0.0.1:{_port('LITELLM_PORT', '4000')}")
+PROJECT = os.environ.get("COMPOSE_PROJECT_NAME") or "agent-evals"
 KEY = os.environ.get("LITELLM_MASTER_KEY", "sk-local-dev-only")
 
 
@@ -85,7 +96,7 @@ def fake_saw_temperature(marker: str, temperature: float) -> bool:
     import subprocess
 
     out = subprocess.run(
-        ["docker", "compose", "exec", "-T", "fake-llm", "python", "-c",
+        ["docker", "compose", "-p", PROJECT, "exec", "-T", "fake-llm", "python", "-c",
          "import urllib.request,sys;"
          "sys.stdout.write(urllib.request.urlopen('http://localhost:8080/_fake/requests').read().decode())"],
         capture_output=True, text=True, check=True,

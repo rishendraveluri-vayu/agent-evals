@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import type { Json } from '../contract';
+import type { BundleTable, ExperimentBundle, Json, JsonObject } from '../contract';
+import { BUNDLE_TABLES } from '../contract';
 import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.service';
 import { Db } from '../database/db.service';
 import { ExperimentsService } from './experiments.service';
@@ -176,6 +177,64 @@ export class ExportService {
       first = false;
     }
     yield '\n]}\n';
+  }
+
+  /**
+   * GET /experiments/:id/bundle: every row needed to recreate the experiment in another database
+   * (scripts/export_example.py, SP7), read in one read-only snapshot. Rows are `to_jsonb` of the
+   * table's own row, which jsonb_populate_recordset reads back, except where the contract says
+   * (ExperimentBundle). Never includes a trial's LiteLLM key tokens or the experiment's LiteLLM team.
+   */
+  async bundle(experimentId: string): Promise<ExperimentBundle> {
+    await this.experiments.row(experimentId); // 404 for an unknown experiment
+    return this.db.tx(async (client) => {
+      // One snapshot, so the rows agree with each other; and nothing here can write.
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+      const rows = async (sql: string, params: unknown[] = [experimentId]): Promise<JsonObject[]> =>
+        (await client.query<{ row: JsonObject }>(sql, params)).rows.map((r) => r.row);
+      const ofTrials = 'JOIN trials t ON t.id = x.trial_id WHERE t.experiment_id = $1';
+      const tables: Partial<Record<BundleTable, JsonObject[]>> = {
+        // The LiteLLM team is a handle into this machine's LiteLLM, of no use anywhere else.
+        experiments: await rows(`SELECT to_jsonb(x) - 'litellm_team_id' AS row FROM experiments x WHERE x.id = $1`),
+        experiment_arms: await rows('SELECT to_jsonb(x) AS row FROM experiment_arms x WHERE x.experiment_id = $1 ORDER BY x.position'),
+        // A new id is given on import; the order is kept.
+        experiment_events: await rows(`SELECT to_jsonb(x) - 'id' AS row FROM experiment_events x WHERE x.experiment_id = $1 ORDER BY x.at, x.id`),
+        // A trial's key tokens are LiteLLM's handles to its (revoked) keys: secrets, never exported.
+        trials: await rows(`SELECT to_jsonb(x) - 'agent_key_token' - 'sim_key_token' AS row FROM trials x WHERE x.experiment_id = $1 ORDER BY x.seq, x.attempt, x.id`),
+        // The other span columns are read from raw (worker/report.ts spanRows) when it is loaded.
+        spans: await rows(`SELECT jsonb_build_object('trial_id', x.trial_id, 'raw', x.raw) AS row FROM spans x ${ofTrials} ORDER BY x.trial_id, x.start_ns, x.span_id`),
+        grading_jobs: await rows(`SELECT to_jsonb(x) AS row FROM grading_jobs x ${ofTrials} ORDER BY x.created_at, x.id`),
+        grades: await rows(`SELECT to_jsonb(x) AS row FROM grades x ${ofTrials} ORDER BY x.id`),
+        // The experiment's configs (and its trials', the same ones), with the configs they were forked from.
+        configs: await rows(
+          `WITH RECURSIVE wanted (hash) AS (
+             SELECT unnest(config_hashes) FROM experiments WHERE id = $1
+             UNION SELECT config_hash FROM trials WHERE experiment_id = $1
+             UNION SELECT c.parent_hash FROM configs c JOIN wanted w ON w.hash = c.hash WHERE c.parent_hash IS NOT NULL)
+           SELECT to_jsonb(x) AS row FROM configs x WHERE x.hash IN (SELECT hash FROM wanted) ORDER BY x.created_at, x.hash`,
+        ),
+      };
+      const configs = tables.configs ?? [];
+      const exp = (tables.experiments ?? [])[0] ?? {};
+      tables.prompts = await rows('SELECT to_jsonb(x) AS row FROM prompts x WHERE x.sha256 = ANY($1) ORDER BY x.sha256', [
+        [...configs.map((c) => c.prompt_sha256), exp.sim_prompt_sha256].filter((v) => typeof v === 'string'),
+      ]);
+      tables.toolsets = await rows('SELECT to_jsonb(x) AS row FROM toolsets x WHERE x.sha256 = ANY($1) ORDER BY x.sha256', [configs.map((c) => c.toolset_sha256)]);
+      tables.tasks = await rows(
+        `SELECT to_jsonb(x) AS row FROM tasks x
+         WHERE x.sha256 IN (SELECT unnest(task_sha256s) FROM experiments WHERE id = $1 UNION SELECT task_sha256 FROM trials WHERE experiment_id = $1)
+         ORDER BY x.id, x.sha256`,
+      );
+      const [schema] = (await client.query<{ version: string | null }>('SELECT max(version) AS version FROM schema_migrations')).rows;
+      return {
+        format: 'agent-evals-bundle',
+        format_version: 1,
+        schema_version: schema?.version ?? '',
+        exported_at: new Date().toISOString(),
+        experiment_id: experimentId,
+        tables: Object.fromEntries(BUNDLE_TABLES.map((t) => [t, tables[t] ?? []])) as Record<BundleTable, JsonObject[]>,
+      };
+    });
   }
 
   /** One row per trial attempt, every column in CSV_COLUMNS. */

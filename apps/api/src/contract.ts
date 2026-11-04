@@ -385,6 +385,21 @@ export interface ExperimentSummary {
   estimate: Estimate;
   budget_usd: number;
   created_at: string;
+  /**
+   * Set when this experiment is a shipped example loaded by POST /examples/:name/load (SP7), so
+   * the UI can label it as sample content; null for your own experiments. An example is
+   * read-only: nothing runs, re-grades or judges it, and its trials are not counted in spend,
+   * estimates or the label queue.
+   */
+  example: ExampleRef | null;
+}
+
+/** Which shipped example an experiment was loaded from (`examples/<name>/manifest.json`). */
+export interface ExampleRef {
+  name: string;
+  /** The manifest's one-line title, to show in place of (or beside) the experiment's name. */
+  title: string;
+  loaded_at: string;
 }
 
 export type ExperimentEventKind =
@@ -714,6 +729,75 @@ export interface RegradeResponse {
   superseded: number;
   /** How many took their graders from the trial's own task, since the task changed beyond its graders. */
   from_trial_task: number;
+}
+
+// ---- experiment bundles and shipped examples (SP7) ----
+
+/** The tables an experiment bundle carries, in the order they are inserted. */
+export const BUNDLE_TABLES = [
+  'prompts',
+  'toolsets',
+  'tasks',
+  'configs',
+  'experiments',
+  'experiment_arms',
+  'experiment_events',
+  'trials',
+  'spans',
+  'grading_jobs',
+  'grades',
+] as const;
+export type BundleTable = (typeof BUNDLE_TABLES)[number];
+
+/**
+ * GET /experiments/:id/bundle: every row needed to recreate one experiment elsewhere, read-only
+ * (scripts/export_example.py writes it to examples/<name>/). Rows are the tables' own columns as
+ * Postgres's to_jsonb writes them (`tasks.client_state` is hex: a backslash, `x`, hex digits),
+ * except: `spans` rows are `{trial_id, raw}`, since the other columns are read from `raw`;
+ * `experiment_events` rows have no `id`; and a trial's LiteLLM key tokens and the experiment's
+ * LiteLLM team are left out. `configs` holds the experiment's configs and the configs they were
+ * forked from. The trials' files are fetched one by one with GET /trials/:id/files/<path>, as
+ * listed in `trials[].files`.
+ */
+export interface ExperimentBundle {
+  format: 'agent-evals-bundle';
+  format_version: 1;
+  /** The latest migration this database has applied, e.g. `011_examples`. */
+  schema_version: string;
+  exported_at: string;
+  experiment_id: string;
+  tables: Record<BundleTable, JsonObject[]>;
+}
+
+/** What a shipped example holds, from its manifest. */
+export interface ExampleCounts {
+  configs: number;
+  tasks: number;
+  trials: number;
+  spans: number;
+  grades: number;
+  files: number;
+}
+
+/** GET /examples: one entry per `examples/<name>/manifest.json` the API can read. */
+export interface ExampleView {
+  /** The folder name: lower-case letters, digits and hyphens. */
+  name: string;
+  title: string;
+  description: string;
+  experiment_id: string;
+  /** True once this database holds the example (POST /examples/:name/load). */
+  loaded: boolean;
+  /** When the experiment was created, on the machine it was exported from. */
+  created_at: string;
+  counts: ExampleCounts;
+}
+
+/** POST /examples/:name/load, 200. `created: false`: it was already loaded and nothing changed. */
+export interface LoadExampleResponse {
+  name: string;
+  experiment_id: string;
+  created: boolean;
 }
 
 /** GET /trials/:id for a trial made in an experiment, or a probe trial (D33: `experiment_id` null, `probe` true). */

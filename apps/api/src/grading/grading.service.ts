@@ -17,6 +17,7 @@ import { canonicalJson } from '../common/hashing';
 import { newId } from '../common/ids';
 import { type TaskFile, readTasks } from '../catalogue/catalogue-files';
 import { Db, type Queryable } from '../database/db.service';
+import { type ExampleMark, NOT_EXAMPLE_TRIAL, assertNotExample } from '../examples/example-guard';
 import { LiteLlmClient } from '../litellm/litellm.client';
 import {
   GRADING_LEASE_S,
@@ -165,6 +166,7 @@ export class GradingService {
     const waiting = await this.db.query<{ id: string }>(
       `SELECT t.id FROM trials t
        WHERE t.status = 'done' AND NOT t.probe AND NOT EXISTS (SELECT 1 FROM grading_jobs j WHERE j.trial_id = t.id)
+         AND ${NOT_EXAMPLE_TRIAL('t')}
        LIMIT 1`,
     );
     if (!waiting.length) return 0;
@@ -175,6 +177,7 @@ export class GradingService {
         `SELECT t.id AS trial_id, t.task_sha256, k.id AS task_id, k.body, k.client_state_sha256
          FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256
          WHERE t.status = 'done' AND NOT t.probe AND NOT EXISTS (SELECT 1 FROM grading_jobs j WHERE j.trial_id = t.id)
+           AND ${NOT_EXAMPLE_TRIAL('t')}
          ORDER BY t.finished_at NULLS LAST, t.id
          LIMIT 200`,
       );
@@ -202,11 +205,13 @@ export class GradingService {
         `UPDATE grading_jobs SET status = 'claimed', worker_id = $1, claimed_at = now(),
                 lease_until = now() + make_interval(secs => $2::double precision), claims = claims + 1
          WHERE id = (
-           SELECT id FROM grading_jobs
-           WHERE status = 'queued' OR (status = 'claimed' AND lease_until < now())
-           ORDER BY created_at, id
+           SELECT j.id FROM grading_jobs j JOIN trials t ON t.id = j.trial_id
+           WHERE (j.status = 'queued' OR (j.status = 'claimed' AND j.lease_until < now()))
+             -- SP7: a shipped example keeps the grades it was shipped with.
+             AND ${NOT_EXAMPLE_TRIAL('t')}
+           ORDER BY j.created_at, j.id
            LIMIT 1
-           FOR UPDATE SKIP LOCKED)
+           FOR UPDATE OF j SKIP LOCKED)
          RETURNING *`,
         [workerId, GRADING_LEASE_S],
       );
@@ -332,8 +337,9 @@ export class GradingService {
     if (only !== undefined && (!Array.isArray(only) || !only.every((x) => typeof x === 'string'))) {
       throw badRequest('invalid_regrade', 'trial_ids must be a list of trial ids');
     }
-    const [exp] = await this.db.query('SELECT 1 FROM experiments WHERE id = $1', [experimentId]);
+    const [exp] = await this.db.query<ExampleMark>('SELECT id, example_name FROM experiments WHERE id = $1', [experimentId]);
     if (!exp) throw notFound('unknown_experiment', `no experiment ${experimentId}`);
+    assertNotExample(exp, 'be re-graded');
     const catalogue = await readTasks(this.config.tasksDir);
     return this.db.tx(async (client) => {
       await client.query('SELECT pg_advisory_xact_lock($1)', [QUEUE_LOCK]);

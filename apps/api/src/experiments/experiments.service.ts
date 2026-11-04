@@ -25,6 +25,7 @@ import { newId } from '../common/ids';
 import { CatalogueService, type StoredPrompt, type StoredTask, taskView } from '../catalogue/catalogue.service';
 import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.service';
 import { Db, type Queryable } from '../database/db.service';
+import { NOT_EXAMPLE_TRIAL, assertNotExample } from '../examples/example-guard';
 import { JudgeService } from '../judge/judge.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
 import { SIM_MAX_OUTPUT_TOKENS, simTemperature } from '../worker/spec-builder';
@@ -71,6 +72,10 @@ export interface ExperimentRow {
   order_seed: string | null;
   futility: FutilityRule | null;
   spend_guard_at: Date | null;
+  // 011: a shipped example (SP7), loaded by POST /examples/:name/load; read-only.
+  example_name: string | null;
+  example_title: string | null;
+  example_loaded_at: Date | null;
 }
 
 const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
@@ -151,7 +156,8 @@ export class ExperimentsService {
     // Item 8: the closest history there is. Finished trials only, with LiteLLM's full record.
     type Row = { trials: number; input_tokens: number; output_tokens: number; wall_s: number | null; cost_usd: number | null };
     // Probes (D33) render a prompt on the fake model; they are never history.
-    const finished = `t.status = 'done' AND NOT t.probe AND t.input_tokens IS NOT NULL AND t.output_tokens IS NOT NULL AND t.proxy_complete IS NOT FALSE`;
+    // Nor are a shipped example's trials (SP7): they are not this database's own runs.
+    const finished = `t.status = 'done' AND NOT t.probe AND t.input_tokens IS NOT NULL AND t.output_tokens IS NOT NULL AND t.proxy_complete IS NOT FALSE AND ${NOT_EXAMPLE_TRIAL('t')}`;
     const means = `count(*)::int AS trials, avg(t.input_tokens)::float8 AS input_tokens, avg(t.output_tokens)::float8 AS output_tokens,
                    avg(t.wall_s)::float8 AS wall_s, avg(t.cost_usd)::float8 AS cost_usd`;
     const byCell = await this.db.query<Row & { config_hash: string; task_sha256: string; sim_cost_usd: number | null }>(
@@ -171,7 +177,7 @@ export class ExperimentsService {
       ? await this.db.query<{ task_sha256: string; sim_cost_usd: number }>(
           `SELECT t.task_sha256, avg(t.sim_cost_usd)::float8 AS sim_cost_usd
            FROM trials t JOIN experiments e ON e.id = t.experiment_id
-           WHERE t.status = 'done' AND t.sim_cost_usd IS NOT NULL AND e.sim_model = $1 AND t.task_sha256 = ANY($2)
+           WHERE t.status = 'done' AND t.sim_cost_usd IS NOT NULL AND e.sim_model = $1 AND t.task_sha256 = ANY($2) AND e.example_name IS NULL
            GROUP BY t.task_sha256`,
           [simModel, taskShas],
         )
@@ -246,6 +252,14 @@ export class ExperimentsService {
     }
     if (!body.reuse_baseline) return { plan, simPrompt, parentId, baseline: null, run: plan };
     if (!parent) throw badRequest('invalid_experiment', 'reuse_baseline needs parent_experiment_id', 'Name the parent experiment whose arm-A trials to reuse, or leave reuse_baseline out.');
+    // SP7: an example's trials stay apart from your own runs, so they are never your arm A.
+    if (parent.example_name !== null) {
+      throw conflict(
+        'example_read_only',
+        `experiment ${parent.id} is the shipped example ${parent.example_name}, so its trials cannot be reused as your arm A`,
+        'Leave reuse_baseline out: arm A then runs in your own experiment.',
+      );
+    }
     if (plan.configs.length !== 2) {
       throw badRequest('invalid_experiment', 'reuse_baseline needs two arms: the parent’s arm A and a new arm B', 'Add the new config as arm B, or leave reuse_baseline out.');
     }
@@ -408,6 +422,7 @@ export class ExperimentsService {
   /** Starts a created experiment, or resumes a paused one; a running one is left as it is. */
   async start(id: string): Promise<ExperimentDetail> {
     const exp = await this.row(id);
+    assertNotExample(exp, 'be started');
     if (exp.status === 'done' || exp.status === 'cancelled') {
       throw conflict('experiment_finished', `experiment ${id} is ${exp.status} and cannot start again`, 'Create a new experiment, with this one as its parent.');
     }
@@ -422,6 +437,7 @@ export class ExperimentsService {
   /** D32: stops new claims; trials already running finish and report. A paused one stays paused. */
   async pause(id: string): Promise<ExperimentDetail> {
     const exp = await this.row(id);
+    assertNotExample(exp, 'be paused');
     if (exp.status === 'created') throw conflict('experiment_not_started', `experiment ${id} has not started`, 'Start it, or stop it; there is nothing to pause yet.');
     if (exp.status === 'done' || exp.status === 'cancelled') throw conflict('experiment_finished', `experiment ${id} is ${exp.status}`);
     await this.db.tx((client) => pauseExperiment(client, id, 'paused', 'paused by hand: new claims stop; trials already running finish'));
@@ -431,6 +447,7 @@ export class ExperimentsService {
   /** Resumes a paused experiment (whatever paused it); arm pauses are separate (D37). */
   async resume(id: string): Promise<ExperimentDetail> {
     const exp = await this.row(id);
+    assertNotExample(exp, 'be resumed');
     if (exp.status === 'created') throw conflict('experiment_not_started', `experiment ${id} has not started`, `POST /experiments/${id}/start to start it.`);
     if (exp.status === 'done' || exp.status === 'cancelled') throw conflict('experiment_finished', `experiment ${id} is ${exp.status} and cannot resume`);
     await this.db.tx(async (client) => {
@@ -445,6 +462,7 @@ export class ExperimentsService {
   /** Stop (D32), also served as cancel: queued trials become cancelled; claimed and running ones finish and are kept. */
   async cancel(id: string): Promise<ExperimentDetail> {
     const exp = await this.row(id);
+    assertNotExample(exp, 'be stopped');
     if (exp.status === 'done') throw conflict('experiment_finished', `experiment ${id} is already done`);
     await this.db.tx(async (client) => {
       await client.query(`UPDATE experiments SET status = 'cancelled', cancelled_at = now() WHERE id = $1 AND status IN ('created', 'running', 'paused')`, [id]);
@@ -466,6 +484,7 @@ export class ExperimentsService {
   async pauseArm(id: string, configHash: string): Promise<ExperimentDetail> {
     const arm = await this.armRow(id, configHash);
     const exp = await this.row(id);
+    assertNotExample(exp, 'have an arm paused');
     if (exp.status === 'done' || exp.status === 'cancelled') throw conflict('experiment_finished', `experiment ${id} is ${exp.status}`);
     await this.db.tx((client) =>
       pauseArm(client, id, arm.config_hash, 'paused by hand: this arm claims nothing more; its running trials finish', `POST /experiments/${id}/arms/${arm.config_hash}/resume to continue it.`),
@@ -476,6 +495,7 @@ export class ExperimentsService {
   /** D37: resumes a paused arm; its queued trials can be claimed again. */
   async resumeArm(id: string, configHash: string): Promise<ExperimentDetail> {
     const arm = await this.armRow(id, configHash);
+    assertNotExample(await this.row(id), 'have an arm resumed');
     await this.db.tx(async (client) => {
       const { rowCount } = await client.query(
         `UPDATE experiment_arms SET paused_at = NULL, paused_reason = NULL, paused_fix = NULL, resumed_at = now()
@@ -539,6 +559,10 @@ export class ExperimentsService {
       estimate: r.estimate,
       budget_usd: r.budget_usd,
       created_at: r.created_at.toISOString(),
+      example:
+        r.example_name !== null
+          ? { name: r.example_name, title: r.example_title ?? r.name, loaded_at: (r.example_loaded_at ?? r.created_at).toISOString() }
+          : null,
     };
   }
 
