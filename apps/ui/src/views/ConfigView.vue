@@ -216,9 +216,22 @@ const invalid = computed(() => {
   return null;
 });
 
-/** A saved config's own value for a setting, as the form compares it: unset when a default. */
-const ownValue = (c: ConfigView, name: SettingName) => (c.settings_sources[name] === 'config' ? c.settings[name] : undefined);
-const shown = (v: unknown) => (v === undefined ? 'unset' : typeof v === 'object' && v !== null && 'enabled' in v ? ((v as { enabled: boolean }).enabled ? 'on' : 'off') : text(v));
+/** PLATFORM_DEFAULTS in apps/api/src/configs/settings.ts: what the API stores for a setting left unset. */
+const PLATFORM_DEFAULTS: Record<SettingName, unknown> = {
+  temperature: null,
+  max_output_tokens: 8192,
+  max_steps: 15,
+  timeout_s: 300,
+  parallel_tool_calls: false,
+  memory: { enabled: false },
+  skills: { enabled: false },
+  compression: { enabled: false },
+};
+/** The value the API would store for a setting from this form: the hash is over these, so a value
+ *  set to its default is no change. */
+const resolvedNow = (name: SettingName) => (!supported(name) || isIgnored(name) ? null : (settings.value[name] ?? PLATFORM_DEFAULTS[name]));
+const shown = (v: unknown) =>
+  v === undefined || v === null ? 'not sent' : typeof v === 'object' && 'enabled' in v ? ((v as { enabled: boolean }).enabled ? 'on' : 'off') : text(v);
 
 /** What differs from the comparison config, in words. */
 const changes = computed(() => {
@@ -230,8 +243,8 @@ const changes = computed(() => {
   if (b.prompt.sha256 !== form.prompt) out.push(`Prompt: ${b.prompt.id === prompt.value?.id ? '' : `${b.prompt.id} `}${b.prompt.version} to ${prompt.value?.id === b.prompt.id ? '' : `${prompt.value?.id} `}${prompt.value?.version ?? '?'}`);
   if (b.toolset.sha256 !== form.toolset) out.push(`Toolset: ${b.toolset.id} ${b.toolset.version} to ${toolset.value?.id} ${toolset.value?.version}`);
   for (const name of SETTING_NAMES) {
-    const was = ownValue(b, name);
-    const now = settings.value[name];
+    const was = b.settings[name];
+    const now = resolvedNow(name);
     if (shown(was) !== shown(now)) out.push(`${settingLabel(name)}: ${shown(was)} to ${shown(now)}`);
   }
   if (JSON.stringify(b.seed?.memory?.length || b.seed?.skills?.length ? b.seed : null) !== JSON.stringify(seed.value)) out.push(`Seed: ${seedWords(b.seed)} to ${seedWords(seed.value)}`);
@@ -251,7 +264,7 @@ const sameAs = computed(() => {
     c.model === form.model &&
     c.prompt.sha256 === form.prompt &&
     c.toolset.sha256 === form.toolset &&
-    SETTING_NAMES.every((name) => shown(ownValue(c, name)) === shown(settings.value[name])) &&
+    SETTING_NAMES.every((name) => shown(c.settings[name]) === shown(resolvedNow(name))) &&
     JSON.stringify(c.seed?.memory?.length || c.seed?.skills?.length ? c.seed : null) === JSON.stringify(seed.value) &&
     JSON.stringify(Object.entries(c.harness_options).sort()) === JSON.stringify(Object.entries(harnessOptions.value).sort());
   return d.configs.find(same) ?? null;

@@ -24,6 +24,18 @@ describe('ConfigView in fixture mode', () => {
     expect(w.text()).toContain('2 lines differ from v1');
   });
 
+  it('compares settings as the API stores them: a value cleared to its default says what the default is', async () => {
+    const w = mount(ConfigView);
+    await settle();
+    await w.get('#setting-max_output_tokens').setValue('');
+    await settle();
+    expect(w.get('[data-test="config-changes"]').text()).toBe('Prompt: v1 to v2Max output tokens: 1024 to 8192');
+    // Set back to the base value, nothing but the prompt differs again.
+    await w.get('#setting-max_output_tokens').setValue('1024');
+    await settle();
+    expect(w.get('[data-test="config-changes"]').text()).toBe('Prompt: v1 to v2');
+  });
+
   it('says how each harness\'s settings are known, in the words the Harnesses page uses, and names configs first', async () => {
     const w = mount(ConfigView);
     await settle();
