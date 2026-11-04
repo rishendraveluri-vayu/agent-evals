@@ -68,8 +68,8 @@ the judged one, a standard correction for a test with known error (Rogan and Gla
 
   true pass rate = (judged pass rate + Sp - 1) / (Se + Sp - 1)
 
-We compute it per arm (with each arm's own Se and Sp if the judge is biased between arms, pooled if
-not), and the A minus B difference from that. The uncertainty is a bootstrap over trials **and**
+We compute it per arm with the pooled Se and Sp (D49: a criterion biased between arms is already
+not trusted under D8), and the A minus B difference from that. The uncertainty is a bootstrap over trials **and**
 labels together, so the interval includes what we do not know about the judge.
 
 The Compare screen and the write-up then show two lines:
@@ -120,7 +120,8 @@ current grading, so that read is still to build.
 ## Decisions for Rishi
 
 1. **Settled 5 Nov (D8):** kappa >= 0.6, lower bound >= 0.4, test-retest >= 90%.
-2. Per-arm or pooled sensitivity and specificity in the correction (per-arm is safer, needs more labels).
+2. **Settled 5 Nov (D49):** pooled sensitivity and specificity in the correction; D8's arm-gap check
+   already drops criteria that treat the arms differently.
 3. **Settled 5 Nov (D46):** a "not sure" label triggers one second look, after the fresh items;
    what is still "not sure" then is excluded, and the count is reported per criterion.
 4. **Settled 5 Nov (D48):** 20 tuning / 40 held-out / 20 final, as in SPEC.

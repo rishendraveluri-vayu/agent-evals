@@ -57,6 +57,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D46 "Not sure" labels | A second look: each "not sure" criterion comes back once, after the fresh items; still "not sure" then means excluded from the judge's agreement, with the count reported | Rishi | 5 Nov |
 | D47 Headline experiment's harness and model | Hermes Agent (pinned 6112c2a) on Claude Haiku 5.5, the same for both arms of prompt v1 vs v2 | Rishi | 5 Nov |
 | D48 Label budget | 20 tuning, 40 held-out, 20 from the final run, as planned in SPEC (about an hour of Rishi's labelling) | Rishi | 5 Nov |
+| D49 Judge-error correction | Pooled sensitivity and specificity from the held-out labels (Rogan-Gladen), since D8 already drops criteria with a false-pass gap between arms; the comparison shows both "as judged" and "corrected" | Rishi | 5 Nov |
 
 ## Open
 
