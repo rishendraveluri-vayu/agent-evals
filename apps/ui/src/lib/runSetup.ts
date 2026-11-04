@@ -127,6 +127,26 @@ export function validateN(raw: number | string | null | undefined): { value: num
   return { value: v, error: null };
 }
 
+// ---------------------------------------------------------------------------------------- seed
+
+/** The largest claim-order seed the API takes: 2^32 - 1. */
+export const MAX_SEED = 4_294_967_295;
+
+/**
+ * The claim-order seed as typed, checked as the API checks it: empty for a random one (recorded),
+ * else a whole number from 0 to 4,294,967,295, or why not. Never silently dropped.
+ */
+export function validateSeed(raw: string | null | undefined): { value: number | null; error: string | null } {
+  const text = (raw ?? '').trim();
+  if (text === '') return { value: null, error: null };
+  const range = 'a whole number from 0 to 4,294,967,295, or left empty for a random one';
+  if (!/^[+-]?\d+$/.test(text)) return { value: null, error: `The claim-order seed must be ${range}; “${text}” is not.` };
+  const v = Number(text);
+  if (v < 0) return { value: null, error: `The claim-order seed must be ${range}; it cannot be negative.` };
+  if (v > MAX_SEED) return { value: null, error: `The claim-order seed must be ${range}; ${text} is too large.` };
+  return { value: v, error: null };
+}
+
 // ---------------------------------------------------------------------------------------- tasks
 
 export const isEngineTest = (t: TaskView): boolean => t.summary.startsWith('ENGINE TEST ONLY');
@@ -196,6 +216,7 @@ export function plainRunError(err: unknown): string {
       if (/budget_usd/.test(m)) return 'Set a spending limit above $0.';
       if (/order_seed/.test(m)) return 'The claim-order seed must be a whole number from 0 to 4,294,967,295, or left empty for a random one.';
       if (/name is required/.test(m)) return 'Give the run a name.';
+      if (/^name is \d+ characters/.test(m)) return 'The run name is longer than 200 characters: shorten it.';
       if (/plan_commit/.test(m)) return 'The analysis plan commit must be text, such as a commit hash.';
       if (/must be a non-empty list/.test(m)) return /task/.test(m) ? 'Pick at least one task.' : 'Pick an agent for arm A.';
       return 'The platform refused this run setup. Check each field, then try again.';

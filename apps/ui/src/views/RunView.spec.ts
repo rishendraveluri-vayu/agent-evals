@@ -161,7 +161,8 @@ describe('RunView, a running experiment in fixture mode', () => {
     expect(checks.findAll('[data-test="check"]').length).toBeGreaterThan(0);
     const diff = w.get('[data-test="diff-details"]');
     expect(diff.attributes('open')).toBeUndefined();
-    expect(diff.get('summary').text()).toMatch(/^How the two arms differ: \d+ fields?$/);
+    // What differs, in words with both values (QA round 3, M1).
+    expect(diff.get('summary').text()).toBe('How the two arms differ: Own loop vs Hermes Agent');
   });
 
   it('gives pass and fail cells equal weight and reads the legend in two rows: outcomes, then only the infra states shown', async () => {
@@ -323,8 +324,12 @@ describe('RunView run controls (D32, D37)', () => {
     await settle();
     expect(w.get('[data-test="run-title"]').text()).toBe('Paused: 6 of 40 trials done');
     const banner = w.get('[data-test="pause-banner"]');
-    expect(banner.get('h2').text()).toBe('The futility check: arm B passed 0 of its first 3 graded trials');
-    expect(banner.text()).toContain('Review those trials, then resume or stop; the check runs once per arm and never compares the arms');
+    // The heading says what paused it; the text goes on from there, never the same words twice (QA round 3, minor 16).
+    expect(banner.get('h2').text()).toBe('Paused by the futility check');
+    const reason = banner.get('p.small').text();
+    expect(reason).toMatch(/^Arm B passed 0 of its first 3 graded trials, fewer than/);
+    expect(reason).toContain('Review those trials, then resume or stop; the check runs once per arm and never compares the arms');
+    expect(banner.text().toLowerCase().split('futility check').length - 1).toBe(1);
     expect(w.find('[data-test="pause"]').exists()).toBe(false);
     await w.get('[data-test="resume"]').trigger('click');
     await settle();
@@ -696,14 +701,14 @@ describe('RunView drafts: N, refusals and the name (QA major 12)', () => {
     const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
     await settle();
     const name = () => (w.get('[data-test="run-name"]').element as HTMLInputElement).value;
-    expect(name()).toBe('Prompt v1 vs v2, held-out');
+    expect(name()).toBe('Prompt v1 vs v2 on Hermes with Claude Haiku 5.5, held-out');
     const all = w.findAll('.seg button').find((b) => b.text() === 'All')!;
     await all.trigger('click');
     await settle();
-    expect(name()).toBe('Prompt v1 vs v2, all tasks');
+    expect(name()).toBe('Prompt v1 vs v2 on Hermes with Claude Haiku 5.5, all tasks');
     await w.findAll('[data-test="task-pick"] input')[0].setValue(false);
     await settle();
-    expect(name()).toBe('Prompt v1 vs v2, 23 tasks');
+    expect(name()).toBe('Prompt v1 vs v2 on Hermes with Claude Haiku 5.5, 23 tasks');
   });
 
   it('says the task list scrolls, and how many tasks are in view, until it reaches the end', async () => {
@@ -863,14 +868,14 @@ describe('RunView never defaults to a shipped example’s config (QA blocker 1, 
     expect(w.get('[data-test="example-arms"]').text()).toContain("To run it again, fork it on its page; the fork gets today's files.");
     const arms = w.findAll('[data-test="check"]')[0];
     expect(arms.text()).toContain('The arms differ in more than one thing');
-    expect(arms.text()).toContain('They differ in the harness version, max steps, timeout and the toolset');
+    expect(arms.text()).toContain("They differ in the Own loop capabilities file, the finance all toolset's content, max steps 15 vs 12 and timeout 300 s vs 180 s");
     expect(arms.get('[data-test="check-link"]').attributes('href')).toBe(`#/configs?fork=${encodeURIComponent(mine.hash)}`);
     // Raw paths and hashes only inside a closed Details.
     const details = arms.get('[data-test="check-details"]');
     expect(details.attributes('open')).toBeUndefined();
     expect(details.text()).toContain('capabilities_sha256');
     expect(arms.text().replace(details.text(), '')).not.toMatch(/sha256|settings\./);
-    expect(w.get('[data-test="arm-diff-summary"]').text()).toBe('4 fields differ: the harness version, max steps, timeout and the toolset.');
+    expect(w.get('[data-test="arm-diff-summary"]').text()).toBe("The Own loop capabilities file, the finance all toolset's content, max steps 15 vs 12 and timeout 300 s vs 180 s.");
     expect(w.get('[data-test="arm-diff-details"]').attributes('open')).toBeUndefined();
     expect(w.get('[data-test="start"]').attributes('disabled')).toBeDefined();
   });
@@ -972,5 +977,109 @@ describe('RunView against the API, a shipped example', () => {
     await settle();
     expect(w.get('.crumbs').text()).toBe('Experiments / Own loop vs Hermes on Claude Haiku 5.5');
     expect(w.text()).not.toContain('Label batch 1');
+  });
+});
+
+describe('RunView, fresh-clone QA round 3', () => {
+  useFixtures();
+
+  /** Two own-loop fake agents one setting apart, with the same name (as auto-named before round 3). */
+  const ownloop = fixtureConfigs[2];
+  const fake = (steps: number, prefix: string): ConfigView => ({
+    ...ownloop,
+    hash: `sha256:${prefix}${'0'.repeat(64 - prefix.length)}`,
+    name: 'Prompt v1 on Own loop, Fake model finance-emi',
+    model: 'fake/finance-emi',
+    settings: { ...ownloop.settings, max_steps: steps },
+    parent_hash: null,
+  });
+  const ten = fake(10, '2cc0564');
+  const twelve = fake(12, 'fb19a82');
+
+  it('names the run by what differs and tells arms with one name apart by their values (M1)', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, ten, twelve]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'settings.max_steps', a: 10, b: 12 }]);
+    const w = mount(RunView, { props: { a: ten.hash, b: twelve.hash } });
+    await settle();
+    const name = (w.get('[data-test="run-name"]').element as HTMLInputElement).value;
+    expect(name).toMatch(/^Max steps 10 vs 12 on Own loop with Fake model finance-emi, /);
+    expect(name).not.toMatch(/(.+) vs \1/);
+    const arms = w.findAll('[data-test="start-arms"] .arm').map((a) => a.text());
+    expect(arms).toEqual(['A: Prompt v1 on Own loop, Fake model finance-emi (max steps 10), config 2cc0564', 'B: Prompt v1 on Own loop, Fake model finance-emi (max steps 12), config fb19a82']);
+    // The check says the change in words and both values; the field path only behind Details (minor 4).
+    const check = w.findAll('[data-test="check"]')[0];
+    expect(check.text()).toContain('Only the max steps setting differs between the arms');
+    expect(check.text()).toContain('Checked from the two saved configs: Max steps 10 vs 12. Nothing else differs.');
+    const details = check.get('[data-test="check-details"]');
+    expect(details.attributes('open')).toBeUndefined();
+    expect(check.text().replace(details.text(), '')).not.toMatch(/settings\.|max_steps/);
+    expect(w.get('[data-test="arm-diff-summary"]').text()).toBe('Max steps 10 vs 12. Nothing else differs.');
+  });
+
+  it('says plainly that an id is not a saved agent, and claims nothing else about it (minor 6)', async () => {
+    const estimate = vi.spyOn(api, 'estimate');
+    const diff = vi.spyOn(api, 'configDiff');
+    const w = mount(RunView, { props: { a: 'sha256:nope', b: 'sha256:nope2' } });
+    await settle();
+    expect(w.get('[data-test="unknown-arms"]').text()).toContain('No saved agent with the id sha256:nope, so arm A is empty.');
+    expect(w.get('[data-test="unknown-arms"]').text()).toContain('No saved agent with the id sha256:nope2, so arm B is empty.');
+    const checks = w.findAll('[data-test="check"]');
+    expect(checks).toHaveLength(1);
+    expect(checks[0].attributes('data-state')).toBe('fail');
+    expect(checks[0].text()).toContain('No saved agents with those ids');
+    const text = w.text();
+    for (const claim of ['differ only in name', 'Check passed', 'support every setting', 'No estimate yet', 'has not come back']) expect(text, claim).not.toContain(claim);
+    expect(w.find('[data-test="arm-diff-summary"]').exists()).toBe(false);
+    expect(w.get('[data-test="cost-note"]').text()).toBe('Pick a saved agent for each arm first.');
+    expect(estimate).not.toHaveBeenCalled();
+    expect(diff).not.toHaveBeenCalled();
+    expect(w.get('[data-test="start"]').attributes('disabled')).toBeDefined();
+  });
+
+  it('checks the claim-order seed as it is typed, as N is, and sends a valid one (minor 20)', async () => {
+    const create = vi.spyOn(api, 'createExperiment');
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
+    const cases: [string, string][] = [
+      ['-1', 'it cannot be negative'],
+      ['99999999999', '99999999999 is too large'],
+      ['1.5', '“1.5” is not'],
+      ['soon', '“soon” is not'],
+    ];
+    for (const [typed, why] of cases) {
+      await w.get('[data-test="order-seed"]').setValue(typed);
+      await settle();
+      expect(w.get('[data-test="seed-error"]').text(), typed).toContain('a whole number from 0 to 4,294,967,295');
+      expect(w.get('[data-test="seed-error"]').text(), typed).toContain(why);
+      expect(w.get('[data-test="order-seed"]').attributes('aria-invalid')).toBe('true');
+      expect(w.get('[data-test="start"]').attributes('disabled'), typed).toBeDefined();
+    }
+    await w.get('[data-test="order-seed"]').setValue('4294967295');
+    await settle();
+    expect(w.find('[data-test="seed-error"]').exists()).toBe(false);
+    await w.get('[data-test="start"]').trigger('click');
+    await w.get('[data-test="confirm-paid-start"]').trigger('click');
+    await settle();
+    expect(create.mock.calls[0][0].order_seed).toBe(4294967295);
+  });
+
+  it('caps the run name at 200 characters, as the API does, and says so by the field (minor 8)', async () => {
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    expect(w.get('[data-test="run-name"]').attributes('maxlength')).toBe('200');
+    await w.get('[data-test="run-name"]').setValue('N'.repeat(201));
+    await settle();
+    expect(w.get('[data-test="run-name-error"]').text()).toBe('The run name is 201 characters; the most is 200. Shorten it.');
+    expect(w.get('[data-test="start"]').attributes('disabled')).toBeDefined();
+  });
+
+  it('keeps each arm’s trials together in one cell, so a phone can wrap them (minor 14)', async () => {
+    const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    const row = w.findAll('[data-test="run-grid"] tbody tr')[0];
+    expect(row.findAll('td.arm-cells')).toHaveLength(2);
+    expect(row.findAll('td.arm-cells')[0].findAll('[data-state]').length).toBe((details as unknown as Record<string, ExperimentDetail>).exp_harness.n);
+    expect(w.findAll('[data-test="run-grid"] thead th.arm-col')).toHaveLength(2);
   });
 });

@@ -8,14 +8,14 @@ import LoadState from '../components/LoadState.vue';
 import { ApiError } from '../api/errors';
 import { armIndexOf, armsOf, namedByHash, timeLeft, totalTrials } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
-import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, contentDiff, diffWords, keysCheck, planCheck, splitCheck, type Check } from '../lib/checks';
+import { armValue, armsCheck, axisFromDiff, budgetCheck, capabilityCheck, changesWords, configChanges, contentDiff, keysCheck, planCheck, runAutoName, RUN_NAME_MAX, splitCheck, type Check } from '../lib/checks';
 import { changedLineCount, lineChanges, sentenceChanges, type LineChange } from '../lib/diff';
 import { capitalise, clock, minutes, money, plainText, plural, shortHash, wholeMoney } from '../lib/format';
 import { experimentName, infraReason, modelName, splitName } from '../lib/names';
 import { href, navigate } from '../router';
 import { eventView, pauseCause } from '../lib/runs';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
-import { armPauseHelp, defaultArms, defaultBudget, isEngineTest, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, type ArmDefaults } from '../lib/runSetup';
+import { armPauseHelp, defaultArms, defaultBudget, isEngineTest, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, validateSeed, type ArmDefaults } from '../lib/runSetup';
 import { FAKE_SIM_MODEL, isFake, simModels } from '../lib/models';
 import { text } from '../trials';
 
@@ -136,6 +136,13 @@ const pickable = computed(() => {
 const fakeOnly = computed(() => hashes.value.length > 0 && realModels.value.length === 0);
 const configOf = (h: string) => data.value?.configs.find((c) => c.hash === h);
 const sameConfig = computed(() => hashes.value.length === 2 && hashes.value[0] === hashes.value[1]);
+/** Arms whose config id is not a saved agent here (a mistyped or stale link): said plainly, and
+ *  nothing else about the run is worked out or claimed until each is picked again. */
+const unknownArms = computed(() =>
+  draft && data.value
+    ? hashes.value.flatMap((h, i) => (configOf(h) ? [] : [{ letter: String.fromCharCode(65 + i), hash: h }]))
+    : [],
+);
 /** The tasks of the chosen split, before any is taken out by hand. */
 const splitTasks = computed<TaskView[]>(() => {
   const d = data.value;
@@ -155,16 +162,22 @@ function toggleTask(sha: string) {
 const splits = computed(() => [...new Set(data.value?.allTasks.map((t) => t.split) ?? [])]);
 /** N as typed, checked: a whole number from 1 to 1,000, or the reason it is not. */
 const nCheck = computed(() => validateN(setup.n));
+/** The claim-order seed as typed, checked as the API checks it (empty is a random one). */
+const seedCheck = computed(() => validateSeed(setup.seed));
+/** The run name as typed, against the API's limit. */
+const nameError = computed(() => (setup.name.trim().length > RUN_NAME_MAX ? `The run name is ${setup.name.trim().length} characters; the most is ${RUN_NAME_MAX}. Shorten it.` : null));
 /** The validated N (the experiment's own once it exists); null while what is typed is not valid. */
 const n = computed<number | null>(() => (draft ? nCheck.value.value : (data.value?.experiment?.n ?? 0)));
 /** The trials a draft would create, from what is picked; null until it is a valid run. */
-const plannedTrials = computed(() => (n.value !== null && !sameConfig.value && hashes.value.length ? tasks.value.length * hashes.value.length * n.value : null));
+const plannedTrials = computed(() => (n.value !== null && !sameConfig.value && hashes.value.length && !unknownArms.value.length ? tasks.value.length * hashes.value.length * n.value : null));
 
 const diff = shallowRef<ConfigDiffEntry[]>([]);
 watch(
-  () => [hashes.value[0], hashes.value[1]],
-  async ([a, b]) => {
-    diff.value = a && b && a !== b ? await optional(api.configDiff(a, b), []) : [];
+  // Both ids, and whether each is a saved agent: the configs load after the address is read.
+  () => [hashes.value[0], hashes.value[1], !!configOf(hashes.value[0] ?? ''), !!configOf(hashes.value[1] ?? '')] as const,
+  async ([a, b, knownA, knownB]) => {
+    // An id that is not a saved agent has no diff to ask for: the page says so instead.
+    diff.value = a && b && a !== b && knownA && knownB ? await optional(api.configDiff(a, b), []) : [];
   },
   { immediate: true },
 );
@@ -176,7 +189,7 @@ const estimateError = ref<string | null>(null);
 /** What the draft would run, as one key; null when it is not a run yet (no arm, no task, a bad
  *  N, or the same config on both arms), so nothing is estimated and no stale figure is shown. */
 const estimateKey = computed(() => {
-  if (!draft || !hashes.value.length || !tasks.value.length || n.value === null || sameConfig.value) return null;
+  if (!draft || !hashes.value.length || !tasks.value.length || n.value === null || sameConfig.value || unknownArms.value.length) return null;
   return JSON.stringify([hashes.value, tasks.value.map((t) => t.sha256), n.value, setup.simModel]);
 });
 /** Each estimate request is numbered, so an answer to an older one (a slow network) is dropped. */
@@ -208,13 +221,12 @@ const budget = computed(() => {
   return Number(setup.budget) || 0;
 });
 
+/** The run's default name says what the arms differ in ("Max steps 10 vs 12 on Own loop with
+ *  Fake model finance-emi, 15 tasks"), never "X vs X" (lib/checks.ts runAutoName). */
 const suggestedName = computed(() => {
-  const [a, b] = arms.value;
-  if (!a) return '';
-  const set = taskSetWords(tasks.value, data.value?.allTasks ?? [], setup.split);
-  // Arms that differ in more than one thing are named by their configs, never by bare hashes.
-  const named = (arm: (typeof arms.value)[number], short: boolean) => (namedByHash(arm) && arm.config ? arm.config.name : short ? arm.short : arm.label);
-  return b ? `${named(a, false)} vs ${named(b, true)}, ${set}` : `${named(a, false)}, ${set}`;
+  const [a, b] = hashes.value.map(configOf);
+  if (!a || (hashes.value.length === 2 && !b)) return '';
+  return runAutoName(a, b, taskSetWords(tasks.value, data.value?.allTasks ?? [], setup.split));
 });
 watch(suggestedName, (v) => {
   if (!touched.name) setup.name = v;
@@ -230,10 +242,23 @@ const needsPlanField = computed(() => !draft && !started.value && !allFake.value
 const checks = computed<Check[]>(() => {
   const d = data.value;
   if (!d) return [];
+  const unknown = unknownArms.value;
+  if (unknown.length) {
+    // Nothing is known about an agent that is not saved here, so nothing else is checked or claimed.
+    const which = unknown.map((u) => `arm ${u.letter} (${u.hash})`).join(' and ');
+    return [
+      {
+        ok: false,
+        title: unknown.length === 1 ? 'No saved agent with that id' : 'No saved agents with those ids',
+        detail: `The link names ${which}, which ${unknown.length === 1 ? 'is not a saved agent' : 'are not saved agents'} here: it may be mistyped, or from another database. Pick ${unknown.length === 1 ? `a saved agent for arm ${unknown[0].letter}` : 'saved agents for both arms'} above.`,
+      },
+    ];
+  }
   const configs = hashes.value.map(configOf).filter((c): c is ConfigView => !!c);
   // An A/A run (the same config on both arms) is not offered: the API refuses it, and whether
   // to run one as a calibration is a separate question.
-  const arms = armsCheck(diff.value, false);
+  const pair = configs.length === 2 ? ([configs[0], configs[1]] as [ConfigView, ConfigView]) : undefined;
+  const arms = armsCheck(diff.value, false, pair);
   const armRow: Check = sameConfig.value
     ? { ok: false, title: 'Arm A and arm B are the same agent', detail: 'Pick a different agent for one of the arms, or set arm B to None to run this agent on its own.' }
     : arms.ok || !hashes.value[1]
@@ -243,6 +268,8 @@ const checks = computed<Check[]>(() => {
   const keys = started.value ? null : keysCheck(keysMissing.value);
   const list: Check[] = [
     ...(draft && nCheck.value.error ? [{ ok: false, title: 'The number of trials is not valid', detail: nCheck.value.error }] : []),
+    ...(draft && seedCheck.value.error ? [{ ok: false, title: 'The claim-order seed is not valid', detail: seedCheck.value.error }] : []),
+    ...(draft && nameError.value ? [{ ok: false, title: 'The run name is too long', detail: nameError.value }] : []),
     ...(hashes.value.length === 2 ? [armRow] : []),
     ...(keys ? [keys] : []),
     capabilityCheck(configs, d.harnesses),
@@ -286,8 +313,9 @@ const armDiff = computed<{ summary: string; lines: LineChange[]; fields: LineCha
     const changed = changedLineCount(lineChanges(pa.text, pb.text));
     return { summary: `The system prompt, ${changed} ${changed === 1 ? 'line' : 'lines'} changed. Nothing else differs.`, lines: sentenceChanges(pa.text, pb.text), fields: [] };
   }
+  const changes = ca && cb ? configChanges(ca, cb) : [];
   return {
-    summary: `${content.length} ${content.length === 1 ? 'field differs' : 'fields differ'}: ${diffWords(content)}.`,
+    summary: `${changes.length ? changesWords(changes) : `${content.length} ${content.length === 1 ? 'field differs' : 'fields differ'}`}.${changes.length === 1 ? ' Nothing else differs.' : ''}`,
     lines: [],
     fields: content.flatMap((d) => [
       { side: 'a' as const, text: `${d.path}: ${diffValue(d.a)}` },
@@ -337,7 +365,7 @@ async function startNew() {
       sim_model: setup.simModel || null,
       budget_usd: budget.value ?? 0,
       plan_commit: setup.plan.trim() || null,
-      ...(setup.seed.trim() !== '' && Number.isInteger(Number(setup.seed)) ? { order_seed: Number(setup.seed) } : {}),
+      ...(seedCheck.value.value !== null ? { order_seed: seedCheck.value.value } : {}),
     });
     createdId = created.id;
     await api.startExperiment(created.id);
@@ -618,8 +646,22 @@ const pause = computed(() => {
   const e = data.value?.experiment;
   if (!e || e.status !== 'paused') return null;
   const reason = e.paused_reason ?? 'No new trials start until it is resumed; trials already running finish.';
-  return { cause: capitalise(pauseCause(reason)), reason: plainText(reason), at: e.paused_at };
+  return { ...pauseWords(reason), at: e.paused_at };
 });
+/**
+ * A whole-run pause as a heading and the rest of its reason, never the same words twice: "futility
+ * check (D32): arm B passed 0 of its first 3 graded trials, fewer than ..." is headed "Paused by the
+ * futility check" and goes on "Arm B passed 0 of its first 3 graded trials, fewer than ...".
+ */
+function pauseWords(reason: string): { cause: string; reason: string } {
+  const plain = plainText(reason).trim();
+  const rule = plain.match(/^(futility check|infra guard|spend guard):\s*(.*)$/s);
+  if (rule) return { cause: `Paused by the ${rule[1]}`, reason: capitalise(rule[2]) };
+  const cause = capitalise(pauseCause(reason));
+  // The heading is the reason's first clause: the text below keeps only what comes after it.
+  const rest = plain.toLowerCase().startsWith(cause.toLowerCase()) ? plain.slice(cause.length).replace(/^[\s.;:,]+/, '') : plain;
+  return { cause, reason: capitalise(rest) };
+}
 const ARM_STATUS: Record<string, string> = { not_started: 'Not started', active: 'Running', paused: 'Paused', stopped: 'Stopped', complete: 'Complete' };
 const armCards = computed(() =>
   (data.value?.experiment?.arms ?? []).map((a) => {
@@ -650,11 +692,36 @@ const rerunHref = computed(() => {
 });
 const pausedArms = computed(() => armCards.value.filter((a) => a.view.status === 'paused'));
 
+/** What the two arms differ in, with both values, once both configs are known. */
+const armChanges = computed(() => {
+  const [a, b] = hashes.value.map(configOf);
+  return a && b && a.hash !== b.hash ? configChanges(a, b) : [];
+});
+/** An arm's own side of what differs ("max steps 10"), when the two configs share a name, so the
+ *  name alone would not tell the arms apart; '' otherwise. */
+function armDistinct(i: number): string {
+  const [a, b] = hashes.value.map(configOf);
+  if (!a || !b || a.name.trim() !== b.name.trim()) return '';
+  return armChanges.value.map((c) => armValue(c, i === 0 ? 'a' : 'b')).join(', ');
+}
+/** The run grid's arm heading: the arm's label, or its value of the one setting that differs
+ *  ("Max steps 10") when the label would be its hash alone. */
+function armHeading(arm: (typeof arms.value)[number], i: number): string {
+  const [c] = armChanges.value;
+  if (armChanges.value.length === 1 && namedByHash(arm) && c) return capitalise(armValue(c, i === 0 ? 'a' : 'b'));
+  return arm.label;
+}
+
 /** "A: Prompt v2, config 7f3a9c2", or "A: Prompt v1 on Hermes, config 3b81e04" when the arm would
- *  otherwise be named by its hash alone, so the hash is never said twice. */
-const armLine = (arm: (typeof arms.value)[number]): string => {
-  if (!namedByHash(arm)) return `${arm.label}, config`;
-  return arm.config?.name ? `${arm.config.name}, config` : 'config';
+ *  otherwise be named by its hash alone, so the hash is never said twice; with its own value of
+ *  what differs when the two names are the same ("…, max steps 10, config 2cc0564"). An id that is
+ *  not a saved agent is said so. */
+const armLine = (arm: (typeof arms.value)[number], i: number): string => {
+  if (!arm.config && draft) return 'no saved agent with id';
+  const distinct = armDistinct(i);
+  const own = distinct ? ` (${distinct})` : '';
+  if (!namedByHash(arm)) return `${arm.label}${own}, config`;
+  return arm.config?.name ? `${arm.config.name}${own}, config` : 'config';
 };
 
 /** The run's name: a shipped example's own title, else the name it was given. */
@@ -719,7 +786,12 @@ const budgetNote = computed(() => {
 /** Under the estimated cost: the likely range, or for a fake-only run that the price is made up. */
 const costNote = computed(() => {
   const e = estimate.value;
-  if (!e) return draft ? (estimateError.value ?? (nCheck.value.error ? 'Set a valid number of trials first.' : sameConfig.value ? 'Pick two different agents first.' : '')) : '';
+  if (!e)
+    return draft
+      ? unknownArms.value.length
+        ? 'Pick a saved agent for each arm first.'
+        : (estimateError.value ?? (nCheck.value.error ? 'Set a valid number of trials first.' : sameConfig.value ? 'Pick two different agents first.' : ''))
+      : '';
   if (fakeOnly.value) return 'A made-up test price: fake models spend nothing real';
   return `Likely ${money(e.cost_usd.low)} to ${money(e.cost_usd.high)}`;
 });
@@ -751,6 +823,8 @@ const checksSummary = computed(() => {
 
 const diffSummary = computed(() => {
   if (sameConfig.value) return 'How the two arms differ: nothing, the same config twice';
+  const words = changesWords(armChanges.value);
+  if (words) return `How the two arms differ: ${words}`;
   const n = contentDiff(diff.value).length;
   return `How the two arms differ: ${n} ${n === 1 ? 'field' : 'fields'}`;
 });
@@ -1089,6 +1163,20 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                 A shipped example's agent was made elsewhere, with the files of its day: its tools or prompt may differ from today's. To run it again, fork it on its page; the fork gets today's files.
               </p>
               <p
+                v-if="unknownArms.length"
+                class="error small same-config"
+                role="alert"
+                data-test="unknown-arms"
+              >
+                <template
+                  v-for="(u, ui) in unknownArms"
+                  :key="u.letter"
+                >
+                  {{ ui ? ' ' : '' }}No saved agent with the id <span class="mono">{{ u.hash }}</span>, so arm {{ u.letter }} is empty.
+                </template>
+                The link may be mistyped, or from another database. Pick a saved agent above; <a :href="href.config()">Configs</a> lists every one.
+              </p>
+              <p
                 v-if="sameConfig"
                 class="error small same-config"
                 role="alert"
@@ -1145,9 +1233,22 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                 <input
                   v-model="setup.name"
                   type="text"
+                  :maxlength="RUN_NAME_MAX"
+                  :aria-invalid="nameError ? 'true' : undefined"
+                  :aria-describedby="nameError ? 'run-name-error' : undefined"
                   data-test="run-name"
                   @input="touched.name = true"
                 >
+                <span
+                  v-if="nameError"
+                  id="run-name-error"
+                  class="error smaller"
+                  data-test="run-name-error"
+                >{{ nameError }}</span>
+                <span
+                  v-else
+                  class="secondary smaller"
+                >Up to {{ RUN_NAME_MAX }} characters. It says what the arms differ in until you change it.</span>
               </label>
               <label class="field">
                 <span class="field-label">Analysis plan commit</span>
@@ -1171,9 +1272,17 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                   inputmode="numeric"
                   class="mono"
                   placeholder="Random, and recorded"
+                  :aria-invalid="seedCheck.error ? 'true' : undefined"
+                  :aria-describedby="seedCheck.error ? 'seed-error' : undefined"
                   data-test="order-seed"
                 >
-                <span class="secondary smaller">The trials run in an order shuffled from it, arms interleaved.</span>
+                <span
+                  v-if="seedCheck.error"
+                  id="seed-error"
+                  class="error smaller"
+                  data-test="seed-error"
+                >{{ seedCheck.error }}</span>
+                <span class="secondary smaller">A whole number from 0 to 4,294,967,295. The trials run in an order shuffled from it, arms interleaved.</span>
               </label>
               <div class="task-pick-wrap">
                 <div class="task-pick-frame">
@@ -1262,7 +1371,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
           </section>
 
           <section
-            v-if="hashes.length === 2"
+            v-if="hashes.length === 2 && !unknownArms.length"
             aria-labelledby="armdiff"
             class="panel panel--pad arm-diff"
           >
@@ -1319,10 +1428,10 @@ onBeforeUnmount(() => taskObserver?.disconnect());
             data-test="start-arms"
           >
             <span
-              v-for="arm in arms"
+              v-for="(arm, i) in arms"
               :key="arm.key"
               class="arm"
-            ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ armLine(arm) }} <span class="mono">{{ shortHash(arm.hash) }}</span></span></span>
+            ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ armLine(arm, i) }} <span class="mono">{{ shortHash(arm.hash) }}</span></span></span>
           </div>
           <template v-if="draft">
             <div class="n-field">
@@ -1571,7 +1680,8 @@ onBeforeUnmount(() => taskObserver?.disconnect());
             :data-test="`arm-${card.view.arm}`"
           >
             <div class="arm-card-head">
-              <span class="arm"><span :class="`dot dot--${card.key}`" /><span><strong>Arm {{ card.view.arm }}</strong>: {{ card.view.config_name }}</span></span>
+              <span class="arm"><span :class="`dot dot--${card.key}`" /><span><strong>Arm {{ card.view.arm }}</strong>: {{ card.view.config_name }}<template v-if="armDistinct(card.view.arm.charCodeAt(0) - 65)">
+                ({{ armDistinct(card.view.arm.charCodeAt(0) - 65) }})</template></span></span>
               <span
                 class="pill pill--small pill--outline arm-status"
                 :data-status="card.shownStatus"
@@ -1741,18 +1851,18 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                       Task
                     </th>
                     <th
-                      v-for="arm in arms"
+                      v-for="(arm, i) in arms"
                       :key="arm.key"
-                      scope="colgroup"
-                      :colspan="data.experiment.n"
+                      scope="col"
                       class="arm-col"
+                      :class="{ gap: i > 0 }"
                     >
                       <!-- On a phone only the dot and the letter show; the rest of the label stays for
                            screen readers. -->
                       <span class="arm"><span :class="`dot dot--${arm.key}`" /><span><span class="arm-letter">{{ arm.key.toUpperCase() }}</span><span
                         class="arm-rest"
                         data-test="arm-rest"
-                      >, {{ arm.label }}</span></span></span>
+                      >, {{ armHeading(arm, i) }}</span></span></span>
                     </th>
                   </tr>
                 </thead>
@@ -1767,16 +1877,16 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                     >
                       {{ row.task.id }}
                     </th>
-                    <template
+                    <td
                       v-for="(cells, ai) in row.arms"
                       :key="ai"
+                      class="arm-cells"
+                      :class="{ gap: ai > 0 }"
                     >
-                      <td
-                        v-for="(c, ci) in cells"
-                        :key="ci"
-                        :class="{ gap: ai > 0 && ci === 0 }"
-                      >
+                      <span class="cells">
                         <span
+                          v-for="(c, ci) in cells"
+                          :key="ci"
                           :class="['cell', `cell--${c.state}`, { 'cell--retried': c.retried }]"
                           :title="c.label"
                           :data-state="c.state"
@@ -1790,8 +1900,8 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                           name="cross"
                           :size="12"
                         /><template v-else-if="c.state === 'infra'">!</template><template v-else-if="c.state === 'abandoned' || c.state === 'final'">–</template><template v-else-if="c.state === 'incomplete'">?</template><template v-else-if="c.state === 'nograders'">·</template><span class="visually-hidden">{{ c.label }}</span></span>
-                      </td>
-                    </template>
+                      </span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -1871,10 +1981,10 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                 data-test="run-arms"
               >
                 <span
-                  v-for="arm in arms"
+                  v-for="(arm, i) in arms"
                   :key="arm.key"
                   class="arm"
-                ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ armLine(arm) }} <span class="mono">{{ shortHash(arm.hash) }}</span></span></span>
+                ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ armLine(arm, i) }} <span class="mono">{{ shortHash(arm.hash) }}</span></span></span>
                 <span
                   v-if="simClient"
                   class="sim-client"
@@ -2548,10 +2658,18 @@ onBeforeUnmount(() => taskObserver?.disconnect());
 
 .run-grid td {
   padding: 0;
+  vertical-align: top;
 }
 
-.run-grid td.gap {
+.run-grid .gap {
   padding-left: 14px;
+}
+
+/* An arm's trials, in a row that wraps when the screen is too narrow for both arms side by side. */
+.cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .cell {
@@ -2646,7 +2764,12 @@ onBeforeUnmount(() => taskObserver?.disconnect());
     border-spacing: 6px;
   }
 
-  .run-grid td.gap {
+  .cells {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .run-grid .gap {
     padding-left: 28px;
   }
 
@@ -2711,13 +2834,21 @@ onBeforeUnmount(() => taskObserver?.disconnect());
     border-spacing: 3px;
   }
 
-  .run-grid td.gap {
+  .cells {
+    gap: 3px;
+  }
+
+  .run-grid .gap {
     padding-left: 8px;
   }
 
+  /* The task name may break after a hyphen, so the arms keep the width. */
   .task-name {
     font-size: 11px;
     padding-right: 6px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    min-width: 8ch;
   }
 
   .run-grid .cell {
