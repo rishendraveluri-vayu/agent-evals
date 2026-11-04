@@ -11,7 +11,8 @@ import VerdictTag from '../components/VerdictTag.vue';
 import { agreementWords, armIndexOf, armLetter, armsOf, differingShort, namedByHash, excludesZero, intervalText, judgeCaveat, methodName, NBSP, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { identParts, money, percent, plainText, plural, seconds, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
-import { alsoGradedBy, gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
+import { isFake } from '../lib/models';
+import { alsoGradedBy, experimentName, gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
 import { href } from '../router';
 
@@ -29,17 +30,31 @@ interface Loaded {
 }
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
-  const [detail, compare, trials, judge, queue] = await Promise.all([
-    api.experiment(props.experimentId),
+  // A shipped example has no judge panel and its trials are never in the label queue, so its page
+  // does not fetch the held-out queue (every held-out output, a large reply) or the agreement.
+  const detailP = api.experiment(props.experimentId);
+  const blindP = detailP.then((d) =>
+    d.example ? ([null, [] as BlindItem[]] as const) : Promise.all([optional(api.judgeAgreement('heldout'), null), optional(api.labelQueue('heldout'), [] as BlindItem[])]),
+  );
+  const [detail, compare, trials, [judge, queue]] = await Promise.all([
+    detailP,
     api.compare(props.experimentId),
     optional(api.experimentTrials(props.experimentId), [] as TrialRowSummary[]),
-    optional(api.judgeAgreement('heldout'), null),
-    optional(api.labelQueue('heldout'), [] as BlindItem[]),
+    blindP,
   ]);
-  return { detail, compare, trials, judge, queue };
+  return { detail, compare, trials, judge, queue: [...queue] };
 });
 
 const arms = computed(() => (data.value ? armsOf(data.value.detail, data.value.detail.configs) : []));
+
+/** Which arms ran on a fake model, in words ("Both arms", "Arm A"), or null when none did. Their
+ *  replies are scripted and their prices made up for testing. */
+const fakeArms = computed(() => {
+  const fake = arms.value.filter((a) => isFake(a.config?.model));
+  if (!fake.length) return null;
+  if (fake.length === arms.value.length) return arms.value.length === 1 ? 'Its one arm' : arms.value.length === 2 ? 'Both arms' : 'Every arm';
+  return fake.length === 1 ? `Arm ${fake[0].key.toUpperCase()}` : `Arms ${fake.map((a) => a.key.toUpperCase()).join(' and ')}`;
+});
 
 /** The judge panel's counts: tasks with a judge check, and the finished trials of those tasks. */
 const judged = computed(() => {
@@ -400,15 +415,51 @@ const fx = (v: number) => 200 + Math.max(-100, Math.min(100, v)) * 1.82;
 const AXIS_TICKS = [-100, -50, 0, 50, 100].map((v) => ({ value: v, x: fx(v), label: tick(v) }));
 /** Arm colour only for a task whose difference holds up after correction; every other row is grey. */
 const lean = (r: TaskRow) => (!r.diff || !r.significant ? 'neutral' : r.diff.estimate >= 0 ? 'b' : 'a');
+/** How one arm's trials of a task stand on grading: some graded and decided; all graded but none
+ *  decided (every one undecided); grading not finished for some; or no finished trial at all. */
+type ArmState = 'decided' | 'undecided' | 'grading' | 'none';
+function armState(c: CompareRow | undefined): ArmState {
+  if (!c || !c.trials) return 'none';
+  if (c.graded + c.incomplete < c.trials) return 'grading';
+  return c.graded ? 'decided' : 'undecided';
+}
+
+/** A task row with no difference to show, in words: which arm is still grading, which is
+ *  undecided, or which has no trial. "Not graded yet" only while grading has not finished. */
+function noDiffWords(r: TaskRow): { tag: string; detail: string } {
+  const states = [armState(r.a), armState(r.b)].slice(0, Math.max(1, Math.min(2, arms.value.length)));
+  const letters = ['A', 'B'];
+  const which = (s: ArmState) => states.map((x, i) => (x === s ? letters[i] : null)).filter((x): x is string => x !== null);
+  const both = (list: string[]) => list.length === states.length && states.length > 1;
+  const grading = which('grading');
+  if (grading.length) return { tag: 'Not graded yet', detail: both(grading) ? 'grading has not finished' : `arm ${grading[0]} is still grading` };
+  const none = which('none');
+  if (none.length) return { tag: 'No trials', detail: both(none) ? 'no finished trial in either arm' : `arm ${none[0]} has no finished trial` };
+  const undecided = which('undecided');
+  if (both(undecided) || (states.length === 1 && undecided.length)) return { tag: 'Undecided', detail: states.length > 1 ? 'no trial in either arm has an outcome' : 'no trial has an outcome' };
+  if (undecided.length) {
+    const other = letters.find((l, i) => i < states.length && l !== undecided[0]) ?? 'A';
+    return { tag: `${undecided[0]} undecided`, detail: `arm ${other} has an outcome, arm ${undecided[0]} none` };
+  }
+  return { tag: 'Not graded yet', detail: '' };
+}
+
 function verdictOf(r: TaskRow): { kind: Verdict; label?: string } {
-  if (!r.diff || !stats.value) return { kind: 'pending' };
+  if (!r.diff) return { kind: 'pending', label: noDiffWords(r).tag };
+  if (!stats.value) return { kind: 'pending' };
   if (r.significant) return { kind: r.diff.estimate >= 0 ? 'better' : 'worse' };
   // Clear of zero on its own, but not once the other comparisons are accounted for.
   if (excludesZero(r.diff)) return { kind: 'none', label: 'No clear difference after correction' };
   return { kind: 'none' };
 }
-const labelOf = (r: TaskRow) => (!r.diff ? 'Not graded yet' : stats.value ? `${signed(r.diff.estimate)} (${intervalText(r.diff)})` : `${signed(r.diff.estimate)}, no interval`);
-const passedText = (c: CompareRow | undefined) => (c ? `${c.passed} of ${c.graded}${c.incomplete ? `, ${c.incomplete} undecided` : ''}` : '–');
+const labelOf = (r: TaskRow) => (!r.diff ? noDiffWords(r).detail : stats.value ? `${signed(r.diff.estimate)} (${intervalText(r.diff)})` : `${signed(r.diff.estimate)}, no interval`);
+/** "2 of 3", "1 of 2, 1 undecided", "1 undecided" (none graded with an outcome), "not graded". */
+const passedText = (c: CompareRow | undefined) => {
+  if (!c) return '–';
+  if (!c.graded && c.incomplete) return `${c.incomplete} undecided`;
+  if (!c.graded && c.trials) return 'not graded';
+  return `${c.passed} of ${c.graded}${c.incomplete ? `, ${c.incomplete} undecided` : ''}`;
+};
 
 const differing = computed(() => taskRows.value.filter((r) => r.significant).length);
 
@@ -527,10 +578,10 @@ const worthALook = computed(() => {
             aria-label="Breadcrumb"
             class="crumbs"
           >
-            <a :href="href.experiments()">Experiments</a> / {{ data.detail.example?.title ?? data.detail.name }}
+            <a :href="href.experiments()">Experiments</a> / {{ experimentName(data.detail) }}
           </nav>
           <h1 tabindex="-1">
-            {{ data.detail.example?.title ?? data.detail.name }}
+            {{ experimentName(data.detail) }}
           </h1>
           <p
             v-if="data.detail.example"
@@ -812,6 +863,7 @@ const worthALook = computed(() => {
         :judge="data.detail.judge ?? null"
         :judged-trials="judged.trials"
         :judged-tasks="judged.tasks"
+        :fake-arms="fakeArms"
         @changed="refreshJudge"
       />
 
@@ -826,6 +878,17 @@ const worthALook = computed(() => {
         >
           Pass rate and what it costs
         </h2>
+        <p
+          v-if="fakeArms"
+          class="caveat"
+          data-test="fake-cost-note"
+        >
+          <AppIcon
+            name="info"
+            :size="14"
+          />
+          <span><strong class="caveat-lead">Made-up prices:</strong> {{ fakeArms }} ran on a fake model, whose replies are scripted and whose prices are invented for testing. These costs show how the platform counts, not what a real model would cost.</span>
+        </p>
         <div class="stat-strip metrics">
           <div
             v-for="m in metrics"
@@ -986,9 +1049,9 @@ const worthALook = computed(() => {
                     class="cell-link"
                     :aria-label="`Arm A on ${r.name}: ${passedText(r.a)} passed. Open its trials of this task`"
                     data-test="cell-a"
-                  ><span class="phone-only">A </span>{{ passedText(r.a) }}</a>
+                  ><span class="phone-only">A{{ NBSP }}</span>{{ passedText(r.a) }}</a>
                   <template v-else>
-                    <span class="phone-only">A </span>{{ passedText(r.a) }}
+                    <span class="phone-only">A{{ NBSP }}</span>{{ passedText(r.a) }}
                   </template>
                 </td>
                 <td class="right num c-b">
@@ -998,9 +1061,9 @@ const worthALook = computed(() => {
                     class="cell-link"
                     :aria-label="`Arm B on ${r.name}: ${passedText(r.b)} passed. Open its trials of this task`"
                     data-test="cell-b"
-                  ><span class="phone-only">B </span>{{ passedText(r.b) }}</a>
+                  ><span class="phone-only">B{{ NBSP }}</span>{{ passedText(r.b) }}</a>
                   <template v-else>
-                    <span class="phone-only">B </span>{{ passedText(r.b) }}
+                    <span class="phone-only">B{{ NBSP }}</span>{{ passedText(r.b) }}
                   </template>
                 </td>
                 <td class="plot-cell">

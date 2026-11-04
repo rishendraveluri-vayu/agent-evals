@@ -285,9 +285,9 @@ describe('CompareView against the API: no statistics yet', () => {
     expect(w.text()).toContain('2 undecided');
   });
 
-  it('labels a shipped example as read-only sample content, by its title, with no judge panel', async () => {
+  it('labels a shipped example as read-only sample content, by its title, with no judge panel, and never fetches the held-out label queue', async () => {
     const detail = (details as Record<string, Record<string, unknown>>).exp_heldout;
-    routeFetch({
+    const { calls } = routeFetch({
       '/api/experiments/exp_heldout': { ...detail, example: { name: 'harness-ownloop-vs-hermes-haiku', title: 'Own loop vs Hermes on Claude Haiku 5.5', loaded_at: '2026-11-05T08:00:00.000Z' } },
       '/api/experiments/exp_heldout/compare': compares.exp_heldout,
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
@@ -299,6 +299,140 @@ describe('CompareView against the API: no statistics yet', () => {
     expect(w.get('h1').text()).toBe('Own loop vs Hermes on Claude Haiku 5.5');
     expect(w.get('[data-test="example-note"]').text()).toContain('read-only');
     expect(w.find('[data-test="judge-panel"]').exists()).toBe(false);
+    // Its trials are never in the label queue, and the judge panel is hidden, so neither the queue
+    // (every held-out output, a large reply) nor the agreement is fetched.
+    expect(calls.map((c) => c.url)).not.toContain('/api/labels/queue?set=heldout');
+    expect(calls.map((c) => c.url)).not.toContain('/api/judge/agreement?set=heldout');
+  });
+});
+
+describe('CompareView against the API: each task row says how its arms stand on grading', () => {
+  const base = compares.exp_heldout as { rows: { task: string; arm: string; passed: number; graded: number; incomplete: number; trials: number }[] };
+  const tasks = [...new Set(base.rows.map((r) => r.task))];
+  /** One task's two rows set as given; every other row as in the sample. */
+  function rowsWith(over: Record<string, Partial<Record<'A' | 'B', { passed: number; graded: number; incomplete: number; trials: number }>>>) {
+    return base.rows.map((r) => ({ ...r, ...(over[r.task]?.[r.arm as 'A' | 'B'] ?? {}) }));
+  }
+  async function mountRows(rows: unknown[]) {
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': { ...base, rows, stats: null },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': null,
+      '/api/labels/queue?set=heldout': [],
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    return w;
+  }
+  /** The verdict cell's tag and its detail, each as shown. */
+  const verdictCell = (row: ReturnType<VueWrapper['findAll']>[number] | undefined) => [row?.get('[data-test="task-verdict"] .result-plain').text(), row?.get('[data-test="task-verdict"] .result-detail').text()];
+  const rowOf = (w: VueWrapper, task: string) => {
+    const id = (details as Record<string, { tasks: { sha256: string; id: string }[] }>).exp_heldout.tasks.find((t) => t.sha256 === task)?.id ?? '';
+    return w.findAll('[data-test="forest-row"]').find((r) => r.get('.c-task').text() === id);
+  };
+
+  it('says "Undecided" when every trial in both arms is graded but none decided, never "Not graded yet"', async () => {
+    const t = tasks[0];
+    const w = await mountRows(rowsWith({ [t]: { A: { passed: 0, graded: 0, incomplete: 1, trials: 1 }, B: { passed: 0, graded: 0, incomplete: 1, trials: 1 } } }));
+    const row = rowOf(w, t);
+    expect(verdictCell(row)).toEqual(['Undecided', 'no trial in either arm has an outcome']);
+    expect(row?.get('.c-a').element.textContent?.trim()).toBe('A\u00a01 undecided');
+    expect(w.text()).not.toContain('Not graded yet');
+  });
+
+  it('names the undecided arm when the other has an outcome', async () => {
+    const t = tasks[1];
+    const w = await mountRows(rowsWith({ [t]: { A: { passed: 0, graded: 1, incomplete: 0, trials: 1 }, B: { passed: 0, graded: 0, incomplete: 1, trials: 1 } } }));
+    expect(verdictCell(rowOf(w, t))).toEqual(['B undecided', 'arm A has an outcome, arm B none']);
+  });
+
+  it('says "Not graded yet" only while grading has not finished, and which arm', async () => {
+    const [t1, t2] = [tasks[2], tasks[3]];
+    const w = await mountRows(
+      rowsWith({
+        [t1]: { A: { passed: 0, graded: 0, incomplete: 0, trials: 2 }, B: { passed: 0, graded: 0, incomplete: 0, trials: 2 } },
+        [t2]: { A: { passed: 0, graded: 0, incomplete: 1, trials: 1 }, B: { passed: 0, graded: 0, incomplete: 0, trials: 1 } },
+      }),
+    );
+    expect(verdictCell(rowOf(w, t1))).toEqual(['Not graded yet', 'grading has not finished']);
+    expect(verdictCell(rowOf(w, t2))).toEqual(['Not graded yet', 'arm B is still grading']);
+  });
+
+  it('keeps a space between the arm letter and its count on a phone card', async () => {
+    const w = await mountRows(base.rows);
+    // The count's link is a flex box, which drops a trailing plain space: the letter keeps a no-break space.
+    const letters = w.findAll('.c-a .phone-only, .c-b .phone-only');
+    expect(letters.length).toBeGreaterThan(0);
+    for (const cell of letters) expect(cell.element.textContent).toMatch(/^[AB]\u00a0$/);
+  });
+});
+
+describe('CompareView against the API: an experiment on fake models', () => {
+  const detail = (details as Record<string, { configs: { model: string }[] } & Record<string, unknown>>).exp_heldout;
+  const fakeDetail = { ...detail, configs: detail.configs.map((c) => ({ ...c, model: 'fake/finance-emi' })) };
+  function mountFake() {
+    const { calls } = routeFetch({
+      '/api/experiments/exp_heldout': fakeDetail,
+      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': null,
+      '/api/labels/queue?set=heldout': [],
+      '/api/models': [{ name: 'claude-haiku-5-5', input_per_mtok: 1, output_per_mtok: 5 }],
+      'POST /api/experiments/exp_heldout/judge': { experiment_id: 'exp_heldout', model: 'claude-haiku-5-5', budget_usd: 2, approved_at: '2026-11-05T08:00:00.000Z' },
+      'POST /api/experiments/exp_heldout/regrade': { experiment_id: 'exp_heldout', trials: 40, queued: 40, no_graders: 0, superseded: 0, from_trial_task: 0 },
+    });
+    return { w: mount(CompareView, { props: { experimentId: 'exp_heldout' } }), calls };
+  }
+
+  it('says the costs are made-up prices for testing', async () => {
+    const { w } = mountFake();
+    await settle();
+    const note = w.get('[data-test="fake-cost-note"]').text();
+    expect(note).toContain('Made-up prices: Both arms ran on a fake model');
+    expect(note).toContain('prices are invented for testing');
+  });
+
+  it('warns before approving a real judge for made-up outputs, and asks again before any call', async () => {
+    const { w, calls } = mountFake();
+    await settle();
+    await w.get('[data-test="judge-approve-open"]').trigger('click');
+    expect(w.get('[data-test="judge-fake-warning"]').text()).toContain('Both arms ran on a fake model: those outputs are scripted test replies');
+    await w.get('[data-test="judge-model-select"]').setValue('claude-haiku-5-5');
+    await w.get('[data-test="judge-budget-input"]').setValue('2');
+    await w.get('[data-test="judge-approve"]').trigger('submit');
+    await settle();
+    // The first yes only asks again; nothing is sent.
+    expect(w.get('[data-test="judge-fake-confirm"]').text()).toContain('Judge made-up outputs with a real, paid model anyway?');
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+    await w.get('[data-test="judge-fake-cancel"]').trigger('click');
+    expect(w.find('[data-test="judge-approve"]').exists()).toBe(false);
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+    // Asked and answered yes twice, it approves and regrades.
+    await w.get('[data-test="judge-approve-open"]').trigger('click');
+    await w.get('[data-test="judge-model-select"]').setValue('claude-haiku-5-5');
+    await w.get('[data-test="judge-budget-input"]').setValue('2');
+    await w.get('[data-test="judge-approve"]').trigger('submit');
+    await settle();
+    await w.get('[data-test="judge-fake-go"]').trigger('click');
+    await settle();
+    expect(calls.filter((c) => c.method === 'POST').map((c) => c.url)).toEqual(['/api/experiments/exp_heldout/judge', '/api/experiments/exp_heldout/regrade']);
+  });
+
+  it('shows no made-up price note and asks once on real models', async () => {
+    routeFetch({
+      '/api/experiments/exp_heldout': detail,
+      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': null,
+      '/api/labels/queue?set=heldout': [],
+      '/api/models': [],
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.find('[data-test="fake-cost-note"]').exists()).toBe(false);
+    await w.get('[data-test="judge-approve-open"]').trigger('click');
+    expect(w.find('[data-test="judge-fake-warning"]').exists()).toBe(false);
   });
 });
 

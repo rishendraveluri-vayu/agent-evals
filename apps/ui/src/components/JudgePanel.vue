@@ -23,6 +23,9 @@ const props = defineProps<{
   judgedTrials: number;
   /** Tasks in the experiment with a judge check. */
   judgedTasks: number;
+  /** Which arms ran on a fake model ("Both arms", "Arm A"), or null: their outputs are scripted,
+   *  so a real judge would spend real money grading made-up text. Approving then asks twice. */
+  fakeArms?: string | null;
 }>();
 /** Something changed on the API (an approval, a revoke, a regrade queued): read the experiment again. */
 const emit = defineEmits<{ changed: [] }>();
@@ -41,6 +44,9 @@ const budget = ref('');
 const busy = ref(false);
 const error = ref<string | null>(null);
 const done = ref<string | null>(null);
+/** Set once the second question is answered yes: judge made-up outputs with a real model anyway. */
+const fakeAsked = ref(false);
+const fakeConfirmed = ref(false);
 
 const budgetValue = computed(() => Number(budget.value.trim()));
 const budgetProblem = computed(() => {
@@ -62,6 +68,24 @@ function open(next: Step) {
   step.value = next;
   error.value = null;
   done.value = null;
+  fakeAsked.value = false;
+  fakeConfirmed.value = false;
+}
+
+/** "Approve and judge": on an experiment with fake-model arms it asks once more first. */
+function submitApprove() {
+  if (approveBlocked.value || busy.value) return;
+  if (props.fakeArms && !fakeConfirmed.value) {
+    fakeAsked.value = true;
+    return;
+  }
+  void approve();
+}
+
+function confirmFake() {
+  fakeConfirmed.value = true;
+  fakeAsked.value = false;
+  void approve();
 }
 
 function regradeWords(queued: number, noGraders: number): string {
@@ -69,9 +93,11 @@ function regradeWords(queued: number, noGraders: number): string {
   return `Regrade queued for ${plural(queued, 'finished trial')}: each trial page shows its new grades once they are in. No agent is run again.${none}`;
 }
 
-/** Only the confirmed "Approve and judge" click gets here: approve, then regrade. */
+/** Only the confirmed "Approve and judge" click gets here (and, on fake-model arms, the second
+ *  yes): approve, then regrade. */
 async function approve() {
   if (approveBlocked.value) return;
+  if (props.fakeArms && !fakeConfirmed.value) return;
   busy.value = true;
   error.value = null;
   let approved = false;
@@ -227,6 +253,13 @@ async function revoke() {
             , {{ money(judge.spend_usd) }} of it spent so far
           </template>, and stops there. No agent is run again.
         </p>
+        <p
+          v-if="fakeArms"
+          class="small fake-warning"
+          data-test="judge-fake-warning"
+        >
+          <strong>{{ fakeArms }} ran on a fake model:</strong> the judge would grade scripted test replies, with real money.
+        </p>
         <div class="row">
           <button
             type="button"
@@ -271,7 +304,7 @@ async function revoke() {
         class="approve"
         novalidate
         data-test="judge-approve"
-        @submit.prevent="approve"
+        @submit.prevent="submitApprove"
       >
         <div class="fields">
           <label class="field">
@@ -340,12 +373,59 @@ async function revoke() {
             It never spends more than {{ budgetProblem || !budget.trim() ? 'the budget' : wholeMoney(budgetValue) }}. A regrade starts right after; no agent is run again, and earlier grades are kept.
           </p>
           <p
+            v-if="fakeArms"
+            class="small fake-warning"
+            data-test="judge-fake-warning"
+          >
+            <AppIcon
+              name="alert"
+              :size="14"
+            /> <strong>{{ fakeArms }} ran on a fake model:</strong> those outputs are scripted test replies, not an agent’s answers. A real judge would spend real money grading made-up text, and its grades would say nothing about any agent.
+          </p>
+          <p
             v-if="fixtures"
             class="small secondary"
           >
             Sample data: here nothing is minted and no model is called.
           </p>
-          <div class="row">
+          <div
+            v-if="fakeAsked"
+            class="confirm again"
+            role="alertdialog"
+            aria-labelledby="judge-fake-again"
+            data-test="judge-fake-confirm"
+          >
+            <p
+              id="judge-fake-again"
+              class="small strong"
+            >
+              Judge made-up outputs with a real, paid model anyway?
+            </p>
+            <div class="row">
+              <button
+                type="button"
+                class="btn"
+                :disabled="busy"
+                data-test="judge-fake-go"
+                @click="confirmFake"
+              >
+                Yes, spend on them anyway
+              </button>
+              <button
+                type="button"
+                class="btn btn--quiet"
+                :disabled="busy"
+                data-test="judge-fake-cancel"
+                @click="open('idle')"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+          <div
+            v-else
+            class="row"
+          >
             <button
               type="submit"
               class="btn"
@@ -470,6 +550,16 @@ async function revoke() {
 
 .confirm p {
   margin: 0 0 6px;
+}
+
+/* The second question, inside the first confirmation: asked only for fake-model arms. */
+.confirm.again {
+  margin-top: 6px;
+  border-left-color: var(--error);
+}
+
+.fake-warning {
+  font-weight: 500;
 }
 
 .problem,
