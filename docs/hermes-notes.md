@@ -124,3 +124,18 @@ Tests: `workers/hermes/tests/test_prompt_switches.py`, against the fake model se
 
 - [x] **D33: the "Parallel tool calls" prompt section follows `parallel_tool_calls`.** The switch is Hermes's own config key `agent.parallel_tool_call_guidance` (default true, `hermes_cli/config_defaults.py:176`, read in `agent/agent_init.py:1323`; the section is `PARALLEL_TOOL_CALL_GUIDANCE` in `agent/prompt_builder.py:411`, added in `agent/system_prompt.py:566` only when tools are loaded). The adapter writes `false` when the setting is false and leaves the key out when it is true or unset. With `false`, the system message on the wire has no "# Parallel tool calls" heading and still has "# Finishing the job" and every other section (D20). `applied_settings.parallel_tool_call_guidance` records the value read back from `agent._parallel_tool_call_guidance`.
 - [x] **D31: prompt-cache markers are off in every config.** The adapter writes `prompt_caching.cache_ttl: "off"` unless `harness_options.prompt_cache_markers` is true. Checked with a model name containing `claude` on a host named `litellm.localhost` (which resolves to loopback here): no `cache_control` in any request by default or with the option false, and markers present with it true. `applied_settings.prompt_cache_markers` has source `platform_default` unless the option is set.
+
+## Verified on Claude Haiku 5.5 through the engine (D39, 4 Nov night)
+
+30 real trials, 10 per memory mode, the 10 draft tasks used in label batch 1's single and conversation mix, experiments `e_0mw2932bv7f47b6e7c4f32a21` (memory off), `e_0mw2932ff68fb231326079843` (on, empty) and `e_0mw2932j32262e513cc0e9021` (on, seeded). Checked trial by trial from the stored files with `scripts/verify_hermes.py` (reads only).
+
+- [x] **Our task prompt reaches the model intact**, inside Hermes's system prompt, in 30 of 30 (D20).
+- [x] **No "Parallel tool calls" section** with `parallel_tool_calls: false`, 30 of 30 (D33).
+- [x] **No `cache_control` marker in any request**, 30 of 30 (D31).
+- [x] **Tools are exactly the 11 finance tools**, plus `memory` only when memory is on, 30 of 30.
+- [x] **Memory off has no memory tool and no memory block; on and empty has the tool and none of the seed text; on and seeded has every seeded entry in the prompt**, 30 of 30.
+- [x] **LiteLLM's call count equals Hermes's own in every trial** (0 calls unaccounted for in 30), and LiteLLM's log was complete each time (R10.9).
+- [x] **Compression never fired**, and **Hermes's config files hashed the same after each trial as before**.
+- **Hermes never called the `memory` tool** in the 20 memory-on trials. Every trial is one session, and nothing in these tasks asks it to remember anything. So within one trial, "memory on, empty" differs from "memory off" only by the tool's schema and the memory section of the prompt, and "seeded" differs by the seeded text. See `docs/known-limits.md`.
+- Cost per trial: $0.0082 off, $0.0106 on and empty, $0.0087 seeded (one run each, not a comparison).
+

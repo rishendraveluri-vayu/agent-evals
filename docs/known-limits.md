@@ -123,6 +123,10 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 
 - Labelling is blind only when it is done from the Label page. While held-out outputs remain to label, the Judge page keeps the judge's reasons closed, and a trial page hides the judge's quotes, rationale and highlights for any task with an output still in the queue and never says where your label disputes the judge. Trial pages still show the judge's Pass or Fail on every check, and the hiding matches tasks by the queue item's `task_id`, which is not in the API contract: if the API leaves it out, trial pages show the judge's reasons for every task.
 
+## Hermes memory (D39, 4 Nov)
+
+- **Memory is never written within one trial.** In 20 memory-on trials on Haiku 5.5, Hermes did not call its `memory` tool once. Each trial is a fresh session, so a memory-on vs memory-off comparison on these tasks measures the extra tool schema and prompt text, and a seeded config measures the seeded facts. It does not measure whether Hermes saves the right things for later. Testing that needs a task that runs two sessions on one home, which we have not built.
+
 ## To check before submission
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted
