@@ -6,8 +6,12 @@ Opt in, after building the images (workers/build_images.sh):
 
     EVALS_IMAGE_TESTS=1 uv run pytest -q tests/test_images.py
 
+EVALS_IMAGE_TAG (default dev) tests images built with the same tag by workers/build_images.sh.
+
 The worker reaches the fake API and the fake model on the host through --network host. That
 network is for the test's plumbing only; the network rules themselves are what netcheck checks.
+As in compose, the worker container mounts nothing but the read-only test fixtures: it uploads
+each trial's files to the (fake) API, which stores them on the host.
 """
 
 from __future__ import annotations
@@ -50,6 +54,7 @@ RUNTIME = [
 ]
 FIXTURE_PY = "/opt/harness/bin/python /fixtures/{}"
 MARKER = "leak-marker-from-trial-1"
+TAG = os.environ.get("EVALS_IMAGE_TAG", "dev")
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("EVALS_IMAGE_TESTS") != "1" or shutil.which("docker") is None,
@@ -58,7 +63,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def image(harness: str) -> str:
-    name = f"agent-evals/worker-{harness}:dev"
+    name = f"agent-evals/worker-{harness}:{TAG}"
     found = subprocess.run(["docker", "image", "inspect", name], capture_output=True)
     if found.returncode != 0:
         pytest.skip(f"{name} not built")
@@ -72,20 +77,16 @@ def docker(*args: str, check: bool = True, timeout: float = 300) -> subprocess.C
     return proc
 
 
-def runs_dir(tmp_path: Path) -> Path:
-    runs = tmp_path / "runs"
-    runs.mkdir()
-    runs.chmod(0o777)  # the worker is uid 10001; the host test user owns tmp_path
-    return runs
+def api_runs(tmp_path: Path) -> Path:
+    """Where the fake API stores uploads, as the API's runs/. Only the host process writes it."""
+    return tmp_path / "runs"
 
 
-def worker_args(api: FakeWorkerApi, runs: Path, worker_id: str, cmd: str | None) -> list[str]:
+def worker_args(api: FakeWorkerApi, worker_id: str, cmd: str | None) -> list[str]:
     args = [
         "--network",
         "host",
         *RUNTIME,
-        "-v",
-        f"{runs}:/runs",
         "-v",
         f"{FIXTURES}:/fixtures:ro",
         "-e",
@@ -160,7 +161,7 @@ def test_a_real_trial_in_the_image(harness, tmp_path, fake):
     spec["tools"]["mcp_servers"][0]["command"] = [
         "/opt/finance-mcp/bin/finance-mcp", "--transport", "stdio", "--state-dir", "/trial/state",
     ]  # fmt: skip
-    runs = runs_dir(tmp_path)
+    runs = api_runs(tmp_path)
     api = FakeWorkerApi(runs_dir=runs)
     api.calls = lambda trial_id, role: (
         rows_from_fake_requests(fake.requests()) if role == "agent" else []
@@ -168,7 +169,7 @@ def test_a_real_trial_in_the_image(harness, tmp_path, fake):
     api.claims.append(make_claim(spec, state_files={"client.json": CLIENT_EXAMPLE.read_bytes()}))
     try:
         proc = docker(
-            "run", "--rm", *worker_args(api, runs, f"img-{harness}", None), img, "--exit-on-idle",
+            "run", "--rm", *worker_args(api, f"img-{harness}", None), img, "--exit-on-idle",
             check=False, timeout=240,
         )  # fmt: skip
     finally:
@@ -185,6 +186,7 @@ def test_a_real_trial_in_the_image(harness, tmp_path, fake):
     assert report["proxy_usage"]["model_calls"] == len(fake.requests()) >= 2
     assert report["adapter"]["leftover_processes"] >= 0
     assert (folder / "runner-report.json").is_file()
+    assert sorted(api.stored(f"t_img_{harness}")) == [row["path"] for row in body["files"]]
 
 
 @pytest.fixture(scope="module", params=list(HARNESSES))
@@ -194,7 +196,7 @@ def leak_views(request, tmp_path_factory):
     harness = request.param
     img = image(harness)
     tmp = tmp_path_factory.mktemp(f"leak-{harness}")
-    runs = runs_dir(tmp)
+    runs = api_runs(tmp)
     api = FakeWorkerApi(runs_dir=runs)
     opts = {"places": CONTAINER_PLACES, "escape": True}
     for n, phase in ((1, "write"), (2, "check")):
@@ -202,8 +204,7 @@ def leak_views(request, tmp_path_factory):
         api.claims.append(make_claim(spec))
     try:
         proc = docker(
-            "run", "--rm", *worker_args(api, runs, f"leak-{harness}",
-                                        FIXTURE_PY.format("leak_probe.py")),
+            "run", "--rm", *worker_args(api, f"leak-{harness}", FIXTURE_PY.format("leak_probe.py")),
             img, "--exit-on-idle", check=False, timeout=240,
         )  # fmt: skip
     finally:
@@ -212,20 +213,20 @@ def leak_views(request, tmp_path_factory):
     root = runs / EXPERIMENT
     wrote = json.loads((root / "t_leak_1/attempt-1/artifacts/leak-view.json").read_text())
     seen = json.loads((root / "t_leak_2/attempt-1/artifacts/leak-view.json").read_text())
-    return {"harness": harness, "wrote": wrote, "seen": seen, "log": proc.stderr}
+    stored = api.stored("t_leak_1")
+    return {"harness": harness, "wrote": wrote, "seen": seen, "log": proc.stderr, "stored": stored}
 
 
 def test_no_state_leaks_between_trials_in_the_image(leak_views):
     wrote, seen = leak_views["wrote"], leak_views["seen"]
     writable = {k for k, v in wrote["wrote"].items() if v == "written"}
-    # The read-only root leaves the trial folder, /dev/shm and the runs volume writable.
+    # The read-only root leaves only the trial folder and /dev/shm writable; there is no /runs.
     assert writable == {
-        "trial_root", "home", "tmp", "harness", "state", "artifacts", "cwd", "dev_shm", "runs",
+        "trial_root", "home", "tmp", "harness", "state", "artifacts", "cwd", "dev_shm",
     }, wrote["wrote"]  # fmt: skip
     assert len(wrote["spawned"]) == 3
-    # Trial 2 starts from an empty folder and sees nothing trial 1 left, except on /runs.
-    outside_runs = {k: v for k, v in seen["seen"].items() if k != "runs"}
-    assert outside_runs == dict.fromkeys(outside_runs), outside_runs
+    # Trial 2 starts from an empty folder and sees nothing trial 1 left, anywhere it looks.
+    assert seen["seen"] == dict.fromkeys(seen["seen"]), seen["seen"]
     assert seen["home"] == [] and seen["tmp"] == [] and seen["dev_shm"] == []
     assert not [p for p in seen["trial_listing"] if "leak" in p], seen["trial_listing"]
     # Every process trial 1 left is gone, including the one that cleared its environment.
@@ -236,23 +237,25 @@ def test_no_state_leaks_between_trials_in_the_image(leak_views):
     assert seen["token"]["pid1_environ_readable"] is False
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="known limit: /runs is mounted in the worker container, so a trial can read and "
-    "write earlier trials' stored folders (reported to Rishi; not fixed in SP3)",
-)
-def test_a_trial_cannot_see_the_runs_volume(leak_views):
-    seen = leak_views["seen"]
+def test_a_trial_cannot_see_earlier_trials_stored_files(leak_views):
+    """Trial 1's files, its marker among them, went to the API, which stores them outside the
+    container. Trial 2 has no /runs or any other shared volume to find them on, and trial 1 had
+    nowhere to write that trial 2 could read (D2, D3)."""
+    wrote, seen, stored = leak_views["wrote"], leak_views["seen"], leak_views["stored"]
+    assert stored["artifacts/leak.txt"] == MARKER.encode()
+    assert wrote["wrote"]["runs"] != "written", wrote["wrote"]
     assert seen["seen"]["runs"] is None
-    assert seen["runs"]["markers"] == []
+    assert seen["runs"] == {"exists": False}
+    assert "/runs" not in seen["mounts"], seen["mounts"]
+    assert not [m for m in seen["mounts"] if m.startswith("/runs")]
 
 
 @pytest.mark.parametrize("harness", HARNESSES)
 def test_killing_the_worker_container_mid_trial(harness, tmp_path):
-    """docker kill mid-trial: no report and no attempt folder. A fresh container cleans nothing
-    up (its /trial is a new tmpfs) and claims the next attempt."""
+    """docker kill mid-trial: no upload, no report and no attempt folder. A fresh container cleans
+    nothing up (its /trial is a new tmpfs) and claims the next attempt."""
     img = image(harness)
-    runs = runs_dir(tmp_path)
+    runs = api_runs(tmp_path)
     api = FakeWorkerApi(runs_dir=runs)
     cmd = FIXTURE_PY.format("scripted_adapter.py")
     slow = {"turns": [{"sleep_s": 60, "reply": "never sent", "model_calls": 0}]}
@@ -260,7 +263,7 @@ def test_killing_the_worker_container_mid_trial(harness, tmp_path):
     api.claims.append(make_claim(worker_spec(harness_options=slow), lease_s=3))
     name = f"sp3-kill-{harness}-{uuid.uuid4().hex[:6]}"
     try:
-        docker("run", "-d", "--name", name, *worker_args(api, runs, f"{name}-1", cmd), img)
+        docker("run", "-d", "--name", name, *worker_args(api, f"{name}-1", cmd), img)
         assert api.wait_for("heartbeat", 2, trial_id="t_test_0001", timeout_s=60), docker(
             "logs", name, check=False
         ).stderr[-3000:]
@@ -269,13 +272,13 @@ def test_killing_the_worker_container_mid_trial(harness, tmp_path):
         beats = len(api.requests("heartbeat"))
         time.sleep(1.5)
         assert len(api.requests("heartbeat")) == beats
-        assert api.reports() == []
+        assert api.reports() == [] and api.requests("upload") == []
         trial_runs = runs / EXPERIMENT / "t_test_0001"
         assert not trial_runs.exists() or not list(trial_runs.iterdir())
 
         api.claims.append(make_claim(worker_spec(attempt=2, harness_options=quick)))
         docker(
-            "run", "--rm", *worker_args(api, runs, f"{name}-2", cmd), img, "--max-trials", "1",
+            "run", "--rm", *worker_args(api, f"{name}-2", cmd), img, "--max-trials", "1",
             timeout=120,
         )  # fmt: skip
     finally:

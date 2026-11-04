@@ -31,13 +31,8 @@ x-harness-worker: &harness-worker
     # provider keys never reach a worker (D2, R10.3).
     EVALS_API_URL: http://api:3000/api
     EVALS_WORKER_TOKEN: *worker-token
-  volumes:
-    # Trial folders are stored at runs/<experiment>/<trial>/attempt-<n>/, which the API reads.
-    # The worker runs as uid 10001, so runs/ must be writable by it: RUNS_GID is a group that
-    # can write runs/ on the host (for example `stat -c %g runs`, with runs/ group-writable).
-    - ./runs:/runs
-  group_add:
-    - "${RUNS_GID:-1000}"
+  # No volumes. The worker uploads each trial's files to the API, which alone writes runs/
+  # (D2), so no trial can read or change another trial's stored files (D3).
   depends_on:
     api:
       condition: service_healthy
@@ -113,7 +108,8 @@ services:
       EVALS_WORKER_TOKEN: *worker-token
       # Recorded on every experiment; set it to `git rev-parse HEAD` when starting a real run.
       EVALS_PLATFORM_COMMIT: ${EVALS_PLATFORM_COMMIT:-}
-      # Trial folders: SP1 gate and smoke runs, and experiment attempts written by workers.
+      # Trial folders: SP1 gate and smoke runs, and experiment attempts, which the API writes
+      # from the files workers upload (runs/<experiment>/<trial>/attempt-<n>/).
       RUNS_DIR: /runs
       # The catalogue is read from git: adapters' capabilities, prompts and tasks.
       WORKERS_DIR: /repo/workers
@@ -122,7 +118,9 @@ services:
       # Rishi's hand labels: the labelling view appends here, nothing else writes them.
       LABELS_DIR: /repo/labels
     volumes:
-      - ./runs:/runs:ro
+      # Read-write: the API stores uploaded trial files here. It runs as uid 1000 (node), so
+      # runs/ must be writable by that user on the host, as labels/ already is.
+      - ./runs:/runs
       - ./workers:/repo/workers:ro
       - ./configs:/repo/configs:ro
       - ./tasks:/repo/tasks:ro

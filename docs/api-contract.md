@@ -4,7 +4,7 @@ Status: 4 Nov 2026. Built on R14 (data model) and D2 (workers only claim and rep
 Three streams build against this file in parallel: the NestJS API, the Python worker, and the
 Vue UI. Change it only by editing this file in the same commit as the code.
 
-**As built (4 Nov):** every path below is served under `/api` (a worker calls `POST /api/worker/claim`). Each attempt is its own trial row with its own id, so a re-queued attempt gets a new `trial_id`; its folder is `runs/<experiment_id>/<trial_id>/attempt-<n>/`. A config's model and price are looked up with LiteLLM's `/model_group/info`, because `/model/info` expands the `fake/*` wildcard into about 220 names and never lists `fake/*` itself; `POST /configs` returns 400 `unknown_model` for a model LiteLLM does not serve. Experiment trials' spans come back in the raw OpenTelemetry shape. A report whose file hashes do not match is accepted and flagged, not refused. Shared request and response types: `apps/api/src/contract.ts`.
+**As built (4 Nov):** every path below is served under `/api` (a worker calls `POST /api/worker/claim`). Each attempt is its own trial row with its own id, so a re-queued attempt gets a new `trial_id`; its folder is `runs/<experiment_id>/<trial_id>/attempt-<n>/`, which only the API writes, from the files the worker uploads (workers mount no `runs/`). A config's model and price are looked up with LiteLLM's `/model_group/info`, because `/model/info` expands the `fake/*` wildcard into about 220 names and never lists `fake/*` itself; `POST /configs` returns 400 `unknown_model` for a model LiteLLM does not serve. Experiment trials' spans come back in the raw OpenTelemetry shape. A report whose file hashes do not match is accepted and flagged, not refused. Shared request and response types: `apps/api/src/contract.ts`.
 
 All bodies are JSON. Times are RFC 3339 UTC. Money is USD as a number. Hashes are
 `sha256:<hex>`; every hash the API takes in, a worker's report included, may also be bare hex
@@ -96,26 +96,57 @@ state folder for the finance MCP server.
 
 ## Worker protocol (D2)
 
-A worker serves one harness. Its loop: claim, run, heartbeat while running, report.
+A worker serves one harness. Its loop: claim, run, heartbeat while running, upload the trial's
+files, report. Workers talk only to the API over HTTP and mount nothing from the host, so a
+trial cannot read or change another trial's stored files (D3).
 
 1. `POST /worker/claim` with `{worker_id, harness}`. Returns 204 when nothing is queued for
    that harness, or 200 with
-   `{trial_id, attempt, spec, state_files: {"client.json": "<base64>"}, keys: {model, sim},
-   budgets: {trial_usd, sim_usd}, lease_s: 60}`. `spec` is a complete contract v2 spec whose
-   `model.base_url` is LiteLLM as seen from the worker. The claim is one `UPDATE ... WHERE id
-   = (SELECT ... FOR UPDATE SKIP LOCKED)`, so two workers never get the same trial.
+   `{trial_id, attempt, experiment_id, spec, state_files: {"client.json": "<base64>"},
+   keys: {model, sim}, budgets: {trial_usd, sim_usd}, lease_s: 60, folder}`. `spec` is a
+   complete contract v2 spec whose `model.base_url` is LiteLLM as seen from the worker.
+   `folder` is where the API will store the attempt's files, relative to `runs/`; the worker
+   does not use it. The claim is one `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP
+   LOCKED)`, so two workers never get the same trial.
 2. `POST /worker/trials/:id/heartbeat` with `{worker_id, attempt}` every 10 s. 200 keeps the
    lease; 409 `claim_lost` means the API gave up on it (stop the trial, report nothing).
 3. `GET /worker/trials/:id/calls?role=agent|sim` returns LiteLLM's spend-log rows for that
    trial's key, as LiteLLM returns them. The worker's runner polls this the way it polls
    LiteLLM today (`ProxyClient.call_records`) and merges the rows into its spans.
-4. `POST /worker/trials/:id/report` with `{worker_id, attempt, runner_report, result, spans,
-   files: [{path, bytes, sha256}]}`. The trial folder itself is on the shared `runs` volume
-   at `runs/<experiment_id>/<trial_id>/attempt-<n>/`; the API checks the hashes. Reporting the
-   same attempt twice is a no-op 200. The API revokes the trial's keys, stores the report,
-   and sets the status: `done` for an `agent` label; for an `infra:*` label, `infra_failed`
-   and, if this was attempt 1, a new `queued` attempt 2 (D16: re-queued once, never twice).
-5. A lease with no heartbeat for 60 s lapses: the API marks the attempt `abandoned`, revokes
+4. `PUT /worker/trials/:id/files/*path?worker_id=<id>&attempt=<n>`, once for each regular file
+   of the trial's `out/` folder, after the run and before the report. The body is the file's
+   raw bytes, with `Content-Type: application/octet-stream`, a `Content-Length`, and
+   `X-Content-Sha256` (`sha256:<hex>` or bare hex). `path` is relative to `out/`, each segment
+   percent-encoded. The API streams the body to a temporary file next to the attempt folder,
+   hashing it on the way, and links it into `runs/<experiment_id>/<trial_id>/attempt-<n>/<path>`
+   only when the hash matches, so a stored file is always whole. Answers:
+   - 201 `{path, bytes, sha256, duplicate: false}`: stored.
+   - 200 the same with `duplicate: true`: those exact bytes were already stored (a retried
+     upload). A stored file is never overwritten.
+   - 400 `invalid_path` (absolute, `..`, empty or dot segments, backslash or NUL),
+     `invalid_upload` (no or bad hash header, no `worker_id` or `attempt`), `hash_mismatch`
+     (the bytes do not match the header; nothing is stored).
+   - 409 `file_conflict` (different bytes already stored at that path), `claim_lost` (the
+     worker does not hold the attempt, for example after its lease lapsed: stop, report
+     nothing), `attempt_mismatch`, `already_reported` (a new path after the report; the same
+     bytes again are still a 200).
+   - 411 without a `Content-Length`; 413 `file_too_large` for over 64 MB, decided from the
+     `Content-Length` before the body is read; 415 for another content type.
+
+   The worker sends regular files only: symlinks and special files are skipped, never followed.
+   A file over 64 MB is not sent but stays in the report's `files`, so the API flags it as not
+   uploaded. Network errors, 429 and 5xx are retried with back-off, under one deadline with
+   the report. Files an attempt uploaded before its lease lapsed stay in its folder; its
+   `abandoned` row says it never reported.
+5. `POST /worker/trials/:id/report` with `{worker_id, attempt, runner_report, result, spans,
+   files: [{path, bytes, sha256}]}`. `files` names every file of `out/`, each already uploaded
+   in step 4; `sha256` may be `sha256:<hex>` or bare hex and is stored as `sha256:<hex>`. The
+   API re-hashes what it stored and flags any file that was not uploaded or differs (the
+   report is accepted, with the trial's `problems` saying so). Reporting the same attempt twice
+   is a no-op 200. The API revokes the trial's keys, stores the report, and sets the status:
+   `done` for an `agent` label; for an `infra:*` label, `infra_failed` and, if this was
+   attempt 1, a new `queued` attempt 2 (D16: re-queued once, never twice).
+6. A lease with no heartbeat for 60 s lapses: the API marks the attempt `abandoned`, revokes
    its keys, and queues the next attempt under the same cap.
 
 ## UI-only endpoints

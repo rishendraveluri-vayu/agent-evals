@@ -97,6 +97,7 @@ Decided (D3; Rishi delegated the call to "simpler and more robust"):
 - **Every writable path lives in one trial folder at a fixed path.** That covers the Hermes home, `HOME`, `TMPDIR` and tool state such as the finance ledger. Because only one trial runs in a container at a time, the paths are the same in every trial, so prompts that carry them stay identical.
 - **Between trials, the runner kills every leftover process, wipes the folder and checks it is empty.** Hermes's scratch-prune child deliberately outlives its parent, which is why the sweep is needed.
 - **The root filesystem is read-only**, so nothing can persist outside the trial folder.
+- **Workers mount nothing from the host.** After a trial the worker uploads each file of `out/` to the API (`PUT /api/worker/trials/:id/files/*path` with its sha256), and the API alone writes `runs/<experiment>/<trial>/attempt-<n>/`. A trial therefore cannot read or change an earlier trial's stored files (D2, D3; `docs/api-contract.md`, worker protocol).
 - **A worker crash kills its own trial.** The trial's claim then lapses and it is re-run once, never twice.
 - **Each trial gets its own LiteLLM virtual key and budget**, since the key is readable inside the container.
 

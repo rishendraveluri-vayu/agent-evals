@@ -2,7 +2,9 @@ import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { checkFiles } from './trial-files';
+import { Readable } from 'node:stream';
+import { ApiError } from '../common/api-error';
+import { checkFiles, storeUpload } from './trial-files';
 
 const hex = (text: string): string => createHash('sha256').update(text).digest('hex');
 
@@ -43,5 +45,45 @@ describe('checkFiles', () => {
     expect(files[0]).toMatchObject({ sha256: `sha256:${'0'.repeat(64)}`, problem: expect.stringContaining(`sha256:${hex('{"ok":true}')}`) as string });
     expect(files[2].problem).toBe('path leaves the trial folder');
     expect(files[3]).toMatchObject({ sha256: 'md5:abc', problem: expect.stringContaining('neither sha256:<hex> nor 64 hex digits') as string });
+  });
+});
+
+describe('storeUpload', () => {
+  let runs: string;
+  const folder = 'e_1/t_9/attempt-1';
+  const body = (text: string): Readable => Readable.from([Buffer.from(text)]);
+
+  beforeEach(async () => {
+    runs = await fs.mkdtemp(path.join(os.tmpdir(), 'evals-upload-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(runs, { recursive: true, force: true });
+  });
+
+  it('refuses a body that grows past the cap while streaming, and keeps nothing of it', async () => {
+    const err = await storeUpload(runs, folder, 'big.log', body('x'.repeat(11)), `sha256:${hex('x'.repeat(11))}`, { allowNew: true, maxBytes: 10 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).getStatus()).toBe(413);
+    expect(await fs.readdir(path.join(runs, 'e_1/t_9'))).toEqual(['attempt-1']);
+    expect(await fs.readdir(path.join(runs, folder))).toEqual([]);
+  });
+
+  it('stores one copy when the same file arrives twice at once', async () => {
+    const sha = `sha256:${hex('same')}`;
+    const both = await Promise.all([0, 1].map(() => storeUpload(runs, folder, 'a/b.json', body('same'), sha, { allowNew: true })));
+    expect(both.map((r) => r.duplicate).sort()).toEqual([false, true]);
+    expect(await fs.readFile(path.join(runs, folder, 'a/b.json'), 'utf8')).toBe('same');
+    expect(await fs.readdir(path.join(runs, 'e_1/t_9'))).toEqual(['attempt-1']);
+  });
+
+  it('never follows a symlink out of the attempt folder', async () => {
+    const outside = path.join(runs, 'outside');
+    await fs.mkdir(outside);
+    await fs.mkdir(path.join(runs, folder), { recursive: true });
+    await fs.symlink(outside, path.join(runs, folder, 'link'));
+    const err = await storeUpload(runs, folder, 'link/x.txt', body('x'), `sha256:${hex('x')}`, { allowNew: true }).catch((e: unknown) => e);
+    expect((err as ApiError).getStatus()).toBe(400);
+    expect(await fs.readdir(outside)).toEqual([]);
   });
 });

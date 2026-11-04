@@ -102,6 +102,15 @@ def runs_view() -> dict:
     return {"exists": True, "files": len(files), "markers": markers}
 
 
+def mount_points() -> list[str]:
+    """Every mount point this process can see (/proc/self/mounts), to show what is shared."""
+    try:
+        lines = Path("/proc/self/mounts").read_text().splitlines()
+    except OSError:
+        return []
+    return sorted({line.split()[1] for line in lines if len(line.split()) > 1})
+
+
 class LeakProbe(Adapter):
     name = "leak-probe"
     capabilities_path = Path(__file__).with_name("capabilities.json")
@@ -151,6 +160,7 @@ class LeakProbe(Adapter):
             view["sleepers"] = sleepers()
             view["token"] = token_readers()
             view["runs"] = runs_view() if "runs" in wanted else None
+            view["mounts"] = mount_points()
         (ctx.paths.artifacts / "leak-view.json").write_text(json.dumps(view, indent=1))
         return TurnResult(stop="answered", reply=f"{opts['phase']} done", model_calls=0)
 

@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
-import type { ClaimResponse, HeartbeatRequest, HeartbeatResponse, ReportResponse, TrialStatus } from '../contract';
+import type { IncomingMessage } from 'node:http';
+import type { ClaimResponse, HeartbeatRequest, HeartbeatResponse, ReportResponse, TrialStatus, UploadResponse } from '../contract';
 import { ApiError, badRequest, conflict, notFound } from '../common/api-error';
+import { normalizeSha } from '../common/hashing';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { newId } from '../common/ids';
 import type { StoredTask } from '../catalogue/catalogue.service';
@@ -9,7 +11,7 @@ import { Db, type Queryable } from '../database/db.service';
 import { type ExperimentRow, finishIfDone, isSimTask } from '../experiments/experiments.service';
 import { LiteLlmClient, LiteLlmHttpError, type MintedKey } from '../litellm/litellm.client';
 import { FINISHED, HELD, LEASE_S, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
-import { checkFiles, trialFolder } from '../trials/trial-files';
+import { MAX_FILE_BYTES, checkFiles, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
 import { parseReport, spanRows, usageOf } from './report';
 import { CLIENT_STATE_FILE, SIM_MAX_OUTPUT_TOKENS, SIM_TEMPERATURE, buildSpec } from './spec-builder';
 
@@ -31,6 +33,20 @@ interface TrialRow {
 
 const one = async <T>(q: Queryable, sql: string, params: unknown[]): Promise<T | undefined> =>
   ((await q.query(sql, params)).rows as T[])[0];
+
+/** Reads and drops the rest of a refused upload's body, so the worker hears the refusal instead
+ *  of a reset connection. */
+async function drained(req: IncomingMessage, err: ApiError): Promise<ApiError> {
+  if (!req.readableEnded && !req.destroyed) {
+    await new Promise<void>((resolve) => {
+      req.once('end', resolve);
+      req.once('error', () => resolve());
+      req.once('close', () => resolve());
+      req.resume();
+    });
+  }
+  return err;
+}
 
 /** Queues the slot's next attempt, if the cap and the experiment allow it (D16). */
 async function requeue(q: Queryable, trialId: string, attempt: number, experimentStatus: ExperimentRow['status']): Promise<string | null> {
@@ -235,6 +251,49 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     return this.litellm.spendLogs(token);
   }
 
+  // ---- files ----
+
+  /**
+   * Stores one file of an attempt's out/ folder under runs/ (worker protocol step 4). Only the worker
+   * holding the attempt may add files; after its report it may only send the same bytes again.
+   * Path traversal, a missing or wrong hash and files over MAX_FILE_BYTES are refused.
+   */
+  async upload(
+    id: string,
+    rel: string,
+    query: Record<string, unknown>,
+    headers: Record<string, string | string[] | undefined>,
+    body: IncomingMessage,
+  ): Promise<UploadResponse> {
+    const header = (name: string): string | undefined => {
+      const v = headers[name];
+      return Array.isArray(v) ? v[0] : v;
+    };
+    const type = (header('content-type') ?? '').split(';')[0].trim().toLowerCase();
+    if (type !== 'application/octet-stream') {
+      throw await drained(body, new ApiError(415, 'unsupported_media_type', 'send the file as Content-Type: application/octet-stream'));
+    }
+    const length = header('content-length');
+    if (length === undefined || !/^[0-9]+$/.test(length)) throw await drained(body, new ApiError(411, 'length_required', 'an upload needs a Content-Length'));
+    if (Number(length) > MAX_FILE_BYTES) throw new ApiError(413, 'file_too_large', `${rel} is ${length} bytes; the limit is ${MAX_FILE_BYTES}`);
+    const sha256 = normalizeSha(header('x-content-sha256'));
+    if (!sha256) throw await drained(body, badRequest('invalid_upload', 'X-Content-Sha256 must be sha256:<hex> or 64 hex digits'));
+    const workerId = typeof query.worker_id === 'string' ? query.worker_id : '';
+    const attempt = typeof query.attempt === 'string' && /^[1-9][0-9]{0,8}$/.test(query.attempt) ? Number(query.attempt) : null;
+    if (!workerId || attempt === null) throw await drained(body, badRequest('invalid_upload', 'the worker_id and attempt query parameters are required'));
+    if (!safeRelPath(rel)) throw await drained(body, badRequest('invalid_path', `${JSON.stringify(rel)} is not a plain relative path inside the trial folder`));
+
+    const [t] = await this.db.query<TrialRow>('SELECT * FROM trials WHERE id = $1', [id]);
+    if (!t) throw await drained(body, notFound('unknown_trial', `no trial ${id}`));
+    if (t.attempt !== attempt) throw await drained(body, conflict('attempt_mismatch', `trial ${id} is attempt ${t.attempt}, not ${attempt}`));
+    const reported = t.reported_at !== null;
+    if (t.worker_id !== workerId || (!reported && !HELD.includes(t.status))) {
+      throw await drained(body, conflict('claim_lost', `trial ${id} is ${t.status} and no longer held by ${workerId}`));
+    }
+    const folder = t.folder ?? trialFolder(t.experiment_id, t.id, t.attempt);
+    return storeUpload(this.config.runsDir, folder, rel, body, sha256, { allowNew: !reported });
+  }
+
   // ---- report ----
 
   async report(id: string, raw: unknown): Promise<ReportResponse> {
@@ -255,7 +314,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     const files = await checkFiles(this.config.runsDir, folder, body.files);
     const { rows: spans, problems } = spanRows(body.spans);
     const bad = files.filter((f) => !f.ok);
-    if (bad.length) problems.push(`${bad.length} of ${files.length} files missing or different on the runs volume under ${folder}`);
+    if (bad.length) problems.push(`${bad.length} of ${files.length} files not uploaded or different from what the API stored under ${folder}`);
     const label = body.runner_report.label as string;
     const status = statusForLabel(label);
     const usage = usageOf(body.runner_report, body.result, spans);

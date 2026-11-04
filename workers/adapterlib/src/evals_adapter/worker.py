@@ -1,4 +1,4 @@
-"""The SP3 worker: claim a trial from the API, run it, store and report it, clean up, repeat.
+"""The SP3 worker: claim a trial from the API, run it, upload and report it, clean up, repeat.
 
 docs/api-contract.md, "Worker protocol" (D2), with D3 isolation and D16 re-queues. One worker
 serves one harness and runs one trial at a time in the fixed folder /trial, so every path a prompt
@@ -11,10 +11,12 @@ can carry (home, cwd, HERMES_HOME) is the same in every trial:
 3. Heartbeat: a thread posts every 10 s from the claim until the report is accepted. A 409 means
    the API gave up on the claim: the trial's process group is killed and nothing is reported,
    because the API has already queued the next attempt.
-4. Store: /trial/out is copied to /runs/<experiment>/<trial>/attempt-<n>/ through a partial folder
-   that is renamed into place, so a crash never leaves a half-written attempt folder and an
-   existing attempt folder is never overwritten.
-5. Report: POST, retried on network errors and 5xx. The API treats a repeat as a no-op.
+4. Upload: each regular file of /trial/out goes to PUT /worker/trials/:id/files/<path> with its
+   sha256. The API stores it under runs/<experiment>/<trial>/attempt-<n>/ and never overwrites it;
+   the worker never mounts runs/, so no trial can see another trial's stored files (D2, D3).
+   Symlinks and special files are not followed or sent.
+5. Report: POST, naming the files the API now holds, retried on network errors and 5xx. The API
+   treats a repeat of an upload or a report as a no-op.
 6. Between trials: kill leftover processes, wipe /trial, and check it is empty (D3). A worker that
    cannot empty its trial folder stops rather than claim again.
 
@@ -47,7 +49,6 @@ import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
-import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -65,9 +66,8 @@ from evals_adapter.runner import (
 from evals_adapter.spec import DEFAULT_TRIAL_DIR, TRIAL_DIR_ENV, TrialPaths
 
 TRIAL_ROOT = Path(DEFAULT_TRIAL_DIR)
-RUNS_DIR = Path("/runs")
-NO_EXPERIMENT = "no-experiment"  # folder for a trial whose spec has experiment_id null
 HEARTBEAT_S = 10.0
+MAX_FILE_BYTES = 64 * 1024 * 1024  # the API's limit per uploaded file (docs/api-contract.md)
 ISOLATION_ENV = "EVALS_WORKER_ISOLATION"
 CONTAINER_WIPES = (Path("/dev/shm"),)  # writable in every container even with a read-only root
 REQUIRED_ENV = ("EVALS_API_URL", "EVALS_WORKER_TOKEN", "EVALS_HARNESS", "EVALS_ADAPTER_CMD")
@@ -110,8 +110,9 @@ class ClaimLost(TrialStopped):
         super().__init__(f"claim_lost ({what})")
 
 
-class StoreConflict(RuntimeError):
-    """The attempt folder already exists with different files. It is never overwritten."""
+class UploadRefused(RuntimeError):
+    """The API holds a different file at this path for the attempt, or no longer takes new ones.
+    Stored files are never overwritten, so the attempt cannot be reported faithfully."""
 
 
 class WorkerFault(RuntimeError):
@@ -138,17 +139,25 @@ class ApiClient:
         self.token = token
         self.timeout_s = timeout_s
 
-    def request(self, method: str, path: str, body: Any = None) -> tuple[int, Any]:
-        req = urllib.request.Request(
-            self.base_url + path,
-            data=json.dumps(body).encode() if body is not None else None,
-            headers={
-                "Authorization": f"Bearer {self.token}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
-            method=method,
-        )
+    def request(
+        self,
+        method: str,
+        path: str,
+        body: Any = None,
+        *,
+        data: bytes | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> tuple[int, Any]:
+        """A JSON `body`, or raw `data` with its own `headers` (Content-Type among them)."""
+        sent = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            **(headers or {}),
+        }
+        if data is None and body is not None:
+            data = json.dumps(body).encode()
+        req = urllib.request.Request(self.base_url + path, data=data, headers=sent, method=method)
         try:
             with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:  # noqa: S310
                 return resp.status, _json(resp.read())
@@ -187,6 +196,27 @@ class ApiClient:
         if status != 200 or not isinstance(body, list):
             raise ApiError(f"GET {path}", status, body)
         return body
+
+    def put_file(
+        self, trial_id: str, worker_id: str, attempt: int, rel: str, data: bytes, sha256: str
+    ) -> Any:
+        """One file of the trial's out/ folder. 201 stored, 200 the same bytes already were."""
+        query = urllib.parse.urlencode({"worker_id": worker_id, "attempt": attempt})
+        path = f"{self._trial(trial_id)}/files/{urllib.parse.quote(rel, safe='/')}?{query}"
+        status, resp = self.request(
+            "PUT",
+            path,
+            data=data,
+            headers={"Content-Type": "application/octet-stream", "X-Content-Sha256": sha256},
+        )
+        code = resp.get("error") if isinstance(resp, dict) else None
+        if status == 409 and code == "claim_lost":
+            raise ClaimLost(f"upload of {rel} for {trial_id} attempt {attempt}")
+        if status == 409:
+            raise UploadRefused(f"PUT {rel} for {trial_id}: {str(resp)[:300]}")
+        if not 200 <= status < 300:
+            raise ApiError(f"PUT {rel} for {trial_id}", status, resp)
+        return resp
 
     def report(self, trial_id: str, body: dict[str, Any]) -> Any:
         path = self._trial(trial_id) + "/report"
@@ -352,47 +382,42 @@ def sha256_file(path: Path) -> tuple[int, str]:
     return size, h.hexdigest()
 
 
-def files_manifest(folder: Path) -> list[dict[str, Any]]:
-    """Every regular file under `folder`: relative path, size and sha256 (contract v2's form)."""
-    rows = []
+def regular_files(folder: Path) -> tuple[list[tuple[str, Path]], list[str]]:
+    """The regular files under `folder` as (relative path, path), sorted, and what was skipped.
+    Symlinks (to files or folders) and special files are not followed, so a trial cannot make the
+    worker send files from outside its folder, such as the worker's own /proc entries."""
+    found, skipped = [], []
     for dirpath, dirnames, filenames in os.walk(folder, followlinks=False):
-        dirnames.sort()
-        for name in sorted(filenames):
-            path = Path(dirpath) / name
-            if not path.is_file() or path.is_symlink():
-                continue
-            size, digest = sha256_file(path)
-            rows.append(
-                {"path": path.relative_to(folder).as_posix(), "bytes": size, "sha256": digest}
-            )
-    rows.sort(key=lambda r: r["path"])
-    return rows
-
-
-def copy_regular_files(src: Path, dst: Path) -> list[str]:
-    """Copy the regular files and folders under `src` into a new folder `dst`. Symlinks and
-    special files are not followed or copied, so a trial cannot make the worker store files from
-    outside its folder. Returns what was skipped."""
-    skipped = []
-    dst.mkdir(parents=True)
-    for dirpath, dirnames, filenames in os.walk(src, followlinks=False):
-        rel = Path(dirpath).relative_to(src)
+        rel = Path(dirpath).relative_to(folder)
         for name in list(dirnames):
             if (Path(dirpath) / name).is_symlink():
                 skipped.append((rel / name).as_posix())
                 dirnames.remove(name)
-            else:
-                (dst / rel / name).mkdir()
+        dirnames.sort()
         for name in filenames:
             path = Path(dirpath) / name
-            mode = os.lstat(path).st_mode
-            if stat.S_ISREG(mode):
-                with open(path, "rb") as fin, open(dst / rel / name, "wb") as fout:
-                    while chunk := fin.read(1 << 20):
-                        fout.write(chunk)
+            if stat.S_ISREG(os.lstat(path).st_mode):
+                found.append(((rel / name).as_posix(), path))
             else:
                 skipped.append((rel / name).as_posix())
-    return skipped
+    found.sort()
+    return found, sorted(skipped)
+
+
+def read_regular(path: Path) -> bytes:
+    """The file's bytes, refusing a symlink put in its place since it was listed."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(fd, "rb") as fh:
+        return fh.read()
+
+
+def files_manifest(folder: Path) -> list[dict[str, Any]]:
+    """Every regular file under `folder`: relative path, size and sha256 (contract v2's form)."""
+    rows = []
+    for rel, path in regular_files(folder)[0]:
+        size, digest = sha256_file(path)
+        rows.append({"path": rel, "bytes": size, "sha256": digest})
+    return rows
 
 
 def _own_rwx(path: str | Path, st: os.stat_result) -> None:
@@ -552,14 +577,14 @@ class WorkerConfig:
     adapter_cmd: list[str]
     worker_id: str
     trial_root: Path = TRIAL_ROOT
-    runs_dir: Path = RUNS_DIR
     isolation: str = "host"  # "container" in the worker images
     heartbeat_s: float = HEARTBEAT_S
     idle_base_s: float = 1.0
     idle_max_s: float = 15.0
     retry_base_s: float = 1.0
     retry_max_s: float = 30.0
-    report_retry_s: float = 600.0  # then give up; the lease lapses and the API re-queues
+    report_retry_s: float = 600.0  # for the uploads and the report; then the lease lapses
+    max_file_bytes: int = MAX_FILE_BYTES
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None, **overrides: Any) -> WorkerConfig:
@@ -623,21 +648,13 @@ class Worker:
         `exit_on_idle`). Returns the process exit code."""
         log(
             f"worker {self.cfg.worker_id} for {self.cfg.harness}: API {self.cfg.api_url}, "
-            f"trial folder {self.paths.root}, runs {self.cfg.runs_dir}, "
-            f"isolation {self.cfg.isolation}"
+            f"trial folder {self.paths.root}, isolation {self.cfg.isolation}"
         )
         self.clean()  # a crashed predecessor may have left processes or files
         idle = 0
         while not self._stop.is_set():
             if max_trials is not None and self.handled >= max_trials:
                 break
-            problem = self.runs_problem()
-            if problem:
-                # Claiming a trial that cannot be stored would only waste an attempt.
-                log(f"not claiming: {problem}")
-                self._sleep(self.idle_backoff_s(idle))
-                idle += 1
-                continue
             try:
                 claim = self.api.claim(self.cfg.worker_id, self.cfg.harness)
             except (NetworkError, ApiError) as exc:
@@ -656,17 +673,6 @@ class Worker:
             self.handled += 1
         log(f"worker {self.cfg.worker_id} stopping after {self.handled} trial(s)")
         return 0
-
-    def runs_problem(self) -> str | None:
-        """Why trial folders cannot be stored, or None. Checked before every claim."""
-        probe = self.cfg.runs_dir / f".write-check-{os.getpid()}"
-        try:
-            self.cfg.runs_dir.mkdir(parents=True, exist_ok=True)
-            probe.write_bytes(b"")
-            probe.unlink()
-        except OSError as exc:
-            return f"{self.cfg.runs_dir} is not writable by uid {os.getuid()}: {exc}"
-        return None
 
     def heartbeat_s(self, claim: Mapping[str, Any]) -> float:
         lease = claim.get("lease_s")
@@ -698,7 +704,7 @@ class Worker:
         beat.start()
         outcome = "failed"
         try:
-            self._run_store_report(claim, control)
+            self._run_upload_report(claim, control)
             outcome = "reported"
         except TrialStopped as exc:
             outcome = "stopped"
@@ -715,7 +721,7 @@ class Worker:
             self.clean()
         return outcome
 
-    def _run_store_report(self, claim: dict[str, Any], control: TrialControl) -> None:
+    def _run_upload_report(self, claim: dict[str, Any], control: TrialControl) -> None:
         trial_id, attempt, spec = claim["trial_id"], claim["attempt"], claim["spec"]
         state = {
             name: base64.b64decode(data, validate=True)
@@ -737,60 +743,85 @@ class Worker:
         control.check()
         runner_report = run_trial(self.paths.root, inputs, proxy, on_spawn=control.spawned)
         control.check()
-        folder = self.store(spec, attempt)
-        control.check()
+        # The trial's processes are dead (the runner swept them), so out/ no longer changes.
         result = None
         if runner_report["adapter"]["result_valid"]:
-            result = json.loads((folder / "result.json").read_text(encoding="utf-8"))
+            result = json.loads(self.paths.result.read_text(encoding="utf-8"))
+        spans = read_spans(self.paths.trace)
+        deadline = time.monotonic() + self.cfg.report_retry_s
+        files = self.upload(trial_id, attempt, self.paths.out, control, deadline)
         body = {
             "worker_id": self.cfg.worker_id,
             "attempt": attempt,
             "runner_report": runner_report,
             "result": result,
-            "spans": read_spans(folder / "trace.jsonl"),
-            "files": files_manifest(folder),
+            "spans": spans,
+            "files": files,
         }
-        self.send_report(trial_id, body, control)
+        self.send_report(trial_id, body, control, deadline)
         log(
             f"reported {trial_id} attempt {attempt}: {runner_report['label']}, "
-            f"end_state {runner_report['end_state']}, stored in {folder}"
+            f"end_state {runner_report['end_state']}, {len(files)} file(s) uploaded"
         )
 
-    def attempt_folder(self, spec: Mapping[str, Any], attempt: int) -> Path:
-        trial = spec["trial"]
-        experiment = trial.get("experiment_id") or NO_EXPERIMENT
-        return self.cfg.runs_dir / experiment / trial["id"] / f"attempt-{attempt}"
-
-    def store(self, spec: Mapping[str, Any], attempt: int) -> Path:
-        """Copy /trial/out to the attempt's folder on the runs volume. It appears whole or not at
-        all, and an existing folder is never overwritten."""
-        dest = self.attempt_folder(spec, attempt)
-        src = self.paths.out
-        if dest.exists():
-            if files_manifest(dest) == files_manifest(src):
-                return dest  # stored before with the same files
-            raise StoreConflict(f"{dest} already holds different files; it is not overwritten")
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        partial = dest.parent / f".attempt-{attempt}.partial-{uuid.uuid4().hex[:8]}"
-        skipped = copy_regular_files(src, partial)
+    def upload(
+        self, trial_id: str, attempt: int, out: Path, control: TrialControl, deadline: float
+    ) -> list[dict[str, Any]]:
+        """PUT every regular file of `out` to the API and return their manifest. A file over the
+        API's limit is not sent but stays in the manifest, so the API flags it as not uploaded
+        instead of the report hiding it."""
+        found, skipped = regular_files(out)
         if skipped:
-            log(f"not stored (symlinks or special files): {skipped[:20]}")
-        try:
-            os.rename(partial, dest)  # atomic; refuses to replace a folder that holds files
-        except OSError as exc:
-            raise StoreConflict(f"could not move the stored files into {dest}: {exc}") from exc
-        return dest
+            log(f"not uploaded (symlinks or special files): {skipped[:20]}")
+        rows = []
+        for rel, path in found:
+            control.check()
+            if os.lstat(path).st_size > self.cfg.max_file_bytes:
+                size, digest = sha256_file(path)
+                log(f"not uploaded: {rel} is {size} bytes, over {self.cfg.max_file_bytes}")
+                rows.append({"path": rel, "bytes": size, "sha256": digest})
+                continue
+            data = read_regular(path)
+            digest = hashlib.sha256(data).hexdigest()
+            rows.append({"path": rel, "bytes": len(data), "sha256": digest})
+            sha = f"sha256:{digest}"
 
-    def send_report(self, trial_id: str, body: dict[str, Any], control: TrialControl) -> None:
+            def put(rel: str = rel, data: bytes = data, sha: str = sha) -> Any:
+                return self.api.put_file(trial_id, self.cfg.worker_id, attempt, rel, data, sha)
+
+            try:
+                self._until_accepted(f"upload of {rel} for {trial_id}", put, control, deadline)
+            except ApiError as exc:
+                if exc.status != 413:
+                    raise
+                log(f"not uploaded: the API refused {rel} as too large ({exc})")
+        return rows
+
+    def send_report(
+        self,
+        trial_id: str,
+        body: dict[str, Any],
+        control: TrialControl,
+        deadline: float | None = None,
+    ) -> None:
         """POST the report until the API accepts it. The same body every time: the API treats a
         repeat of an attempt as a no-op, so a report whose answer was lost is simply sent again."""
-        deadline = time.monotonic() + self.cfg.report_retry_s
+        if deadline is None:
+            deadline = time.monotonic() + self.cfg.report_retry_s
+        self._until_accepted(
+            f"report for {trial_id}", lambda: self.api.report(trial_id, body), control, deadline
+        )
+
+    def _until_accepted(
+        self, what: str, call: Callable[[], Any], control: TrialControl, deadline: float
+    ) -> Any:
+        """Repeat `call` on network errors, 5xx and 429, with jittered back-off, until it answers
+        or `deadline` passes. Any other refusal is raised at once."""
         n = 0
         while True:
             control.check()
             try:
-                self.api.report(trial_id, body)
-                return
+                return call()
             except ApiError as exc:
                 if not exc.retryable:
                     raise
@@ -798,9 +829,9 @@ class Worker:
             except NetworkError as exc:
                 error = exc
             if time.monotonic() >= deadline:
-                raise RuntimeError(f"gave up reporting {trial_id}: {error}") from error
+                raise RuntimeError(f"gave up on the {what}: {error}") from error
             delay = self._jitter(self.cfg.retry_base_s, self.cfg.retry_max_s, n)
-            log(f"report for {trial_id} failed ({error}); sending it again in {delay:.1f} s")
+            log(f"{what} failed ({error}); sending it again in {delay:.1f} s")
             n += 1
             if control.stopped.wait(delay):
                 control.check()
@@ -846,18 +877,15 @@ def _non_dumpable() -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="The SP3 worker loop: claim, run, heartbeat, store, report, clean (D2, D3)."
+        description="The SP3 worker loop: claim, run, heartbeat, upload, report, clean (D2, D3)."
     )
     parser.add_argument("--max-trials", type=int, help="stop after this many claims")
     parser.add_argument("--exit-on-idle", action="store_true", help="stop at the first 204")
-    # Fixed in production (/trial, /runs, 10 s). Overridable for tests on a shared host.
+    # Fixed in production (/trial, 10 s). Overridable for tests on a shared host.
     parser.add_argument("--trial-root", type=Path, help=argparse.SUPPRESS)
-    parser.add_argument("--runs-dir", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--heartbeat-s", type=float, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    cfg = WorkerConfig.from_env(
-        trial_root=args.trial_root, runs_dir=args.runs_dir, heartbeat_s=args.heartbeat_s
-    )
+    cfg = WorkerConfig.from_env(trial_root=args.trial_root, heartbeat_s=args.heartbeat_s)
     _non_dumpable()
     worker = Worker(cfg)
 

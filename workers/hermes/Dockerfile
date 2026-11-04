@@ -39,8 +39,8 @@ RUN uv venv /opt/harness --python /usr/local/bin/python3.14 \
 
 FROM python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966
 RUN useradd --uid 10001 --no-create-home --home-dir /trial/home trial \
-    && mkdir -p /trial /runs \
-    && chown 10001:10001 /trial /runs
+    && mkdir -p /trial \
+    && chown 10001:10001 /trial
 COPY workers/base/netcheck.py /opt/worker/netcheck.py
 COPY --from=build /opt/finance-mcp /opt/finance-mcp
 COPY --from=build /opt/hermes-agent /opt/hermes-agent

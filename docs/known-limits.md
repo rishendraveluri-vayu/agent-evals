@@ -43,7 +43,7 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 
 ## Trial isolation (D3)
 
-- Consecutive trials in one harness container are separated by a process sweep, a folder wipe and a read-only root filesystem, not by a fresh container. A harness that writes somewhere we did not anticipate, such as a writable mount outside the trial folder, could carry state from one trial to the next. The SP3 leak test checks the known paths only.
+- Consecutive trials in one harness container are separated by a process sweep, a folder wipe and a read-only root filesystem, not by a fresh container. A harness that writes somewhere we did not anticipate could carry state from one trial to the next. The SP3 leak test checks the known paths only. Worker containers mount nothing from the host (trial files are uploaded to the API, which alone writes `runs/`), so the only writable places are the trial folder and `/dev/shm`, both wiped between trials; the image test checks that trial 2 sees no `/runs` and none of trial 1's files.
 
 ## Cost tracking
 

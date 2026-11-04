@@ -358,7 +358,7 @@ export interface StoredFile {
   bytes: number;
   /** `sha256:<hex>`, whichever form the report used. */
   sha256: string;
-  /** The API found the file on the runs volume with this size and hash. */
+  /** The API holds the file (uploaded by the worker) with this size and hash. */
   ok?: boolean;
   problem?: string;
 }
@@ -496,7 +496,7 @@ export interface ClaimResponse {
   keys: { model: string; sim: string | null };
   budgets: { trial_usd: number; sim_usd: number };
   lease_s: number;
-  /** Where the worker writes the trial folder, relative to the runs volume. */
+  /** Where the API stores this attempt's uploaded files, relative to runs/. Workers never see runs/. */
   folder: string;
 }
 
@@ -510,6 +510,18 @@ export interface HeartbeatResponse {
   lease_s: number;
 }
 
+/**
+ * PUT /worker/trials/:id/files/*path?worker_id=&attempt= with the raw bytes
+ * (`Content-Type: application/octet-stream`, `Content-Length`, and `X-Content-Sha256` as
+ * `sha256:<hex>` or bare hex). 201 when stored, 200 when the same bytes were already stored.
+ */
+export interface UploadResponse {
+  path: string;
+  bytes: number;
+  sha256: Sha256;
+  duplicate: boolean;
+}
+
 /** POST /worker/trials/:id/report */
 export interface ReportRequest {
   worker_id: string;
@@ -517,7 +529,10 @@ export interface ReportRequest {
   runner_report: JsonObject;
   result: JsonObject | null;
   spans: JsonObject[];
-  /** `sha256` may be `sha256:<hex>` or bare hex; the API stores `sha256:<hex>`. */
+  /**
+   * Every file of the trial's out/ folder, each already uploaded (PUT .../files/*path). The API
+   * checks each against what it stored. `sha256` may be `sha256:<hex>` or bare hex.
+   */
   files: { path: string; bytes: number; sha256: string }[];
 }
 
