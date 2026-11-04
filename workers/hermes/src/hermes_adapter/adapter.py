@@ -97,8 +97,15 @@ def hermes_config(ctx: TrialContext, opts: dict[str, Any]) -> dict[str, Any]:
         "tools": {"tool_search": {"enabled": "off"}},
         "mcp_servers": servers,
     }
-    if not opts.get("prompt_cache_markers", True):
+    # D31: Hermes's own cache_control markers are off in every config, like every other harness;
+    # the harness option turns them back on (Hermes's default, "5m").
+    if not opts.get("prompt_cache_markers", False):
         cfg["prompt_caching"] = {"cache_ttl": "off"}
+    # D33: Hermes's "Parallel tool calls" prompt section tells the model to batch tool calls, so
+    # with parallel_tool_calls false it is turned off through Hermes's own switch. True or unset
+    # keeps Hermes's default (on); every other section stays as shipped (D20).
+    if s["parallel_tool_calls"] is False:
+        cfg["agent"]["parallel_tool_call_guidance"] = False
     return cfg
 
 
@@ -215,8 +222,26 @@ class Hermes(Adapter):
         ctx.applied.set(
             "prompt_cache_markers",
             ctx.harness_extra["prompt_cache_markers"],
-            "harness_default" if "prompt_cache_markers" not in opts else "config",
-            observed="Hermes adds cache_control markers for claude models on a host named litellm",
+            "platform_default" if "prompt_cache_markers" not in opts else "config",
+            observed="D31: off unless the harness option turns it on (prompt_caching.cache_ttl "
+            "off); when on, Hermes adds cache_control markers for claude models on a host "
+            "named litellm",
+        )
+        # D33: what Hermes's own flag ended up as, read back from the agent.
+        guidance = bool(getattr(self.agent, "_parallel_tool_call_guidance", True))
+        ptc_source = ctx.spec["settings_sources"]["parallel_tool_calls"]
+        if s["parallel_tool_calls"] is False:
+            note = "D33: the 'Parallel tool calls' prompt section off (parallel_tool_calls false)"
+        elif s["parallel_tool_calls"] is True:
+            note = "D33: section kept as shipped (parallel_tool_calls true)"
+        else:
+            note = "D33: section kept as shipped (parallel_tool_calls unset)"
+            ptc_source = "harness_default"
+        ctx.applied.set(
+            "parallel_tool_call_guidance",
+            guidance,
+            ptc_source,
+            observed=note + "; config agent.parallel_tool_call_guidance",
         )
         ctx.applied.set("api_max_retries", 1, "platform_default", observed="R10.11: one attempt")
         ctx.applied.set("reasoning_effort", None, "platform_default", observed="kept off the wire")

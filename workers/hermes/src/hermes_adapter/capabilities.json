@@ -37,7 +37,7 @@
     },
     "parallel_tool_calls": {
       "supported": true,
-      "native": "request_overrides.parallel_tool_calls",
+      "native": "request_overrides.parallel_tool_calls; false also turns off Hermes's 'Parallel tool calls' prompt section (agent.parallel_tool_call_guidance: false, D33); true or unset keeps it",
       "default": null,
       "evidence": "probe:2026-11-03",
       "observed": "unset: not sent; set to False: sent as parallel_tool_calls"
@@ -68,7 +68,7 @@
     "properties": {
       "prompt_cache_markers": {
         "type": "boolean",
-        "description": "Hermes's own cache_control markers for claude models on a host named litellm. Default: Hermes's behaviour (on)."
+        "description": "Hermes's own cache_control markers for claude models on a host named litellm. Default: off (D31, prompt_caching.cache_ttl off); true restores Hermes's behaviour."
       }
     }
   },
@@ -78,6 +78,8 @@
     "Malformed tool-call JSON is repaired and run (or run with {} if unrepairable); the model is never told. The adapter counts each repair from Hermes's log (D18)",
     "Hermes's identity and runtime text surround the task system prompt (D20)",
     "Replayed tool-call arguments are re-serialised with sorted keys",
-    "Non-chat GET requests to the proxy host (Ollama and /models probes) on every trial"
+    "Non-chat GET requests to the proxy host (Ollama and /models probes) on every trial",
+    "Hermes's 'Parallel tool calls' prompt section is removed when parallel_tool_calls is false, through its own switch (D33); with true or unset it stays",
+    "Prompt-cache markers are off by default (D31); the prompt_cache_markers option turns them on"
   ]
 }

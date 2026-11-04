@@ -75,7 +75,7 @@ The facts that matter most for eval design:
 | Step limit | `max_iterations`, reset to steps left each turn. **+2 calls** at the limit [ran] | Loop counter. +0 [ran] | `ModelCallLimitMiddleware(thread_limit, "error")`, whole trial. +0 [ran] | `RunConfig(max_llm_calls)`, steps left each turn. +0 [ran] | `max_turns`, steps left each turn. +0 [ran] |
 | Temperature | `request_overrides`; unset means not sent [ran] | Request field; unset means not sent [ran] | `ChatOpenAI(temperature=)`; some model names rewrite it [ran; names src] | `generate_content_config` [ran] | `ModelSettings` [ran] |
 | Max output tokens | Sent as `max_tokens`. A `length` stop is **not** a stop: Hermes raises the cap and continues [src] | `max_tokens`; `length` ends as `token_limit` [src] | `max_completion_tokens`; `length` ends as `token_limit` [ran; mapping src] | `max_completion_tokens`; `MAX_TOKENS` ends as `token_limit` [ran; mapping src] | `max_tokens`; finish reason read from the raw response for `token_limit` [ran; mapping src] |
-| Parallel tool calls | Sent as set [ran], but the prompt tells the model to batch, and calls to one MCP server run one at a time [src] | Sent when tools exist; tools run in order [src] | Middleware to `bind_tools` [ran]; calls in one reply run concurrently [src] | `LiteLlm` keyword [ran]; calls run concurrently [src] | `ModelSettings` [ran]; calls run concurrently [src] |
+| Parallel tool calls | Sent as set [ran]; with it false, Hermes's batching section is off too (D33) [ran]; calls to one MCP server run one at a time [src] | Sent when tools exist; tools run in order [src] | Middleware to `bind_tools` [ran]; calls in one reply run concurrently [src] | `LiteLlm` keyword [ran]; calls run concurrently [src] | `ModelSettings` [ran]; calls run concurrently [src] |
 | Retries off | `agent.api_max_retries: 1`, `auto_recovery_cycles: 0` [ran] | `max_retries=0` [ran] | `max_retries=0` (default 2) [ran] | `num_retries=0`, `max_retries=0` (default 2) [ran] | `max_retries=0` on the client and the runner [ran] |
 | Streaming | `stream: true` [ran] | `stream: false` [ran] | `stream: false` [ran] | Not sent [ran] | Not sent [ran] |
 | Telemetry off | Shared metrics off by default; no third-party calls seen [ran] | Nothing to turn off | Tracing variables forced off; one trial made a single `connect()`, to the model [ran] | Environment scrubbed; only the model server contacted [ran] | Trace processors removed, tracing off [ran] |
@@ -344,7 +344,8 @@ The loop: `AIAgent(...)` reads its home's `config.yaml` and builds the tool list
 | `agent.environment_probe`, `coding_context`, lazy installs, telemetry | off | No per-host prompt lines, installs or metrics [src] |
 | `enabled_toolsets` | `finance`, plus `memory` and `skills` when on, plus enabled built-ins | Built-in tools off (R10.7) [src] |
 | `skip_memory`, `skip_background_review`, `skip_context_files`; `session_db=None`; trajectories, checkpoints and session id off | | No external memory, project files, `state.db` or session id in the prompt [ran] |
-| `prompt_caching.cache_ttl` | off only if `harness_options.prompt_cache_markers` is false | Hermes's own behaviour by default (section 3.11) [src] |
+| `prompt_caching.cache_ttl` | off, unless `harness_options.prompt_cache_markers` is true | D31: no cache markers in any Hermes config, like every other harness (section 3.11) [ran] |
+| `agent.parallel_tool_call_guidance` | false when `parallel_tool_calls` is false; Hermes's default (on) when true or unset | D33: the prompt never tells the model to batch calls when the setting forbids it [ran] |
 
 ### 3.3 How the system prompt is built
 
@@ -393,7 +394,7 @@ Scratch directory: /trial/harness/hermes/cache/scratch (TMPDIR points here; writ
 **Which parts can move** [src unless marked]:
 
 - The identity paragraph is the same whatever we set, unless we wrote a custom `SOUL.md`.
-- "Finishing the job" and "Parallel tool calls" are config switches (`agent.task_completion_guidance`, `agent.parallel_tool_call_guidance`), on by default. The adapter leaves them on. **The parallel section stays even when `parallel_tool_calls` is false on the wire** [ran].
+- "Finishing the job" and "Parallel tool calls" are config switches (`agent.task_completion_guidance`, `agent.parallel_tool_call_guidance`), on by default. **Since D33 the parallel section follows `parallel_tool_calls`:** with the setting false the adapter turns the section off through Hermes's own switch, and with it true or unset the section stays as shipped. "Finishing the job" and every other section stay (D20). The gate-level tests in `workers/hermes/tests/test_prompt_switches.py` read the system message on the wire [ran]. `applied_settings.parallel_tool_call_guidance` records the value Hermes ended up with.
 - The date line changes daily; "Model:" changes with the model. Paths are fixed in a container.
 
 **Memory on** adds a guidance paragraph and, when `MEMORY.md` has entries, a block with a usage meter [ran]. The guidance opens: "You have persistent memory, carried across sessions and loaded into each new session's context; the memory tool's schema defines what belongs there." It then says skills come first, memory is for facts that apply to every session, and entries should be declarative facts [src]. The block looks like this, with `§` lines between entries [ran for the meter format]:
@@ -441,12 +442,12 @@ The server's JSON arrives as an **escaped string inside another JSON object**. T
 | `max_output_tokens` | `request_overrides.max_tokens` | `max_tokens`; unset means not sent. On `finish_reason: length` Hermes raises the cap and continues, so it is not a hard cap | [ran] on the wire; [src] for the boost |
 | `max_steps` | `max_iterations`, set before each turn to the steps left | N calls, plus up to 2 summary calls | [ran] |
 | `timeout_s` | The library's watchdog; Hermes's own run budget only nudges at 80% | none | [ran] timeout gate |
-| `parallel_tool_calls` | `request_overrides.parallel_tool_calls` | `parallel_tool_calls` | [ran]; effect unchecked |
+| `parallel_tool_calls` | `request_overrides.parallel_tool_calls`; false also turns off Hermes's "Parallel tool calls" prompt section (D33) | `parallel_tool_calls`; the section is absent from the system message when false | [ran]; effect unchecked |
 | `memory` | `memory` toolset, `memory_enabled` and `user_profile_enabled` | `memory` tool, guidance and block in the prompt | [src]; [ran] for the prompt |
 | `skills` | `skills` toolset | `skills_list`, `skill_view`, `skill_manage`; guidance and index | [src] |
 | `compression` | `compression.enabled` | Rewrites messages through an extra model call when over the threshold | [src] |
 | Not sent | `reasoning_effort` (kept off), `top_p`, `seed` | absent | [ran] |
-| Streaming, cache markers | Hermes defaults; markers via `harness_options.prompt_cache_markers` | `stream: true`; three `cache_control` markers for "claude" names on host `litellm` | [ran] |
+| Streaming, cache markers | Hermes's streaming default; cache markers off (D31), back on with `harness_options.prompt_cache_markers: true` | `stream: true`; no `cache_control`. With the option on, three `cache_control` markers for "claude" names on a host named `litellm` | [ran] |
 
 ### 3.6 The step limit and end states
 
@@ -503,7 +504,7 @@ So **"memory on and empty" vs "on and seeded" is a clean comparison**: same tool
 
 Each is described above and collected in section 8.2: the extra 4,500 characters of prompt (1,633 more tokens on the first call on Haiku 5.5); the wrapper and escaped JSON on tool results; prefixed, sorted tool names; silent JSON repair; up to 2 extra calls and a summary answer at the step limit; no hard token cap; the circuit breaker; the date line (interleave arms in time); and start-up time.
 
-One more: **prompt-cache markers.** Hermes adds them for model names containing "claude" when the proxy host is named `litellm`. In engine containers the proxy is `http://litellm:4000/v1` (the API builds the spec with that URL), so Claude arms on Hermes get cached prompts and other harnesses do not [src]. The 4 Nov run went to 127.0.0.1, so it sent none (`prompt_cache_markers: false`) [ran, 4 Nov]. Caching changes cost and latency, not outputs.
+One more: **prompt-cache markers.** Hermes adds them for model names containing "claude" when the proxy host is named `litellm`, which is the case in engine containers (`http://litellm:4000/v1`). **Since D31 they are off in every Hermes config** (`prompt_caching.cache_ttl: off`), like every other harness; `harness_options.prompt_cache_markers: true` turns them back on. A gate-level test runs a claude model name on a host named `litellm.localhost` and sees no `cache_control` by default and the three markers with the option on [ran].
 
 ### 3.12 Implications for eval design
 
@@ -520,7 +521,7 @@ One more: **prompt-cache markers.** Hermes adds them for model names containing 
 - **Deliberately bad inputs** (an unschedulable loan, a budget below the minimums, a prepayment above the balance): three errors in a row pause the tools for 60 s, on Hermes only.
 - **Injection-shaped text** in `client.json` notes or transactions: Hermes marks tool results as data; ADK fences only descriptions; the others mark nothing.
 - **Empathy tasks:** Hermes's identity asks for brevity ("Depth is earned") and no narration of tool calls, which pulls against a warm, longer answer. On the real single trial the model skipped the sympathy line it wrote on the other four harnesses before its first tool call [ran, 4 Nov, n = 1]. Constant within Hermes; a style confound across harnesses that the judge will see.
-- **Two independent calculations:** Hermes's prompt says batch them even with `parallel_tool_calls` off.
+- **Two independent calculations:** with `parallel_tool_calls` false, Hermes's prompt no longer says batch them (D33); with it true or unset, it does.
 
 **What to watch in results:** proxy calls against Hermes's count (summary calls, probe retries); `counts.malformed_tool_calls`; `[BLOCKED` in `hermes-logs/errors.log` for memory tasks; `prompt_cache_markers` on Claude runs; tokens from `proxy_usage`, not `harness_usage`; wall time, which includes start-up; stop reason `format_error` for a provider 400.
 
@@ -937,7 +938,7 @@ At `max_turns` 3 the SDK makes exactly 3 calls and raises `MaxTurnsExceeded`: 0 
 | Extra calls at the step limit | Hermes +2 with a summary answer | Cost; a graded answer where others have none | Proxy vs harness call counts; `capabilities.json` `extra_calls_at_limit` |
 | Output-token cap | Hermes boosts and continues; on Claude, thinking counts toward the cap | Long answers survive a cap on Hermes only; a tight cap can end a thinking reply before any text | `finish_reasons` in `chat` spans; `completion_tokens_details` in bodies |
 | Reasoning or thinking | All | Haiku 5.5 thinks by default (0 to 1,520 reasoning tokens per call); no harness passes thinking blocks back; Hermes keeps `reasoning_effort` off, others send nothing | Response bodies; question 16 |
-| Prompt caching | Hermes, Claude names, host `litellm` (engine containers) | Cost and latency only | `harness.extra.prompt_cache_markers`; `cache_control` in bodies |
+| Prompt caching | Off on every harness (D31); Hermes only with `harness_options.prompt_cache_markers: true` | Cost and latency only | `harness.extra.prompt_cache_markers`; `cache_control` in bodies |
 | Streaming | Hermes streams; the others do not | Latency profile, timeout behaviour | `evals.request.stream` |
 | Start-up and warm-up | Hermes (inside `timeout_s`), ADK (about 10 s before the clock) | Wall time; Hermes's counts against `timeout_s` | `runner-report.timing` against `result.timing` |
 | Tool execution order | LangGraph, ADK, SDK concurrent [src]; Hermes and own loop sequential | Trace order | Sort by call order in the response |
