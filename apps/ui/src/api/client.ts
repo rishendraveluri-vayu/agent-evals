@@ -21,11 +21,15 @@ import type {
   ExperimentSummary,
   Harness,
   JudgeAgreement,
+  JudgeApprovalRequest,
+  JudgeApprovalResponse,
+  JudgeRevokeResponse,
   LabelCriterion,
   LabelLine,
   LabelSet,
   ModelView,
   PromptView,
+  RegradeResponse,
   RenderedPromptView,
   SpendView,
   SystemSpendRow,
@@ -35,7 +39,7 @@ import type {
   TrialView,
 } from './types';
 
-type Method = 'GET' | 'POST';
+type Method = 'GET' | 'POST' | 'DELETE';
 
 async function call<T>(method: Method, path: string, body?: unknown): Promise<T> {
   if (isFixtureMode()) {
@@ -257,6 +261,14 @@ export const api = {
   experimentTrials: (id: string, filter: { status?: string; config?: string; task?: string } = {}) =>
     call<TrialRowSummary[]>('GET', `/experiments/${enc(id)}/trials${query(filter)}`),
   compare: (id: string) => call<Compare>('GET', `/experiments/${enc(id)}/compare`),
+  /** Approves real-model judging for one experiment with a model and a cap: a paid step, so only a
+   *  person's confirmed click calls it. The key itself never comes back. */
+  approveJudge: (id: string, body: JudgeApprovalRequest) => post<JudgeApprovalResponse>(`/experiments/${enc(id)}/judge`, body),
+  /** Deletes the judge's key, so judging stops at once. */
+  revokeJudge: (id: string) => call<JudgeRevokeResponse>('DELETE', `/experiments/${enc(id)}/judge`),
+  /** Queues new grade versions for the experiment's done trials; re-runs nothing. With a judge
+   *  approved, its checks are paid model calls within the approval's budget. */
+  regrade: (id: string, trialIds?: string[]) => post<RegradeResponse>(`/experiments/${enc(id)}/regrade`, trialIds ? { trial_ids: trialIds } : {}),
   exportUrl: (id: string, format: 'json' | 'csv') => `/api/experiments/${enc(id)}/export?format=${format}`,
 
   trial: async (id: string) => toAnyTrial(await call<unknown>('GET', `/trials/${enc(id)}`)),

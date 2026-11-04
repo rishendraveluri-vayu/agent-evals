@@ -1,5 +1,6 @@
 import { mount, type VueWrapper } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { api } from '../api/client';
 import type { Compare, CompareStats } from '../api/types';
 import compares from '../fixtures/compares.json';
 import details from '../fixtures/experiment-details.json';
@@ -7,6 +8,7 @@ import experimentTrials from '../fixtures/experiment-trials.json';
 import judge from '../fixtures/judge-agreement.json';
 import queue from '../fixtures/label-queue.json';
 import { routeFetch, settle, useFixtures } from '../test/helpers';
+import { ApiError } from '../api/errors';
 import CompareView from './CompareView.vue';
 
 /** A no-break space: numbers keep their unit, and κ and p = keep their value. */
@@ -331,5 +333,92 @@ describe('CompareView against the API: the check on the method', () => {
     await settle();
     expect(w.findAll('[data-test="why-line"]')[1].text()).toBe('No A/A run on this setup yet, so the method has not been checked on a run where nothing changed.');
     expect(w.find('[data-test="export-note"]').exists()).toBe(false);
+  });
+});
+
+describe('CompareView: the judge panel, in fixture mode', () => {
+  useFixtures();
+
+  it('says judging is not approved, approves it only after a paid-step confirmation with a real model and a budget, then regrades', async () => {
+    const approve = vi.spyOn(api, 'approveJudge');
+    const regrade = vi.spyOn(api, 'regrade');
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const panel = w.get('[data-test="judge-panel"]');
+    expect(panel.text()).toContain('The judge is a model that grades the checks code cannot');
+    expect(panel.text()).toContain('so judging costs money');
+    expect(panel.get('[data-test="judge-state"]').text()).toBe('Not approved. The judge checks on 4 tasks stay ungraded (“Not judged”) until judging is approved.');
+    await panel.get('[data-test="judge-approve-open"]').trigger('click');
+    const form = w.get('[data-test="judge-approve"]');
+    // Real models only, and nothing picked for you.
+    const options = form.findAll('[data-test="judge-model-select"] option').map((o) => o.text());
+    expect(options).toEqual(['Pick a model', 'Claude Haiku 5.5', 'Gemini 3.8 Flash']);
+    expect(form.get('[data-test="judge-approve-blocked"]').text()).toBe('Pick the model the judge calls.');
+    expect(form.get('[data-test="judge-approve-go"]').attributes('disabled')).toBeDefined();
+    await form.get('[data-test="judge-model-select"]').setValue('claude-haiku-5-5');
+    await form.get('[data-test="judge-budget-input"]').setValue('25');
+    expect(form.get('[data-test="judge-budget-problem"]').text()).toBe('The budget must be above $0 and at most $20.');
+    await form.get('[data-test="judge-budget-input"]').setValue('two');
+    expect(form.get('[data-test="judge-budget-problem"]').text()).toContain('“two” is not one');
+    await form.get('[data-test="judge-budget-input"]').setValue('2');
+    const confirm = form.get('[data-test="judge-confirm"]').text();
+    expect(confirm).toContain('A paid step: approving sends 40 finished trials to Claude Haiku 5.5, one call per judge check, at once.');
+    expect(confirm).toContain('It never spends more than $2.');
+    expect(approve).not.toHaveBeenCalled();
+    await form.get('[data-test="judge-approve-go"]').trigger('submit');
+    await settle();
+    expect(approve).toHaveBeenCalledWith('exp_heldout', { model: 'claude-haiku-5-5', budget_usd: 2 });
+    expect(regrade).toHaveBeenCalledWith('exp_heldout');
+    expect(w.get('[data-test="judge-done"]').text()).toMatch(/^Approved: Claude Haiku 5\.5, with a \$2 budget\. Regrade queued for \d+ finished trials/);
+    // The panel reads the experiment again: approved, with its model, budget and spend.
+    expect(w.get('[data-test="judge-model"]').text()).toBe('Claude Haiku 5.5');
+    expect(w.get('[data-test="judge-budget"]').text()).toBe('$2');
+    expect(w.get('[data-test="judge-spent"]').text()).toBe('$0');
+
+    // A regrade with the judge is paid too: it asks first.
+    await w.get('[data-test="judge-regrade"]').trigger('click');
+    expect(w.get('[data-test="judge-regrade-confirm"]').text()).toContain('A paid step: the judge calls Claude Haiku 5.5 again for 40 finished trials with a judge check.');
+    await w.get('[data-test="judge-regrade-go"]').trigger('click');
+    await settle();
+    expect(regrade).toHaveBeenCalledTimes(2);
+
+    // Revoking is there too, and the panel goes back to not approved.
+    const revoke = vi.spyOn(api, 'revokeJudge');
+    await w.get('[data-test="judge-revoke"]').trigger('click');
+    await settle();
+    expect(revoke).toHaveBeenCalledWith('exp_heldout');
+    expect(w.get('[data-test="judge-done"]').text()).toContain('Judging revoked');
+    expect(w.get('[data-test="judge-state"]').text()).toContain('Not approved.');
+  });
+
+  it('cancels without a call, and says a refused approval plainly', async () => {
+    const approve = vi.spyOn(api, 'approveJudge').mockRejectedValueOnce(new ApiError(400, 'unknown_model', 'LiteLLM serves no priced model x (R8)', 'Pick a model from the list.'));
+    const regrade = vi.spyOn(api, 'regrade');
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    await w.get('[data-test="judge-approve-open"]').trigger('click');
+    await w.get('[data-test="judge-approve-cancel"]').trigger('click');
+    expect(w.find('[data-test="judge-approve"]').exists()).toBe(false);
+    expect(approve).not.toHaveBeenCalled();
+    await w.get('[data-test="judge-approve-open"]').trigger('click');
+    await w.get('[data-test="judge-model-select"]').setValue('gemini-3.8-flash');
+    await w.get('[data-test="judge-budget-input"]').setValue('1.50');
+    await w.get('[data-test="judge-approve"]').trigger('submit');
+    await settle();
+    expect(w.get('[data-test="judge-error"]').text()).toBe('Not approved: LiteLLM serves no priced model x. Pick a model from the list.');
+    expect(regrade).not.toHaveBeenCalled();
+  });
+
+  it('opens at the judge panel when the address asks for it', async () => {
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout', panel: 'judge' }, attachTo: document.body });
+    await settle();
+    expect(document.activeElement?.id).toBe('judge-panel');
+    w.unmount();
+  });
+
+  it('shows no judge panel for an experiment with no judge check and no approval', async () => {
+    const w = mount(CompareView, { props: { experimentId: 'exp_futility' } });
+    await settle();
+    expect(w.find('[data-test="judge-panel"]').exists()).toBe(false);
   });
 });

@@ -23,7 +23,12 @@ import type {
   ExperimentStatus,
   ExperimentSummary,
   Harness,
+  JudgeApprovalRequest,
+  JudgeApprovalResponse,
+  JudgeView,
+  ModelView,
   PromptView,
+  RegradeResponse,
   RenderedPromptView,
   SettingName,
   TaskView,
@@ -70,8 +75,8 @@ const conflictChecks = conflictChecksJson as unknown as Record<string, ConflictC
 const trial = trialJson as unknown as { id: string };
 const recordedTrial = recordedTrialJson as unknown as { summary: { trialId: string } };
 
-/** Session-only writes. */
-const created = { configs: [] as ConfigView[], experiments: new Map<string, ExperimentDetail>(), prompts: [] as PromptView[] };
+/** Session-only writes. A judge approval here mints no key and calls no model. */
+const created = { configs: [] as ConfigView[], experiments: new Map<string, ExperimentDetail>(), prompts: [] as PromptView[], judges: new Map<string, JudgeView>() };
 const allPrompts = () => [...(promptsJson as PromptView[]), ...created.prompts];
 
 /** POST /prompts by the API's rules: the next v<n> of an existing id; the same text returns its
@@ -378,6 +383,36 @@ function armControl(id: string, armKey: string, pause: boolean): ExperimentDetai
   return d;
 }
 
+/** POST /experiments/:id/judge by the API's rules: a priced model LiteLLM serves, a budget above 0
+ *  and at most 20, one active approval at a time. In sample mode nothing is minted or called. */
+function approveJudge(id: string, body: JudgeApprovalRequest): JudgeApprovalResponse {
+  experimentDetail(id);
+  const b = (body ?? {}) as Partial<JudgeApprovalRequest>;
+  if (typeof b.model !== 'string' || !b.model) throw new ApiError(400, 'invalid_judge', 'model is required', 'Name a model LiteLLM serves with a price.');
+  if (typeof b.budget_usd !== 'number' || !(b.budget_usd > 0) || b.budget_usd > 20) {
+    throw new ApiError(400, 'invalid_judge', 'budget_usd must be a number above 0 and at most 20', 'Give a budget in dollars, above 0 and at most 20.');
+  }
+  const priced = (modelsJson as ModelView[]).some((m) => m.name === b.model && m.input_per_mtok !== null) || b.model.startsWith('fake/');
+  if (!priced) throw new ApiError(400, 'unknown_model', `LiteLLM serves no priced model ${b.model}`, 'Pick a model from GET /models.');
+  if (created.judges.has(id)) throw new ApiError(409, 'judge_already_approved', `judging is already approved for ${id}`, 'Revoke it first, then approve again.');
+  const approval = { model: b.model, budget_usd: b.budget_usd, spend_usd: 0, approved_at: meta.now };
+  created.judges.set(id, approval);
+  return { experiment_id: id, model: approval.model, budget_usd: approval.budget_usd, approved_at: approval.approved_at };
+}
+
+function revokeJudge(id: string) {
+  experimentDetail(id);
+  if (!created.judges.delete(id)) throw new ApiError(404, 'no_judge_approval', `judging is not approved for ${id}`, 'There is nothing to revoke.');
+  return { experiment_id: id, revoked_at: meta.now };
+}
+
+/** POST /experiments/:id/regrade: counts what the API would queue; in sample mode nothing runs. */
+function regrade(id: string): RegradeResponse {
+  experimentDetail(id);
+  const done = trialsFor(id).filter((t) => t.status === 'done').length;
+  return { experiment_id: id, trials: done, queued: done, no_graders: 0, superseded: 0, from_trial_task: 0 };
+}
+
 function saveLabel(body: CreateLabelRequest) {
   const values = ['yes', 'no', 'unsure'];
   if (!body.item_id || !body.criterion || !values.includes(body.value)) {
@@ -459,7 +494,10 @@ const routes: [string, RegExp, Handler][] = [
       return { experiment_id: id, status: 'incomplete', reason: 'the experiment has not been started', arms: d.arms, rows: [], stats: null };
     },
   ],
-  ['GET', /^\/experiments\/([^/]+)$/, (m) => experimentDetail(id1(m))],
+  ['POST', /^\/experiments\/([^/]+)\/judge$/, (m, _p, body) => approveJudge(id1(m), body as JudgeApprovalRequest)],
+  ['DELETE', /^\/experiments\/([^/]+)\/judge$/, (m) => revokeJudge(id1(m))],
+  ['POST', /^\/experiments\/([^/]+)\/regrade$/, (m) => regrade(id1(m))],
+  ['GET', /^\/experiments\/([^/]+)$/, (m) => ({ ...experimentDetail(id1(m)), judge: created.judges.get(id1(m)) ?? experimentDetail(id1(m)).judge ?? null })],
   ['GET', /^\/trials$/, () => recordedTrialsJson],
   [
     'GET',

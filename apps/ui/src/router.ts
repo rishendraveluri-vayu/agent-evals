@@ -11,7 +11,7 @@ export type Route =
   | { name: 'config-page'; hash: string }
   | { name: 'run-new'; a: string | null; b: string | null }
   | { name: 'run'; id: string }
-  | { name: 'compare'; id: string }
+  | { name: 'compare'; id: string; panel: string | null }
   | { name: 'trial'; id: string }
   | { name: 'recorded' }
   | { name: 'labels'; set: LabelSet | null; experiment: string | null }
@@ -39,7 +39,7 @@ export function parseHash(hash: string): Route {
   if (first === 'configs' && second && parts.length === 2) return { name: 'config-page', hash: dec(second) };
   if (first === 'run' && parts.length === 1) return { name: 'run-new', a: params.get('a'), b: params.get('b') };
   if (first === 'experiments' && second && third === 'run' && parts.length === 3) return { name: 'run', id: dec(second) };
-  if (first === 'experiments' && second && parts.length === 2) return { name: 'compare', id: dec(second) };
+  if (first === 'experiments' && second && parts.length === 2) return { name: 'compare', id: dec(second), panel: params.get('panel') };
   if (first === 'trials' && parts.length === 1) return { name: 'recorded' };
   if (first === 'trials' && second && parts.length === 2) return { name: 'trial', id: dec(second) };
   if (first === 'labels' && parts.length === 1) {
@@ -94,6 +94,8 @@ export const href = {
   },
   run: (id: string) => `#/experiments/${enc(id)}/run`,
   compare: (id: string) => `#/experiments/${enc(id)}`,
+  /** The comparison with its judge panel in view: approve, revoke or regrade there. */
+  compareJudge: (id: string) => `#/experiments/${enc(id)}?panel=judge`,
   trial: (id: string) => `#/trials/${enc(id)}`,
   recorded: () => '#/trials',
   labels: () => '#/labels',

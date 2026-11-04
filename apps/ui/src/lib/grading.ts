@@ -38,8 +38,11 @@ export interface GradeView {
   /** The check in words when the evidence names it, else the grader's id. */
   name: string;
   verdict: Verdict;
-  /** The verdict in words: Pass, Fail, Not applicable, Grader error, Not built yet. */
+  /** The verdict in words: Pass, Fail, Not applicable, Grader error, Not judged. */
   verdictWord: string;
+  /** The grader's own verdict: pass, fail, not_applicable, error or not_implemented (a judge check
+   *  on an experiment whose judging is not approved). */
+  rawVerdict: string | null;
   score: number | null;
   reason: string | null;
   /** Passages of the answer the grader quoted, to highlight in the conversation. */
@@ -66,7 +69,8 @@ const VERDICT_WORDS: Record<string, string> = {
   fail: 'Fail',
   not_applicable: 'Not applicable',
   error: 'Grader error',
-  not_implemented: 'Not built yet',
+  // The judge's verdict when judging is not approved for the experiment: nothing called, nothing spent.
+  not_implemented: 'Not judged',
 };
 
 export function verdictOf(raw: string | null, score: number | null): Verdict {
@@ -109,6 +113,7 @@ export function gradeView(g: Grade, index: number): GradeView {
     name: (legacy && firstString(legacy, ['name', 'criterion', 'check', 'title'])) ?? g.grader_id,
     verdict,
     verdictWord: VERDICT_WORDS[raw ?? ''] ?? (verdict === 'pass' ? 'Pass' : verdict === 'fail' ? 'Fail' : (raw ?? 'No verdict')),
+    rawVerdict: raw,
     score: g.score,
     reason,
     quotes: items.filter((x) => x.source === null || ANSWER_SOURCES.has(x.source)).map((x) => x.quote),

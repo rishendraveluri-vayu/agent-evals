@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, nextTick, watch } from 'vue';
 import { api } from '../api/client';
 import { isFixtureMode } from '../api/mode';
 import type { BlindItem, Compare, CompareRow, ExperimentDetail, TrialRowSummary, Interval, JudgeAgreement, TaskView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
+import JudgePanel from '../components/JudgePanel.vue';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
 import { agreementWords, armIndexOf, armLetter, armsOf, differingShort, excludesZero, intervalText, judgeCaveat, methodName, NBSP, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
@@ -14,7 +15,8 @@ import { alsoGradedBy, gradedBy, harnessShort, infraReason, isJudged, modelName 
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
 import { href } from '../router';
 
-const props = defineProps<{ experimentId: string }>();
+/** `panel`: `judge` opens the page at its judge panel (the trial page links there). */
+const props = defineProps<{ experimentId: string; panel?: string | null }>();
 const fixtures = isFixtureMode();
 
 interface Loaded {
@@ -38,6 +40,33 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
 });
 
 const arms = computed(() => (data.value ? armsOf(data.value.detail, data.value.detail.configs) : []));
+
+/** The judge panel's counts: tasks with a judge check, and the finished trials of those tasks. */
+const judged = computed(() => {
+  const d = data.value;
+  if (!d) return { tasks: 0, trials: 0 };
+  const tasks = d.detail.tasks.filter(isJudged);
+  const keys = new Set(tasks.map((t) => t.sha256));
+  return { tasks: tasks.length, trials: d.trials.filter((t) => t.status === 'done' && keys.has(t.task_sha256)).length };
+});
+
+/** After an approval, a revoke or a regrade: the experiment again (its judge and spend), and its
+ *  trials, without reloading the page around the panel. */
+async function refreshJudge() {
+  const d = data.value;
+  if (!d) return;
+  const [detail, trials] = await Promise.all([optional(api.experiment(props.experimentId), d.detail), optional(api.experimentTrials(props.experimentId), d.trials)]);
+  data.value = { ...d, detail, trials };
+}
+
+// Opened from a trial's "Not judged" grade: bring the judge panel into view and give it focus.
+watch(data, async (d, before) => {
+  if (!d || before || props.panel !== 'judge') return;
+  await nextTick();
+  const panel = document.getElementById('judge-panel');
+  panel?.scrollIntoView?.({ block: 'start' });
+  panel?.focus({ preventScroll: true });
+});
 const stats = computed(() => data.value?.compare.stats ?? null);
 const taskOf = (key: string): TaskView | undefined => data.value?.detail.tasks.find((t) => t.sha256 === key || t.id === key);
 const taskName = (key: string) => taskOf(key)?.id ?? key.replace(/^sha256:/, '').slice(0, 12);
@@ -744,6 +773,16 @@ const worthALook = computed(() => {
           </div>
         </div>
       </section>
+
+      <!-- How the judge checks get graded, by the verdict they feed; the task table stays last. -->
+      <JudgePanel
+        v-if="judged.tasks || data.detail.judge"
+        :experiment-id="data.detail.id"
+        :judge="data.detail.judge ?? null"
+        :judged-trials="judged.trials"
+        :judged-tasks="judged.tasks"
+        @changed="refreshJudge"
+      />
 
       <section
         v-if="metrics.length"

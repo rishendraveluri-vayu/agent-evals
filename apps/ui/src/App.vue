@@ -82,6 +82,7 @@ watch(
       v-else-if="route.name === 'compare'"
       :key="`compare-${route.id}`"
       :experiment-id="route.id"
+      :panel="route.panel"
     />
     <TrialView
       v-else-if="route.name === 'trial'"

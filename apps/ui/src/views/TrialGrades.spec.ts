@@ -59,10 +59,26 @@ describe('TrialView grades', () => {
     await settle();
     expect(w.get('[data-test="trial-outcome"]').text()).toBe('Incomplete: 2 of 3 checks undecided');
     const verdicts = w.findAll('[data-test="grade-verdict"]').map((v) => v.text());
-    expect(verdicts).toEqual(['Pass', 'Not built yet', 'Grader error']);
+    expect(verdicts).toEqual(['Pass', 'Not judged', 'Grader error']);
     expect(w.findAll('[data-test="grade"]')[2].get('[data-test="grade-reason"]').text()).toBe('unit_test timed out after 10 s');
     // Neither green nor red for a check that did not decide.
     expect(w.findAll('[data-test="grade-verdict"]')[1].classes()).toContain('pill--outline');
+  });
+
+  it('points a judge check that was never judged to the judge panel, in plain words', async () => {
+    const [first, second] = trial.grades;
+    const reason = 'judging is not approved for this experiment (R8), so the judge was not called and nothing was spent; approve it with a model and budget, then regrade';
+    const w = mountWith({ grades: [{ ...first, verdict: 'pass' }, { ...second, verdict: 'not_implemented', score: null, reason, evidence: [] }] });
+    await settle();
+    const grade = w.findAll('[data-test="grade"]')[1];
+    expect(grade.get('[data-test="grade-verdict"]').text()).toBe('Not judged');
+    const words = grade.get('[data-test="not-judged"]');
+    expect(words.text()).toBe(
+      "Not judged: judging is not approved for this experiment, so the judge was not called and nothing was spent. Approving it is a paid step, on the comparison page's judge panel; the regrade that follows fills this in.",
+    );
+    expect(words.get('a').attributes('href')).toBe('#/experiments/exp_heldout?panel=judge');
+    expect(grade.text()).not.toContain('R8');
+    expect(grade.find('[data-test="grade-reason"]').exists()).toBe(false);
   });
 
   it('leaves a check that is not required out of the outcome, and says so', async () => {

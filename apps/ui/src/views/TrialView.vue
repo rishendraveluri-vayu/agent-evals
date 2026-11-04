@@ -9,7 +9,7 @@ import SpanTimeline from '../components/SpanTimeline.vue';
 import { armIndexOf, armsOf } from '../lib/arms';
 import { gradeView, markAmounts, outcomeOf, provenanceOf, type AmountCheck, type GradeView, type ProvenanceView } from '../lib/grading';
 import { optional, useLoad } from '../lib/async';
-import { capitalise, count, money, seconds, shortVersion } from '../lib/format';
+import { capitalise, count, money, plainText, seconds, shortVersion } from '../lib/format';
 import { endStateName, graderName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
 import { href } from '../router';
 import { text, timelineRows, type SpanView } from '../trials';
@@ -438,6 +438,10 @@ const gradeKind = (g: GradeView) => {
   return `${graderName(g.kind)}${type}${g.required ? '' : ', not required'}`;
 };
 const isJudge = (g: GradeView) => g.kind === 'judge' || !!g.judgeModel;
+/** A judge check that was never judged: judging was not approved when the trial was graded. */
+const notJudged = (g: GradeView) => isJudge(g) && g.rawVerdict === 'not_implemented';
+/** Where to approve judging, or to regrade once it is: the comparison page's judge panel. */
+const judgePanelHref = computed(() => (data.value?.experiment ? href.compareJudge(data.value.experiment.id) : null));
 const verdictWord = (g: GradeView) => g.verdictWord;
 const sourceWords = (source: string | null, tool: string | null) =>
   ({ tool_result: `${tool ?? 'a tool'}'s result`, span: `${tool ?? 'a tool'} call`, result: 'result.json', checks: 'the number check' })[source ?? ''] ?? source ?? 'the trial';
@@ -866,13 +870,25 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             >
               {{ hiddenReasons }}
             </p>
+            <p
+              v-else-if="notJudged(g) && judgePanelHref"
+              class="small"
+              data-test="not-judged"
+            >
+              <template v-if="data.experiment?.judge">
+                Not judged: judging was approved after this trial was graded. <a :href="judgePanelHref">Regrade from the judge panel</a> on the comparison page to judge it now.
+              </template>
+              <template v-else>
+                Not judged: judging is not approved for this experiment, so the judge was not called and nothing was spent. Approving it is a paid step, on the comparison page's <a :href="judgePanelHref">judge panel</a>; the regrade that follows fills this in.
+              </template>
+            </p>
             <template v-else>
               <p
                 v-if="g.reason"
                 class="small"
                 data-test="grade-reason"
               >
-                {{ g.reason }}
+                {{ plainText(g.reason) }}
               </p>
               <blockquote
                 v-for="(q, qi) in g.quotes"
