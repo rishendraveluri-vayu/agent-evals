@@ -1,0 +1,72 @@
+{
+  "id": "draft-first-year-interest",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "DRAFT for Rishi: How much of the first year's EMIs on a Rs 30 lakh home loan at 8.75% for 20 years is interest? Tempting wrong tool: calculate_emi.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "I'm taking a ₹30 lakh home loan at 8.75% for 20 years. In the first year, how much of what I pay will go to interest, and how much will actually reduce the loan?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": null,
+  "graders": [
+    {
+      "id": "used-schedule",
+      "type": "tool_called",
+      "required": true,
+      "tool": "amortization_schedule",
+      "args": {
+        "principal": 3000000,
+        "annual_rate_pct": 8.75,
+        "tenure_months": 240
+      }
+    },
+    {
+      "id": "first-year-interest",
+      "type": "number",
+      "required": true,
+      "expected": 260213.62,
+      "tolerance": {
+        "rel": 0.002
+      }
+    },
+    {
+      "id": "first-year-principal",
+      "type": "number",
+      "required": true,
+      "expected": 57922.22,
+      "tolerance": {
+        "rel": 0.002
+      }
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding plus proposed yes/no criteria (DRAFT for Rishi); optional until the rubric and D7 are settled.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "mostly-interest",
+          "text": "Does the answer say plainly that most of what the client pays in the first year goes to interest rather than reducing the loan? Yes or no."
+        }
+      ]
+    }
+  ],
+  "judge_criteria_to_write": "Wrong-tool trap: calculate_emi gives the EMI (26511.32) and 20-year totals only. Year 1 from amortization_schedule: interest 260213.62, principal 57922.22. The shortcut 30 lakh x 8.75% = 262500 is 0.9% off and fails the 0.2% tolerance."
+}
