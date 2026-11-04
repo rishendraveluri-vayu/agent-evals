@@ -52,6 +52,14 @@ describe('#/example: the finished example', () => {
     expect(currentHash.value).toBe('#/experiments/e_shipped');
   });
 
+  it('opens the original run on the machine the example was exported from, where the load is refused', async () => {
+    vi.spyOn(api, 'examples').mockResolvedValue([{ ...shipped, experiment_id: 'exp_heldout' }]);
+    vi.spyOn(api, 'loadExample').mockRejectedValue(new ApiError(409, 'example_conflict', 'experiment exp_heldout is already here as an experiment of its own'));
+    mount(OpenExampleView);
+    await settle();
+    expect(currentHash.value).toBe('#/experiments/exp_heldout');
+  });
+
   it('says so when no example ships, and offers the other ways in', async () => {
     vi.spyOn(api, 'examples').mockResolvedValue([]);
     const w = mount(OpenExampleView);

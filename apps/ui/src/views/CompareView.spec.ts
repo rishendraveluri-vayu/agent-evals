@@ -269,6 +269,22 @@ describe('CompareView against the API: no statistics yet', () => {
     expect(w.text()).not.toContain('has not reported');
   });
 
+  it('counts trials with no outcome apart, as neither a pass nor a fail', async () => {
+    const base = compares.exp_heldout as { rows: Record<string, unknown>[] };
+    const rows = base.rows.map((r, i) => (i === 0 ? { ...r, incomplete: 2 } : r));
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': { ...base, rows, stats: null },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.text()).toContain('2 more trials have no outcome: a required check could not be decided');
+    expect(w.text()).toContain('2 undecided');
+  });
+
   it('labels a shipped example as read-only sample content, by its title, with no judge panel', async () => {
     const detail = (details as Record<string, Record<string, unknown>>).exp_heldout;
     routeFetch({

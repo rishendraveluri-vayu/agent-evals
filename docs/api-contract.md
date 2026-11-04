@@ -478,8 +478,12 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   (...); a verdict needs the full planned N (D32)", "the experiment is paused: ...", "arm A has 3
   trials queued or running", "the experiment has not been started") and `rows` is empty, so no
   pass counts are shown off a partial run. Once `complete`, `rows` holds per task and arm `{task,
-  task_id, arm, config, config_name, passed, graded, trials, infra_failed, abandoned}` and, once
-  SP6 exists, the intervals and verdict. Until then `stats` is `null`.
+  task_id, arm, config, config_name, passed, graded, incomplete, trials, infra_failed, abandoned}`
+  and, once SP6 exists, the intervals and verdict. Until then `stats` is `null`. Each done trial
+  counts by its latest finished grading job's outcome, as on the run grid: `passed` is the trials
+  whose outcome is `pass`, `graded` those with `pass` or `fail`, and `incomplete` those whose
+  grading finished with no outcome (a required grader errored, was not applicable or is the
+  unapproved judge). Older grade versions and optional graders do not count.
 - `GET /experiments/:id/export?format=json|csv` streams trials joined with configs, tasks,
   grades and spend.
 - `GET /experiments/:id/bundle` (SP7) returns every row needed to recreate the experiment in
@@ -681,8 +685,8 @@ key (`010_judge.sql`; approving and revoking are under Experiments).
   any job still queued for them. It returns `{experiment_id, trials, queued, no_graders,
   superseded, from_trial_task}`. 404 `unknown_experiment`. Nothing is re-run; old grades stay.
 - Views: `current_grading` (each trial's latest `done` job, by queue order) and `current_grades`
-  (its grades). `GET /experiments/:id/compare` and the export still count every stored grade row
-  of a trial, all versions, until SP6 reads these (`docs/known-limits.md`).
+  (its grades). `GET /experiments/:id/compare` counts each trial's latest finished job's outcome;
+  the export still lists every stored grade row of a trial, all versions (`docs/known-limits.md`).
 
 ## Shipped examples (SP7)
 

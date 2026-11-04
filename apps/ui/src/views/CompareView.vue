@@ -95,9 +95,9 @@ const totals = computed(() => {
     d.detail.tasks.reduce(
       (acc, t) => {
         const c = cell(t.sha256, arm);
-        return { passed: acc.passed + (c?.passed ?? 0), graded: acc.graded + (c?.graded ?? 0) };
+        return { passed: acc.passed + (c?.passed ?? 0), graded: acc.graded + (c?.graded ?? 0), incomplete: acc.incomplete + (c?.incomplete ?? 0) };
       },
-      { passed: 0, graded: 0 },
+      { passed: 0, graded: 0, incomplete: 0 },
     );
   return { a: sum(0), b: sum(1) };
 });
@@ -107,11 +107,15 @@ const noVerdictText = computed(() => {
   if (!t) return '';
   const b = arms.value[1] ? `, B passed ${t.b.passed} of ${t.b.graded}` : '';
   const more = arms.value.length > 2 ? ` This experiment has ${arms.value.length} configs, made before experiments had two arms: only A and B are compared here; the run page shows every arm.` : '';
-  if (!t.a.graded && !t.b.graded) {
+  if (!t.a.graded && !t.b.graded && !t.a.incomplete && !t.b.incomplete) {
     const ran = (letter: 'A' | 'B') => (data.value?.compare.rows ?? []).filter((r) => r.arm === letter).reduce((sum, r) => sum + r.trials, 0);
     return `Not graded yet: A has ${ran('A')} finished ${ran('A') === 1 ? 'trial' : 'trials'}${arms.value[1] ? ` and B ${ran('B')}` : ''}, and grading runs as its own step. The interval and the verdict come after it.${more}`;
   }
-  return `A passed ${t.a.passed} of ${t.a.graded} graded trials${b}. This version of the platform does not compute the verdict and its interval yet, so read these as counts, not a conclusion; the per-task results below are complete.${more}`;
+  const open = t.a.incomplete + t.b.incomplete;
+  const undecided = open
+    ? ` ${open} more ${open === 1 ? 'trial has' : 'trials have'} no outcome: a required check could not be decided (often the judge, when judging is not approved), so ${open === 1 ? 'it counts' : 'they count'} as neither a pass nor a fail.`
+    : '';
+  return `A passed ${t.a.passed} of ${t.a.graded} graded trials${b}.${undecided} This version of the platform does not compute the verdict and its interval yet, so read these as counts, not a conclusion; the per-task results below are complete.${more}`;
 });
 
 /** Trials stopped on infra failures: listed, never dropped. When the trial list did not load,
@@ -404,7 +408,7 @@ function verdictOf(r: TaskRow): { kind: Verdict; label?: string } {
   return { kind: 'none' };
 }
 const labelOf = (r: TaskRow) => (!r.diff ? 'Not graded yet' : stats.value ? `${signed(r.diff.estimate)} (${intervalText(r.diff)})` : `${signed(r.diff.estimate)}, no interval`);
-const passedText = (c: CompareRow | undefined) => (c ? `${c.passed} of ${c.graded}` : '–');
+const passedText = (c: CompareRow | undefined) => (c ? `${c.passed} of ${c.graded}${c.incomplete ? `, ${c.incomplete} undecided` : ''}` : '–');
 
 const differing = computed(() => taskRows.value.filter((r) => r.significant).length);
 

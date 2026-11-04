@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
 import request from 'supertest';
-import type { ClaimResponse, ExperimentDetail, GraderClaimResponse, GradesReportResponse, RegradeResponse, TrialView } from '../src/contract';
+import type { ClaimResponse, CompareResponse, ExperimentDetail, GraderClaimResponse, GradesReportResponse, RegradeResponse, TrialView } from '../src/contract';
 import { graderVersion } from '../src/grading/grading-core';
 import { REPO, type TestEnv, auth, bootEnv, catalogue, makeConfig, runnerReport } from './support/app';
 import { describeWithDb } from './support/db';
@@ -269,6 +269,25 @@ describeWithDb('grading (e2e, real Postgres)', () => {
     expect(await claimGrading('crashy')).toBeNull();
     const view = await trial(job.trial_id);
     expect(view.grading.pending).toMatchObject({ status: 'failed', error: 'the grading lease lapsed 3 times without a report' });
+  });
+
+  it('compares by each trial’s latest grading outcome: required graders only, older grade versions ignored', async () => {
+    await drain();
+    const exp = await experiment(['emi-graded'], 3);
+    await runTrials();
+    const compare = async () => ((await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as CompareResponse).rows;
+    // One trial passes (its optional judge is not_implemented), one fails a required grader, one errors on one.
+    const overrides: Record<string, string>[] = [{}, { emi: 'fail' }, { unit: 'error' }];
+    for (const o of overrides) {
+      const job = (await claimGrading())!;
+      await report(job, 'g1', gradesFor(job, 'pass', o)).expect(200);
+    }
+    expect(await compare()).toEqual([expect.objectContaining({ trials: 3, graded: 2, passed: 1, incomplete: 1 })]);
+    // A regrade where everything required passes: the old fail and error grades stay stored, but no longer count.
+    await request(env.http).post(`/api/experiments/${exp.id}/regrade`).send({}).expect(202);
+    await drain();
+    expect(await count('SELECT count(*)::int AS n FROM grades g JOIN trials t ON t.id = g.trial_id WHERE t.experiment_id = $1 AND g.verdict IN ($2, $3)', [exp.id, 'fail', 'error'])).toBe(2);
+    expect(await compare()).toEqual([expect.objectContaining({ trials: 3, graded: 3, passed: 3, incomplete: 0 })]);
   });
 
   it('re-grades after a grader fix, keeping the old grades and re-running nothing', async () => {

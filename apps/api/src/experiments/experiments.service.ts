@@ -870,20 +870,26 @@ export class ExperimentsService {
       trials: number;
       graded: number;
       passed: number;
+      incomplete: number;
       infra_failed: number;
       abandoned: number;
     }>(
+      // A trial's outcome is its latest finished grading job's, as on the run grid and the trial
+      // page: pass when every required grader passed, fail when one failed, incomplete otherwise
+      // (grader format, "The task's outcome"). Older grade versions and optional graders do not count.
       `SELECT t.task_sha256 AS task, k.id AS task_id, t.config_hash AS config, c.name AS config_name,
               count(*) FILTER (WHERE t.status = 'done')::int AS trials,
-              count(*) FILTER (WHERE t.status = 'done' AND g.n > 0)::int AS graded,
-              count(*) FILTER (WHERE t.status = 'done' AND g.n > 0 AND g.n = g.passed)::int AS passed,
+              count(*) FILTER (WHERE t.status = 'done' AND g.outcome IN ('pass', 'fail'))::int AS graded,
+              count(*) FILTER (WHERE t.status = 'done' AND g.outcome = 'pass')::int AS passed,
+              count(*) FILTER (WHERE t.status = 'done' AND g.status = 'done' AND (g.outcome IS NULL OR g.outcome = 'incomplete'))::int AS incomplete,
               count(*) FILTER (WHERE t.status = 'infra_failed')::int AS infra_failed,
               count(*) FILTER (WHERE t.status = 'abandoned')::int AS abandoned
        FROM trials t
        JOIN tasks k ON k.sha256 = t.task_sha256
        JOIN configs c ON c.hash = t.config_hash
        LEFT JOIN LATERAL (
-         SELECT count(*)::int AS n, count(*) FILTER (WHERE verdict = 'pass')::int AS passed FROM grades WHERE trial_id = t.id
+         SELECT j.status, j.outcome FROM grading_jobs j
+         WHERE j.trial_id = t.id AND j.status IN ('done', 'no_graders') ORDER BY j.created_at DESC, j.id DESC LIMIT 1
        ) g ON true
        -- D34: a reused arm A's rows are the parent's trials it took.
        WHERE t.experiment_id = $1 OR t.id IN (SELECT unnest(reused_trial_ids) FROM experiment_arms WHERE experiment_id = $1)

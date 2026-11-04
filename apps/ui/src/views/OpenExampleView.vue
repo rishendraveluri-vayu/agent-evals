@@ -7,7 +7,7 @@
  */
 import { onMounted, ref } from 'vue';
 import { api } from '../api/client';
-import { errorFix, errorText } from '../api/errors';
+import { ApiError, errorFix, errorText } from '../api/errors';
 import type { ExampleView } from '../api/types';
 import { plainText } from '../lib/format';
 import { href, replaceRoute } from '../router';
@@ -15,6 +15,15 @@ import { href, replaceRoute } from '../router';
 const status = ref<'finding' | 'loading' | 'none' | 'failed'>('finding');
 const example = ref<ExampleView | null>(null);
 const problem = ref<{ text: string; fix: string | null } | null>(null);
+
+async function hasExperiment(id: string): Promise<boolean> {
+  try {
+    await api.experiment(id);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 onMounted(async () => {
   try {
@@ -27,7 +36,13 @@ onMounted(async () => {
     }
     if (!first.loaded) {
       status.value = 'loading';
-      await api.loadExample(first.name);
+      try {
+        await api.loadExample(first.name);
+      } catch (err) {
+        // The machine the example was exported from already holds the same run as its own: the
+        // load is refused (409), and that run is the example, so open it.
+        if (!(err instanceof ApiError && err.code === 'example_conflict' && (await hasExperiment(first.experiment_id)))) throw err;
+      }
     }
     replaceRoute(href.compare(first.experiment_id));
   } catch (err) {

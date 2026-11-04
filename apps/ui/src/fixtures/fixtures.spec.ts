@@ -30,7 +30,7 @@ const FIELDS = {
     'label', 'end_state', 'cost_usd', 'input_tokens', 'output_tokens', 'model_calls', 'wall_s', 'worker_id', 'claimed_at', 'finished_at', 'passed', 'grading',
   ],
   compare: ['experiment_id', 'status', 'reason', 'arms', 'rows', 'stats'],
-  compareRow: ['task', 'task_id', 'arm', 'config', 'config_name', 'passed', 'graded', 'trials', 'infra_failed', 'abandoned'],
+  compareRow: ['task', 'task_id', 'arm', 'config', 'config_name', 'passed', 'graded', 'incomplete', 'trials', 'infra_failed', 'abandoned'],
   trial: [
     'id', 'experiment_id', 'probe', 'task', 'config', 'repeat_index', 'attempt', 'status', 'label', 'end_state', 'spec', 'result', 'runner_report', 'usage',
     'timing', 'worker_id', 'files', 'grades', 'grading', 'problems',

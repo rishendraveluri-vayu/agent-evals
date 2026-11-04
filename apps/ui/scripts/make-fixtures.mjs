@@ -551,7 +551,7 @@ const rowsFrom = (trials, cfgs) => {
   for (const t of trials) {
     const key = `${t.task_sha256}|${t.config_hash}`;
     if (!seen.has(key)) {
-      const row = { task: t.task_sha256, task_id: t.task_id, arm: t.arm, config: t.config_hash, config_name: t.config_name, passed: 0, graded: 0, trials: 0, infra_failed: 0, abandoned: 0 };
+      const row = { task: t.task_sha256, task_id: t.task_id, arm: t.arm, config: t.config_hash, config_name: t.config_name, passed: 0, graded: 0, incomplete: 0, trials: 0, infra_failed: 0, abandoned: 0 };
       seen.set(key, row);
       rows.push(row);
     }
@@ -569,7 +569,7 @@ const rowsFrom = (trials, cfgs) => {
 };
 const fixedRows = (taskList_, cfgs, passedByArm) =>
   taskList_.flatMap((t, i) =>
-    cfgs.map((c, arm) => ({ task: t.sha256, task_id: t.id, arm: LETTERS[arm], config: c.hash, config_name: c.name, passed: passedByArm[arm][i], graded: 5, trials: 5, infra_failed: 0, abandoned: 0 })),
+    cfgs.map((c, arm) => ({ task: t.sha256, task_id: t.id, arm: LETTERS[arm], config: c.hash, config_name: c.name, passed: passedByArm[arm][i], graded: 5, incomplete: 0, trials: 5, infra_failed: 0, abandoned: 0 })),
   );
 
 const I = (estimate_, low, high) => ({ estimate: estimate_, low, high });

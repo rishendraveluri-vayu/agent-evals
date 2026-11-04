@@ -618,10 +618,13 @@ export interface CompareRow {
   arm: string;
   config: Sha256;
   config_name: string;
-  /** Agent-labelled trials whose every grade passed. */
+  /** Done trials whose outcome is pass: every required grader of the latest grading passed. */
   passed: number;
-  /** Agent-labelled trials with at least one grade. */
+  /** Done trials with an outcome, pass or fail, from their latest finished grading. */
   graded: number;
+  /** Done trials whose latest grading finished without an outcome: a required grader errored, was
+   *  not applicable or did not run (the judge, unapproved). Counted apart, never as a pass or fail. */
+  incomplete: number;
   /** Agent-labelled (gradable) trials. */
   trials: number;
   infra_failed: number;
