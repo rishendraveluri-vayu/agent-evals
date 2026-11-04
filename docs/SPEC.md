@@ -122,6 +122,8 @@ Every requirement in the brief, and the sub-project that answers for it.
 
 Thursday is the crunch. If it slips, cut UI polish in SP7 before touching SP5 or SP6.
 
+Re-planned on 4 Nov (R13): Wednesday finishes every harness on real models and a basic UI (Claude), while Rishi writes the evals from `docs/harness-guide.md`. Thursday and Friday are for evals.
+
 ## Sub-projects
 
 Each one has a done-when test. Scope stops growing once that test passes.
