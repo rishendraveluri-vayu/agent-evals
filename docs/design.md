@@ -77,9 +77,17 @@ Approved on 4 Nov (R14): `docs/proposals/data-model.md`. Content-addressed promp
 
 Added with D22's reply cache (migration `002_sim_replies.sql`): a `sim_replies` table keyed by the simulator cache key, with the task sha256, simulator model, temperature, token cap and prompt sha256 it is scoped by and the trial that first produced each reply. A claim hands out every reply in its trial's scope; a report adds the trial's new ones, first reply per key kept. An empty reply is never cached (D26, 4 Nov): the adapter marks it with `error` in `sim_replies.jsonl`, the report skips it, and a claim leaves out any empty reply stored before that rule, so a trial re-queued after `infra:sim_error` asks the simulator again.
 
-Added with D26 (migration `003_experiment_pause.sql`): an experiment status `paused`, with `paused_at`, `paused_reason` and `resumed_at`. A report labelled `infra:config_error` pauses a running experiment, so no more trials are claimed; `POST /experiments/:id/start` resumes it. `infra:config_error` and `infra:budget_net` attempts are never re-queued; the other infra labels are re-queued once (D16).
+Added with D26 (migration `003_experiment_pause.sql`): an experiment status `paused`, with `paused_at`, `paused_reason` and `resumed_at`. A report labelled `infra:config_error` pauses a running experiment, so no more trials are claimed; `POST /experiments/:id/start` resumes it. `infra:config_error` and `infra:budget_net` attempts are never re-queued; the other infra labels are re-queued once (D16). Since D37 (migration 005), a config error pauses only its arm; the experiment status `paused` is for pauses by hand and D32's futility check and guards.
 
 Added with D27 (migration `004_sim_temperature_optional.sql`): `sim_replies.temperature` may be null, for a simulator that sends no temperature (Haiku 5.5); claims select replies with `IS NOT DISTINCT FROM`, so a null temperature is its own cache scope. The spec's `client_sim` gains an optional `client_summary`, built by the API from the task's client file at claim time and not stored separately.
+
+Added with D32, D34, D35, D37 and the guide review's platform item 8 (migration `005_run_controls.sql`):
+- `configs.parent_hash` and `experiments.parent_experiment_id` (D34). Lineage is not behaviour, so it is not in the config hash. `experiments.reuse_baseline` asks to reuse the parent's arm-A trials; `baseline_decision` says whether that applied and why.
+- `experiment_arms`, one row per arm (A, and B unless it is a pilot; D35): what can change while the experiment runs, kept off the frozen `experiments` row. An arm is paused by an `infra:config_error` report (D37, amending D26) or by hand; claims skip a paused arm. `reused_trial_ids` lists the parent's trials arm A reuses. `futility_checked_at` makes the futility check run once per arm.
+- `trials.order_index` and `experiments.order_seed` (D32): a seeded shuffle of the (task, repeat) blocks, with the arm order shuffled inside each block, so the arms alternate and any early batch is a random sample. Claims go in that order.
+- `experiments.futility` (the resolved rule) and `spend_guard_at` (the spend guard pauses once).
+- `experiment_events`: pauses, resumes, stops and the baseline decision, which the trial rows cannot show. Claim, failure and re-queue events are still derived from the trial rows.
+- `workers`: each worker's harness and when it was last seen (a claim, empty or not, or a heartbeat), so the estimate's time divides by the live workers per harness.
 
 Added with D33 and D38 (migration `006_probes_and_system_spend.sql`; 005 is the run-controls work):
 

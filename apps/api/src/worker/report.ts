@@ -47,15 +47,20 @@ export function parseReport(body: unknown): ReportRequest {
   };
 }
 
+/** LiteLLM's status for the trial's last call, as the runner reported it, or null. */
+function lastStatus(runnerReport: JsonObject): string | null {
+  const usage = runnerReport.proxy_usage;
+  return isObj(usage) && typeof usage.last_status === 'string' ? usage.last_status : null;
+}
+
 /**
- * D26: why an `infra:config_error` report paused its experiment, in plain words for the events
- * list: LiteLLM's last status and the provider's own message from the adapter's end_detail (the
- * first JSON `"message"` in it, which is the provider's text inside LiteLLM's wrapping), else the
- * start of the whole error.
+ * D26, D37: why an `infra:config_error` report paused its arm, in plain words for the UI and the
+ * events list: LiteLLM's last status and the provider's own message from the adapter's end_detail
+ * (the first JSON `"message"` in it, which is the provider's text inside LiteLLM's wrapping), else
+ * the start of the whole error.
  */
 export function configErrorReason(result: JsonObject | null, runnerReport: JsonObject): string {
-  const usage = runnerReport.proxy_usage;
-  const status = isObj(usage) && typeof usage.last_status === 'string' ? usage.last_status : null;
+  const status = lastStatus(runnerReport);
   const detail = isObj(result) && isObj(result.end_detail) ? result.end_detail : {};
   const raw = typeof detail.exception_message === 'string' ? detail.exception_message : '';
   let message = raw.replace(/\s+/g, ' ').trim().slice(0, 300);
@@ -68,7 +73,31 @@ export function configErrorReason(result: JsonObject | null, runnerReport: JsonO
     }
   }
   const head = `infra:config_error (LiteLLM status ${status ?? 'unknown'})`;
-  return `${head}${message ? `: ${message}` : ''}. New claims are paused; fix the setup and POST /experiments/:id/start to resume, or cancel`;
+  return `${head}${message ? `: ${message}` : ''}`;
+}
+
+/**
+ * D37: how to fix a config error, by LiteLLM's status (D26's kinds: auth, unknown model, a
+ * rejected request). A config cannot change once stored, so a fix inside the config means a
+ * forked config and a new experiment; a fix outside it (a key, LiteLLM's model list) is made
+ * there, then the arm is resumed.
+ */
+export function configErrorFix(runnerReport: JsonObject): string {
+  const resume = 'then POST /experiments/:id/arms/:config_hash/resume to continue this arm';
+  switch (lastStatus(runnerReport)) {
+    case '401':
+    case '403':
+      return `The provider refused the key: fix the provider key or its permissions in LiteLLM's environment (never in the config), ${resume}.`;
+    case '404':
+      return `The provider does not know the model: fix the model's route in LiteLLM's config, ${resume}; if the config names the wrong model, fork it with the right one and run a new experiment.`;
+    case '400':
+      return (
+        `The provider refused how the request is set up: read the message. A setting the model rejects needs a forked config ` +
+        `without it and a new experiment (a config cannot change); a key or account problem is fixed in LiteLLM, ${resume}.`
+      );
+    default:
+      return `Find the setup problem in the trial's result and LiteLLM's logs, fix it, ${resume}; or stop the experiment.`;
+  }
 }
 
 export interface SpanRow {

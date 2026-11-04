@@ -9,7 +9,8 @@ Vue UI. Change it only by editing this file in the same commit as the code.
 All bodies are JSON. Times are RFC 3339 UTC. Money is USD as a number. Hashes are
 `sha256:<hex>`; every hash the API takes in, a worker's report included, may also be bare hex
 (any case), and the API stores and returns it as `sha256:<hex>`. Errors are `{"error": "<code>", "message": "<plain words>"}` with a 4xx/5xx
-status. The trial spec, result, span and runner-report shapes are contract v2
+status, plus `"fix": "<what to change>"` where the API can say how to put the request right
+(every refused setting on `POST /configs` has one; so do the experiment refusals below). The trial spec, result, span and runner-report shapes are contract v2
 (`contract/v2/*.schema.json`); this API carries them unchanged.
 
 ## Who holds which secret
@@ -54,7 +55,11 @@ simulated-client task the API also summarises that file (profile and debts) into
 
 ## Configs
 
-- `POST /configs` with `{name, harness, model, prompt_sha256, toolset_sha256, settings, harness_options}`.
+- `POST /configs` with `{name, harness, model, prompt_sha256, toolset_sha256, settings, harness_options, parent_hash}`.
+  `parent_hash` (optional, D34) names the config this one was forked from: it must exist (400
+  `unknown_parent`), and a fork identical to its parent is a 400 `same_as_parent` ("change the one
+  thing this fork is meant to test"). Lineage is not behaviour, so it is not in the hash; the
+  first post of a config's content records its parent, and a later post of the same content keeps it.
   The API checks every set setting against the harness's capabilities (an unsupported one
   is a 400 `unsupported_setting` naming it) and against the model (D25): a setting the model
   refuses is a 400 `unsupported_setting` naming the model. The table of refused settings is
@@ -78,9 +83,40 @@ simulated-client task the API also summarises that file (profile and debts) into
   `hash = sha256(canonical JSON of harness ref, adapter version, capabilities sha256, model,
   prompt sha256, toolset sha256, settings, harness_options)`. Posting the same content twice
   returns the same config (200, not a duplicate).
+
+  **Refusals carry a fix** (D25 follow-up, Rishi's guide review item 1). Every 400 for a refused
+  setting has a `fix` the Config screen shows by the field:
+
+  | `error` | When | `fix`, for example |
+  | --- | --- | --- |
+  | `unsupported_setting` | the model refuses it | "Claude Haiku 5.5 rejects temperature: leave it unset, or pick a model that takes it." |
+  | `unsupported_setting` | the harness cannot take it (the message quotes the capabilities file's reason) | "ownloop ignores memory: leave it unset, or pick a harness that takes it (hermes)." |
+  | `invalid_setting` | a bad value | "Set max_steps to an integer of at least 1, or leave it unset for the default." |
+  | `unknown_setting` | a name that is not a setting | "Did you mean temperature? Rename temprature to temperature." |
+  | `invalid_harness_options`, `unknown_harness`, `unknown_model`, `unknown_prompt`, `unknown_toolset` | | where to pick a valid one |
+
+  **Warnings** (valid but risky, stored anyway): `warnings: [{code, message, fix}]`. Today one
+  code: `langgraph_model_name_rewrite`, for a LangGraph config whose model name langchain-openai
+  1.7.2 rewrites the request for (`workers/langgraph/README.md`, finding 6): names starting
+  `gpt-5` (without `chat`) drop any temperature but 1; `o1` names send temperature 1 when unset;
+  `^o\d` names send the system prompt as `developer`; `gpt-6` and `codex` names would move to the
+  Responses API, which the adapter turns off (`use_responses_api=False`), so for those two the
+  warning asks for the captured request to be checked. The message starts "LangGraph changes the
+  request for this model name"; the fix is to serve the model under another LiteLLM name, or to
+  run it on another harness.
+
+  **Ignored settings:** `unsupported: {<setting>: <reason>}` lists every setting this harness or
+  model ignores, for the UI to grey out with the reason: the harness's own words from its
+  capabilities file ("langgraph does not support skills: LangGraph has no skills"), or the
+  model's refusal ("Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's
+  default applies").
 - `GET /configs`, `GET /configs/:hash` return `{hash, name, harness, harness_ref, model,
-  prompt, toolset, settings, settings_sources, harness_options, created_at}`.
-- `GET /configs/:a/diff/:b` returns `[{path, a, b}]`: every field that differs.
+  prompt, toolset, settings, settings_sources, unsupported, warnings, harness_options,
+  parent_hash, created_at}`. `unsupported` and `warnings` are worked out from the stored
+  capabilities, so every read has them, not only the POST. `GET /configs/:hash` adds
+  `children: [{hash, name, created_at}]`, the configs forked from it, oldest first.
+- `GET /configs/:a/diff/:b` returns `[{path, a, b}]`: every field that differs (`unsupported`,
+  `warnings` and `parent_hash` are left out: derived, or not behaviour).
 
 ## Pre-run checks: rendered prompt and conflict check (D33, D38)
 
@@ -199,13 +235,23 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 
 ## Experiments
 
-- `POST /experiments/estimate` with `{config_hashes, task_sha256s, n, sim_model}` returns
-  `{trials, cost_usd: {expected, low, high}, minutes, basis}`. `basis` says where per-trial
-  tokens came from: the mean of earlier finished trials of the same config and task when
-  there are any, otherwise the assumptions in `docs/cost.md` (64k input, 2.4k output per
-  trial). Prices come from LiteLLM. No power estimate yet; SP6 adds `min_detectable_effect`.
+- `POST /experiments/estimate` with `{config_hashes, task_sha256s, n, sim_model,
+  sim_prompt_sha256, parent_experiment_id, reuse_baseline}` returns `{trials, cost_usd:
+  {expected, low, high}, minutes, basis, basis_detail, budgets, baseline}`. **From history
+  (Rishi's guide review, item 8):** each config x task cell takes the mean tokens, cost and wall
+  time of earlier finished trials (`done`, LiteLLM's record complete) of the same config and task
+  (`source: config_task`), else of the same harness and model, any config or task
+  (`harness_model`), and only with neither the `docs/cost.md` assumptions (`assumption`: 64k
+  input, 2.4k output, 60 s per trial). The cost is LiteLLM's recorded mean cost where history has
+  it, else tokens at LiteLLM's prices. The simulator's cost per trial comes from the same cell,
+  else from earlier trials of the same task with the same simulator model, else the
+  assumptions. **Time** divides each harness's trial time by its live workers (a worker is live
+  if it asked for a trial, 204 included, or heartbeat in the last 60 s; none seen counts as one),
+  harnesses in parallel; `basis_detail.workers` is `{<harness>: {live, used}}`. `basis` says all
+  of this in words. No power estimate yet; SP6 adds `min_detectable_effect`.
 - `POST /experiments` with `{name, axis, config_hashes, task_sha256s, n, sim_model,
-  budget_usd, plan_commit, sim_prompt_sha256}` creates the experiment and all its trial rows
+  budget_usd, plan_commit, sim_prompt_sha256, order_seed, futility, parent_experiment_id,
+  reuse_baseline}` creates the experiment and all its trial rows
   (`queued`), records the platform commit (`EVALS_PLATFORM_COMMIT`), and sets a LiteLLM budget
   for the whole experiment. It returns the experiment. Nothing runs until it is started. The
   simulator prompt defaults to the highest version of `client-sim` (v2 since D27). The simulator
@@ -213,24 +259,104 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   temperature is `null` and not sent (D27); the token cap is 2048, because Haiku 5.5's reasoning
   counts towards it (at 300 on 4 Nov it took the whole cap and the reply was empty). An
   experiment keeps the cap it was created with. `sim` in the experiment shows all three.
-- `POST /experiments/:id/start` starts a `created` experiment or resumes a `paused` one (and
-  marks it `done` if nothing is left to claim); `POST /experiments/:id/cancel` (queued trials
-  become `cancelled`; running ones finish), from `created`, `running` or `paused`.
-- An experiment's `status` is `created`, `running`, `paused`, `done` or `cancelled`. **`paused`
-  (D26):** a report labelled `infra:config_error` moves a running experiment to `paused`, with
-  `paused_at` and a `paused_reason` naming the trial, its config, LiteLLM's status and the
-  provider's message. Nothing is claimed while paused; trials already running finish and report
-  (a re-queued attempt waits, queued, for the resume). Fix the setup (a key, the model, a refused
-  setting), then start it again, or cancel it.
+- **Lineage and baseline reuse (D34).** `parent_experiment_id` (optional) names the experiment
+  this one follows from (400 `unknown_parent_experiment` if there is none). With
+  `reuse_baseline: true` (which needs a parent and two arms), arm A takes the parent's finished
+  arm-A trials instead of running again, only when all of these hold: the parent's arm-A config
+  hash is this arm A; the task hashes are the same set; both ran under the same, known platform
+  commit; the simulator model and prompt are the same; and the parent has at least N `done`
+  arm-A trials for every task (its own, or ones it reused itself). Then the first N per task (by
+  repeat, then attempt) are recorded on arm A, nothing is copied, only arm B is queued, and the
+  estimate and budget check cover arm B alone. Otherwise arm A is queued as usual. Either way a
+  `baseline` event and `baseline: {applied, reason, reused_trials}` in the detail say which
+  applied and why ("arm A runs again: the platform commit differs (parent old0000, now
+  abc1234)"). A reused arm shows `status: complete`, `reused_from` and `reused_trials`, its
+  counts are the reused trials, and compare's arm-A rows are those trials. The estimate endpoint
+  takes the same two fields and returns `baseline` too.
+- **Arms (D35).** `config_hashes` holds one config (a pilot) or two: arm A, then arm B. More is a
+  400 `too_many_arms` (on the estimate too), with the fix "Run several A/B experiments against
+  the same parent".
+- **Claim order (D32).** `order_seed` (optional, 0 to 2^32 - 1) seeds the shuffle; without one a
+  random seed is drawn, and either way it is stored and shown as `order_seed`. Every (task,
+  repeat) is a block with one trial per arm; the blocks are shuffled, and so is the arm order
+  inside each block, so the arms alternate and any early batch is a random sample. Each trial's
+  place is its `order_index` (in the trial summaries); claims go in `order_index` order, and a
+  re-queued attempt keeps its slot's place. The i-th random number is the first 4 bytes of
+  `sha256("<seed>:<i>")` over 2^32, used in a Fisher-Yates shuffle
+  (`apps/api/src/experiments/order.ts`), so the order can be rebuilt anywhere from the seed. `seq`
+  stays the slot's number in plan order (repeat, task, config), which the export and the trial
+  list are sorted by.
+- **Run controls (D32, D37).** Each returns the experiment detail.
+
+  | Call | From | Does |
+  | --- | --- | --- |
+  | `POST /experiments/:id/start` | `created`, `paused` | starts it, or resumes it (as `/resume`); marks it `done` if nothing is left to claim |
+  | `POST /experiments/:id/pause` | `running` (a `paused` one: no-op) | no new claims; trials already running finish and report; event `paused` |
+  | `POST /experiments/:id/resume` | `paused` (a `running` one: no-op) | claims resume; event `resumed` |
+  | `POST /experiments/:id/stop` (also `/cancel`) | `created`, `running`, `paused` | queued trials become `cancelled`; running ones finish and are kept; status `cancelled` |
+  | `POST /experiments/:id/arms/:config/pause` | not `done` or `cancelled` | that arm claims nothing more; event `arm_paused` |
+  | `POST /experiments/:id/arms/:config/resume` | any | that arm's queued trials can be claimed again; event `arm_resumed` |
+
+  `:config` is the arm's config hash (or its letter, `A` or `B`). A wrong state is a 409
+  (`experiment_not_started`, `experiment_finished`) and an unknown arm a 404 `unknown_arm`, each
+  with a `fix`.
+- An experiment's `status` is `created`, `running`, `paused`, `done` or `cancelled`. `paused` is
+  the whole experiment, by hand or by D32's futility check and guards (below); `paused_at` and
+  `paused_reason` are the latest. A re-queued attempt made while paused waits, queued.
+- **Automatic pauses (D32).** Checked after every report and every lapsed lease, only while the
+  experiment is `running`. Each pauses the whole experiment with an event whose `detail` is the
+  `paused_reason`; resume or stop after review. None of them looks at the difference between the
+  arms: the verdict uses the full planned N, so nothing stops or decides on an apparent win.
+  - **Futility**, `futility: {enabled, after, min_passed}` on `POST /experiments` (left out:
+    `{enabled: true, after: 3, min_passed: 1}`; `{"enabled": false}` turns it off; shown resolved
+    as `futility` in the detail). Once per arm: when the arm has `after` finished (`done`) trials,
+    it pauses the run if fewer than `min_passed` of them passed. Event `futility_pause`, for
+    example "futility check (D32): arm B passed 0 of its first 3 finished trials, fewer than the 1
+    the rule asks for (passed means label agent and end state answered until graders exist
+    (SP4)) ...". Until graders exist (SP4), **passed means label `agent` and end state
+    `answered`**. The first batch is a random sample because of the claim order. An arm whose
+    trials are reused from the parent is not checked.
+  - **Infra guard**: more than 30% infra failures (`infra_failed` or `abandoned`) among at least 5
+    trials finished since the run started or was last resumed. Event `infra_guard_pause`, naming
+    the failure labels. The count starts again at each resume.
+  - **Spend guard**, once per experiment: spend so far plus every queued or running trial at its
+    arm's mean cost so far (the estimate's per-trial cost for an arm with none finished) passes
+    `budget_usd`. Event `spend_guard_pause`. After a resume it does not fire again; LiteLLM's
+    experiment budget still stops spend at the cap.
+- **A config error pauses only its arm (D37, amending D26).** A report labelled
+  `infra:config_error` pauses that trial's arm, not the experiment: claims skip the arm's trials,
+  its running trials finish, and the other arm keeps claiming. The arm's `paused_reason` names the
+  trial, its config, LiteLLM's status and the provider's message; its `fix` says what to do by
+  LiteLLM's status (401/403: the key in LiteLLM's environment; 404: the model's route; 400: a
+  setting the model rejects needs a forked config and a new experiment, a key or account problem
+  is fixed in LiteLLM), then resume the arm. If that was the last trial, the experiment is `done`
+  with the arm still paused, and compare waits until the arm is resumed.
+- `arms` in the experiment detail: `[{arm, config_hash, config_name, status, paused_at,
+  paused_reason, fix, counts}]`, arm A first. `status` is `not_started`, `active` (trials
+  queued or running), `paused`, `stopped` (some of its trials were cancelled) or `complete`
+  (every slot has a final attempt: done, or an infra failure that is not re-queued).
 - `GET /experiments` returns `[{id, name, axis, status, config_hashes, n, counts, spend_usd,
   estimate, created_at}]`, where `counts` is `{queued, running, done, infra_failed,
   abandoned, cancelled}` and done is split by label.
-- `GET /experiments/:id` adds `tasks`, `configs`, `paused_at`, `paused_reason`, `events`
-  (claims, infra failures, config errors, re-queues, budget trips, the latest pause and resume,
-  newest first).
+- `GET /experiments/:id` adds `actual` next to `estimate` (item 8): null until a trial has
+  finished, then `{finished_trials, spend_usd, cost_per_trial_usd, wall_s_per_trial,
+  elapsed_minutes, projected_spend_usd}` (elapsed from the start to the finish or now; the
+  projection is the spend guard's). Reused trials are the parent's spend, not this one's.
+- `GET /experiments/:id` also adds `tasks`, `configs`, `arms`, `order_seed`, `futility`,
+  `parent_experiment_id`, `baseline`, `paused_at`, `paused_reason` and `events`, newest first: `[{at, kind, trial_id, attempt, arm, config_hash,
+  detail}]`. Claims, infra failures, config errors, re-queues, budget trips, abandons and file
+  problems come from the trial rows; pauses and resumes (`paused`, `resumed`, `arm_paused`,
+  `arm_resumed`, `futility_pause`, `infra_guard_pause`, `spend_guard_pause`) and the `baseline`
+  decision are stored as they happen.
 - `GET /experiments/:id/trials?status=&config=&task=` returns trial summaries.
-- `GET /experiments/:id/compare` returns per task and arm `{task, config, passed, graded,
-  trials}` and, once SP6 exists, the intervals and verdict. Until then `stats` is `null`.
+- `GET /experiments/:id/compare` returns `{experiment_id, status, reason, arms, rows, stats}`.
+  **No comparison until every arm is complete** (D37, D32): while `status` is `incomplete`,
+  `reason` says why ("arm B is paused: ...", "the experiment was stopped before every trial ran
+  (...); a verdict needs the full planned N (D32)", "the experiment is paused: ...", "arm A has 3
+  trials queued or running", "the experiment has not been started") and `rows` is empty, so no
+  pass counts are shown off a partial run. Once `complete`, `rows` holds per task and arm `{task,
+  task_id, arm, config, config_name, passed, graded, trials, infra_failed, abandoned}` and, once
+  SP6 exists, the intervals and verdict. Until then `stats` is `null`.
 - `GET /experiments/:id/export?format=json|csv` streams trials joined with configs, tasks,
   grades and spend.
 
@@ -320,13 +446,16 @@ trial cannot read or change another trial's stored files (D3).
    is a no-op 200. The API revokes the trial's keys, stores the report, and sets the status:
    `done` for an `agent` label; for an `infra:*` label, `infra_failed` and, if this was
    attempt 1, a new `queued` attempt 2 (D16: re-queued once, never twice), except for the two
-   labels that are never re-queued (D26): `infra:config_error`, which also pauses the
-   experiment, and `infra:budget_net`. `infra:provider_error`, `infra:sim_error` (the simulated
+   labels that are never re-queued (D26): `infra:config_error`, which also pauses its arm
+   (D37), and `infra:budget_net`. `infra:provider_error`, `infra:sim_error` (the simulated
    client's call failed or its reply had no text, D26), `infra:adapter_crash` and
    `infra:timeout_kill` are re-queued once. Each infra attempt is an `infra_failure` event
-   naming its label, and each re-queued attempt a `requeue` event.
-   A probe trial is never re-queued and pauses nothing
-   (nor is a lapsed one); `POST /configs/:hash/rendered-prompt` probes again.
+   naming its label, and each re-queued attempt a `requeue` event. After the report, D32's
+   futility check and guards run for the experiment.
+   A probe trial is never re-queued and pauses nothing (no arm, no guard)
+   (nor is a lapsed one); `POST /configs/:hash/rendered-prompt` probes again. Claims hand out
+   queued probes first, then each running experiment's trials in `order_index` order, skipping
+   paused arms.
 6. A lease with no heartbeat for 60 s lapses: the API marks the attempt `abandoned`, revokes
    its keys, and queues the next attempt under the same cap (also while the experiment is
    paused; the attempt waits for the resume).

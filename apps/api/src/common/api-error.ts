@@ -1,20 +1,25 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import type { HttpResponse } from './http';
 
-/** An error with the contract's body: `{"error": "<code>", "message": "<plain words>"}`. */
+/**
+ * An error with the contract's body: `{"error": "<code>", "message": "<plain words>"}`, plus
+ * `"fix": "<what to do instead>"` when there is one (the D25 follow-up: a refused config says how
+ * to put it right, so the UI can show the fix next to the field).
+ */
 export class ApiError extends HttpException {
   constructor(
     status: number,
     readonly code: string,
     message: string,
+    readonly fix?: string,
   ) {
-    super({ error: code, message }, status);
+    super(fix ? { error: code, message, fix } : { error: code, message }, status);
   }
 }
 
-export const badRequest = (code: string, message: string): ApiError => new ApiError(400, code, message);
-export const notFound = (code: string, message: string): ApiError => new ApiError(404, code, message);
-export const conflict = (code: string, message: string): ApiError => new ApiError(409, code, message);
+export const badRequest = (code: string, message: string, fix?: string): ApiError => new ApiError(400, code, message, fix);
+export const notFound = (code: string, message: string, fix?: string): ApiError => new ApiError(404, code, message, fix);
+export const conflict = (code: string, message: string, fix?: string): ApiError => new ApiError(409, code, message, fix);
 
 function snake(text: string): string {
   return text
