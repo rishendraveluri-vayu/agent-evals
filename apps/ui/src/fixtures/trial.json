@@ -1,0 +1,207 @@
+{
+  "id": "tr_fd-vs-sip-07_b_3",
+  "experiment_id": "exp_heldout",
+  "task": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
+  "config": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+  "repeat_index": 2,
+  "attempt": 1,
+  "status": "done",
+  "label": "agent",
+  "end_state": "answered",
+  "result": {
+    "contract_version": "2",
+    "trial_id": "tr_fd-vs-sip-07_b_3",
+    "end_state": "answered",
+    "end_detail": {
+      "harness_stop_reason": "stop",
+      "exception_type": null,
+      "exception_message": null,
+      "last_message_excerpt": "Since you'll need this in about five years for a flat, an FD is the safer choice"
+    },
+    "final_answer": "Since you'll need this in about five years for a flat, an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870 at maturity, against about ₹6,87,400 from a SIP of ₹8,333 a month at an assumed 12%, which can also fall.\n\nWhat I'd do: put ₹4 lakh in a 5-year FD and keep ₹1 lakh as an emergency buffer. Review it once a year.",
+    "conversation": {
+      "agent_turns": 1,
+      "client_turns": 1,
+      "ended_by": "client",
+      "transcript": [
+        {
+          "role": "user",
+          "content": "I have ₹5 lakh sitting in my savings account. Should I put it in an FD or start a SIP? I'm 34 and may need the money for a flat in about five years.",
+          "source": "task"
+        },
+        {
+          "role": "assistant",
+          "content": "Since you'll need this in about five years for a flat, an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870 at maturity, against about ₹6,87,400 from a SIP of ₹8,333 a month at an assumed 12%, which can also fall.\n\nWhat I'd do: put ₹4 lakh in a 5-year FD and keep ₹1 lakh as an emergency buffer. Review it once a year.",
+          "source": "agent"
+        }
+      ]
+    },
+    "harness": {
+      "name": "hermes",
+      "version": "6112c2a",
+      "extra": {}
+    },
+    "applied_settings": {
+      "temperature": {
+        "value": 0.2,
+        "source": "config"
+      },
+      "max_output_tokens": {
+        "value": 1024,
+        "source": "config"
+      },
+      "max_steps": {
+        "value": 12,
+        "source": "config"
+      },
+      "timeout_s": {
+        "value": 180,
+        "source": "config"
+      },
+      "parallel_tool_calls": {
+        "value": false,
+        "source": "config"
+      },
+      "memory": {
+        "value": false,
+        "source": "config"
+      },
+      "skills": {
+        "value": false,
+        "source": "config"
+      },
+      "compression": {
+        "value": false,
+        "source": "config",
+        "observed": "Hermes default is on"
+      },
+      "prompt_cache_markers": {
+        "value": true,
+        "source": "harness_default"
+      }
+    },
+    "harness_usage": {
+      "model_calls": 3,
+      "input_tokens": 16910,
+      "output_tokens": 2330,
+      "cost_usd": null
+    },
+    "counts": {
+      "model_calls": 3,
+      "tool_calls": 3,
+      "tool_errors": 0,
+      "malformed_tool_calls": 0
+    },
+    "timing": {
+      "started_at": "2026-11-05T11:31:12Z",
+      "ended_at": "2026-11-05T11:31:36.600Z",
+      "wall_s": 24.6
+    },
+    "artifacts": []
+  },
+  "runner_report": {
+    "contract_version": "2",
+    "trial_id": "tr_fd-vs-sip-07_b_3",
+    "attempt": 1,
+    "harness": "hermes",
+    "label": "agent",
+    "end_state": "answered"
+  },
+  "usage": {
+    "calls": 3,
+    "input_tokens": 16910,
+    "output_tokens": 2330,
+    "cost_usd": 0.18,
+    "complete": true,
+    "sim_calls": 1
+  },
+  "timing": {
+    "started_at": "2026-11-05T11:31:12Z",
+    "ended_at": "2026-11-05T11:31:36.600Z",
+    "wall_s": 24.6
+  },
+  "files": [
+    {
+      "path": "result.json",
+      "bytes": 4210,
+      "sha256": "sha256:68435aeffecbd07fc51f36bece6cc67bef40cd6d97479157a9f8a2211abc28a0"
+    },
+    {
+      "path": "trace.jsonl",
+      "bytes": 9832,
+      "sha256": "sha256:958292fdd571590ed2cde766ba5f663eb2350abd1eb241c725344d6ee7abf163"
+    },
+    {
+      "path": "requests/001.json",
+      "bytes": 18220,
+      "sha256": "sha256:2265acdbd1484e77a5aad88e0ded0dbdfda4a9d9aab9a5f4f68d2de28936e5b7"
+    },
+    {
+      "path": "requests/002.json",
+      "bytes": 19034,
+      "sha256": "sha256:b64c980698880f902599e2480ca3729524baab11c5414de50520b678cdc91821"
+    },
+    {
+      "path": "requests/003.json",
+      "bytes": 21140,
+      "sha256": "sha256:2cab5aaed8e074a144fa81b60f2003ea55945e91f691bc3893852c84e174a1a1"
+    },
+    {
+      "path": "requests/004.json",
+      "bytes": 6120,
+      "sha256": "sha256:d0a94b2732b0bec19d1f423eeec56e288f47aba0591ba489ba6bce0810feadc7"
+    },
+    {
+      "path": "stdout.log",
+      "bytes": 2210,
+      "sha256": "sha256:9ce732e90e44ea11e0169d7bdfa724461d1b69f10244f1f2bc81904cd0c168f3"
+    },
+    {
+      "path": "stderr.log",
+      "bytes": 14820,
+      "sha256": "sha256:ababb33613e4d87dee5a02d93b30f4ac3d1e04fc99030721050324365b8bdc02"
+    }
+  ],
+  "grades": [
+    {
+      "grader_id": "amounts-from-tools",
+      "grader_version": "1",
+      "kind": "unit",
+      "name": "Every amount comes from a tool",
+      "verdict": "pass",
+      "score": 1,
+      "evidence": [],
+      "rationale": "All 3 amounts in the reply match a tool result exactly.",
+      "judge_model": null,
+      "run_index": 0
+    },
+    {
+      "grader_id": "fd-tax",
+      "grader_version": "v3",
+      "kind": "judge",
+      "name": "Accounts for tax on FD interest",
+      "verdict": "fail",
+      "score": 0,
+      "evidence": [
+        "an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870"
+      ],
+      "rationale": "The profile shows a 30% slab, but the comparison uses the pre-tax FD amount. After tax the FD gives about ₹6,47,600, which changes the comparison.",
+      "judge_model": "claude-haiku-5-5",
+      "run_index": 0
+    },
+    {
+      "grader_id": "horizon",
+      "grader_version": "v3",
+      "kind": "judge",
+      "name": "Respects the five-year horizon",
+      "verdict": "pass",
+      "score": 1,
+      "evidence": [
+        "Since you'll need this in about five years for a flat"
+      ],
+      "rationale": "The recommendation is built around the stated deadline.",
+      "judge_model": "claude-haiku-5-5",
+      "run_index": 0
+    }
+  ]
+}
