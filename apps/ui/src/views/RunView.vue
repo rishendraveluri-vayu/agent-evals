@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue';
 import { api } from '../api/client';
-import { errorText, errorWithFix } from '../api/errors';
 import { isFixtureMode } from '../api/mode';
 import type { ConfigView, ConfigDiffEntry, Estimate, ExperimentDetail, TrialRowSummary, Harness, ModelView, PromptView, TaskView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
@@ -11,9 +10,11 @@ import { optional, useLoad } from '../lib/async';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, contentDiff, planCheck, splitCheck, type Check } from '../lib/checks';
 import { changedLineCount, lineChanges, sentenceChanges, type LineChange } from '../lib/diff';
 import { capitalise, clock, minutes, money, plural, shortHash, wholeMoney } from '../lib/format';
-import { modelName, splitName } from '../lib/names';
+import { infraReason, modelName, splitName } from '../lib/names';
 import { href, navigate } from '../router';
 import { eventView, pauseCause } from '../lib/runs';
+import { setRunFlash, takeRunFlash } from '../lib/runFlash';
+import { armPauseHelp, defaultArms, defaultBudget, isEngineTest, plainRunError, taskSetWords, validateN, type ArmDefaults } from '../lib/runSetup';
 import { FAKE_SIM_MODEL, isFake, simModels } from '../lib/models';
 import { text } from '../trials';
 
@@ -34,12 +35,14 @@ interface Loaded {
 const { data, error, loading, reload } = useLoad<Loaded>(async () => {
   const [harnesses, prompts] = await Promise.all([optional(api.harnesses(), [] as Harness[]), optional(api.prompts(), [] as PromptView[])]);
   if (props.experimentId) {
-    const [experiment, trials, allTasks] = await Promise.all([
+    const [experiment, trials, allTasks, models] = await Promise.all([
       api.experiment(props.experimentId),
       optional(api.experimentTrials(props.experimentId), [] as TrialRowSummary[]),
       optional(api.tasks(), [] as TaskView[]),
+      // Only to name each arm's provider when a config error pauses it.
+      optional(api.models(), [] as ModelView[]),
     ]);
-    return { configs: experiment.configs, allTasks: allTasks.length ? allTasks : experiment.tasks, models: [], harnesses, prompts, experiment, trials };
+    return { configs: experiment.configs, allTasks: allTasks.length ? allTasks : experiment.tasks, models, harnesses, prompts, experiment, trials };
   }
   const [configs, allTasks, models] = await Promise.all([api.configs(), api.tasks(), optional(api.models(), [] as ModelView[])]);
   return { configs, allTasks, models, harnesses, prompts, experiment: null, trials: [] };
@@ -47,38 +50,61 @@ const { data, error, loading, reload } = useLoad<Loaded>(async () => {
 
 // ---------------------------------------------------------------- what is being run
 
-const setup = reactive({ a: props.a ?? '', b: props.b ?? '', split: 'held_out', n: 5, simModel: '', budget: '', plan: '', name: '', seed: '' });
+/** `n` is what the number field holds: a number, or '' when what is typed is not one. */
+interface Setup {
+  a: string;
+  b: string;
+  split: string;
+  n: number | string;
+  simModel: string;
+  budget: string;
+  plan: string;
+  name: string;
+  seed: string;
+}
+const setup = reactive<Setup>({ a: props.a ?? '', b: props.b ?? '', split: 'held_out', n: 5, simModel: '', budget: '', plan: '', name: '', seed: '' });
 const touched = reactive({ budget: false, name: false, sim: false });
 /** Tasks taken out of the run by hand, by sha256. Engine tests start out of it. */
 const excluded = reactive(new Set<string>());
-const isEngineTest = (t: TaskView) => t.summary.startsWith('ENGINE TEST ONLY');
+/** Why the arms could not both be filled in: one config only (a pilot), or none. */
+const armNote = ref<ArmDefaults['note']>(null);
 
 watch(data, (d) => {
   if (!d || !draft || setup.simModel) return;
-  // GET /configs lists the oldest first: arm A defaults to the oldest, the baseline.
-  if (!setup.a) setup.a = d.configs[0]?.hash ?? '';
-  // An arm B passed as empty in the address means a one-arm run.
-  if (!setup.b && props.b !== '') setup.b = d.configs.find((c) => c.hash !== setup.a)?.hash ?? setup.a;
+  // A missing arm is the newest other config, the same harness first; never the config on the
+  // other arm, and never an A/A run (lib/runSetup.ts).
+  const arms = defaultArms(d.configs, props.a, props.b);
+  setup.a = arms.a;
+  setup.b = arms.b;
+  armNote.value = arms.note;
   setup.simModel = defaultSim.value;
   if (!d.allTasks.some((t) => t.split === setup.split)) setup.split = 'all';
   for (const t of d.allTasks) if (isEngineTest(t)) excluded.add(t.sha256);
 });
 
 const hashes = computed<string[]>(() => (draft ? [setup.a, setup.b].filter(Boolean) : (data.value?.experiment?.config_hashes ?? [])));
-/** Every arm on a fake model: the run is free, and the simulated client defaults to the fake one. */
+/** Every arm on a fake model: the run tries the platform out, and the simulated client defaults to the fake one. */
 const allFake = computed(() => hashes.value.length > 0 && hashes.value.every((h) => isFake(data.value?.configs.find((c) => c.hash === h)?.model)));
 const defaultSim = computed(() => (allFake.value ? FAKE_SIM_MODEL : (data.value?.models[0]?.name ?? FAKE_SIM_MODEL)));
 watch(defaultSim, (v) => {
   if (draft && !touched.sim && setup.simModel) setup.simModel = v;
 });
 const simGroups = computed(() => simModels(data.value?.models ?? []));
-/** What this run calls that costs money, for the start panel. */
-const realModels = computed(() => {
-  const models = hashes.value.map((h) => data.value?.configs.find((c) => c.hash === h)?.model).filter((m): m is string => !!m && !isFake(m));
-  const conversation = tasks.value.some((t) => t.kind === 'conversation');
-  if (conversation && setup.simModel && !isFake(setup.simModel)) models.push(setup.simModel);
-  return [...new Set(models)];
+/** The simulated client's model, when a conversation task needs one. */
+const simInUse = computed(() => {
+  const model = draft ? setup.simModel : (data.value?.experiment?.sim_model ?? '');
+  return model && tasks.value.some((t) => t.kind === 'conversation') ? model : '';
 });
+/** Every model this run calls, by role, for the paid-run confirmation. */
+const runModels = computed(() => {
+  const list = hashes.value.map((h, i) => ({ role: `Arm ${String.fromCharCode(65 + i)}`, model: data.value?.configs.find((c) => c.hash === h)?.model ?? '' }));
+  if (simInUse.value) list.push({ role: 'Simulated client', model: simInUse.value });
+  return list.filter((m) => m.model);
+});
+/** What this run calls that costs money, for the start panel. */
+const realModels = computed(() => [...new Set(runModels.value.map((m) => m.model).filter((m) => !isFake(m)))]);
+/** No model costs anything real: the estimate is at made-up test prices, and no spending limit is needed. */
+const fakeOnly = computed(() => hashes.value.length > 0 && realModels.value.length === 0);
 const configOf = (h: string) => data.value?.configs.find((c) => c.hash === h);
 const sameConfig = computed(() => hashes.value.length === 2 && hashes.value[0] === hashes.value[1]);
 /** The tasks of the chosen split, before any is taken out by hand. */
@@ -98,7 +124,12 @@ function toggleTask(sha: string) {
   else excluded.add(sha);
 }
 const splits = computed(() => [...new Set(data.value?.allTasks.map((t) => t.split) ?? [])]);
-const n = computed(() => (draft ? Math.max(1, Math.round(Number(setup.n) || 1)) : (data.value?.experiment?.n ?? 0)));
+/** N as typed, checked: a whole number from 1 to 1,000, or the reason it is not. */
+const nCheck = computed(() => validateN(setup.n));
+/** The validated N (the experiment's own once it exists); null while what is typed is not valid. */
+const n = computed<number | null>(() => (draft ? nCheck.value.value : (data.value?.experiment?.n ?? 0)));
+/** The trials a draft would create, from what is picked; null until it is a valid run. */
+const plannedTrials = computed(() => (n.value !== null && !sameConfig.value && hashes.value.length ? tasks.value.length * hashes.value.length * n.value : null));
 
 const diff = shallowRef<ConfigDiffEntry[]>([]);
 watch(
@@ -113,29 +144,46 @@ const arms = computed(() => armsOf({ axis: draft ? axis.value : (data.value?.exp
 
 const draftEstimate = ref<Estimate | null>(null);
 const estimateError = ref<string | null>(null);
+/** What the draft would run, as one key; null when it is not a run yet (no arm, no task, a bad
+ *  N, or the same config on both arms), so nothing is estimated and no stale figure is shown. */
+const estimateKey = computed(() => {
+  if (!draft || !hashes.value.length || !tasks.value.length || n.value === null || sameConfig.value) return null;
+  return JSON.stringify([hashes.value, tasks.value.map((t) => t.sha256), n.value, setup.simModel]);
+});
+/** Each estimate request is numbered, so an answer to an older one (a slow network) is dropped. */
+let estimateSeq = 0;
 watch(
-  () => [draft, hashes.value.join(','), tasks.value.map((t) => t.sha256).join(','), n.value, setup.simModel] as const,
-  async () => {
-    if (!draft || !hashes.value.length || !tasks.value.length) return;
+  estimateKey,
+  async (key) => {
+    const mine = ++estimateSeq;
+    draftEstimate.value = null;
+    estimateError.value = null;
+    if (key === null || n.value === null) return;
     try {
-      draftEstimate.value = await api.estimate({ config_hashes: hashes.value, task_sha256s: tasks.value.map((t) => t.sha256), n: n.value, sim_model: setup.simModel || null });
-      estimateError.value = null;
-      if (!touched.budget) setup.budget = String(Math.max(10, Math.round((draftEstimate.value.cost_usd.expected * 2) / 10) * 10));
+      const e = await api.estimate({ config_hashes: hashes.value, task_sha256s: tasks.value.map((t) => t.sha256), n: n.value, sim_model: setup.simModel || null });
+      if (mine !== estimateSeq) return;
+      draftEstimate.value = e;
+      if (!touched.budget) setup.budget = String(defaultBudget(e.cost_usd.high));
     } catch (err) {
-      estimateError.value = errorText(err);
+      if (mine !== estimateSeq) return;
+      estimateError.value = plainRunError(err);
     }
   },
   { immediate: true },
 );
 const estimate = computed(() => (draft ? draftEstimate.value : (data.value?.experiment?.estimate ?? null)));
-const budget = computed(() => (draft ? Number(setup.budget) || 0 : data.value?.experiment?.budget_usd));
+/** A draft on fake models only sends a budget that covers the estimate (the API raises it anyway). */
+const budget = computed(() => {
+  if (!draft) return data.value?.experiment?.budget_usd;
+  if (fakeOnly.value) return draftEstimate.value ? defaultBudget(draftEstimate.value.cost_usd.high) : 0;
+  return Number(setup.budget) || 0;
+});
 
 const suggestedName = computed(() => {
   const [a, b] = arms.value;
   if (!a) return '';
-  const split = setup.split === 'all' ? 'all tasks' : splitName(setup.split);
-  if (sameConfig.value) return `A/A check, ${a.label}`;
-  return b ? `${a.label} vs ${b.short}, ${split}` : `${a.label}, ${split}`;
+  const set = taskSetWords(tasks.value, data.value?.allTasks ?? [], setup.split);
+  return b ? `${a.label} vs ${b.short}, ${set}` : `${a.label}, ${set}`;
 });
 watch(suggestedName, (v) => {
   if (!touched.name) setup.name = v;
@@ -143,28 +191,44 @@ watch(suggestedName, (v) => {
 
 // ---------------------------------------------------------------- checks
 
+/** The plan commit the checks read: the draft's field, or an unstarted experiment's own (else its field). */
+const planCommit = computed(() => (draft ? setup.plan : (data.value?.experiment?.plan_commit ?? setup.plan)));
+/** An unstarted experiment without a plan commit can be given one before it starts. */
+const needsPlanField = computed(() => !draft && !started.value && !allFake.value && !data.value?.experiment?.plan_commit);
+
 const checks = computed<Check[]>(() => {
   const d = data.value;
   if (!d) return [];
   const configs = hashes.value.map(configOf).filter((c): c is ConfigView => !!c);
-  const plan = draft ? setup.plan : d.experiment?.plan_commit;
-  const list = [
-    ...(hashes.value.length === 2 ? [armsCheck(diff.value, sameConfig.value)] : []),
+  // An A/A run (the same config on both arms) is not offered: the API refuses it, and whether
+  // to run one as a calibration is a separate question.
+  const armRow = sameConfig.value
+    ? { ok: false, title: 'Arm A and arm B are the same agent', detail: 'Pick a different agent for one of the arms, or set arm B to None to run this agent on its own.' }
+    : armsCheck(diff.value, false);
+  const list: Check[] = [
+    ...(draft && nCheck.value.error ? [{ ok: false, title: 'The number of trials is not valid', detail: nCheck.value.error }] : []),
+    ...(hashes.value.length === 2 ? [armRow] : []),
     capabilityCheck(configs, d.harnesses),
     // A plan is committed before a run that measures something; a run on fake models only tries the platform out.
-    allFake.value && draft ? { ok: true, title: 'No analysis plan needed: every arm runs on a fake model', detail: 'A fake run tries the platform out; it measures nothing about a real agent.' } : planCheck(plan),
+    allFake.value ? { ok: true, title: 'No analysis plan needed: every arm runs on a fake model', detail: 'A fake run tries the platform out; it measures nothing about a real agent.' } : planCheck(planCommit.value),
     splitCheck(tasks.value, d.allTasks),
   ];
-  list.push(budgetCheck(budget.value, estimate.value));
+  if (fakeOnly.value) {
+    list.push({ ok: true, title: 'No spending limit needed: every model here is fake', detail: 'Fake models spend nothing real; the estimate is at made-up test prices.' });
+  } else if (!draft || (n.value !== null && !sameConfig.value)) {
+    list.push(budgetCheck(budget.value, estimate.value));
+  }
   return list;
 });
 const allPass = computed(() => checks.value.length > 0 && checks.value.every((c) => c.ok));
+/** Start needs every check passing and, for a draft, the estimate of exactly what would run. */
+const canStart = computed(() => allPass.value && !busy.value && (!draft || (!!draftEstimate.value && draftEstimate.value.trials === plannedTrials.value)));
 
 /** Under a disabled Start: which checks stand in the way, by name. */
 const startHelper = computed(() => {
   const failing = checks.value.filter((c) => !c.ok);
   const n = failing.length;
-  if (!n) return 'Every check above has to pass first.';
+  if (!n) return draft && !draftEstimate.value ? 'Waiting for the estimate of this run.' : 'Every check above has to pass first.';
   return `${n} check${n === 1 ? ' is' : 's are'} not passing: ${failing.map((c) => c.title).join('; ')}.`;
 });
 
@@ -194,11 +258,33 @@ const armDiff = computed<{ summary: string; lines: LineChange[] }>(() => {
 
 const busy = ref(false);
 const actionError = ref<string | null>(null);
+onMounted(() => {
+  // A run that was saved but did not start says why on its own page (lib/runFlash.ts).
+  if (props.experimentId) actionError.value = takeRunFlash(props.experimentId) ?? actionError.value;
+});
+
+/** A run that calls a real model asks before it starts, with what it can cost (as the conflict check does). */
+const confirmPaid = ref(false);
+
+function requestStart() {
+  if (!canStart.value) return;
+  if (realModels.value.length) {
+    confirmPaid.value = true;
+    return;
+  }
+  void (draft ? startNew() : startCreated());
+}
+
+function confirmedStart() {
+  confirmPaid.value = false;
+  void (draft ? startNew() : startCreated());
+}
 
 async function startNew() {
-  if (!allPass.value || !estimate.value) return;
+  if (!canStart.value || n.value === null) return;
   busy.value = true;
   actionError.value = null;
+  let createdId: string | null = null;
   try {
     const created = await api.createExperiment({
       name: setup.name.trim() || suggestedName.value,
@@ -207,22 +293,37 @@ async function startNew() {
       task_sha256s: tasks.value.map((t) => t.sha256),
       n: n.value,
       sim_model: setup.simModel || null,
-      budget_usd: Number(setup.budget),
+      budget_usd: budget.value ?? 0,
       plan_commit: setup.plan.trim() || null,
       ...(setup.seed.trim() !== '' && Number.isInteger(Number(setup.seed)) ? { order_seed: Number(setup.seed) } : {}),
     });
+    createdId = created.id;
     await api.startExperiment(created.id);
     navigate(href.run(created.id));
   } catch (err) {
-    actionError.value = errorText(err);
+    if (createdId) {
+      // Saved but not started: its own page can start it or discard it, so a retry never makes a second one.
+      setRunFlash(createdId, `The run was saved but did not start: ${plainRunError(err)} Start it here, or discard it.`);
+      navigate(href.run(createdId));
+    } else {
+      actionError.value = plainRunError(err);
+    }
   } finally {
     busy.value = false;
   }
 }
 
+/** Starts an experiment that was created but never started, with its plan commit when it lacked one. */
+async function startCreated() {
+  const id = props.experimentId;
+  if (!id) return;
+  const commit = needsPlanField.value ? setup.plan.trim() : '';
+  await act('start', commit ? { plan_commit: commit } : undefined);
+}
+
 type RunAction = 'start' | 'pause' | 'resume' | 'stop';
-const RUN_ACTIONS: Record<RunAction, (id: string) => Promise<unknown>> = {
-  start: (id) => api.startExperiment(id),
+const RUN_ACTIONS: Record<RunAction, (id: string, plan?: { plan_commit: string }) => Promise<unknown>> = {
+  start: (id, plan) => (plan ? api.startExperiment(id, plan) : api.startExperiment(id)),
   pause: (id) => api.pauseExperiment(id),
   resume: (id) => api.resumeExperiment(id),
   stop: (id) => api.stopExperiment(id),
@@ -231,19 +332,37 @@ const RUN_ACTIONS: Record<RunAction, (id: string) => Promise<unknown>> = {
 /** Stop cancels every waiting trial for good, so it asks first. */
 const confirmStop = ref(false);
 
-async function act(kind: RunAction) {
+async function act(kind: RunAction, plan?: { plan_commit: string }) {
   const id = props.experimentId;
   if (!id) return;
   busy.value = true;
   actionError.value = null;
   try {
-    await RUN_ACTIONS[kind](id);
+    await RUN_ACTIONS[kind](id, plan);
     confirmStop.value = false;
     await reload();
   } catch (err) {
-    actionError.value = errorWithFix(err);
+    actionError.value = plainRunError(err);
   } finally {
     busy.value = false;
+  }
+}
+
+/** An experiment that never started can be thrown away: the API marks it cancelled, nothing is deleted. */
+const confirmDiscard = ref(false);
+async function discard() {
+  const id = props.experimentId;
+  if (!id) return;
+  busy.value = true;
+  actionError.value = null;
+  try {
+    await api.discardExperiment(id);
+    navigate(href.experiments());
+  } catch (err) {
+    actionError.value = plainRunError(err);
+  } finally {
+    busy.value = false;
+    confirmDiscard.value = false;
   }
 }
 
@@ -259,7 +378,7 @@ async function armAct(letter: string, pause: boolean) {
     await (pause ? api.pauseArm(id, letter) : api.resumeArm(id, letter));
     await reload();
   } catch (err) {
-    armError.value = { arm: letter, text: errorWithFix(err) };
+    armError.value = { arm: letter, text: plainRunError(err) };
   } finally {
     armBusy.value = null;
   }
@@ -267,11 +386,13 @@ async function armAct(letter: string, pause: boolean) {
 
 // ---------------------------------------------------------------- progress
 
-type CellState = 'pass' | 'fail' | 'ungraded' | 'running' | 'waiting' | 'infra' | 'abandoned' | 'cancelled';
-const CELL_WORDS: Record<Exclude<CellState, 'abandoned'>, string> = {
+type CellState = 'pass' | 'fail' | 'incomplete' | 'ungraded' | 'nograders' | 'running' | 'waiting' | 'infra' | 'final' | 'abandoned' | 'cancelled';
+const CELL_WORDS: Record<Exclude<CellState, 'abandoned' | 'final'>, string> = {
   pass: 'passed',
   fail: 'failed',
-  ungraded: 'done, not graded',
+  incomplete: 'graded, incomplete: a required check gave no verdict',
+  ungraded: 'done, waiting for its grades',
+  nograders: 'done, its task has no graders',
   running: 'running',
   waiting: 'waiting',
   infra: 'infra failure, re-queued',
@@ -279,6 +400,29 @@ const CELL_WORDS: Record<Exclude<CellState, 'abandoned'>, string> = {
 };
 
 const isInfraStop = (t: TrialRowSummary) => t.status === 'infra_failed' || t.status === 'abandoned';
+/** D26: never re-queued. Any other infra failure is re-queued once (D16), so a second is final too. */
+const NEVER_REQUEUED = ['infra:config_error', 'infra:budget_net'];
+const isFinalInfra = (t: TrialRowSummary) => t.status === 'infra_failed' && (NEVER_REQUEUED.includes(t.label ?? '') || t.attempt >= 2);
+
+/** A done trial's cell, from its grading (GET /experiments/:id/trials, SP4), so the grid shows
+ *  what the comparison counts; `passed` alone for an API from before `grading`. */
+function doneState(t: TrialRowSummary): CellState {
+  switch (t.grading) {
+    case 'pass':
+      return 'pass';
+    case 'fail':
+      return 'fail';
+    case 'incomplete':
+    case 'grading_failed':
+      return 'incomplete';
+    case 'no_graders':
+      return 'nograders';
+    case 'waiting':
+      return 'ungraded';
+    default:
+      return t.passed === true ? 'pass' : t.passed === false ? 'fail' : 'ungraded';
+  }
+}
 
 /** A slot's state is its latest attempt's; `hadInfra` keeps the history, so a slot that was
  *  stopped by an infra failure and then re-run still says so once it has passed or failed. */
@@ -289,7 +433,7 @@ function slotState(attempts: TrialRowSummary[]): { state: CellState; hadInfra: b
   const state = ((): CellState => {
     switch (latest.status) {
       case 'done':
-        return latest.passed === true ? 'pass' : latest.passed === false ? 'fail' : 'ungraded';
+        return doneState(latest);
       case 'running':
       case 'claimed':
         return 'running';
@@ -300,7 +444,7 @@ function slotState(attempts: TrialRowSummary[]): { state: CellState; hadInfra: b
       case 'abandoned':
         return 'abandoned';
       default:
-        return 'infra';
+        return isFinalInfra(latest) ? 'final' : 'infra';
     }
   })();
   return { state, hadInfra };
@@ -321,7 +465,13 @@ const grid = computed(() => {
           .sort((x, y) => x.attempt - y.attempt);
         const { state, hadInfra } = slotState(attempts);
         const tries = attempts.length ? Math.max(...attempts.map((x) => x.attempt)) : 0;
-        const words = state === 'abandoned' ? `infra failure, gave up after ${tries} ${tries === 1 ? 'attempt' : 'attempts'}` : CELL_WORDS[state];
+        const last = attempts[attempts.length - 1];
+        const words =
+          state === 'abandoned'
+            ? `infra failure, gave up after ${tries} ${tries === 1 ? 'attempt' : 'attempts'}`
+            : state === 'final'
+              ? `infra failure (${infraReason(last?.label) || 'infra'}), not re-run`
+              : CELL_WORDS[state];
         const retried = hadInfra && (state === 'pass' || state === 'fail');
         return { state, retried, attempts, label: `${t.id}, arm ${String.fromCharCode(65 + arm)}, trial ${r + 1}: ${words}${retried ? ', after an infra failure' : ''}` };
       }),
@@ -334,7 +484,7 @@ const grid = computed(() => {
 const tally = computed(() => {
   const all = grid.value.flatMap((row) => row.arms.flat());
   const of = (...s: CellState[]) => all.filter((c) => s.includes(c.state)).length;
-  const stops = { total: 0, rerun: 0, requeued: 0, gaveUp: 0 };
+  const stops = { total: 0, rerun: 0, requeued: 0, gaveUp: 0, notRerun: 0 };
   const byArm: Record<string, number> = {};
   for (const row of grid.value) {
     row.arms.forEach((cells, arm) => {
@@ -346,13 +496,14 @@ const tally = computed(() => {
           byArm[letter] = (byArm[letter] ?? 0) + 1;
           const next = c.attempts[k + 1];
           if (a.status === 'abandoned') stops.gaveUp += 1;
+          else if (!next && isFinalInfra(a)) stops.notRerun += 1;
           else if (!next || next.status === 'queued') stops.requeued += 1;
           else stops.rerun += 1;
         });
       }
     });
   }
-  return { done: of('pass', 'fail', 'ungraded'), running: of('running'), waiting: of('waiting'), stops, byArm, cancelled: of('cancelled') };
+  return { done: of('pass', 'fail', 'incomplete', 'ungraded', 'nograders'), running: of('running'), waiting: of('waiting'), stops, byArm, cancelled: of('cancelled') };
 });
 
 /** "both in arm B", "all in arm A", "in arm B" when every infra failure fell in one arm; "A 1, B 2"
@@ -386,7 +537,9 @@ const tallyText = computed(() => {
     const how =
       s.requeued === s.total
         ? `${noun} re-queued`
-        : `${noun}: ${[s.rerun ? `${s.rerun} re-run` : '', s.requeued ? `${s.requeued} re-queued` : '', s.gaveUp ? `${s.gaveUp} gave up` : ''].filter(Boolean).join(', ')}`;
+        : s.notRerun === s.total
+          ? `${noun}, not re-run`
+          : `${noun}: ${[s.rerun ? `${s.rerun} re-run` : '', s.requeued ? `${s.requeued} re-queued` : '', s.notRerun ? `${s.notRerun} not re-run` : '', s.gaveUp ? `${s.gaveUp} gave up` : ''].filter(Boolean).join(', ')}`;
     parts.push(`${how}, ${armsWords(t.byArm, s.total)}`);
   }
   if (t.cancelled) parts.push(`${t.cancelled} cancelled`);
@@ -396,11 +549,20 @@ const tallyText = computed(() => {
 /** Which infra states the grid holds, for the legend's second row: only those present. */
 const infraInGrid = computed(() => {
   const cells = grid.value.flatMap((row) => row.arms.flat());
-  return { requeued: cells.some((c) => c.state === 'infra'), retried: cells.some((c) => c.retried), gaveUp: cells.some((c) => c.state === 'abandoned') };
+  return {
+    requeued: cells.some((c) => c.state === 'infra'),
+    retried: cells.some((c) => c.retried),
+    gaveUp: cells.some((c) => c.state === 'abandoned'),
+    notRerun: cells.some((c) => c.state === 'final'),
+  };
 });
-/** Done trials with no grade yet (grading is its own step), for the legend: only when present. */
-const ungradedInGrid = computed(() => grid.value.some((row) => row.arms.flat().some((c) => c.state === 'ungraded')));
-const showInfraLegend = computed(() => infraInGrid.value.requeued || infraInGrid.value.retried || infraInGrid.value.gaveUp);
+/** The grading states the grid holds beyond pass and fail (grading is its own step), for the
+ *  legend: only those present. */
+const gradingInGrid = computed(() => {
+  const cells = grid.value.flatMap((row) => row.arms.flat());
+  return { ungraded: cells.some((c) => c.state === 'ungraded'), incomplete: cells.some((c) => c.state === 'incomplete'), noGraders: cells.some((c) => c.state === 'nograders') };
+});
+const showInfraLegend = computed(() => infraInGrid.value.requeued || infraInGrid.value.retried || infraInGrid.value.gaveUp || infraInGrid.value.notRerun);
 
 /** The run's log, oldest first, so it reads in the order things happened. Claims are many and
  *  routine, so they are counted, and listed only on request. */
@@ -422,17 +584,27 @@ const armCards = computed(() =>
     const c = a.counts;
     const total = c.queued + c.running + c.done + c.infra_failed + c.abandoned + c.cancelled;
     const parts = [`${c.done} done`, c.running ? `${c.running} running` : '', c.queued ? `${c.queued} waiting` : '', c.infra_failed + c.abandoned ? `${c.infra_failed + c.abandoned} infra` : '', c.cancelled ? `${c.cancelled} cancelled` : ''];
+    // While the whole run is paused (by hand, the futility check or a guard), an arm with trials
+    // left claims nothing either, so it says Paused, not Running.
+    const runPaused = data.value?.experiment?.status === 'paused' && (a.status === 'active' || a.status === 'not_started');
     return {
       view: a,
       key: a.arm.toLowerCase(),
-      status: ARM_STATUS[a.status] ?? a.status,
+      status: runPaused ? 'Paused' : (ARM_STATUS[a.status] ?? a.status),
+      shownStatus: runPaused ? 'paused' : a.status,
       counts: `${parts.filter(Boolean).join(', ')} of ${plural(total, 'trial row')}`,
       reused: a.reused_from ? `Reuses ${plural(a.reused_trials, 'finished trial')} of ${a.reused_from}` : '',
       canPause: a.status === 'active' || a.status === 'not_started',
       canResume: a.status === 'paused',
+      help: a.status === 'paused' ? armPauseHelp(a, configOf(a.config_hash)?.model ?? null, data.value?.models ?? []) : null,
     };
   }),
 );
+/** "Set up the same run again", for an arm a config error left with nothing to run. */
+const rerunHref = computed(() => {
+  const [a, b] = data.value?.experiment?.config_hashes ?? [];
+  return a ? href.runNew(a, b ?? '') : href.runNew();
+});
 const pausedArms = computed(() => armCards.value.filter((a) => a.view.status === 'paused'));
 
 /** The simulated client's model, which every conversation in both arms runs against. */
@@ -483,11 +655,20 @@ onBeforeUnmount(() => {
 });
 
 const budgetNote = computed(() => {
+  // A fake-only run spends nothing real, so its LiteLLM cap (in made-up money) is not news.
+  if (fakeOnly.value) return '';
   const b = budget.value;
   if (!b) return '';
   const e = estimate.value;
   const times = e && e.cost_usd.expected > 0 ? `, about ${Math.round((b / e.cost_usd.expected) * 10) / 10} times the estimate` : '';
   return `LiteLLM stops all spending at ${wholeMoney(b)}${times}. If it ever trips, the trials it stopped are reported as infra failures, not agent failures.`;
+});
+/** Under the estimated cost: the likely range, or for a fake-only run that the price is made up. */
+const costNote = computed(() => {
+  const e = estimate.value;
+  if (!e) return draft ? (estimateError.value ?? (nCheck.value.error ? 'Set a valid number of trials first.' : sameConfig.value ? 'Pick two different agents first.' : '')) : '';
+  if (fakeOnly.value) return 'A made-up test price: fake models spend nothing real';
+  return `Likely ${money(e.cost_usd.low)} to ${money(e.cost_usd.high)}`;
 });
 
 // ---------------------------------------------------------------- a started run
@@ -521,10 +702,63 @@ const diffSummary = computed(() => {
 
 const planNote = computed(() => {
   const e = estimate.value;
-  if (!e) return '';
+  if (!e || n.value === null) return '';
   const t = tasks.value.length;
   return `${t} ${t === 1 ? 'task' : 'tasks'} × ${hashes.value.length} ${hashes.value.length === 1 ? 'arm' : 'arms'} × ${n.value} ${n.value === 1 ? 'trial' : 'trials'}`;
 });
+
+/** The Start button's words: the trial count only once it is valid and estimated. */
+const startLabel = computed(() => {
+  const fresh = !!draftEstimate.value && draftEstimate.value.trials === plannedTrials.value;
+  const count = draft ? (fresh ? plannedTrials.value : null) : (estimate.value?.trials ?? null);
+  return count ? `Start ${count} trials` : 'Start';
+});
+
+/** The paid-run confirmation's facts (D38's pattern): trials, models, the most it can cost, the limit. */
+const paidFacts = computed(() => {
+  const e = estimate.value;
+  return {
+    trials: draft ? plannedTrials.value : (e?.trials ?? null),
+    models: runModels.value.map((m) => `${m.role}: ${modelName(m.model)}${isFake(m.model) ? ' (fake, free)' : ''}`),
+    expected: e ? money(e.cost_usd.expected) : '–',
+    high: e ? money(e.cost_usd.high) : '–',
+    budget: wholeMoney(budget.value ?? null),
+  };
+});
+
+// ---------------------------------------------------------------- the task list's scroll cue
+
+/** The task list scrolls once it is long: say how many are in view, and fade its lower edge,
+ *  until it is scrolled to the end. */
+const taskPick = ref<HTMLElement | null>(null);
+const taskScroll = reactive({ overflow: false, atEnd: true, shown: 0 });
+function measureTasks() {
+  const el = taskPick.value;
+  if (!el) return;
+  const overflow = el.scrollHeight > el.clientHeight + 1;
+  const bottom = el.scrollTop + el.clientHeight;
+  const options = [...el.querySelectorAll<HTMLElement>('.task-option')];
+  taskScroll.overflow = overflow;
+  taskScroll.atEnd = !overflow || bottom >= el.scrollHeight - 2;
+  taskScroll.shown = options.filter((o) => o.offsetTop >= el.scrollTop - 1 && o.offsetTop + o.offsetHeight <= bottom + 1).length;
+}
+const taskHint = computed(() => (taskScroll.overflow && !taskScroll.atEnd ? `${taskScroll.shown} of ${splitTasks.value.length} shown, scroll for more` : ''));
+let taskObserver: ResizeObserver | null = null;
+watch(
+  taskPick,
+  (el) => {
+    taskObserver?.disconnect();
+    taskObserver = null;
+    if (el && typeof ResizeObserver !== 'undefined') {
+      taskObserver = new ResizeObserver(() => measureTasks());
+      taskObserver.observe(el);
+    }
+    void nextTick(measureTasks);
+  },
+  { flush: 'post' },
+);
+watch(splitTasks, () => void nextTick(measureTasks), { flush: 'post' });
+onBeforeUnmount(() => taskObserver?.disconnect());
 </script>
 
 <template>
@@ -548,6 +782,13 @@ const planNote = computed(() => {
         data-test="tally"
       >
         {{ tallyText }}
+      </p>
+      <p
+        v-if="!draft && !started && data?.experiment"
+        class="lede unstarted"
+        data-test="unstarted"
+      >
+        This run was set up but never started, so nothing has run. Check what it still needs below, then start it, or discard it.
       </p>
       <p
         v-if="!started"
@@ -656,7 +897,10 @@ const planNote = computed(() => {
         <div>
           <span class="stat-label">Estimated cost</span>
           <span class="stat-value">{{ estimate ? money(estimate.cost_usd.expected) : '–' }}</span>
-          <span class="stat-note">{{ estimate ? `Likely ${money(estimate.cost_usd.low)} to ${money(estimate.cost_usd.high)}` : (estimateError ?? '') }}</span>
+          <span
+            class="stat-note"
+            data-test="cost-note"
+          >{{ costNote }}</span>
         </div>
         <div>
           <span class="stat-label">Estimated time</span>
@@ -686,6 +930,19 @@ const planNote = computed(() => {
             >
               What to run
             </h2>
+            <p
+              v-if="armNote"
+              class="arm-note small"
+              data-test="arm-note"
+            >
+              <template v-if="armNote === 'only_one'">
+                A comparison needs a second agent to compare against, and there is only one so far, so this run tests it on its own.
+                <a :href="href.build()">Build a second agent</a> to compare the two.
+              </template>
+              <template v-else>
+                There are no agents to run yet. <a :href="href.build()">Build an agent</a> first.
+              </template>
+            </p>
             <div class="setup-grid">
               <label class="field">
                 <span class="arm"><span class="dot dot--a" />Arm A</span>
@@ -716,6 +973,14 @@ const planNote = computed(() => {
                   >{{ c.name }} · {{ shortHash(c.hash) }}</option>
                 </select>
               </label>
+              <p
+                v-if="sameConfig"
+                class="error small same-config"
+                role="alert"
+                data-test="same-config"
+              >
+                Arm A and arm B are the same agent. Pick a different agent for one of them, or set arm B to None to run it on its own.
+              </p>
               <fieldset class="field fieldset">
                 <legend class="field-label">
                   Tasks
@@ -765,6 +1030,7 @@ const planNote = computed(() => {
                 <input
                   v-model="setup.name"
                   type="text"
+                  data-test="run-name"
                   @input="touched.name = true"
                 >
               </label>
@@ -777,6 +1043,10 @@ const planNote = computed(() => {
                   placeholder="The commit of docs/experiment.md"
                   data-test="plan-commit"
                 >
+                <span
+                  class="secondary smaller"
+                  data-test="plan-why"
+                >The git commit where the hypothesis and how to read the result were written down before the run, so the result is judged against a plan made in advance.</span>
               </label>
               <label class="field">
                 <span class="field-label">Claim-order seed, optional</span>
@@ -790,27 +1060,47 @@ const planNote = computed(() => {
                 >
                 <span class="secondary smaller">The trials run in an order shuffled from it, arms interleaved (D32).</span>
               </label>
-              <fieldset
-                class="field fieldset task-pick"
-                data-test="task-pick"
-              >
-                <legend class="field-label">
-                  {{ tasks.length }} of {{ splitTasks.length }} tasks in the run
-                </legend>
-                <label
-                  v-for="t in splitTasks"
-                  :key="t.sha256"
-                  class="task-option small"
-                >
-                  <input
-                    type="checkbox"
-                    :checked="!excluded.has(t.sha256)"
-                    :data-test="`task-${t.id}`"
-                    @change="toggleTask(t.sha256)"
+              <div class="task-pick-wrap">
+                <div class="task-pick-frame">
+                  <fieldset
+                    ref="taskPick"
+                    class="field fieldset task-pick"
+                    :class="{ 'task-pick--more': taskHint }"
+                    data-test="task-pick"
+                    @scroll.passive="measureTasks"
                   >
-                  <span><span class="mono">{{ t.id }}</span> <span class="secondary">{{ t.kind === 'conversation' ? 'conversation' : 'one prompt' }}{{ isEngineTest(t) ? ', engine test' : '' }}</span></span>
-                </label>
-              </fieldset>
+                    <legend class="field-label">
+                      {{ tasks.length }} of {{ splitTasks.length }} tasks in the run
+                    </legend>
+                    <label
+                      v-for="t in splitTasks"
+                      :key="t.sha256"
+                      class="task-option small"
+                    >
+                      <input
+                        type="checkbox"
+                        :checked="!excluded.has(t.sha256)"
+                        :data-test="`task-${t.id}`"
+                        @change="toggleTask(t.sha256)"
+                      >
+                      <span><span class="mono">{{ t.id }}</span> <span class="secondary">{{ t.kind === 'conversation' ? 'conversation' : 'one prompt' }}{{ isEngineTest(t) ? ', engine test' : '' }}</span></span>
+                    </label>
+                  </fieldset>
+                  <!-- More below: the lower edge fades into the panel until the list is scrolled to its end. -->
+                  <span
+                    v-if="taskHint"
+                    class="task-fade"
+                    aria-hidden="true"
+                  />
+                </div>
+                <p
+                  v-if="taskHint"
+                  class="secondary smaller task-hint"
+                  data-test="task-hint"
+                >
+                  {{ taskHint }}
+                </p>
+              </div>
             </div>
           </section>
 
@@ -886,29 +1176,61 @@ const planNote = computed(() => {
             ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ arm.label }}, config <span class="mono">{{ shortHash(arm.hash) }}</span></span></span>
           </div>
           <template v-if="draft">
-            <label class="row-field">
-              <span><span class="block strong">Trials per task and arm</span><span class="secondary smaller block">More trials, narrower intervals</span></span>
-              <input
-                v-model="setup.n"
-                type="number"
-                min="1"
-                class="small-input num"
-                data-test="n-input"
+            <div class="n-field">
+              <label class="row-field">
+                <span><span class="block strong">Trials per task and arm</span><span class="secondary smaller block">More trials, narrower intervals</span></span>
+                <input
+                  v-model="setup.n"
+                  type="number"
+                  min="1"
+                  max="1000"
+                  step="1"
+                  class="small-input num"
+                  :aria-invalid="nCheck.error ? 'true' : undefined"
+                  :aria-describedby="nCheck.error ? 'n-error' : undefined"
+                  data-test="n-input"
+                >
+              </label>
+              <p
+                v-if="nCheck.error"
+                id="n-error"
+                class="error smaller"
+                data-test="n-error"
               >
-            </label>
-            <label class="row-field">
+                {{ nCheck.error }}
+              </p>
+            </div>
+            <label
+              v-if="!fakeOnly"
+              class="row-field"
+            >
               <span><span class="block strong">Spending limit</span><span class="secondary smaller block">Set in LiteLLM for the whole run</span></span>
               <input
                 v-model="setup.budget"
                 type="number"
                 min="1"
                 class="small-input num"
+                data-test="budget-input"
                 @input="touched.budget = true"
               >
             </label>
           </template>
+          <label
+            v-if="needsPlanField"
+            class="field"
+          >
+            <span class="field-label">Analysis plan commit</span>
+            <input
+              v-model="setup.plan"
+              type="text"
+              class="mono"
+              placeholder="The commit of docs/experiment.md"
+              data-test="plan-commit"
+            >
+            <span class="secondary smaller">The git commit where the hypothesis and how to read the result were written down before the run, so the result is judged against a plan made in advance.</span>
+          </label>
           <p
-            v-if="draft"
+            v-if="!started"
             class="small spend-kind"
             :class="{ 'spend-kind--real': realModels.length }"
             data-test="spend-kind"
@@ -917,10 +1239,10 @@ const planNote = computed(() => {
               <AppIcon
                 name="alert"
                 :size="14"
-              /> Real models: {{ realModels.map(modelName).join(' and ') }}. This run costs real money and needs Rishi's go-ahead first (R8).
+              /> Real models: {{ realModels.map(modelName).join(' and ') }}. This run costs real money; you confirm the cost before it starts.
             </template>
             <template v-else>
-              Every model here is fake: the run is free, and nothing it finds is about a real agent.
+              Every model here is fake, so the run is free: its prices are made up for testing, and nothing it finds is about a real model.
             </template>
           </p>
           <p
@@ -933,37 +1255,122 @@ const planNote = computed(() => {
             v-if="actionError"
             class="error small"
             role="alert"
+            data-test="action-error"
           >
             {{ actionError }}
           </p>
-          <template v-if="draft">
+          <template v-if="draft || data.experiment">
+            <div
+              v-if="confirmPaid"
+              class="confirm"
+              role="group"
+              aria-labelledby="paid-title"
+              data-test="confirm-paid"
+            >
+              <p
+                id="paid-title"
+                class="small strong"
+              >
+                <AppIcon
+                  name="alert"
+                  :size="14"
+                /> This run calls real models and costs real money.
+              </p>
+              <ul class="small confirm-facts">
+                <li v-if="paidFacts.trials">
+                  {{ paidFacts.trials }} trials
+                </li>
+                <li
+                  v-for="m in paidFacts.models"
+                  :key="m"
+                >
+                  {{ m }}
+                </li>
+                <li>Estimated cost {{ paidFacts.expected }}, likely at most {{ paidFacts.high }}</li>
+                <li>
+                  The most it can cost: {{ paidFacts.budget }}, the spending limit. LiteLLM stops all spending there.
+                </li>
+              </ul>
+              <div class="confirm-buttons">
+                <button
+                  type="button"
+                  class="btn"
+                  :disabled="busy"
+                  data-test="confirm-paid-start"
+                  @click="confirmedStart"
+                >
+                  Start the paid run
+                </button>
+                <button
+                  type="button"
+                  class="btn btn--quiet"
+                  :disabled="busy"
+                  data-test="confirm-paid-cancel"
+                  @click="confirmPaid = false"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
             <button
+              v-else
               type="button"
               class="btn btn--big"
-              :disabled="!allPass || busy"
+              :disabled="!canStart"
               data-test="start"
-              @click="startNew"
+              @click="requestStart"
             >
-              Start {{ estimate?.trials ?? '' }} trials
+              {{ startLabel }}
             </button>
             <p
-              v-if="!allPass"
+              v-if="!canStart && !busy && !confirmPaid"
               class="secondary smaller"
               data-test="start-helper"
             >
               {{ startHelper }}
             </p>
           </template>
-          <button
-            v-else-if="data.experiment"
-            type="button"
-            class="btn btn--big"
-            :disabled="busy || !allPass"
-            data-test="start"
-            @click="act('start')"
+          <div
+            v-if="!draft && data.experiment && data.experiment.status === 'created'"
+            class="discard"
+            data-test="discard"
           >
-            Start {{ estimate?.trials ?? '' }} trials
-          </button>
+            <button
+              v-if="!confirmDiscard"
+              type="button"
+              class="btn btn--quiet"
+              :disabled="busy"
+              data-test="discard-ask"
+              @click="confirmDiscard = true"
+            >
+              Discard this run
+            </button>
+            <template v-else>
+              <p class="small">
+                Discard it? Nothing has run; it is marked stopped and kept in the list, and nothing is deleted.
+              </p>
+              <div class="confirm-buttons">
+                <button
+                  type="button"
+                  class="btn"
+                  :disabled="busy"
+                  data-test="discard-confirm"
+                  @click="discard"
+                >
+                  Discard it
+                </button>
+                <button
+                  type="button"
+                  class="btn btn--quiet"
+                  :disabled="busy"
+                  data-test="discard-keep"
+                  @click="confirmDiscard = false"
+                >
+                  Keep it
+                </button>
+              </div>
+            </template>
+          </div>
         </aside>
       </div>
     </template>
@@ -1018,7 +1425,7 @@ const planNote = computed(() => {
               <span class="arm"><span :class="`dot dot--${card.key}`" /><span><strong>Arm {{ card.view.arm }}</strong>: {{ card.view.config_name }}</span></span>
               <span
                 class="pill pill--small pill--outline arm-status"
-                :data-status="card.view.status"
+                :data-status="card.shownStatus"
               >{{ card.status }}</span>
             </div>
             <p class="secondary small num">
@@ -1026,20 +1433,34 @@ const planNote = computed(() => {
                 . {{ card.reused }}
               </template>
             </p>
-            <template v-if="card.view.status === 'paused'">
+            <template v-if="card.help">
               <p
                 class="small arm-reason"
                 data-test="arm-reason"
               >
-                <strong>Why:</strong> {{ card.view.paused_reason ?? 'paused' }}
+                <strong>Why:</strong> {{ card.help.why }}
               </p>
               <p
-                v-if="card.view.fix"
                 class="small arm-fix"
                 data-test="arm-fix"
               >
-                <strong>How to fix it:</strong> {{ card.view.fix }}
+                <strong>How to fix it:</strong> {{ card.help.fix }}<template v-if="card.help.rerun">
+                  {{ ' ' }}<a
+                    :href="rerunHref"
+                    data-test="arm-rerun"
+                  >Set up the same run again</a>.
+                </template>
               </p>
+              <details
+                v-if="card.help.raw"
+                class="arm-details smaller"
+                data-test="arm-details"
+              >
+                <summary>Details</summary>
+                <p class="mono arm-raw">
+                  {{ card.help.raw }}
+                </p>
+              </details>
             </template>
             <div
               v-if="data.experiment.status !== 'done' && data.experiment.status !== 'cancelled' && (card.canPause || card.canResume)"
@@ -1115,10 +1536,20 @@ const planNote = computed(() => {
                 <span class="legend-item"><span class="cell cell--running" />Running</span>
                 <span class="legend-item"><span class="cell cell--waiting" />Waiting</span>
                 <span
-                  v-if="ungradedInGrid"
+                  v-if="gradingInGrid.ungraded"
                   class="legend-item"
                   data-test="legend-ungraded"
-                ><span class="cell cell--ungraded" />Done, not graded yet</span>
+                ><span class="cell cell--ungraded" />Done, waiting for grades</span>
+                <span
+                  v-if="gradingInGrid.incomplete"
+                  class="legend-item"
+                  data-test="legend-incomplete"
+                ><span class="cell cell--incomplete">?</span>Graded, incomplete</span>
+                <span
+                  v-if="gradingInGrid.noGraders"
+                  class="legend-item"
+                  data-test="legend-nograders"
+                ><span class="cell cell--nograders">·</span>No graders</span>
               </div>
               <div
                 v-if="showInfraLegend"
@@ -1140,6 +1571,11 @@ const planNote = computed(() => {
                   v-if="infraInGrid.gaveUp"
                   class="legend-item"
                 ><span class="cell cell--abandoned">–</span>Infra, gave up</span>
+                <span
+                  v-if="infraInGrid.notRerun"
+                  class="legend-item"
+                  data-test="legend-final"
+                ><span class="cell cell--final">–</span>Infra, not re-run</span>
               </div>
             </div>
             <div class="grid-scroll">
@@ -1204,7 +1640,7 @@ const planNote = computed(() => {
                           v-else-if="c.state === 'fail'"
                           name="cross"
                           :size="12"
-                        /><template v-else-if="c.state === 'infra'">!</template><template v-else-if="c.state === 'abandoned'">–</template><span class="visually-hidden">{{ c.label }}</span></span>
+                        /><template v-else-if="c.state === 'infra'">!</template><template v-else-if="c.state === 'abandoned' || c.state === 'final'">–</template><template v-else-if="c.state === 'incomplete'">?</template><template v-else-if="c.state === 'nograders'">·</template><span class="visually-hidden">{{ c.label }}</span></span>
                       </td>
                     </template>
                   </tr>
@@ -1222,6 +1658,11 @@ const planNote = computed(() => {
                 v-if="spend.expected !== null"
                 class="secondary"
               > of {{ money(spend.expected) }} estimated</span>
+              <span
+                v-if="fakeOnly"
+                class="secondary small block"
+                data-test="fake-spend"
+              >Made-up test prices: fake models spend nothing real.</span>
               <svg
                 viewBox="0 0 300 40"
                 width="100%"
@@ -1360,7 +1801,7 @@ const planNote = computed(() => {
           data-test="plan-facts"
         >
           <span v-if="data.experiment.order_seed !== null && data.experiment.order_seed !== undefined">Claim order shuffled from seed <span class="mono">{{ data.experiment.order_seed }}</span>, arms interleaved (D32). </span>
-          <span v-if="data.experiment.futility">{{ data.experiment.futility.enabled ? `Futility check on: pauses for review if an arm passes fewer than ${data.experiment.futility.min_passed} of its first ${data.experiment.futility.after} finished trials; it never stops on an apparent win.` : 'Futility check off.' }} </span>
+          <span v-if="data.experiment.futility">{{ data.experiment.futility.enabled ? `Futility check on: pauses for review if an arm passes fewer than ${data.experiment.futility.min_passed} of its first ${data.experiment.futility.after} graded trials (a trial counts once its grades are in; an incomplete grading does not count); it never stops on an apparent win.` : 'Futility check off.' }} </span>
           <span v-if="data.experiment.parent_experiment_id">Follows from <a :href="href.compare(data.experiment.parent_experiment_id)">{{ data.experiment.parent_experiment_id }}</a><template v-if="data.experiment.baseline">: {{ data.experiment.baseline.reason }}</template>.</span>
         </p>
         <div
@@ -1375,7 +1816,7 @@ const planNote = computed(() => {
           <div>
             <span class="stat-label">Estimated cost</span>
             <span class="stat-value">{{ estimate ? money(estimate.cost_usd.expected) : '–' }}</span>
-            <span class="stat-note">{{ estimate ? `Likely ${money(estimate.cost_usd.low)} to ${money(estimate.cost_usd.high)}` : '' }}</span>
+            <span class="stat-note">{{ costNote }}</span>
           </div>
           <div>
             <span class="stat-label">Estimated time</span>
@@ -1446,7 +1887,13 @@ const planNote = computed(() => {
 </template>
 
 <style scoped>
+.task-pick-wrap {
+  min-width: 0;
+}
+
+/* position: relative, so each option's offsetTop is measured from the list for the scroll cue. */
 .task-pick {
+  position: relative;
   display: grid;
   gap: 4px;
   max-height: 280px;
@@ -1454,11 +1901,104 @@ const planNote = computed(() => {
   padding-right: 4px;
 }
 
+/* An overlay rather than a mask: a mask on the fieldset would also clip its legend, which sits
+   partly above the fieldset's box. */
+.task-pick-frame {
+  position: relative;
+}
+
+.task-fade {
+  position: absolute;
+  left: 0;
+  right: 12px;
+  bottom: 0;
+  height: 40px;
+  background: linear-gradient(to bottom, transparent, var(--surface));
+  pointer-events: none;
+}
+
+.task-hint {
+  margin: 6px 0 0;
+}
+
 @media (min-width: 720px) {
-  .task-pick {
+  .task-pick-wrap,
+  .same-config {
     grid-column: 1 / -1;
+  }
+
+  .task-pick {
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   }
+}
+
+.same-config {
+  margin: 0;
+}
+
+.arm-note {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-left: 4px solid var(--ink);
+  background: var(--surface-muted);
+  border-radius: 6px;
+}
+
+.n-field .error {
+  margin: 4px 0 0;
+}
+
+/* The paid-run confirmation, as the conflict check asks before its paid call. */
+.confirm {
+  padding: 12px 14px;
+  border: 1px solid var(--rule-strong);
+  border-left: 4px solid var(--ink);
+  border-radius: 8px;
+}
+
+.confirm p {
+  margin: 0 0 6px;
+}
+
+.confirm-facts {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+
+.confirm-facts li + li {
+  margin-top: 2px;
+}
+
+.confirm-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.discard {
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.discard p {
+  margin: 0 0 8px;
+}
+
+.arm-details {
+  margin-top: 6px;
+}
+
+.arm-details summary {
+  cursor: pointer;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+
+.arm-raw {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }
 
 .task-option {
@@ -1878,11 +2418,26 @@ const planNote = computed(() => {
   color: var(--ink-2);
 }
 
-/* Finished states are filled: the slot gave up, with no result (an en dash). */
-.cell--abandoned {
+/* Finished states are filled: the slot gave up, or its infra failure is never re-run (D26), with
+   no result (an en dash). */
+.cell--abandoned,
+.cell--final {
   background: var(--neutral-mark-strong);
   color: var(--surface);
   border: 1px dashed var(--ink-2);
+}
+
+/* Done and graded, but a required check gave no verdict: neither pass nor fail. */
+.cell--incomplete {
+  background: var(--surface-muted);
+  box-shadow: inset 0 0 0 1px var(--ink-2);
+  color: var(--ink);
+}
+
+/* Done, and its task has no graders: nothing to pass or fail. */
+.cell--nograders {
+  background: var(--surface-muted);
+  color: var(--ink-2);
 }
 
 /* Passed or failed on a re-run after an infra failure: the history stays visible as a ring. */
