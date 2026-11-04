@@ -12,6 +12,7 @@ the answers a worker must handle. Nothing here talks to a model.
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import hashlib
 import json
 import threading
@@ -85,10 +86,14 @@ def rows_from_fake_requests(requests: list[dict[str, Any]]) -> list[dict[str, An
     rows = []
     for n, req in enumerate(requests, 1):
         body = req.get("body") or {}
+        # `ts` has the full precision; `time` is cut to milliseconds.
+        when = req.get("time")
+        if isinstance(req.get("ts"), int | float):
+            when = dt.datetime.fromtimestamp(req["ts"], dt.UTC).isoformat()
         row = spend_row(
             n,
-            req["time"],
-            req["time"],
+            when,
+            when,
             model=body.get("model") or "fake/unknown",
             messages=body.get("messages"),
         )
