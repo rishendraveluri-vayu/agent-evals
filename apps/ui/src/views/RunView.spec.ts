@@ -385,3 +385,16 @@ describe('RunView against the API, with claim events', () => {
     expect(w.text()).toContain('claimed by ownloop-1');
   });
 });
+
+describe('RunView against the API as it is today, with no pass or fail on trial rows', () => {
+  it('shows done trials as done and not graded yet, with that in the legend', async () => {
+    const detail = (details as unknown as Record<string, ExperimentDetail>).exp_heldout;
+    const trials = (experimentTrials as Record<string, TrialRowSummary[]>).exp_heldout.map((row) => Object.fromEntries(Object.entries(row).filter(([k]) => k !== 'passed')));
+    routeFetch({ '/api/experiments/exp_heldout': detail, '/api/experiments/exp_heldout/trials': trials, '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] });
+    const w = mount(RunView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const states = w.findAll('[data-test="run-grid"] [data-state]').map((c) => c.attributes('data-state'));
+    expect(new Set(states)).toEqual(new Set(['ungraded']));
+    expect(w.get('[data-test="legend-ungraded"]').text()).toBe('Done, not graded yet');
+  });
+});

@@ -188,7 +188,8 @@ function show(e: MouseEvent, lines: string[]) {
 <style scoped>
 .legend {
   display: flex;
-  gap: 1rem;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
   font-size: 0.85rem;
   margin-bottom: 0.5rem;
 }

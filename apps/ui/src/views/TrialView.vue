@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { api, type AnyTrial } from '../api/client';
+import { api, bareToolName, type AnyTrial } from '../api/client';
 import { isFixtureMode } from '../api/mode';
 import type { BlindItem, ExperimentDetail, TrialRowSummary, JudgeAgreement, PromptView, TrialResult, VersionRef } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
@@ -338,7 +338,8 @@ const conversation = computed<(ToolItem | MessageItem)[]>(() => {
       .map<ToolItem>((r) => ({
         kind: 'tool',
         id: r.span.spanId,
-        name: text(r.span.attributes['gen_ai.tool.name'] ?? r.span.name.replace(/^execute_tool /, '')),
+        // The tool as the server names it; a harness's prefix (Hermes: mcp__finance__) is in the timeline and the request files.
+        name: bareToolName(text(r.span.attributes['gen_ai.tool.name'] ?? r.span.name.replace(/^execute_tool /, ''))),
         summary: summarise(r.span.attributes['evals.tool.arguments']),
         at: `at ${(r.startMs / 1000).toFixed(1)} s`,
         title: `Started ${(r.startMs / 1000).toFixed(1)} s in, took ${(r.durationMs / 1000).toFixed(1)} s`,
@@ -1409,5 +1410,11 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
     order: 1;
     flex-basis: 100%;
   }
+}
+
+/* Arguments are often one long JSON line: it wraps anywhere rather than widening the page. */
+.tool-args {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 </style>

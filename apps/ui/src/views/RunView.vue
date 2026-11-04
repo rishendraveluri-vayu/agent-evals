@@ -398,6 +398,8 @@ const infraInGrid = computed(() => {
   const cells = grid.value.flatMap((row) => row.arms.flat());
   return { requeued: cells.some((c) => c.state === 'infra'), retried: cells.some((c) => c.retried), gaveUp: cells.some((c) => c.state === 'abandoned') };
 });
+/** Done trials with no grade yet (grading is its own step), for the legend: only when present. */
+const ungradedInGrid = computed(() => grid.value.some((row) => row.arms.flat().some((c) => c.state === 'ungraded')));
 const showInfraLegend = computed(() => infraInGrid.value.requeued || infraInGrid.value.retried || infraInGrid.value.gaveUp);
 
 /** The run's log, oldest first, so it reads in the order things happened. Claims are many and
@@ -1112,6 +1114,11 @@ const planNote = computed(() => {
                 /></span>Fail</span>
                 <span class="legend-item"><span class="cell cell--running" />Running</span>
                 <span class="legend-item"><span class="cell cell--waiting" />Waiting</span>
+                <span
+                  v-if="ungradedInGrid"
+                  class="legend-item"
+                  data-test="legend-ungraded"
+                ><span class="cell cell--ungraded" />Done, not graded yet</span>
               </div>
               <div
                 v-if="showInfraLegend"
@@ -1792,6 +1799,7 @@ const planNote = computed(() => {
 }
 
 .grid-scroll {
+  position: relative;
   overflow-x: auto;
 }
 

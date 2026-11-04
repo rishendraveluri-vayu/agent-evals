@@ -77,7 +77,12 @@ const noVerdictText = computed(() => {
   const t = totals.value;
   if (!t) return '';
   const b = arms.value[1] ? `, B passed ${t.b.passed} of ${t.b.graded}` : '';
-  return `A passed ${t.a.passed} of ${t.a.graded} graded trials${b}. The interval and the verdict come from the statistics step, which has not reported on this experiment yet.`;
+  const more = arms.value.length > 2 ? ` This experiment has ${arms.value.length} configs, made before experiments had two arms (D35): only A and B are compared here; the run page shows every arm.` : '';
+  if (!t.a.graded && !t.b.graded) {
+    const ran = (letter: 'A' | 'B') => (data.value?.compare.rows ?? []).filter((r) => r.arm === letter).reduce((sum, r) => sum + r.trials, 0);
+    return `Not graded yet: A has ${ran('A')} finished ${ran('A') === 1 ? 'trial' : 'trials'}${arms.value[1] ? ` and B ${ran('B')}` : ''}, and grading runs as its own step. The interval and the verdict come after it.${more}`;
+  }
+  return `A passed ${t.a.passed} of ${t.a.graded} graded trials${b}. The interval and the verdict come from the statistics step, which has not reported on this experiment yet.${more}`;
 });
 
 /** Trials stopped on infra failures: listed, never dropped. When the trial list did not load,
