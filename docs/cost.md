@@ -18,9 +18,9 @@ These are assumptions until the pilot replaces them: 8 LLM calls per trial, 8k i
 | --- | --- | --- | --- | --- | --- |
 | Opus 5.5 | 4.00 | 20.00 | 0.304 | $122 | Claude docs |
 | Sonnet 5.5 | 2.00 | 10.00 | 0.152 | $61 | Claude docs |
-| Gemini 3.8 Flash | 0.75 | 3.75 | 0.057 | $23 | Costbench, as of 10 Oct, third-party |
+| Gemini 3.8 Flash | 0.75 | 3.75 | 0.057 | $23 | Google AI Studio pricing page, checked 4 Nov (paid tier; cache read 0.075) |
 | gpt-oss-120b | 0.15 | 0.60 | 0.011 | $4.40 | BenchLM, read 20 Oct, third-party |
-| Haiku 5.5 | 0.10 | 0.50 | 0.0076 | $3 | Claude docs |
+| Haiku 5.5 | 0.10 | 0.50 | 0.0076 | $3 | Claude pricing page, checked 4 Nov (prompts up to 100k tokens; cache write 0.125, read 0.01; 5x above 100k) |
 | GPT-6 Luna | 0.10 | 0.50 | 0.0076 | $3 | Costbench, as of 10 Oct, third-party |
 
 - 400 trials is 20 tasks × 2 configs × N=10, used as a placeholder until the pilot sets N.

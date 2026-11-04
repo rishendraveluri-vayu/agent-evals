@@ -22,6 +22,43 @@ model_list:
       input_cost_per_token: 0.000001
       output_cost_per_token: 0.000002
 
+  # Real models. Registering them costs nothing; calling them needs Rishi's
+  # sign-off with an estimate (R8). Prices checked on the providers' pages on
+  # 4 Nov 2026, in litellm_params as well as model_info (see the fake/* note).
+  #
+  # Claude Haiku 5.5, platform.claude.com/docs/en/about-claude/pricing: $0.10 in,
+  # $0.50 out, $0.125 cache write (5 min), $0.01 cache read, per million tokens,
+  # for prompts up to 100,000 tokens. Above that every price is 5x; LiteLLM has
+  # no 100k tier, so spend on such a prompt would be under-counted (known-limits).
+  - model_name: claude-haiku-5-5
+    litellm_params:
+      model: anthropic/claude-haiku-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      input_cost_per_token: 0.0000001
+      output_cost_per_token: 0.0000005
+      cache_creation_input_token_cost: 0.000000125
+      cache_read_input_token_cost: 0.00000001
+    model_info:
+      input_cost_per_token: 0.0000001
+      output_cost_per_token: 0.0000005
+      cache_creation_input_token_cost: 0.000000125
+      cache_read_input_token_cost: 0.00000001
+
+  # Gemini 3.8 Flash, aistudio.google.com/docs/pricing (paid tier, standard):
+  # $0.75 in, $3.75 out including thinking, $0.075 cache read, per million
+  # tokens, through 31 Dec 2026 (then $1.50 / $7.50). No long-context tier.
+  - model_name: gemini-3.8-flash
+    litellm_params:
+      model: gemini/gemini-3.8-flash
+      api_key: os.environ/GEMINI_API_KEY
+      input_cost_per_token: 0.00000075
+      output_cost_per_token: 0.00000375
+      cache_read_input_token_cost: 0.000000075
+    model_info:
+      input_cost_per_token: 0.00000075
+      output_cost_per_token: 0.00000375
+      cache_read_input_token_cost: 0.000000075
+
 litellm_settings:
   # Never on for trials: a cached reply would make repeated trials stop being
   # independent samples (CLAUDE.md). Checked in CI by scripts/check_litellm_config.py.

@@ -83,3 +83,4 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 - [ ] Rate-limit retries that could affect latency numbers
 - [ ] Prompt caching that could affect cost and latency differently per provider
 - [ ] Anything the invariance diff could not explain
+- Haiku 5.5 charges 5x for any request whose prompt is over 100,000 tokens (Claude pricing page, 4 Nov). LiteLLM's price fields have no 100k tier, so spend on such a request would be under-counted by up to 5x. Our prompts are far below it; a trial that grows past it should be flagged from the token counts.
