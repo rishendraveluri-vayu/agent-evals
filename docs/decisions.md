@@ -47,6 +47,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D38 Prompt conflict checks | A standing $2 allowance for pre-run conflict checks on Claude Sonnet 5.5 (pinned, temperature not sent), each logged with its cost in `docs/cost.md`, with a note to Rishi at half. The UI shows it to the platform's user too: the Config screen shows each check's findings, its cost and the allowance used, and platform-made calls appear as their own line in the spend total, separate from trial spend. Anything else still needs a sign-off (R8) | Rishi ("we have to show this to the user somehow") | 4 Nov |
 | D39 Hermes verification run | 30 trials first on Hermes with Haiku 5.5 (10 each: memory off, on and empty, on and seeded), about $0.60, cap $2, after the simulator empty-reply fix; the other 70 decided from what they show. Ran 4 Nov: 30 of 30 passed every check, $0.275; the other 70 not run yet | Rishi | 4 Nov |
 | D40 Agent builder for reviewers | A guided "Build an agent" page (agent type with an explainer per harness, model, prompt, a few settings, then try it on the free fake model or evaluate it) and a short demo guide, on the existing API. No accounts, logins, per-account API keys or hosted demo: the brief does not ask for them (Rishi, asked whether to build a shared demo login on our keys: "They did not ask"). Reviewers run the platform locally; fake models need no key. Rishi: "They did not ask for a full login and all so we don't complicate it, maybe ask Friday evening if needed": revisit Friday evening | Rishi | 4 Nov |
+| D10 Unit of analysis and the verdict | The task is the unit: per-task pass-rate difference B minus A, two-level bootstrap interval (tasks, then trials), sign-flip permutation test; the headline is the task pass rate (decision 2 of the stats proposal); a critical-failure guardrail and a regression list with severity and cause sit beside it | Rishi | 5 Nov |
 
 ## Open
 
@@ -54,7 +55,6 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | --- | --- | --- | --- | --- |
 | D7 | Tasks using the judge | Any share of the 20+ | About 6 to 8 | Thu |
 | D8 | Judge threshold and what happens below it | Set before seeing results | Below threshold leaves the headline score | Thu |
-| D10 | Unit of analysis for the stats | Task, trial, or trials nested in tasks | Resample tasks, then trials within them | Thu |
 | D15 | Hermes settings that are design calls | Compression on or off; Tool Search off or on (must be off for MCP tools, R10.7); in skills-on configs allow `skill_manage` writes or stage them; ~~accept the untrusted MCP wrapper or not~~ (settled by D20: accept) | None yet. Evidence in `docs/research/hermes/context_and_self_improvement.md` | Wed |
 
 ## Notes behind the open calls
@@ -210,6 +210,13 @@ Rishi: "Need to scale the code much closer to industry standard." Traces become 
 ### D24: Effect checks (3 Nov)
 Choice: once per harness and model at gate time, on Haiku 5.5 and a Gemini Flash, each run signed off with an estimate (R8): temperature changes output variety, a small token cap truncates, parallel tool calls arrive together when on, seeded memory is used when on. A setting that arrives but changes nothing is recorded as inert for that harness and model.
 Why: Rishi: "I have temperature but nothing changes when I move the value." The gate tests only prove a setting reaches the request.
+
+### D10: Unit of analysis, primary metric and regressions (5 Nov)
+Options: the task as the unit (two-level bootstrap and a sign-flip test, proposed in `docs/proposals/stats.md`); a mixed-effects logistic model; the trial as the unit (not recommended). For severity: a critical-failure guardrail on the verdict; a severity-weighted score as the metric; or severity reported only, with no gate.
+Choice: the task as the unit, as proposed. The headline is the task pass rate (every required grader passes; a trial with no outcome is counted apart, never as a pass or a fail). Each grader gets a severity (critical, major or minor) in its task file, set by Rishi; B can only be called better when its critical failures did not rise beyond noise, with their paired interval shown beside the verdict. Where B regressed, a list shows which checks flipped from pass to fail, critical ones first, and each failed trial's cause (the brief's stretch item 7: wrong tool, made-up tool arguments, gave up early, ran out of steps, grader disagrees with the human label).
+Why: Rishi: "While the logic is sound, we may need to have more details, some failures are more catastrophic than others so an overall pass rate works, but also where b regressed needs a further look as to what kind of regression that is." He chose the critical guardrail over a weighted score or report-only.
+What would change it: severities that cannot be agreed per grader; too few critical checks for their interval to say anything (then report them without the gate, and say so).
+Still open from the stats proposal: the per-task correction (Holm or BH), an equivalence margin, alpha.
 
 ## Entry template
 

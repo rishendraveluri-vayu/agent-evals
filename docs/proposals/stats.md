@@ -87,10 +87,17 @@ Any change after seeing results is recorded there as a deviation (CLAUDE.md).
 
 ## Decisions for Rishi
 
-1. D10: the task as the unit, two-level bootstrap plus sign-flip test (proposed); or a mixed-effects
-   logistic model; or trial-level (not recommended).
-2. The primary metric: the task pass rate (every required grader passes, the deterministic graders
-   plus trusted judge criteria) (proposed), or a mean score.
+1. **Settled 5 Nov (D10):** the task as the unit, two-level bootstrap plus sign-flip test.
+2. **Settled 5 Nov (D10):** the task pass rate is the headline, with a critical-failure guardrail
+   and a regression list beside it (below).
+   - Each grader carries a severity (critical, major, minor) in its task file, set by Rishi. B is
+     called better only when its critical-failure rate did not rise beyond noise: the paired
+     interval of B minus A on critical failures, computed the same way, must not lie above zero.
+   - Where B regressed (per-task difference below zero, or a check that flipped from pass to fail),
+     the comparison lists the checks that flipped, critical first, and each failed trial's cause:
+     wrong tool, made-up tool arguments, gave up early, ran out of steps, or grader disagrees with
+     the human label (the brief's stretch item 7). Causes come from rules over the trace, written
+     per harness where a harness reports a failure its own way.
 3. The per-task correction: Holm (proposed, strict) or Benjamini-Hochberg (more flags, controls the
    share of false flags instead).
 4. An equivalence margin delta, or none.
