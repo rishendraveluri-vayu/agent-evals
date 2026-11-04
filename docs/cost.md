@@ -79,4 +79,5 @@ Model calls the platform makes itself, outside any trial (D38). Today there is o
 <!-- system-calls:start -->
 | Date | Id | Kind | Model | Ref | Status | Input tok | Output tok | Cost | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-11-04 | `ss_0mw2514q91eea4107aead` | conflict_check | claude-sonnet-5-5 | config a54a75646e13 | done | 3,596 | 1,109 | $0.0183 | spend_log |
 <!-- system-calls:end -->
