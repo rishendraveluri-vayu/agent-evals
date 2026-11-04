@@ -1,14 +1,18 @@
 import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
-import { settle, useFixtures } from '../test/helpers';
+import compares from '../fixtures/compares.json';
+import configs from '../fixtures/configs.json';
+import details from '../fixtures/experiment-details.json';
+import experiments from '../fixtures/experiments.json';
+import { routeFetch, settle, useFixtures } from '../test/helpers';
 import ExperimentsView from './ExperimentsView.vue';
-
-useFixtures();
 
 /** A no-break space: numbers keep their unit, and κ keeps its value. */
 const nb = '\u00a0';
 
 describe('ExperimentsView in fixture mode', () => {
+  useFixtures();
+
   it('leads with the latest verdict, its size and its interval', async () => {
     const w = mount(ExperimentsView);
     await settle();
@@ -107,5 +111,52 @@ describe('ExperimentsView in fixture mode', () => {
     const w = mount(ExperimentsView);
     await settle();
     expect(w.find('a[href="#/trials/tr_fd-vs-sip-07_b_3"]').exists()).toBe(true);
+  });
+});
+
+describe('ExperimentsView against the API: no statistics in this version', () => {
+  /** The shipped example as the live API lists it: its working name, and the manifest's title. */
+  const EXAMPLE = { name: 'harness-ownloop-vs-hermes-haiku', title: 'Draft stand-in: own loop vs Hermes on Claude Haiku 5.5 (15 draft tasks, one trial each)', loaded_at: '2026-11-05T08:00:00.000Z' };
+  const done = (experiments as { id: string }[]).find((e) => e.id === 'exp_heldout') as Record<string, unknown>;
+  const detail = (details as Record<string, Record<string, unknown>>).exp_heldout;
+
+  function mountLive() {
+    routeFetch({
+      '/api/experiments': [{ ...done, name: 'Label batch 1: open coding (R8, approved: 30 trials, cap $2)', example: EXAMPLE }],
+      '/api/configs': configs,
+      '/api/harnesses': [],
+      '/api/labels/queue?set=heldout': [],
+      '/api/labels/queue?set=tuning': [],
+      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null },
+      '/api/experiments/exp_heldout': { ...detail, name: 'Label batch 1: open coding (R8, approved: 30 trials, cap $2)', example: EXAMPLE },
+      '/api/experiments/exp_heldout/trials?status=done': [],
+    });
+    return mount(ExperimentsView);
+  }
+
+  it('leads with the latest finished A/B as counts, by its one name, and promises no verdict', async () => {
+    const w = mountLive();
+    await settle();
+    expect(w.find('[data-test="latest-result"]').exists()).toBe(false);
+    const latest = w.get('[data-test="latest-counts"]');
+    expect(latest.get('h2').text()).toBe(EXAMPLE.title);
+    expect(latest.text()).toMatch(/A: .+, \d+ of \d+ graded trials passed/);
+    expect(latest.text()).toContain('These are counts, not a conclusion: this version does not compute the verdict and its interval.');
+    expect(latest.get('a').attributes('href')).toBe('#/experiments/exp_heldout');
+    // The list names the example the same way, and never by its working name.
+    expect(w.get('[data-test="experiments-table"] .row-link').text()).toBe(EXAMPLE.title);
+    expect(w.text()).not.toContain('Label batch 1');
+  });
+
+  it('says what each step does today: no power estimate, no verdict, no interval', async () => {
+    const w = mountLive();
+    await settle();
+    const text = w.text();
+    expect(text).not.toContain('whether N is enough');
+    expect(text).not.toContain('One verdict with its interval');
+    expect(text).not.toContain('verdict shows here first');
+    expect(text).not.toContain('how sure we can be');
+    expect(text).toContain('See the trials, models, cost and time before anything starts.');
+    expect(text).toContain('No verdict or interval in this version.');
   });
 });

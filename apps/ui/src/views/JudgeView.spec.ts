@@ -166,7 +166,11 @@ describe('JudgeView before SP5', () => {
     routeFetch({ '/api/judge/agreement?set=heldout': null, '/api/configs': [], '/api/experiments': [], '/api/labels/queue?set=heldout': [] });
     const w = mount(JudgeView);
     await settle();
-    expect(w.get('[data-test="judge-empty"]').text()).toContain('Not measured yet');
+    const empty = w.get('[data-test="judge-empty"]').text();
+    expect(empty).toContain('Not shown in this version');
+    // Not "has not reported yet", which reads as pending: this version does not show it at all.
+    expect(empty).not.toContain('reported');
+    expect(w.get('.lede').text()).not.toMatch(/^Measured/);
     expect(w.find('[data-test="provisional"]').exists()).toBe(false);
   });
 });

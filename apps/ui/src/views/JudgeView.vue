@@ -77,7 +77,7 @@ function configLabel(hash: string): string {
 
 const lede = computed(() => {
   const a = j.value;
-  if (!a) return 'Measured on the held-out checks, which are never used to tune the rubric.';
+  if (!a) return 'How often the LLM judge gives the same answer as a person, on held-out checks that are never used to tune the rubric.';
   const on = checksToGo.value ? `${a.labels} of ${a.labels + checksToGo.value} held-out checks so far` : `the ${a.labels} held-out checks`;
   // The bar is stated, not dated: D8 (the judge threshold) is still open, so nothing on record
   // says when it was set.
@@ -190,10 +190,10 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
       data-test="judge-empty"
     >
       <h2 class="section-title">
-        Not measured yet
+        Not shown in this version
       </h2>
       <p class="secondary not-yet">
-        The judge's agreement with the held-out human labels comes from the judge validation step, which has not reported yet. Until it does, judge-graded results carry no measured trust.
+        This page does not show the judge's agreement with the held-out human labels: in this version it is worked out outside the UI, by a command-line tool that reads the labels and the judge's grades. So nothing on these pages says how far to trust a judge-graded result.
       </p>
     </section>
     <template v-else-if="answer">

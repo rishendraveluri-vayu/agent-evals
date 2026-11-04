@@ -2,34 +2,55 @@
 /**
  * The front door: three ways in (a finished example, the guided builder, the full platform) and
  * the five steps a reviewer follows, each linking to its screen. It only reads: the newest saved
- * agent, so "Preview what reaches the model" can open a real one. The example opens through
- * #/example, which loads the shipped example the first time.
+ * agent, so "Preview what reaches the model" can open a real one, and the shipped example's title,
+ * so the card names the run it opens. The example opens through #/example, which loads the
+ * shipped example the first time.
+ *
+ * Every line says only what this version does: it reports pass counts, cost and time per version
+ * and per task; the verdict with its interval (the statistics step) is not built yet.
  */
 import { computed } from 'vue';
 import { api } from '../api/client';
-import type { ConfigView } from '../api/types';
+import { isFixtureMode } from '../api/mode';
+import type { ConfigView, ExampleView } from '../api/types';
 import { optional, useLoad } from '../lib/async';
 import { href } from '../router';
 
-const { data } = useLoad(() => optional(api.configs(), [] as ConfigView[]));
-const newest = computed(() => [...(data.value ?? [])].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0] ?? null);
+const { data } = useLoad(async () => {
+  const [configs, examples] = await Promise.all([optional(api.configs(), [] as ConfigView[]), optional(api.examples(), [] as ExampleView[])]);
+  return { configs, example: examples[0] ?? null };
+});
+const newest = computed(() => [...(data.value?.configs ?? [])].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0] ?? null);
+
+/** The example's own title, as its comparison page shows it, and whether it is the small draft
+ *  that stands in until the full experiment is exported (its manifest's title says so). */
+const example = computed(() => {
+  const e = data.value?.example;
+  if (!e) return null;
+  return { title: e.title, draft: /^draft\b/i.test(e.title) };
+});
 
 const doors = computed(() => [
   {
     key: 'example',
     title: 'See a finished example',
-    detail: 'A real A/B experiment shipped with the repo, already run: how each version did per task, every trial’s trace and its grades. Nothing runs and nothing is spent.',
+    name: example.value?.title ?? null,
+    detail: `${isFixtureMode() ? 'Sample data standing in for the real run the repo ships' : 'A real run on a real model, shipped with the repo'} and opened read-only: how each version did per task, every trial’s trace and its grades.${
+      example.value?.draft ? ' It is a small draft, for now: the full experiment replaces it.' : ''
+    } Nothing runs and nothing is spent.`,
     to: href.example(),
   },
   {
     key: 'build',
     title: 'Build your own, step by step',
+    name: null,
     detail: 'Pick an agent type, a model, its instructions and settings on one page, then evaluate it.',
     to: href.build(),
   },
   {
     key: 'full',
     title: 'Go straight to the full platform',
+    name: null,
     detail: 'Every experiment, config, task, harness and label, at full detail.',
     to: href.experiments(),
   },
@@ -67,7 +88,7 @@ const steps = computed(() => [
   {
     key: 'result',
     title: 'Read the result',
-    detail: 'Better, worse or no clear difference, with how sure we can be, then the tasks and trials behind it.',
+    detail: 'Pass counts, cost and time for each version, then task by task down to each trial. This version gives counts only: the verdict with its interval, how sure a difference is, is not built yet.',
     link: 'Open the experiments',
     to: href.experiments(),
   },
@@ -80,7 +101,7 @@ const steps = computed(() => [
       Evaluate an agent
     </h1>
     <p class="lede">
-      Run two versions of an agent on the same tasks and see whether the change made it better, worse or no different, and how sure we can be.
+      Run two versions of an agent on the same tasks, then compare them task by task, down to each trial’s trace and grades. This version reports pass counts, cost and time; the verdict with its interval, whether a change is better or worse and how sure we can be, is not built yet.
     </p>
   </div>
 
@@ -105,6 +126,11 @@ const steps = computed(() => [
           :data-test="`door-${d.key}`"
         >
           <span class="door-title">{{ d.title }}</span>
+          <span
+            v-if="d.name"
+            class="small door-name"
+            data-test="door-example-name"
+          >{{ d.name }}</span>
           <span class="secondary small">{{ d.detail }}</span>
         </a>
       </li>
@@ -182,6 +208,10 @@ const steps = computed(() => [
 .door-title {
   font-size: 18px;
   font-weight: 600;
+}
+
+.door-name {
+  font-weight: 500;
 }
 
 .guide {

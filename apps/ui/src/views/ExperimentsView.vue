@@ -10,7 +10,7 @@ import { armsOf, axisWords, checksToGo, doneCount, excludesZero, headline, inter
 import { optional, useLoad } from '../lib/async';
 import { capitalise, identParts, minutes, money, percent, plainText, plural, relative, signed } from '../lib/format';
 import { pauseCause } from '../lib/runs';
-import { alsoGradedBy, harnessShort, isJudged, modelName, settingLabel, splitName } from '../lib/names';
+import { alsoGradedBy, experimentName, harnessShort, isJudged, modelName, settingLabel, splitName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
 import { href } from '../router';
 
@@ -44,8 +44,11 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
   ]);
   const finished = experiments.filter((e) => e.status === 'done' && twoArms(e));
   const compares = new Map(await Promise.all(finished.map(async (e) => [e.id, await optional(api.compare(e.id), null)] as const)));
-  // The list is newest first (by when each was made).
-  const latestId = finished.find((e) => e.config_hashes[0] !== e.config_hashes[1] && compares.get(e.id)?.stats)?.id;
+  // The list is newest first (by when each was made). The latest result is the newest finished
+  // A/B with statistics; while the statistics step is not built, the newest finished A/B whose
+  // comparison is complete, read as counts.
+  const ab = finished.filter((e) => e.config_hashes[0] !== e.config_hashes[1]);
+  const latestId = (ab.find((e) => compares.get(e.id)?.stats) ?? ab.find((e) => compares.get(e.id)?.status === 'complete'))?.id;
   const latest = latestId ? await optional(api.experiment(latestId), null) : null;
   const trials = latestId ? await optional(api.experimentTrials(latestId, { status: 'done' }), [] as TrialRowSummary[]) : [];
   // Step 4 opens a failure of arm B on the task where B did worst: the most telling one to read.
@@ -104,6 +107,27 @@ const latestResult = computed(() => {
   };
 });
 
+/** The latest finished A/B as counts, when it has no statistics: each arm's passes of its graded
+ *  trials, and the trials with no outcome, as its comparison page gives them. */
+const latestCounts = computed(() => {
+  const d = data.value;
+  const latest = d?.latest;
+  const compare = latest ? d.compares.get(latest.id) : null;
+  if (!d || !latest || !compare || compare.stats || compare.status !== 'complete') return null;
+  const sum = (letter: string) =>
+    compare.rows.filter((r) => r.arm === letter).reduce((acc, r) => ({ passed: acc.passed + r.passed, graded: acc.graded + r.graded, incomplete: acc.incomplete + r.incomplete }), { passed: 0, graded: 0, incomplete: 0 });
+  const a = sum('A');
+  const b = sum('B');
+  const open = a.incomplete + b.incomplete;
+  const arms = armsOf(latest, d.configs);
+  return {
+    experiment: latest,
+    name: experimentName(latest),
+    arms: arms.slice(0, 2).map((arm, i) => ({ key: arm.key, label: arm.label, counts: `${(i ? b : a).passed} of ${(i ? b : a).graded} graded trials passed` })),
+    undecided: open ? `${plural(open, 'trial')} ${open === 1 ? 'has' : 'have'} no outcome: a required check could not decide, so ${open === 1 ? 'it counts' : 'they count'} as neither a pass nor a fail.` : '',
+  };
+});
+
 interface Attention {
   key: string;
   to: string;
@@ -128,7 +152,7 @@ const attention = computed<Attention[]>(() => {
         to: href.run(e.id),
         icon: 'alert',
         infra: false,
-        title: `${e.name} is paused`,
+        title: `${experimentName(e)} is paused`,
         detail: `${capitalise(plainText(pauseCause(reason)))}. Review it, then resume or stop.`,
       });
     }
@@ -139,7 +163,7 @@ const attention = computed<Attention[]>(() => {
         to: href.run(e.id),
         icon: 'alert',
         infra: false,
-        title: `Arm ${a.arm} of ${e.name} is paused`,
+        title: `Arm ${a.arm} of ${experimentName(e)} is paused`,
         detail: `${capitalise(plainText(pauseCause(a.paused_reason ?? 'paused')))}. ${a.fix ? 'The run page says how to fix it.' : 'Resume it on the run page.'}`,
       });
     }
@@ -152,7 +176,7 @@ const attention = computed<Attention[]>(() => {
         icon: 'plug',
         infra: true,
         title: plural(retried, 'infra failure'),
-        detail: `${e.name}. Each is re-queued once. Not counted as agent failures.`,
+        detail: `${experimentName(e)}. Each is re-queued once. Not counted as agent failures.`,
       });
     }
   }
@@ -280,7 +304,7 @@ const rows = computed<Row[]>(() => {
         Experiments
       </h1>
       <p class="lede">
-        Each experiment changes one thing and measures whether the agent got better, worse or stayed the same, and how sure we can be.
+        Each experiment changes one thing and runs both versions on the same tasks, so their pass counts, cost and time can be read side by side, task by task. Whether a difference is real, the verdict with its interval, is not computed in this version.
       </p>
     </div>
     <div class="head-actions">
@@ -367,6 +391,42 @@ const rows = computed<Row[]>(() => {
         </p>
       </section>
       <section
+        v-else-if="latestCounts"
+        aria-labelledby="latest"
+        class="panel latest"
+        data-test="latest-counts"
+      >
+        <div class="latest-top">
+          <p class="secondary small">
+            Latest finished, {{ relative(updatedAt(latestCounts.experiment, latestCounts.experiment)).toLowerCase() }}
+          </p>
+          <a
+            :href="href.compare(latestCounts.experiment.id)"
+            class="small strong-link"
+          >Open the comparison</a>
+        </div>
+        <h2
+          id="latest"
+          class="latest-title"
+        >
+          {{ latestCounts.name }}
+        </h2>
+        <ul class="latest-arms">
+          <li
+            v-for="arm in latestCounts.arms"
+            :key="arm.key"
+            class="arm"
+          >
+            <span :class="`dot dot--${arm.key}`" /><span><strong>{{ arm.key.toUpperCase() }}</strong>: {{ arm.label }}, <span class="num">{{ arm.counts }}</span></span>
+          </li>
+        </ul>
+        <p class="secondary small">
+          <template v-if="latestCounts.undecided">
+            {{ latestCounts.undecided }}{{ ' ' }}
+          </template>These are counts, not a conclusion: this version does not compute the verdict and its interval.
+        </p>
+      </section>
+      <section
         v-else
         class="panel latest"
         aria-labelledby="latest"
@@ -378,7 +438,7 @@ const rows = computed<Row[]>(() => {
           No finished comparison yet
         </h2>
         <p class="secondary">
-          When an experiment with two arms finishes and its statistics are in, its verdict shows here first.
+          When an experiment with two arms finishes, each arm’s pass counts show here. This version does not compute a verdict or its interval.
         </p>
       </section>
 
@@ -442,14 +502,14 @@ const rows = computed<Row[]>(() => {
           <a :href="href.runNew()">
             <span class="secondary small num block">2</span>
             <span class="flow-head">Check and run</span>
-            <span class="secondary small block">See trials, cost, time and whether N is enough before anything starts.</span>
+            <span class="secondary small block">See the trials, models, cost and time before anything starts.</span>
           </a>
         </li>
         <li>
           <a :href="data?.latest ? href.compare(data.latest.id) : href.experiments()">
             <span class="secondary small num block">3</span>
             <span class="flow-head">Compare</span>
-            <span class="secondary small block">One verdict with its interval, then the per-task differences behind it.</span>
+            <span class="secondary small block">Pass counts, cost and time per version, then task by task. No verdict or interval in this version.</span>
           </a>
         </li>
         <li>
@@ -527,7 +587,7 @@ const rows = computed<Row[]>(() => {
                 <a
                   :href="r.to"
                   class="row-link"
-                >{{ r.e.example?.title ?? r.e.name }}</a>
+                >{{ experimentName(r.e) }}</a>
                 <span class="secondary block changes"><span
                   v-if="r.e.example"
                   class="tag"
@@ -637,6 +697,14 @@ const rows = computed<Row[]>(() => {
 .latest-title {
   font-size: 26px;
   letter-spacing: -0.01em;
+}
+
+.latest-arms {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
 }
 
 .latest-figure {

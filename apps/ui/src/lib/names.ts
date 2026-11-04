@@ -12,6 +12,13 @@ const HARNESS_NAMES: Record<string, string> = {
 
 const HARNESS_SHORT: Record<string, string> = { hermes: 'Hermes', adk: 'ADK' };
 
+/** An experiment as every screen names it: a shipped example by its manifest's title, so it has
+ *  one name everywhere (the experiment it was exported from keeps its working name, which is
+ *  for its author); any other by its own name. */
+export function experimentName(e: { name: string; example?: { title: string } | null }): string {
+  return e.example?.title ?? e.name;
+}
+
 export function harnessName(name: string): string {
   return HARNESS_NAMES[name] ?? name;
 }
