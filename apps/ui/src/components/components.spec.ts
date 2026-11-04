@@ -153,13 +153,19 @@ describe('VerdictTag', () => {
     expect(better.find('svg').exists()).toBe(true);
     const worse = mount(VerdictTag, { props: { verdict: 'worse' } });
     expect(worse.classes()).toContain('verdict-tag--worse');
+    expect(better.attributes('data-verdict')).toBe('better');
+    expect(worse.attributes('data-verdict')).toBe('worse');
+    expect(worse.find('svg').exists()).toBe(true);
     const none = mount(VerdictTag, { props: { verdict: 'none' } });
     expect(none.text()).toBe('No clear difference');
     expect(none.classes()).toEqual(['result-plain']);
+    // theme.css sets this one in regular weight: the absence of evidence, lighter than a finding.
+    expect(none.attributes('data-verdict')).toBe('none');
     expect(none.find('svg').exists()).toBe(false);
     const pending = mount(VerdictTag, { props: { verdict: 'pending' } });
     expect(pending.text()).toBe('No interval yet');
     expect(pending.classes()).toEqual(['result-plain']);
+    expect(pending.attributes('data-verdict')).toBe('pending');
     expect(mount(VerdictTag, { props: { verdict: 'none', label: 'No clear difference after correction' } }).text()).toBe('No clear difference after correction');
   });
 });

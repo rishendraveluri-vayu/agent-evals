@@ -129,7 +129,7 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
           v-else-if="!loading"
           :href="href.judge()"
           data-test="judge-link"
-        >See how the judge compares</a>
+        >See judge agreement</a>
       </p>
     </div>
     <div
@@ -216,8 +216,10 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
             class="disclosure"
           >
             <summary>
-              <span class="strong">{{ item.tool_calls.length }} tool {{ item.tool_calls.length === 1 ? 'call' : 'calls' }}</span>
-              <span class="secondary small mono">{{ item.tool_calls.map((t) => t.name).join(', ') }}</span>
+              <span class="summary-text">
+                <span class="strong">{{ item.tool_calls.length }} tool {{ item.tool_calls.length === 1 ? 'call' : 'calls' }}</span>
+                <span class="secondary small mono">{{ item.tool_calls.map((t) => t.name).join(', ') }}</span>
+              </span>
             </summary>
             <p class="secondary small gap-below">
               Arguments and results, without timings or costs, which could hint at the config.

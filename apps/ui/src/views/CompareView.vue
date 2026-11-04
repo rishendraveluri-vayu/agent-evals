@@ -7,10 +7,10 @@ import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { armsOf, excludesZero, intervalText, judgeCaveat, methodName, pointsWithInterval, setupOf, totalTrials, verdictTitle, type ArmKey, type Verdict } from '../lib/arms';
+import { agreementWords, armsOf, differingShort, excludesZero, intervalText, judgeCaveat, methodName, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
-import { money, percent, seconds, signed, signedMoney, thousands, tick } from '../lib/format';
-import { gradedBy, infraReason, isJudged } from '../lib/names';
+import { money, percent, plural, seconds, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
+import { gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
 import { href } from '../router';
 
@@ -90,9 +90,64 @@ function armOfTrial(t: ExperimentTrial): ArmKey {
   return t.config === hb ? 'b' : 'a';
 }
 
+/** The attempt that re-ran an infra-stopped trial: same task, config and repeat, one attempt on. */
+function rerunWords(t: ExperimentTrial): string {
+  if (t.status === 'abandoned') return 'gave up, not re-run';
+  const next = data.value?.trials.find((x) => x.task === t.task && x.config === t.config && x.repeat_index === t.repeat_index && x.attempt === t.attempt + 1);
+  if (!next || next.status === 'queued' || next.status === 'claimed' || next.status === 'running') return 'not re-run yet';
+  if (next.status === 'infra_failed' || next.status === 'abandoned') return 're-run also an infra failure';
+  if (next.passed === true) return 're-run passed';
+  if (next.passed === false) return 're-run failed';
+  return 're-run not graded yet';
+}
+
+const infraRows = computed(() =>
+  infraTrials.value.map((t) => {
+    const reason = infraReason(t.label);
+    return { trial: t, arm: armOfTrial(t), task: taskName(t.task), cause: `infra failure${reason ? `: ${reason}` : ''}`, rerun: rerunWords(t) };
+  }),
+);
+
+/** "Both were in arm B." when every listed infra failure is in one arm. */
+const infraArmNote = computed(() => {
+  const rows = infraRows.value;
+  const armsHit = new Set(rows.map((r) => r.arm));
+  if (!rows.length || armsHit.size !== 1) return '';
+  const arm = rows[0].arm.toUpperCase();
+  if (rows.length === 1) return `It was in arm ${arm}.`;
+  return rows.length === 2 ? `Both were in arm ${arm}.` : `All ${rows.length} were in arm ${arm}.`;
+});
+
+/** "2 trials stopped on infra failures were re-run and are listed, not dropped. Both were in arm
+ *  B." It says re-run only when every listed stop was, and the counts say so when the list did not
+ *  load. */
+const infraSentence = computed(() => {
+  const n = infraCount.value;
+  const rows = infraRows.value;
+  const rerun = !rows.length || rows.every((r) => r.rerun === 're-run passed' || r.rerun === 're-run failed' || r.rerun === 're-run not graded yet');
+  const one = n === 1;
+  const done = rerun ? `${one ? 'was' : 'were'} re-run and ${one ? 'is' : 'are'}` : one ? 'is' : 'are';
+  return `${n} ${one ? 'trial' : 'trials'} stopped on infra failures ${done} listed, not dropped.${infraArmNote.value ? ` ${infraArmNote.value}` : ''}`;
+});
+
 const commits = computed(() => {
   const d = data.value?.detail;
   return { plan: d?.plan_commit ? d.plan_commit.slice(0, 7) : null, platform: d?.platform_commit ? d.platform_commit.slice(0, 7) : null };
+});
+
+/** The harness pin from the configs: "Hermes 6112c2a" on line 2 when both arms share it, or each
+ *  pin in its arm on line 1 when they differ. */
+const pinOf = (arm: Arm | undefined) => (arm?.config ? shortRef(arm.config.harness_ref) : null);
+const meta = computed(() => {
+  const d = data.value;
+  const [a, b] = arms.value;
+  const ca = a?.config;
+  const cb = (b ?? a)?.config;
+  if (!d || !ca) return { perArm: false, harness: '', pin: null as string | null, rest: setupOf(d?.detail ?? { axis: 'none' }, arms.value) };
+  const shared = !!cb && ca.harness === cb.harness && ca.harness_ref === cb.harness_ref;
+  if (!shared) return { perArm: true, harness: '', pin: null, rest: setupOf(d.detail, arms.value) };
+  const rest = d.detail.axis === 'model' ? `, prompt ${ca.prompt.version}` : ` with ${modelName(ca.model)}`;
+  return { perArm: false, harness: harnessShort(ca.harness), pin: pinOf(a), rest };
 });
 
 const hero = computed(() => {
@@ -244,7 +299,7 @@ const taskRows = computed<TaskRow[]>(() => {
       const look = lookTrial(r.key);
       const name = taskName(r.key);
       const what = look && look.trial.passed === false ? 'a failed trial' : 'a trial';
-      const linkTitle = look ? `Open ${what} of ${name}, arm ${armOfTrial(look.trial).toUpperCase()}${look.disputed ? ' (your label disagrees with the judge)' : ''}` : '';
+      const linkTitle = look ? `Open ${what} of ${name}, arm ${armOfTrial(look.trial).toUpperCase()}${look.disputed && labelsDone.value ? ' (your label disagrees with the judge)' : ''}` : '';
       return {
         key: r.key,
         name,
@@ -275,6 +330,34 @@ const passedText = (c: CompareRow | undefined) => (c ? `${c.passed} of ${c.grade
 
 const differing = computed(() => taskRows.value.filter((r) => r.significant).length);
 
+/** While held-out outputs remain to label, nothing on the page says where your labels and the
+ *  judge part ways, so labelling stays blind. */
+const labelsDone = computed(() => (data.value?.queue.length ?? 0) === 0);
+
+/** How many tasks differ, and how wide the rest's intervals are: no clear difference at this N is
+ *  an absence of evidence, not a finding of no change. */
+const taskSummary = computed(() => {
+  const d = data.value;
+  if (!d || !stats.value) return '';
+  const total = taskRows.value.length;
+  const n = differing.value;
+  const first = `${n} ${n === 1 ? 'task differs' : 'tasks differ'} ${correctionWords.value ? `after ${correctionWords.value} for ${total} comparisons` : 'before any correction for many comparisons'}.`;
+  const other = total - n;
+  if (!other) return first;
+  let line = `${first} The other ${other} ${other === 1 ? 'shows' : 'show'} no clear difference.`;
+  const widths = taskRows.value.filter((r) => !r.significant && r.diff).map((r) => Math.round((r.diff?.high ?? 0) - (r.diff?.low ?? 0)));
+  if (widths.length) {
+    const lo = Math.min(...widths);
+    const hi = Math.max(...widths);
+    const range = lo === hi ? `${lo}` : `${lo} to ${hi}`;
+    const per = `At ${plural(d.detail.n, 'trial')} per arm`;
+    line += widths.length === 1
+      ? ` ${per} its interval is ${range} points wide, so a real change on that task can hide here.`
+      : ` ${per} their intervals are ${range} points wide, so a real change on one task can hide here.`;
+  }
+  return line;
+});
+
 const correctionWords = computed(() => {
   const c = stats.value?.correction;
   if (!c) return null;
@@ -283,15 +366,15 @@ const correctionWords = computed(() => {
   return `the ${c} correction`;
 });
 
+/** What it rests on: how much the judge graded. When the caveat under the figure shows, it already
+ *  gives kappa, the bar and whether it is provisional, so this line does not repeat them. */
 const judgeLine = computed(() => {
   const j = stats.value?.judge;
   const d = data.value;
   if (!j || !d) return null;
-  const judged = d.detail.tasks.filter(isJudged).length;
-  let line = `The judge scored ${judged} of the ${d.detail.tasks.length} tasks. It agrees with your held-out labels at κ ${j.kappa.toFixed(2)}, ${j.kappa >= j.bar ? 'above' : 'below'} the ${j.bar} bar set before the run${j.low < j.bar ? ', though its interval dips below it' : ''}.`;
-  const toGo = d.queue.length;
-  if (toGo) line += ` Provisional: ${toGo} held-out ${toGo === 1 ? 'output' : 'outputs'} still to label.`;
-  return line;
+  const scored = `The judge scored ${d.detail.tasks.filter(isJudged).length} of the ${d.detail.tasks.length} tasks`;
+  if (caveat.value) return `${scored}, including ${differingShort(differing.value)}.`;
+  return `${scored}. Its agreement with you${agreementWords(j, d.queue.length)}`;
 });
 
 /** Under the figure: when every task that differs is judge-graded, the verdict rests on the judge. */
@@ -342,9 +425,9 @@ const worthALook = computed(() => {
   return {
     row: worst,
     title,
-    text: `${finding} The failed trials show what went wrong.`,
+    text: `${finding} Open the failed trials to see whether the agent or the grader is behind it.`,
     link: look ? href.trial(look.trial.id) : null,
-    button: look?.disputed ? 'Open a failed trial (your label disagrees with the judge)' : 'Open a failed trial',
+    button: look?.disputed && labelsDone.value ? 'Open a failed trial (your label disagrees with the judge)' : 'Open a failed trial',
   };
 });
 </script>
@@ -367,25 +450,41 @@ const worthALook = computed(() => {
           <h1 tabindex="-1">
             {{ data.detail.name }}
           </h1>
-          <div class="arms-line small">
+          <div
+            class="arms-line small"
+            data-test="arms-line"
+          >
             <span
               v-for="arm in arms"
               :key="arm.key"
               class="arm"
-            ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ arm.label }} (config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span>)</span></span>
-            <span class="secondary">{{ setupOf(data.detail, arms) }}, {{ totalTrials(data.detail) }} trials</span>
-            <a
-              v-if="commits.plan"
-              :href="href.run(data.detail.id)"
-              class="secondary"
-              data-test="plan-commit"
-            >plan <span class="mono">{{ commits.plan }}</span>, committed before the run</a>
-            <span
-              v-if="commits.platform"
-              class="secondary"
-              data-test="platform-commit"
-            >platform <span class="mono">{{ commits.platform }}</span></span>
+            ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ arm.label }}<template v-if="meta.perArm && pinOf(arm)">{{ ' ' }}<span
+              class="mono"
+              data-test="arm-pin"
+            >{{ pinOf(arm) }}</span></template> (config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span>)</span></span>
           </div>
+          <!-- Line 2: what the arms share, then the run's size and commits. Each group stays whole;
+               the line breaks only between groups. -->
+          <p
+            class="meta-line small secondary"
+            data-test="meta-line"
+          >
+            <span
+              class="nowrap"
+              data-test="setup"
+            >{{ meta.harness }}<template v-if="meta.pin">{{ ' ' }}<span class="mono">{{ meta.pin }}</span></template>{{ meta.rest }}</span> · <span class="nowrap">{{ totalTrials(data.detail) }} trials</span><template v-if="commits.plan">
+              · <a
+                :href="href.run(data.detail.id)"
+                class="secondary nowrap"
+                data-test="plan-commit"
+              >plan <span class="mono">{{ commits.plan }}</span>, committed before the run</a>
+            </template><template v-if="commits.platform">
+              · <span
+                class="nowrap"
+                data-test="platform-commit"
+              >platform <span class="mono">{{ commits.platform }}</span></span>
+            </template>
+          </p>
         </div>
         <div class="actions">
           <div class="action-buttons">
@@ -529,8 +628,11 @@ const worthALook = computed(() => {
           >
             What it rests on
           </h3>
-          <p v-if="judgeLine">
-            {{ judgeLine }} <a :href="href.judge()">See the check</a>
+          <p
+            v-if="judgeLine"
+            data-test="judge-line"
+          >
+            {{ judgeLine }} <a :href="href.judge()">See judge agreement</a>
           </p>
           <div class="infra">
             <p
@@ -538,8 +640,8 @@ const worthALook = computed(() => {
               data-test="infra-sentence"
             >
               <template v-if="infraCount">
-                {{ infraCount }} {{ infraCount === 1 ? 'trial' : 'trials' }} stopped on infra failures {{ infraCount === 1 ? 'was' : 'were' }} re-run and {{ infraCount === 1 ? 'is' : 'are' }} listed, not dropped.<template v-if="!infraTrials.length">
-                  <a :href="href.run(data.detail.id)">See them on the run page</a>
+                {{ infraSentence }}<template v-if="!infraTrials.length">
+                  {{ ' ' }}<a :href="href.run(data.detail.id)">See them on the run page</a>
                 </template>
               </template>
               <template v-else>
@@ -552,16 +654,17 @@ const worthALook = computed(() => {
               data-test="infra-list"
             >
               <li
-                v-for="t in infraTrials"
-                :key="t.id"
+                v-for="r in infraRows"
+                :key="r.trial.id"
+                data-test="infra-row"
               >
                 <a
-                  :href="href.trial(t.id)"
+                  :href="href.trial(r.trial.id)"
                   class="infra-link"
                 ><span
-                  :class="`dot dot--${armOfTrial(t)}`"
+                  :class="`dot dot--${r.arm}`"
                   aria-hidden="true"
-                /><span class="visually-hidden">Arm {{ armOfTrial(t).toUpperCase() }}, </span><span class="mono infra-task">{{ taskName(t.task) }}</span> <span>attempt {{ t.attempt }}</span> <span class="secondary">{{ infraReason(t.label) || t.status.replace('_', ' ') }}</span></a>
+                /><span class="infra-text">{{ r.arm.toUpperCase() }} · <span class="mono infra-task">{{ r.task }}</span> · attempt {{ r.trial.attempt }} · <span class="secondary">{{ r.cause }}</span> · {{ r.rerun }}</span></a>
               </li>
             </ul>
           </div>
@@ -624,10 +727,10 @@ const worthALook = computed(() => {
           </h2>
           <p
             v-if="stats"
-            class="secondary small"
+            class="secondary small task-summary"
             data-test="task-summary"
           >
-            {{ differing }} {{ differing === 1 ? 'task differs' : 'tasks differ' }} {{ correctionWords ? `after ${correctionWords} for ${taskRows.length} comparisons` : 'before any correction for many comparisons' }}. The other {{ taskRows.length - differing }} {{ taskRows.length - differing === 1 ? 'shows' : 'show' }} no clear difference.
+            {{ taskSummary }}
           </p>
         </div>
         <div class="table-wrap">
@@ -678,6 +781,7 @@ const worthALook = computed(() => {
                   <svg
                     viewBox="0 0 400 18"
                     width="100%"
+                    data-test="axis"
                   >
                     <text
                       x="0"
@@ -685,17 +789,37 @@ const worthALook = computed(() => {
                       class="axis-label"
                     >{{ tick(-100) }}</text>
                     <text
+                      x="100"
+                      y="13"
+                      class="axis-label"
+                      text-anchor="middle"
+                    >{{ tick(-50) }}</text>
+                    <text
                       x="200"
                       y="13"
                       class="axis-label axis-label--zero"
                       text-anchor="middle"
                     >0</text>
                     <text
+                      x="300"
+                      y="13"
+                      class="axis-label"
+                      text-anchor="middle"
+                    >{{ tick(50) }}</text>
+                    <text
                       x="400"
                       y="13"
                       class="axis-label"
                       text-anchor="end"
-                    >+100</text>
+                    >{{ tick(100) }}</text>
+                    <!-- The top of the zero line, under its label; the cells below carry it on. -->
+                    <line
+                      x1="200"
+                      x2="200"
+                      y1="15"
+                      y2="18"
+                      class="zero-stub"
+                    />
                   </svg>
                 </td>
                 <td />
@@ -741,13 +865,6 @@ const worthALook = computed(() => {
                     :aria-label="`${r.name}: ${signed(r.diff.estimate)} points${stats ? `, interval ${intervalText(r.diff)}` : ''}`"
                   >
                     <line
-                      x1="200"
-                      y1="0"
-                      x2="200"
-                      y2="26"
-                      class="zero"
-                    />
-                    <line
                       :x1="fx(r.diff.low)"
                       :x2="fx(r.diff.high)"
                       y1="13"
@@ -787,6 +904,14 @@ const worthALook = computed(() => {
   flex-wrap: wrap;
   gap: 6px 20px;
   margin-top: 10px;
+}
+
+.meta-line {
+  margin-top: 6px;
+}
+
+.nowrap {
+  white-space: nowrap;
 }
 
 /* The export controls sit top right, level with the h1. */
@@ -964,6 +1089,11 @@ const worthALook = computed(() => {
   align-items: baseline;
 }
 
+/* No single word left on a line of its own. */
+.task-summary {
+  text-wrap: pretty;
+}
+
 .forest {
   min-width: 980px;
 }
@@ -977,14 +1107,51 @@ const worthALook = computed(() => {
   width: 420px;
 }
 
+/* One dashed zero line down the whole plot column. Each cell draws its piece at the SVG's x = 200,
+   which is the cell's centre because its left and right padding are equal, and reaches over the
+   row rule below it. The SVG sits above the line, so dots and intervals cover it. */
 .axis-cell,
 .plot-cell {
+  position: relative;
   padding-top: 4px;
   padding-bottom: 4px;
 }
 
+.axis-cell::before,
+.plot-cell::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  bottom: -1px;
+  left: 50%;
+  border-left: 1px dashed var(--ink-2);
+  pointer-events: none;
+}
+
+/* In the axis row the line starts under the zero label, at the foot of the axis. */
+.axis-cell::before {
+  top: auto;
+  height: 5px;
+}
+
+.axis-cell svg {
+  display: block;
+}
+
+.axis-cell svg,
+.plot-cell svg {
+  position: relative;
+  z-index: 1;
+}
+
+.zero-stub {
+  stroke: var(--ink-2);
+  stroke-dasharray: 3 3;
+}
+
 .axis-label {
-  font-size: 11px;
+  font-size: 12px;
   fill: var(--ink-2);
 }
 
@@ -994,11 +1161,6 @@ const worthALook = computed(() => {
 
 .task-link {
   color: var(--ink);
-}
-
-.zero {
-  stroke: var(--neutral-line);
-  stroke-dasharray: 2 3;
 }
 
 .ci {
@@ -1050,15 +1212,19 @@ const worthALook = computed(() => {
   gap: 2px;
 }
 
-/* One underline, on the task id: the arm, attempt and reason read as plain text beside it. */
+/* One underline, on the task id: the arm, attempt, cause and re-run read as plain text beside it. */
 .infra-link {
   display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
+  align-items: baseline;
+  gap: 8px;
   min-height: 32px;
+  padding: 5px 0;
   color: var(--ink);
   text-decoration: none;
+}
+
+.infra-link .dot {
+  align-self: center;
 }
 
 .infra-task {
@@ -1138,12 +1304,30 @@ const worthALook = computed(() => {
   }
 
   .table.forest tbody tr {
+    position: relative;
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
     gap: 2px 0;
     padding: 12px 16px;
     border-bottom: 1px solid var(--rule-soft);
+  }
+
+  /* On a phone each task is a block of three lines; its piece of the zero line runs the whole
+     block, so the line stays unbroken from the axis to the last task. The row's padding is the
+     same on both sides, so 50% is still the SVG's x = 200. Text sits on the surface over it. */
+  .table.forest .plot-cell {
+    position: static;
+  }
+
+  .table.forest .c-task > *,
+  .table.forest .c-verdict,
+  .table.forest .c-a,
+  .table.forest .c-b,
+  .table.forest .c-grader {
+    position: relative;
+    z-index: 1;
+    background: var(--surface);
   }
 
   .table.forest tbody tr:last-child {

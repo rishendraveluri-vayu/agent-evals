@@ -70,14 +70,16 @@ describe('RunView, a running experiment in fixture mode', () => {
   it('shows progress per task, arm and trial, with infra failures apart from agent failures', async () => {
     const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
     await settle();
-    expect(w.get('[data-test="tally"]').text()).toBe('60 done, 8 running, 50 waiting, 2 stopped by the provider and re-queued, about 19 min left');
+    expect(w.get('[data-test="tally"]').text()).toBe('60 done, 4 running, 54 waiting, 2 infra failures re-queued, both in arm B, about 19 min left');
     const grid = w.get('[data-test="run-grid"]');
     expect(grid.findAll('tbody tr')).toHaveLength(12);
     const states = grid.findAll('[data-state]').map((c) => c.attributes('data-state'));
     expect(states).toHaveLength(120);
     expect(states.filter((s) => s === 'infra')).toHaveLength(2);
-    expect(grid.text()).toContain('debt-hardship-03, arm B, trial 2: stopped on an infra failure, re-queued');
-    expect(w.get('[data-test="events"]').text()).toContain('Started 120 trials, 4 at a time.');
+    expect(grid.text()).toContain('debt-hardship-03, arm B, trial 2: infra failure, re-queued');
+    const events = w.get('[data-test="events"]').text();
+    expect(events).toContain('Started 120 trials, 4 at a time.');
+    expect(events).toContain('debt-hardship-03, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last.');
   });
 
   it('leads with its progress: the count in the title, then the grid, then what was planned and checked', async () => {
@@ -100,6 +102,7 @@ describe('RunView, a running experiment in fixture mode', () => {
   it('keeps the checks and the arm diff closed, with what they hold in the summary', async () => {
     const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
     await settle();
+    for (const summary of w.findAll('.run-details > summary')) expect(summary.find('.summary-text').exists()).toBe(true);
     const checks = w.get('[data-test="checks-details"]');
     expect(checks.attributes('open')).toBeUndefined();
     expect(checks.get('summary').text()).toMatch(/^Checked before the start: \d+ of \d+ passed, plan 3e1a9f0$/);
@@ -118,7 +121,11 @@ describe('RunView, a running experiment in fixture mode', () => {
     expect(legend.findAll('.cell')[5].classes()).toContain('cell--retried');
     const grid = w.get('[data-test="run-grid"]');
     expect(grid.findAll('[data-state="fail"]').length).toBeGreaterThan(0);
-    expect(grid.findAll('[data-state="running"]').length).toBe(8);
+    // As many running as the run allows at once, in both arms.
+    const running = grid.findAll('[data-state="running"]');
+    expect(running).toHaveLength(4);
+    expect(running.map((c) => c.attributes('title')).some((t) => t?.includes('arm A'))).toBe(true);
+    expect(running.map((c) => c.attributes('title')).some((t) => t?.includes('arm B'))).toBe(true);
   });
 });
 
@@ -129,7 +136,7 @@ describe('RunView, a finished run in fixture mode', () => {
     const w = mount(RunView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     const tally = w.get('[data-test="tally"]').text();
-    expect(tally).toContain('2 stopped by the provider: 2 re-run');
+    expect(tally).toContain('2 infra failures: 2 re-run, both in arm B');
     expect(tally).not.toContain('re-queued');
     expect(tally).not.toContain('left');
     const retried = w.findAll('[data-test="run-grid"] [data-retried="true"]');
@@ -156,7 +163,7 @@ describe('RunView against the API, with a slot that gave up', () => {
     routeFetch({ '/api/experiments/exp_harness': detail, '/api/experiments/exp_harness/trials': trials, '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] });
     const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
     await settle();
-    expect(w.get('[data-test="tally"]').text()).toContain('2 stopped by the provider: 1 re-run, 1 gave up');
+    expect(w.get('[data-test="tally"]').text()).toContain('2 infra failures: 1 re-run, 1 gave up, both in arm B');
     const grid = w.get('[data-test="run-grid"]');
     const gaveUp = grid.findAll('[data-state="abandoned"]');
     expect(gaveUp).toHaveLength(1);
@@ -166,5 +173,21 @@ describe('RunView against the API, with a slot that gave up', () => {
     const failedAfter = grid.findAll('[data-retried="true"]');
     expect(failedAfter.map((c) => c.attributes('data-state'))).toEqual(['fail']);
     expect(failedAfter[0].get('.visually-hidden').text()).toContain('failed, after an infra failure');
+  });
+});
+
+describe('RunView against the API, with infra failures in both arms', () => {
+  it('counts them per arm', async () => {
+    const detail = (details as Record<string, ExperimentDetail>).exp_harness;
+    const base = (experimentTrials as Record<string, ExperimentTrial[]>).exp_harness;
+    const first = base.find((t) => t.id === 'th_emi-basic-01_a_1') as ExperimentTrial;
+    const trials = [
+      ...base.map((t) => (t.id === first.id ? { ...t, status: 'infra_failed', label: 'infra:provider_error', passed: null } : t)),
+      { ...first, id: `${first.id}_attempt2`, attempt: 2, status: 'queued', label: null, passed: null },
+    ];
+    routeFetch({ '/api/experiments/exp_harness': detail, '/api/experiments/exp_harness/trials': trials, '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] });
+    const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    expect(w.get('[data-test="tally"]').text()).toBe('59 done, 4 running, 54 waiting, 3 infra failures re-queued, A 1, B 2, about 19 min left');
   });
 });

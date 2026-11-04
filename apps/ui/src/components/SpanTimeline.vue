@@ -83,7 +83,7 @@ const LEGEND: [SpanBar['role'], string][] = [
           >
             <span
               class="label"
-              :title="b.label"
+              :title="b.title"
             >{{ b.label }}</span>
             <span class="track"><span
               v-for="t in ticks"
@@ -101,13 +101,13 @@ const LEGEND: [SpanBar['role'], string][] = [
             type="button"
             class="row"
             :aria-pressed="b.id === selected"
-            :aria-label="`${b.label}, ${duration(b.durationMs)}${b.error ? ', failed' : ''}. Show its details`"
+            :aria-label="`${b.title}, ${duration(b.durationMs)}${b.error ? ', failed' : ''}. Show its details`"
             data-test="span-row"
             @click="emit('select', b.id)"
           >
             <span
               class="label"
-              :title="b.label"
+              :title="b.title"
             ><AppIcon
               v-if="b.error"
               name="cross"
@@ -265,6 +265,9 @@ const LEGEND: [SpanBar['role'], string][] = [
   border-radius: 4px;
 }
 
+/* Four kinds told apart by lightness and outline, never by hue: the agent dark, tools mid grey,
+   the harness's own overhead light grey with an edge (so it shows in the dark theme too), and
+   the simulated client an outline. Never dashed: dashes mean infra. */
 .bar--agent,
 .swatch-bar--agent {
   background: var(--span-agent);
@@ -272,17 +275,19 @@ const LEGEND: [SpanBar['role'], string][] = [
 
 .bar--tool,
 .swatch-bar--tool {
-  background: var(--span-tool);
+  background: var(--neutral-mark-strong);
 }
 
 .bar--client,
 .swatch-bar--client {
-  background: var(--span-client);
+  background: transparent;
+  border: 1.5px solid var(--ink);
 }
 
 .bar--harness,
 .swatch-bar--harness {
-  background: var(--span-harness);
+  background: var(--neutral-mark);
+  box-shadow: inset 0 0 0 1px var(--neutral-mark-strong);
 }
 
 .dur {

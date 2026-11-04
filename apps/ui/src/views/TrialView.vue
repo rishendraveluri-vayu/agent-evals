@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { api, type AnyTrial } from '../api/client';
 import { isFixtureMode } from '../api/mode';
-import type { ExperimentDetail, ExperimentTrial, Grade, JudgeAgreement, Prompt, TrialResult } from '../api/types';
+import type { BlindItem, ExperimentDetail, ExperimentTrial, Grade, JudgeAgreement, Prompt, TrialResult } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import SpanTimeline from '../components/SpanTimeline.vue';
@@ -24,19 +24,23 @@ interface Loaded {
   prompts: Prompt[];
   /** Your held-out labels against the judge, to flag a judge verdict you disagree with. */
   judge: JudgeAgreement | null;
+  /** Held-out outputs still to label. A failed load counts as none, as on the Judge page, so the
+   *  two pages always agree on whether labelling is still blind. */
+  queue: BlindItem[];
 }
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
-  const [any, spans, judge] = await Promise.all([
+  const [any, spans, judge, queue] = await Promise.all([
     api.trial(props.trialId),
     optional(api.trialSpans(props.trialId), [] as SpanView[]),
     optional(api.judgeAgreement('heldout'), null),
+    optional(api.labelQueue('heldout'), [] as BlindItem[]),
   ]);
   const experimentId = any.kind === 'experiment' ? any.trial.experiment_id : null;
   const [experiment, siblings, prompts] = experimentId
     ? await Promise.all([optional(api.experiment(experimentId), null), optional(api.experimentTrials(experimentId), [] as ExperimentTrial[]), optional(api.prompts(), [] as Prompt[])])
     : [null, [] as ExperimentTrial[], [] as Prompt[]];
-  return { any, spans, experiment, siblings, prompts, judge };
+  return { any, spans, experiment, siblings, prompts, judge, queue };
 });
 
 const EMPTY_RESULT: TrialResult = {};
@@ -98,6 +102,21 @@ const vm = computed(() => {
 });
 
 const isInfra = computed(() => !!vm.value?.label?.startsWith('infra:'));
+
+/** While held-out outputs remain to label, the page never says where your labels and the judge
+ *  part ways. */
+const labelsDone = computed(() => (data.value?.queue.length ?? 0) === 0);
+/** Outputs of this trial's task still in the held-out queue: while any remain, the judge's reasons
+ *  for the task (quotes, rationale, highlights) stay hidden, so they cannot steer those labels. */
+const queuedForTask = computed(() => {
+  const id = vm.value?.taskId;
+  return id ? (data.value?.queue ?? []).filter((q) => q.task_id === id).length : 0;
+});
+const hiddenReasons = computed(() => {
+  const n = queuedForTask.value;
+  if (!n) return '';
+  return `The judge's reasons for this task are hidden while ${n} of its held-out outputs ${n === 1 ? 'is' : 'are'} still to label.`;
+});
 
 /** The harness and its pinned version from result.json: "Hermes 6112c2a". Contract v2 gives the
  *  version as a string; an object with a `ref` is read too. */
@@ -258,7 +277,7 @@ function segments(body: string, quotes: Quote[]): Segment[][] {
 }
 
 const failedQuotes = computed<Quote[]>(() =>
-  (vm.value?.grades ?? []).flatMap((g, index) => (g.verdict === 'fail' ? g.evidence.map((text) => ({ text, index, name: g.name })) : [])),
+  queuedForTask.value ? [] : (vm.value?.grades ?? []).flatMap((g, index) => (g.verdict === 'fail' ? g.evidence.map((text) => ({ text, index, name: g.name })) : [])),
 );
 
 const conversation = computed<(ToolItem | MessageItem)[]>(() => {
@@ -352,8 +371,9 @@ const fileUrl = (path: string) => api.trialFileUrl(props.trialId, path);
 const gradeKind = (g: Grade) => (g.kind === 'judge' ? `Judge, rubric ${g.grader_version}` : graderName(g.kind));
 const isJudge = (g: Grade) => g.kind === 'judge' || !!g.judge_model;
 
-/** Where your held-out label disagrees with the judge on this trial's check. */
-const disputeOf = (g: Grade) => data.value?.judge?.disagreements.find((x) => x.trial_id === props.trialId && x.criterion === g.name) ?? null;
+/** Where your held-out label disagrees with the judge on this trial's check: shown only once the
+ *  held-out set is labelled. */
+const disputeOf = (g: Grade) => (labelsDone.value ? (data.value?.judge?.disagreements.find((x) => x.trial_id === props.trialId && x.criterion === g.name) ?? null) : null);
 const labelWord = (v: string) => (v === 'yes' ? 'Yes' : v === 'no' ? 'No' : 'Not sure');
 
 /** "Failed on" names each failed check, says which the judge graded, and which you dispute. */
@@ -527,8 +547,10 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               class="disclosure"
             >
               <summary>
-                <span class="strong">System prompt</span>
-                <span class="secondary small">{{ systemPrompt.name }}, plus any text {{ vm.harness ? harnessShort(vm.harness) : 'the harness' }} adds itself</span>
+                <span class="summary-text">
+                  <span class="strong">System prompt</span>
+                  <span class="secondary small">{{ systemPrompt.name }}, plus any text {{ vm.harness ? harnessShort(vm.harness) : 'the harness' }} adds itself</span>
+                </span>
               </summary>
               <p class="secondary small gap-below">
                 What the harness adds is kept as it ships it, and is the same in both arms. The first model request shows the full text.
@@ -590,19 +612,21 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                     :size="16"
                     class="tool-icon"
                   />
-                  <span class="mono strong">{{ item.name }}</span>
-                  <span class="secondary small">{{ item.summary }}</span>
-                  <span
-                    v-if="item.error"
-                    class="pill pill--fail pill--small"
-                  ><AppIcon
-                    name="cross"
-                    :size="12"
-                  />Error</span>
-                  <span
-                    class="secondary smaller num at"
-                    :title="item.title"
-                  >{{ item.at }}</span>
+                  <span class="summary-text">
+                    <span class="mono strong">{{ item.name }}</span>
+                    <span class="secondary small tool-args">{{ item.summary }}</span>
+                    <span
+                      v-if="item.error"
+                      class="pill pill--fail pill--small"
+                    ><AppIcon
+                      name="cross"
+                      :size="12"
+                    />Error</span>
+                    <span
+                      class="secondary smaller num at"
+                      :title="item.title"
+                    >{{ item.at }}</span>
+                  </span>
                 </summary>
                 <div class="tool-body">
                   <div>
@@ -700,7 +724,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 
         <aside
           aria-labelledby="graders"
-          class="side stack graders-col"
+          class="stack grading"
         >
           <h2
             id="graders"
@@ -730,26 +754,35 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               class="secondary smaller"
               data-test="grade-kind"
             ><template v-if="g.judge_model">Judge <span class="mono">{{ g.judge_model }}</span>, rubric {{ g.grader_version }}</template><template v-else>{{ gradeKind(g) }}</template></span>
-            <blockquote
-              v-for="(q, qi) in g.evidence"
-              :key="qi"
-              class="quote small"
-            >
-              “{{ q }}”
-            </blockquote>
             <p
-              v-if="g.rationale"
-              class="small"
+              v-if="isJudge(g) && hiddenReasons"
+              class="small hidden-reasons"
+              data-test="hidden-reasons"
             >
-              {{ g.rationale }}
+              {{ hiddenReasons }}
             </p>
+            <template v-else>
+              <blockquote
+                v-for="(q, qi) in g.evidence"
+                :key="qi"
+                class="quote small"
+              >
+                “{{ q }}”
+              </blockquote>
+              <p
+                v-if="g.rationale"
+                class="small"
+              >
+                {{ g.rationale }}
+              </p>
+            </template>
             <p
               v-if="disputeOf(g)"
               class="small dispute"
               data-test="dispute"
             >
               Your held-out label: {{ labelWord(disputeOf(g)?.you ?? 'unsure') }}. You and the judge disagree on this check.
-              <a :href="href.judge()">See how the judge compares</a>
+              <a :href="href.judge()">See judge agreement</a>
             </p>
           </div>
           <p
@@ -764,13 +797,22 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
           >
             A task passes only when every check passes. The judge never sees the harness, the model or the arm.
           </p>
+        </aside>
 
-          <h2 class="section-title applied-title">
+        <section
+          aria-labelledby="applied-title"
+          class="stack applied"
+          data-test="applied"
+        >
+          <h2
+            id="applied-title"
+            class="section-title"
+          >
             Settings as applied
           </h2>
           <table
             v-if="applied.length"
-            class="table applied"
+            class="table applied-table"
           >
             <tbody>
               <tr
@@ -818,7 +860,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               v-if="files.requests.length"
               class="requests"
             >
-              <summary>Model requests ({{ files.requests.length }})</summary>
+              <summary><span class="summary-text">Model requests ({{ files.requests.length }})</span></summary>
               <ul>
                 <li
                   v-for="f in files.requests"
@@ -845,15 +887,41 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               Files open from the API; sample data has none to open.
             </p>
           </div>
-        </aside>
+        </section>
       </div>
     </template>
   </LoadState>
 </template>
 
 <style scoped>
-.split > .graders-col {
-  flex-basis: 380px;
+/* The story on the left; on the right the grading, then the settings and files under it. A
+   phone reads grading, story, then settings: why it failed, what happened, how it was set up. */
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  grid-template-areas:
+    'story grading'
+    'story applied';
+  grid-template-rows: auto 1fr;
+  column-gap: 28px;
+  row-gap: 24px;
+  align-items: start;
+}
+
+.story {
+  grid-area: story;
+  min-width: 0;
+}
+
+.grading {
+  grid-area: grading;
+  min-width: 0;
+}
+
+.applied {
+  grid-area: applied;
+  align-self: start;
+  min-width: 0;
 }
 
 .title-row {
@@ -938,16 +1006,15 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 }
 
 .tool-icon {
-  color: var(--span-tool);
+  flex: none;
+  align-self: flex-start;
+  margin-top: 16px;
+  color: var(--ink-2);
 }
 
+/* The time sits at the right of the text, before the chevron; only the text wraps. */
 .at {
   margin-left: auto;
-}
-
-/* The time stays right-aligned; the chevron follows it, 12 px on. */
-.tool-call > summary::after {
-  margin-left: 0;
 }
 
 /* A quoted passage is a link to the check that quoted it, styled as the highlight alone. */
@@ -1007,11 +1074,13 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
   border-radius: 6px;
 }
 
-.applied-title {
-  margin-top: 12px;
+/* While the task's held-out outputs are still to label, this one line stands in for the judge's
+   quotes and rationale. */
+.hidden-reasons {
+  color: var(--ink-2);
 }
 
-.applied {
+.applied-table {
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: 10px;
@@ -1019,16 +1088,16 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
   border-spacing: 0;
 }
 
-.applied th,
-.applied td {
+.applied-table th,
+.applied-table td {
   padding: 8px 14px;
 }
 
-.applied tr > :first-child {
+.applied-table tr > :first-child {
   padding-left: 14px;
 }
 
-.applied tr > :last-child {
+.applied-table tr > :last-child {
   padding-right: 14px;
 }
 
@@ -1089,9 +1158,22 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
     font-size: 24px;
   }
 
-  /* On a phone the grading comes first: it says why the trial failed before the transcript. */
-  .split > .graders-col {
-    order: -1;
+  /* On a phone the grading comes first: it says why the trial failed before the transcript. The
+     settings and files come last. */
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'grading'
+      'story'
+      'applied';
+    grid-template-rows: auto;
+    row-gap: 28px;
+  }
+
+  /* A tool row on a phone: its name and time on the first line, its arguments under them. */
+  .tool-args {
+    order: 1;
+    flex-basis: 100%;
   }
 }
 </style>

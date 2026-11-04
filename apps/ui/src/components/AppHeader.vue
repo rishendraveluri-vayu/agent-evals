@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { api } from '../api/client';
 import { isFixtureMode } from '../api/mode';
 import { fetchHealth, type HealthResult } from '../health';
@@ -30,22 +30,39 @@ const spendWords = computed(() => (spend.value === null ? '' : `${money(spend.va
 /** "$54 of $150": whole dollars for the phone header, where there is no room for cents. */
 const compactSpend = computed(() => (spend.value === null ? '' : `$${Math.round(spend.value)}${budget.value ? ` of ${wholeMoney(budget.value)}` : ''}`));
 
-/** On a phone the nav is one row that scrolls sideways; the current section is kept in view. */
+/** On a phone the nav is one row that scrolls sideways; the current section is kept in view, with
+ *  8 px to spare past its right edge. Only the nav scrolls (never scrollIntoView, which can move
+ *  the page). It runs again once the fonts are in and whenever the nav changes size, since both
+ *  move the tabs. */
 const nav = ref<HTMLElement | null>(null);
+const EDGE = 8;
 async function showCurrent() {
   await nextTick();
   const el = nav.value;
   const current = el?.querySelector<HTMLElement>('[aria-current="page"]');
   if (!el || !current || el.scrollWidth <= el.clientWidth) return;
-  el.scrollLeft = Math.max(0, current.offsetLeft - (el.clientWidth - current.offsetWidth) / 2);
+  const box = el.getBoundingClientRect();
+  const tab = current.getBoundingClientRect();
+  const past = tab.right + EDGE - box.right;
+  const before = box.left - (tab.left - EDGE);
+  if (past > 0) el.scrollLeft += past;
+  else if (before > 0) el.scrollLeft -= before;
 }
 watch(
   () => props.section,
   () => void showCurrent(),
 );
 
+let resizes: ResizeObserver | null = null;
+onBeforeUnmount(() => resizes?.disconnect());
+
 onMounted(async () => {
   void showCurrent();
+  void document.fonts?.ready.then(() => showCurrent());
+  if (typeof ResizeObserver !== 'undefined' && nav.value) {
+    resizes = new ResizeObserver(() => void showCurrent());
+    resizes.observe(nav.value);
+  }
   const envBudget = Number(import.meta.env.VITE_TOTAL_BUDGET_USD);
   if (fixtures) {
     const { meta } = await import('../fixtures');

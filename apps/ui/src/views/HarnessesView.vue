@@ -55,6 +55,7 @@ const STEPS = [
             />Probed</span>: seen in a request</span>
             <span><span class="declared">Declared</span>: a request cannot show it</span>
             <span><span class="none">Not supported</span>: the harness has no such feature</span>
+            <span><span class="pending">Not probed yet</span>: no request sent to check it</span>
           </div>
         </div>
         <div class="table-wrap">
@@ -79,7 +80,7 @@ const STEPS = [
                   <span class="block strong-head">{{ harnessName(h.name) }}</span>
                   <span class="block secondary smaller mono">{{ shortRef(h.ref) }}</span>
                   <span
-                    class="pill pill--small pill--outline status"
+                    class="result-detail coverage"
                     data-test="coverage"
                   >{{ coverageText(h) }}</span>
                 </th>
@@ -184,9 +185,10 @@ const STEPS = [
   gap: 6px 16px;
 }
 
+/* Columns size to their content, so each harness's coverage line keeps to one line; the longest
+   one is wider than an equal share of the table. */
 .matrix {
   min-width: 1040px;
-  table-layout: fixed;
 }
 
 .setting-col {
@@ -202,12 +204,12 @@ const STEPS = [
   color: var(--ink);
 }
 
-/* The coverage line can be longer than its column: it wraps rather than run into the next one. */
-.status {
+/* How each setting is known, in plain grey words under the version: a count, not a status. */
+.coverage {
+  display: block;
   margin-top: 6px;
-  white-space: normal;
-  border-radius: 10px;
-  line-height: 1.35;
+  font-weight: 400;
+  white-space: nowrap;
 }
 
 .block {

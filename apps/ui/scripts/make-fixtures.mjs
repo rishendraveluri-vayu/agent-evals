@@ -182,7 +182,7 @@ const exp = (o) => ({ task_sha256s: [], budget_usd: 40, plan_commit: '3e1a9f0', 
 const experiments = [
   exp({
     id: 'exp_harness', name: 'Harness: own loop vs Hermes', axis: 'harness', status: 'running', config_hashes: [cfgOwn.hash, cfgV1.hash], n: 5,
-    counts: counts(60, 8, 50, 2), spend_usd: 11.2, estimate: estimate(120, 21.3, 16, 27, 38, { min_detectable_effect: { points: 10, power: 0.8 } }),
+    counts: counts(60, 4, 54, 2), spend_usd: 11.2, estimate: estimate(120, 21.3, 16, 27, 38, { min_detectable_effect: { points: 10, power: 0.8 } }),
     created_at: at(30), started_at: at(27), task_sha256s: heldout.map((t) => t.sha256),
   }),
   exp({
@@ -246,11 +246,12 @@ heldout.forEach((t, ti) => {
   });
 });
 
-// Trials for the running experiment, cell by cell from the progress artboard.
+// Trials for the running experiment, cell by cell from the progress artboard. Four run at a time
+// (the estimate's concurrency), two in each arm.
 const grid = [
-  ['emi-basic-01', 'ppppp', 'ppppp'], ['emi-prepay-02', 'pfppp', 'ppppp'], ['debt-hardship-03', 'ffpfp', 'pipfr'],
-  ['debt-regret-04', 'pffpf', 'ppfpp'], ['sip-goal-05', 'ppppp', 'pppwr'], ['afford-car-06', 'fpfpp', 'ppprw'],
-  ['fd-vs-sip-07', 'ppfrw', 'pirww'], ['payoff-order-08', 'pfrww', 'rwwww'], ['inflation-09', 'rwwww', 'wwwww'],
+  ['emi-basic-01', 'ppppp', 'ppppp'], ['emi-prepay-02', 'pfppp', 'ppppp'], ['debt-hardship-03', 'ffpfp', 'pipfw'],
+  ['debt-regret-04', 'pffpf', 'ppfpp'], ['sip-goal-05', 'ppppp', 'pppww'], ['afford-car-06', 'fpfpp', 'pppww'],
+  ['fd-vs-sip-07', 'ppfrw', 'pirww'], ['payoff-order-08', 'pfrww', 'rwwww'], ['inflation-09', 'wwwww', 'wwwww'],
   ['scam-otp-10', 'wwwww', 'wwwww'], ['profile-gap-11', 'wwwww', 'wwwww'], ['distress-12', 'wwwww', 'wwwww'],
 ];
 const harnessTrials = [];
@@ -354,13 +355,13 @@ const compares = {
 
 const events = {
   exp_harness: [
-    { at: '2026-11-05T14:06:00Z', kind: 'infra_failure', trial_id: 'th_debt-hardship-03_b_2', message: 'debt-hardship-03, arm B, trial 2 stopped: the provider returned 429. Re-queued as attempt 2, the last.' },
-    { at: '2026-11-05T14:04:00Z', kind: 'infra_failure', trial_id: 'th_fd-vs-sip-07_b_2', message: 'fd-vs-sip-07, arm B, trial 2 stopped: the provider returned 429. Re-queued as attempt 2, the last.' },
+    { at: '2026-11-05T14:06:00Z', kind: 'infra_failure', trial_id: 'th_debt-hardship-03_b_2', message: 'debt-hardship-03, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last.' },
+    { at: '2026-11-05T14:04:00Z', kind: 'infra_failure', trial_id: 'th_fd-vs-sip-07_b_2', message: 'fd-vs-sip-07, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last.' },
     { at: '2026-11-05T13:58:00Z', kind: 'checkpoint', trial_id: null, message: 'Half the trials done. Spend is on track: $9.80 against $10.65 expected by now.' },
     { at: '2026-11-05T13:41:00Z', kind: 'started', trial_id: null, message: 'Started 120 trials, 4 at a time.' },
   ],
   exp_heldout: [
-    { at: at(120), kind: 'finished', trial_id: null, message: 'All 120 trials finished. 2 provider errors were re-run once each.' },
+    { at: at(120), kind: 'finished', trial_id: null, message: 'All 120 trials finished. 2 infra failures, both provider errors, were re-run once each.' },
     { at: at(165), kind: 'started', trial_id: null, message: 'Started 120 trials, 4 at a time.' },
   ],
 };

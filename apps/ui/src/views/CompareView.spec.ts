@@ -27,7 +27,7 @@ describe('CompareView in fixture mode', () => {
     const verdict = w.get('[data-test="verdict"]').text();
     expect(verdict).toContain('+15 points of pass rate, from 58% to 73%');
     expect(verdict).toContain('The 95% interval runs from +7 to +23 points');
-    expect(verdict).toContain('2 trials stopped on infra failures were re-run and are listed, not dropped');
+    expect(verdict).toContain('2 trials stopped on infra failures were re-run and are listed, not dropped. Both were in arm B.');
   });
 
   it('says why this is not noise, then what it rests on, naming the method only as the payload does', async () => {
@@ -44,23 +44,27 @@ describe('CompareView in fixture mode', () => {
     expect(w.text()).not.toContain('resampled');
   });
 
-  it('names the plan and platform commits in the meta line', async () => {
+  it('puts the arms on one line, and what they share, the size and the commits on a second', async () => {
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
+    expect(w.get('[data-test="arms-line"]').text()).toBe('A: Prompt v1 (config 3b81e04)B: Prompt v2 (config 7f3a9c2)');
+    const meta = w.get('[data-test="meta-line"]');
+    expect(meta.text()).toBe('Hermes 6112c2a with Claude Haiku 5.5 · 120 trials · plan 3e1a9f0, committed before the run · platform c4d2e19');
+    // Each group keeps together; the line breaks only at a middot.
+    expect(meta.findAll('.nowrap').map((g) => g.text())).toEqual(['Hermes 6112c2a with Claude Haiku 5.5', '120 trials', 'plan 3e1a9f0, committed before the run', 'platform c4d2e19']);
     const plan = w.get('[data-test="plan-commit"]');
     expect(plan.text()).toBe('plan 3e1a9f0, committed before the run');
     expect(plan.attributes('href')).toBe('#/experiments/exp_heldout/run');
     expect(w.get('[data-test="platform-commit"]').text()).toBe('platform c4d2e19');
   });
 
-  it('lists each trial stopped on an infra failure, with its arm, attempt and reason', async () => {
+  it('lists each trial stopped on an infra failure, with its arm in words, attempt, cause and re-run', async () => {
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     const items = w.findAll('[data-test="infra-list"] li');
     expect(items).toHaveLength(2);
-    expect(items[0].text()).toContain('debt-hardship-03');
-    expect(items[0].text()).toContain('attempt 1');
-    expect(items[0].text()).toContain('provider error');
+    expect(items[0].text()).toBe('B · debt-hardship-03 · attempt 1 · infra failure: provider error · re-run passed');
+    expect(items[0].find('.visually-hidden').exists()).toBe(false);
     expect(items[0].get('.dot').classes()).toContain('dot--b');
     expect(items[0].get('a').attributes('href')).toBe('#/trials/tr_debt-hardship-03_b_2');
   });
@@ -72,6 +76,15 @@ describe('CompareView in fixture mode', () => {
     expect(hero.findAll('.range').map((r) => toneOf(r.classes(), 'range--'))).toEqual(['b', 'neutral']);
     const labels = [...hero.findAll('[data-test="strip-label"]').map((t) => t.text()), ...w.findAll('[data-test="strip-legend"] li').map((l) => l.text())];
     expect(labels).toEqual(expect.arrayContaining(['v2 minus v1, 12 tasks', 'A/A run, same config twice']));
+  });
+
+  it('draws the zero line once for the whole plot column, with ticks every 50 points', async () => {
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.findAll('[data-test="forest"] line.zero')).toHaveLength(0);
+    expect(w.findAll('[data-test="axis"] text').map((t) => t.text())).toEqual(['−100', '−50', '0', '+50', '+100']);
+    expect(w.findAll('[data-test="axis"] text').map((t) => t.attributes('x'))).toEqual(['0', '100', '200', '300', '400']);
+    for (const r of w.findAll('[data-test="forest-row"]')) expect(r.find('svg line:not(.ci)').exists()).toBe(false);
   });
 
   it('draws one forest-plot row per task, largest difference first, coloured only where it holds up', async () => {
@@ -89,7 +102,9 @@ describe('CompareView in fixture mode', () => {
     expect(last.text()).toContain('fd-vs-sip-07');
     expect(last.text()).toContain('−40 (−90 to +10)');
     expect(last.find('svg').attributes('aria-label')).toBe('fd-vs-sip-07: −40 points, interval −90 to +10');
-    expect(w.get('[data-test="task-summary"]').text()).toBe("2 tasks differ after Holm's correction for 12 comparisons. The other 10 show no clear difference.");
+    expect(w.get('[data-test="task-summary"]').text()).toBe(
+      "2 tasks differ after Holm's correction for 12 comparisons. The other 10 show no clear difference. At 5 trials per arm their intervals are 40 to 100 points wide, so a real change on one task can hide here.",
+    );
     expect(w.get('.forest thead').text()).toContain('Difference, B minus A, 95% interval (not corrected)');
   });
 
@@ -116,7 +131,9 @@ describe('CompareView in fixture mode', () => {
     expect(look.classes()).not.toContain('panel');
     expect(look.get('h3').text()).toBe('Worth a look: fd-vs-sip-07 fell from 4 of 5 to 2 of 5');
     expect(w.findAll('h2, h3').filter((h) => h.text().startsWith('Worth a look'))).toHaveLength(1);
-    expect(look.text()).toContain('No clear difference: its interval includes zero even before correcting for 12 tasks (−40, interval −90 to +10). The failed trials show what went wrong.');
+    expect(look.text()).toContain(
+      'No clear difference: its interval includes zero even before correcting for 12 tasks (−40, interval −90 to +10). Open the failed trials to see whether the agent or the grader is behind it.',
+    );
     expect(look.text()).not.toContain('got worse');
     expect(look.text()).not.toContain('B passed');
     // tr_fd-vs-sip-07_b_3 is the trial where your held-out label disputes the judge's fail.
@@ -131,7 +148,7 @@ describe('CompareView in fixture mode', () => {
     await settle();
     const caveat = w.get('[data-test="judge-caveat"]');
     expect(caveat.text()).toBe(
-      'Rests on the judge: both tasks that differ are judge-graded, and its agreement with you (κ 0.70, interval 0.47 to 0.88) dips below the 0.6 bar and is provisional.',
+      'Rests on the judge: both tasks that differ are judge-graded. Its agreement with you is κ 0.70, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional.',
     );
     expect(caveat.get('a').text()).toBe('agreement with you');
     expect(caveat.get('a').attributes('href')).toBe('#/labels/judge');
@@ -139,9 +156,13 @@ describe('CompareView in fixture mode', () => {
     expect(w.get('.verdict-main').find('[data-test="worth-a-look"]').exists()).toBe(true);
     // Nothing follows the task table.
     expect(w.get('#tasks').element.closest('section')?.nextElementSibling).toBeNull();
-    const why = w.get('.verdict-why').text();
-    expect(why).toContain('though its interval dips below it. Provisional: 3 held-out outputs still to label.');
-    expect(why).not.toContain('leans on the judge');
+    // The caveat already gives kappa, the bar and that it is provisional, so the aside does not.
+    const line = w.get('[data-test="judge-line"]');
+    expect(line.text()).toBe('The judge scored 4 of the 12 tasks, including both that differ. See judge agreement');
+    expect(line.text()).not.toContain('κ');
+    expect(line.text()).not.toContain('Provisional');
+    expect(line.get('a').attributes('href')).toBe('#/labels/judge');
+    expect(w.get('.verdict-why').text()).not.toContain('leans on the judge');
   });
 
   it('says on a phone what the shared axis shows, and that export needs the API in sample mode', async () => {
@@ -173,6 +194,37 @@ describe('CompareView in fixture mode', () => {
   });
 });
 
+describe('CompareView against the API: blind labelling', () => {
+  type Trial = { id: string; task: string; config: string; passed: boolean | null };
+  const trials = (experimentTrials as unknown as Record<string, Trial[]>).exp_heldout;
+  const fd = (details as unknown as { exp_heldout: { tasks: { id: string; sha256: string }[] } }).exp_heldout.tasks.find((t) => t.id === 'fd-vs-sip-07')?.sha256;
+  // Every failure of fd-vs-sip-07 is one your label disputes, so the callout can only offer a disputed one.
+  const disputedAll = { ...judge, disagreements: trials.filter((t) => t.task === fd && t.passed === false).map((t) => ({ ...judge.disagreements[2], trial_id: t.id })) };
+  const routes = (labelQueue: unknown) => ({
+    '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+    '/api/experiments/exp_heldout/compare': compares.exp_heldout,
+    '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+    '/api/judge/agreement?set=heldout': disputedAll,
+    '/api/labels/queue?set=heldout': labelQueue,
+  });
+
+  it('never says your label disagrees with the judge while held-out outputs remain to label', async () => {
+    routeFetch(routes(queue.heldout));
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="look-link"]').text()).toBe('Open a failed trial');
+    expect(w.text()).not.toContain('your label disagrees');
+    expect(w.html()).not.toContain('your label disagrees');
+  });
+
+  it('says so once the held-out set is labelled', async () => {
+    routeFetch(routes([]));
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="look-link"]').text()).toBe('Open a failed trial (your label disagrees with the judge)');
+  });
+});
+
 describe('CompareView against the API: the check on the method', () => {
   const base = compares.exp_heldout as unknown as Compare;
   function withStats(over: Partial<CompareStats>) {
@@ -191,6 +243,17 @@ describe('CompareView against the API: the check on the method', () => {
     await settle();
     expect(w.findAll('[data-test="why-line"]')[1].text()).toBe(
       'Check on the method: the same config run twice gave +9 points (+2 to +16), a difference where there is none. Treat this result with caution.',
+    );
+  });
+
+  it('gives the judge agreement in the aside when a task that differs is code-graded, so no caveat shows', async () => {
+    const emi = (details as unknown as { exp_heldout: { tasks: { id: string; sha256: string }[] } }).exp_heldout.tasks.find((t) => t.id === 'emi-basic-01');
+    withStats({ tasks: base.stats!.tasks.map((t) => (t.task === emi?.sha256 ? { ...t, significant: true, diff: { estimate: 30, low: 5, high: 55 } } : t)) });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.find('[data-test="judge-caveat"]').exists()).toBe(false);
+    expect(w.get('[data-test="judge-line"]').text()).toBe(
+      'The judge scored 4 of the 12 tasks. Its agreement with you is κ 0.70, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional. See judge agreement',
     );
   });
 

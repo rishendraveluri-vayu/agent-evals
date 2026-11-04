@@ -23,7 +23,7 @@ describe('ExperimentsView in fixture mode', () => {
     await settle();
     const caveat = w.get('[data-test="latest-result"] [data-test="judge-caveat"]');
     expect(caveat.text()).toBe(
-      'Rests on the judge: both tasks that differ are judge-graded, and its agreement with you (κ 0.70, interval 0.47 to 0.88) dips below the 0.6 bar and is provisional.',
+      'Rests on the judge: both tasks that differ are judge-graded. Its agreement with you is κ 0.70, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional.',
     );
     expect(caveat.get('a').attributes('href')).toBe('#/labels/judge');
     const caption = w.get('[data-test="latest-result"] figcaption').element;
@@ -49,8 +49,8 @@ describe('ExperimentsView in fixture mode', () => {
     const w = mount(ExperimentsView);
     await settle();
     expect(w.findAll('[data-test="attention"]').map((a) => a.find('.attention-head').text())).toEqual([
-      '2 trials stopped on infra failures',
-      '3 held-out labels to go',
+      '2 infra failures',
+      '3 held-out outputs to label (7 checks)',
       'Temperature looks inert on ADK',
     ]);
   });

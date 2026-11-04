@@ -6,9 +6,9 @@ import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { armsOf, axisWords, doneCount, excludesZero, headline, intervalText, judgeCaveat, pointsWithInterval, setupOf, timeLeft, totalTrials, type Verdict } from '../lib/arms';
+import { armsOf, axisWords, checksToGo, doneCount, excludesZero, headline, intervalText, judgeCaveat, pointsWithInterval, setupOf, timeLeft, totalTrials, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
-import { minutes, money, percent, relative, signed } from '../lib/format';
+import { minutes, money, percent, plural, relative, signed } from '../lib/format';
 import { harnessShort, isJudged, modelName, settingLabel, splitName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
 import { href } from '../router';
@@ -18,6 +18,8 @@ interface Loaded {
   configs: Config[];
   harnesses: Harness[];
   heldoutToGo: number | null;
+  /** The same outputs counted in checks (one output, one question). */
+  heldoutChecksToGo: number;
   compares: Map<string, Compare | null>;
   latest: ExperimentDetail | null;
   latestFailed: ExperimentTrial | null;
@@ -44,7 +46,7 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
   const worst = latestId ? [...(compares.get(latestId)?.stats?.tasks ?? [])].sort((x, y) => x.diff.estimate - y.diff.estimate)[0]?.task : undefined;
   const failedB = trials.filter((t) => t.passed === false && t.config === latest?.config_hashes[1]);
   const latestFailed = failedB.find((t) => t.task === worst) ?? failedB[0] ?? trials.find((t) => t.passed === false) ?? null;
-  return { experiments, configs, harnesses, heldoutToGo: queue ? queue.length : null, compares, latest, latestFailed };
+  return { experiments, configs, harnesses, heldoutToGo: queue ? queue.length : null, heldoutChecksToGo: checksToGo(queue ?? []), compares, latest, latestFailed };
 });
 
 const show = ref<'all' | 'running' | 'done'>('all');
@@ -95,6 +97,8 @@ interface Attention {
   to: string;
   icon: 'plug' | 'tag' | 'alert';
   title: string;
+  /** A count in brackets after the title, kept on one line: "(7 checks)". */
+  titleNote?: string;
   detail: string;
   infra: boolean;
 }
@@ -110,7 +114,7 @@ const attention = computed<Attention[]>(() => {
         to: href.run(e.id),
         icon: 'plug',
         infra: true,
-        title: `${e.counts.infra_failed} ${e.counts.infra_failed === 1 ? 'trial' : 'trials'} stopped on infra failures`,
+        title: plural(e.counts.infra_failed, 'infra failure'),
         detail: `${e.name}. Each is re-queued once. Not counted as agent failures.`,
       });
     }
@@ -121,7 +125,8 @@ const attention = computed<Attention[]>(() => {
       to: href.labels(),
       icon: 'tag',
       infra: false,
-      title: `${d.heldoutToGo} held-out ${d.heldoutToGo === 1 ? 'label' : 'labels'} to go`,
+      title: `${plural(d.heldoutToGo, 'held-out output')} to label`,
+      titleNote: `(${plural(d.heldoutChecksToGo, 'check')})`,
       detail: "The judge's agreement with you is final once all of them are labelled.",
     });
   }
@@ -326,7 +331,9 @@ const rows = computed<Row[]>(() => {
             class="secondary"
           />
           <span>
-            <span class="attention-head">{{ item.title }}</span>
+            <span class="attention-head">{{ item.title }}<template v-if="item.titleNote">
+              {{ ' ' }}<span class="nowrap">{{ item.titleNote }}</span>
+            </template></span>
             <span class="secondary small block">{{ item.detail }}</span>
           </span>
         </a>
@@ -532,6 +539,10 @@ const rows = computed<Row[]>(() => {
 
 .strong-link {
   font-weight: 500;
+}
+
+.nowrap {
+  white-space: nowrap;
 }
 
 .latest-title {

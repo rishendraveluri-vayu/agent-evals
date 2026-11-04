@@ -16,7 +16,7 @@ export function matrixCell(s: CapabilitySetting | undefined): MatrixCell {
     .filter(([, e]) => e.status === 'inert')
     .map(([model]) => `Inert on ${modelName(model)}`);
   const join = (...parts: (string | undefined)[]) => parts.filter(Boolean).join('. ');
-  if (s.evidence === 'none') return { kind: 'pending', text: 'Probe pending', note: join(...effects) };
+  if (s.evidence === 'none') return { kind: 'pending', text: 'Not probed yet', note: join(...effects) };
   if (!s.supported) return { kind: 'none', text: 'Not supported', note: join(s.observed, ...effects) };
   if (s.evidence.startsWith('probe:')) return { kind: 'probed', text: 'Probed', note: join(s.observed, ...effects) };
   const reason = s.evidence.replace(/^declared:/, '');

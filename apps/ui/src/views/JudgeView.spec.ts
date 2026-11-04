@@ -25,8 +25,10 @@ describe('JudgeView in fixture mode', () => {
   it('says the numbers are provisional while held-out outputs remain to label', async () => {
     const w = mount(JudgeView);
     await settle();
-    expect(w.get('[data-test="provisional"]').text()).toBe('Provisional: 3 held-out outputs still to label. These numbers will change.');
-    expect(w.get('.lede').text()).toContain('Measured on the 40 held-out checks');
+    expect(w.get('[data-test="provisional"]').text()).toBe('Provisional: 3 held-out outputs (7 checks) still to label. These numbers will change.');
+    expect(w.get('.lede').text()).toBe(
+      'Measured on 40 of 47 held-out checks so far, which are never used to tune the rubric. The bar of 0.6 was set before any results came in.',
+    );
     // The numbers stay in view while provisional.
     expect(w.find('[data-test="judge-answer"]').exists()).toBe(true);
     expect(w.find('[data-test="judge-matrix"]').exists()).toBe(true);
@@ -52,7 +54,10 @@ describe('JudgeView in fixture mode', () => {
     expect(w.text()).not.toContain('Compare these two');
     expect(w.text()).toContain('Prompt v2, 20 labels');
     const self = w.get('[data-test="self-line"]').text();
-    expect(self).toBe('relabelled checks got the same answer (90%). The judge matched you on 34 of 40 (85%), the same measure; your own consistency is roughly its ceiling.');
+    expect(self).toBe(
+      'relabelled checks got the same answer (90%, interval 60% to 98%). The judge matched you on 34 of 40 (85%, interval 71% to 93%). 10 relabels are too few to tell that apart from your own consistency.',
+    );
+    expect(self).not.toContain('ceiling');
     expect(w.text()).toContain('9 of 10');
   });
 
@@ -74,9 +79,22 @@ describe('JudgeView once the held-out set is labelled', () => {
     await settle();
     expect(w.find('[data-test="provisional"]').exists()).toBe(false);
     expect(w.find('[data-test="disagreements-later"]').exists()).toBe(false);
+    expect(w.get('.lede').text()).toContain('Measured on the 40 held-out checks, which are never used to tune the rubric.');
     const rows = w.findAll('[data-test="disagreement-row"]');
     expect(rows).toHaveLength(6);
     expect(rows[0].text()).toContain(agreement.disagreements[0].evidence);
+  });
+});
+
+describe('JudgeView against the API: your consistency beside the judge', () => {
+  it('says the judge is below your own consistency when its agreement is under your interval', async () => {
+    const self = { same: 39, total: 40 };
+    routeFetch({ '/api/judge/agreement?set=heldout': { ...agreement, self }, '/api/configs': [], '/api/experiments': [], '/api/labels/queue?set=heldout': [] });
+    const w = mount(JudgeView);
+    await settle();
+    expect(w.get('[data-test="self-line"]').text()).toBe(
+      'relabelled checks got the same answer (98%, interval 87% to 100%). The judge matched you on 34 of 40 (85%, interval 71% to 93%), below your own consistency.',
+    );
   });
 });
 

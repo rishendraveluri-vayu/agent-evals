@@ -34,7 +34,14 @@ describe('TasksView in fixture mode', () => {
     expect(rows()[0].get('[data-verdict]').attributes('data-verdict')).toBe('better');
     expect(rows()[0].get('[data-verdict]').text()).toBe('Better');
     expect(rows()[1].text()).toContain('Judge and state check');
-    expect(w.get('[data-test="last-run-head"]').text()).toBe('Last run: Prompt v1 vs v2, held-out');
+    expect(w.get('[data-test="last-run-head"]').text()).toBe('Last run');
+    expect(w.get('[data-test="last-run-head"]').classes()).toContain('last-run-head');
+    const caption = w.get('[data-test="run-caption"]');
+    expect(caption.text()).toBe('Last run: Prompt v1 vs v2, held-out, 5 trials per arm. No clear difference is not the same as unchanged.');
+    expect(caption.classes()).toContain('result-detail');
+    // The caption sits between the filters and the table.
+    expect(caption.element.previousElementSibling?.classList.contains('filters')).toBe(true);
+    expect(caption.element.nextElementSibling?.classList.contains('table-wrap')).toBe(true);
     const plain = rows().filter((r) => r.find('[data-verdict="none"]').exists());
     expect(plain.length).toBeGreaterThan(0);
     expect(plain[0].get('[data-verdict="none"]').text()).toBe('No clear difference');

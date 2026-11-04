@@ -72,9 +72,7 @@ const TEXT: [string, string][] = [
   ['arm-b-ink', 'arm-b-soft'],
   ['ink', 'arm-a-soft'],
   ['ink', 'arm-b-soft'],
-  ['client', 'client-soft'],
   ['client', 'surface-muted'],
-  ['ink', 'client-soft'],
   ['ink', 'mark'],
 ];
 
@@ -85,9 +83,10 @@ const MARKS: [string, string][] = [
   ['pass', 'surface'],
   ['rule-strong', 'surface'],
   ['span-agent', 'surface'],
-  ['span-tool', 'surface'],
-  ['span-client', 'surface'],
-  ['span-harness', 'surface'],
+  // Tool bars, and the edge that keeps the light harness bars visible in both themes.
+  ['neutral-mark-strong', 'surface'],
+  // Grey intervals (no clear difference) and the hero's A/A row.
+  ['neutral-line', 'surface'],
   ['focus', 'surface'],
   ['focus', 'ground'],
   ['on-pass', 'fail'],
@@ -116,6 +115,17 @@ describe('colour that carries meaning', () => {
       expect(t.focus).toBe(t.ink);
       expect(t.link).not.toBe(t['arm-a']);
     }
+  });
+});
+
+describe('the trial page palette', () => {
+  it('uses only the approved hues: no teal or violet tokens for tools or the client', () => {
+    // The retired teal and violet tokens, spelt in parts so a search of the source finds none.
+    const retired = [['span', 'tool'], ['span', 'client'], ['client', 'soft']].map((p) => `--${p.join('-')}`);
+    for (const { file, css: sheet } of stylesheets()) {
+      for (const name of retired) expect(sheet.includes(name), `${file} uses ${name}`).toBe(false);
+    }
+    for (const t of [light, dark]) expect(t.client).toBe(t['ink-2']);
   });
 });
 
@@ -196,6 +206,17 @@ describe('pass green and fail red', () => {
   });
 });
 
+describe('results that are not findings', () => {
+  it('sets no clear difference in regular weight, while status words and pills keep theirs', () => {
+    const all = rules(css);
+    const plain = all.find((r) => r.selector === '.result-plain');
+    const none = all.find((r) => r.selector === ".result-plain[data-verdict='none']");
+    expect(plain?.body).toMatch(/font-weight:\s*500/);
+    expect(plain?.body).toMatch(/font-size:\s*14px/);
+    expect(none?.body.trim()).toBe('font-weight: 400;');
+  });
+});
+
 describe('disclosures', () => {
   it('show a chevron that flips when open, on every kind of summary', () => {
     const all = rules(css);
@@ -206,6 +227,10 @@ describe('disclosures', () => {
       expect(flipped?.selector, kind).toContain(`${kind}[open] > summary::after`);
     }
     expect(chevron?.body).toMatch(/margin-left:\s*auto/);
+    expect(chevron?.body).toMatch(/flex:\s*none/);
+    // The summary itself never wraps, so the chevron cannot drop to a line of its own.
+    const summary = all.find((r) => r.selector.startsWith('.disclosure > summary, .options > summary'));
+    expect(summary?.body).toMatch(/flex-wrap:\s*nowrap/);
     expect(chevron?.body).toMatch(/border-right:\s*2px solid var\(--ink-2\)/);
     expect(flipped?.body).toMatch(/rotate\(-135deg\)/);
   });

@@ -210,7 +210,7 @@ const CELL_WORDS: Record<Exclude<CellState, 'abandoned'>, string> = {
   ungraded: 'done, not graded',
   running: 'running',
   waiting: 'waiting',
-  infra: 'stopped on an infra failure, re-queued',
+  infra: 'infra failure, re-queued',
   cancelled: 'cancelled',
 };
 
@@ -265,27 +265,39 @@ const grid = computed(() => {
   }));
 });
 
-/** Infra stops are counted from the attempts, not from the latest states, so a finished run still
- *  reports the trials the provider stopped. Each stop was re-run, is re-queued, or gave up. */
+/** Infra failures are counted from the attempts, not from the latest states, so a finished run
+ *  still reports them. Each was re-run, is re-queued, or gave up; `byArm` says where they fell. */
 const tally = computed(() => {
   const all = grid.value.flatMap((row) => row.arms.flat());
   const of = (...s: CellState[]) => all.filter((c) => s.includes(c.state)).length;
   const stops = { total: 0, rerun: 0, requeued: 0, gaveUp: 0 };
-  const stopped: ExperimentTrial[] = [];
-  for (const c of all) {
-    c.attempts.forEach((a, k) => {
-      if (!isInfraStop(a)) return;
-      stopped.push(a);
-      stops.total += 1;
-      const next = c.attempts[k + 1];
-      if (a.status === 'abandoned') stops.gaveUp += 1;
-      else if (!next || next.status === 'queued') stops.requeued += 1;
-      else stops.rerun += 1;
+  const byArm = { a: 0, b: 0 };
+  for (const row of grid.value) {
+    row.arms.forEach((cells, arm) => {
+      for (const c of cells) {
+        c.attempts.forEach((a, k) => {
+          if (!isInfraStop(a)) return;
+          stops.total += 1;
+          byArm[arm === 0 ? 'a' : 'b'] += 1;
+          const next = c.attempts[k + 1];
+          if (a.status === 'abandoned') stops.gaveUp += 1;
+          else if (!next || next.status === 'queued') stops.requeued += 1;
+          else stops.rerun += 1;
+        });
+      }
     });
   }
-  const provider = stopped.length > 0 && stopped.every((t) => t.label === 'infra:provider_error');
-  return { done: of('pass', 'fail', 'ungraded'), running: of('running'), waiting: of('waiting'), stops, cancelled: of('cancelled'), provider };
+  return { done: of('pass', 'fail', 'ungraded'), running: of('running'), waiting: of('waiting'), stops, byArm, cancelled: of('cancelled') };
 });
+
+/** "both in arm B", "all in arm A", "in arm B" when every infra failure fell in one arm; "A 1, B 2"
+ *  otherwise. */
+function armsWords(byArm: { a: number; b: number }, total: number): string {
+  const only = byArm.a === 0 ? 'B' : byArm.b === 0 ? 'A' : null;
+  if (!only) return `A ${byArm.a}, B ${byArm.b}`;
+  if (total === 1) return `in arm ${only}`;
+  return `${total === 2 ? 'both' : 'all'} in arm ${only}`;
+}
 
 const slotCount = computed(() => grid.value.reduce((sum, row) => sum + row.arms.flat().length, 0));
 
@@ -294,9 +306,10 @@ const tallyText = computed(() => {
   const parts = [`${t.done} done`, `${t.running} running`, `${t.waiting} waiting`];
   const s = t.stops;
   if (s.total) {
-    const how = `${s.total} stopped ${t.provider ? 'by the provider' : 'on infra failures'}`;
-    if (s.requeued === s.total) parts.push(`${how} and re-queued`);
-    else parts.push(`${how}: ${[s.rerun ? `${s.rerun} re-run` : '', s.requeued ? `${s.requeued} re-queued` : '', s.gaveUp ? `${s.gaveUp} gave up` : ''].filter(Boolean).join(', ')}`);
+    const noun = `${s.total} infra ${s.total === 1 ? 'failure' : 'failures'}`;
+    if (s.requeued === s.total) parts.push(`${noun} re-queued`);
+    else parts.push(`${noun}: ${[s.rerun ? `${s.rerun} re-run` : '', s.requeued ? `${s.requeued} re-queued` : '', s.gaveUp ? `${s.gaveUp} gave up` : ''].filter(Boolean).join(', ')}`);
+    parts.push(armsWords(t.byArm, s.total));
   }
   if (t.cancelled) parts.push(`${t.cancelled} cancelled`);
   const e = data.value?.experiment;
@@ -943,7 +956,7 @@ const planNote = computed(() => {
         data-test="checks-details"
       >
         <summary class="strong">
-          {{ checksSummary }}
+          <span class="summary-text">{{ checksSummary }}</span>
         </summary>
         <div class="checks checks--inside">
           <div
@@ -971,7 +984,7 @@ const planNote = computed(() => {
         data-test="diff-details"
       >
         <summary class="strong">
-          {{ diffSummary }}
+          <span class="summary-text">{{ diffSummary }}</span>
         </summary>
         <div class="mono diff-body diff-body--inside">
           <div class="secondary">

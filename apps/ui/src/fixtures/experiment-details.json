@@ -30,8 +30,8 @@
     ],
     "n": 5,
     "counts": {
-      "queued": 50,
-      "running": 8,
+      "queued": 54,
+      "running": 4,
       "done": 60,
       "infra_failed": 2,
       "abandoned": 0,
@@ -297,13 +297,13 @@
         "at": "2026-11-05T14:06:00Z",
         "kind": "infra_failure",
         "trial_id": "th_debt-hardship-03_b_2",
-        "message": "debt-hardship-03, arm B, trial 2 stopped: the provider returned 429. Re-queued as attempt 2, the last."
+        "message": "debt-hardship-03, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last."
       },
       {
         "at": "2026-11-05T14:04:00Z",
         "kind": "infra_failure",
         "trial_id": "th_fd-vs-sip-07_b_2",
-        "message": "fd-vs-sip-07, arm B, trial 2 stopped: the provider returned 429. Re-queued as attempt 2, the last."
+        "message": "fd-vs-sip-07, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last."
       },
       {
         "at": "2026-11-05T13:58:00Z",
@@ -620,7 +620,7 @@
         "at": "2026-11-05T12:08:00.000Z",
         "kind": "finished",
         "trial_id": null,
-        "message": "All 120 trials finished. 2 provider errors were re-run once each."
+        "message": "All 120 trials finished. 2 infra failures, both provider errors, were re-run once each."
       },
       {
         "at": "2026-11-05T11:23:00.000Z",

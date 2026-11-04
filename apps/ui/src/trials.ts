@@ -167,7 +167,11 @@ export function duration(ms: number): string {
  *  are the gaps between the trial span's edges and its first and last child. */
 export interface SpanBar {
   id: string;
+  /** The row's name: "Agent call 2", "tool fd_maturity". */
   label: string;
+  /** The same with what the name leaves out, for the row's tooltip and screen readers: the model
+   *  of an agent call. */
+  title: string;
   role: 'agent' | 'tool' | 'client' | 'harness';
   startMs: number;
   durationMs: number;
@@ -187,9 +191,13 @@ export function spanBars(spans: SpanView[], harness?: string): { bars: SpanBar[]
     const a = r.span.attributes;
     const model = typeof a['gen_ai.request.model'] === 'string' ? a['gen_ai.request.model'] : r.span.name.replace(/^chat /, '');
     let label = r.span.name;
+    let title = '';
     let role: SpanBar['role'] = 'harness';
     if (r.role === 'chat') {
-      label = `chat ${model}${r.span.spanId === lastChat && agentChats.length > 1 ? ', final reply' : ''}`;
+      // Numbered, so each call fits its row; the model id is in the tooltip and the details.
+      const n = agentChats.findIndex((c) => c.span.spanId === r.span.spanId) + 1;
+      label = `Agent call ${n}${r.span.spanId === lastChat && agentChats.length > 1 ? ', final reply' : ''}`;
+      title = `${label}: chat ${model}`;
       role = 'agent';
     } else if (r.role === 'chat-sim') {
       label = 'chat simulated client';
@@ -204,6 +212,7 @@ export function spanBars(spans: SpanView[], harness?: string): { bars: SpanBar[]
     return {
       id: r.span.spanId,
       label,
+      title: title || label,
       role,
       startMs: r.startMs,
       durationMs: r.durationMs,
@@ -217,8 +226,10 @@ export function spanBars(spans: SpanView[], harness?: string): { bars: SpanBar[]
     const first = Math.min(...children.map((r) => r.startMs));
     const last = Math.max(...children.map((r) => r.startMs + r.durationMs));
     const who = harness ? harnessShort(harness) : 'Harness';
-    if (first >= 1) bars.unshift({ id: 'derived:startup', label: `${who} start-up`, role: 'harness', startMs: 0, durationMs: first, derived: true, error: false, span: null });
-    if (totalMs - last >= 1) bars.push({ id: 'derived:shutdown', label: 'Shut down and collect files', role: 'harness', startMs: last, durationMs: totalMs - last, derived: true, error: false, span: null });
+    const startup = `${who} start-up`;
+    const shutdown = 'Shut down and collect files';
+    if (first >= 1) bars.unshift({ id: 'derived:startup', label: startup, title: startup, role: 'harness', startMs: 0, durationMs: first, derived: true, error: false, span: null });
+    if (totalMs - last >= 1) bars.push({ id: 'derived:shutdown', label: shutdown, title: shutdown, role: 'harness', startMs: last, durationMs: totalMs - last, derived: true, error: false, span: null });
   }
   return { bars, totalMs };
 }

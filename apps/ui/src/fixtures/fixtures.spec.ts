@@ -35,6 +35,18 @@ describe('fixtures', () => {
     for (const r of compare.rows) expect(keys(r)).toEqual(['config', 'graded', 'passed', 'task', 'trials']);
   });
 
+  it('never run more trials at once than the estimate allows', () => {
+    type Running = { id: string; status: string; estimate: { concurrency?: number } | null };
+    const running = (fixtureResponse('GET', '/experiments') as Running[]).filter((e) => e.status === 'running');
+    expect(running.length).toBeGreaterThan(0);
+    for (const e of running) {
+      const trials = fixtureResponse('GET', `/experiments/${e.id}/trials`) as { status: string }[];
+      const live = trials.filter((t) => t.status === 'running' || t.status === 'claimed').length;
+      expect(e.estimate?.concurrency, e.id).toBeDefined();
+      expect(live, `${e.id} runs ${live} trials at once`).toBeLessThanOrEqual(e.estimate?.concurrency ?? 0);
+    }
+  });
+
   it('serve the one full trial with the contract trial fields, and spans as OTLP', () => {
     const trial = fixtureResponse('GET', '/trials/tr_fd-vs-sip-07_b_3');
     expect(keys(trial)).toEqual(['attempt', 'config', 'end_state', 'experiment_id', 'files', 'grades', 'id', 'label', 'repeat_index', 'result', 'runner_report', 'status', 'task', 'timing', 'usage']);

@@ -52,6 +52,14 @@ const glance = computed(() => {
   };
 });
 
+/** Above the table: which run the last column shows, its size, and what its words can claim. */
+const runCaption = computed(() => {
+  const run = data.value?.run;
+  if (!run) return '';
+  const n = run.detail.n;
+  return `Last run: ${run.detail.name}, ${n} ${n === 1 ? 'trial' : 'trials'} per arm. No clear difference is not the same as unchanged.`;
+});
+
 const lastRun = (t: TaskInfo) => {
   const run = data.value?.run;
   if (!run) return null;
@@ -158,6 +166,13 @@ const groups = computed(() => {
         </select>
       </label>
     </div>
+    <p
+      v-if="runCaption"
+      class="result-detail run-caption"
+      data-test="run-caption"
+    >
+      {{ runCaption }}
+    </p>
 
     <div class="table-wrap">
       <table
@@ -172,21 +187,30 @@ const groups = computed(() => {
             <th scope="col">
               What it checks
             </th>
-            <th scope="col">
+            <th
+              scope="col"
+              class="one-line"
+            >
               Split
             </th>
-            <th scope="col">
+            <th
+              scope="col"
+              class="one-line"
+            >
               Graded by
             </th>
-            <th scope="col">
+            <th
+              scope="col"
+              class="one-line"
+            >
               Client
             </th>
             <th
               scope="col"
-              class="right"
+              class="right last-run-head"
               data-test="last-run-head"
             >
-              {{ data?.run ? `Last run: ${data.run.detail.name}` : 'Last run' }}
+              Last run
             </th>
           </tr>
         </thead>
@@ -225,11 +249,13 @@ const groups = computed(() => {
             <td class="what">
               {{ t.summary }}
             </td>
-            <td>{{ sentence(splitName(t.split)) }}</td>
-            <td class="secondary">
+            <td class="one-line">
+              {{ sentence(splitName(t.split)) }}
+            </td>
+            <td class="secondary one-line">
               {{ gradedBy(t) }}
             </td>
-            <td class="secondary">
+            <td class="secondary one-line">
               {{ clientKind(t.kind) }}
             </td>
             <td class="right num">
@@ -294,8 +320,22 @@ const groups = computed(() => {
   min-width: 1000px;
 }
 
-.what {
-  max-width: 420px;
+/* Close under the filters and close over the table it describes (the page puts 32 px between
+   blocks). */
+.run-caption {
+  margin-top: -18px;
+  margin-bottom: -20px;
+}
+
+.last-run-head {
+  white-space: nowrap;
+}
+
+/* Short labels stay on one line on a wide screen; "What it checks" takes the room they leave. */
+@media (min-width: 641px) {
+  .one-line {
+    white-space: nowrap;
+  }
 }
 
 .task-link {

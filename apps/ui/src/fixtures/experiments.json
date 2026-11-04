@@ -30,8 +30,8 @@
     ],
     "n": 5,
     "counts": {
-      "queued": 50,
-      "running": 8,
+      "queued": 54,
+      "running": 4,
       "done": 60,
       "infra_failed": 2,
       "abandoned": 0,

@@ -130,6 +130,31 @@ export interface JudgeCaveat {
   after: string;
 }
 
+type JudgeStats = NonNullable<CompareStats['judge']>;
+
+/** The judge's agreement with you, estimate first and then its interval, against the bar: what
+ *  follows "Its agreement with you". Three cases: the whole interval clears the bar, the estimate
+ *  clears it but the interval reaches below, or the estimate is below. Ends with the full stop. */
+export function agreementWords(judge: Pick<JudgeStats, 'kappa' | 'low' | 'high' | 'bar'>, toGo: number): string {
+  const k = judge.kappa.toFixed(2);
+  const interval = `${judge.low.toFixed(2)} to ${judge.high.toFixed(2)}`;
+  let words: string;
+  if (judge.low >= judge.bar) words = ` is κ ${k} (interval ${interval}), clearing the ${judge.bar} bar`;
+  else if (judge.kappa >= judge.bar) words = ` is κ ${k}, above the ${judge.bar} bar, but the interval (${interval}) reaches below it`;
+  else words = ` is κ ${k} (interval ${interval}), below the ${judge.bar} bar`;
+  return `${words}${toGo > 0 ? ', and it is provisional.' : '.'}`;
+}
+
+/** "the one task that differs", "both tasks that differ", "all 3 tasks that differ" */
+function differingWords(n: number): string {
+  return n === 1 ? 'the one task that differs is' : n === 2 ? 'both tasks that differ are' : `all ${n} tasks that differ are`;
+}
+
+/** "the one that differs", "both that differ", "all 3 that differ" */
+export function differingShort(n: number): string {
+  return n === 1 ? 'the one that differs' : n === 2 ? 'both that differ' : `all ${n} that differ`;
+}
+
 /** Says a verdict rests on the judge, and how far the judge can be trusted, when every task that
  *  differs after correction is judge-graded. Null when there is no judge, no differing task, or a
  *  differing task that a code grader also sees. */
@@ -141,12 +166,13 @@ export function judgeCaveat<T>(args: {
 }): JudgeCaveat | null {
   const { differing, isJudged, judge, toGo } = args;
   if (!judge || !differing.length || !differing.every(isJudged)) return null;
-  const n = differing.length;
-  const which = n === 1 ? 'the one task that differs is' : n === 2 ? 'both tasks that differ are' : `all ${n} tasks that differ are`;
-  const parts = [...(judge.low < judge.bar ? [`dips below the ${judge.bar} bar`] : []), ...(toGo > 0 ? ['is provisional'] : [])];
-  const verb = parts.length ? parts.join(' and ') : `clears the ${judge.bar} bar`;
-  const before = `Rests on the judge: ${which} judge-graded, and its `;
+  const before = `Rests on the judge: ${differingWords(differing.length)} judge-graded. Its `;
   const link = 'agreement with you';
-  const after = ` (κ ${judge.kappa.toFixed(2)}, interval ${judge.low.toFixed(2)} to ${judge.high.toFixed(2)}) ${verb}.`;
+  const after = agreementWords(judge, toGo);
   return { text: `${before}${link}${after}`, before, link, after };
+}
+
+/** Checks still to label: one per question on each queued output. */
+export function checksToGo(queue: { criteria: unknown[] }[]): number {
+  return queue.reduce((sum, item) => sum + item.criteria.length, 0);
 }

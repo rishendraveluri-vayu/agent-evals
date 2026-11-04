@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeSpan, toBlindItem } from '../api/client';
 import type { Config } from '../api/types';
-import { armsOf, headline, judgeCaveat, methodName, pointsWithInterval, setupOf, timeLeft } from './arms';
+import { agreementWords, armsOf, checksToGo, headline, judgeCaveat, methodName, pointsWithInterval, setupOf, timeLeft } from './arms';
 import { coverage, coverageText } from './capabilities';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, splitCheck } from './checks';
 import { sentenceChanges } from './diff';
-import { money, relative, shortHash, signed, wholeMoney } from './format';
+import { money, relative, shortHash, signed, wholeMoney, wilson } from './format';
 import { mdBlocks } from './markdown';
 import { modelName } from './names';
 import { domainFor, ticksFor, verdictTone } from './scale';
@@ -156,18 +156,36 @@ describe('judgeCaveat', () => {
   const code = { id: 'b', judged: false };
   const judge = { kappa: 0.7, low: 0.47, high: 0.88, bar: 0.6, tasks: 4 };
   const isJudged = (t: { judged: boolean }) => t.judged;
+  const both = [judged, { ...judged, id: 'c' }];
 
-  it('says the result rests on the judge when every differing task is judge-graded', () => {
-    const c = judgeCaveat({ differing: [judged, { ...judged, id: 'c' }], isJudged, judge, toGo: 3 });
+  it('gives the estimate first, then says the interval reaches below the bar, when only the estimate clears it', () => {
+    const c = judgeCaveat({ differing: both, isJudged, judge, toGo: 3 });
     expect(c?.text).toBe(
-      'Rests on the judge: both tasks that differ are judge-graded, and its agreement with you (κ 0.70, interval 0.47 to 0.88) dips below the 0.6 bar and is provisional.',
+      'Rests on the judge: both tasks that differ are judge-graded. Its agreement with you is κ 0.70, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional.',
     );
     expect(c?.link).toBe('agreement with you');
+    expect(c?.before).toBe('Rests on the judge: both tasks that differ are judge-graded. Its ');
     expect(`${c?.before}${c?.link}${c?.after}`).toBe(c?.text);
     expect(judgeCaveat({ differing: [judged], isJudged, judge, toGo: 0 })?.text).toBe(
-      'Rests on the judge: the one task that differs is judge-graded, and its agreement with you (κ 0.70, interval 0.47 to 0.88) dips below the 0.6 bar.',
+      'Rests on the judge: the one task that differs is judge-graded. Its agreement with you is κ 0.70, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it.',
     );
     expect(judgeCaveat({ differing: [judged, judged, judged], isJudged, judge, toGo: 1 })?.text).toContain('all 3 tasks that differ are judge-graded');
+  });
+
+  it('gives the estimate with its interval and says it is below the bar when the estimate is', () => {
+    const low = { ...judge, kappa: 0.55, low: 0.4, high: 0.7 };
+    expect(judgeCaveat({ differing: both, isJudged, judge: low, toGo: 3 })?.text).toBe(
+      'Rests on the judge: both tasks that differ are judge-graded. Its agreement with you is κ 0.55 (interval 0.40 to 0.70), below the 0.6 bar, and it is provisional.',
+    );
+    expect(judgeCaveat({ differing: both, isJudged, judge: low, toGo: 0 })?.after).toBe(' is κ 0.55 (interval 0.40 to 0.70), below the 0.6 bar.');
+  });
+
+  it('says the judge clears the bar when its whole interval does', () => {
+    const high = { ...judge, kappa: 0.82, low: 0.71, high: 0.9 };
+    expect(judgeCaveat({ differing: both, isJudged, judge: high, toGo: 0 })?.text).toBe(
+      'Rests on the judge: both tasks that differ are judge-graded. Its agreement with you is κ 0.82 (interval 0.71 to 0.90), clearing the 0.6 bar.',
+    );
+    expect(judgeCaveat({ differing: both, isJudged, judge: high, toGo: 2 })?.after).toBe(' is κ 0.82 (interval 0.71 to 0.90), clearing the 0.6 bar, and it is provisional.');
   });
 
   it('says nothing when a code grader also sees a differing task, or there is no judge or no difference', () => {
@@ -176,11 +194,26 @@ describe('judgeCaveat', () => {
     expect(judgeCaveat({ differing: [], isJudged, judge, toGo: 3 })).toBeNull();
   });
 
-  it('says the judge clears the bar when its whole interval does and labelling is done', () => {
-    expect(judgeCaveat({ differing: [judged], isJudged, judge: { ...judge, low: 0.62 }, toGo: 0 })?.text).toBe(
-      'Rests on the judge: the one task that differs is judge-graded, and its agreement with you (κ 0.70, interval 0.62 to 0.88) clears the 0.6 bar.',
-    );
-    expect(judgeCaveat({ differing: [judged], isJudged, judge: { ...judge, low: 0.62 }, toGo: 2 })?.after).toContain(') is provisional.');
+  it('shares its agreement wording with the rest of the page', () => {
+    expect(agreementWords(judge, 3)).toBe(' is κ 0.70, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional.');
+  });
+});
+
+describe('what is left to label', () => {
+  it('counts the checks still to label, one per question on each queued output', () => {
+    expect(checksToGo([{ criteria: [1, 2, 3, 4] }, { criteria: [1, 2] }, { criteria: [1] }])).toBe(7);
+    expect(checksToGo([])).toBe(0);
+  });
+});
+
+describe('wilson', () => {
+  const pct = (i: { low: number; high: number }) => [Math.round(i.low * 100), Math.round(i.high * 100)];
+
+  it('gives the 95% Wilson interval for a count, inside 0 to 1', () => {
+    expect(pct(wilson(9, 10))).toEqual([60, 98]);
+    expect(pct(wilson(34, 40))).toEqual([71, 93]);
+    expect(wilson(10, 10).high).toBe(1);
+    expect(wilson(0, 10).low).toBe(0);
   });
 });
 

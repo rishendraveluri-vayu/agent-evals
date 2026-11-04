@@ -1,5 +1,12 @@
 import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
+import details from '../fixtures/experiment-details.json';
+import experimentTrials from '../fixtures/experiment-trials.json';
+import judge from '../fixtures/judge-agreement.json';
+import queue from '../fixtures/label-queue.json';
+import prompts from '../fixtures/prompts.json';
+import trialSpans from '../fixtures/trial-spans.json';
+import trial from '../fixtures/trial.json';
 import { routeFetch, settle, useFixtures } from '../test/helpers';
 import TrialView from './TrialView.vue';
 
@@ -45,21 +52,33 @@ describe('TrialView in fixture mode', () => {
     expect(at[0].attributes('title')).toMatch(/^Started \d+\.\d s in, took \d+\.\d s$/);
   });
 
-  it('names the pinned harness and says which check failed, who graded it and that you dispute it', async () => {
+  it('names the pinned harness and says which check failed and who graded it', async () => {
     const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
     await settle();
     expect(w.get('[data-test="trial-meta"]').text()).toBe('Prompt v2, config 7f3a9c2, Hermes 6112c2a');
     const failedOn = w.get('[data-test="failed-on"]');
-    expect(failedOn.text()).toBe('Failed on: Accounts for tax on FD interest (judge; your label passes it)');
     expect(failedOn.get('a').attributes('href')).toBe('#grade-1');
     const grades = w.findAll('[data-test="grade"]');
     expect(grades[1].attributes('id')).toBe('grade-1');
-    const dispute = grades[1].get('[data-test="dispute"]');
-    expect(dispute.text()).toContain('Your held-out label: Yes. You and the judge disagree on this check.');
-    expect(dispute.get('a').attributes('href')).toBe('#/labels/judge');
-    expect(grades[2].find('[data-test="dispute"]').exists()).toBe(false);
     // The status pill still reports the grades as they are.
     expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed: 2 of 3 checks passed');
+  });
+
+  it('keeps your held-out label out of sight while held-out outputs remain, on a task not in the queue', async () => {
+    // fd-vs-sip-07 has no output in the queue, but your label on this trial disputes the judge.
+    const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
+    await settle();
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: Accounts for tax on FD interest (judge)');
+    expect(w.find('[data-test="dispute"]').exists()).toBe(false);
+    expect(w.text()).not.toContain('Your held-out label');
+    expect(w.text()).not.toContain('your label');
+    // Its quotes, rationale and highlight stay: none of its outputs is still to label.
+    const grades = w.findAll('[data-test="grade"]');
+    expect(grades[1].find('blockquote').exists()).toBe(true);
+    expect(grades[1].text()).toContain('The profile shows a 30% slab');
+    expect(w.find('[data-test="hidden-reasons"]').exists()).toBe(false);
+    expect(w.find('mark').exists()).toBe(true);
+    expect(w.find('[data-test="mark-key"]').exists()).toBe(true);
   });
 
   it('jumps to the failed check without changing the route, from "Failed on" or the highlight', async () => {
@@ -88,7 +107,29 @@ describe('TrialView in fixture mode', () => {
     const story = w.get('.story');
     expect(story.find('#timeline').exists()).toBe(true);
     expect(story.find('#convo').exists()).toBe(true);
-    expect(w.get('.graders-col').find('#timeline').exists()).toBe(false);
+    expect(w.get('.grading').find('#timeline').exists()).toBe(false);
+  });
+
+  it('keeps the settings and files apart from the grading, so a phone can put the story between them', async () => {
+    const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
+    await settle();
+    const grading = w.get('.grading').element;
+    const applied = w.get('.applied').element;
+    expect(applied.parentElement).toBe(grading.parentElement);
+    expect(grading.contains(applied)).toBe(false);
+    expect(w.get('.grading').find('#graders').exists()).toBe(true);
+    expect(w.get('.grading').findAll('[data-test="grade"]')).toHaveLength(3);
+    expect(w.get('.applied').text()).toContain('Settings as applied');
+    expect(w.get('.applied').find('[data-test="trial-files"]').exists()).toBe(true);
+    expect(w.get('.applied').find('.requests').exists()).toBe(true);
+  });
+
+  it('wraps each summary\'s words in one block, with the time inside it, so only the words wrap', async () => {
+    const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
+    await settle();
+    for (const summary of w.findAll('.story summary')) expect(summary.find('.summary-text').exists()).toBe(true);
+    const at = w.find('[data-test="tool-call"] .summary-text .at');
+    expect(at.exists()).toBe(true);
   });
 
   it('draws the timeline with the start-up and shut-down the harness spends around the agent', async () => {
@@ -106,6 +147,73 @@ describe('TrialView in fixture mode', () => {
     const w = mount(TrialView, { props: { trialId: 'nope' } });
     await settle();
     expect(w.get('[data-test="load-error"]').text()).toContain('No sample data for trial nope');
+  });
+});
+
+describe('TrialView against the API: blind labelling', () => {
+  type Detail = { tasks: { id: string; sha256: string }[] };
+  const heldout = (details as unknown as Record<string, Detail>).exp_heldout;
+  const sha = (id: string) => heldout.tasks.find((t) => t.id === id)?.sha256;
+  function routes(over: { trialId?: string; task?: string; queue?: unknown }) {
+    const id = over.trialId ?? 'tr_fd-vs-sip-07_b_3';
+    return routeFetch({
+      [`/api/trials/${id}`]: { ...trial, id, task: over.task ?? trial.task },
+      [`/api/trials/${id}/spans`]: trialSpans,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': over.queue ?? queue.heldout,
+      '/api/experiments/exp_heldout': heldout,
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/prompts': prompts,
+    });
+  }
+
+  it("hides the judge's reasons on a task with outputs still to label, keeping its verdicts", async () => {
+    routes({ trialId: 'tr_distress-12_b_3', task: sha('distress-12') });
+    const w = mount(TrialView, { props: { trialId: 'tr_distress-12_b_3' } });
+    await settle();
+    const grades = w.findAll('[data-test="grade"]');
+    expect(grades).toHaveLength(3);
+    for (const g of [grades[1], grades[2]]) {
+      // Title, Pass or Fail, and the judge's model and rubric stay; quotes and rationale go.
+      expect(g.get('[data-test="grade-kind"]').text()).toBe('Judge claude-haiku-5-5, rubric v3');
+      expect(g.find('.pill').exists()).toBe(true);
+      expect(g.find('blockquote').exists()).toBe(false);
+      expect(g.get('[data-test="hidden-reasons"]').text()).toBe("The judge's reasons for this task are hidden while 1 of its held-out outputs is still to label.");
+    }
+    expect(grades[1].text()).toContain('Accounts for tax on FD interest');
+    expect(grades[1].get('.pill').text()).toBe('Fail');
+    expect(grades[1].text()).not.toContain('The profile shows a 30% slab');
+    // A code-graded check is unchanged.
+    expect(grades[0].text()).toContain('All 3 amounts in the reply match a tool result exactly.');
+    expect(grades[0].find('[data-test="hidden-reasons"]').exists()).toBe(false);
+    // No highlight in the transcript, and no key for one.
+    expect(w.find('mark').exists()).toBe(false);
+    expect(w.find('[data-test="quote-link"]').exists()).toBe(false);
+    expect(w.find('[data-test="mark-key"]').exists()).toBe(false);
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: Accounts for tax on FD interest (judge)');
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed: 2 of 3 checks passed');
+  });
+
+  it('counts the outputs still to label for the task', async () => {
+    const two = [...queue.heldout, { ...queue.heldout[1], item_id: 'lq_extra' }];
+    routes({ trialId: 'tr_distress-12_b_3', task: sha('distress-12'), queue: two });
+    const w = mount(TrialView, { props: { trialId: 'tr_distress-12_b_3' } });
+    await settle();
+    expect(w.get('[data-test="hidden-reasons"]').text()).toBe("The judge's reasons for this task are hidden while 2 of its held-out outputs are still to label.");
+  });
+
+  it('brings back your label and where it disputes the judge once the held-out set is labelled', async () => {
+    routes({ queue: [] });
+    const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
+    await settle();
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: Accounts for tax on FD interest (judge; your label passes it)');
+    const grades = w.findAll('[data-test="grade"]');
+    const dispute = grades[1].get('[data-test="dispute"]');
+    expect(dispute.text()).toBe('Your held-out label: Yes. You and the judge disagree on this check. See judge agreement');
+    expect(dispute.get('a').attributes('href')).toBe('#/labels/judge');
+    expect(grades[2].find('[data-test="dispute"]').exists()).toBe(false);
+    expect(w.find('mark').exists()).toBe(true);
+    expect(w.find('[data-test="hidden-reasons"]').exists()).toBe(false);
   });
 });
 

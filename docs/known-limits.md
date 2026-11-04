@@ -79,7 +79,7 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 
 ## Labelling UI (SP7)
 
-- Labelling is blind only when it is done from the Label page. The Judge page keeps the judge's reasons closed until the held-out set is labelled, but trial pages still show judge verdicts and their evidence while labelling is open, so opening a trial mid-set can steer the labels still to come.
+- Labelling is blind only when it is done from the Label page. While held-out outputs remain to label, the Judge page keeps the judge's reasons closed, and a trial page hides the judge's quotes, rationale and highlights for any task with an output still in the queue and never says where your label disputes the judge. Trial pages still show the judge's Pass or Fail on every check, and the hiding matches tasks by the queue item's `task_id`, which is not in the API contract: if the API leaves it out, trial pages show the judge's reasons for every task.
 
 ## To check before submission
 

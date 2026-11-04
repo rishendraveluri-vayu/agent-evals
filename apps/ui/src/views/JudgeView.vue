@@ -4,9 +4,9 @@ import { api } from '../api/client';
 import type { BlindItem, Config, Experiment, JudgeAgreement } from '../api/types';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
-import { armsOf } from '../lib/arms';
+import { armsOf, checksToGo as countChecks } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
-import { shortHash } from '../lib/format';
+import { percent, plural, shortHash, wilson } from '../lib/format';
 import { href } from '../router';
 
 const { data, error, loading } = useLoad(async () => {
@@ -21,6 +21,8 @@ const { data, error, loading } = useLoad(async () => {
 
 /** Held-out items still to label: until there are none, every number here is provisional. */
 const toGo = computed(() => data.value?.queue.length ?? 0);
+/** The same work counted in checks (one output, one question), the unit the agreement is measured in. */
+const checksToGo = computed(() => countChecks(data.value?.queue ?? []));
 
 const j = computed<JudgeAgreement | null>(() => data.value?.agreement ?? null);
 
@@ -61,19 +63,34 @@ function configLabel(hash: string): string {
   return arm?.label ?? `Config ${shortHash(hash)}`;
 }
 
-const lede = computed(() =>
-  j.value
-    ? `Measured on the ${j.value.labels} held-out checks, which are never used to tune the rubric. The bar of ${j.value.bar} was set before any results came in.`
-    : 'Measured on the held-out checks, which are never used to tune the rubric.',
-);
+const lede = computed(() => {
+  const a = j.value;
+  if (!a) return 'Measured on the held-out checks, which are never used to tune the rubric.';
+  const on = checksToGo.value ? `${a.labels} of ${a.labels + checksToGo.value} held-out checks so far` : `the ${a.labels} held-out checks`;
+  return `Measured on ${on}, which are never used to tune the rubric. The bar of ${a.bar} was set before any results came in.`;
+});
 
-/** Your own consistency against the judge's agreement with you: the same measure, so the first is
- *  roughly the ceiling for the second. */
+/** "3 held-out outputs (7 checks)" */
+const toGoWords = computed(() => `${plural(toGo.value, 'held-out output')} (${plural(checksToGo.value, 'check')})`);
+
+/** Your own consistency beside the judge's agreement with you, each with its 95% interval. Ten
+ *  relabels give a wide interval, so the line says when the two cannot be told apart. */
 const selfLine = computed(() => {
   const a = j.value;
   if (!a?.self) return '';
-  const pct = (n: number, of: number) => `${Math.round((n / Math.max(1, of)) * 100)}%`;
-  return `relabelled checks got the same answer (${pct(a.self.same, a.self.total)}). The judge matched you on ${a.agree} of ${a.labels} (${pct(a.agree, a.labels)}), the same measure; your own consistency is roughly its ceiling.`;
+  const rate = (k: number, n: number) => {
+    const i = wilson(k, n);
+    return `${percent(k / Math.max(1, n))}, interval ${percent(i.low)} to ${percent(i.high)}`;
+  };
+  const self = wilson(a.self.same, a.self.total);
+  const judgeRate = a.agree / Math.max(1, a.labels);
+  const judge = `The judge matched you on ${a.agree} of ${a.labels} (${rate(a.agree, a.labels)})`;
+  const relabels = a.self.total === 1 ? '1 relabel is' : `${a.self.total} relabels are`;
+  const verdict =
+    judgeRate >= self.low && judgeRate <= self.high
+      ? `${judge}. ${relabels} too few to tell that apart from your own consistency.`
+      : `${judge}, ${judgeRate < self.low ? 'below' : 'above'} your own consistency.`;
+  return `relabelled checks got the same answer (${rate(a.self.same, a.self.total)}). ${verdict}`;
 });
 
 /** The kappa scale: evenly spaced, so a phone can keep every other tick. */
@@ -105,7 +122,7 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
       class="provisional"
       data-test="provisional"
     >
-      Provisional: {{ toGo }} held-out {{ toGo === 1 ? 'output' : 'outputs' }} still to label. These numbers will change.
+      Provisional: {{ toGoWords }} still to label. These numbers will change.
     </p>
     <p class="lede">
       {{ lede }}

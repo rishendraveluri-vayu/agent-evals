@@ -38,13 +38,10 @@
   --fail-cell: #fbd5d7;
   --error: var(--fail);
   --neutral-dot: #57606a;
-  --neutral-line: #afb8c1;
-  --client: #6639ba;
-  --client-soft: #f3eefc;
+  --neutral-line: #8c959f;
+  /* The client is told apart by its muted bubble and its place on the left, not by a hue. */
+  --client: var(--ink-2);
   --span-agent: #3d444d;
-  --span-tool: #1b7c83;
-  --span-client: #8250df;
-  --span-harness: var(--neutral-mark-strong);
   --mark: #fdeded;
 
   /* Older names, kept so the spend chart and the recorded-runs list keep their colours. */
@@ -98,13 +95,9 @@
   --fail-soft: #341618;
   --fail-cell: #4a1c20;
   --neutral-dot: #9ba6b2;
-  --neutral-line: #545d68;
-  --client: #b392f0;
-  --client-soft: #251c3a;
+  --neutral-line: #6e7781;
+  --client: var(--ink-2);
   --span-agent: #aab4bf;
-  --span-tool: #39a8b0;
-  --span-client: #a887ee;
-  --span-harness: var(--neutral-mark-strong);
   --mark: #341618;
 
   --series-1: #6f93f2;
@@ -281,6 +274,12 @@ code,
 
 .crumbs a {
   color: var(--ink-2);
+}
+
+/* A literal identifier never breaks inside itself: a crumb wraps between items, not inside
+   fd-vs-sip-07. Table cells do the same (.table .mono below). */
+.crumbs .mono {
+  white-space: nowrap;
 }
 
 .head-row {
@@ -480,12 +479,17 @@ code,
 
 /* A result that is not a finding (no clear difference, no interval yet) or a status (Running,
    Finished): plain words, darker and larger than the detail line under them. Only Better and
-   Worse are pills. */
+   Worse are pills. No clear difference is the absence of evidence, so it is set at regular
+   weight: lighter than the pills and the status words, still above its 13 px grey detail. */
 .result-plain {
   font-size: 14px;
   font-weight: 500;
   color: var(--ink);
   white-space: nowrap;
+}
+
+.result-plain[data-verdict='none'] {
+  font-weight: 400;
 }
 
 /* The line under any result: its numbers, or what happens next. */
@@ -665,7 +669,6 @@ mark {
   cursor: pointer;
   min-height: 48px;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 4px 12px;
   margin: 0 -18px;
@@ -683,12 +686,24 @@ mark {
 }
 
 /* Every disclosure shows a chevron that flips when it opens: a flex summary loses the browser's
-   own marker. */
+   own marker. The summary never wraps: its words go in .summary-text, which wraps on its own, so
+   the chevron stays at the right of the first line. */
 .disclosure > summary,
 .options > summary,
 .requests > summary,
 .run-details > summary {
   list-style: none;
+  flex-wrap: nowrap;
+}
+
+.summary-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 12px 0;
 }
 
 .disclosure > summary::-webkit-details-marker,
@@ -698,12 +713,15 @@ mark {
   display: none;
 }
 
+/* Level with the first line of a 48 px summary, however many lines its words wrap to. */
 .disclosure > summary::after,
 .options > summary::after,
 .requests > summary::after,
 .run-details > summary::after {
   content: '';
   flex: none;
+  align-self: flex-start;
+  margin-top: 20px;
   margin-left: auto;
   width: 8px;
   height: 8px;
