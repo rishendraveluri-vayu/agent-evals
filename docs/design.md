@@ -107,6 +107,8 @@ Added for shipped example data (SP7; migration `011_examples.sql`), so a reviewe
 
 Changed after the second fresh-clone QA (5 Nov), no migration: the API is told whether each provider key is set (compose passes `ANTHROPIC_KEY_SET: ${ANTHROPIC_API_KEY:+1}` and the Gemini one, a flag and never the key, which stays LiteLLM's alone; `scripts/check_compose.py` enforces both), so `GET /models` carries `key_set` and the UI holds a run back before its first call fails. A `fake/*` model is a script: its trials are not labelling items, and its made-up prices are kept out of `GET /spend`'s trial spend (`fake_trials_usd`, A32). The export's grade columns and `outcome` are each trial's current grading, as the comparison counts it; older grade versions stay in the database and the bundle.
 
+Changed after the third fresh-clone QA (5 Nov), no migration: both exports carry `experiment_title`, the name screens show (a shipped example's manifest title, else the experiment's name), so an example's stored working name is never the only one a reader sees. `POST /experiments` caps a name at 200 characters, and the judge's approval refuses a model whose provider key is known not to be set. In the UI, one helper says what two configs differ in, with both values (`configChanges` in `apps/ui/src/lib/checks.ts`); config names, run names, the Run screen's arm labels and checks, and the comparison header use it (A36).
+
 Interim, not a design decision: until SP2, the API reads finished trial folders from `RUNS_DIR` through a `TrialStore` interface (`apps/api/src/trials/trial-store.ts`), so the trace view and spend chart work now. SP2's database store replaces the file store behind the same interface.
 
 Planned in the spec, not yet designed:

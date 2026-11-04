@@ -132,6 +132,7 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 - **A grading job with a judge grader carries the key** (since 4 Nov night, only those; a job without one gets `judge: null`). It reaches the grader worker's memory, not its unit tests: a `unit_test` runs in a subprocess with an empty environment.
 - **A revoked approval's spend relies on LiteLLM keeping a deleted key's spend-log rows** (assumption A19, not checked on v1.99.4). The figure read at revoke is the floor and the fallback, so at worst `GET /spend` under-counts calls whose rows landed after the revoke.
 - **`GET /spend` reads LiteLLM's spend log once per approval ever made**, on every request, in parallel. With LiteLLM down each read waits for its timeout (15 s) and the judge line is null while any approval is active.
+- **The judge's key check knows set, not valid (5 Nov, QA round 3).** `POST /experiments/:id/judge` refuses a model whose provider key compose's flag says is not set (`provider_key_missing`, naming the variable), but a key that is set and wrong, expired or without access to the model is approved, and every judge grade then errors. Outside compose there is no flag and nothing is refused.
 - **The header's visible spend split shows trials and platform calls only.** `total_usd`, and so the header's bar and its spoken summary, include judge spend; a Judge figure in the visible split is a UI follow-up.
 
 
@@ -167,6 +168,12 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 - **Fake-model trials are never labelling items.** Since 5 Nov the labelling queue leaves out trials whose agent ran on a `fake/*` model (a script, not an agent's output). A trial with a real agent and a fake simulated client is still an item: the agent's turns are real, but the client's are scripted, so judge those labels with that in mind.
 - **A config counts as the example's until one of your own experiments uses it.** `example_only` is worked out from which experiments use a config: one the shipped example uses (or the parent of one) and none of your own does. A config you saved yourself with exactly the content of an example's (the same hash) before loading the example is one row, so it counts as the example's until an experiment of yours uses it; pickers then leave it out of their defaults, and it can still be named in the address or forked.
 - **A config error's own trial is not re-run when its arm resumes** (D26, above). The run page now says so in the arm's "How to fix it": after the key or route is fixed, the arm's waiting trials run, and the slot that failed stays an infra failure. A run whose arm has no waiting trials left needs to be set up again.
+
+## Names and what differs (fresh-clone QA round 3, 5 Nov)
+
+- **A config's name is fixed when it is saved.** Since 5 Nov an unnamed config is named from what it holds (A36), but configs saved before keep their old auto-names ("Prompt v1 on Own loop, Fake model finance-emi"), so two of them one setting apart can still share a name. The Run screen then shows each arm's own value beside the name ("(max steps 10)") and the run's default name says what differs, but the arm pickers list configs by name and short hash only, so same-named configs are told apart there by hash. A name is a label; the hash is what a result points to.
+- **An auto-name lists settings away from the platform's default, not the harness's.** A Hermes config with compression off is not named "compression off", though Hermes's own default is on (the platform turns it off unless the config turns it on). Past 120 characters the settings a config shares with its relative are left out of its name, so a long name may not mention every setting it sets; the config page lists them all.
+- **"What differs" reads the two saved configs.** A toolset, prompt or capabilities file that kept its name but changed is named as such ("the finance all toolset's content"), without saying what in it changed; the Details disclosure has the two hashes, and the change itself is in git.
 
 ## Cost comparisons (4 Nov night)
 
