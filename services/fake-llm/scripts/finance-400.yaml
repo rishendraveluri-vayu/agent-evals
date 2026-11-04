@@ -1,0 +1,5 @@
+# For the retry-layer gate test (D16): always 400 with the wording Haiku 5.5 used on 4 Nov for a
+# rejected parameter. LiteLLM must not retry it, and the runner labels it infra:config_error (D26).
+description: Always 400, a rejected-parameter error.
+steps:
+  - fault: {kind: "400", message: "`temperature` is deprecated for this model."}

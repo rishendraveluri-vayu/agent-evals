@@ -9,6 +9,11 @@ Checked against LiteLLM v1.99.4 on 3 Nov: `GET /spend/logs?api_key=<token>` retu
 call, failures included (`status: failure`, `metadata.error_information.error_code`), and with
 `store_prompts_in_spend_logs` the bodies are in `proxy_server_request` and `response`. Rows land
 about 1 s after the call with `proxy_batch_write_at: 1`.
+
+LiteLLM's own retries (D16) do not add rows: a request it retried is still one row, with the
+retries in `metadata.attempted_retries` (checked 4 Nov). So a span is one request the harness
+sent, `evals.proxy.attempts` says how many tries the provider got, and a harness retry is
+still an extra span.
 """
 
 from __future__ import annotations
@@ -125,17 +130,36 @@ class ProxyClient:
 
     @staticmethod
     def usage(records: list[dict], complete: bool = True) -> dict[str, Any]:
+        """`model_calls` counts the requests the harness sent (one row each), `attempts` the
+        requests LiteLLM sent the provider for them (D16 retries included), and
+        `retried_calls` the calls that needed more than one attempt."""
         failed = [r for r in records if r.get("status") != "success"]
         last = records[-1] if records else None
         return {
             "complete": complete,
             "model_calls": len(records),
+            "attempts": sum(provider_attempts(r) for r in records),
+            "retried_calls": sum(1 for r in records if provider_attempts(r) > 1),
             "failed_calls": len(failed),
             "input_tokens": sum(int(r.get("prompt_tokens") or 0) for r in records),
             "output_tokens": sum(int(r.get("completion_tokens") or 0) for r in records),
             "cost_usd": round(sum(float(r.get("spend") or 0.0) for r in records), 8),
             "last_status": call_status(last) if last else None,
         }
+
+
+def provider_attempts(row: dict) -> int:
+    """How many times LiteLLM sent this logged call to the provider (D16).
+
+    LiteLLM v1.99.4 writes one spend-log row per request it receives, however many times its
+    router retried it, and puts the retries in `metadata.attempted_retries` (checked 4 Nov
+    against the fake: 429, 429, 200 is one success row with attempted_retries 2). A call
+    refused before routing (a budget stop) has no attempted_retries and never reached the
+    provider, so it counts 0."""
+    retries = (row.get("metadata") or {}).get("attempted_retries")
+    if isinstance(retries, bool) or not isinstance(retries, int):
+        return 0
+    return 1 + max(retries, 0)
 
 
 def call_status(row: dict) -> str:
@@ -230,6 +254,8 @@ def merge_proxy_spans(
             "evals.source": "proxy",
             "evals.role": role,
             "evals.attempt": attempt,
+            # LiteLLM's own tries at this call (D16); evals.attempt counts the harness's.
+            "evals.proxy.attempts": provider_attempts(row),
             "evals.proxy.status": status,
             "evals.proxy.request_id": row.get("request_id"),
             "evals.cost_usd": float(row.get("spend") or 0.0),

@@ -51,6 +51,24 @@ def test_malformed_tool_call_through_litellm(tmp_path):
     assert tool["content"] == "An error occurred while running the tool. Please try again."
 
 
+def test_no_harness_retries_through_litellm(tmp_path):
+    """R10.11 with D16: one harness request for the 429, LiteLLM's retries behind it."""
+    PROXY.test_no_harness_retries(tmp_path, None)
+
+
+@pytest.mark.parametrize("script", ["finance-429-twice", "finance-503-twice"])
+def test_litellm_retry_recovers(tmp_path, script):
+    PROXY.test_proxy_retry_recovers(tmp_path, script)
+
+
+def test_litellm_retries_run_out(tmp_path):
+    PROXY.test_proxy_retries_run_out(tmp_path)
+
+
+def test_litellm_does_not_retry_a_400(tmp_path):
+    PROXY.test_proxy_no_retry_on_400(tmp_path)
+
+
 def test_conversation_through_litellm(tmp_path):
     run = PROXY.test_conversation(tmp_path, None)
     PROXY.check_proxy_records(run)

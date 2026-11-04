@@ -108,6 +108,9 @@ def test_auth_permission_and_not_found_are_config_errors(status):
         ("429", "infra:provider_error"),
         ("500", "infra:provider_error"),
         ("503", "infra:provider_error"),
+        # D16: LiteLLM's per-call timeout, still failing after its retries (seen 4 Nov on
+        # v1.99.4 with a hung fake call: one row, status 408, attempted_retries 3)
+        ("408", "infra:provider_error"),
         ("budget_exceeded", "infra:budget_net"),
         ("200", "agent"),
     ],

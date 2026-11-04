@@ -371,6 +371,9 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   status, reason, grader_source, source_note, task_sha256, framework_version, passed, outcome,
   error, queued_at, graded_at`), and a newer job still queued, claimed or failed. Both are null
   before the first grading.
+  `runner_report.proxy_usage` is stored as the runner wrote it; since D16 it carries `attempts`
+  (LiteLLM's tries at the provider) and `retried_calls` beside `model_calls` (the harness's
+  requests). The API does not index those two yet.
 - `GET /trials/:id/spans` returns contract v2 spans in time order.
 - `GET /trials/:id/files/*path` streams one stored file (path traversal refused).
 - The existing folder-based `/trials` endpoints (`FileTrialStore`) stay for runs recorded
@@ -453,7 +456,8 @@ trial cannot read or change another trial's stored files (D3).
    `done` for an `agent` label; for an `infra:*` label, `infra_failed` and, if this was
    attempt 1, a new `queued` attempt 2 (D16: re-queued once, never twice), except for the two
    labels that are never re-queued (D26): `infra:config_error`, which also pauses its arm
-   (D37), and `infra:budget_net`. `infra:provider_error`, `infra:sim_error` (the simulated
+   (D37), and `infra:budget_net`. `infra:provider_error` (429, 5xx or LiteLLM's 408 timeout,
+   still failing after LiteLLM's own retries, D16), `infra:sim_error` (the simulated
    client's call failed or its reply had no text, D26), `infra:adapter_crash` and
    `infra:timeout_kill` are re-queued once. Each infra attempt is an `infra_failure` event
    naming its label, and each re-queued attempt a `requeue` event. After the report, D32's

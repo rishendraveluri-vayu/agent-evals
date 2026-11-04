@@ -11,7 +11,9 @@ A harness counts only once these pass against the fake model server, with no rea
 4. timeout: a hung model call ends the trial as timeout within timeout_s plus a margin;
 5. errors: a malformed tool call goes back to the model (D18), or, for a harness that declares it
    cannot, ends the run in the declared end state; and a 429 is not retried by the harness
-   (R10.11);
+   (R10.11). Through LiteLLM, the proxy's own retries (D16) recover a call that fails twice,
+   run out on one that always fails (infra:provider_error), and never touch a 400, while the
+   harness still sends each call once;
 6. conversation: a simulated client holds a three-turn conversation;
 7. schemas: every output validates (the runner checks this on every gate run).
 
@@ -51,6 +53,9 @@ GATE_SYSTEM_PROMPT = (
 )
 MODEL_KEY_ENV = "EVALS_MODEL_API_KEY"
 SIM_KEY_ENV = "EVALS_SIM_API_KEY"
+# D16: LiteLLM's tries at a call that keeps failing with a retryable error, 1 + num_retries in
+# services/litellm/config.yaml. The proxy tests fail if the two drift apart.
+LITELLM_MAX_ATTEMPTS = 4
 
 
 def prompt_text(path: Path) -> str:
@@ -484,14 +489,76 @@ class Gate:
         assert tool_msgs, "the malformed call's error never went back to the model"
         return run
 
-    def test_no_harness_retries(self, tmp_path: Path, fake: FakeServer) -> GateRun:
+    def test_no_harness_retries(self, tmp_path: Path, fake: FakeServer | None) -> GateRun:
+        """R10.11: the harness sends each model call once. Straight against the fake, the
+        always-429 call is one request. Through LiteLLM (D16) the proxy retries it itself: the
+        harness still sends one request (one spend-log row), LiteLLM tries it
+        LITELLM_MAX_ATTEMPTS times behind it, and the trial is infra:provider_error (D26)."""
         run = self.run(tmp_path, fake, self.spec(tmp_path / "trial", "finance-429", fake))
         self.check_schemas(run)
         assert run.result["end_state"] == "harness_error", run.explain()
         assert run.result["final_answer"] is None
-        assert len(self.agent_requests(run)) == 1, (
-            f"{len(self.agent_requests(run))} requests: the harness retried"
-        )
+        sent = self.agent_requests(run)
+        assert len(sent) == 1, f"{len(sent)} requests: the harness retried"
+        if self.proxy is not None:
+            assert sent[0]["status"] == "429", sent[0]["status"]
+            assert sent[0]["attempts"] == LITELLM_MAX_ATTEMPTS, sent[0]["attempts"]
+            usage = run.report["proxy_usage"]
+            assert usage["model_calls"] == 1 and usage["retried_calls"] == 1, usage
+            assert usage["attempts"] == LITELLM_MAX_ATTEMPTS, usage
+            assert run.report["label"] == "infra:provider_error", run.report["label"]
+        return run
+
+    # ---- D16, proxy mode only: LiteLLM's retries --------------------------------------------
+
+    def _proxy_run(self, tmp_path: Path, script: str) -> GateRun:
+        """A run through LiteLLM with a user message no earlier run sent. The fake counts a
+        `times: n` fault per conversation state and the compose fake is never reset, so a
+        repeated message would find the fault already spent."""
+        assert self.proxy is not None, "D16 retry tests run through LiteLLM only"
+        spec = self.spec(tmp_path / "trial", script, None)
+        spec["task"]["messages"][0]["content"] += f" (ref {os.urandom(4).hex()})"
+        run = self.run(tmp_path, None, spec)
+        self.check_schemas(run)
+        return run
+
+    def test_proxy_retry_recovers(self, tmp_path: Path, script: str) -> GateRun:
+        """The first call fails twice (`finance-429-twice` or `finance-503-twice`), then is
+        served: 1 harness request, 3 provider attempts, and the trial answers as usual."""
+        run = self._proxy_run(tmp_path, script)
+        assert run.result["end_state"] == "answered", run.explain()
+        assert run.report["label"] == "agent", run.report["label"]
+        sent = self.agent_requests(run)
+        assert [r["status"] for r in sent] == ["200"] * len(sent), sent
+        assert [r["attempts"] for r in sent] == [3] + [1] * (len(sent) - 1), sent
+        assert [r["harness_attempt"] for r in sent] == [1] * len(sent), "the harness re-sent"
+        usage = run.report["proxy_usage"]
+        assert usage["model_calls"] == len(sent) >= run.result["counts"]["model_calls"], usage
+        assert usage["attempts"] == len(sent) + 2 and usage["retried_calls"] == 1, usage
+        assert usage["failed_calls"] == 0, usage
+        return run
+
+    def test_proxy_retries_run_out(self, tmp_path: Path) -> GateRun:
+        """Every attempt gets a 503 (`finance-503`): LiteLLM's retries are bounded, the harness
+        sends the call once, and the trial is infra:provider_error, which the API re-queues."""
+        run = self._proxy_run(tmp_path, "finance-503")
+        assert run.result["end_state"] == "harness_error", run.explain()
+        assert run.report["label"] == "infra:provider_error", run.report["label"]
+        sent = self.agent_requests(run)
+        assert [(r["status"], r["attempts"]) for r in sent] == [("503", LITELLM_MAX_ATTEMPTS)]
+        assert run.report["proxy_usage"]["attempts"] == LITELLM_MAX_ATTEMPTS
+        return run
+
+    def test_proxy_no_retry_on_400(self, tmp_path: Path) -> GateRun:
+        """A 400 (`finance-400`, a rejected parameter) is never retried, by LiteLLM or the
+        harness: one request, one attempt, labelled infra:config_error (D26)."""
+        run = self._proxy_run(tmp_path, "finance-400")
+        assert run.result["end_state"] == "harness_error", run.explain()
+        assert run.report["label"] == "infra:config_error", run.report["label"]
+        sent = self.agent_requests(run)
+        assert [(r["status"], r["attempts"]) for r in sent] == [("400", 1)], sent
+        usage = run.report["proxy_usage"]
+        assert usage["attempts"] == 1 and usage["retried_calls"] == 0, usage
         return run
 
     def test_conversation(self, tmp_path: Path, fake: FakeServer) -> GateRun:
@@ -562,6 +629,8 @@ def proxy_requests(trial_dir: Path, spans: list[dict[str, Any]]) -> list[dict[st
                 "script": str(a.get("gen_ai.request.model", "")).split("/")[-1],
                 "fault": None,
                 "status": a.get("evals.proxy.status"),
+                "attempts": a.get("evals.proxy.attempts"),  # LiteLLM's tries (D16)
+                "harness_attempt": a.get("evals.attempt"),  # above 1: the harness re-sent
                 "role": a.get("evals.role"),
             }
         )

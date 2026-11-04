@@ -17,6 +17,8 @@
   "proxy_usage": {
     "complete": true,
     "model_calls": 1,
+    "attempts": 1,
+    "retried_calls": 0,
     "failed_calls": 1,
     "input_tokens": 628,
     "output_tokens": 0,

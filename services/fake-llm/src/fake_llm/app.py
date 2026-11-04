@@ -31,6 +31,24 @@ log = logging.getLogger("fake_llm")
 
 CAPTURE_SIZE = 2000
 
+# Status faults: (default message, OpenAI error type, code). A script's fault.message replaces
+# the message, for example to look like a provider's own 400 wording.
+STATUS_ERRORS: dict[str, tuple[str, str, str | None]] = {
+    "400": ("Invalid request", "invalid_request_error", None),
+    "401": ("Incorrect API key provided", "invalid_request_error", "invalid_api_key"),
+    "403": ("You are not allowed to use this model", "invalid_request_error", None),
+    "404": ("The model does not exist", "invalid_request_error", "model_not_found"),
+    "429": ("Rate limit reached", "requests", "rate_limit_exceeded"),
+    "500": ("The server had an error while processing your request", "server_error", None),
+    "502": ("Bad gateway", "server_error", None),
+    "503": (
+        "This model is currently experiencing high demand. Please try again later",
+        "server_error",
+        None,
+    ),
+}
+assert set(STATUS_ERRORS) == set(script_lib.STATUS_FAULTS)
+
 
 @dataclass
 class FakeState:
@@ -111,24 +129,21 @@ async def chat_completions(request: Request) -> Any:
         return NoResponse()
 
     kind = fault.kind if fault else None
-    if kind == "429":
+    if fault is not None and kind in STATUS_ERRORS:
         done("completed")
-        return openai_error(
-            429,
-            "Rate limit reached (fake-llm forced fault).",
-            "requests",
-            code="rate_limit_exceeded",
-            headers={
+        message, error_type, code = STATUS_ERRORS[kind]
+        headers = None
+        if kind == "429":
+            headers = {
                 "retry-after": str(math.ceil(fault.retry_after)),
                 "retry-after-ms": str(round(fault.retry_after * 1000)),
-            },
-        )
-    if kind == "500":
-        done("completed")
+            }
         return openai_error(
-            500,
-            "The server had an error while processing your request (fake-llm forced fault).",
-            "server_error",
+            int(kind),
+            fault.message or f"{message} (fake-llm forced fault).",
+            error_type,
+            code=code,
+            headers=headers,
         )
     if kind == "timeout" and await sleep_unless_disconnected(request.receive, fault.seconds):
         done("client_disconnected")
