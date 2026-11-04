@@ -1,8 +1,10 @@
 # agent-evals
 
-A platform that runs an AI agent (a harness plus a model) on a set of tasks, many times each, and
-answers one question with evidence: **did the agent get better, worse or stay the same after a
-change, and how sure are we?**
+A platform that runs an AI agent (a harness plus a model) on a set of tasks, many times each, built
+to answer one question with evidence: **did the agent get better, worse or stay the same after a
+change, and how sure are we?** This version reports the evidence (pass counts, cost and time per
+version and per task, every trial's trace and grades); the verdict with its interval is not built
+yet (see Status).
 
 Five harnesses plug in through one adapter contract: Hermes Agent, LangGraph, Google ADK, the
 OpenAI Agents SDK and a plain tool-calling loop. Every model call goes through a LiteLLM proxy,
@@ -25,12 +27,21 @@ docker compose up -d --build --wait
 ```
 
 Then open **http://127.0.0.1:8080**. Every port binds to localhost only. If a port is taken, set
-`UI_PORT`, `API_PORT` or `LITELLM_PORT`, for example `API_PORT=3001 docker compose up -d --build --wait`.
+`UI_PORT`, `API_PORT` or `LITELLM_PORT`, for example `API_PORT=3001 docker compose up -d --build --wait`,
+and pass the same variables to every later `docker compose` command and to the checks under
+Develop and test.
 
-**Keys.** You need no key to look around or to open the finished example. To run agents on real
-models, copy `.env.example` to `.env`, add `ANTHROPIC_API_KEY` (Claude) and/or `GEMINI_API_KEY`,
-then run `docker compose up -d` again. Every run shows its trials, models and most it can cost
-before it starts, and asks you to confirm a paid run.
+**Keys.** You need no key to look around, open the finished example, build and save an agent, or
+preview what reaches the model. Running an agent on tasks needs a real model, so it needs a
+provider key: copy `.env.example` to `.env`, add `ANTHROPIC_API_KEY` (Claude) and/or
+`GEMINI_API_KEY`, then run `docker compose up -d` again. Every run shows its trials, models and
+most it can cost before it starts, and asks you to confirm a paid run.
+
+**Fake models are for tests, not a demo.** The full platform's Configs screen also offers fake
+models (`fake/...`), served by a scripted local server at made-up prices, so the platform can be
+tested end to end with no key and no spend. They make the same scripted calls whatever the task
+(one always works out the same EMI), so they fail most tasks: a run on them shows the machinery
+(queueing, retries, traces, grading), not how good an agent is.
 
 Stop it with `docker compose down`; add `-v` to wipe the local database too.
 
@@ -38,19 +49,22 @@ Stop it with `docker compose down`; add `-v` to wipe the local database too.
 
 The home page offers:
 
-1. **See a finished example.** A real A/B experiment, already run, shipped with the repo: the
-   comparison per task, every trial's trace (messages, tool calls and results, grader reasoning,
-   final score) and the grades. Nothing is spent.
+1. **See a finished example.** A real run on a real model (Claude Haiku 5.5), shipped with the
+   repo: own loop against Hermes, each task's pass counts, every trial's trace (messages, tool
+   calls and results, grader reasoning) and its grades. Nothing runs and nothing is spent. Today it
+   is a small draft: 15 draft tasks, one trial per task and arm, and 20 of its 30 trials undecided
+   because the LLM judge was not approved for it. The full experiment replaces it.
 2. **Build your own, step by step.** Pick an agent type (each has an "i" that says what it is and
    what it adds to your prompt), a model, the instructions and a few settings. Preview exactly
    what reaches the model, for free. Then evaluate it against a baseline: run it, compare the
-   results, and open a failed trial to see why it failed.
+   results, and open a failed trial to see why it failed. Running it needs a provider key (see
+   Keys); without one you can build, save and preview, but not run.
 3. **The full platform.** Every experiment, config, task, harness and label, at full detail.
 
 The first door opens `http://127.0.0.1:8080/#/example`. The first time, it copies the example shipped
 in `examples/` into your local database: rows are only inserted, the example is read-only, and
-nothing runs or is spent. `GET /api/examples` lists the shipped examples. Today's is a small draft
-stand-in until the real experiment is exported (`docs/known-limits.md`).
+nothing runs or is spent. `GET /api/examples` lists the shipped examples. Its title says what it is
+("Draft stand-in: ..."), and `docs/known-limits.md` says why its counts prove nothing.
 
 ## What runs where
 
@@ -112,13 +126,30 @@ python3 scripts/smoke.py                                                     # t
 docker compose --profile smoke run --rm netcheck                             # worker isolation
 ```
 
+**The API's database tests.** Without `TEST_DATABASE_URL`, `pnpm test` skips the API's
+database suites (nine test files) and prints that they were skipped, not passed. To run them,
+start a throwaway Postgres (never the compose one), then stop it:
+
+```bash
+docker run --rm -d --name evals-api-test -p 127.0.0.1:55432:5432 -e POSTGRES_PASSWORD=x postgres:17
+TEST_DATABASE_URL=postgresql://postgres:x@127.0.0.1:55432/postgres pnpm test
+docker stop evals-api-test
+```
+
+**A stack on other ports or under another project name.** The checks need the same settings as
+the stack: `API_PORT=3001 python3 scripts/smoke.py` (and `UI_PORT`, `LITELLM_PORT` if you changed
+them), and `API_PORT=3001 docker compose --profile smoke run --rm netcheck`, because compose
+otherwise recreates the API on its default port. If you started it with `-p <name>` or
+`COMPOSE_PROJECT_NAME=<name>`, use the same for both: smoke.py reads `COMPOSE_PROJECT_NAME`.
+
 `CLAUDE.md` lists every command, including the per-harness gate tests.
 
 ## Docs
 
 - `docs/design.md`: architecture, adapter interfaces, data model, isolation and reproducibility,
   graders and their validation, the statistics and the choice of N.
-- `docs/experiment.md`: the real experiment, its hypothesis, setup, results and conclusion.
+- `docs/experiment.md`: the real experiment's write-up, its hypothesis, setup, results and
+  conclusion, written after the run; until then a template.
 - `docs/known-limits.md`: where the platform's conclusions should not be trusted.
 - `docs/cost.md`: the cost formula and the actual spend.
 - `docs/assumptions.md` and `docs/decisions.md`: every assumption, and every design decision with
