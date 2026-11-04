@@ -61,5 +61,6 @@ Fill in with what we actually tried and measured.
 | --- | --- | --- | --- | --- |
 | 4 Nov | First real-model smoke on Claude Haiku 5.5, 5 harnesses × 3 trials (`runs/20261104T083111Z-real`) | 15 | $0.077 (LiteLLM's records) | Rishi, R8, estimate $0.20, cap $3 |
 | 4 Nov | Two earlier attempts that never reached a model: a script path bug, then an unscoped API key rejected with a 400 | 6 | $0.00 | same |
+| 4 Nov | client-sim v2 check through the engine: 3 conversation trials on Haiku 5.5 (own loop, Hermes, LangGraph), experiment `e_0mw22cinx2dade03d979bb3c4` | 3 | $0.039 | Rishi, D27 ("I'll show you 3 transcripts from v2") |
 
 Per trial on Haiku 5.5: a single question cost $0.0024 to $0.0035 (3 model calls); a 3-turn simulated-client conversation cost $0.012 to $0.014 (8 to 10 agent calls plus the simulator's).

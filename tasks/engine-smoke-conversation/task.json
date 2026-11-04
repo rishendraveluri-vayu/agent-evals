@@ -1,0 +1,19 @@
+{
+  "id": "engine-smoke-conversation",
+  "version": "1",
+  "split": "discovery",
+  "kind": "conversation",
+  "summary": "ENGINE TEST ONLY, synthetic: a simulated client asks where to start with her money. Used to check client-sim v2 on a real model. Not part of the task set.",
+  "synthetic": true,
+  "messages": [{"role": "user", "content": "Hi. I don't really know where to start with my money. Can you help me?"}],
+  "client_sim": {
+    "persona": "Meera Raghavan, 34, a QA engineer in Pune who supports her son, 6, and her mother, 63. Practical, a little anxious about money, answers what she is asked.",
+    "hidden_facts": ["Her mother's medical bills are now about Rs 8,000 a month", "She can put about Rs 20,000 a month towards her debts"],
+    "concerns": ["Am I going to fall behind on the credit card?"],
+    "goal": "A clear order to pay off her debts and a monthly plan she can follow",
+    "opening_message": "Hi. I don't really know where to start with my money. Can you help me?",
+    "max_client_turns": 4
+  },
+  "client_state": "client.json",
+  "graders": []
+}
