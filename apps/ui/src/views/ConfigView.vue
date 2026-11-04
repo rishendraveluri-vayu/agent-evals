@@ -197,7 +197,7 @@ function ifUnset(name: SettingName): string {
     if (cap.default === false) return 'Off';
     return 'Not sent';
   }
-  if (name === 'temperature' && (cap.default === null || cap.default === undefined)) return 'Not sent; the provider default applies';
+  if (name === 'temperature' && (cap.default === null || cap.default === undefined)) return 'Not sent; provider default';
   return 'Platform default';
 }
 

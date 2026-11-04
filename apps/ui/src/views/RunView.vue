@@ -1019,6 +1019,35 @@ const planNote = computed(() => {
   margin-bottom: 8px;
 }
 
+@media (max-width: 640px) {
+  .grid-wrap {
+    padding: 14px 12px;
+  }
+
+  .run-grid {
+    border-spacing: 3px;
+  }
+
+  .run-grid td.gap {
+    padding-left: 8px;
+  }
+
+  .task-name {
+    font-size: 11px;
+    padding-right: 6px;
+  }
+
+  .run-grid .cell {
+    width: 16px;
+    height: 16px;
+  }
+
+  .run-grid .cell :deep(svg) {
+    width: 11px;
+    height: 11px;
+  }
+}
+
 .spend-now {
   font-size: 26px;
   font-weight: 600;

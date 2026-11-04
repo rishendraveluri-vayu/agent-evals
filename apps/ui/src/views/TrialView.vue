@@ -741,7 +741,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 </template>
 
 <style scoped>
-.graders-col {
+.split > .graders-col {
   flex-basis: 380px;
 }
 

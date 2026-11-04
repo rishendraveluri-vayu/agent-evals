@@ -565,6 +565,10 @@ code,
   text-align: right;
 }
 
+.table .mono {
+  white-space: nowrap;
+}
+
 .row-link {
   color: var(--ink);
   font-weight: 500;

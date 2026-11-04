@@ -33,11 +33,37 @@ const x = (v: number) => PAD + ((Math.min(props.max, Math.max(props.min, v)) - p
 const rowY = (i: number) => 22 + i * 24;
 const lastY = computed(() => rowY(props.rows.length - 1));
 const height = computed(() => lastY.value + 38);
-const anchor = (i: number) => (i === 0 ? 'start' : i === props.ticks.length - 1 ? 'end' : 'middle');
-/** A row's label goes right of its interval, or left when there is no room. */
+/** About how wide a 13 px label is, to keep labels apart and inside the figure. */
+const textWidth = (text: string) => text.length * 6.6;
+
+/** Labels are placed in order of importance: the reference (zero or a bar), then the two
+ *  ends, then the rest. A label that would touch one already placed is left out, which
+ *  only happens at phone width. */
+const shownTicks = computed(() => {
+  const n = props.ticks.length;
+  const placed = props.ticks.map((t, i) => {
+    const at = i === 0 ? PAD : i === n - 1 ? width.value - PAD : x(t.value);
+    const w = textWidth(t.label);
+    const anchor = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle';
+    const [from, to] = anchor === 'start' ? [at, at + w] : anchor === 'end' ? [at - w, at] : [at - w / 2, at + w / 2];
+    return { ...t, at, anchor, from, to, rank: t.strong ? 0 : i === 0 || i === n - 1 ? 1 : 2 };
+  });
+  const kept: typeof placed = [];
+  for (const t of [...placed].sort((p, q) => p.rank - q.rank)) {
+    if (kept.every((k) => t.to + 8 < k.from || t.from > k.to + 8)) kept.push(t);
+  }
+  return kept;
+});
+
+/** A row's label goes right of its interval, else left of it, else it is left out: the
+ *  surrounding text always states the same numbers. */
 const labelAt = (r: StripRow) => {
+  const w = textWidth(r.label ?? '');
   const right = x(r.high) + 10;
-  return right + 170 < width.value ? { x: right, anchor: 'start' } : { x: x(r.low) - 10, anchor: 'end' };
+  if (right + w < width.value) return { x: right, anchor: 'start' };
+  const left = x(r.low) - 10;
+  if (left - w > 0) return { x: left, anchor: 'end' };
+  return null;
 };
 </script>
 
@@ -85,19 +111,19 @@ const labelAt = (r: StripRow) => {
           :class="`point point--${r.tone} point--${r.size ?? 'lg'}`"
         />
         <text
-          v-if="r.label"
-          :x="labelAt(r).x"
+          v-if="r.label && labelAt(r)"
+          :x="labelAt(r)?.x"
           :y="rowY(i) + 4"
-          :text-anchor="labelAt(r).anchor"
+          :text-anchor="labelAt(r)?.anchor"
           class="tick"
         >{{ r.label }}</text>
       </g>
       <text
-        v-for="(t, i) in ticks"
+        v-for="t in shownTicks"
         :key="t.value"
-        :x="i === 0 ? PAD : i === ticks.length - 1 ? width - PAD : x(t.value)"
+        :x="t.at"
         :y="height - 6"
-        :text-anchor="anchor(i)"
+        :text-anchor="t.anchor"
         :class="t.strong ? 'tick tick--strong' : 'tick'"
       >{{ t.label }}</text>
     </svg>
