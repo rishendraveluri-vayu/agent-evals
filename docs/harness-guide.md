@@ -74,7 +74,7 @@ The facts that matter most for eval design:
 | Route to LiteLLM | `provider="custom"`, `api_mode="chat_completions"` [ran] | `openai` client, chat completions [ran] | `ChatOpenAI(base_url, use_responses_api=False, disable_streaming=True)` [ran] | `LiteLlm("openai/<alias>")`: the LiteLLM library in front of the proxy. The adapter's choice, for your review [ran] | `OpenAIChatCompletionsModel` instance; a model string would use the Responses API [ran] |
 | Step limit | `max_iterations`, reset to steps left each turn. **+2 calls** at the limit [ran] | Loop counter. +0 [ran] | `ModelCallLimitMiddleware(thread_limit, "error")`, whole trial. +0 [ran] | `RunConfig(max_llm_calls)`, steps left each turn. +0 [ran] | `max_turns`, steps left each turn. +0 [ran] |
 | Temperature | `request_overrides`; unset means not sent [ran] | Request field; unset means not sent [ran] | `ChatOpenAI(temperature=)`; some model names rewrite it [ran; names src] | `generate_content_config` [ran] | `ModelSettings` [ran] |
-| Max output tokens | Sent as `max_tokens`. A `length` stop is **not** a stop: Hermes raises the cap and continues [src] | `max_tokens`; `length` ends as `token_limit` [src] | `max_completion_tokens`; `length` ends as `token_limit` [ran; mapping src] | `max_completion_tokens`; `MAX_TOKENS` ends as `token_limit` [ran; mapping src] | `max_tokens`; finish reason read from the raw response for `token_limit` [ran; mapping src] |
+| Max output tokens | Sent as `max_tokens`. A `length` stop is **not** a stop: Hermes raises the cap and continues [src] | `max_tokens`; on `length` the same request is re-sent once at double the cap (up to 8,192), and a second `length` ends as `token_limit` (D36) [ran] | `max_completion_tokens`; `length` ends as `token_limit` [ran; mapping src] | `max_completion_tokens`; `MAX_TOKENS` ends as `token_limit` [ran; mapping src] | `max_tokens`; finish reason read from the raw response for `token_limit` [ran; mapping src] |
 | Parallel tool calls | Sent as set [ran]; with it false, Hermes's batching section is off too (D33) [ran]; calls to one MCP server run one at a time [src] | Sent when tools exist; tools run in order [src] | Middleware to `bind_tools` [ran]; calls in one reply run concurrently [src] | `LiteLlm` keyword [ran]; calls run concurrently [src] | `ModelSettings` [ran]; calls run concurrently [src] |
 | Retries off | `agent.api_max_retries: 1`, `auto_recovery_cycles: 0` [ran] | `max_retries=0` [ran] | `max_retries=0` (default 2) [ran] | `num_retries=0`, `max_retries=0` (default 2) [ran] | `max_retries=0` on the client and the runner [ran] |
 | Streaming | `stream: true` [ran] | `stream: false` [ran] | `stream: false` [ran] | Not sent [ran] | Not sent [ran] |
@@ -137,7 +137,7 @@ Workers mount nothing from the host, so a trial cannot read another trial's stor
 | --- | --- | --- |
 | `answered` | The agent's last turn ended with a reply | All. ADK can report it with an empty reply [src] |
 | `step_limit` | `max_steps` used up | All [ran] |
-| `token_limit` | A reply stopped at `max_output_tokens` | Own loop, LangGraph, ADK and the Agents SDK, in code only: the fake never returns `length` and no real trial hit the cap [src]. Hermes never stops on length |
+| `token_limit` | A reply stopped at `max_output_tokens` | Own loop: after one re-send at double the cap, or when the cap cannot be raised (D36) [ran against the fake's `length` fault]. LangGraph, ADK and the Agents SDK in code only; no real trial hit the cap [src]. Hermes never stops on length |
 | `timeout` | The watchdog fired at `timeout_s` | Library, for all [ran] |
 | `agent_error` | The agent did something the harness could not run | LangGraph (a reply with only malformed calls) and ADK (the 4th malformed call in a row) [ran]; ADK (any other error code, or a turn ending on a call) and the Agents SDK (a model error other than a length cut) [src]. Never Hermes or the own loop |
 | `harness_error` | The harness or a provider failed, or the adapter raised | All. Includes provider 400s [ran, 4 Nov] |
@@ -531,7 +531,7 @@ One more: **prompt-cache markers.** Hermes adds them for model names containing 
 
 `workers/ownloop/src/ownloop/adapter.py`, about 245 lines. It is the reference harness: it adds nothing to the prompt or the schemas, sends only what the spec gives, and never retries [src]. Every other harness is measured against what this one sends.
 
-The loop: the messages start as the system prompt plus the task messages. Each step makes one non-streaming chat completion call. If `finish_reason` is `length`, the turn ends as `token_limit`. If the reply has no tool calls, it is the answer. Otherwise each tool call runs in order through MCP, its result is appended as a `tool` message, and the loop repeats until `max_steps` calls [src].
+The loop: the messages start as the system prompt plus the task messages. Each step makes one non-streaming chat completion call. If `finish_reason` is `length`, the same request is re-sent once with the cap doubled, up to 8,192, and a second `length` ends the turn as `token_limit` (D36). If the reply has no tool calls, it is the answer. Otherwise each tool call runs in order through MCP, its result is appended as a `tool` message, and the loop repeats until `max_steps` calls [src].
 
 It uses `openai` 3.42.1 with `max_retries=0` and a per-request timeout of `timeout_s`, and `mcp` 2.3.0 on a background event loop [ran: version string].
 
@@ -554,7 +554,7 @@ The spec's prompt text is `messages[0]` with role `system`, byte for byte. Nothi
 | Setting | Native | On the wire | Evidence |
 | --- | --- | --- | --- |
 | `temperature` | request field | `temperature`; unset means not sent | [ran] probe |
-| `max_output_tokens` | request field | `max_tokens`; `length` gives `token_limit` | [ran] on the wire; [src] mapping |
+| `max_output_tokens` | request field: the first attempt's cap (D36) | `max_tokens`; a `length` reply is re-sent once at double the cap, up to 8,192, with an `evals.token_cap_raised` event; a second `length` gives `token_limit` | [ran] on the wire and against the fake's `length` fault |
 | `max_steps` | loop counter | exactly N calls | [ran] |
 | `timeout_s` | library watchdog; per-request timeout too | none | [ran] |
 | `parallel_tool_calls` | request field, only when tools exist | `parallel_tool_calls` | [ran] |
@@ -568,7 +568,8 @@ At the limit the loop stops right after running the last tool calls. It makes no
 | Event | `end_state` |
 | --- | --- |
 | Reply with no tool calls | `answered` |
-| `finish_reason: length` | `token_limit` (the partial text is kept as the reply) [src] |
+| `finish_reason: length` | Re-sent once, the same request with the cap doubled (up to 8,192), recorded as an `evals.token_cap_raised` event on the turn with both caps; both calls are in the proxy's `chat` spans (D36) [ran] |
+| `length` again, or no cap to raise (unset, or already 8,192), or no step left for the re-send | `token_limit` (the partial text is kept as the reply) [ran] |
 | N calls used | `step_limit`, no reply |
 | `openai.APIError` | `harness_error` with the exception |
 | Watchdog | `timeout` |
@@ -596,7 +597,7 @@ At the limit the loop stops right after running the last tool calls. It makes no
 - **The baseline for harness overhead:** the gap to the own loop on the same task and model is "what the harness does".
 - **No memory or skills axes.**
 - **`step_limit` trials have no answer** in a single-prompt task, unlike Hermes.
-- **Ends on `token_limit` with the partial text**, as LangGraph, ADK and the Agents SDK now do in code [src]. A small cap truncates answers on these four and not on Hermes.
+- **Re-sends a cut-off reply once at double the cap, then ends on `token_limit`** with the partial text (D36). LangGraph, ADK and the Agents SDK end on the first `length` [src]; Hermes raises the cap and continues. A small cap truncates answers on those three, and less often on the own loop and Hermes; `max_output_tokens` is the first attempt's cap on both. The re-send counts as a step.
 
 ## 5. LangGraph
 

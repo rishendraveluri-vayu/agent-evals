@@ -193,6 +193,7 @@ Uses of the file:
 ```
 
 - **`end_state`** is one of `answered`, `step_limit`, `token_limit`, `timeout`, `agent_error` or `harness_error`. It is **provisional and extensible** (R10.2, R11): new states can be added without breaking old results. `end_detail` keeps the raw signals, so trials can be relabelled later without re-running.
+- **`token_limit` on the own loop (D36).** A reply cut off at the cap (`finish_reason: length`) is re-sent once: the same request with `max_tokens` doubled, up to 8,192. The turn span gets an `evals.token_cap_raised` event with `evals.token_cap.first` and `evals.token_cap.raised`, and both calls are in the proxy's `chat` spans. Cut off again, the turn ends as `token_limit` with the partial text. With no cap to raise (none sent, or already 8,192) or no step left for the re-send (it is a model call, D17), it ends as `token_limit` at once; `end_detail.harness_stop_reason` says which. `max_output_tokens` means the first attempt's cap, as on Hermes, and later calls go back to it. The other harnesses end on the first `length`, except Hermes, which raises the cap itself.
 - **`applied_settings`** records every setting with its value and **source**: `config`, `platform_default`, `harness_default` or `unsupported`, plus what was observed. The UI shows this (R11).
 - **`harness_usage` and `counts`** are the harness's own view, kept for comparison. The truth comes from the proxy (R10.9).
 - **`integrity`**: before and after hashes of files the harness can edit with no switch (R10.8).
@@ -217,7 +218,7 @@ Standard tools can read it directly. Our own UI renders it as the trial timeline
 | `execute_tool <name>` | turn | adapter | `gen_ai.operation.name=execute_tool`, `gen_ai.tool.name`, `gen_ai.tool.call.id`, `evals.tool.arguments`, `evals.tool.is_error`, `evals.tool.result_ref` |
 | `client_sim.turn` | root | simulator helper | `evals.sim.model`, `evals.sim.cache_hit`, the client's message; on a simulator failure, status `ERROR` and an `evals.error` event (`sim_empty_reply` or `sim_call_failed`, section 9) |
 
-- **Span events** on the turn or root carry `evals.memory.read`, `evals.memory.write`, `evals.skill.load`, `evals.skill.write`, `evals.compression`, and errors with `evals.error.kind` (for example `malformed_tool_call` or `unknown_tool`, D18). These are our extensions, and the reason D12 kept its own attributes.
+- **Span events** on the turn or root carry `evals.memory.read`, `evals.memory.write`, `evals.skill.load`, `evals.skill.write`, `evals.compression`, `evals.token_cap_raised` (the own loop's re-send on a cut-off reply, D36), and errors with `evals.error.kind` (for example `malformed_tool_call` or `unknown_tool`, D18). These are our extensions, and the reason D12 kept its own attributes.
 - **Model-call spans come from LiteLLM** for every harness (R10.9), so hidden retries appear as extra `chat` spans with `evals.attempt` above 1. An adapter may also emit its own view of a call (`evals.source=adapter`), kept for comparison.
 - **Spend is a span attribute**, so it can be plotted per trial, config, task and experiment straight from stored spans.
 - Full request and response bodies are stored by reference (section 10). The first request feeds the invariance diff.

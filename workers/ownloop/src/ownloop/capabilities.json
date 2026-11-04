@@ -18,7 +18,7 @@
     },
     "max_output_tokens": {
       "supported": true,
-      "native": "request.max_tokens",
+      "native": "request.max_tokens, the first attempt's cap. A reply cut off at it (finish_reason length) is re-sent once, same request, with the cap doubled up to 8192, if a step is left; cut off again, or with no cap to raise or no step left, the turn ends as token_limit (D36). The re-send is a model call and counts as a step (D17)",
       "default": null,
       "evidence": "probe:2026-11-03",
       "observed": "unset: not sent; set to 777: sent as max_tokens"

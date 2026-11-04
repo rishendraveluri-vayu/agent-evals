@@ -1,8 +1,9 @@
 """The own plain loop: call the model, run any tool calls through MCP, repeat until it answers.
 
 This is the reference harness. It adds nothing to the prompt and nothing to the tool schemas,
-sends only the settings the spec gives, and never retries (R10.11): LiteLLM does that (D16).
-What it does is what every other harness should be measured against.
+sends only the settings the spec gives, and never retries a failed call (R10.11): LiteLLM does
+that (D16). The one request it sends twice is a reply cut off at the token cap, re-sent once
+with the cap doubled (D36). What it does is what every other harness should be measured against.
 """
 
 from __future__ import annotations
@@ -88,6 +89,28 @@ class McpHub:
             self.loop.call_soon_threadsafe(self._stop.set)
 
 
+TOKEN_CAP_CEILING = 8192  # D36: a re-sent request's cap is doubled, up to this
+
+
+def raised_cap(cap: int | None) -> int | None:
+    """D36: the cap for re-sending a cut-off reply, or None when it cannot go higher (no cap
+    was sent, or the cap is already at the ceiling). `max_output_tokens` stays the first
+    attempt's cap; later calls go back to it."""
+    if cap is None:
+        return None
+    raised = min(2 * cap, TOKEN_CAP_CEILING)
+    return raised if raised > cap else None
+
+
+def add_usage(response: Any, tokens_in: int, tokens_out: int) -> tuple[int, int]:
+    if response.usage is None:
+        return tokens_in, tokens_out
+    return (
+        tokens_in + (response.usage.prompt_tokens or 0),
+        tokens_out + (response.usage.completion_tokens or 0),
+    )
+
+
 def openai_tool(tool: Any) -> dict[str, Any]:
     """The server's tool exactly as given: name, description and input schema, untouched.
     Read through the wire (JSON) form, so the schema is byte-for-byte what the server sent."""
@@ -145,6 +168,18 @@ class OwnLoop(Adapter):
         else:
             self.messages.append({"role": "user", "content": history[-1]["content"]})
         calls, tokens_in, tokens_out = 0, 0, 0
+
+        def failed(exc: openai.APIError) -> TurnResult:
+            return TurnResult(
+                stop="harness_error",
+                reply=None,
+                model_calls=calls,
+                exception=exc,
+                input_tokens=tokens_in,
+                output_tokens=tokens_out,
+                harness_stop_reason=f"model call failed: {type(exc).__name__}",
+            )
+
         while max_steps is None or calls < max_steps:
             calls += 1
             try:
@@ -152,29 +187,53 @@ class OwnLoop(Adapter):
                     messages=self.messages, **self.request
                 )
             except openai.APIError as exc:
-                return TurnResult(
-                    stop="harness_error",
-                    reply=None,
-                    model_calls=calls,
-                    exception=exc,
-                    input_tokens=tokens_in,
-                    output_tokens=tokens_out,
-                    harness_stop_reason=f"model call failed: {type(exc).__name__}",
-                )
-            if response.usage is not None:
-                tokens_in += response.usage.prompt_tokens or 0
-                tokens_out += response.usage.completion_tokens or 0
+                return failed(exc)
+            tokens_in, tokens_out = add_usage(response, tokens_in, tokens_out)
             choice = response.choices[0]
-            message = choice.message
             if choice.finish_reason == "length":
-                return TurnResult(
-                    stop="token_limit",
-                    reply=message.content or None,
-                    model_calls=calls,
-                    input_tokens=tokens_in,
-                    output_tokens=tokens_out,
-                    harness_stop_reason="length",
+                # D36: a cut-off reply is re-sent once, the same request with the cap doubled
+                # (up to 8,192). The re-send is a model call like any other, so it needs a step
+                # left (D17); with no cap to raise or no step left, the turn ends as token_limit.
+                first_cap = self.request.get("max_tokens")
+                raised = raised_cap(first_cap)
+                no_step = max_steps is not None and calls >= max_steps
+                if raised is None or no_step:
+                    why = "no step left" if raised is not None else f"cap {first_cap} not raisable"
+                    return TurnResult(
+                        stop="token_limit",
+                        reply=choice.message.content or None,
+                        model_calls=calls,
+                        input_tokens=tokens_in,
+                        output_tokens=tokens_out,
+                        harness_stop_reason=f"length; no re-send ({why})",
+                    )
+                ctx.event(
+                    "evals.token_cap_raised",
+                    {
+                        "evals.token_cap.first": first_cap,
+                        "evals.token_cap.raised": raised,
+                        "evals.model_call.index": calls,
+                    },
                 )
+                calls += 1
+                try:
+                    response = self.client.chat.completions.create(
+                        messages=self.messages, **{**self.request, "max_tokens": raised}
+                    )
+                except openai.APIError as exc:
+                    return failed(exc)
+                tokens_in, tokens_out = add_usage(response, tokens_in, tokens_out)
+                choice = response.choices[0]
+                if choice.finish_reason == "length":
+                    return TurnResult(
+                        stop="token_limit",
+                        reply=choice.message.content or None,
+                        model_calls=calls,
+                        input_tokens=tokens_in,
+                        output_tokens=tokens_out,
+                        harness_stop_reason=f"length, again at the raised cap {raised}",
+                    )
+            message = choice.message
             if not message.tool_calls:
                 self.messages.append({"role": "assistant", "content": message.content or ""})
                 return TurnResult(
