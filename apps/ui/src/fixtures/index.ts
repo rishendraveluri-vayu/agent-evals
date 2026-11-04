@@ -80,6 +80,14 @@ const recordedTrial = recordedTrialJson as unknown as { summary: { trialId: stri
 
 /** Session-only writes. A judge approval here mints no key and calls no model. */
 const created = { configs: [] as ConfigView[], experiments: new Map<string, ExperimentDetail>(), prompts: [] as PromptView[], judges: new Map<string, JudgeView>() };
+
+/** Forgets this session's writes, as a reload does; for tests that must not see each other's. */
+export function resetSession(): void {
+  created.configs.length = 0;
+  created.prompts.length = 0;
+  created.experiments.clear();
+  created.judges.clear();
+}
 const allPrompts = () => [...(promptsJson as PromptView[]), ...created.prompts];
 
 /** POST /prompts by the API's rules: the next v<n> of an existing id; the same text returns its

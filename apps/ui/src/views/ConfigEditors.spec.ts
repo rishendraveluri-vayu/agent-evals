@@ -1,15 +1,17 @@
 /** The Config screen's editors: a new prompt version (POST /prompts) and seeds (D39). */
 import { mount } from '@vue/test-utils';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api/client';
 import { ApiError } from '../api/errors';
+import { resetSession } from '../fixtures';
 import { settle, useFixtures } from '../test/helpers';
 import ConfigView from './ConfigView.vue';
 
 useFixtures();
 
-// The fixtures keep this session's writes (a new prompt version, a saved config), so the tests that
-// need the untouched sample data come first.
+// The fixtures keep this session's writes (a new prompt version, a saved config), and a new config
+// starts from the newest saved one, so each test starts from the untouched sample data.
+beforeEach(() => resetSession());
 
 const selectedPrompt = (w: ReturnType<typeof mount>) => (w.get('[data-test="prompt-select"]').element as HTMLSelectElement).selectedOptions[0]?.text;
 
@@ -17,6 +19,8 @@ describe('ConfigView, seeds (D39)', () => {
   it('sends no seed for a config without one, so its hash is unchanged', async () => {
     const create = vi.spyOn(api, 'createConfig');
     const w = mount(ConfigView);
+    await settle();
+    await w.get('[data-test="model-select"]').setValue('claude-haiku-5-5');
     await settle();
     // The same content as a saved config without seeds: the same hash.
     expect(w.get('[data-test="config-hash"]').text()).toBe('7f3a9c2');
