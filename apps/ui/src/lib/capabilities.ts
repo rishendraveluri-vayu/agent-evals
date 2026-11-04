@@ -1,6 +1,25 @@
 /** A capability matrix cell: what the platform knows about one setting on one harness. */
 import type { CapabilitySetting, Harness } from '../api/types';
+import { plainText } from './format';
 import { modelName } from './names';
+
+/** Every string in a value, through plainText; keys and other values as they are. */
+function plainDeep<T>(value: T): T {
+  if (typeof value === 'string') return plainText(value) as T;
+  if (Array.isArray(value)) return value.map(plainDeep) as T;
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, plainDeep(v)])) as T;
+  return value;
+}
+
+/**
+ * GET /harnesses as a screen shows it: each harness's capabilities (its settings' native calls,
+ * what was observed, its known differences, its options' descriptions) without the authors'
+ * decision-log references. The adapters' capabilities.json files keep them, since every config
+ * hash covers those files; only what is shown drops them, in one place for every screen.
+ */
+export function plainHarnesses(harnesses: Harness[]): Harness[] {
+  return harnesses.map((h) => ({ ...h, capabilities: plainDeep(h.capabilities) }));
+}
 
 export type CellKind = 'probed' | 'declared' | 'none' | 'pending';
 

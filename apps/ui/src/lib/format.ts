@@ -128,11 +128,21 @@ export function harnessVersion(version: string): string {
   return version.split(' (')[0].trim() || version;
 }
 
-/** Text from the API without the authors' internal references to their own decision log: "(R8)",
- *  "(D32)", "(SP4)", "(D25, R11b)", "(R10.8)". The sentence reads the same without them. */
+/** Text from the API without the authors' internal references to their own decision log. The
+ *  sentence reads the same without them:
+ *  - a bracket of nothing else goes: "(R8)", "(D32)", "(SP4)", "(D25, R11b)", "(R10.8)";
+ *  - one that opens or closes a longer bracket goes, the rest stays: "(D18; the SDK default is
+ *    kept)" and "(D31, prompt_caching off)" become "(the SDK default is kept)" and "(prompt_caching
+ *    off)", "(guidance: false, D33)" becomes "(guidance: false)";
+ *  - one that labels the text after it goes: "R10.11: one attempt" becomes "one attempt". */
 export function plainText(text: string): string {
-  const ref = '(?:R|D|SP|A)\\d+[a-z]?(?:\\.\\d+)?';
-  return text.replace(new RegExp(`\\s*\\((?:${ref})(?:,\\s*${ref})*\\)`, 'g'), '');
+  const ref = '(?:R|D|SP|A)\\d+[a-z]?(?:\\.\\d+)*';
+  const refs = `${ref}(?:,\\s*${ref})*`;
+  return text
+    .replace(new RegExp(`\\s*\\(${refs}\\)`, 'g'), '')
+    .replace(new RegExp(`\\(${refs}[;,]\\s*`, 'g'), '(')
+    .replace(new RegExp(`[;,]\\s*${refs}\\)`, 'g'), ')')
+    .replace(new RegExp(`(^|[\\s(])${refs}:\\s+`, 'g'), '$1');
 }
 
 export function plural(n: number, one: string, many = `${one}s`): string {

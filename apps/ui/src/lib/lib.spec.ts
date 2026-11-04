@@ -95,6 +95,25 @@ describe('format', () => {
     expect(plainText('2 trials (one per arm) at $0.30 (A/A)')).toBe('2 trials (one per arm) at $0.30 (A/A)');
   });
 
+  it('drops a decision-log reference inside a longer bracket, or labelling the text after it, as the harness capabilities and results hold them', () => {
+    // Each from a workers/*/capabilities.json or a recorded result.json, as the live API returns it.
+    expect(plainText('the turn ends as token_limit (D36). The re-send is a model call and counts as a step (D17)')).toBe(
+      'the turn ends as token_limit. The re-send is a model call and counts as a step',
+    );
+    expect(plainText("gets 'please try again.' and is not told the JSON was invalid (D18; the SDK default is kept, which)")).toBe(
+      "gets 'please try again.' and is not told the JSON was invalid (the SDK default is kept, which)",
+    );
+    expect(plainText('through its own injection (agent.parallel_tool_call_guidance: false, D33); true or unset keeps it')).toBe(
+      'through its own injection (agent.parallel_tool_call_guidance: false); true or unset keeps it',
+    );
+    expect(plainText('Default: off (D31, prompt_caching.cache_ttl off)')).toBe('Default: off (prompt_caching.cache_ttl off)');
+    expect(plainText('R10.11: one attempt')).toBe('one attempt');
+    expect(plainText('Platform default, R10.11: one attempt')).toBe('Platform default, one attempt');
+    expect(plainText('Label batch 1: open coding (R8, approved: 30 trials, cap $2)')).toBe('Label batch 1: open coding (approved: 30 trials, cap $2)');
+    // Ordinary text with a colon, a ratio or a model name is left alone.
+    expect(plainText('Step 2: pick a model (A or B), then 3:1 odds on Claude Haiku 5.5')).toBe('Step 2: pick a model (A or B), then 3:1 odds on Claude Haiku 5.5');
+  });
+
   it('names models the way people say them', () => {
     expect(modelName('claude-haiku-5-5')).toBe('Claude Haiku 5.5');
     expect(modelName('gemini-3.8-flash')).toBe('Gemini 3.8 Flash');

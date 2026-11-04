@@ -1,5 +1,6 @@
 /** A typed client for every endpoint the screens use (docs/api-contract.md). In fixture mode
  *  the same calls are answered from src/fixtures, so screens never know the difference. */
+import { plainHarnesses } from '../lib/capabilities';
 import type { SpanView, TrialDetail as RecordedTrialDetail, TrialSummary as RecordedTrialSummary } from '../trials';
 import { ApiError, isErrorBody } from './errors';
 import { isFixtureMode } from './mode';
@@ -223,7 +224,7 @@ export function toBlindItem(raw: unknown): BlindItem {
 const post = <T>(path: string, body?: unknown) => call<T>('POST', path, body);
 
 export const api = {
-  harnesses: () => call<Harness[]>('GET', '/harnesses'),
+  harnesses: () => call<Harness[]>('GET', '/harnesses').then(plainHarnesses),
   prompts: () => call<PromptView[]>('GET', '/prompts'),
   /** Writes the next version of an existing prompt; never overwrites one (201 new, 200 same text). */
   createPrompt: (body: CreatePromptRequest) => post<CreatedPrompt>('/prompts', body),
