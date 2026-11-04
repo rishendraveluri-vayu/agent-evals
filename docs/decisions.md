@@ -53,6 +53,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D43 Significance level | Alpha 0.05 and 95% intervals throughout (verdict, critical guardrail, equivalence, BH q = 0.05) | Rishi | 5 Nov |
 | D44 A/A calibration | An explicit calibration run: the same config on both arms only when the run is marked "A/A calibration"; the comparison of an A/B shows the latest A/A interval for its configs; each one is a paid run signed off like any other | Rishi | 5 Nov |
 | D8 Judge trust bar | A judge criterion counts in the headline only when, on the held-out labels, kappa >= 0.6 with its 95% interval's lower end >= 0.4, no false-pass gap between arms, and test-retest agreement >= 90%; below it, it stays visible in trials and the report | Rishi | 5 Nov |
+| D45 Judge model | Gemini 3.8 Flash, pinned for the experiment; needs billing on the Gemini key (today it gets 429 quota errors) | Rishi | 5 Nov |
 
 ## Open
 
@@ -254,6 +255,14 @@ Options: kappa >= 0.6, lower bound >= 0.4, retest >= 90%; kappa >= 0.7, lower >=
 Choice: kappa at least 0.6 and its 95% interval's lower end at least 0.4, on the held-out set; the false-pass gap between arms has an interval that includes 0; test-retest agreement at least 90%. A criterion below the bar is "not trusted": it stays in the trial view and the report with its numbers, and leaves the headline pass. Fixed in `docs/experiment.md` before the pilot; never moved after seeing held-out results.
 Why: Rishi picked it. 0.6 is "substantial" agreement on the usual scale; with about 40 held-out labels the kappa interval is about +/- 0.2 wide, so the lower-bound rule asks for a point estimate near 0.6 and the stricter bar would fail good judges on label count alone.
 What would change it: more held-out labels (a tighter interval would allow a stricter bar); kappa misleading on a criterion whose answer is almost always yes (then report raw agreement, sensitivity and specificity beside it, as section 3 of the proposal already does).
+
+### D45: The judge model is Gemini 3.8 Flash (5 Nov)
+Options: Claude Sonnet 5.5 (proposed); Claude Opus 5.5; Gemini 3.8 Flash.
+Choice: Gemini 3.8 Flash, pinned for the whole experiment. Every judging run still needs Rishi's approval with a model and a budget (`POST /experiments/:id/judge`).
+Why: Rishi picked it. It is the cheapest ($0.75 / $3.75 per MTok, listed to rise to $1.50 / $7.50 from 1 Jan 2027) and from a different family than the Claude agents, so a judge preferring its own family's writing cannot tilt a comparison of Claude configs.
+Blocker: the Gemini key's project is not on a paid tier. On 4 Nov every Gemini call failed with 503 "high demand", then 429 "You exceeded your current quota, please check your plan and billing details" (`docs/cost.md`). The judge cannot run until billing is on. One call also took 3 minutes before a 503, against the judge's 300 s timeout (A22).
+What would change it: Gemini still failing or too slow with billing on (then Sonnet 5.5, the proposal's choice); the judge missing the trust bar (D8) where a stronger judge would pass.
+Not yet run: the judge has never met a real model; its JSON answer format, the 8,000-token cap and the quote check are tested against a stub and the fake server only (`docs/known-limits.md`).
 
 ## Entry template
 

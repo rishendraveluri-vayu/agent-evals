@@ -121,6 +121,6 @@ current grading, so that read is still to build.
 2. Per-arm or pooled sensitivity and specificity in the correction (per-arm is safer, needs more labels).
 3. Whether "not sure" labels count as fail, are excluded (proposed), or trigger a second look.
 4. The label budget: 20 / 40 / 20 as in SPEC, or more held-out labels for tighter intervals.
-5. The judge model: Claude Sonnet 5.5 (proposed, pinned) or another. For prompt v1 vs v2 both arms
+5. **Settled 5 Nov (D45):** Gemini 3.8 Flash, pinned; it needs billing on the Gemini key first. (Proposed was Claude Sonnet 5.5.) For prompt v1 vs v2 both arms
    use the same model, so this is fine; in a Claude-vs-Gemini comparison a Claude judge could favour
    its own family, and the per-arm bias check in §3 is what would show it.
