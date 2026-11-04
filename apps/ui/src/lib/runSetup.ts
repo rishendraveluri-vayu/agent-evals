@@ -4,8 +4,8 @@
  * API's refusals in plain words, and what to do about an arm that a config error paused (D37).
  */
 import { ApiError, errorText, errorWithFix } from '../api/errors';
-import type { ArmView, ConfigDiffEntry, ConfigView, ModelView, TaskView } from '../api/types';
-import { axisFromDiff } from './checks';
+import type { ArmView, ConfigView, ModelView, TaskView } from '../api/types';
+import { axisFromDiff, localDiff } from './checks';
 import { isFake } from './models';
 import { modelName, splitName } from './names';
 
@@ -33,36 +33,8 @@ function newestFirst(configs: ConfigView[]): ConfigView[] {
 /** Configs of your own: a shipped example's (`example_only`) are never a default. */
 export const ownConfigs = (configs: ConfigView[]): ConfigView[] => configs.filter((c) => !c.example_only);
 
-/**
- * Two configs as paths and values, in the shape of GET /configs/:a/diff/:b (every field that
- * changes behaviour, the harness's version and capabilities file included), so the Run screen's
- * own rule (axisFromDiff) can say what they differ in without a call per pair.
- */
-export function localDiff(a: ConfigView, b: ConfigView): ConfigDiffEntry[] {
-  const fields = (c: ConfigView) => ({
-    harness: c.harness,
-    harness_ref: c.harness_ref,
-    adapter_version: c.adapter_version,
-    capabilities_sha256: c.capabilities_sha256,
-    model: c.model,
-    prompt: c.prompt.sha256,
-    toolset: c.toolset.sha256,
-    settings: c.settings,
-    harness_options: c.harness_options,
-    seed: c.seed,
-  });
-  const out: ConfigDiffEntry[] = [];
-  const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-  const walk = (path: string, x: unknown, y: unknown) => {
-    if (isObj(x) && isObj(y)) {
-      for (const k of [...new Set([...Object.keys(x), ...Object.keys(y)])].sort()) walk(path ? `${path}.${k}` : k, x[k], y[k]);
-    } else if (JSON.stringify(x ?? null) !== JSON.stringify(y ?? null)) {
-      out.push({ path, a: (x ?? null) as ConfigDiffEntry['a'], b: (y ?? null) as ConfigDiffEntry['b'] });
-    }
-  };
-  walk('', fields(a), fields(b));
-  return out;
-}
+/** Two configs as paths and values (lib/checks.ts, where the words for what differs live). */
+export { localDiff };
 
 /** The one thing two configs differ in (`prompt`, `model`, `max_steps`, ...), or null when it is
  *  nothing or more than one thing. */
