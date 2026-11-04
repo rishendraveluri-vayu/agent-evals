@@ -502,6 +502,39 @@ export interface ExperimentDetail extends ExperimentSummary {
   configs: ConfigView[];
   /** Newest first. */
   events: ExperimentEvent[];
+  /** The active LLM judge approval (POST /experiments/:id/judge), or null: no judging approved. */
+  judge: JudgeView | null;
+}
+
+/** POST /experiments/:id/judge: Rishi's sign-off for real-model judging of one experiment, with a cap (R8). */
+export interface JudgeApprovalRequest {
+  /** A model LiteLLM serves with a price (GET /models; `fake/*` counts). */
+  model: string;
+  /** Above 0 and at most 20: the minted key's LiteLLM budget, so judging can never spend more. */
+  budget_usd: number;
+}
+
+/** POST /experiments/:id/judge, 201. The key itself is never returned to the UI. */
+export interface JudgeApprovalResponse {
+  experiment_id: string;
+  model: string;
+  budget_usd: number;
+  approved_at: string;
+}
+
+/** DELETE /experiments/:id/judge, 200: the key is deleted in LiteLLM, so it stops working at once. */
+export interface JudgeRevokeResponse {
+  experiment_id: string;
+  revoked_at: string;
+}
+
+/** The active approval in GET /experiments/:id. Never the key. */
+export interface JudgeView {
+  model: string;
+  budget_usd: number;
+  /** What the judge's key has spent, from LiteLLM's spend log; null when LiteLLM could not be read. */
+  spend_usd: number | null;
+  approved_at: string;
 }
 
 /** GET /experiments/:id/trials?status=&config=&task= */
@@ -634,11 +667,27 @@ export interface GraderClaimResponse {
   attempt: number;
   trial_id: string;
   lease_s: number;
-  task: { id: string; sha256: Sha256; grader_source: 'catalogue' | 'trial_task'; note: string | null };
+  /** `summary`: the trial's task summary, the one the blind labelling screen shows; null if unknown. */
+  task: { id: string; sha256: Sha256; grader_source: 'catalogue' | 'trial_task'; note: string | null; summary: string | null };
   graders: { spec: Json; spec_sha256: Sha256 }[];
+  /**
+   * Each grader's files, keyed as in its spec hash: a unit_test's file by its name next to
+   * task.json (`grader.py`), a judge's rubric by its repo path (`configs/rubrics/<id>.<version>.md`).
+   * Null when the file is missing or unknown.
+   */
   grader_files: Record<string, { sha256: Sha256; base64: string } | null>;
   /** Download each file with GET /trials/:id/files/<path> and check it against this manifest. */
   trial: { files: StoredFile[]; end_state: string | null; label: string | null };
+  /** LiteLLM access for the judge when the trial's experiment has an active approval, else null. Read at claim time. */
+  judge: JudgeAccess | null;
+}
+
+/** The judge's access in a grading claim: one experiment's key, limited to one model and capped at its budget. */
+export interface JudgeAccess {
+  /** LiteLLM's OpenAI-compatible base URL as workers reach it, the same as a trial spec's `model.base_url` (ends in /v1). */
+  base_url: string;
+  api_key: string;
+  model: string;
 }
 
 /** POST /grader/trials/:id/grades */
@@ -971,12 +1020,17 @@ export interface ConflictCheckView {
   allowance: AllowanceView;
 }
 
-/** GET /spend: trial spend and the platform's own calls, separately (D38). */
+/** GET /spend: trial spend, the platform's own calls and the LLM judge, separately (D38). */
 export interface SpendView {
   /** Experiment trials, agent and simulator calls. Probe trials (fake model) are not counted. */
   trials_usd: number;
   /** Platform-made calls with a known cost. */
   system_usd: number;
+  /** The LLM judge's calls across every approval, revoked ones included, from LiteLLM's spend log; null when it could not be read. */
+  judge_usd: number | null;
+  /** Judge approvals ever made, revoked ones included. */
+  judge_approvals: number;
+  /** Trials, system and judge spend (the judge only when known). */
   total_usd: number;
   system_by_kind: Record<string, { usd: number; calls: number }>;
   allowances: AllowanceView[];

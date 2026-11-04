@@ -33,6 +33,10 @@ export class LiteLlmStub {
   keyDelayMs = 0;
   /** When set, /key/generate fails with this status. */
   failKeyGenerate: number | null = null;
+  /** When set, /key/delete fails with this status. */
+  failKeyDelete: number | null = null;
+  /** When set, /spend/logs fails with this status (LiteLLM down or erroring). */
+  failSpendLogs: number | null = null;
   /**
    * `/model/info` as v1.99.4 answers it: a wildcard route (`fake/*`) is expanded into names
    * from LiteLLM's price map and the route itself is not listed (seen 4 Nov on the pinned image).
@@ -147,6 +151,7 @@ export class LiteLlmStub {
       return send(200, { key: key.key, token: key.token, key_alias: key.key_alias });
     }
     if (req.method === 'POST' && url.pathname === '/key/delete') {
+      if (this.failKeyDelete) return send(this.failKeyDelete, { error: 'stub refuses' });
       const tokens = (b.keys as string[]) ?? [];
       const missing = tokens.filter((t) => !this.keys.has(t) || this.deleted.includes(t));
       if (missing.length) return send(404, { error: `keys not found: ${missing.join(',')}` });
@@ -159,6 +164,7 @@ export class LiteLlmStub {
       return send(200, team);
     }
     if (req.method === 'GET' && url.pathname === '/spend/logs') {
+      if (this.failSpendLogs) return send(this.failSpendLogs, { error: 'stub refuses' });
       return send(200, this.spendLogs.get(url.searchParams.get('api_key') ?? '') ?? []);
     }
     if (req.method === 'GET' && url.pathname === '/model/info') return send(200, { data: this.models });

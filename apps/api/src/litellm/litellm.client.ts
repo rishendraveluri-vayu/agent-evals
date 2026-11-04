@@ -119,6 +119,19 @@ export class LiteLlmClient {
     return this.mint({ key_alias: opts.alias, models: [opts.model], max_budget: opts.maxBudgetUsd, metadata: { ...opts.metadata, system: 'true' } });
   }
 
+  /**
+   * The LLM judge's key for one experiment (R8): limited to the approved model and capped at the
+   * approved budget. Not in the experiment's team, so judging never spends the trials' budget.
+   */
+  async generateJudgeKey(opts: { experimentId: string; model: string; maxBudgetUsd: number }): Promise<MintedKey> {
+    return this.mint({
+      key_alias: `judge-${opts.experimentId}`,
+      models: [opts.model],
+      max_budget: opts.maxBudgetUsd,
+      metadata: { experiment_id: opts.experimentId, kind: 'judge' },
+    });
+  }
+
   private async mint(body: Record<string, unknown>): Promise<MintedKey> {
     const data = obj(await this.request('POST', '/key/generate', body));
     if (typeof data.key !== 'string' || typeof data.token !== 'string') {

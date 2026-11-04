@@ -17,6 +17,7 @@ import { canonicalJson } from '../common/hashing';
 import { newId } from '../common/ids';
 import { type TaskFile, readTasks } from '../catalogue/catalogue-files';
 import { Db, type Queryable } from '../database/db.service';
+import { LiteLlmClient } from '../litellm/litellm.client';
 import {
   GRADING_LEASE_S,
   type GraderEntry,
@@ -106,6 +107,7 @@ export class GradingService {
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly db: Db,
+    private readonly litellm: LiteLlmClient,
   ) {}
 
   // ---- which graders ----
@@ -209,9 +211,15 @@ export class GradingService {
         [workerId, GRADING_LEASE_S],
       );
       if (!job) return null;
-      const trial = (await one<{ files: StoredFile[] | null; end_state: string | null; label: string | null }>(
+      // The task summary as the blind labelling screen shows it (the trial's own task), and the
+      // judge's key if judging is approved for the trial's experiment now (SP4, R8).
+      const trial = (await one<{ files: StoredFile[] | null; end_state: string | null; label: string | null; summary: string | null; judge_model: string | null; judge_key: string | null }>(
         client,
-        'SELECT files, end_state, label FROM trials WHERE id = $1',
+        `SELECT t.files, t.end_state, t.label, k.summary, a.model AS judge_model, a.key AS judge_key
+         FROM trials t
+         LEFT JOIN tasks k ON k.sha256 = t.task_sha256
+         LEFT JOIN judge_approvals a ON a.experiment_id = t.experiment_id AND a.revoked_at IS NULL
+         WHERE t.id = $1`,
         [job.trial_id],
       ))!;
       return {
@@ -219,10 +227,12 @@ export class GradingService {
         attempt: job.claims,
         trial_id: job.trial_id,
         lease_s: GRADING_LEASE_S,
-        task: { id: job.task_id, sha256: job.task_sha256, grader_source: job.grader_source, note: job.source_note },
+        task: { id: job.task_id, sha256: job.task_sha256, grader_source: job.grader_source, note: job.source_note, summary: trial.summary },
         graders: job.graders,
         grader_files: job.grader_files,
         trial: { files: trial.files ?? [], end_state: trial.end_state, label: trial.label },
+        // The same LiteLLM URL a trial spec gives workers; it throws (and the claim rolls back) only if LiteLLM is not configured.
+        judge: trial.judge_key && trial.judge_model ? { base_url: this.litellm.workerBaseUrl, api_key: trial.judge_key, model: trial.judge_model } : null,
       };
     });
   }

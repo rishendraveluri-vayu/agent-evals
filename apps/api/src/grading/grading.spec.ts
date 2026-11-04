@@ -5,6 +5,7 @@ import type { Json, JsonObject } from '../contract';
 import type { AppConfig } from '../common/app-config';
 import type { TaskFile } from '../catalogue/catalogue-files';
 import type { Db } from '../database/db.service';
+import type { LiteLlmClient } from '../litellm/litellm.client';
 import { type GraderEntry, MAX_GRADER_FILE_BYTES, graderSet, graderVersion, kindOf, outcomeOf, parseGradesReport, rubricPathOf, specSha256, taskCoreSha } from './grading-core';
 import { GradingService, readRubricFile } from './grading.service';
 
@@ -208,7 +209,7 @@ describe('a grades report', () => {
 });
 
 describe('which graders grade a trial', () => {
-  const service = new GradingService({ tasksDir: '/repo/tasks' } as AppConfig, null as unknown as Db);
+  const service = new GradingService({ tasksDir: '/repo/tasks' } as AppConfig, null as unknown as Db, null as unknown as LiteLlmClient);
   const body: JsonObject = { id: 'emi', version: '1', messages: [{ role: 'user', content: 'EMI?' }], graders: [{ id: 'old', type: 'end_state', states: ['answered'] }] };
   const trial = { trial_id: 't1', task_sha256: 'sha256:old', task_id: 'emi', body, client_state_sha256: null };
   const file = (b: JsonObject, sha: string, dir = 'emi', version = b.version as string): TaskFile =>

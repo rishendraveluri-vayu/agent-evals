@@ -4,6 +4,7 @@ import type { AllowanceView, SpendView, SystemSpendRow } from '../contract';
 import { ApiError, conflict } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { Db, type Queryable } from '../database/db.service';
+import { JudgeService } from '../judge/judge.service';
 import type { CallCost } from '../preflight/conflict-check';
 
 /**
@@ -46,6 +47,7 @@ export class SpendService {
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly db: Db,
+    private readonly judge: JudgeService,
   ) {}
 
   /** The kinds of platform call that have an allowance, with their limits. */
@@ -109,7 +111,7 @@ export class SpendService {
     return r?.cost_usd ?? null;
   }
 
-  /** GET /spend: experiment trials and platform calls, separately. */
+  /** GET /spend: experiment trials, platform calls and the LLM judge, separately. */
   async totals(): Promise<SpendView> {
     const [t] = await this.db.query<{ usd: number }>(
       `SELECT coalesce(sum(coalesce(cost_usd, 0) + coalesce(sim_cost_usd, 0)), 0)::float8 AS usd FROM trials WHERE NOT probe`,
@@ -123,7 +125,16 @@ export class SpendService {
     const system = round(kinds.reduce((s, k) => s + k.usd, 0));
     const allowances: AllowanceView[] = [];
     for (const kind of Object.keys(this.limits())) allowances.push(await this.allowance(kind));
-    return { trials_usd: trials, system_usd: system, total_usd: round(trials + system), system_by_kind: byKind, allowances };
+    const judge = await this.judge.totals();
+    return {
+      trials_usd: trials,
+      system_usd: system,
+      judge_usd: judge.usd,
+      judge_approvals: judge.approvals,
+      total_usd: round(trials + system + (judge.usd ?? 0)),
+      system_by_kind: byKind,
+      allowances,
+    };
   }
 
   /** GET /spend/system: every platform call, newest first. */

@@ -22,6 +22,13 @@ status, plus `"fix": "<what to change>"` where the API can say how to put the re
   (R10.3 tightened; D2). For a call the platform makes itself (the conflict check, D38) it
   mints a key for that one call, limited to the checker model with a $0.10 budget, makes the
   call with that key (never the master key), and revokes it straight after.
+- **The LLM judge's key (SP4, R8).** Judging costs real money, so it runs only for an experiment
+  Rishi has approved with a model and a budget (`POST /experiments/:id/judge`, below). The API
+  mints one key for that experiment's judging, limited to that model, capped at that budget and
+  outside the experiment's team (so judging never spends the trials' budget), and hands it to
+  the grader worker in each grading claim for that experiment's trials. It is kept in
+  `judge_approvals`, because every claim hands it out again; no UI-facing route returns it.
+  Revoking deletes it in LiteLLM, so it stops working at once.
 - Workers hold only a worker token (`EVALS_WORKER_TOKEN`), sent as `Authorization: Bearer`.
   Provider keys live only in LiteLLM.
 
@@ -277,8 +284,13 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 
 ## Spend
 
-- `GET /spend` returns `{trials_usd, system_usd, total_usd, system_by_kind: {<kind>: {usd,
-  calls}}, allowances: [{kind, limit_usd, used_usd, remaining_usd, calls, half_reached}]}`.
+- `GET /spend` returns `{trials_usd, system_usd, judge_usd, judge_approvals, total_usd,
+  system_by_kind: {<kind>: {usd, calls}}, allowances: [{kind, limit_usd, used_usd,
+  remaining_usd, calls, half_reached}]}`. `judge_usd` is the LLM judge's spend across every
+  approval, revoked ones included: for each key, the sum of `spend` over its LiteLLM spend-log
+  rows (for a revoked key, at least what the log showed at revoke, and that figure when LiteLLM
+  cannot be read). It is null when an active key's log cannot be read. `judge_approvals` counts
+  approvals ever made. `total_usd` is trials, system and judge spend (the judge only when known).
   `trials_usd` is every experiment trial's agent and simulator cost (fake-model experiment
   trials included, at the made-up fake prices, as in each experiment's `spend_usd`); probe trials
   are left out. `system_usd` is the platform's own calls with a known cost, shown as its own line
@@ -403,6 +415,36 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   problems come from the trial rows; pauses and resumes (`paused`, `resumed`, `arm_paused`,
   `arm_resumed`, `futility_pause`, `infra_guard_pause`, `spend_guard_pause`) and the `baseline`
   decision are stored as they happen.
+- `GET /experiments/:id` also adds `judge`: the experiment's active judge approval, `{model,
+  budget_usd, spend_usd, approved_at}`, or null when judging is not approved. `spend_usd` is the
+  sum of `spend` over LiteLLM's spend-log rows for the judge's key, read on each request, and
+  null when LiteLLM cannot be read. The key itself is never in it.
+- **Judge approval (SP4, R8).** Real-model judging needs Rishi's sign-off with a cap, per
+  experiment. Types: `JudgeApprovalRequest`, `JudgeApprovalResponse`, `JudgeRevokeResponse`,
+  `JudgeView`; table `judge_approvals` (migration `010_judge.sql`, at most one active approval
+  per experiment).
+  - `POST /experiments/:id/judge` with `{model, budget_usd}`. `model` must be a model LiteLLM
+    serves with a price (looked up as for configs, so `fake/*` counts at its made-up prices);
+    `budget_usd` a number above 0 and at most 20. The API mints a LiteLLM key with `models:
+    [model]`, `max_budget: budget_usd`, alias `judge-<experiment id>` and metadata
+    `{experiment_id, kind: "judge"}`, stores it, and answers 201 `{experiment_id, model,
+    budget_usd, approved_at}`. Any experiment status may be approved: an approval made after
+    the trials finished applies to the next regrade, since the claim reads it.
+  - `DELETE /experiments/:id/judge` deletes the key in LiteLLM, then sets `revoked_at`, and
+    answers 200 `{experiment_id, revoked_at}`. A key LiteLLM no longer has (a 4xx on delete)
+    counts as deleted; a LiteLLM 5xx or no answer is a 502 and the approval stays active, so a
+    key that still works is never shown as revoked. The spend LiteLLM shows for the key at that
+    moment is kept (`revoked_spend_usd`) as a floor and a fallback for `GET /spend`.
+    Approving again after a revoke mints a new key.
+  - Refusals, each with a `fix`:
+
+    | `error` | When |
+    | --- | --- |
+    | `unknown_experiment` (404) | no such experiment (approve and revoke) |
+    | `invalid_judge` (400) | not an object; `model` missing or empty; `budget_usd` not a number above 0 and at most 20 |
+    | `unknown_model` (400) | LiteLLM serves no such model, or serves it without a price (its spend could not be capped or counted) |
+    | `judge_already_approved` (409) | the experiment has an active approval: revoke it first. Two approvals at once: one wins, the other's key is deleted and it gets this 409 |
+    | `no_judge_approval` (404) | revoke with no active approval |
 - `GET /experiments/:id/trials?status=&config=&task=` returns trial summaries.
 - `GET /experiments/:id/compare` returns `{experiment_id, status, reason, arms, rows, stats}`.
   **No comparison until every arm is complete** (D37, D32): while `status` is `incomplete`,
@@ -531,8 +573,9 @@ Grading is its own step after the trial, so a grader fix re-grades old trials wi
 them. The grader worker (`evals-grader`, `graders/`, compose service `grader`) uses the worker
 token and talks to the API only over HTTP (D2). The grader format is a draft for Rishi:
 `docs/proposals/grader-format.md`. Types: `GraderClaimResponse`, `GradesReportResponse`,
-`RegradeResponse`, `Grade`, `TrialGrading` in `apps/api/src/contract.ts`. Tables: `grading_jobs`
-and `grades` (migration `007_grading.sql`).
+`RegradeResponse`, `Grade`, `TrialGrading`, `JudgeAccess` in `apps/api/src/contract.ts`. Tables:
+`grading_jobs` and `grades` (migration `007_grading.sql`), and `judge_approvals` for the judge's
+key (`010_judge.sql`; approving and revoking are under Experiments).
 
 - **A grading job** is one grading of one trial with a frozen grader set: the task's grader specs,
   each with the API's `spec_sha256` (canonical JSON of `{spec, files}`, where `files` holds the
@@ -560,9 +603,19 @@ and `grades` (migration `007_grading.sql`).
   `graders/tests/hash_vectors.json`.
 
 1. `POST /grader/claim` with `{worker_id}`. 204 when nothing needs grading, or 200 with
-   `{job_id, attempt, trial_id, lease_s: 120, task: {id, sha256, grader_source, note}, graders:
-   [{spec, spec_sha256}], grader_files: {<name>: {sha256, base64} | null}, trial: {files,
-   end_state, label}}`. `attempt` counts the job's claims. The claim is `FOR UPDATE SKIP LOCKED`
+   `{job_id, attempt, trial_id, lease_s: 120, task: {id, sha256, grader_source, note, summary},
+   graders: [{spec, spec_sha256}], grader_files: {<name or repo path>: {sha256, base64} | null},
+   trial: {files, end_state, label}, judge: {base_url, api_key, model} | null}`. `attempt`
+   counts the job's claims. `task.summary` is the trial's task summary from the tasks table, the
+   one the blind labelling screen shows, or null. `grader_files` keys are a unit_test's file
+   name or a judge's rubric path (`configs/rubrics/open-coding.v0.md`), so a key may hold `/`.
+   `judge` is null unless the trial's experiment has an active judge approval; then it is that
+   approval's LiteLLM key and model, and `base_url` is the same OpenAI-compatible LiteLLM URL a
+   trial spec's `model.base_url` gives workers (`LITELLM_URL` + `/v1`, `http://litellm:4000/v1`
+   in compose). It is read at each claim, so an approval made after the trials finished
+   applies to the next regrade, and a claim made after a revoke (a lapsed job claimed again
+   included) carries none. Without it the judge grader answers `not_implemented` ("judging not
+   approved for this experiment"). The claim is `FOR UPDATE SKIP LOCKED`
    over queued jobs and claimed jobs whose lease has lapsed, so a crashed grader's job is claimed
    again; after 3 lapsed claims the job is `failed` instead.
 2. The worker downloads `result.json`, `trace.jsonl`, `runner-report.json` and `checks.json` (those
