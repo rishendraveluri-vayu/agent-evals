@@ -9,12 +9,13 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { api } from '../api/client';
 import { errorWithFix } from '../api/errors';
-import type { ConfigDiffEntry, ConfigView, CreatedPrompt, Harness, Json, ModelView, PromptView, SettingName, ToolsetView } from '../api/types';
+import type { ConfigView, CreatedPrompt, Harness, Json, ModelView, PromptView, SettingName, ToolsetView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import InfoTip from '../components/InfoTip.vue';
 import LoadState from '../components/LoadState.vue';
 import { useLoad } from '../lib/async';
-import { axisFromDiff, axisPhrase } from '../lib/checks';
+import { axisPhrase } from '../lib/checks';
+import { baselineFor, missingKey } from '../lib/runSetup';
 import { plainText, shortHash, shortRef } from '../lib/format';
 import { harnessFacts, harnessTagline, memoryLine } from '../lib/harnessInfo';
 import { mdBlocks } from '../lib/markdown';
@@ -66,7 +67,8 @@ const realModels = computed(() => (data.value?.models ?? []).filter((m) => !isFa
 watch(data, (d) => {
   if (!d || form.harness) return;
   form.harness = d.harnesses[0]?.name ?? '';
-  form.model = realModels.value[0]?.name ?? '';
+  // A model that can run (its key is set) first.
+  form.model = (realModels.value.find((m) => !missingKey(m.name, realModels.value)) ?? realModels.value[0])?.name ?? '';
   form.prompt = taskPrompts.value[0]?.sha256 ?? '';
 });
 
@@ -247,43 +249,27 @@ watch(
 
 // ---------------------------------------------------------------- next steps
 
-/** Two configs as paths and values, in the shape of GET /configs/:a/diff/:b, so the Run screen's
- *  own rule (axisFromDiff) says what they differ in. */
-function diffOf(a: ConfigView, b: ConfigView): ConfigDiffEntry[] {
-  const fields = (c: ConfigView) => ({ harness: c.harness, harness_ref: c.harness_ref, model: c.model, prompt: c.prompt.sha256, toolset: c.toolset.sha256, settings: c.settings, harness_options: c.harness_options, seed: c.seed });
-  const out: ConfigDiffEntry[] = [];
-  const walk = (path: string, x: unknown, y: unknown) => {
-    const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-    if (isObj(x) && isObj(y)) {
-      for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) walk(path ? `${path}.${k}` : k, x[k], y[k]);
-    } else if (JSON.stringify(x ?? null) !== JSON.stringify(y ?? null)) {
-      out.push({ path, a: (x ?? null) as ConfigDiffEntry['a'], b: (y ?? null) as ConfigDiffEntry['b'] });
-    }
-  };
-  walk('', fields(a), fields(b));
-  return out;
-}
-
-/** A saved agent that differs from this one in exactly one thing, the oldest first (the Run
- *  screen's baseline is the oldest): the obvious one to compare with. Null when there is none. */
+/** The baseline to compare this agent with: a saved agent of your own that differs from it in
+ *  exactly one thing (the Run screen's own rule, baselineFor), never a shipped example's. */
 const baseline = computed<{ config: ConfigView; axis: string } | null>(() => {
   const mine = saved.value?.config;
-  if (!mine) return null;
-  const others = [...(data.value?.configs ?? [])].filter((c) => c.hash !== mine.hash).sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
-  for (const c of others) {
-    const axis = axisFromDiff(diffOf(c, mine), false);
-    if (axis && axis !== 'none') return { config: c, axis };
-  }
-  return null;
+  return mine ? baselineFor(data.value?.configs ?? [], mine.hash) : null;
 });
 
-/** Arm A is the baseline and arm B the agent: the comparison reads B minus A. With no obvious
- *  baseline, the Run screen starts arm A on the oldest saved agent and you pick there. */
+/** Arm A is the baseline and arm B the agent: the comparison reads B minus A. With no baseline,
+ *  the Run screen runs this agent on its own (a pilot) and says how to make one. */
 const runLink = computed(() => {
   const mine = saved.value?.config;
   if (!mine) return href.runNew();
   return href.runNew(baseline.value?.config.hash, mine.hash);
 });
+
+// ---------------------------------------------------------------- provider keys
+
+/** The .env variable the picked model needs and lacks; null when it is set or not known. */
+const keyMissing = computed(() => missingKey(form.model, data.value?.models ?? []));
+/** No real model can run: every one lacks its key. A keyless reviewer is pointed at the free route. */
+const noKeys = computed(() => realModels.value.length > 0 && realModels.value.every((m) => missingKey(m.name, realModels.value)));
 </script>
 
 <template>
@@ -411,8 +397,21 @@ const runLink = computed(() => {
               data-test="model-radio"
             ><span class="tile-name">{{ modelName(m.name) }}</span></span>
             <span class="secondary smaller num">{{ priceLine(m) }}</span>
+            <span
+              v-if="missingKey(m.name, realModels)"
+              class="smaller needs-key"
+              data-test="needs-key"
+            >needs {{ missingKey(m.name, realModels) }} in .env</span>
           </label>
         </div>
+        <p
+          v-if="noKeys"
+          class="small no-keys"
+          role="note"
+          data-test="no-keys"
+        >
+          No provider key is set in <span class="mono">.env</span>, so no real model can run yet. You can still build and save an agent here for free. To run something without a key, pick a fake model (scripted replies, no spend) on the <a :href="href.config()">full Config screen</a>.
+        </p>
         <p
           v-else
           class="secondary"
@@ -430,7 +429,8 @@ const runLink = computed(() => {
             name="alert"
             :size="16"
           />
-          <span>Running this agent calls a real model, so it costs money and needs <template v-if="keyName(model)">the provider's key, <span class="mono">{{ keyName(model) }}</span>,</template><template v-else>the provider's API key</template> in <span class="mono">.env</span>. Saving costs nothing; the Run screen shows the trials, models and cost before anything starts.</span>
+          <span v-if="keyMissing"><span class="mono">{{ keyMissing }}</span> is not set in <span class="mono">.env</span>, so this model cannot run yet. Saving is free and works anyway; before a run, add the key, then run <span class="mono">docker compose up -d</span>. A run calls a real model, so it costs money: the Run screen shows the trials, models and cost before anything starts.</span>
+          <span v-else>Running this agent calls a real model, so it costs money and needs <template v-if="keyName(model)">the provider's key, <span class="mono">{{ keyName(model) }}</span>,</template><template v-else>the provider's API key</template> in <span class="mono">.env</span>. Saving costs nothing; the Run screen shows the trials, models and cost before anything starts.</span>
         </p>
       </fieldset>
 
@@ -597,24 +597,25 @@ const runLink = computed(() => {
                 <p>{{ settingInfo(name) }}</p>
               </InfoTip>
             </div>
-            <input
-              v-if="NUMBER_SETTINGS.includes(name)"
-              :id="`build-${name}`"
-              v-model="form.numbers[name]"
-              type="text"
-              inputmode="numeric"
-              class="num num-input"
-              :placeholder="usable(name) ? `${DEFAULT_WORDS[name]} (default)` : 'Not available'"
-              :disabled="!usable(name)"
-              :aria-invalid="problems[name] ? 'true' : undefined"
-              :aria-describedby="problems[name] ? `build-problem-${name}` : undefined"
-            >
-            <span
-              v-if="problems[name]"
-              :id="`build-problem-${name}`"
-              class="smaller problem"
-              :data-test="`problem-${name}`"
-            >{{ problems[name] }}</span>
+            <template v-if="NUMBER_SETTINGS.includes(name)">
+              <input
+                :id="`build-${name}`"
+                v-model="form.numbers[name]"
+                type="text"
+                inputmode="numeric"
+                class="num num-input"
+                :placeholder="usable(name) ? `${DEFAULT_WORDS[name]} (default)` : 'Not available'"
+                :disabled="!usable(name)"
+                :aria-invalid="problems[name] ? 'true' : undefined"
+                :aria-describedby="problems[name] ? `build-problem-${name}` : undefined"
+              >
+              <span
+                v-if="problems[name]"
+                :id="`build-problem-${name}`"
+                class="smaller problem"
+                :data-test="`problem-${name}`"
+              >{{ problems[name] }}</span>
+            </template>
             <label
               v-else
               class="toggle"
@@ -745,7 +746,7 @@ const runLink = computed(() => {
               >See what reaches the model</a>
               <span class="secondary small block">A free preview of exactly what the model receives: the harness's own text, with your prompt marked inside it.</span>
             </li>
-            <li>
+            <li v-if="baseline">
               <a
                 :href="runLink"
                 class="next-link"
@@ -755,9 +756,25 @@ const runLink = computed(() => {
                 class="secondary small block"
                 data-test="next-evaluate-words"
               >
-                <template v-if="baseline">Against {{ baseline.config.name }}, which differs from it only in {{ axisPhrase(baseline.axis) }}: that agent is arm A, the baseline, and this one arm B.</template>
-                <template v-else>No saved agent differs from this one in just one thing, so the Run screen starts arm A, the baseline, on the oldest saved agent; pick the one you want there.</template>
+                Against {{ baseline.config.name }}, which differs from it only in {{ axisPhrase(baseline.axis) }}: that agent is arm A, the baseline, and this one arm B.
                 The Run screen shows the trials, models and cost before anything starts.
+              </span>
+            </li>
+            <li v-else>
+              <a
+                :href="href.fork(saved.config.hash)"
+                class="next-link"
+                data-test="next-fork"
+              >Make a baseline to compare with</a>
+              <span
+                class="secondary small block"
+                data-test="next-evaluate-words"
+              >
+                A comparison needs a baseline: a saved agent that differs from this one in just one thing, so any difference in results comes from that one change. None does yet. Fork this agent, change one setting, the prompt or the model, and save; then evaluate the fork against this one.
+                Or <a
+                  :href="runLink"
+                  data-test="next-evaluate"
+                >run this agent on its own</a> (a pilot) to see how it does.
               </span>
             </li>
           </ol>
@@ -922,6 +939,17 @@ const runLink = computed(() => {
 
 .cost-note .icon {
   margin-top: 2px;
+}
+
+/* A model whose provider key is not in .env: said on its tile, in words, not by colour alone. */
+.needs-key {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.no-keys {
+  margin: 12px 0 0;
+  max-width: 72ch;
 }
 
 .prompt-seg {
