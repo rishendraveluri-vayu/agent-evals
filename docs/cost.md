@@ -64,6 +64,7 @@ Fill in with what we actually tried and measured.
 | 4 Nov | client-sim v2 check through the engine: 3 conversation trials on Haiku 5.5 (own loop, Hermes, LangGraph), experiment `e_0mw22cinx2dade03d979bb3c4` | 3 | $0.039 | Rishi, D27 ("I'll show you 3 transcripts from v2") |
 | 4 Nov | client-sim v3 check through the engine: 3 conversations on Haiku 5.5; every simulator reply came back empty (300-token cap used up by thinking), fix in progress | 3 | $0.013 | Rishi, D30 |
 | 4 Nov | First Gemini 3.8 Flash trial (own loop, single question): one call took 3 minutes and the next got a 503 "high demand" after the 240 s timeout | 1 | $0.007 | Rishi, R8 (the approved 30-trial smoke) |
+| 4 Nov | Gemini 3.8 Flash smoke, 5 harnesses x 3 trials, after the D16 retries: every trial failed at Google with 503 "high demand" then 429 "You exceeded your current quota, please check your plan and billing details" (the key's project is not on a paid tier); all labelled infra, none counted against an agent | 15 | $0.00 | Rishi, R8 (the approved 30-trial smoke) |
 
 Per trial on Haiku 5.5: a single question cost $0.0024 to $0.0035 (3 model calls); a 3-turn simulated-client conversation cost $0.012 to $0.014 (8 to 10 agent calls plus the simulator's).
 
