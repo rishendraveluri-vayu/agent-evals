@@ -58,13 +58,13 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D47 Headline experiment's harness and model | Hermes Agent (pinned 6112c2a) on Claude Haiku 5.5, the same for both arms of prompt v1 vs v2 | Rishi | 5 Nov |
 | D48 Label budget | 20 tuning, 40 held-out, 20 from the final run, as planned in SPEC (about an hour of Rishi's labelling) | Rishi | 5 Nov |
 | D49 Judge-error correction | Pooled sensitivity and specificity from the held-out labels (Rogan-Gladen), since D8 already drops criteria with a false-pass gap between arms; the comparison shows both "as judged" and "corrected" | Rishi | 5 Nov |
+| D15 Hermes settings for the headline experiment | Compression, memory and skills off in both arms; prompt-cache markers off (D31); Tool Search off (R10.7) | Rishi | 5 Nov |
 
 ## Open
 
 | # | Call | Options | Lean | Needed by |
 | --- | --- | --- | --- | --- |
 | D7 | Tasks using the judge | Any share of the 20+ | About 6 to 8 | Thu |
-| D15 | Hermes settings that are design calls | Compression on or off; Tool Search off or on (must be off for MCP tools, R10.7); in skills-on configs allow `skill_manage` writes or stage them; ~~accept the untrusted MCP wrapper or not~~ (settled by D20: accept) | None yet. Evidence in `docs/research/hermes/context_and_self_improvement.md` | Wed |
 
 ## Notes behind the open calls
 
@@ -280,6 +280,12 @@ Choice: Hermes Agent at the pinned SHA 6112c2a on Claude Haiku 5.5, for both arm
 Why: Rishi picked it. Hermes is the brief's required harness and passed every D39 check on Haiku 5.5; Haiku is cheap (measured $0.0024 to $0.014 a trial on 4 Nov) and is not the judge's family (D45, Gemini), so the judge does not grade its own model family's answers.
 What would change it: Hermes failing on the final tasks in a way the platform cannot label as infra; Anthropic rate limits at the planned N.
 Rough cost, an estimate before the pilot: 20 tasks x 10 trials x 2 arms on Haiku 5.5 is about $2 to $5, plus the simulated client and the judge.
+
+### D15: Hermes settings in the headline experiment (5 Nov)
+Options: all off (compression, memory, skills); Hermes's defaults (compression on, memory and skills off); memory and skills on.
+Choice: compression, memory and skills off in both arms of prompt v1 vs v2, with prompt-cache markers off (D31) and Tool Search off (R10.7). `skill_manage` does not arise with skills off.
+Why: Rishi picked it. The prompt stays the only difference, and no hidden extra model call (compression rewrites the history through an auxiliary call) can change one arm's trajectories or cost; D39 found Hermes never writes memory within one session, so memory would add schema and prompt text without testing what it is for.
+What would change it: tasks long enough that an uncompressed conversation hits the model's context limit (none of ours is near it).
 
 ## Entry template
 
