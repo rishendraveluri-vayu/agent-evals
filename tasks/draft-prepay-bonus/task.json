@@ -1,0 +1,54 @@
+{
+  "id": "draft-prepay-bonus",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "DRAFT for Rishi: Prepay Rs 3 lakh of a Rs 18.4 lakh home loan at 9.1% with 168 months left, keeping the EMI.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "I have ₹18,40,000 left on my home loan at 9.1%, with 168 months to go. I'm getting a ₹3 lakh bonus. If I prepay it and keep my EMI the same, how much interest do I save and how much sooner am I done?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": null,
+  "graders": [
+    {
+      "id": "used-prepayment-impact",
+      "type": "tool_called",
+      "required": true,
+      "tool": "prepayment_impact",
+      "args": {
+        "outstanding_principal": 1840000,
+        "annual_rate_pct": 9.1,
+        "remaining_months": 168,
+        "prepayment_amount": 300000
+      }
+    },
+    {
+      "id": "interest-saved",
+      "type": "number",
+      "required": true,
+      "expected": 595511.77,
+      "tolerance": {
+        "rel": 0.002
+      }
+    },
+    {
+      "id": "months-saved",
+      "type": "regex_present",
+      "required": true,
+      "target": "final_answer",
+      "pattern": "\\b46\\s*months?\\b"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    }
+  ],
+  "judge_criteria_to_write": "Judgment: does it check the client keeps an emergency buffer before prepaying everything?"
+}

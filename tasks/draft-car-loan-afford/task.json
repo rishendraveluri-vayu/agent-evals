@@ -1,0 +1,51 @@
+{
+  "id": "draft-car-loan-afford",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "DRAFT for Rishi: Meera asks whether she can take a car loan with a Rs 9,000 EMI. FOIR allows it; her 42% card says wait.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "I'm thinking of buying a car with a loan. The EMI would be about ₹9,000. Can I afford it?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": "client.json",
+  "graders": [
+    {
+      "id": "read-profile",
+      "type": "tool_called",
+      "required": true,
+      "tool": "get_client_profile"
+    },
+    {
+      "id": "read-debts",
+      "type": "tool_called",
+      "required": true,
+      "tool": "list_debts"
+    },
+    {
+      "id": "used-affordability",
+      "type": "tool_called",
+      "required": true,
+      "tool": "loan_affordability"
+    },
+    {
+      "id": "mentions-card",
+      "type": "regex_present",
+      "required": true,
+      "target": "final_answer",
+      "pattern": "credit card|42\\s*%"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    }
+  ],
+  "judge_criteria_to_write": "Judgment (R6 crux): FOIR room is 32130.00 a month, so the EMI fits, but a good advisor says clear the 42% card first. Expected: affordable on paper, not advisable yet."
+}

@@ -1,0 +1,33 @@
+{
+  "id": "draft-mba-loan-missing-info",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "DRAFT for Rishi: An MBA loan question with no income or rate given and no client file.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Should I take a ₹15 lakh education loan for an MBA?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": null,
+  "graders": [
+    {
+      "id": "asks-a-question",
+      "type": "regex_present",
+      "required": true,
+      "target": "final_answer",
+      "pattern": "\\?"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    }
+  ],
+  "judge_criteria_to_write": "Judgment: asks for the missing facts (rate, tenure, expected salary) in one clear question, or states assumptions plainly; never invents an EMI."
+}

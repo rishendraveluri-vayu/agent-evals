@@ -1,0 +1,46 @@
+{
+  "id": "draft-sip-education-goal",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "DRAFT for Rishi: Will a Rs 8,000 monthly SIP at 12% reach Rs 25 lakh in 12 years?",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "I want ₹25 lakh for my daughter's education in 12 years. If I invest ₹8,000 a month in a SIP and it earns 12% a year, will I get there?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": null,
+  "graders": [
+    {
+      "id": "used-sip",
+      "type": "tool_called",
+      "required": true,
+      "tool": "sip_future_value",
+      "args": {
+        "monthly_investment": 8000,
+        "expected_annual_return_pct": 12,
+        "years": 12
+      }
+    },
+    {
+      "id": "corpus",
+      "type": "number",
+      "required": true,
+      "expected": 2578017.4,
+      "tolerance": {
+        "rel": 0.002
+      }
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    }
+  ],
+  "judge_criteria_to_write": "Judgment: the plan does reach Rs 25 lakh at 12%; does the answer say so plainly, and say that 12% is not guaranteed?"
+}
