@@ -343,3 +343,22 @@ def test_http_transport_posts_a_chat_completion_and_reads_cost():
     assert seen["path"] == "/chat/completions" and seen["auth"] == "Bearer sk-j"
     assert reply.status == 200 and reply.text == "{}" and reply.finish_reason == "stop"
     assert reply.cost_usd == 0.0123 and reply.usage == {"prompt_tokens": 3}
+
+
+def test_a_judge_specs_hash_matches_the_apis_vector(tmp_path):
+    """The vector apps/api/src/grading/grading.spec.ts asserts: the rubric's raw bytes (here the
+    word "test") are hashed into spec_sha256 under its configs/rubrics/ path."""
+    (tmp_path / "configs" / "rubrics").mkdir(parents=True)
+    (tmp_path / "configs/rubrics/open-coding.v0.md").write_bytes(b"test")
+    s = {
+        "id": "overall",
+        "type": "judge",
+        "required": False,
+        "rubric": "configs/rubrics/open-coding.v0.md",
+        "criteria": [{"id": "overall", "text": "Would a real client be well served?"}],
+    }
+    [p] = prepare([s], None, framework_version="0.1.0", repo_root=tmp_path)
+    assert p.spec_sha256 == (
+        "sha256:3fb79d03ffc238a0d18f86f5fe4e9afc885ca1b85097715919628d8964c7f225"
+    )
+    assert p.version == ("sha256:5d37ab08a82f9dcadddc037f1908948fc017d2fec037813e0e2de6cba3e221b8")

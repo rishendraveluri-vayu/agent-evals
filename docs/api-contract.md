@@ -609,7 +609,8 @@ key (`010_judge.sql`; approving and revoking are under Experiments).
    counts the job's claims. `task.summary` is the trial's task summary from the tasks table, the
    one the blind labelling screen shows, or null. `grader_files` keys are a unit_test's file
    name or a judge's rubric path (`configs/rubrics/open-coding.v0.md`), so a key may hold `/`.
-   `judge` is null unless the trial's experiment has an active judge approval; then it is that
+   `judge` is null unless the trial's experiment has an active judge approval and the job has a
+   judge grader; then it is that
    approval's LiteLLM key and model, and `base_url` is the same OpenAI-compatible LiteLLM URL a
    trial spec's `model.base_url` gives workers (`LITELLM_URL` + `/v1`, `http://litellm:4000/v1`
    in compose). It is read at each claim, so an approval made after the trials finished

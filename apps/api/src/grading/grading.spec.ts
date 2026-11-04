@@ -7,7 +7,7 @@ import type { TaskFile } from '../catalogue/catalogue-files';
 import type { Db } from '../database/db.service';
 import type { LiteLlmClient } from '../litellm/litellm.client';
 import { type GraderEntry, MAX_GRADER_FILE_BYTES, graderSet, graderVersion, kindOf, outcomeOf, parseGradesReport, rubricPathOf, specSha256, taskCoreSha } from './grading-core';
-import { GradingService, readRubricFile } from './grading.service';
+import { GradingService, hasJudgeGrader, readRubricFile } from './grading.service';
 
 const REPO = path.resolve(__dirname, '../../../..');
 
@@ -233,5 +233,14 @@ describe('which graders grade a trial', () => {
     expect(c.folder).toBeNull();
     expect(c.note).toContain('changed beyond its graders');
     expect(service.choose(trial, []).note).toContain('not in the catalogue');
+  });
+});
+
+describe('the judge key goes only to a job with a judge grader', () => {
+  it('reads the frozen grader specs', () => {
+    expect(hasJudgeGrader([{ spec: { type: 'number' } }, { spec: { type: 'judge' } }])).toBe(true);
+    expect(hasJudgeGrader([{ spec: { type: 'number' } }, { spec: { type: 'unit_test' } }])).toBe(false);
+    expect(hasJudgeGrader([])).toBe(false);
+    expect(hasJudgeGrader(null)).toBe(false);
   });
 });

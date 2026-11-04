@@ -128,7 +128,7 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 ## LLM judge approval (SP4, R8)
 
 - **The judge's key is stored in Postgres as plain text**, because every grading claim for the experiment hands it out again. Anyone who can read the database can use it until it is revoked; the damage is capped by its budget (at most $20) and its one model. A revoked row keeps the dead key's text.
-- **Every grading job of an approved experiment carries the key**, also one with no judge grader (as the contract asks). It reaches the grader worker's memory, not its unit tests: a `unit_test` runs in a subprocess with an empty environment.
+- **A grading job with a judge grader carries the key** (since 4 Nov night, only those; a job without one gets `judge: null`). It reaches the grader worker's memory, not its unit tests: a `unit_test` runs in a subprocess with an empty environment.
 - **A revoked approval's spend relies on LiteLLM keeping a deleted key's spend-log rows** (assumption A19, not checked on v1.99.4). The figure read at revoke is the floor and the fallback, so at worst `GET /spend` under-counts calls whose rows landed after the revoke.
 - **`GET /spend` reads LiteLLM's spend log once per approval ever made**, on every request, in parallel. With LiteLLM down each read waits for its timeout (15 s) and the judge line is null while any approval is active.
 - **The header's visible spend split shows trials and platform calls only.** `total_usd`, and so the header's bar and its spoken summary, include judge spend; a Judge figure in the visible split is a UI follow-up.

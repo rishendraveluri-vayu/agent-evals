@@ -232,7 +232,11 @@ export class GradingService {
         grader_files: job.grader_files,
         trial: { files: trial.files ?? [], end_state: trial.end_state, label: trial.label },
         // The same LiteLLM URL a trial spec gives workers; it throws (and the claim rolls back) only if LiteLLM is not configured.
-        judge: trial.judge_key && trial.judge_model ? { base_url: this.litellm.workerBaseUrl, api_key: trial.judge_key, model: trial.judge_model } : null,
+        // Only a job with a judge grader gets the key, so it travels no further than it must.
+        judge:
+          trial.judge_key && trial.judge_model && hasJudgeGrader(job.graders)
+            ? { base_url: this.litellm.workerBaseUrl, api_key: trial.judge_key, model: trial.judge_model }
+            : null,
       };
     });
   }
@@ -352,4 +356,9 @@ export class GradingService {
       return out;
     });
   }
+}
+
+/** True when one of a job's frozen graders is a judge. */
+export function hasJudgeGrader(graders: unknown): boolean {
+  return Array.isArray(graders) && graders.some((g) => typeof g === 'object' && g !== null && (g as { spec?: { type?: unknown } }).spec?.type === 'judge');
 }
