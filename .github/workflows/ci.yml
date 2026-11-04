@@ -64,6 +64,15 @@ jobs:
       - name: Own loop
         working-directory: workers/ownloop
         run: uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run pytest -q
+      - name: LangGraph
+        working-directory: workers/langgraph
+        run: uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run pytest -q
+      - name: Google ADK
+        working-directory: workers/adk
+        run: uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run pytest -q
+      - name: OpenAI Agents SDK
+        working-directory: workers/openai-agents
+        run: uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run pytest -q
       - name: Hermes at the pinned SHA, from its own lockfile
         run: scripts/setup_hermes.sh
       - name: Hermes
@@ -94,13 +103,15 @@ jobs:
       - name: Worker isolation check (D3)
         run: docker compose --profile smoke run --rm netcheck
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-      - name: Own loop gates through LiteLLM (trial keys, spend-log merge)
+      - name: Harness gates through LiteLLM (trial keys, spend-log merge)
         env:
           EVALS_PROXY_URL: http://127.0.0.1:4000
           LITELLM_MASTER_KEY: sk-local-dev-only
         run: |
           (cd services/finance-mcp && uv sync --locked)
-          cd workers/ownloop && uv sync --locked && uv run pytest -q tests/test_proxy.py
+          for w in ownloop langgraph adk openai-agents; do
+            (cd workers/$w && uv sync --locked && uv run pytest -q tests/test_proxy.py)
+          done
       - name: Logs on failure
         if: failure()
         run: docker compose logs --no-color --tail 200

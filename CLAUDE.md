@@ -66,12 +66,15 @@ uv run --no-project --with pyyaml==6.0.3 python scripts/check_litellm_config.py 
 
 cd workers/adapterlib && uv sync --locked && uv run pytest -q     # contract schemas, adapter library, runner
 cd workers/ownloop && uv sync --locked && uv run pytest -q        # own loop gate tests (needs uv sync in services/fake-llm and services/finance-mcp)
+cd workers/langgraph && uv sync --locked && uv run pytest -q      # LangGraph gates (same for workers/adk and workers/openai-agents)
 scripts/setup_hermes.sh                                           # Hermes at the pin, from its own lockfile
 cd workers/hermes && uv sync --locked && HERMES_SRC=$PWD/.hermes-agent uv run pytest -q   # Hermes gate tests
 
 # Gates through LiteLLM (compose up first); fake models only, no spend
 EVALS_PROXY_URL=http://127.0.0.1:4000 LITELLM_MASTER_KEY=sk-local-dev-only uv run pytest -q tests/test_proxy.py   # in a worker folder
 scripts/dev_trials.sh                                              # record gate scenarios into runs/ for the trace view
+# REAL MONEY, only with Rishi's sign-off (R8): 3 smoke trials for one harness on a real model
+cd workers/ownloop && EVALS_PROXY_URL=http://127.0.0.1:4000 LITELLM_MASTER_KEY=sk-local-dev-only uv run python ../../scripts/real_smoke.py --model claude-haiku-5-5 --out ../../runs/<stamp>-real/ownloop/claude-haiku-5-5 --cap-usd 0.6
 ```
 
 If a host port is taken, set `UI_PORT`, `API_PORT` or `LITELLM_PORT` (and `SMOKE_API_URL` etc. for the smoke test). On Rishi's machine, port 3000 is held by an older sibling-project process, so use `API_PORT=3001`.
