@@ -44,13 +44,14 @@ workers/base/            Worker base image and the D3 isolation check
 workers/<harness>/       One Python project and image per harness (later, SP1)
 scripts/                 Smoke test, config check, probes
 tasks/                   Task set, one folder per task (later, SP4)
+graders/                 Grader framework and the grader worker, Python (SP4)
 configs/                 Versioned configs (later, SP2)
 labels/                  Rishi's hand labels only (later, SP5)
 experiments/             Exported results for the real experiment (later, SP8)
 docs/                    See the docs register
 ```
 
-Graders and stats are Python (D1); where their project lives is set in SP4.
+Graders and stats are Python (D1). The grader framework lives in `graders/` at the repo root (SP4).
 
 ## Docs register
 
@@ -198,11 +199,11 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [ ] **[Rishi designs]** Task format and task set. Domain: personal-finance assistant (D13, R6)
 - [ ] Split tasks into discovery and held-out sets for the prompt experiment (D9); keep simulated-client tasks to about 5 to 8 (D22)
 - [ ] Rishi reviews about 10 simulated-client transcripts and the simulator prompt is versioned before the experiment (D22, R11)
-- [ ] Build deterministic graders: exact match, unit tests, state checks
+- [x] Build deterministic graders: exact match, unit tests, state checks (`graders/`, nine types incl. a reserved judge; grading as its own step through the API and a `grader` service, R14; the spec format is a draft for Rishi, `docs/proposals/grader-format.md`)
 - [ ] **[Rishi designs]** Judge rubric format. Judge is blind to harness and model, with a pinned model and a verdict and quoted evidence per criterion
 - [ ] Write tasks where skills or memory should help
 - [ ] Seed skills and memory explicitly per config, since a fresh Hermes home has no skills
-- [ ] Test each grader against known pass and fail outputs
+- [x] Test each grader against known pass and fail outputs (96 tests in `graders/tests`, incl. the real 4 Nov transcripts of all five harnesses; API grading e2e with the real grader worker)
 
 ### SP5 Judge validation (Thu to Fri)
 
