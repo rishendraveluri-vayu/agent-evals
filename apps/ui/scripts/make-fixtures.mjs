@@ -39,9 +39,10 @@ const prompts = [
   { id: 'finance-advisor', version: 'v1', sha256: named('5c0f1a2'), path: 'configs/prompts/finance-advisor.v1.md', text: v1Text },
 ];
 
+// The sample stack has both provider keys in .env (key_set), so sample runs are not held back.
 const models = [
-  { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5 },
-  { name: 'gemini-3.8-flash', provider: 'gemini', input_per_mtok: 0.75, output_per_mtok: 3.75 },
+  { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: true },
+  { name: 'gemini-3.8-flash', provider: 'gemini', input_per_mtok: 0.75, output_per_mtok: 3.75, key_set: true },
 ];
 
 const HAIKU = 'claude-haiku-5-5';
@@ -220,7 +221,7 @@ const makeConfig = ({ hash, name, harness, model, prompt, settings, parent = nul
   return {
     hash, name, harness, harness_ref: h.ref, adapter_version: h.adapter_version, capabilities_sha256: h.capabilities_sha256, model,
     prompt: promptRef(prompt), toolset: toolsetRef, ...resolveSettings(settings, harness, model), warnings: [], harness_options: {}, seed: { memory: [], skills: [] },
-    parent_hash: parent, created_at: at(minutesAgo),
+    parent_hash: parent, example_only: false, created_at: at(minutesAgo),
   };
 };
 // Haiku 5.5 refuses temperature, so no sample config on it sets one (D25).
@@ -898,7 +899,8 @@ const conflictChecks = {
 const trialsUsd = Number(experiments.reduce((sum, e) => sum + e.spend_usd, 0).toFixed(6));
 // No judge approved in the sample data (SP4, R8): the judge line is 0.
 const spend = {
-  trials_usd: trialsUsd, system_usd: hermesCheck.cost_usd, judge_usd: 0, judge_approvals: 0, total_usd: Number((trialsUsd + hermesCheck.cost_usd).toFixed(6)),
+  // Every sample experiment is on a real model, so no made-up fake prices are kept apart.
+  trials_usd: trialsUsd, fake_trials_usd: 0, system_usd: hermesCheck.cost_usd, judge_usd: 0, judge_approvals: 0, total_usd: Number((trialsUsd + hermesCheck.cost_usd).toFixed(6)),
   system_by_kind: { conflict_check: { usd: hermesCheck.cost_usd, calls: 1 } }, allowances: [allowance],
 };
 const systemSpend = [{

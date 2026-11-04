@@ -216,6 +216,7 @@ function createConfig(body: CreateConfigRequest): ConfigView {
     warnings: [],
     harness_options: body.harness_options ?? {},
     parent_hash: parent?.hash ?? null,
+    example_only: false,
     created_at: meta.now,
   };
   created.configs.push(config);
@@ -244,7 +245,7 @@ function diffConfigs(a: ConfigView, b: ConfigView): ConfigDiffEntry[] {
   // derived ones and the lineage, so the name, capabilities_sha256 and settings_sources show too.
   const fields = (c: ConfigView) => {
     const rest: Partial<ConfigView> = { ...c };
-    for (const key of ['hash', 'created_at', 'unsupported', 'warnings', 'parent_hash'] as const) delete rest[key];
+    for (const key of ['hash', 'created_at', 'unsupported', 'warnings', 'parent_hash', 'example_only'] as const) delete rest[key];
     return rest;
   };
   walk('', fields(a), fields(b));

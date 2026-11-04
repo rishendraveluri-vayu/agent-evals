@@ -3,12 +3,14 @@
     "name": "claude-haiku-5-5",
     "provider": "anthropic",
     "input_per_mtok": 0.1,
-    "output_per_mtok": 0.5
+    "output_per_mtok": 0.5,
+    "key_set": true
   },
   {
     "name": "gemini-3.8-flash",
     "provider": "gemini",
     "input_per_mtok": 0.75,
-    "output_per_mtok": 3.75
+    "output_per_mtok": 3.75,
+    "key_set": true
   }
 ]

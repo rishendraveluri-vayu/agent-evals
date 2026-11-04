@@ -12,10 +12,10 @@ const FIELDS = {
   harness: ['name', 'package', 'ref', 'python', 'adapter_version', 'capabilities_sha256', 'capabilities'],
   prompt: ['id', 'version', 'sha256', 'path', 'text'],
   task: ['sha256', 'id', 'version', 'split', 'kind', 'summary', 'graders', 'problems'],
-  model: ['name', 'provider', 'input_per_mtok', 'output_per_mtok'],
+  model: ['name', 'provider', 'input_per_mtok', 'output_per_mtok', 'key_set'],
   config: [
     'hash', 'name', 'harness', 'harness_ref', 'adapter_version', 'capabilities_sha256', 'model', 'prompt', 'toolset', 'settings', 'settings_sources',
-    'unsupported', 'warnings', 'harness_options', 'seed', 'parent_hash', 'created_at',
+    'unsupported', 'warnings', 'harness_options', 'seed', 'parent_hash', 'example_only', 'created_at',
   ],
   summary: ['id', 'name', 'axis', 'status', 'config_hashes', 'task_sha256s', 'n', 'counts', 'spend_usd', 'estimate', 'budget_usd', 'created_at', 'example'],
   detailExtra: [
@@ -39,7 +39,7 @@ const FIELDS = {
   rendered: ['config_hash', 'status', 'probe', 'cached', 'error', 'rendered'],
   conflict: ['config_hash', 'rendered_sha256', 'input_sha256', 'checker', 'model', 'conflicts', 'notes', 'cost_usd', 'cached', 'skipped', 'spend_id', 'checked_at', 'allowance'],
   allowance: ['kind', 'limit_usd', 'used_usd', 'remaining_usd', 'calls', 'half_reached'],
-  spend: ['trials_usd', 'system_usd', 'judge_usd', 'judge_approvals', 'total_usd', 'system_by_kind', 'allowances'],
+  spend: ['trials_usd', 'fake_trials_usd', 'system_usd', 'judge_usd', 'judge_approvals', 'total_usd', 'system_by_kind', 'allowances'],
   blind: ['item_id', 'task_id', 'task_summary', 'transcript', 'tool_calls', 'criteria'],
 };
 
