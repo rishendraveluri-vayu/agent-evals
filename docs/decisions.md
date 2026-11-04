@@ -60,6 +60,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D49 Judge-error correction | Pooled sensitivity and specificity from the held-out labels (Rogan-Gladen), since D8 already drops criteria with a false-pass gap between arms; the comparison shows both "as judged" and "corrected" | Rishi | 5 Nov |
 | D15 Hermes settings for the headline experiment | Compression, memory and skills off in both arms; prompt-cache markers off (D31); Tool Search off (R10.7) | Rishi | 5 Nov |
 | D50 Minimum tasks for a verdict | 6 tasks in the aggregate; below it the verdict is "no detectable difference" with "too few tasks for any verdict" | Rishi | 5 Nov |
+| D51 Fake models for reviewers | Kept as a test tool on the full Config screen, clearly labelled; they replay one script whatever the task, so their trials fail and show no A/B difference. Reviewers see real results in the shipped example and run agents with their own key | Rishi | 5 Nov |
 
 ## Open
 
