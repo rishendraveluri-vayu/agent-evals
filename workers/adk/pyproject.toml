@@ -1,0 +1,45 @@
+[project]
+name = "adk-worker"
+version = "0.1.0"
+description = "The Google ADK harness adapter on the shared adapter library (contract v2)."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "evals-adapter",
+    # Exact pins, each released at least two weeks before 4 Nov (exclude-newer below holds the
+    # rest of the lock to the same rule). ADK has no litellm extra; [extensions] would pull in
+    # langgraph and crewai, so litellm is a direct dependency (docs/research/harnesses/google-adk.md).
+    "google-adk[mcp]==2.12.0",
+    "litellm==1.106.1",
+    "mcp==2.3.0",
+]
+
+[project.scripts]
+adk-adapter = "adk_adapter.adapter:entry"
+
+[tool.uv.sources]
+evals-adapter = { path = "../adapterlib", editable = true }
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv]
+# Nothing newer than two weeks before the pin date, transitive packages included.
+exclude-newer = "2026-10-21T00:00:00Z"
+# Test tools only, never in a trial: the same versions as the other workers' locks.
+exclude-newer-package = { pytest = "2026-11-04T00:00:00Z", ruff = "2026-11-04T00:00:00Z", jsonschema = "2026-11-04T00:00:00Z" }
+
+[tool.uv.build-backend]
+module-name = "adk_adapter"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[dependency-groups]
+dev = [
+    "jsonschema>=4.25.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+]
