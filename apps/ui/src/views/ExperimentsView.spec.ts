@@ -148,6 +148,24 @@ describe('ExperimentsView against the API: no statistics in this version', () =>
     expect(w.text()).not.toContain('Label batch 1');
   });
 
+  it('marks the spend of a run on fake models as made-up prices, as the comparison does', async () => {
+    const hashes = done.config_hashes as string[];
+    const fake = (configs as { hash: string; model: string }[]).map((c) => (hashes.includes(c.hash) ? { ...c, model: 'fake/finance-emi' } : c));
+    routeFetch({
+      '/api/experiments': [done, { ...done, id: 'exp_one_fake', config_hashes: [hashes[0], (configs as { hash: string }[]).find((c) => !hashes.includes(c.hash))?.hash] }],
+      '/api/configs': fake,
+      '/api/harnesses': [],
+      '/api/labels/queue?set=heldout': [],
+      '/api/labels/queue?set=tuning': [],
+    });
+    const w = mount(ExperimentsView);
+    await settle();
+    const notes = w.findAll('[data-test="experiment-row"]').map((r) => r.find('[data-test="fake-prices"]'));
+    expect(notes[0].text()).toBe('Made-up prices: fake model');
+    expect(notes[0].attributes('title')).toContain('invented for testing');
+    expect(notes[1].text()).toBe('Made-up prices in arm A: fake model');
+  });
+
   it('says what each step does today: no power estimate, no verdict, no interval', async () => {
     const w = mountLive();
     await settle();
