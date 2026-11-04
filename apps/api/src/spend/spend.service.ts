@@ -4,6 +4,7 @@ import type { AllowanceView, SpendView, SystemSpendRow } from '../contract';
 import { ApiError, conflict } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { Db, type Queryable } from '../database/db.service';
+import { NOT_EXAMPLE_TRIAL } from '../examples/example-guard';
 import { JudgeService } from '../judge/judge.service';
 import type { CallCost } from '../preflight/conflict-check';
 
@@ -114,7 +115,8 @@ export class SpendService {
   /** GET /spend: experiment trials, platform calls and the LLM judge, separately. */
   async totals(): Promise<SpendView> {
     const [t] = await this.db.query<{ usd: number }>(
-      `SELECT coalesce(sum(coalesce(cost_usd, 0) + coalesce(sim_cost_usd, 0)), 0)::float8 AS usd FROM trials WHERE NOT probe`,
+      // A shipped example's trials (SP7) were paid for on another machine, not by this one.
+      `SELECT coalesce(sum(coalesce(t.cost_usd, 0) + coalesce(t.sim_cost_usd, 0)), 0)::float8 AS usd FROM trials t WHERE NOT t.probe AND ${NOT_EXAMPLE_TRIAL('t')}`,
     );
     const kinds = await this.db.query<{ kind: string; usd: number; calls: number }>(
       `SELECT kind, coalesce(sum(cost_usd), 0)::float8 AS usd, count(*)::int AS calls FROM system_spend GROUP BY kind ORDER BY kind`,

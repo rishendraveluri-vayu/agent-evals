@@ -385,6 +385,21 @@ export interface ExperimentSummary {
   estimate: Estimate;
   budget_usd: number;
   created_at: string;
+  /**
+   * Set when this experiment is a shipped example loaded by POST /examples/:name/load (SP7), so
+   * the UI can label it as sample content; null for your own experiments. An example is
+   * read-only: nothing runs, re-grades or judges it, and its trials are not counted in spend,
+   * estimates or the label queue.
+   */
+  example: ExampleRef | null;
+}
+
+/** Which shipped example an experiment was loaded from (`examples/<name>/manifest.json`). */
+export interface ExampleRef {
+  name: string;
+  /** The manifest's one-line title, to show in place of (or beside) the experiment's name. */
+  title: string;
+  loaded_at: string;
 }
 
 export type ExperimentEventKind =
@@ -716,7 +731,7 @@ export interface RegradeResponse {
   from_trial_task: number;
 }
 
-// ---- experiment bundles (SP7) ----
+// ---- experiment bundles and shipped examples (SP7) ----
 
 /** The tables an experiment bundle carries, in the order they are inserted. */
 export const BUNDLE_TABLES = [
@@ -752,6 +767,37 @@ export interface ExperimentBundle {
   exported_at: string;
   experiment_id: string;
   tables: Record<BundleTable, JsonObject[]>;
+}
+
+/** What a shipped example holds, from its manifest. */
+export interface ExampleCounts {
+  configs: number;
+  tasks: number;
+  trials: number;
+  spans: number;
+  grades: number;
+  files: number;
+}
+
+/** GET /examples: one entry per `examples/<name>/manifest.json` the API can read. */
+export interface ExampleView {
+  /** The folder name: lower-case letters, digits and hyphens. */
+  name: string;
+  title: string;
+  description: string;
+  experiment_id: string;
+  /** True once this database holds the example (POST /examples/:name/load). */
+  loaded: boolean;
+  /** When the experiment was created, on the machine it was exported from. */
+  created_at: string;
+  counts: ExampleCounts;
+}
+
+/** POST /examples/:name/load, 200. `created: false`: it was already loaded and nothing changed. */
+export interface LoadExampleResponse {
+  name: string;
+  experiment_id: string;
+  created: boolean;
 }
 
 /** GET /trials/:id for a trial made in an experiment, or a probe trial (D33: `experiment_id` null, `probe` true). */

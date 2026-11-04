@@ -3,6 +3,7 @@ import type { JudgeApprovalResponse, JudgeRevokeResponse, JudgeView } from '../c
 import { badRequest, conflict, notFound } from '../common/api-error';
 import { newId } from '../common/ids';
 import { Db } from '../database/db.service';
+import { type ExampleMark, assertNotExample } from '../examples/example-guard';
 import { LiteLlmClient, LiteLlmHttpError } from '../litellm/litellm.client';
 import { parseJudgeRequest, spendLogUsd } from './judge-core';
 
@@ -38,9 +39,10 @@ export class JudgeService {
     private readonly litellm: LiteLlmClient,
   ) {}
 
-  private async experiment(id: string): Promise<void> {
-    const [e] = await this.db.query('SELECT 1 FROM experiments WHERE id = $1', [id]);
+  private async experiment(id: string): Promise<ExampleMark> {
+    const [e] = await this.db.query<ExampleMark>('SELECT id, example_name FROM experiments WHERE id = $1', [id]);
     if (!e) throw notFound('unknown_experiment', `no experiment ${id}`);
+    return e;
   }
 
   private async active(experimentId: string): Promise<ApprovalRow | undefined> {
@@ -58,7 +60,8 @@ export class JudgeService {
 
   /** POST /experiments/:id/judge */
   async approve(experimentId: string, body: unknown): Promise<JudgeApprovalResponse> {
-    await this.experiment(experimentId);
+    // SP7: a shipped example is never judged again, so no key is ever minted for one.
+    assertNotExample(await this.experiment(experimentId), 'be judged');
     const { model, budgetUsd } = parseJudgeRequest(body);
     const route = await this.litellm.findModel(model);
     if (!route || route.inputPerToken === null || route.outputPerToken === null) {

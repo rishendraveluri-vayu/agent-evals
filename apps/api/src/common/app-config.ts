@@ -17,6 +17,8 @@ export interface AppConfig {
   configsDir: string;
   tasksDir: string;
   labelsDir: string;
+  /** Shipped examples (examples/<name>/manifest.json), loaded on request; read-only. */
+  examplesDir: string;
   runsDir: string;
   /** The finance MCP server's folder: its published tool manifest and version give the toolset's hash. */
   financeMcpDir: string;
@@ -56,6 +58,7 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     configsDir: dir('CONFIGS_DIR', 'configs'),
     tasksDir: dir('TASKS_DIR', 'tasks'),
     labelsDir: dir('LABELS_DIR', 'labels'),
+    examplesDir: dir('EXAMPLES_DIR', 'examples'),
     financeMcpDir: dir('FINANCE_MCP_DIR', 'services/finance-mcp'),
     // RUNS_DIR keeps its SP1 meaning: relative to the working directory.
     runsDir: path.resolve(nonEmpty(env.RUNS_DIR) ?? 'runs'),

@@ -4,6 +4,7 @@ import { CatalogueModule } from './catalogue/catalogue.module';
 import { ApiErrorFilter } from './common/api-error';
 import { CoreModule } from './common/core.module';
 import { ConfigsModule } from './configs/configs.module';
+import { ExamplesModule } from './examples/examples.module';
 import { ExperimentsModule } from './experiments/experiments.module';
 import { GradingModule } from './grading/grading.module';
 import { HealthModule } from './health/health.module';
@@ -15,7 +16,7 @@ import { TrialsModule } from './trials/trials.module';
 import { WorkerModule } from './worker/worker.module';
 
 @Module({
-  imports: [CoreModule, HealthModule, CatalogueModule, ConfigsModule, ExperimentsModule, TrialsModule, WorkerModule, LabelsModule, PreflightModule, SpendModule, GradingModule, JudgeModule],
+  imports: [CoreModule, HealthModule, CatalogueModule, ConfigsModule, ExperimentsModule, TrialsModule, WorkerModule, LabelsModule, PreflightModule, SpendModule, GradingModule, JudgeModule, ExamplesModule],
   providers: [{ provide: APP_FILTER, useClass: ApiErrorFilter }],
 })
 export class AppModule {}
