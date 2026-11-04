@@ -910,102 +910,144 @@
   "exp_harness": {
     "rows": [
       {
-        "task": "sha256:6cb22f66c177ae8a65105561ac06815d3a5d4d77a76dec261b1489da97d9ec04",
+        "task": "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
         "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 5,
-        "graded": 5,
-        "trials": 5
-      },
-      {
-        "task": "sha256:6cb22f66c177ae8a65105561ac06815d3a5d4d77a76dec261b1489da97d9ec04",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 5,
-        "graded": 5,
-        "trials": 5
-      },
-      {
-        "task": "sha256:f489140e6f210f4520eab97162d598fb6cd5a51d3055ce51ae9bd80909d67957",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 4,
-        "graded": 5,
-        "trials": 5
-      },
-      {
-        "task": "sha256:f489140e6f210f4520eab97162d598fb6cd5a51d3055ce51ae9bd80909d67957",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 5,
-        "graded": 5,
-        "trials": 5
-      },
-      {
-        "task": "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 2,
-        "graded": 5,
-        "trials": 5
-      },
-      {
-        "task": "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 2,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:0898a95850884320814ab6ca5681f1d651b9bdf36f7082c949059805e9365f8f",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 2,
-        "graded": 5,
-        "trials": 5
-      },
-      {
-        "task": "sha256:0898a95850884320814ab6ca5681f1d651b9bdf36f7082c949059805e9365f8f",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 4,
-        "graded": 5,
-        "trials": 5
-      },
-      {
-        "task": "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 5,
-        "graded": 5,
-        "trials": 5
-      },
-      {
-        "task": "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 3,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:90278ef5926e8ea4be29333f28d1cb70b3074b97df447e0b5198e11d86107531",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 3,
-        "graded": 5,
-        "trials": 5
-      },
-      {
-        "task": "sha256:90278ef5926e8ea4be29333f28d1cb70b3074b97df447e0b5198e11d86107531",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 3,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 2,
-        "graded": 3,
-        "trials": 3
-      },
-      {
-        "task": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
         "passed": 1,
-        "graded": 1,
-        "trials": 1
+        "graded": 3,
+        "trials": 3
+      },
+      {
+        "task": "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
+        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "passed": 2,
+        "graded": 3,
+        "trials": 3
+      },
+      {
+        "task": "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
+        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
+        "passed": 1,
+        "graded": 3,
+        "trials": 3
+      },
+      {
+        "task": "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
+        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "passed": 2,
+        "graded": 2,
+        "trials": 2
+      },
+      {
+        "task": "sha256:0898a95850884320814ab6ca5681f1d651b9bdf36f7082c949059805e9365f8f",
+        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
+        "passed": 1,
+        "graded": 3,
+        "trials": 3
+      },
+      {
+        "task": "sha256:0898a95850884320814ab6ca5681f1d651b9bdf36f7082c949059805e9365f8f",
+        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "passed": 2,
+        "graded": 3,
+        "trials": 3
+      },
+      {
+        "task": "sha256:a972fb38006ca7dbb39d45f0d4dfa2c2385a2a903be1b2ee5086ae6df493bc56",
+        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
+        "passed": 2,
+        "graded": 3,
+        "trials": 3
+      },
+      {
+        "task": "sha256:a972fb38006ca7dbb39d45f0d4dfa2c2385a2a903be1b2ee5086ae6df493bc56",
+        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "passed": 3,
+        "graded": 3,
+        "trials": 3
+      },
+      {
+        "task": "sha256:90278ef5926e8ea4be29333f28d1cb70b3074b97df447e0b5198e11d86107531",
+        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
+        "passed": 1,
+        "graded": 3,
+        "trials": 3
+      },
+      {
+        "task": "sha256:90278ef5926e8ea4be29333f28d1cb70b3074b97df447e0b5198e11d86107531",
+        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "passed": 3,
+        "graded": 3,
+        "trials": 3
+      },
+      {
+        "task": "sha256:f489140e6f210f4520eab97162d598fb6cd5a51d3055ce51ae9bd80909d67957",
+        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
+        "passed": 2,
+        "graded": 3,
+        "trials": 3
+      },
+      {
+        "task": "sha256:f489140e6f210f4520eab97162d598fb6cd5a51d3055ce51ae9bd80909d67957",
+        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "passed": 3,
+        "graded": 3,
+        "trials": 3
+      },
+      {
+        "task": "sha256:303b76c2b46a4df6f8bd97a11c59018632560d53021d1cabd90be7a2d5d212f8",
+        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
+        "passed": 2,
+        "graded": 3,
+        "trials": 3
+      },
+      {
+        "task": "sha256:303b76c2b46a4df6f8bd97a11c59018632560d53021d1cabd90be7a2d5d212f8",
+        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "passed": 2,
+        "graded": 3,
+        "trials": 3
+      },
+      {
+        "task": "sha256:6cb22f66c177ae8a65105561ac06815d3a5d4d77a76dec261b1489da97d9ec04",
+        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
+        "passed": 2,
+        "graded": 2,
+        "trials": 2
+      },
+      {
+        "task": "sha256:6cb22f66c177ae8a65105561ac06815d3a5d4d77a76dec261b1489da97d9ec04",
+        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "passed": 2,
+        "graded": 2,
+        "trials": 2
+      },
+      {
+        "task": "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
+        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
+        "passed": 2,
+        "graded": 2,
+        "trials": 2
+      },
+      {
+        "task": "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
+        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "passed": 2,
+        "graded": 2,
+        "trials": 2
+      },
+      {
+        "task": "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15",
+        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
+        "passed": 1,
+        "graded": 2,
+        "trials": 2
+      },
+      {
+        "task": "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15",
+        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "passed": 2,
+        "graded": 2,
+        "trials": 2
       },
       {
         "task": "sha256:924c8f26ddd6933aa36a956ab55875ee3e106d751564c9f1cf4d9be98b6306ea",
@@ -1017,65 +1059,23 @@
       {
         "task": "sha256:924c8f26ddd6933aa36a956ab55875ee3e106d751564c9f1cf4d9be98b6306ea",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 0,
-        "graded": 0,
-        "trials": 0
+        "passed": 1,
+        "graded": 2,
+        "trials": 2
       },
       {
-        "task": "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15",
+        "task": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
         "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 0,
-        "graded": 0,
-        "trials": 0
+        "passed": 2,
+        "graded": 2,
+        "trials": 2
       },
       {
-        "task": "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15",
+        "task": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
         "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 0,
-        "graded": 0,
-        "trials": 0
-      },
-      {
-        "task": "sha256:a972fb38006ca7dbb39d45f0d4dfa2c2385a2a903be1b2ee5086ae6df493bc56",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 0,
-        "graded": 0,
-        "trials": 0
-      },
-      {
-        "task": "sha256:a972fb38006ca7dbb39d45f0d4dfa2c2385a2a903be1b2ee5086ae6df493bc56",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 0,
-        "graded": 0,
-        "trials": 0
-      },
-      {
-        "task": "sha256:303b76c2b46a4df6f8bd97a11c59018632560d53021d1cabd90be7a2d5d212f8",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 0,
-        "graded": 0,
-        "trials": 0
-      },
-      {
-        "task": "sha256:303b76c2b46a4df6f8bd97a11c59018632560d53021d1cabd90be7a2d5d212f8",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 0,
-        "graded": 0,
-        "trials": 0
-      },
-      {
-        "task": "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
-        "config": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
-        "passed": 0,
-        "graded": 0,
-        "trials": 0
-      },
-      {
-        "task": "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
-        "config": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
-        "passed": 0,
-        "graded": 0,
-        "trials": 0
+        "passed": 1,
+        "graded": 1,
+        "trials": 1
       }
     ],
     "stats": null

@@ -17,9 +17,11 @@ describe('TrialView in fixture mode', () => {
     const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
     await settle();
     expect(w.get('[data-test="trial-title"]').text()).toBe('Arm B, trial 3 of 5');
-    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed: 2 of 3 checks passed');
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 checks');
     const facts = w.get('[data-test="trial-facts"]').text();
     expect(facts).toContain('Agent answered');
+    // Beside the call counts: the simulated client's model, which shapes the conversation too.
+    expect(facts).toContain('Hermes counted 3; client Claude Haiku 5.5');
     expect(facts).toContain('5.4 s of it start-up');
     expect(facts).toContain('$0.18');
     expect(facts).toContain('3 agent, 1 client');
@@ -61,7 +63,7 @@ describe('TrialView in fixture mode', () => {
     const grades = w.findAll('[data-test="grade"]');
     expect(grades[1].attributes('id')).toBe('grade-1');
     // The status pill still reports the grades as they are.
-    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed: 2 of 3 checks passed');
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 checks');
   });
 
   it('keeps your held-out label out of sight while held-out outputs remain, on a task not in the queue', async () => {
@@ -122,6 +124,19 @@ describe('TrialView in fixture mode', () => {
     expect(w.get('.applied').text()).toContain('Settings as applied');
     expect(w.get('.applied').find('[data-test="trial-files"]').exists()).toBe(true);
     expect(w.get('.applied').find('.requests').exists()).toBe(true);
+    // The files have their own heading, and the model requests their own row.
+    expect(w.get('[data-test="files-title"]').text()).toBe('Files');
+    expect(w.get('[data-test="files-title"]').classes()).toContain('sub-title');
+    expect(w.get('[data-test="files-title"]').element.nextElementSibling).toBe(w.get('[data-test="trial-files"]').element);
+  });
+
+  it('says prompt-cache markers change cost and time, not the reply', async () => {
+    const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
+    await settle();
+    const source = w.get('[data-test="applied-source-prompt_cache_markers"]');
+    expect(source.text()).toBe('Hermes default Affects cost and time, not the reply.');
+    expect(source.get('.setting-note').text()).toBe('Affects cost and time, not the reply.');
+    expect(w.findAll('.setting-note')).toHaveLength(1);
   });
 
   it('wraps each summary\'s words in one block, with the time inside it, so only the words wrap', async () => {
@@ -191,7 +206,7 @@ describe('TrialView against the API: blind labelling', () => {
     expect(w.find('[data-test="quote-link"]').exists()).toBe(false);
     expect(w.find('[data-test="mark-key"]').exists()).toBe(false);
     expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: Accounts for tax on FD interest (judge)');
-    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed: 2 of 3 checks passed');
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 checks');
   });
 
   it('counts the outputs still to label for the task', async () => {
@@ -214,6 +229,45 @@ describe('TrialView against the API: blind labelling', () => {
     expect(grades[2].find('[data-test="dispute"]').exists()).toBe(false);
     expect(w.find('mark').exists()).toBe(true);
     expect(w.find('[data-test="hidden-reasons"]').exists()).toBe(false);
+  });
+});
+
+describe('TrialView against the API: the outcome in words, and the simulated client', () => {
+  type Detail = Record<string, unknown> & { sim_model: string | null };
+  const heldout = (details as unknown as Record<string, Detail>).exp_heldout;
+  const grade = trial.grades[0];
+  function mountWith(over: { grades?: unknown[]; simModel?: string | null }) {
+    routeFetch({
+      '/api/trials/tr_fd-vs-sip-07_b_3': { ...trial, grades: over.grades ?? trial.grades },
+      '/api/trials/tr_fd-vs-sip-07_b_3/spans': trialSpans,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+      '/api/experiments/exp_heldout': { ...heldout, sim_model: over.simModel === undefined ? heldout.sim_model : over.simModel },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/prompts': prompts,
+    });
+    return mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
+  }
+
+  it('says "Passed all 3 checks", and "its one check" when there is one', async () => {
+    const pass = { ...grade, verdict: 'pass' };
+    let w = mountWith({ grades: [pass, { ...pass, grader_id: 'g2' }, { ...pass, grader_id: 'g3' }] });
+    await settle();
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Passed all 3 checks');
+    w = mountWith({ grades: [pass] });
+    await settle();
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Passed its one check');
+    w = mountWith({ grades: [{ ...grade, verdict: 'fail' }] });
+    await settle();
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed its one check');
+  });
+
+  it('leaves the client model out of the call counts when the experiment has none', async () => {
+    const w = mountWith({ simModel: null });
+    await settle();
+    const facts = w.get('[data-test="trial-facts"]').text();
+    expect(facts).toContain('Hermes counted 3');
+    expect(facts).not.toContain('client Claude');
   });
 });
 

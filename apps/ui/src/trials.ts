@@ -172,6 +172,8 @@ export interface SpanBar {
   /** The same with what the name leaves out, for the row's tooltip and screen readers: the model
    *  of an agent call. */
   title: string;
+  /** A tool bar's tool name, a literal identifier the row sets in mono: "get_client_profile". */
+  ident?: string;
   role: 'agent' | 'tool' | 'client' | 'harness';
   startMs: number;
   durationMs: number;
@@ -192,6 +194,7 @@ export function spanBars(spans: SpanView[], harness?: string): { bars: SpanBar[]
     const model = typeof a['gen_ai.request.model'] === 'string' ? a['gen_ai.request.model'] : r.span.name.replace(/^chat /, '');
     let label = r.span.name;
     let title = '';
+    let ident: string | undefined;
     let role: SpanBar['role'] = 'harness';
     if (r.role === 'chat') {
       // Numbered, so each call fits its row; the model id is in the tooltip and the details.
@@ -206,13 +209,15 @@ export function spanBars(spans: SpanView[], harness?: string): { bars: SpanBar[]
       label = 'Simulated client';
       role = 'client';
     } else if (r.role === 'tool') {
-      label = `tool ${text(a['gen_ai.tool.name'] ?? r.span.name.replace(/^execute_tool /, ''))}`;
+      ident = text(a['gen_ai.tool.name'] ?? r.span.name.replace(/^execute_tool /, ''));
+      label = `tool ${ident}`;
       role = 'tool';
     }
     return {
       id: r.span.spanId,
       label,
       title: title || label,
+      ...(ident !== undefined ? { ident } : {}),
       role,
       startMs: r.startMs,
       durationMs: r.durationMs,

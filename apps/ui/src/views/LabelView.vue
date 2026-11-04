@@ -158,7 +158,7 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
       name="eye-off"
       class="secondary"
     />
-    <span>Hidden from you: the harness, the model, the arm, the timing, the cost and the judge's verdict. Outputs come in a random order, mixed across configs.</span>
+    <span>Hidden from you: the harness, the model, the arm, the timing, the cost and the judge's verdict. Outputs come in a random order, mixed across configs. Trial pages still show the arm and the judge's pass or fail, so label a task before opening its trials.</span>
     <span
       v-if="queue"
       class="progress num"

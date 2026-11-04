@@ -24,6 +24,14 @@ describe('LabelView in fixture mode', () => {
     expectBlind(item.text());
   });
 
+  it('says what is hidden, and that trial pages still show the arm and the judge, so a task is labelled first', async () => {
+    const w = mount(LabelView);
+    await settle();
+    const note = w.get('[data-test="blind-note"]').text();
+    expect(note).toContain("Hidden from you: the harness, the model, the arm, the timing, the cost and the judge's verdict.");
+    expect(note).toContain("Trial pages still show the arm and the judge's pass or fail, so label a task before opening its trials.");
+  });
+
   it('marks the question 1, 2 and 3 answer with a band, not an underline', async () => {
     const w = mount(LabelView);
     await settle();
@@ -85,7 +93,8 @@ describe('LabelView against the API', () => {
     await settle();
     const item = w.get('[data-test="blind-item"]');
     expect(item.text()).toContain('Your EMI is Rs 8,997.26.');
-    expectBlind(w.text().replace(/Hidden from you:[^.]*\./, ''));
+    // The note saying what is hidden names those things itself; everything else stays blind.
+    expectBlind(w.text().replace(w.get('[data-test="blind-note"] > span').text(), ''));
     expect(w.get('[data-test="label-file"]').text()).toContain('labels/heldout.jsonl');
   });
 

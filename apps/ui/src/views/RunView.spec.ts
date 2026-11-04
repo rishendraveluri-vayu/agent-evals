@@ -6,6 +6,9 @@ import experimentTrials from '../fixtures/experiment-trials.json';
 import { routeFetch, settle, useFixtures } from '../test/helpers';
 import RunView from './RunView.vue';
 
+/** A no-break space: a number keeps its unit. */
+const nb = '\u00a0';
+
 describe('RunView, setting up a run in fixture mode', () => {
   useFixtures();
 
@@ -38,7 +41,12 @@ describe('RunView, setting up a run in fixture mode', () => {
     expect(plan).toContain('12 tasks × 2 arms × 5 trials');
     expect(plan).toContain('$21.30');
     expect(plan).toContain('Likely $16.00 to $27.00');
-    expect(plan).toContain('10 points');
+    expect(plan).toContain(`10${nb}points`);
+    // Before the start the plan is the answer, so its figures stay large (34 px).
+    expect(w.get('[data-test="plan"]').classes()).not.toContain('plan--past');
+    const tiles = w.findAll('[data-test="plan"] > div');
+    expect(tiles[3].get('.stat-label').text()).toBe('Smallest overall difference it can see');
+    expect(tiles[3].get('[data-test="power-note"]').text()).toBe("Pass rate over all 12 tasks, 8 times in 10, from the pilot's spread");
   });
 
   it('will not start until every check passes', async () => {
@@ -70,16 +78,34 @@ describe('RunView, a running experiment in fixture mode', () => {
   it('shows progress per task, arm and trial, with infra failures apart from agent failures', async () => {
     const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
     await settle();
-    expect(w.get('[data-test="tally"]').text()).toBe('60 done, 4 running, 54 waiting, 2 infra failures re-queued, both in arm B, about 19 min left');
+    expect(w.get('[data-test="tally"]').text()).toBe('About 19 min left · 4 running · 54 waiting · 2 infra failures re-queued, both in arm B');
     const grid = w.get('[data-test="run-grid"]');
     expect(grid.findAll('tbody tr')).toHaveLength(12);
     const states = grid.findAll('[data-state]').map((c) => c.attributes('data-state'));
     expect(states).toHaveLength(120);
     expect(states.filter((s) => s === 'infra')).toHaveLength(2);
     expect(grid.text()).toContain('debt-hardship-03, arm B, trial 2: infra failure, re-queued');
-    const events = w.get('[data-test="events"]').text();
-    expect(events).toContain('Started 120 trials, 4 at a time.');
-    expect(events).toContain('debt-hardship-03, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last.');
+    // The log reads in the order things happened, which is the order trials were claimed.
+    const lines = w.findAll('[data-test="events"] li').map((li) => li.text());
+    expect(lines[0]).toMatch(/arms alternating\.$/);
+    expect(lines[1]).toContain('debt-hardship-03, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last.');
+    expect(lines[2]).toContain('fd-vs-sip-07, arm B, trial 2');
+    expect(lines[3]).toContain('Half the trials done. Spend is on track: $11.20 against $10.65 expected by now.');
+  });
+
+  it('fills the grid in claim order: trials 1 and 2 in every row, trial 3 in the first rows', async () => {
+    const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    const rows = w.findAll('[data-test="run-grid"] tbody tr').map((tr) => tr.findAll('[data-state]').map((c) => c.attributes('data-state')));
+    const filled = (s: string | undefined) => s === 'pass' || s === 'fail' || s === 'infra';
+    for (const cells of rows) {
+      // Trials 1 and 2 of arm A (cells 0, 1) and of arm B (cells 5, 6).
+      expect([cells[0], cells[1], cells[5], cells[6]].every(filled)).toBe(true);
+    }
+    expect(rows.slice(0, 7).every((cells) => filled(cells[2]) && filled(cells[7]))).toBe(true);
+    expect(rows.slice(7, 9).every((cells) => cells[2] === 'running' && cells[7] === 'running')).toBe(true);
+    expect(rows.slice(9).every((cells) => cells[2] === 'waiting' && cells[7] === 'waiting')).toBe(true);
+    expect(rows.every((cells) => [3, 4, 8, 9].every((i) => cells[i] === 'waiting'))).toBe(true);
   });
 
   it('leads with its progress: the count in the title, then the grid, then what was planned and checked', async () => {
@@ -87,6 +113,15 @@ describe('RunView, a running experiment in fixture mode', () => {
     await settle();
     expect(w.get('[data-test="run-title"]').text()).toBe('Running: 60 of 120 trials done');
     expect(w.find('.lede').exists()).toBe(false);
+    // The live state sits right under the h1; the Progress heading carries no line of its own.
+    expect(w.get('[data-test="run-title"]').element.nextElementSibling).toBe(w.get('[data-test="tally"]').element);
+    expect(w.get('.page-head').find('[data-test="tally"]').exists()).toBe(true);
+    expect(w.get('#progress').element.parentElement?.querySelector('[data-test="tally"]')).toBeNull();
+    // What was planned steps back.
+    expect(w.get('[data-test="plan"]').classes()).toEqual(expect.arrayContaining(['stat-strip', 'plan', 'plan--past']));
+    const tiles = w.findAll('[data-test="plan"] > div');
+    expect(tiles[3].get('.stat-label').text()).toBe('Smallest overall difference it can see');
+    expect(tiles[3].get('[data-test="power-note"]').text()).toBe("Pass rate over all 12 tasks, 8 times in 10, from the pilot's spread");
     const actions = w.get('[data-test="run-actions"]');
     expect(actions.get('[data-test="cancel"]').text()).toBe('Cancel the waiting trials');
     expect(actions.text()).toContain('Running trials finish; waiting ones are marked cancelled and kept.');
@@ -96,6 +131,8 @@ describe('RunView, a running experiment in fixture mode', () => {
     expect(before('[data-test="checks-details"]', '[data-test="diff-details"]')).toBe(true);
     expect(w.get('#planned').text()).toBe('Planned');
     expect(w.get('[data-test="run-arms"]').text()).toContain('A: Own loop');
+    expect(w.get('[data-test="run-sim-client"]').text()).toBe('Simulated client: Claude Haiku 5.5');
+    expect(w.get('[data-test="run-sim-client"]').find('.dot').exists()).toBe(false);
     expect(w.text()).toContain('LiteLLM stops all spending at $40');
   });
 
@@ -112,13 +149,19 @@ describe('RunView, a running experiment in fixture mode', () => {
     expect(diff.get('summary').text()).toMatch(/^How the two arms differ: \d+ fields?$/);
   });
 
-  it('gives pass and fail cells equal weight and reads the legend in order', async () => {
+  it('gives pass and fail cells equal weight and reads the legend in two rows: outcomes, then only the infra states shown', async () => {
     const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
     await settle();
-    const legend = w.get('[data-test="grid-legend"]');
-    expect(legend.findAll('.legend-item').map((i) => i.text())).toEqual(['Pass', 'Fail', 'Running', 'Waiting', '!Infra, re-queued', 'Re-run after infra', '!Infra, gave up']);
-    expect(legend.findAll('.cell').map((c) => c.classes().find((k) => k.startsWith('cell--')))).toEqual(['cell--pass', 'cell--fail', 'cell--running', 'cell--waiting', 'cell--infra', 'cell--pass', 'cell--abandoned']);
-    expect(legend.findAll('.cell')[5].classes()).toContain('cell--retried');
+    const outcomes = w.get('[data-test="legend-outcomes"]');
+    expect(outcomes.findAll('.legend-item').map((i) => i.text())).toEqual(['Pass', 'Fail', 'Running', 'Waiting']);
+    expect(outcomes.findAll('.cell').map((c) => c.classes().find((k) => k.startsWith('cell--')))).toEqual(['cell--pass', 'cell--fail', 'cell--running', 'cell--waiting']);
+    const infra = w.get('[data-test="legend-infra"]');
+    expect(infra.findAll('.legend-item').map((i) => i.text())).toEqual(['!Infra, re-queued']);
+    // On a phone each arm's header is its dot and letter; the rest of the label is for screen readers.
+    const heads = w.findAll('.arm-col');
+    expect(heads.map((h) => h.get('.arm-letter').text())).toEqual(['A', 'B']);
+    expect(heads.map((h) => h.get('[data-test="arm-rest"]').text())).toEqual([', Own loop', ', Hermes Agent']);
+    expect(heads.map((h) => h.text())).toEqual(['A, Own loop', 'B, Hermes Agent']);
     const grid = w.get('[data-test="run-grid"]');
     expect(grid.findAll('[data-state="fail"]').length).toBeGreaterThan(0);
     // As many running as the run allows at once, in both arms.
@@ -147,6 +190,9 @@ describe('RunView, a finished run in fixture mode', () => {
       expect(c.get('.visually-hidden').text()).toMatch(/: passed, after an infra failure$/);
     }
     expect(w.get('[data-test="run-grid"]').text()).toContain('debt-hardship-03, arm B, trial 2: passed, after an infra failure');
+    // Only the infra state this grid holds is in the legend.
+    expect(w.get('[data-test="legend-infra"]').findAll('.legend-item').map((i) => i.text())).toEqual(['Re-run after infra']);
+    expect(w.get('[data-test="legend-infra"] .cell').classes()).toEqual(expect.arrayContaining(['cell--pass', 'cell--retried']));
   });
 });
 
@@ -167,7 +213,9 @@ describe('RunView against the API, with a slot that gave up', () => {
     const grid = w.get('[data-test="run-grid"]');
     const gaveUp = grid.findAll('[data-state="abandoned"]');
     expect(gaveUp).toHaveLength(1);
-    expect(gaveUp[0].text()).toContain('!');
+    // Filled and marked with an en dash: finished, with no result.
+    expect(gaveUp[0].text()).toContain('–');
+    expect(gaveUp[0].text()).not.toContain('!');
     expect(gaveUp[0].get('.visually-hidden').text()).toBe('fd-vs-sip-07, arm B, trial 2: infra failure, gave up after 1 attempt');
     expect(gaveUp[0].text()).not.toContain('re-queued');
     const failedAfter = grid.findAll('[data-retried="true"]');
@@ -188,6 +236,45 @@ describe('RunView against the API, with infra failures in both arms', () => {
     routeFetch({ '/api/experiments/exp_harness': detail, '/api/experiments/exp_harness/trials': trials, '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] });
     const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
     await settle();
-    expect(w.get('[data-test="tally"]').text()).toBe('59 done, 4 running, 54 waiting, 3 infra failures re-queued, A 1, B 2, about 19 min left');
+    expect(w.get('[data-test="tally"]').text()).toBe('About 19 min left · 4 running · 54 waiting · 3 infra failures re-queued, A 1, B 2');
+  });
+});
+
+describe('RunView against the API, with one slot re-queued and one that gave up', () => {
+  it('tells them apart in the grid and the legend: an outline with "!", and a filled cell with "–"', async () => {
+    const detail = (details as Record<string, ExperimentDetail>).exp_harness;
+    const trials = ((experimentTrials as Record<string, ExperimentTrial[]>).exp_harness)
+      .filter((t) => t.id !== 'th_fd-vs-sip-07_b_2_attempt2')
+      .map((t) => (t.id === 'th_fd-vs-sip-07_b_2' ? { ...t, status: 'abandoned' } : t));
+    routeFetch({ '/api/experiments/exp_harness': detail, '/api/experiments/exp_harness/trials': trials, '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] });
+    const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    const swatches = w.get('[data-test="legend-infra"]').findAll('.legend-item');
+    expect(swatches.map((i) => i.text())).toEqual(['!Infra, re-queued', '–Infra, gave up']);
+    const [requeued, gaveUp] = swatches.map((i) => i.get('.cell'));
+    expect(requeued.classes()).toContain('cell--infra');
+    expect(gaveUp.classes()).toContain('cell--abandoned');
+    expect(requeued.classes()).not.toContain('cell--abandoned');
+    expect(requeued.text()).toBe('!');
+    expect(gaveUp.text()).toBe('–');
+    const grid = w.get('[data-test="run-grid"]');
+    // Each cell's glyph, without its hidden label.
+    const glyph = (state: string) => {
+      const cell = grid.get(`[data-state="${state}"]`);
+      return cell.text().replace(cell.get('.visually-hidden').text(), '');
+    };
+    expect(glyph('infra')).toBe('!');
+    expect(glyph('abandoned')).toBe('–');
+  });
+});
+
+describe('RunView against the API, with no simulated client', () => {
+  it('leaves the simulated client line out', async () => {
+    const detail = { ...(details as Record<string, ExperimentDetail>).exp_harness, sim_model: null };
+    routeFetch({ '/api/experiments/exp_harness': detail, '/api/experiments/exp_harness/trials': (experimentTrials as Record<string, ExperimentTrial[]>).exp_harness, '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] });
+    const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    expect(w.get('[data-test="run-arms"]').text()).toContain('A: Own loop');
+    expect(w.find('[data-test="run-sim-client"]').exists()).toBe(false);
   });
 });

@@ -294,28 +294,28 @@
     ],
     "events": [
       {
-        "at": "2026-11-05T14:06:00Z",
+        "at": "2026-11-05T13:41:00Z",
+        "kind": "started",
+        "trial_id": null,
+        "message": "Started 120 trials, 4 at a time, arms alternating."
+      },
+      {
+        "at": "2026-11-05T13:53:00Z",
         "kind": "infra_failure",
         "trial_id": "th_debt-hardship-03_b_2",
         "message": "debt-hardship-03, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last."
       },
       {
-        "at": "2026-11-05T14:04:00Z",
+        "at": "2026-11-05T14:01:00Z",
         "kind": "infra_failure",
         "trial_id": "th_fd-vs-sip-07_b_2",
         "message": "fd-vs-sip-07, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last."
       },
       {
-        "at": "2026-11-05T13:58:00Z",
+        "at": "2026-11-05T14:07:00Z",
         "kind": "checkpoint",
         "trial_id": null,
-        "message": "Half the trials done. Spend is on track: $9.80 against $10.65 expected by now."
-      },
-      {
-        "at": "2026-11-05T13:41:00Z",
-        "kind": "started",
-        "trial_id": null,
-        "message": "Started 120 trials, 4 at a time."
+        "message": "Half the trials done. Spend is on track: $11.20 against $10.65 expected by now."
       }
     ]
   },

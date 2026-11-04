@@ -16,19 +16,30 @@ const offset = computed(() => (skipStartup.value ? startup.value : 0));
 const span = computed(() => Math.max(1, layout.value.totalMs - offset.value));
 const rows = computed(() => layout.value.bars.filter((b) => !(skipStartup.value && b.derived && b.startMs === 0)));
 
-const pct = (ms: number) => `${(Math.max(0, ms - offset.value) / span.value) * 100}%`;
-const width = (b: SpanBar) => `${(Math.max(0, Math.min(b.startMs + b.durationMs, layout.value.totalMs) - Math.max(b.startMs, offset.value)) / span.value) * 100}%`;
-
-/** Ticks every 1, 2, 5, 10... seconds, about five across. */
-const ticks = computed(() => {
+/** The axis: a tick every 1, 2, 5, 10... seconds, about five across, and a domain snapped out to
+ *  the next tick, so the axis always reaches past the trial's end (25 s for a 24.6 s trial). */
+const axis = computed(() => {
   const total = span.value / 1000;
   const raw = total / 5;
   const pow = 10 ** Math.floor(Math.log10(Math.max(raw, 0.001)));
   const step = [1, 2, 5, 10].map((m) => m * pow).find((s) => s >= raw) ?? pow * 10;
+  const domain = Math.max(step, Math.ceil(total / step - 1e-9) * step);
+  return { step, domain, domainMs: domain * 1000 };
+});
+
+const pct = (ms: number) => `${(Math.max(0, ms - offset.value) / axis.value.domainMs) * 100}%`;
+const width = (b: SpanBar) => `${(Math.max(0, Math.min(b.startMs + b.durationMs, layout.value.totalMs) - Math.max(b.startMs, offset.value)) / axis.value.domainMs) * 100}%`;
+
+/** The tick marks over the snapped domain, labelled in trial time (start-up added back when it is
+ *  skipped). */
+const ticks = computed(() => {
+  const { step, domain } = axis.value;
   const out: { left: string; label: string }[] = [];
-  for (let t = 0; t <= total + 1e-9; t += step) {
-    const decimals = step < 1 ? 1 : 0;
-    out.push({ left: `${(t / total) * 100}%`, label: `${(t + offset.value / 1000).toFixed(decimals)} s` });
+  const decimals = step < 1 ? 1 : 0;
+  const count = Math.round(domain / step);
+  for (let i = 0; i <= count; i++) {
+    const t = i * step;
+    out.push({ left: `${(t / domain) * 100}%`, label: `${(t + offset.value / 1000).toFixed(decimals)} s` });
   }
   return out;
 });
@@ -43,24 +54,32 @@ const LEGEND: [SpanBar['role'], string][] = [
 
 <template>
   <div class="timeline">
+    <!-- The key on the left holds swatches only; the control sits apart on the right, and wraps
+         under the key on a phone. -->
     <div class="timeline-head">
-      <div class="legend smaller">
+      <div
+        class="legend smaller"
+        data-test="timeline-key"
+      >
         <span
           v-for="[role, text] in LEGEND"
           :key="role"
           class="legend-item"
         ><span :class="`swatch-bar swatch-bar--${role}`" />{{ text }}</span>
-        <label class="legend-item skip">
-          <input
-            v-model="skipStartup"
-            type="checkbox"
-            data-test="skip-startup"
-          >Skip start-up<span
-            v-if="startup"
-            class="secondary"
-          >&nbsp;({{ duration(startup) }})</span>
-        </label>
       </div>
+      <label
+        class="skip smaller"
+        data-test="skip-label"
+      >
+        <input
+          v-model="skipStartup"
+          type="checkbox"
+          data-test="skip-startup"
+        ><span>Skip start-up<span
+          v-if="startup"
+          class="secondary"
+        >&nbsp;({{ duration(startup) }})</span></span>
+      </label>
     </div>
     <p
       v-if="!rows.length"
@@ -113,7 +132,10 @@ const LEGEND: [SpanBar['role'], string][] = [
               name="cross"
               :size="14"
               class="err"
-            />{{ b.label }}</span>
+            /><template v-if="b.ident !== undefined">tool <span
+              class="mono"
+              data-test="span-ident"
+            >{{ b.ident }}</span></template><template v-else>{{ b.label }}</template></span>
             <span class="track"><span
               v-for="t in ticks"
               :key="t.label"
@@ -148,6 +170,11 @@ const LEGEND: [SpanBar['role'], string][] = [
 
 <style scoped>
 .timeline-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 24px;
   margin-bottom: 10px;
 }
 
@@ -165,6 +192,9 @@ const LEGEND: [SpanBar['role'], string][] = [
 }
 
 .skip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--ink);
   min-height: 44px;
 }
@@ -312,6 +342,11 @@ const LEGEND: [SpanBar['role'], string][] = [
 
 .axis-tick:first-child {
   transform: none;
+}
+
+/* The last tick is the axis's right edge: its label ends there. */
+.axis-tick:last-child {
+  transform: translateX(-100%);
 }
 
 /* On a phone each span is two lines: its name and duration, then its bar across the full width,

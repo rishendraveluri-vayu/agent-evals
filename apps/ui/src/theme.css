@@ -520,8 +520,38 @@ code,
 
 .arm {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+}
+
+/* The dot stays level with the first line when the label wraps, and directly before it. */
+.arm > .dot {
+  margin-top: 0.45em;
+  margin-top: calc((1lh - 10px) / 2);
+}
+
+/* What a result rests on, or why a number may change: an icon and words, never colour alone. */
+.caveat {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 72ch;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.caveat .icon {
+  margin-top: 4px;
+}
+
+/* A task id in a caveat is a literal identifier: mono, and never split at its hyphens. */
+.caveat .mono {
+  white-space: nowrap;
+}
+
+/* A caveat in a page head sits under the lede at the lede's spacing. */
+.page-head > .caveat {
+  margin-top: 8px;
 }
 
 .meter {

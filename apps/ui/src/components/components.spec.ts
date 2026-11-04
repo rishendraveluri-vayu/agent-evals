@@ -6,7 +6,9 @@ import { settle, useFixtures } from '../test/helpers';
 import CompareView from '../views/CompareView.vue';
 import ExperimentsView from '../views/ExperimentsView.vue';
 import IntervalStrip from './IntervalStrip.vue';
+import SpanTimeline from './SpanTimeline.vue';
 import VerdictTag from './VerdictTag.vue';
+import type { SpanView } from '../trials';
 
 type Rows = StripRow[];
 
@@ -142,6 +144,58 @@ describe('the two heroes', () => {
     const labels = (w: VueWrapper) => (w.findComponent(IntervalStrip).props('ticks') as Tick[]).map((t) => t.label);
     expect(labels(main)).toEqual(['−20', '−10', '0, no change', '+10', '+20', '+30']);
     expect(labels(compare)).toEqual(labels(main));
+  });
+});
+
+describe('SpanTimeline', () => {
+  const span = (id: string, parent: string | null, name: string, start: number, end: number, attributes = {}): SpanView => ({
+    spanId: id, parentSpanId: parent, name, kind: 1, startNs: String(start * 1_000_000), endNs: String(end * 1_000_000), statusCode: 1, statusMessage: null, attributes, events: [],
+  });
+  // A 24.6 s trial: 5.4 s of start-up, then the agent's work, then the shut-down.
+  const spans = [
+    span('t', null, 'invoke_agent hermes', 0, 24_600),
+    span('u', 't', 'agent.turn', 5_400, 23_000),
+    span('c', 'u', 'chat claude-haiku-5-5', 5_400, 9_000, { 'evals.role': 'agent', 'gen_ai.request.model': 'claude-haiku-5-5' }),
+    span('d', 'u', 'execute_tool get_client_profile', 9_000, 9_400, { 'gen_ai.tool.name': 'get_client_profile' }),
+    span('e', 'u', 'chat claude-haiku-5-5', 9_400, 23_000, { 'evals.role': 'agent', 'gen_ai.request.model': 'claude-haiku-5-5' }),
+  ];
+  const mountIt = () => mount(SpanTimeline, { props: { spans, selected: null, harness: 'hermes' } });
+  const seconds = (label: string) => Number(label.replace(/ s$/, ''));
+
+  it('snaps the axis out to the next tick, so its last label is at least the trial length', async () => {
+    const w = mountIt();
+    const labels = w.findAll('.axis-tick').map((t) => t.text());
+    expect(labels).toEqual(['0 s', '5 s', '10 s', '15 s', '20 s', '25 s']);
+    expect(seconds(labels[labels.length - 1])).toBeGreaterThanOrEqual(24.6);
+    // The shut-down bar ends before the axis does.
+    const shutdown = w.findAll('.row--static').find((r) => r.text().includes('Shut down'));
+    const bar = shutdown?.get('.bar').attributes('style') ?? '';
+    const [left, width] = [/left: ([\d.]+)%/, /width: ([\d.]+)%/].map((re) => Number(bar.match(re)?.[1]));
+    expect(left + width).toBeLessThan(100);
+    expect(left + width).toBeCloseTo((24.6 / 25) * 100);
+    // Skipping start-up keeps the labels in trial time.
+    await w.get('[data-test="skip-startup"]').setValue(true);
+    const skipped = w.findAll('.axis-tick').map((t) => t.text());
+    expect(seconds(skipped[skipped.length - 1])).toBeGreaterThanOrEqual(24.6);
+  });
+
+  it('keeps the key to swatches only, with the skip control apart from it', () => {
+    const w = mountIt();
+    const key = w.get('[data-test="timeline-key"]');
+    expect(key.find('input').exists()).toBe(false);
+    expect(key.findAll('.legend-item').map((i) => i.text())).toEqual(['Agent model call', 'Tool call', 'Simulated client', 'Harness overhead']);
+    const skip = w.get('[data-test="skip-label"]');
+    expect(skip.element.parentElement).toBe(key.element.parentElement);
+    expect(skip.text()).toBe('Skip start-up\u00a0(5.4 s)');
+  });
+
+  it('sets the tool name in mono, keeping the plain name for the tooltip and screen readers', () => {
+    const w = mountIt();
+    const row = w.findAll('[data-test="span-row"]').find((r) => r.text().includes('get_client_profile'));
+    expect(row?.get('.label').text()).toBe('tool get_client_profile');
+    expect(row?.get('[data-test="span-ident"]').classes()).toContain('mono');
+    expect(row?.get('.label').attributes('title')).toBe('tool get_client_profile');
+    expect(row?.attributes('aria-label')).toBe('tool get_client_profile, 0.4 s. Show its details');
   });
 });
 

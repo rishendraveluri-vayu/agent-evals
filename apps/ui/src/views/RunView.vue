@@ -6,11 +6,11 @@ import { isFixtureMode } from '../api/mode';
 import type { Config, ConfigDiffEntry, Estimate, ExperimentDetail, ExperimentTrial, Harness, ModelInfo, Prompt, TaskInfo } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
-import { armsOf, timeLeft, totalTrials } from '../lib/arms';
+import { armsOf, NBSP, timeLeft, totalTrials } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, contentDiff, planCheck, splitCheck, type Check } from '../lib/checks';
 import { changedLineCount, lineChanges, sentenceChanges, type LineChange } from '../lib/diff';
-import { clock, minutes, money, shortHash, wholeMoney } from '../lib/format';
+import { capitalise, clock, minutes, money, shortHash, wholeMoney } from '../lib/format';
 import { modelName, splitName } from '../lib/names';
 import { href, navigate } from '../router';
 import { text } from '../trials';
@@ -301,23 +301,53 @@ function armsWords(byArm: { a: number; b: number }, total: number): string {
 
 const slotCount = computed(() => grid.value.reduce((sum, row) => sum + row.arms.flat().length, 0));
 
+/** The line under a started run's h1: time left first, then what is running and waiting, the
+ *  infra failures (with where they fell) and what was cancelled. The done count is left out: every
+ *  started run's h1 already states it. */
 const tallyText = computed(() => {
   const t = tally.value;
-  const parts = [`${t.done} done`, `${t.running} running`, `${t.waiting} waiting`];
-  const s = t.stops;
-  if (s.total) {
-    const noun = `${s.total} infra ${s.total === 1 ? 'failure' : 'failures'}`;
-    if (s.requeued === s.total) parts.push(`${noun} re-queued`);
-    else parts.push(`${noun}: ${[s.rerun ? `${s.rerun} re-run` : '', s.requeued ? `${s.requeued} re-queued` : '', s.gaveUp ? `${s.gaveUp} gave up` : ''].filter(Boolean).join(', ')}`);
-    parts.push(armsWords(t.byArm, s.total));
-  }
-  if (t.cancelled) parts.push(`${t.cancelled} cancelled`);
+  const parts: string[] = [];
   const e = data.value?.experiment;
   if (e?.status === 'running') {
     const left = timeLeft(e.estimate, t.done, slotCount.value || totalTrials(e));
-    if (left !== null) parts.push(`about ${minutes(left)} left`);
+    if (left !== null) parts.push(capitalise(`about ${minutes(left)} left`));
   }
-  return parts.join(', ');
+  if (!started.value) parts.push(`${t.done} done`);
+  parts.push(`${t.running} running`, `${t.waiting} waiting`);
+  const s = t.stops;
+  if (s.total) {
+    const noun = `${s.total} infra ${s.total === 1 ? 'failure' : 'failures'}`;
+    const how =
+      s.requeued === s.total
+        ? `${noun} re-queued`
+        : `${noun}: ${[s.rerun ? `${s.rerun} re-run` : '', s.requeued ? `${s.requeued} re-queued` : '', s.gaveUp ? `${s.gaveUp} gave up` : ''].filter(Boolean).join(', ')}`;
+    parts.push(`${how}, ${armsWords(t.byArm, s.total)}`);
+  }
+  if (t.cancelled) parts.push(`${t.cancelled} cancelled`);
+  return parts.join(' · ');
+});
+
+/** Which infra states the grid holds, for the legend's second row: only those present. */
+const infraInGrid = computed(() => {
+  const cells = grid.value.flatMap((row) => row.arms.flat());
+  return { requeued: cells.some((c) => c.state === 'infra'), retried: cells.some((c) => c.retried), gaveUp: cells.some((c) => c.state === 'abandoned') };
+});
+const showInfraLegend = computed(() => infraInGrid.value.requeued || infraInGrid.value.retried || infraInGrid.value.gaveUp);
+
+/** The run's log, oldest first, so it reads in the order things happened. */
+const events = computed(() => [...(data.value?.experiment?.events ?? [])].sort((x, y) => Date.parse(x.at) - Date.parse(y.at)));
+
+/** The simulated client's model, which every conversation in both arms runs against. */
+const simClient = computed(() => (data.value?.experiment?.sim_model ? modelName(data.value.experiment.sim_model) : null));
+
+/** "10 points" with the number kept on its unit's line. */
+const pointsText = (points: number) => `${points}${NBSP}${points === 1 ? 'point' : 'points'}`;
+/** The power tile's note, over the experiment's or the draft's tasks. */
+const powerNote = computed(() => {
+  const mde = estimate.value?.min_detectable_effect;
+  if (!mde) return 'Not estimated yet: the power estimate comes with the statistics step';
+  const t = tasks.value.length;
+  return `Pass rate over all ${t} ${t === 1 ? 'task' : 'tasks'}, ${Math.round(mde.power * 10)} times in 10, from the pilot's spread`;
 });
 
 const spend = computed(() => {
@@ -403,6 +433,13 @@ const planNote = computed(() => {
         {{ heading }}
       </h1>
       <p
+        v-if="started && data?.experiment"
+        class="tally num"
+        data-test="tally"
+      >
+        {{ tallyText }}
+      </p>
+      <p
         v-if="!started"
         class="lede"
       >
@@ -470,9 +507,12 @@ const planNote = computed(() => {
           <span class="stat-note">{{ estimate?.concurrency ? `${estimate.concurrency} trials at a time` : '' }}</span>
         </div>
         <div>
-          <span class="stat-label">Smallest difference it can see</span>
-          <span class="stat-value">{{ estimate?.min_detectable_effect ? `${estimate.min_detectable_effect.points} points` : '–' }}</span>
-          <span class="stat-note">{{ estimate?.min_detectable_effect ? `${Math.round(estimate.min_detectable_effect.power * 10)} times in 10, from the pilot's spread` : 'Not estimated yet: the power estimate comes with the statistics step' }}</span>
+          <span class="stat-label">Smallest overall difference it can see</span>
+          <span class="stat-value">{{ estimate?.min_detectable_effect ? pointsText(estimate.min_detectable_effect.points) : '–' }}</span>
+          <span
+            class="stat-note"
+            data-test="power-note"
+          >{{ powerNote }}</span>
         </div>
       </section>
 
@@ -710,42 +750,55 @@ const planNote = computed(() => {
         aria-labelledby="progress"
         class="progress"
       >
-        <div class="head-row head-row--baseline">
-          <h2
-            id="progress"
-            class="section-title"
-          >
-            Progress
-          </h2>
-          <p
-            class="secondary small num"
-            data-test="tally"
-          >
-            {{ tallyText }}
-          </p>
-        </div>
+        <h2
+          id="progress"
+          class="section-title"
+        >
+          Progress
+        </h2>
         <div class="split">
           <div class="grow panel grid-wrap">
+            <!-- Two rows: the outcomes, always; then only the infra states this grid holds. -->
             <div
               class="legend smaller"
               data-test="grid-legend"
             >
-              <span class="legend-item"><span class="cell cell--pass"><AppIcon
-                name="check"
-                :size="13"
-              /></span>Pass</span>
-              <span class="legend-item"><span class="cell cell--fail"><AppIcon
-                name="cross"
-                :size="12"
-              /></span>Fail</span>
-              <span class="legend-item"><span class="cell cell--running" />Running</span>
-              <span class="legend-item"><span class="cell cell--waiting" />Waiting</span>
-              <span class="legend-item"><span class="cell cell--infra">!</span>Infra, re-queued</span>
-              <span class="legend-item"><span class="cell cell--pass cell--retried"><AppIcon
-                name="check"
-                :size="13"
-              /></span>Re-run after infra</span>
-              <span class="legend-item"><span class="cell cell--abandoned">!</span>Infra, gave up</span>
+              <div
+                class="legend-row"
+                data-test="legend-outcomes"
+              >
+                <span class="legend-item"><span class="cell cell--pass"><AppIcon
+                  name="check"
+                  :size="13"
+                /></span>Pass</span>
+                <span class="legend-item"><span class="cell cell--fail"><AppIcon
+                  name="cross"
+                  :size="12"
+                /></span>Fail</span>
+                <span class="legend-item"><span class="cell cell--running" />Running</span>
+                <span class="legend-item"><span class="cell cell--waiting" />Waiting</span>
+              </div>
+              <div
+                v-if="showInfraLegend"
+                class="legend-row"
+                data-test="legend-infra"
+              >
+                <span
+                  v-if="infraInGrid.requeued"
+                  class="legend-item"
+                ><span class="cell cell--infra">!</span>Infra, re-queued</span>
+                <span
+                  v-if="infraInGrid.retried"
+                  class="legend-item"
+                ><span class="cell cell--pass cell--retried"><AppIcon
+                  name="check"
+                  :size="13"
+                /></span>Re-run after infra</span>
+                <span
+                  v-if="infraInGrid.gaveUp"
+                  class="legend-item"
+                ><span class="cell cell--abandoned">–</span>Infra, gave up</span>
+              </div>
             </div>
             <div class="grid-scroll">
               <table
@@ -767,7 +820,12 @@ const planNote = computed(() => {
                       :colspan="data.experiment.n"
                       class="arm-col"
                     >
-                      <span class="arm"><span :class="`dot dot--${arm.key}`" />{{ arm.key.toUpperCase() }}, {{ arm.label }}</span>
+                      <!-- On a phone only the dot and the letter show; the rest of the label stays for
+                           screen readers. -->
+                      <span class="arm"><span :class="`dot dot--${arm.key}`" /><span><span class="arm-letter">{{ arm.key.toUpperCase() }}</span><span
+                        class="arm-rest"
+                        data-test="arm-rest"
+                      >, {{ arm.label }}</span></span></span>
                     </th>
                   </tr>
                 </thead>
@@ -804,7 +862,7 @@ const planNote = computed(() => {
                           v-else-if="c.state === 'fail'"
                           name="cross"
                           :size="12"
-                        /><template v-else-if="c.state === 'infra' || c.state === 'abandoned'">!</template><span class="visually-hidden">{{ c.label }}</span></span>
+                        /><template v-else-if="c.state === 'infra'">!</template><template v-else-if="c.state === 'abandoned'">–</template><span class="visually-hidden">{{ c.label }}</span></span>
                       </td>
                     </template>
                   </tr>
@@ -885,6 +943,11 @@ const planNote = computed(() => {
                   :key="arm.key"
                   class="arm"
                 ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ arm.label }}, config <span class="mono">{{ shortHash(arm.hash) }}</span></span></span>
+                <span
+                  v-if="simClient"
+                  class="sim-client"
+                  data-test="run-sim-client"
+                >Simulated client: {{ simClient }}</span>
               </div>
               <p
                 v-if="budgetNote"
@@ -902,7 +965,7 @@ const planNote = computed(() => {
                 data-test="events"
               >
                 <li
-                  v-for="(e, i) in data.experiment.events"
+                  v-for="(e, i) in events"
                   :key="i"
                 >
                   <span class="secondary num">{{ clock(e.at) }}</span>
@@ -925,7 +988,7 @@ const planNote = computed(() => {
           Planned
         </h2>
         <div
-          class="stat-strip plan"
+          class="stat-strip plan plan--past"
           data-test="plan"
         >
           <div>
@@ -944,9 +1007,12 @@ const planNote = computed(() => {
             <span class="stat-note">{{ estimate?.concurrency ? `${estimate.concurrency} trials at a time` : '' }}</span>
           </div>
           <div>
-            <span class="stat-label">Smallest difference it can see</span>
-            <span class="stat-value">{{ estimate?.min_detectable_effect ? `${estimate.min_detectable_effect.points} points` : '–' }}</span>
-            <span class="stat-note">{{ estimate?.min_detectable_effect ? `${Math.round(estimate.min_detectable_effect.power * 10)} times in 10, from the pilot's spread` : 'Not estimated yet: the power estimate comes with the statistics step' }}</span>
+            <span class="stat-label">Smallest overall difference it can see</span>
+            <span class="stat-value">{{ estimate?.min_detectable_effect ? pointsText(estimate.min_detectable_effect.points) : '–' }}</span>
+            <span
+              class="stat-note"
+              data-test="power-note"
+            >{{ powerNote }}</span>
           </div>
         </div>
       </section>
@@ -1010,6 +1076,27 @@ const planNote = computed(() => {
 
 .plan .stat-value {
   font-size: 34px;
+}
+
+/* Once a run has started the plan is history: it steps back behind the live state above it. */
+.plan.plan--past .stat-value {
+  font-size: 20px;
+}
+
+.plan--past > * {
+  padding: 14px 18px;
+}
+
+/* The line under a started run's h1, in the lede's voice. */
+.tally {
+  margin-top: 8px;
+  font-size: 15px;
+  color: var(--ink-2);
+}
+
+/* Under the arms, level with their text (past the 10 px dot and the 8 px gap). */
+.sim-client {
+  padding-left: 18px;
 }
 
 /* Two columns from 720 px: the arms, then tasks and the client model, then the name and the
@@ -1180,10 +1267,6 @@ const planNote = computed(() => {
   padding-bottom: 16px;
 }
 
-.head-row--baseline {
-  align-items: baseline;
-}
-
 .grid-wrap {
   padding: 18px 20px;
   min-width: 0;
@@ -1191,10 +1274,21 @@ const planNote = computed(() => {
 
 .legend {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px 18px;
+  flex-direction: column;
+  gap: 8px;
   margin-bottom: 14px;
   color: var(--ink-2);
+}
+
+.legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+/* The ring around a re-run cell clears its own label. */
+.legend .cell--retried {
+  margin-inline: 4px;
 }
 
 .legend-item {
@@ -1276,10 +1370,17 @@ const planNote = computed(() => {
   box-shadow: inset 0 0 0 1px var(--rule);
 }
 
-.cell--infra,
-.cell--abandoned {
+/* Pending, so an outline: re-queued after an infra failure. */
+.cell--infra {
   border: 1px dashed var(--ink-2);
   color: var(--ink-2);
+}
+
+/* Finished states are filled: the slot gave up, with no result (an en dash). */
+.cell--abandoned {
+  background: var(--neutral-mark-strong);
+  color: var(--surface);
+  border: 1px dashed var(--ink-2);
 }
 
 /* Passed or failed on a re-run after an infra failure: the history stays visible as a ring. */
@@ -1329,6 +1430,41 @@ const planNote = computed(() => {
   .head-actions {
     align-items: flex-start;
     text-align: left;
+  }
+
+  /* The draft's figures never outgrow the 26 px phone h1. */
+  .plan .stat-value {
+    font-size: 26px;
+  }
+
+  /* A 2 x 2 grid, kept to about a third of the screen. */
+  .plan.plan--past {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .plan--past > * {
+    padding: 12px 14px;
+  }
+
+  .plan--past .stat-label,
+  .plan--past .stat-note {
+    font-size: 13px;
+  }
+
+  .run-grid .arm-col {
+    white-space: nowrap;
+  }
+
+  .run-grid .arm-rest {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .grid-wrap {
@@ -1389,9 +1525,9 @@ const planNote = computed(() => {
   stroke-width: 1.5;
 }
 
+/* Solid grey: dashes mean infra and zero lines only. */
 .mark--cap {
   stroke: var(--ink-2);
-  stroke-dasharray: 3 2;
 }
 
 .mark-label {

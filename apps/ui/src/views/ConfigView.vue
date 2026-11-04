@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { api } from '../api/client';
 import { errorText } from '../api/errors';
 import { SETTING_NAMES, type Config, type ConfigDiffEntry, type Harness, type ModelInfo, type Prompt, type SettingName, type Settings, type Toolset } from '../api/types';
+import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import { useLoad } from '../lib/async';
 import { coverageText } from '../lib/capabilities';
@@ -540,13 +541,21 @@ watch(
                       class="secondary"
                     >–</span>
                   </td>
-                  <td>
+                  <!-- Each answer looks different, and the words carry it: a check for a change seen,
+                       an alert for none seen, plain grey for not checked. -->
+                  <td :data-test="`effect-${name}`">
                     <span
-                      :class="{
-                        'pill pill--outline pill--small': effect(name).kind !== 'na',
-                        secondary: effect(name).kind === 'na',
-                      }"
-                    >{{ effect(name).text }}</span>
+                      :class="['effect', `effect--${effect(name).kind}`]"
+                      :data-effect="effect(name).kind"
+                    ><AppIcon
+                      v-if="effect(name).kind === 'yes'"
+                      name="check"
+                      :size="12"
+                    /><AppIcon
+                      v-else-if="effect(name).kind === 'no'"
+                      name="alert"
+                      :size="14"
+                    />{{ effect(name).text }}</span>
                   </td>
                 </tr>
               </tbody>
@@ -963,6 +972,34 @@ watch(
 
 .table-scroll {
   overflow-x: auto;
+}
+
+/* Whether a setting changed behaviour: ink with a check when a change was seen (as Probed on
+   Harnesses), ink at 500 with an alert when none was, plain grey when not checked. No green. */
+.effect {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.effect--yes {
+  color: var(--ink);
+}
+
+.effect--no {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.effect--todo,
+.effect--na {
+  color: var(--ink-2);
+}
+
+@media (min-width: 641px) {
+  .effect {
+    white-space: nowrap;
+  }
 }
 
 .settings {

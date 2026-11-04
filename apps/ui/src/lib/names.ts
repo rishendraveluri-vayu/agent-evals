@@ -87,6 +87,19 @@ export function isJudged(task: TaskInfo | undefined): boolean {
   return !!task && graderKinds(task.graders).includes('judge');
 }
 
+/** A grader in running text, with its article: "a state check", "an exact match". */
+export function graderPhrase(kind: string): string {
+  const name = graderName(kind).toLowerCase();
+  return `${kind === 'exact' ? 'an' : 'a'} ${name}`;
+}
+
+/** A task's id and its code graders, for "debt-hardship-03 also has a state check": every grader
+ *  but the judge. Null for an unknown task. */
+export function alsoGradedBy(task: TaskInfo | undefined): { name: string; graders: string[] } | null {
+  if (!task) return null;
+  return { name: task.id, graders: graderKinds(task.graders).filter((k) => k !== 'judge').map(graderPhrase) };
+}
+
 export function clientKind(kind: string): string {
   if (kind === 'single' || kind === 'single_prompt' || kind === 'prompt') return 'Single prompt';
   if (kind === 'conversation' || kind === 'multi_turn' || kind === 'simulated') return 'Conversation';

@@ -5,14 +5,18 @@ import ExperimentsView from './ExperimentsView.vue';
 
 useFixtures();
 
+/** A no-break space: numbers keep their unit, and κ keeps its value. */
+const nb = '\u00a0';
+
 describe('ExperimentsView in fixture mode', () => {
   it('leads with the latest verdict, its size and its interval', async () => {
     const w = mount(ExperimentsView);
     await settle();
     const latest = w.get('[data-test="latest-result"]').text();
     expect(latest).toContain('Prompt v2 beats v1 on the held-out tasks');
-    expect(latest).toContain('+15 points');
-    expect(latest).toContain('pass rate, 58% to 73%');
+    // Each arm's rate is named; "X to Y" is kept for intervals.
+    expect(w.findAll('[data-test="latest-result"] .latest-figure > span').map((x) => x.text())).toEqual([`+15${nb}points`, 'pass rate: v1 58%, v2 73%']);
+    expect(latest).not.toContain('58% to 73%');
     expect(latest).toContain('95% interval +7 to +23, paired over 12 held-out tasks with 5 trials each.');
     expect(latest).toContain('finished 2 h ago');
     expect(latest).not.toContain('An A/A run on the same setup moved');
@@ -23,7 +27,7 @@ describe('ExperimentsView in fixture mode', () => {
     await settle();
     const caveat = w.get('[data-test="latest-result"] [data-test="judge-caveat"]');
     expect(caveat.text()).toBe(
-      'Rests on the judge: both tasks that differ are judge-graded. Its agreement with you is κ 0.70, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional.',
+      `Rests on the judge: both tasks that differ need the judge's pass (debt-hardship-03 also has a state check). Its agreement with you is κ${nb}0.70, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional.`,
     );
     expect(caveat.get('a').attributes('href')).toBe('#/labels/judge');
     const caption = w.get('[data-test="latest-result"] figcaption').element;
@@ -62,9 +66,9 @@ describe('ExperimentsView in fixture mode', () => {
     expect(rows()).toHaveLength(5);
     expect(rows()[1].get('[data-verdict]').attributes('data-verdict')).toBe('better');
     expect(rows()[1].text()).toContain('Better');
-    expect(rows()[1].text()).toContain('+15 points (+7 to +23)');
+    expect(rows()[1].text()).toContain(`+15${nb}points (+7 to +23)`);
     expect(rows()[3].get('[data-verdict]').text()).toBe('No clear difference');
-    expect(rows()[3].text()).toContain('+1 point (−7 to +9), as expected');
+    expect(rows()[3].text()).toContain(`+1${nb}point (−7 to +9), as expected`);
     await w.get('[data-test="show-filter"]').setValue('running');
     expect(rows()).toHaveLength(1);
     expect(rows()[0].text()).toContain('Running');

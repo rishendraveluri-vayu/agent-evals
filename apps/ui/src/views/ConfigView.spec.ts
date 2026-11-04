@@ -56,4 +56,44 @@ describe('ConfigView in fixture mode', () => {
     expect(w.get('[data-test="setting-parallel_tool_calls"]').text()).toContain('Not checked yet');
     expect(w.get('[data-test="setting-compression"]').text()).toContain('On (Hermes default)');
   });
+
+  it('answers "Changes behaviour?" in words with an icon each, never as identical pills', async () => {
+    const w = mount(ConfigView);
+    await settle();
+    const cells = w.findAll('[data-test^="effect-"]');
+    expect(cells).toHaveLength(8);
+    for (const c of cells) expect(c.find('.pill').exists()).toBe(false);
+    const kind = (k: string) => cells.filter((c) => c.get('.effect').attributes('data-effect') === k);
+    // A change seen: ink, with the check mark used for Probed on the Harnesses page.
+    const yes = kind('yes');
+    expect(yes.map((c) => c.text())).toEqual(['Yes, on Claude Haiku 5.5', 'Yes, on Claude Haiku 5.5', 'Yes, on Claude Haiku 5.5']);
+    for (const c of yes) {
+      expect(c.find('svg.icon').exists()).toBe(true);
+      expect(c.get('svg.icon').attributes('width')).toBe('12');
+      expect(c.get('svg.icon').attributes('aria-hidden')).toBe('true');
+    }
+    // Not checked: plain grey words, no icon.
+    const todo = kind('todo');
+    expect(todo).toHaveLength(4);
+    for (const c of todo) {
+      expect(c.text()).toBe('Not checked yet');
+      expect(c.find('svg').exists()).toBe(false);
+    }
+    expect(w.get('[data-test="effect-timeout_s"]').text()).toBe('Not applicable');
+    expect(w.find('[data-test="effect-timeout_s"] svg').exists()).toBe(false);
+  });
+
+  it('marks a setting with no change seen with the alert icon and weight 500, as the main page does', async () => {
+    const w = mount(ConfigView);
+    await settle();
+    const adk = w.findAll('[data-test="harness-radio"]').find((r) => (r.element as HTMLInputElement).value === 'adk');
+    await adk?.setValue(true);
+    await settle();
+    const temp = w.get('[data-test="effect-temperature"] .effect');
+    expect(temp.text()).toBe('No change seen on Claude Haiku 5.5');
+    expect(temp.attributes('data-effect')).toBe('no');
+    expect(temp.classes()).toContain('effect--no');
+    expect(temp.get('svg.icon').attributes('width')).toBe('14');
+    expect(temp.find('.pill').exists()).toBe(false);
+  });
 });

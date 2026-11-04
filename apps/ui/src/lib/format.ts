@@ -117,3 +117,35 @@ export function plural(n: number, one: string, many = `${one}s`): string {
 export function capitalise(text: string): string {
   return text ? text[0].toUpperCase() + text.slice(1) : text;
 }
+
+/** Splits running text around literal identifiers with a double underscore
+ *  ("mcp__finance__<name>"), so they can be set in mono. Punctuation that ends the sentence
+ *  around one stays with the words. */
+export function splitIdents(text: string): { text: string; ident: boolean }[] {
+  const out: { text: string; ident: boolean }[] = [];
+  const push = (part: string, ident: boolean) => {
+    if (!part) return;
+    const last = out[out.length - 1];
+    if (last && last.ident === ident && !ident) last.text += part;
+    else out.push({ text: part, ident });
+  };
+  text.split(/(\S*__\S*)/).forEach((part, i) => {
+    if (i % 2 === 0) return push(part, false);
+    const [, ident, tail] = part.match(/^(.*?)([,.;:!?)]*)$/) ?? [part, part, ''];
+    push(ident, true);
+    push(tail, false);
+  });
+  return out;
+}
+
+/** Splits text around the given literal identifiers (task ids, say), so a page can set each in
+ *  mono and keep it whole: "debt-hardship-03" never breaks at its hyphens. */
+export function identParts(text: string, idents: string[]): { text: string; ident: boolean }[] {
+  const names = [...new Set(idents)].filter(Boolean).sort((a, b) => b.length - a.length);
+  if (!names.length) return text ? [{ text, ident: false }] : [];
+  const escaped = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return text
+    .split(new RegExp(`(${escaped.join('|')})`))
+    .map((part, i) => ({ text: part, ident: i % 2 === 1 }))
+    .filter((p) => p.text);
+}

@@ -20,6 +20,14 @@ describe('HarnessesView in fixture mode', () => {
     expect(w.get('[data-test="cell-ownloop-temperature"] span').classes()).toContain('probed');
   });
 
+  it('sets literal identifiers in the known differences in mono, and the words around them in Plex Sans', async () => {
+    const w = mount(HarnessesView);
+    await settle();
+    const line = w.findAll('[data-test="difference-text"]').find((d) => d.text().includes('mcp__finance__'));
+    expect(line?.text()).toBe('Tool names reach the model as mcp__finance__<name>, and tool results are wrapped as untrusted content.');
+    expect(line?.findAll('.mono').map((m) => m.text())).toEqual(['mcp__finance__<name>']);
+  });
+
   it('has one column per harness and one row per common setting', async () => {
     const w = mount(HarnessesView);
     await settle();

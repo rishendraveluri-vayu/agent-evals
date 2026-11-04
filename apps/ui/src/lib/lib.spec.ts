@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeSpan, toBlindItem } from '../api/client';
 import type { Config } from '../api/types';
-import { agreementWords, armsOf, checksToGo, headline, judgeCaveat, methodName, pointsWithInterval, setupOf, timeLeft } from './arms';
+import { agreementWords, armsOf, checksToGo, headline, judgeCaveat, methodName, pointsWithInterval, setupOf, timeLeft, verdictTitle } from './arms';
 import { coverage, coverageText } from './capabilities';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, splitCheck } from './checks';
 import { sentenceChanges } from './diff';
-import { money, relative, shortHash, signed, wholeMoney, wilson } from './format';
+import { identParts, money, relative, shortHash, signed, splitIdents, wholeMoney, wilson } from './format';
 import { mdBlocks } from './markdown';
-import { modelName } from './names';
+import { alsoGradedBy, isJudged as taskIsJudged, modelName } from './names';
 import { domainFor, ticksFor, verdictTone } from './scale';
 
 const config = (over: Partial<Config>): Config => ({
@@ -129,14 +129,18 @@ describe('arms', () => {
     expect(setupOf(exp, arms)).toBe('Hermes with Claude Haiku 5.5');
     const stats = { verdict: 'better' } as Parameters<typeof headline>[0];
     expect(headline(stats, arms, [{ sha256: 'a', id: 'a', version: '1', split: 'heldout', kind: 'single', summary: '', graders: [] }])).toBe('Prompt v2 beats v1 on the held-out tasks');
+    // The verdict title uses the same verbs, with both arms named.
+    expect(verdictTitle(stats, arms)).toBe('v2 beats v1');
+    expect(verdictTitle({ verdict: 'worse' } as Parameters<typeof verdictTitle>[0], arms)).toBe('v2 does worse than v1');
+    expect(verdictTitle({ verdict: 'no_clear_difference' } as Parameters<typeof verdictTitle>[0], arms)).toBe('No clear difference');
     expect(armsOf({ axis: 'none', config_hashes: [configs[0].hash, configs[0].hash] }, configs).map((a) => a.label)).toEqual(['Config 3b81e04', 'Config 3b81e04']);
   });
 
-  it('writes a difference in points, with its interval, and one point in the singular', () => {
-    expect(pointsWithInterval({ estimate: 15, low: 7, high: 23 })).toBe('+15 points (+7 to +23)');
-    expect(pointsWithInterval({ estimate: 1, low: -7, high: 9 })).toBe('+1 point (−7 to +9)');
-    expect(pointsWithInterval({ estimate: -1, low: -9, high: 7 })).toBe('−1 point (−9 to +7)');
-    expect(pointsWithInterval({ estimate: 0, low: -5, high: 5 })).toBe('0 points (−5 to +5)');
+  it('writes a difference in points, with its interval, one point in the singular, and the number kept with its unit', () => {
+    expect(pointsWithInterval({ estimate: 15, low: 7, high: 23 })).toBe('+15\u00a0points (+7 to +23)');
+    expect(pointsWithInterval({ estimate: 1, low: -7, high: 9 })).toBe('+1\u00a0point (−7 to +9)');
+    expect(pointsWithInterval({ estimate: -1, low: -9, high: 7 })).toBe('−1\u00a0point (−9 to +7)');
+    expect(pointsWithInterval({ estimate: 0, low: -5, high: 5 })).toBe('0\u00a0points (−5 to +5)');
   });
 
   it('works out the time left from the estimate and the trials done', () => {
@@ -157,45 +161,61 @@ describe('judgeCaveat', () => {
   const judge = { kappa: 0.7, low: 0.47, high: 0.88, bar: 0.6, tasks: 4 };
   const isJudged = (t: { judged: boolean }) => t.judged;
   const both = [judged, { ...judged, id: 'c' }];
+  const k = (v: string) => `κ\u00a0${v}`;
 
   it('gives the estimate first, then says the interval reaches below the bar, when only the estimate clears it', () => {
     const c = judgeCaveat({ differing: both, isJudged, judge, toGo: 3 });
     expect(c?.text).toBe(
-      'Rests on the judge: both tasks that differ are judge-graded. Its agreement with you is κ 0.70, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional.',
+      `Rests on the judge: both tasks that differ need the judge's pass. Its agreement with you is ${k('0.70')}, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional.`,
     );
     expect(c?.link).toBe('agreement with you');
-    expect(c?.before).toBe('Rests on the judge: both tasks that differ are judge-graded. Its ');
+    expect(c?.before).toBe("Rests on the judge: both tasks that differ need the judge's pass. Its ");
     expect(`${c?.before}${c?.link}${c?.after}`).toBe(c?.text);
     expect(judgeCaveat({ differing: [judged], isJudged, judge, toGo: 0 })?.text).toBe(
-      'Rests on the judge: the one task that differs is judge-graded. Its agreement with you is κ 0.70, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it.',
+      `Rests on the judge: the one task that differs needs the judge's pass. Its agreement with you is ${k('0.70')}, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it.`,
     );
-    expect(judgeCaveat({ differing: [judged, judged, judged], isJudged, judge, toGo: 1 })?.text).toContain('all 3 tasks that differ are judge-graded');
+    expect(judgeCaveat({ differing: [judged, judged, judged], isJudged, judge, toGo: 1 })?.text).toContain("all 3 tasks that differ need the judge's pass");
+    expect(c?.text).not.toContain('judge-graded');
   });
 
   it('gives the estimate with its interval and says it is below the bar when the estimate is', () => {
     const low = { ...judge, kappa: 0.55, low: 0.4, high: 0.7 };
     expect(judgeCaveat({ differing: both, isJudged, judge: low, toGo: 3 })?.text).toBe(
-      'Rests on the judge: both tasks that differ are judge-graded. Its agreement with you is κ 0.55 (interval 0.40 to 0.70), below the 0.6 bar, and it is provisional.',
+      `Rests on the judge: both tasks that differ need the judge's pass. Its agreement with you is ${k('0.55')} (interval 0.40 to 0.70), below the 0.6 bar, and it is provisional.`,
     );
-    expect(judgeCaveat({ differing: both, isJudged, judge: low, toGo: 0 })?.after).toBe(' is κ 0.55 (interval 0.40 to 0.70), below the 0.6 bar.');
+    expect(judgeCaveat({ differing: both, isJudged, judge: low, toGo: 0 })?.after).toBe(` is ${k('0.55')} (interval 0.40 to 0.70), below the 0.6 bar.`);
   });
 
   it('says the judge clears the bar when its whole interval does', () => {
     const high = { ...judge, kappa: 0.82, low: 0.71, high: 0.9 };
     expect(judgeCaveat({ differing: both, isJudged, judge: high, toGo: 0 })?.text).toBe(
-      'Rests on the judge: both tasks that differ are judge-graded. Its agreement with you is κ 0.82 (interval 0.71 to 0.90), clearing the 0.6 bar.',
+      `Rests on the judge: both tasks that differ need the judge's pass. Its agreement with you is ${k('0.82')} (interval 0.71 to 0.90), clearing the 0.6 bar.`,
     );
-    expect(judgeCaveat({ differing: both, isJudged, judge: high, toGo: 2 })?.after).toBe(' is κ 0.82 (interval 0.71 to 0.90), clearing the 0.6 bar, and it is provisional.');
+    expect(judgeCaveat({ differing: both, isJudged, judge: high, toGo: 2 })?.after).toBe(` is ${k('0.82')} (interval 0.71 to 0.90), clearing the 0.6 bar, and it is provisional.`);
   });
 
-  it('says nothing when a code grader also sees a differing task, or there is no judge or no difference', () => {
+  it('names, in brackets, the code graders a differing task also has, since it passes only when every check does', () => {
+    const task = (id: string, kinds: string[]) => ({ sha256: id, id, version: '1', split: 'heldout', kind: 'single', summary: '', graders: kinds.map((kind) => ({ kind })) });
+    const mixed = [task('distress-12', ['judge']), task('debt-hardship-03', ['judge', 'state'])];
+    const c = judgeCaveat({ differing: mixed, isJudged: taskIsJudged, judge, toGo: 3, alsoGraded: alsoGradedBy });
+    expect(c?.before).toBe("Rests on the judge: both tasks that differ need the judge's pass (debt-hardship-03 also has a state check). Its ");
+    expect(c?.idents).toEqual(['debt-hardship-03']);
+    // Without a mixed task, or without the argument, there are no brackets.
+    const judgeOnly = [task('distress-12', ['judge']), task('fd-vs-sip-07', ['judge'])];
+    expect(judgeCaveat({ differing: judgeOnly, isJudged: taskIsJudged, judge, toGo: 3, alsoGraded: alsoGradedBy })?.before).toBe("Rests on the judge: both tasks that differ need the judge's pass. Its ");
+    expect(judgeCaveat({ differing: mixed, isJudged: taskIsJudged, judge, toGo: 3 })?.before).toBe("Rests on the judge: both tasks that differ need the judge's pass. Its ");
+    const two = [task('x-01', ['judge', 'exact', 'unit']), task('y-02', ['judge', 'state'])];
+    expect(judgeCaveat({ differing: two, isJudged: taskIsJudged, judge, toGo: 0, alsoGraded: alsoGradedBy })?.before).toContain('(x-01 also has an exact match and a unit test; y-02 also has a state check)');
+  });
+
+  it('says nothing when a differing task has no judge check, or there is no judge or no difference', () => {
     expect(judgeCaveat({ differing: [judged, code], isJudged, judge, toGo: 3 })).toBeNull();
     expect(judgeCaveat({ differing: [judged], isJudged, judge: null, toGo: 3 })).toBeNull();
     expect(judgeCaveat({ differing: [], isJudged, judge, toGo: 3 })).toBeNull();
   });
 
-  it('shares its agreement wording with the rest of the page', () => {
-    expect(agreementWords(judge, 3)).toBe(' is κ 0.70, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional.');
+  it('shares its agreement wording with the rest of the page, κ kept with its value', () => {
+    expect(agreementWords(judge, 3)).toBe(` is ${k('0.70')}, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional.`);
   });
 });
 
@@ -203,6 +223,26 @@ describe('what is left to label', () => {
   it('counts the checks still to label, one per question on each queued output', () => {
     expect(checksToGo([{ criteria: [1, 2, 3, 4] }, { criteria: [1, 2] }, { criteria: [1] }])).toBe(7);
     expect(checksToGo([])).toBe(0);
+  });
+});
+
+describe('splitIdents', () => {
+  it('picks out double-underscore identifiers, leaving the punctuation after them with the words', () => {
+    expect(splitIdents('Tool names reach the model as mcp__finance__<name>, and results are wrapped.')).toEqual([
+      { text: 'Tool names reach the model as ', ident: false },
+      { text: 'mcp__finance__<name>', ident: true },
+      { text: ', and results are wrapped.', ident: false },
+    ]);
+    expect(splitIdents('No identifiers here.')).toEqual([{ text: 'No identifiers here.', ident: false }]);
+  });
+
+  it('picks out the named identifiers, so a task id can be kept whole', () => {
+    expect(identParts('pass (debt-hardship-03 also has a state check). Its ', ['debt-hardship-03'])).toEqual([
+      { text: 'pass (', ident: false },
+      { text: 'debt-hardship-03', ident: true },
+      { text: ' also has a state check). Its ', ident: false },
+    ]);
+    expect(identParts('No ids.', [])).toEqual([{ text: 'No ids.', ident: false }]);
   });
 });
 

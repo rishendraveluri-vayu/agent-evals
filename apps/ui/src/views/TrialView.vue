@@ -8,8 +8,8 @@ import LoadState from '../components/LoadState.vue';
 import SpanTimeline from '../components/SpanTimeline.vue';
 import { armsOf } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
-import { count, money, seconds } from '../lib/format';
-import { endStateName, graderName, harnessShort, infraReason, settingLabel } from '../lib/names';
+import { capitalise, count, money, seconds } from '../lib/format';
+import { endStateName, graderName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
 import { href } from '../router';
 import { text, timelineRows, type SpanView } from '../trials';
 
@@ -152,9 +152,11 @@ const outcome = computed(() => {
   if (!v) return null;
   if (isInfra.value) return { kind: 'infra', text: `Infra failure: ${infraReason(v.label)}, not graded` };
   if (v.grades.length) {
-    const passed = v.grades.filter((g) => g.verdict === 'pass').length;
-    const all = passed === v.grades.length;
-    return { kind: all ? 'pass' : 'fail', text: `${all ? 'Passed' : 'Failed'}: ${passed} of ${v.grades.length} checks passed` };
+    // The pill says what happened in the trial's own terms: how many checks it failed.
+    const n = v.grades.length;
+    const failed = v.grades.filter((g) => g.verdict !== 'pass').length;
+    if (!failed) return { kind: 'pass', text: n === 1 ? 'Passed its one check' : `Passed all ${n} checks` };
+    return { kind: 'fail', text: n === 1 ? 'Failed its one check' : `Failed ${failed} of ${n} checks` };
   }
   if (v.status === 'running' || v.status === 'claimed') return { kind: 'pending', text: 'Running' };
   if (v.status === 'queued') return { kind: 'pending', text: 'Queued' };
@@ -179,6 +181,12 @@ const facts = computed(() => {
   const detail = v.result.end_detail ?? {};
   const endNote = conv?.ended_by === 'client' ? 'Then the client ended it' : typeof detail.exception_type === 'string' ? text(detail.exception_type) : typeof detail.harness_stop_reason === 'string' ? `Harness said ${detail.harness_stop_reason}` : '';
   const harnessCount = v.result.counts?.model_calls;
+  // The simulated client's model shapes the conversation too, so it is named beside the counts.
+  const sim = data.value?.experiment?.sim_model;
+  const callsNote = [
+    harnessCount !== undefined ? `${v.harness ? harnessShort(v.harness) : 'The harness'} counted ${harnessCount}` : '',
+    sim ? `client ${modelName(sim)}` : '',
+  ].filter(Boolean);
   return [
     { k: 'Ended because', v: endStateName(v.endState), n: endNote },
     { k: 'Counted as', v: isInfra.value ? 'Infra failure' : v.label === 'agent' ? 'Agent outcome' : (v.label ?? 'Not reported'), n: isInfra.value ? infraReason(v.label) : 'Not an infra failure' },
@@ -187,7 +195,7 @@ const facts = computed(() => {
     {
       k: 'Model calls',
       v: data.value?.spans.length ? `${calls.value.agent} agent, ${calls.value.client} client` : '–',
-      n: harnessCount !== undefined ? `${v.harness ? harnessShort(v.harness) : 'The harness'} counted ${harnessCount}` : '',
+      n: capitalise(callsNote.join('; ')),
     },
     { k: 'Tokens', v: v.inputTokens !== null && v.outputTokens !== null ? count(v.inputTokens + v.outputTokens) : '–', n: v.inputTokens !== null ? `In ${count(v.inputTokens)}, out ${count(v.outputTokens)}` : '' },
   ];
@@ -358,7 +366,9 @@ const applied = computed(() =>
     const who = vm.value?.harness ? harnessShort(vm.value.harness) : 'Harness';
     const source =
       s.source === 'config' ? 'Config' : s.source === 'platform_default' ? 'Platform default' : s.source === 'harness_default' ? `${who} default` : s.source === 'unsupported' ? 'Not supported' : s.source;
-    return { k: settingLabel(k), v: value, src: s.observed ? `${source}, ${s.observed}` : source };
+    // Cache markers change what a call costs and how long it takes, never what the model replies.
+    const note = k === 'prompt_cache_markers' ? 'Affects cost and time, not the reply.' : '';
+    return { key: k, k: settingLabel(k), v: value, src: s.observed ? `${source}, ${s.observed}` : source, note };
   }),
 );
 
@@ -825,8 +835,15 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                 <td class="num">
                   {{ s.v }}
                 </td>
-                <td class="secondary">
+                <td
+                  class="secondary"
+                  :data-test="`applied-source-${s.key}`"
+                >
                   {{ s.src }}
+                  <span
+                    v-if="s.note"
+                    class="block setting-note"
+                  >{{ s.note }}</span>
                 </td>
               </tr>
             </tbody>
@@ -837,6 +854,12 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
           >
             The result does not list applied settings.
           </p>
+          <h3
+            class="sub-title"
+            data-test="files-title"
+          >
+            Files
+          </h3>
           <div
             class="files small"
             data-test="trial-files"
@@ -1093,6 +1116,17 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
   padding: 8px 14px;
 }
 
+.setting-note {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.sub-title {
+  font-size: 15px;
+  margin-top: 8px;
+}
+
 .applied-table tr > :first-child {
   padding-left: 14px;
 }
@@ -1122,6 +1156,10 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
   color: var(--ink);
   font-weight: 500;
   text-decoration: none;
+}
+
+.requests {
+  flex-basis: 100%;
 }
 
 .requests ul {

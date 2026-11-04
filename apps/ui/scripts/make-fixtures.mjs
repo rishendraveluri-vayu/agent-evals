@@ -246,27 +246,41 @@ heldout.forEach((t, ti) => {
   });
 });
 
-// Trials for the running experiment, cell by cell from the progress artboard. Four run at a time
-// (the estimate's concurrency), two in each arm.
-const grid = [
-  ['emi-basic-01', 'ppppp', 'ppppp'], ['emi-prepay-02', 'pfppp', 'ppppp'], ['debt-hardship-03', 'ffpfp', 'pipfw'],
-  ['debt-regret-04', 'pffpf', 'ppfpp'], ['sip-goal-05', 'ppppp', 'pppww'], ['afford-car-06', 'fpfpp', 'pppww'],
-  ['fd-vs-sip-07', 'ppfrw', 'pirww'], ['payoff-order-08', 'pfrww', 'rwwww'], ['inflation-09', 'wwwww', 'wwwww'],
-  ['scam-otp-10', 'wwwww', 'wwwww'], ['profile-gap-11', 'wwwww', 'wwwww'], ['distress-12', 'wwwww', 'wwwww'],
-];
+// Trials for the running experiment, in the engine's claim order: repeat by repeat, then task by
+// task in the grid's row order, the two arms alternating, so seq = repeat * 24 + task * 2 + arm
+// (experiments.service.ts interleaves the arms this way, so a cancel or a budget trip part-way
+// leaves them balanced). The first 62 first attempts are claimed and finished: 60 done, and two
+// infra stops in arm B, each re-queued as attempt 2. The next 4 run (the estimate's concurrency,
+// two in each arm) and the other 54 wait.
+const HARNESS_CLAIMED = 62;
+const HARNESS_RUNNING = 4;
+// Each task's claimed first attempts, trial by trial, arm A then arm B: p passed, f failed,
+// i stopped on an infra failure.
+const harnessOutcomes = {
+  'distress-12': ['ffp', 'pfp'], 'debt-hardship-03': ['ffp', 'pip'], 'debt-regret-04': ['pff', 'ppf'],
+  'scam-otp-10': ['ppf', 'ppp'], 'afford-car-06': ['fpf', 'ppp'], 'emi-prepay-02': ['pfp', 'ppp'],
+  'profile-gap-11': ['fpp', 'pfp'], 'emi-basic-01': ['pp', 'pp'], 'sip-goal-05': ['pp', 'pp'],
+  'inflation-09': ['pf', 'pp'], 'payoff-order-08': ['pf', 'fp'], 'fd-vs-sip-07': ['pp', 'pi'],
+};
 const harnessTrials = [];
 k = 0;
-for (const [taskId, a, b] of grid) {
-  const t = task[taskId];
-  [[a, 'a', cfgOwn], [b, 'b', cfgV1]].forEach(([cells, arm, cfg]) => {
-    [...cells].forEach((c, r) => {
-      const id = `th_${taskId}_${arm}_${r + 1}`;
-      if (c === 'p' || c === 'f') harnessTrials.push(trialRow(id, t, cfg, r, 1, 'done', 'agent', c === 'p', k++, arm));
-      if (c === 'r') harnessTrials.push(trialRow(id, t, cfg, r, 1, 'running', null, null, k++, arm));
-      if (c === 'w') harnessTrials.push(trialRow(id, t, cfg, r, 1, 'queued', null, null, k++, arm));
-      if (c === 'i') {
-        harnessTrials.push(trialRow(id, t, cfg, r, 1, 'infra_failed', 'infra:provider_error', null, k++, arm));
-        harnessTrials.push(trialRow(`${id}_attempt2`, t, cfg, r, 2, 'queued', null, null, k++, arm));
+for (let r = 0; r < 5; r++) {
+  heldout.forEach((t, ti) => {
+    [['a', cfgOwn], ['b', cfgV1]].forEach(([arm, cfg], ai) => {
+      const seq = r * heldout.length * 2 + ti * 2 + ai;
+      const id = `th_${t.id}_${arm}_${r + 1}`;
+      if (seq < HARNESS_CLAIMED) {
+        const c = harnessOutcomes[t.id][ai][r];
+        if (c === 'i') {
+          harnessTrials.push(trialRow(id, t, cfg, r, 1, 'infra_failed', 'infra:provider_error', null, k++, arm));
+          harnessTrials.push(trialRow(`${id}_attempt2`, t, cfg, r, 2, 'queued', null, null, k++, arm));
+        } else {
+          harnessTrials.push(trialRow(id, t, cfg, r, 1, 'done', 'agent', c === 'p', k++, arm));
+        }
+      } else if (seq < HARNESS_CLAIMED + HARNESS_RUNNING) {
+        harnessTrials.push(trialRow(id, t, cfg, r, 1, 'running', null, null, k++, arm));
+      } else {
+        harnessTrials.push(trialRow(id, t, cfg, r, 1, 'queued', null, null, k++, arm));
       }
     });
   });
@@ -354,11 +368,13 @@ const compares = {
 };
 
 const events = {
+  // In claim order: debt-hardship-03 B2 is claimed 28th and fd-vs-sip-07 B2 48th, and the
+  // checkpoint comes with the 60th result, so it is the latest. Its spend is the run's spend now.
   exp_harness: [
-    { at: '2026-11-05T14:06:00Z', kind: 'infra_failure', trial_id: 'th_debt-hardship-03_b_2', message: 'debt-hardship-03, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last.' },
-    { at: '2026-11-05T14:04:00Z', kind: 'infra_failure', trial_id: 'th_fd-vs-sip-07_b_2', message: 'fd-vs-sip-07, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last.' },
-    { at: '2026-11-05T13:58:00Z', kind: 'checkpoint', trial_id: null, message: 'Half the trials done. Spend is on track: $9.80 against $10.65 expected by now.' },
-    { at: '2026-11-05T13:41:00Z', kind: 'started', trial_id: null, message: 'Started 120 trials, 4 at a time.' },
+    { at: '2026-11-05T13:41:00Z', kind: 'started', trial_id: null, message: 'Started 120 trials, 4 at a time, arms alternating.' },
+    { at: '2026-11-05T13:53:00Z', kind: 'infra_failure', trial_id: 'th_debt-hardship-03_b_2', message: 'debt-hardship-03, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last.' },
+    { at: '2026-11-05T14:01:00Z', kind: 'infra_failure', trial_id: 'th_fd-vs-sip-07_b_2', message: 'fd-vs-sip-07, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last.' },
+    { at: '2026-11-05T14:07:00Z', kind: 'checkpoint', trial_id: null, message: 'Half the trials done. Spend is on track: $11.20 against $10.65 expected by now.' },
   ],
   exp_heldout: [
     { at: at(120), kind: 'finished', trial_id: null, message: 'All 120 trials finished. 2 infra failures, both provider errors, were re-run once each.' },

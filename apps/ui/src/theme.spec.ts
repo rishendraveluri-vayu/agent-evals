@@ -206,6 +206,51 @@ describe('pass green and fail red', () => {
   });
 });
 
+/** Every source file but the tests, with any <style> blocks taken out: the markup and scripts. */
+function markup(): { file: string; text: string }[] {
+  const out: { file: string; text: string }[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name.endsWith('.vue') || (entry.name.endsWith('.ts') && !entry.name.endsWith('.spec.ts'))) {
+        out.push({ file: relative(SRC, path), text: readFileSync(path, 'utf8').replace(/<style[^>]*>[\s\S]*?<\/style>/g, '') });
+      }
+    }
+  };
+  walk(SRC);
+  return out;
+}
+
+/** Where a dashed stroke may appear: a zero line or infra, nothing else, so a dash always means
+ *  one of those two. Solid lines carry every other mark, such as the spending cap. */
+const DASH_ALLOWED: Record<string, string[]> = {
+  // The task plot's zero line, under its axis label.
+  'views/CompareView.vue': ['.zero-stub'],
+  // The heroes' zero reference.
+  'components/IntervalStrip.vue': ['.ref--dashed'],
+};
+/** Dashes drawn in markup rather than CSS: the infra badge's ring. */
+const DASH_IN_MARKUP: Record<string, number> = { 'components/AppIcon.vue': 1 };
+
+describe('dashed strokes', () => {
+  it('appear only on zero lines and infra marks', () => {
+    const found: string[] = [];
+    const allowed: string[] = [];
+    for (const { file, css: sheet } of stylesheets()) {
+      for (const { selector, body } of rules(sheet)) {
+        if (!/dasharray/.test(body)) continue;
+        if ((DASH_ALLOWED[file] ?? []).includes(selector)) allowed.push(`${file}: ${selector}`);
+        else found.push(`${file}: ${selector}`);
+      }
+    }
+    expect(found).toEqual([]);
+    expect(allowed.sort()).toEqual(Object.entries(DASH_ALLOWED).flatMap(([file, list]) => list.map((sel) => `${file}: ${sel}`)).sort());
+    const inMarkup = Object.fromEntries(markup().map(({ file, text }) => [file, (text.match(/dasharray/g) ?? []).length] as const).filter(([, n]) => n > 0));
+    expect(inMarkup).toEqual(DASH_IN_MARKUP);
+  });
+});
+
 describe('results that are not findings', () => {
   it('sets no clear difference in regular weight, while status words and pills keep theirs', () => {
     const all = rules(css);

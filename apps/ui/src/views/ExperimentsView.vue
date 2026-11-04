@@ -6,10 +6,10 @@ import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { armsOf, axisWords, checksToGo, doneCount, excludesZero, headline, intervalText, judgeCaveat, pointsWithInterval, setupOf, timeLeft, totalTrials, type Verdict } from '../lib/arms';
+import { armsOf, axisWords, checksToGo, doneCount, excludesZero, headline, intervalText, judgeCaveat, NBSP, pointsWithInterval, setupOf, timeLeft, totalTrials, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
-import { minutes, money, percent, plural, relative, signed } from '../lib/format';
-import { harnessShort, isJudged, modelName, settingLabel, splitName } from '../lib/names';
+import { identParts, minutes, money, percent, plural, relative, signed } from '../lib/format';
+import { alsoGradedBy, harnessShort, isJudged, modelName, settingLabel, splitName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
 import { href } from '../router';
 
@@ -75,8 +75,9 @@ const latestResult = computed(() => {
     experiment: latest,
     stats,
     title: headline(stats, arms, latest.tasks),
-    big: `${signed(stats.diff.estimate)} points`,
-    rates: `pass rate, ${percent(stats.a.rate)} to ${percent(stats.b.rate)}`,
+    big: `${signed(stats.diff.estimate)}${NBSP}${Math.abs(Math.round(stats.diff.estimate)) === 1 ? 'point' : 'points'}`,
+    // Each arm's rate by name: "X to Y" is kept for intervals.
+    rates: arms.length === 2 ? `pass rate: ${arms[0].short} ${percent(stats.a.rate)}, ${arms[1].short} ${percent(stats.b.rate)}` : `pass rate: A ${percent(stats.a.rate)}, B ${percent(stats.b.rate)}`,
     min,
     max,
     ticks: ticksFor(min, max, 10),
@@ -87,6 +88,7 @@ const latestResult = computed(() => {
       isJudged,
       judge: stats.judge,
       toGo: d.heldoutToGo ?? 0,
+      alsoGraded: alsoGradedBy,
     }),
     aria: `Difference in pass rate: ${signed(stats.diff.estimate)} points, ${level}% interval ${intervalText(stats.diff)}, on a scale from ${min} to ${max}.${stats.aa ? ` An A/A run on the same setup gave ${signed(stats.aa.diff.estimate)}, interval ${intervalText(stats.aa.diff)}.` : ''}`,
   };
@@ -289,7 +291,13 @@ const rows = computed<Row[]>(() => {
             name="alert"
             :size="14"
           />
-          <span>{{ latestResult.caveat.before }}<a :href="href.judge()">{{ latestResult.caveat.link }}</a>{{ latestResult.caveat.after }}</span>
+          <span><template
+            v-for="(part, pi) in identParts(latestResult.caveat.before, latestResult.caveat.idents)"
+            :key="pi"
+          ><span
+            v-if="part.ident"
+            class="mono"
+          >{{ part.text }}</span><template v-else>{{ part.text }}</template></template><a :href="href.judge()">{{ latestResult.caveat.link }}</a>{{ latestResult.caveat.after }}</span>
         </p>
       </section>
       <section
@@ -574,19 +582,9 @@ const rows = computed<Row[]>(() => {
   max-width: 70ch;
 }
 
-/* What the result rests on, right under the caption: an icon and words, never colour alone. */
+/* What the result rests on, right under the caption (the shared .caveat in theme.css). */
 .caveat {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  max-width: 72ch;
   margin-top: -6px;
-  font-size: 14px;
-  color: var(--ink-2);
-}
-
-.caveat .icon {
-  margin-top: 4px;
 }
 
 .attention {

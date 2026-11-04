@@ -2,9 +2,10 @@
 import { computed } from 'vue';
 import { api } from '../api/client';
 import type { BlindItem, Config, Experiment, JudgeAgreement } from '../api/types';
+import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
-import { armsOf, checksToGo as countChecks } from '../lib/arms';
+import { armsOf, checksToGo as countChecks, NBSP } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { percent, plural, shortHash, wilson } from '../lib/format';
 import { href } from '../router';
@@ -39,7 +40,7 @@ const answer = computed(() => {
     meaning:
       k.low >= a.bar
         ? 'Judge-graded tasks can be read like the others.'
-        : 'What this means for results: a difference that rests only on judge-graded tasks is weaker evidence than one the code graders also see. Read those task rows with that in mind.',
+        : "What this means for results: a difference on tasks that need the judge's pass is weaker evidence than one on code-graded tasks. Read those task rows with that in mind.",
   };
 });
 
@@ -93,6 +94,38 @@ const selfLine = computed(() => {
   return `relabelled checks got the same answer (${rate(a.self.same, a.self.total)}). ${verdict}`;
 });
 
+/** "20 checks", or "20 and 18 checks" when the arms differ. */
+function checksWords(counts: number[]): string {
+  if (!counts.length) return '';
+  if (counts.every((c) => c === counts[0])) return `${counts.length > 1 ? `${counts[0]} checks each` : plural(counts[0], 'check')}`;
+  return `${counts.slice(0, -1).join(', ')} and ${counts[counts.length - 1]} checks`;
+}
+
+/** Under the per-config rows: what kappa per arm can and cannot say. No interval comes per arm,
+ *  and kappa cannot say which arm the judge is lenient on; the matrix's disagreements are not
+ *  split by arm. */
+const perConfigNote = computed(() => {
+  const a = j.value;
+  if (!a) return '';
+  const rows = a.per_config;
+  const within = `Cohen's κ within each arm, ${checksWords(rows.map((c) => c.labels))}.`;
+  const gap =
+    rows.length === 2 ? ` No interval is given per arm, and at this size the gap between ${rows[0].kappa.toFixed(2)} and ${rows[1].kappa.toFixed(2)} says little.` : ' No interval is given per arm.';
+  const lean = ` κ also cannot show which arm the judge is lenient on: the ${a.matrix.judge_pass_you_fail} too-lenient and ${a.matrix.judge_fail_you_pass} too-strict checks are not split by arm here.`;
+  return `${within}${gap}${lean}`;
+});
+
+/** "checks got the same verdict in all 3 runs (96%, interval 91% to 98%)", with its Wilson 95%
+ *  interval, as the line beside it gives for your own relabels. */
+const retestLine = computed(() => {
+  const r = j.value?.retest;
+  if (!r) return '';
+  const i = wilson(r.identical, r.total);
+  return `checks got the same verdict in all ${r.runs} runs (${percent(r.identical / Math.max(1, r.total))}, interval ${percent(i.low)} to ${percent(i.high)}).${r.note ? ` ${r.note}` : ''}`;
+});
+
+const kappaText = (k: number) => `κ${NBSP}${k.toFixed(2)}`;
+
 /** The kappa scale: evenly spaced, so a phone can keep every other tick. */
 const kappaTicks = computed(() => {
   const bar = j.value?.bar ?? 0.6;
@@ -117,15 +150,19 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
     <h1 tabindex="-1">
       Can we trust the judge?
     </h1>
-    <p
-      v-if="toGo"
-      class="provisional"
-      data-test="provisional"
-    >
-      Provisional: {{ toGoWords }} still to label. These numbers will change.
-    </p>
     <p class="lede">
       {{ lede }}
+    </p>
+    <p
+      v-if="toGo"
+      class="caveat"
+      data-test="provisional"
+    >
+      <AppIcon
+        name="alert"
+        :size="14"
+      />
+      <span>Provisional: {{ toGoWords }} still to label. These numbers will change.</span>
     </p>
   </div>
 
@@ -247,17 +284,19 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
               :key="c.config"
               class="per-row"
             >
-              <span class="arm"><span
+              <span
+                class="arm"
+                data-test="per-config-row"
+              ><span
                 class="dot"
                 :class="armKey(c.config) ? `dot--${armKey(c.config)}` : ''"
-              />{{ configLabel(c.config) }}, {{ c.labels }} labels</span>
-              <span class="num strong">κ {{ c.kappa.toFixed(2) }}</span>
+              /><span>{{ configLabel(c.config) }} · <span class="num">{{ kappaText(c.kappa) }}</span> · {{ plural(c.labels, 'check') }}</span></span>
             </div>
             <p
               class="secondary"
               data-test="per-config-note"
             >
-              How often you and the judge agree within each arm. κ does not show which way the judge leans, so a gap here is not evidence for or against bias.
+              {{ perConfigNote }}
             </p>
           </div>
         </section>
@@ -270,8 +309,11 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
           </h2>
           <template v-if="j.retest">
             <span class="figure num">{{ j.retest.identical }} of {{ j.retest.total }}</span>
-            <p class="secondary small">
-              verdicts were identical across all {{ j.retest.runs }} runs. {{ j.retest.note ?? '' }}
+            <p
+              class="secondary small"
+              data-test="retest-line"
+            >
+              {{ retestLine }}
             </p>
           </template>
           <p
@@ -389,11 +431,6 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
 .not-yet {
   margin-top: 8px;
   max-width: 72ch;
-}
-
-.provisional {
-  margin-top: 8px;
-  color: var(--ink-2);
 }
 
 .answer {

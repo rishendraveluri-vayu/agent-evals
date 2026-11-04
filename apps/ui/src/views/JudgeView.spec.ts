@@ -5,6 +5,9 @@ import { routeFetch, settle, useFixtures } from '../test/helpers';
 import JudgeView from './JudgeView.vue';
 import judgeSource from './JudgeView.vue?raw';
 
+/** A no-break space: κ keeps its value. */
+const nb = '\u00a0';
+
 describe('JudgeView in fixture mode', () => {
   useFixtures();
 
@@ -18,14 +21,20 @@ describe('JudgeView in fixture mode', () => {
     );
     expect(answer).not.toContain('outputs');
     expect(w.get('[data-test="judge-matrix"]').text()).toMatch(/19\s*agree\s*3\s*too lenient[\s\S]*3\s*too strict\s*15\s*agree/);
-    expect(w.text()).toContain('Prompt v1, 20 labels');
+    expect(w.findAll('[data-test="per-config-row"]').map((r) => r.text())).toEqual([`Prompt v1 · κ${nb}0.73 · 20 checks`, `Prompt v2 · κ${nb}0.66 · 20 checks`]);
     expect(w.text()).toContain('The 6 disagreements');
   });
 
   it('says the numbers are provisional while held-out outputs remain to label', async () => {
     const w = mount(JudgeView);
     await settle();
-    expect(w.get('[data-test="provisional"]').text()).toBe('Provisional: 3 held-out outputs (7 checks) still to label. These numbers will change.');
+    const provisional = w.get('[data-test="provisional"]');
+    expect(provisional.text()).toBe('Provisional: 3 held-out outputs (7 checks) still to label. These numbers will change.');
+    // The shared caveat line, with its icon, under the lede.
+    expect(provisional.classes()).toEqual(['caveat']);
+    expect(provisional.find('svg.icon').exists()).toBe(true);
+    expect(w.get('.lede').element.nextElementSibling).toBe(provisional.element);
+    expect(judgeSource).not.toMatch(/^\.provisional\b/m);
     expect(w.get('.lede').text()).toBe(
       'Measured on 40 of 47 held-out checks so far, which are never used to tune the rubric. The bar of 0.6 was set before any results came in.',
     );
@@ -49,10 +58,21 @@ describe('JudgeView in fixture mode', () => {
     const w = mount(JudgeView);
     await settle();
     const note = w.get('[data-test="per-config-note"]').text();
-    expect(note).toBe('How often you and the judge agree within each arm. κ does not show which way the judge leans, so a gap here is not evidence for or against bias.');
+    expect(note).toBe(
+      "Cohen's κ within each arm, 20 checks each. No interval is given per arm, and at this size the gap between 0.73 and 0.66 says little. κ also cannot show which arm the judge is lenient on: the 3 too-lenient and 3 too-strict checks are not split by arm here.",
+    );
+    // The retired note, spelt in parts so a search of the source finds none.
+    expect(w.text()).not.toContain(['How often you', 'and the judge agree'].join(' '));
     expect(w.text()).not.toContain('favoured');
     expect(w.text()).not.toContain('Compare these two');
-    expect(w.text()).toContain('Prompt v2, 20 labels');
+    // Regular weight: no figure on these rows is set in bold.
+    for (const r of w.findAll('[data-test="per-config-row"]')) expect(r.find('.strong').exists()).toBe(false);
+    // The retest figure comes with its interval, as your own relabels do.
+    expect(w.get('[data-test="retest-line"]').text()).toBe('checks got the same verdict in all 3 runs (96%, interval 91% to 98%). The 5 that flipped were all on "kind and direct".');
+    expect(w.text()).toContain('115 of 120');
+    expect(w.get('.meaning').text()).toBe(
+      "What this means for results: a difference on tasks that need the judge's pass is weaker evidence than one on code-graded tasks. Read those task rows with that in mind.",
+    );
     const self = w.get('[data-test="self-line"]').text();
     expect(self).toBe(
       'relabelled checks got the same answer (90%, interval 60% to 98%). The judge matched you on 34 of 40 (85%, interval 71% to 93%). 10 relabels are too few to tell that apart from your own consistency.',
@@ -95,6 +115,20 @@ describe('JudgeView against the API: your consistency beside the judge', () => {
     expect(w.get('[data-test="self-line"]').text()).toBe(
       'relabelled checks got the same answer (98%, interval 87% to 100%). The judge matched you on 34 of 40 (85%, interval 71% to 93%), below your own consistency.',
     );
+  });
+});
+
+describe('JudgeView against the API: arms with different numbers of checks', () => {
+  it('gives each count, and the matrix counts that are not split by arm', async () => {
+    const per_config = [{ ...agreement.per_config[0] }, { ...agreement.per_config[1], labels: 18 }];
+    const matrix = { ...agreement.matrix, judge_pass_you_fail: 4, judge_fail_you_pass: 2 };
+    routeFetch({ '/api/judge/agreement?set=heldout': { ...agreement, per_config, matrix }, '/api/configs': [], '/api/experiments': [], '/api/labels/queue?set=heldout': [] });
+    const w = mount(JudgeView);
+    await settle();
+    const note = w.get('[data-test="per-config-note"]').text();
+    expect(note).toContain("Cohen's κ within each arm, 20 and 18 checks.");
+    expect(note).toContain('the 4 too-lenient and 2 too-strict checks are not split by arm here.');
+    expect(w.findAll('[data-test="per-config-row"]')[1].text()).toContain('18 checks');
   });
 });
 

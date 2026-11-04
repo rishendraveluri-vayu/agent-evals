@@ -47,6 +47,31 @@ describe('fixtures', () => {
     }
   });
 
+  it('claim first attempts in the engine order, so the arms stay balanced at any point in a run', () => {
+    type Detail = { tasks: { sha256: string }[]; config_hashes: string[]; n: number };
+    type Trial = { task: string; config: string; repeat_index: number; attempt: number; status: string };
+    const CLAIMED = ['done', 'infra_failed', 'abandoned', 'running', 'claimed'];
+    let checked = 0;
+    for (const e of fixtureResponse('GET', '/experiments') as { id: string; config_hashes: string[] }[]) {
+      const [ha, hb] = e.config_hashes;
+      if (e.config_hashes.length !== 2 || ha === hb) continue;
+      const d = fixtureResponse('GET', `/experiments/${e.id}`) as Detail;
+      const firsts = (fixtureResponse('GET', `/experiments/${e.id}/trials`) as Trial[]).filter((t) => t.attempt === 1);
+      if (!firsts.length) continue;
+      // Repeat by repeat, then task by task in the grid's order, the two arms alternating.
+      const seq = (t: Trial) => t.repeat_index * d.tasks.length * 2 + d.tasks.findIndex((x) => x.sha256 === t.task) * 2 + d.config_hashes.indexOf(t.config);
+      const order = [...firsts].sort((x, y) => seq(x) - seq(y));
+      expect(order.map(seq), e.id).toEqual(order.map((_, i) => i));
+      const claimed = order.map((t) => CLAIMED.includes(t.status));
+      const m = claimed.filter(Boolean).length;
+      expect(claimed, `${e.id}: the claimed first attempts are the first ${m} in claim order`).toEqual(order.map((_, i) => i < m));
+      const perArm = (h: string) => order.filter((t, i) => claimed[i] && t.config === h).length;
+      expect(Math.abs(perArm(ha) - perArm(hb)), e.id).toBeLessThanOrEqual(1);
+      checked += 1;
+    }
+    expect(checked).toBeGreaterThanOrEqual(2);
+  });
+
   it('serve the one full trial with the contract trial fields, and spans as OTLP', () => {
     const trial = fixtureResponse('GET', '/trials/tr_fd-vs-sip-07_b_3');
     expect(keys(trial)).toEqual(['attempt', 'config', 'end_state', 'experiment_id', 'files', 'grades', 'id', 'label', 'repeat_index', 'result', 'runner_report', 'status', 'task', 'timing', 'usage']);

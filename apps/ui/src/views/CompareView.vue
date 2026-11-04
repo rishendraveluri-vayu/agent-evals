@@ -7,10 +7,10 @@ import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { agreementWords, armsOf, differingShort, excludesZero, intervalText, judgeCaveat, methodName, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
+import { agreementWords, armsOf, differingShort, excludesZero, intervalText, judgeCaveat, methodName, NBSP, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
-import { money, percent, plural, seconds, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
-import { gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
+import { identParts, money, percent, plural, seconds, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
+import { alsoGradedBy, gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
 import { href } from '../router';
 
@@ -150,6 +150,10 @@ const meta = computed(() => {
   return { perArm: false, harness: harnessShort(ca.harness), pin: pinOf(a), rest };
 });
 
+/** The simulated client's model, which shapes every conversation in both arms: null when the
+ *  experiment has none. */
+const simClient = computed(() => (data.value?.detail.sim_model ? modelName(data.value.detail.sim_model) : null));
+
 const hero = computed(() => {
   const s = stats.value;
   if (!s) return null;
@@ -171,6 +175,21 @@ const hero = computed(() => {
   };
 });
 
+/** The hero's sentence under the verdict: "+15 points of pass rate: v1 58%, v2 73%. The 95%
+ *  interval runs from +7 to +23 points." Each arm's rate is named; "X to Y" is only an interval.
+ *  Numbers stay on the line with their unit. */
+const heroText = computed(() => {
+  const s = stats.value;
+  const h = hero.value;
+  if (!s || !h) return null;
+  const [a, b] = arms.value;
+  const unit = (v: number) => (Math.abs(Math.round(v)) === 1 ? 'point' : 'points');
+  return {
+    big: `${signed(s.diff.estimate)}${NBSP}${unit(s.diff.estimate)}`,
+    rest: ` of pass rate: ${a?.short ?? 'A'} ${percent(s.a.rate)}, ${b?.short ?? 'B'} ${percent(s.b.rate)}. The ${h.level}% interval runs from ${signed(s.diff.low)} to ${signed(s.diff.high)}${NBSP}points.`,
+  };
+});
+
 /** Why the result is or is not noise: the interval, the check on the method (an A/A run), and
  *  the method itself, named only as the statistics step names it. */
 const why = computed(() => {
@@ -186,7 +205,7 @@ const why = computed(() => {
       ? `Check on the method: the same config run twice gave ${pointsWithInterval(s.aa.diff)}, a difference where there is none. Treat this result with caution.`
       : `Check on the method: the same config run twice gave ${pointsWithInterval(s.aa.diff)}, which includes zero, so the method did not invent a difference when nothing changed.`;
   }
-  const p = s.p_value !== null ? `, p = ${s.p_value}` : '';
+  const p = s.p_value !== null ? `, p${NBSP}=${NBSP}${s.p_value}` : '';
   const method = s.method === 'paired_task_bootstrap'
     ? `Paired by task: each task is compared with itself across the two arms. ${methodName(s.method)}${p}.`
     : `${methodName(s.method)}${p}.`;
@@ -315,7 +334,11 @@ const taskRows = computed<TaskRow[]>(() => {
     .sort((x, y) => (y.diff?.estimate ?? -999) - (x.diff?.estimate ?? -999));
 });
 
-const fx = (v: number) => 200 + Math.max(-100, Math.min(100, v)) * 2;
+/** The task plot's x for a difference: ±100 land at 18 and 382, so a round cap at either end
+ *  stays inside the cell and sits under the centre of its axis label. */
+const fx = (v: number) => 200 + Math.max(-100, Math.min(100, v)) * 1.82;
+/** The axis labels, each centred on its tick at the same x the intervals use. */
+const AXIS_TICKS = [-100, -50, 0, 50, 100].map((v) => ({ value: v, x: fx(v), label: tick(v) }));
 /** Arm colour only for a task whose difference holds up after correction; every other row is grey. */
 const lean = (r: TaskRow) => (!r.diff || !r.significant ? 'neutral' : r.diff.estimate >= 0 ? 'b' : 'a');
 function verdictOf(r: TaskRow): { kind: Verdict; label?: string } {
@@ -377,12 +400,12 @@ const judgeLine = computed(() => {
   return `${scored}. Its agreement with you${agreementWords(j, d.queue.length)}`;
 });
 
-/** Under the figure: when every task that differs is judge-graded, the verdict rests on the judge. */
+/** Under the figure: when every task that differs needs the judge's pass, the verdict rests on the judge. */
 const caveat = computed(() => {
   const s = stats.value;
   const d = data.value;
   if (!s || !d) return null;
-  return judgeCaveat({ differing: taskRows.value.filter((r) => r.significant).map((r) => taskOf(r.key)), isJudged, judge: s.judge, toGo: d.queue.length });
+  return judgeCaveat({ differing: taskRows.value.filter((r) => r.significant).map((r) => taskOf(r.key)), isJudged, judge: s.judge, toGo: d.queue.length, alsoGraded: alsoGradedBy });
 });
 
 /** On a phone the column heads are hidden, so the shared axis says what its intervals are. */
@@ -472,7 +495,12 @@ const worthALook = computed(() => {
             <span
               class="nowrap"
               data-test="setup"
-            >{{ meta.harness }}<template v-if="meta.pin">{{ ' ' }}<span class="mono">{{ meta.pin }}</span></template>{{ meta.rest }}</span> · <span class="nowrap">{{ totalTrials(data.detail) }} trials</span><template v-if="commits.plan">
+            >{{ meta.harness }}<template v-if="meta.pin">{{ ' ' }}<span class="mono">{{ meta.pin }}</span></template>{{ meta.rest }}</span><template v-if="simClient">
+              · <span
+                class="nowrap"
+                data-test="sim-client"
+              >simulated client {{ simClient }}</span>
+            </template> · <span class="nowrap">{{ totalTrials(data.detail) }} trials</span><template v-if="commits.plan">
               · <a
                 :href="href.run(data.detail.id)"
                 class="secondary nowrap"
@@ -540,7 +568,7 @@ const worthALook = computed(() => {
               {{ verdictTitle(stats, arms) }}
             </h2>
             <p class="verdict-text">
-              <strong class="num">{{ signed(stats.diff.estimate) }} points</strong> of pass rate, from {{ percent(stats.a.rate) }} to {{ percent(stats.b.rate) }}. The {{ hero.level }}% interval runs from {{ signed(stats.diff.low) }} to {{ signed(stats.diff.high) }} points.
+              <strong class="num">{{ heroText?.big }}</strong>{{ heroText?.rest }}
             </p>
             <IntervalStrip
               :min="hero.min"
@@ -559,7 +587,13 @@ const worthALook = computed(() => {
                 name="alert"
                 :size="14"
               />
-              <span>{{ caveat.before }}<a :href="href.judge()">{{ caveat.link }}</a>{{ caveat.after }}</span>
+              <span><template
+                v-for="(part, pi) in identParts(caveat.before, caveat.idents)"
+                :key="pi"
+              ><span
+                v-if="part.ident"
+                class="mono"
+              >{{ part.text }}</span><template v-else>{{ part.text }}</template></template><a :href="href.judge()">{{ caveat.link }}</a>{{ caveat.after }}</span>
             </p>
           </template>
           <template v-else>
@@ -613,7 +647,7 @@ const worthALook = computed(() => {
             class="why-title"
             data-test="why-title"
           >
-            {{ excludesZero(stats.diff) ? 'Why this is not noise' : 'Why this could be noise' }}
+            {{ excludesZero(stats.diff) ? 'Why this is unlikely to be noise' : 'Why this could be noise' }}
           </h3>
           <p
             v-for="(line, i) in why"
@@ -664,7 +698,7 @@ const worthALook = computed(() => {
                 ><span
                   :class="`dot dot--${r.arm}`"
                   aria-hidden="true"
-                /><span class="infra-text">{{ r.arm.toUpperCase() }} · <span class="mono infra-task">{{ r.task }}</span> · attempt {{ r.trial.attempt }} · <span class="secondary">{{ r.cause }}</span> · {{ r.rerun }}</span></a>
+                /><span class="infra-text">{{ r.arm.toUpperCase() }} · <span class="mono infra-task">{{ r.task }}</span> · attempt {{ r.trial.attempt }} · <span class="secondary nowrap">{{ r.cause }}</span> · {{ r.rerun }}</span></a>
               </li>
             </ul>
           </div>
@@ -762,7 +796,7 @@ const worthALook = computed(() => {
                   scope="col"
                   class="plot-col"
                 >
-                  Difference, B minus A, {{ stats ? Math.round(stats.level * 100) : 95 }}% interval (not corrected)
+                  Difference in points, B minus A, {{ stats ? Math.round(stats.level * 100) : 95 }}% interval (not corrected)
                 </th>
                 <th scope="col">
                   Verdict
@@ -783,43 +817,28 @@ const worthALook = computed(() => {
                     width="100%"
                     data-test="axis"
                   >
-                    <text
-                      x="0"
-                      y="13"
-                      class="axis-label"
-                    >{{ tick(-100) }}</text>
-                    <text
-                      x="100"
-                      y="13"
-                      class="axis-label"
-                      text-anchor="middle"
-                    >{{ tick(-50) }}</text>
-                    <text
-                      x="200"
-                      y="13"
-                      class="axis-label axis-label--zero"
-                      text-anchor="middle"
-                    >0</text>
-                    <text
-                      x="300"
-                      y="13"
-                      class="axis-label"
-                      text-anchor="middle"
-                    >{{ tick(50) }}</text>
-                    <text
-                      x="400"
-                      y="13"
-                      class="axis-label"
-                      text-anchor="end"
-                    >{{ tick(100) }}</text>
-                    <!-- The top of the zero line, under its label; the cells below carry it on. -->
-                    <line
-                      x1="200"
-                      x2="200"
-                      y1="15"
-                      y2="18"
-                      class="zero-stub"
-                    />
+                    <template
+                      v-for="t in AXIS_TICKS"
+                      :key="t.value"
+                    >
+                      <text
+                        :x="t.x"
+                        y="13"
+                        :class="t.value === 0 ? 'axis-label axis-label--zero' : 'axis-label'"
+                        text-anchor="middle"
+                        data-test="axis-label"
+                      >{{ t.label }}</text>
+                      <!-- A stub under each label; at zero it is the top of the zero line, which the
+                           cells below carry on. -->
+                      <line
+                        :x1="t.x"
+                        :x2="t.x"
+                        y1="15"
+                        y2="18"
+                        :class="t.value === 0 ? 'zero-stub' : 'tick-stub'"
+                        data-test="axis-stub"
+                      />
+                    </template>
                   </svg>
                 </td>
                 <td />
@@ -990,20 +1009,6 @@ const worthALook = computed(() => {
   margin-top: 20px;
 }
 
-/* What the result rests on, right under the figure: an icon and words, never colour alone. */
-.caveat {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  max-width: 72ch;
-  font-size: 14px;
-  color: var(--ink-2);
-}
-
-.caveat .icon {
-  margin-top: 4px;
-}
-
 .push {
   flex: 1 0 0;
 }
@@ -1150,6 +1155,10 @@ const worthALook = computed(() => {
   stroke-dasharray: 3 3;
 }
 
+.tick-stub {
+  stroke: var(--ink-2);
+}
+
 .axis-label {
   font-size: 12px;
   fill: var(--ink-2);
@@ -1215,7 +1224,7 @@ const worthALook = computed(() => {
 /* One underline, on the task id: the arm, attempt, cause and re-run read as plain text beside it. */
 .infra-link {
   display: inline-flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 8px;
   min-height: 32px;
   padding: 5px 0;
@@ -1224,7 +1233,9 @@ const worthALook = computed(() => {
 }
 
 .infra-link .dot {
-  align-self: center;
+  /* Level with the first line of a row that wraps. */
+  margin-top: 0.45em;
+  margin-top: calc((1lh - 10px) / 2);
 }
 
 .infra-task {

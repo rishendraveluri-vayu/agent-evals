@@ -73,6 +73,9 @@ describe('spanBars', () => {
       'Agent call 3, final reply: chat claude-haiku-5-5',
     ]);
     expect(bars.find((b) => b.role === 'tool')?.title).toBe('tool fd_maturity');
+    // The tool's name on its own, for the row to set in mono; no other bar has one.
+    expect(bars.find((b) => b.role === 'tool')?.ident).toBe('fd_maturity');
+    expect(bars.filter((b) => b.ident !== undefined)).toHaveLength(1);
     // No label carries the model id, so none is long enough to be cut short.
     expect(bars.every((b) => !b.label.includes('claude'))).toBe(true);
   });

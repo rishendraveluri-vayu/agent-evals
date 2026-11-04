@@ -6,7 +6,7 @@ import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import { useLoad } from '../lib/async';
 import { coverageText, matrixCell } from '../lib/capabilities';
-import { shortRef } from '../lib/format';
+import { shortRef, splitIdents } from '../lib/format';
 import { harnessName, harnessShort, settingLabel } from '../lib/names';
 
 const { data, error, loading } = useLoad(() => api.harnesses());
@@ -138,7 +138,13 @@ const STEPS = [
               :key="d.key"
             >
               <span class="strong">{{ harnessShort(d.harness) }}</span>
-              <span>{{ d.text }}</span>
+              <span data-test="difference-text"><template
+                v-for="(part, pi) in splitIdents(d.text)"
+                :key="pi"
+              ><span
+                v-if="part.ident"
+                class="mono"
+              >{{ part.text }}</span><template v-else>{{ part.text }}</template></template></span>
             </li>
           </ul>
         </section>
