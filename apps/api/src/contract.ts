@@ -338,6 +338,11 @@ export interface CreateExperimentRequest {
   n: number;
   sim_model?: string | null;
   budget_usd: number;
+  /**
+   * The git commit of the analysis plan (docs/experiment.md): 7 to 40 hex characters, stored in
+   * lower case. Only the format is checked: the API cannot see git history, so it does not check
+   * that the commit exists or holds the plan. Blank or null: none.
+   */
   plan_commit?: string | null;
   /** Optional; defaults to the highest version of the `client-sim` prompt (v4 since 4 Nov). */
   sim_prompt_sha256?: Sha256 | null;
@@ -360,6 +365,7 @@ export interface CreateExperimentRequest {
  * its run page); once it has started the plan commit is fixed (409 `plan_commit_locked`).
  */
 export interface StartExperimentRequest {
+  /** As in CreateExperimentRequest: 7 to 40 hex characters, the format checked only. */
   plan_commit?: string | null;
 }
 

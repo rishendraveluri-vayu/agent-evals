@@ -50,7 +50,7 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
         n: opts.n ?? 1,
         sim_model: opts.sim ?? null,
         budget_usd: opts.budget ?? 50,
-        plan_commit: 'plan123',
+        plan_commit: 'a1b2c3d',
       });
     if (res.status !== 201) throw new Error(`experiment: ${res.status} ${JSON.stringify(res.body)}`);
     const exp = res.body as ExperimentDetail;
@@ -190,7 +190,7 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     await cancel(roomy.id);
 
     const exp = await experiment({ configs: [configA, configB], n: 2, budget: 7, start: false });
-    expect(exp).toMatchObject({ status: 'created', n: 2, platform_commit: 'abc1234', plan_commit: 'plan123', budget_usd: 7 });
+    expect(exp).toMatchObject({ status: 'created', n: 2, platform_commit: 'abc1234', plan_commit: 'a1b2c3d', budget_usd: 7 });
     expect(exp.counts.queued).toBe(4);
     expect(exp.configs.map((c) => c.name)).toEqual(['arm A', 'arm B']);
     expect(env.stub.teams.find((t) => t.team_alias === `experiment:${exp.id}`)?.max_budget).toBe(7);

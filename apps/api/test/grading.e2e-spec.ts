@@ -79,7 +79,7 @@ describeWithDb('grading (e2e, real Postgres)', () => {
   async function experiment(taskIds: string[], n = 1): Promise<ExperimentDetail> {
     const res = await request(env.http)
       .post('/api/experiments')
-      .send({ name: 'grading test', axis: 'none', config_hashes: [config], task_sha256s: taskIds.map((t) => tasks[t]), n, sim_model: null, budget_usd: 50, plan_commit: 'plan123' });
+      .send({ name: 'grading test', axis: 'none', config_hashes: [config], task_sha256s: taskIds.map((t) => tasks[t]), n, sim_model: null, budget_usd: 50, plan_commit: 'a1b2c3d' });
     if (res.status !== 201) throw new Error(`experiment: ${res.status} ${JSON.stringify(res.body)}`);
     const exp = res.body as ExperimentDetail;
     await request(env.http).post(`/api/experiments/${exp.id}/start`).expect(200);

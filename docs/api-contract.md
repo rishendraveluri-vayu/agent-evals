@@ -348,6 +348,12 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   temperature is `null` and not sent (D27); the token cap is 2048, because Haiku 5.5's reasoning
   counts towards it (at 300 on 4 Nov it took the whole cap and the reply was empty). An
   experiment keeps the cap it was created with. `sim` in the experiment shows all three.
+- **Plan commit.** `plan_commit` (here and on `start`) is the git commit of the analysis plan in
+  `docs/experiment.md`: blank or null for none, else 7 to 40 hex characters (as `git rev-parse`
+  prints it), trimmed and stored in lower case. Anything else is a 400 `invalid_plan_commit` with
+  a `fix`; a value that is not a string is a 400 `invalid_experiment`. Only the format is checked:
+  the API cannot see git history, so it records the commit as given and does not check that it
+  exists or that it holds the plan.
 - **Lineage and baseline reuse (D34).** `parent_experiment_id` (optional) names the experiment
   this one follows from (400 `unknown_parent_experiment` if there is none). With
   `reuse_baseline: true` (which needs a parent and two arms), arm A takes the parent's finished
@@ -379,7 +385,7 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 
   | Call | From | Does |
   | --- | --- | --- |
-  | `POST /experiments/:id/start` | `created`, `paused` | starts it, or resumes it (as `/resume`); marks it `done` if nothing is left to claim. Optional body `{plan_commit}` (`StartExperimentRequest`): on a `created` one it sets the analysis plan's commit first (trimmed), so an experiment left unstarted without one can be started from its run page; once it has started the commit is fixed, and a different one is a 409 `plan_commit_locked` (the same one again is fine) |
+  | `POST /experiments/:id/start` | `created`, `paused` | starts it, or resumes it (as `/resume`); marks it `done` if nothing is left to claim. Optional body `{plan_commit}` (`StartExperimentRequest`): on a `created` one it sets the analysis plan's commit first (format checked as on `POST /experiments`, 400 `invalid_plan_commit`), so an experiment left unstarted without one can be started from its run page; once it has started the commit is fixed, and a different one is a 409 `plan_commit_locked` (the same one again is fine) |
   | `POST /experiments/:id/discard` | `created`, no trial claimed | marks an experiment that never started `cancelled` and its queued trials `cancelled`, as a stop does; nothing is deleted. Event `discarded` (no `cancelled` event). Anything started is a 409 `experiment_started` (fix: stop it instead); a `done` or `cancelled` one a 409 `experiment_finished` |
   | `POST /experiments/:id/pause` | `running` (a `paused` one: no-op) | no new claims; trials already running finish and report; event `paused` |
   | `POST /experiments/:id/resume` | `paused` (a `running` one: no-op) | claims resume; event `resumed` |

@@ -182,7 +182,20 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
   it('starts an unstarted experiment with its plan commit, which is fixed once it has started', async () => {
     const exp = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 1 }, { start: false });
     expect(exp).toMatchObject({ status: 'created', plan_commit: null });
-    const started = (await request(env.http).post(`/api/experiments/${exp.id}/start`).send({ plan_commit: ' 3e1a9f0 ' }).expect(200)).body as ExperimentDetail;
+    // Only a commit hash's shape is taken: 7 to 40 hex characters. Anything else is refused in plain words, and nothing starts.
+    for (const bad of ['abc', 'plan-v1', 'docs/experiment.md', 'g1234567', 'a'.repeat(41)]) {
+      const res = (await request(env.http).post(`/api/experiments/${exp.id}/start`).send({ plan_commit: bad }).expect(400)).body as { error: string; message: string; fix: string };
+      expect(res).toMatchObject({ error: 'invalid_plan_commit' });
+      expect(res.message).toContain('7 to 40 characters, each 0-9 or a-f');
+      expect(res.fix).toContain('git rev-parse --short HEAD');
+    }
+    expect((await e.detail(exp.id)).status).toBe('created');
+    const create = await request(env.http)
+      .post('/api/experiments')
+      .send({ name: 'bad plan', axis: 'none', config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 1, sim_model: null, budget_usd: 50, plan_commit: 'not a commit' })
+      .expect(400);
+    expect(create.body).toMatchObject({ error: 'invalid_plan_commit' });
+    const started = (await request(env.http).post(`/api/experiments/${exp.id}/start`).send({ plan_commit: ' 3E1A9F0 ' }).expect(200)).body as ExperimentDetail;
     expect(started).toMatchObject({ status: 'running', plan_commit: '3e1a9f0' });
     // The same commit again (a retried click) is fine; another one is refused.
     await request(env.http).post(`/api/experiments/${exp.id}/start`).send({ plan_commit: '3e1a9f0' }).expect(200);
