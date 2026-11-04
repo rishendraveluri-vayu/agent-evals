@@ -47,6 +47,12 @@ export function simScope(taskSha256: string, spec: unknown): SimScope | null {
 /**
  * The lines of a trial's sim_replies.jsonl that can be cached, first reply per key, and a note for
  * each line that cannot: not JSON, no `sha256:<hex>` key or string reply, or from another model.
+ *
+ * A line the adapter marked with `error` (an empty simulator reply: a simulator failure, D26)
+ * stays in the trial's file for the record but is never cached, so a re-queued attempt asks the
+ * simulator again. Neither is a reply that is empty or only spaces, which an adapter from before
+ * that rule wrote unmarked; that line is noted. The end marker alone, unmarked, is cached: the
+ * adapter judged it the client's normal ending after an earlier goodbye.
  */
 export function parseSimReplies(text: string, model: string): { rows: SimReplyRow[]; problems: string[] } {
   const rows: SimReplyRow[] = [];
@@ -67,6 +73,11 @@ export function parseSimReplies(text: string, model: string): { rows: SimReplyRo
     }
     if (row.model !== undefined && row.model !== model) {
       problems.push(`${SIM_REPLIES_FILE} line ${i + 1} is from ${JSON.stringify(row.model)}, not the simulator ${model}; not cached`);
+      return;
+    }
+    if (row.error !== undefined && row.error !== null) return; // a simulator failure: kept in the file, never cached
+    if (row.reply.trim() === '') {
+      problems.push(`${SIM_REPLIES_FILE} line ${i + 1} has an empty reply; not cached`);
       return;
     }
     if (seen.has(row.key)) return;

@@ -59,4 +59,18 @@ describe('parseSimReplies', () => {
     expect(problems[0]).toContain('line 5 is not JSON');
     expect(problems[3]).toContain('"other-model", not the simulator sim-model');
   });
+
+  it('never caches an empty simulator reply (D26), but keeps the end marker alone', () => {
+    // The 4 Nov Haiku reply: the whole token cap went to reasoning, so there is no text.
+    const usage = { completion_tokens: 300, completion_tokens_details: { reasoning_tokens: 300, text_tokens: 0 } };
+    const text = [
+      JSON.stringify({ key: key('1'), reply: '', model: 'sim-model', usage, error: 'reply has no text' }),
+      JSON.stringify({ key: key('2'), reply: '[[END_CONVERSATION]]', model: 'sim-model', error: 'reply holds only the end marker, before the client has said anything' }),
+      JSON.stringify({ key: key('3'), reply: ' \n', model: 'sim-model', usage }), // unmarked, from an older adapter
+      JSON.stringify({ key: key('4'), reply: '[[END_CONVERSATION]]', model: 'sim-model' }), // after the client's own goodbye
+    ].join('\n');
+    const { rows, problems } = parseSimReplies(text, 'sim-model');
+    expect(rows).toEqual([{ key: key('4'), reply: '[[END_CONVERSATION]]', usage: null }]);
+    expect(problems).toEqual(['sim_replies.jsonl line 3 has an empty reply; not cached']);
+  });
 });
