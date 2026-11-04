@@ -131,6 +131,20 @@ describe('ConfigView in fixture mode', () => {
     w.unmount();
   });
 
+  it('puts focus in the draft when the prompt editor opens, so Escape straight away closes it', async () => {
+    const w = mount(ConfigView, { attachTo: document.body });
+    await settle();
+    await w.get('[data-test="new-prompt"]').trigger('click');
+    await settle();
+    // The button that opened it is gone; focus is in the draft, not left on the page body.
+    expect(document.activeElement).toBe(w.get('[data-test="prompt-draft"]').element);
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await settle();
+    expect(w.find('[data-test="prompt-editor"]').exists()).toBe(false);
+    expect(document.activeElement).toBe(w.get('[data-test="new-prompt"]').element);
+    w.unmount();
+  });
+
   it('greys out what the harness or the model ignores, with the reason, and never sends it', async () => {
     const create = vi.spyOn(api, 'createConfig');
     const w = mount(ConfigView);

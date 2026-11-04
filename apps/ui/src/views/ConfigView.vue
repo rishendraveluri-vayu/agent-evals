@@ -180,6 +180,7 @@ const nextVersion = computed(() => {
   return `v${n + 1}`;
 });
 const newPromptButton = ref<HTMLButtonElement | null>(null);
+const promptDraft = ref<HTMLTextAreaElement | null>(null);
 /** Cancel, the button or Escape: the draft goes, and focus returns to the button that opened it. */
 async function cancelPromptEdit() {
   if (promptSaving.value) return;
@@ -187,12 +188,16 @@ async function cancelPromptEdit() {
   await nextTick();
   newPromptButton.value?.focus();
 }
-function startPromptEdit() {
+/** Focus moves into the draft: the button that opened it is gone, and Escape only reaches the
+ *  editor from inside it (left on the page body, Escape did nothing). */
+async function startPromptEdit() {
   if (!prompt.value) return;
   draftText.value = prompt.value.text;
   promptRefusal.value = null;
   promptSaved.value = null;
   editingPrompt.value = true;
+  await nextTick();
+  promptDraft.value?.focus();
 }
 async function savePrompt() {
   const base = prompt.value;
@@ -675,6 +680,7 @@ watch(
             <label class="field">
               <span class="strong">{{ prompt.id }} {{ nextVersion }}, from {{ prompt.version }}</span>
               <textarea
+                ref="promptDraft"
                 v-model="draftText"
                 rows="18"
                 class="mono prompt-draft"
