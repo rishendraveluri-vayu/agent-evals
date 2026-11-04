@@ -60,6 +60,57 @@ describe('ConfigView in fixture mode', () => {
     expect(w.find('.table-scroll').exists()).toBe(false);
   });
 
+  it('names a new config with its model, and says so plainly when saving returns one that exists', async () => {
+    // As the API does for the same content: it answers with the stored config, under its own name.
+    const v2 = (configs as unknown as Config[]).find((c) => c.name === 'Prompt v2 on Hermes') as Config;
+    const create = vi.spyOn(api, 'createConfig').mockResolvedValueOnce(v2);
+    const w = mount(ConfigView);
+    await settle();
+    // The baseline with the newest prompt is exactly the saved "Prompt v2 on Hermes".
+    expect((w.get('[data-test="config-name"]').element as HTMLInputElement).value).toBe('Prompt v2 on Hermes, Claude Haiku 5.5');
+    expect(w.get('[data-test="config-name"]').attributes('maxlength')).toBe('120');
+    expect(w.get('[data-test="same-as"]').text()).toContain('Same content as “Prompt v2 on Hermes”: saving returns that config, under its own name.');
+    await w.get('[data-test="config-name"]').setValue('My better name');
+    await w.get('[data-test="save-config"]').trigger('click');
+    await settle();
+    expect(create.mock.calls[0][0].name).toBe('My better name');
+    const notice = w.get('[data-test="config-exists"]').text();
+    expect(notice).toContain('This config already exists as “Prompt v2 on Hermes” (7f3a9c2), so nothing new was saved and the name typed here was not used.');
+    expect(notice).toContain('A name is only a label');
+    expect(w.find('[data-test="open-saved"]').exists()).toBe(true);
+  });
+
+  it('says by each field why a value cannot be saved, follows the API on types, and adds upper bounds it says are its own', async () => {
+    const create = vi.spyOn(api, 'createConfig');
+    const w = mount(ConfigView);
+    await settle();
+    await w.get('#setting-max_steps').setValue('abc');
+    await settle();
+    expect(w.get('[data-test="problem-max_steps"]').text()).toBe('Max steps must be a whole number from 1 to 200; “abc” is not a number.');
+    expect(w.get('#setting-max_steps').attributes('aria-invalid')).toBe('true');
+    expect(w.get('#setting-max_steps').attributes('aria-describedby')).toBe('problem-max_steps');
+    expect(w.get('[data-test="save-blocked"]').text()).toBe('Not saved yet: Max steps must be a whole number from 1 to 200; “abc” is not a number.');
+    expect(w.get('[data-test="save-config"]').attributes('disabled')).toBeDefined();
+    expect(w.get('[data-test="save-config"]').attributes('aria-describedby')).toBe('save-blocked');
+    await w.get('#setting-max_steps').setValue('1000000');
+    await settle();
+    expect(w.get('[data-test="problem-max_steps"]').text()).toContain('more is almost always a typo');
+    await w.get('#setting-max_steps').setValue('12');
+    await w.get('#setting-max_output_tokens').setValue('99999999999');
+    await w.get('#setting-timeout_s').setValue('86400000');
+    await settle();
+    expect(w.get('[data-test="problem-max_output_tokens"]').text()).toContain('from 1 to 64,000');
+    expect(w.get('[data-test="problem-timeout_s"]').text()).toContain('at most 3,600 (one hour)');
+    await w.get('#setting-max_output_tokens').setValue('1024');
+    await w.get('#setting-timeout_s').setValue('180');
+    await w.get('[data-test="config-name"]').setValue('   ');
+    await settle();
+    expect(w.get('[data-test="save-blocked"]').text()).toBe('Give the config a name to save it.');
+    await w.get('[data-test="save-config"]').trigger('click');
+    await settle();
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('greys out what the harness or the model ignores, with the reason, and never sends it', async () => {
     const create = vi.spyOn(api, 'createConfig');
     const w = mount(ConfigView);

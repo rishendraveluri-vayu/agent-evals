@@ -163,11 +163,43 @@ describe('Build an agent, in fixture mode', () => {
     const create = vi.spyOn(api, 'createConfig');
     const view = await open();
     await setNumber(view, 'timeout_s', 'soon');
-    expect(view.get('[data-test="save-blocked"]').text()).toBe('Timeout must be a number above 0 (step 4).');
+    expect(view.get('[data-test="save-blocked"]').text()).toBe('Step 4: Timeout must be a number of seconds above 0 and at most 3,600 (one hour); “soon” is not a number.');
+    expect(view.get('[data-test="problem-timeout_s"]').text()).toBe('Timeout must be a number of seconds above 0 and at most 3,600 (one hour); “soon” is not a number.');
+    expect(view.get('#build-timeout_s').attributes('aria-invalid')).toBe('true');
     expect(view.get('[data-test="save-agent"]').attributes('disabled')).toBeDefined();
+    expect(view.get('[data-test="save-agent"]').attributes('aria-describedby')).toBe('build-save-blocked');
     await view.get('form').trigger('submit');
     await settle();
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it('follows the API on whole numbers and adds an upper bound it says is its own', async () => {
+    const view = await open();
+    await setNumber(view, 'max_steps', '2.5');
+    expect(view.get('[data-test="problem-max_steps"]').text()).toBe('Max steps must be a whole number from 1 to 200, with no decimals.');
+    await setNumber(view, 'max_steps', '0');
+    expect(view.get('[data-test="problem-max_steps"]').text()).toBe('Max steps must be a whole number from 1 to 200.');
+    await setNumber(view, 'max_steps', '1000000');
+    expect(view.get('[data-test="problem-max_steps"]').text()).toBe('Max steps must be a whole number from 1 to 200: more is almost always a typo, and a runaway trial costs money.');
+    await setNumber(view, 'max_steps', '200');
+    expect(view.find('[data-test="problem-max_steps"]').exists()).toBe(false);
+    await setNumber(view, 'max_output_tokens', '99999999999');
+    expect(view.get('[data-test="problem-max_output_tokens"]').text()).toContain('a whole number from 1 to 64,000');
+    await setNumber(view, 'max_output_tokens', '64000');
+    await setNumber(view, 'timeout_s', '86400000');
+    expect(view.get('[data-test="problem-timeout_s"]').text()).toContain('at most 3,600 (one hour)');
+    await setNumber(view, 'timeout_s', '0.5');
+    expect(view.find('[data-test="problem-timeout_s"]').exists()).toBe(false);
+    expect(view.get('[data-test="save-agent"]').attributes('disabled')).toBeUndefined();
+  });
+
+  it('caps the name and says why Save is off when it is empty', async () => {
+    const view = await open();
+    expect(view.get('[data-test="agent-name"]').attributes('maxlength')).toBe('120');
+    await view.get('[data-test="agent-name"]').setValue('   ');
+    await settle();
+    expect(view.get('[data-test="save-blocked"]').text()).toBe('Give the agent a name to save it.');
+    expect(view.get('[data-test="save-agent"]').attributes('disabled')).toBeDefined();
   });
 
   it('shows the API refusal and its fix when saving fails', async () => {
@@ -237,7 +269,10 @@ describe('Build an agent, in fixture mode', () => {
     await view.get('[data-test="agent-name"]').setValue('Same agent again');
     await view.get('[data-test="save-agent"]').trigger('click');
     await settle();
-    expect(view.get('[data-test="saved-status"]').text()).toMatch(/^This agent was already saved as Own loop, Gemini 3\.8 Flash, finance-advisor v2, [0-9a-f]{7}; nothing new was written\.$/);
+    // The name typed the second time is dropped by the API: the page says so, and why.
+    expect(view.get('[data-test="saved-status"]').text()).toMatch(
+      /^This agent already exists as “Own loop, Gemini 3\.8 Flash, finance-advisor v2” \([0-9a-f]{7}\), so nothing new was saved and the name typed here was not used\. A name is only a label/,
+    );
   });
 
   it('writes a new prompt as the next version through POST /prompts, then uses it', async () => {

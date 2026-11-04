@@ -20,6 +20,7 @@ import { harnessFacts, harnessTagline, memoryLine } from '../lib/harnessInfo';
 import { mdBlocks } from '../lib/markdown';
 import { isFake } from '../lib/models';
 import { harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
+import { NAME_MAX, settingProblem } from '../lib/limits';
 import { ignoredReasons } from '../lib/settings';
 import { href } from '../router';
 
@@ -181,6 +182,16 @@ watch(suggestedName, (n) => {
   if (!nameTouched.value) form.name = n;
 });
 
+/** Why a typed setting cannot be saved, by setting, shown under its field. */
+const problems = computed<Partial<Record<Shown, string>>>(() => {
+  const out: Partial<Record<Shown, string>> = {};
+  for (const name of NUMBER_SETTINGS) {
+    const problem = usable(name) ? settingProblem(name, form.numbers[name]) : null;
+    if (problem) out[name] = problem;
+  }
+  return out;
+});
+
 /** Why the agent cannot be saved yet, in words; null when it can. */
 const blocked = computed<string | null>(() => {
   if (!harness.value) return 'Pick an agent type (step 1).';
@@ -188,11 +199,9 @@ const blocked = computed<string | null>(() => {
   if (promptMode.value === 'write') return 'Save your prompt first, or go back to a saved one (step 3).';
   if (!prompt.value) return 'Pick a prompt (step 3).';
   if (!toolset.value) return 'The API lists no toolset.';
-  for (const name of NUMBER_SETTINGS) {
-    const raw = form.numbers[name]?.trim();
-    if (usable(name) && raw && !(Number.isFinite(Number(raw)) && Number(raw) > 0)) return `${settingLabel(name)} must be a number above 0 (step 4).`;
-  }
-  if (!form.name.trim()) return 'Give the agent a name.';
+  const problem = NUMBER_SETTINGS.map((name) => problems.value[name]).find(Boolean);
+  if (problem) return `Step 4: ${problem}`;
+  if (!form.name.trim()) return 'Give the agent a name to save it.';
   return null;
 });
 
@@ -216,7 +225,9 @@ async function save() {
       settings: settings.value,
     });
     data.value = { ...d, configs: await api.configs() };
-    saved.value = { config, existed: known.has(config.hash) };
+    // The API returns the stored agent when this content exists already, under the name it was
+    // first saved with; the name typed here is not used.
+    saved.value = { config, existed: known.has(config.hash) || config.name !== form.name.trim() };
   } catch (err) {
     saveError.value = errorWithFix(err);
   } finally {
@@ -595,7 +606,15 @@ const runLink = computed(() => {
               class="num num-input"
               :placeholder="usable(name) ? `${DEFAULT_WORDS[name]} (default)` : 'Not available'"
               :disabled="!usable(name)"
+              :aria-invalid="problems[name] ? 'true' : undefined"
+              :aria-describedby="problems[name] ? `build-problem-${name}` : undefined"
             >
+            <span
+              v-if="problems[name]"
+              :id="`build-problem-${name}`"
+              class="smaller problem"
+              :data-test="`problem-${name}`"
+            >{{ problems[name] }}</span>
             <label
               v-else
               class="toggle"
@@ -646,9 +665,11 @@ const runLink = computed(() => {
           <input
             v-model="form.name"
             type="text"
+            :maxlength="NAME_MAX"
             data-test="agent-name"
             @input="nameTouched = true"
           >
+          <span class="secondary smaller">A label for lists, up to {{ NAME_MAX }} characters. It is not part of the agent's identity: the same choices are one agent, whatever it is called.</span>
         </label>
         <p
           v-if="saveError"
@@ -660,6 +681,7 @@ const runLink = computed(() => {
         </p>
         <p
           v-else-if="blocked"
+          id="build-save-blocked"
           class="secondary small blocked"
           data-test="save-blocked"
         >
@@ -670,6 +692,7 @@ const runLink = computed(() => {
             type="submit"
             class="btn"
             :disabled="saving || !!blocked"
+            :aria-describedby="blocked ? 'build-save-blocked' : undefined"
             data-test="save-agent"
           >
             Save agent
@@ -688,7 +711,7 @@ const runLink = computed(() => {
             data-test="saved-status"
           >
             <template v-if="saved.existed">
-              This agent was already saved as {{ saved.config.name }}, <span class="mono">{{ shortHash(saved.config.hash) }}</span>; nothing new was written.
+              This agent already exists as “{{ saved.config.name }}” (<span class="mono">{{ shortHash(saved.config.hash) }}</span>), so nothing new was saved and the name typed here was not used. A name is only a label: the same agent type, model, prompt and settings are one agent, whatever it is called.
             </template>
             <template v-else>
               Saved as {{ saved.config.name }}, <span class="mono">{{ shortHash(saved.config.hash) }}</span>.
@@ -1029,6 +1052,10 @@ const runLink = computed(() => {
 
 .reason {
   color: var(--ink-2);
+}
+
+.problem {
+  color: var(--error);
 }
 
 .all-settings {

@@ -12,6 +12,7 @@ import { mdBlocks } from '../lib/markdown';
 import { shortHash, shortRef } from '../lib/format';
 import { BOOLEAN_SETTINGS, harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
 import { agentModels, fakeDoes, isFake } from '../lib/models';
+import { NAME_MAX, settingProblem } from '../lib/limits';
 import { ignoredReasons, toggleValue } from '../lib/settings';
 import { href, navigate } from '../router';
 import { text } from '../trials';
@@ -51,6 +52,8 @@ const saving = ref(false);
 /** A refusal from POST /configs: its message, the API's fix, and the field it is about. */
 const refusal = ref<{ field: string | null; code: string; message: string; fix: string | null } | null>(null);
 const saved = ref<ConfigView | null>(null);
+/** The save returned a config that was already stored (the same content, under its own name). */
+const existed = ref(false);
 const apiDiff = shallowRef<ConfigDiffEntry[] | null>(null);
 const showPrompt = ref(false);
 const showPromptDiff = ref(false);
@@ -202,17 +205,29 @@ async function savePrompt() {
   }
 }
 
-const suggestedName = computed(() => (prompt.value && harness.value ? `Prompt ${prompt.value.version} on ${harnessShort(harness.value.name)}` : ''));
+/** "Prompt v2 on Hermes, Claude Haiku 5.5": the model is in it, so two configs that differ only in
+ *  their model never share a name in a list. */
+const suggestedName = computed(() => (prompt.value && harness.value ? `Prompt ${prompt.value.version} on ${harnessShort(harness.value.name)}${form.model ? `, ${modelName(form.model)}` : ''}` : ''));
 watch(suggestedName, (n) => {
   if (!nameTouched.value) form.name = n;
 });
 
-const invalid = computed(() => {
+/** Why a typed setting cannot be saved, by setting, shown by its field. */
+const problems = computed<Partial<Record<SettingName, string>>>(() => {
+  const out: Partial<Record<SettingName, string>> = {};
   for (const name of SETTING_NAMES) {
-    const raw = form.numbers[name]?.trim();
-    if (supported(name) && !isIgnored(name) && raw && !Number.isFinite(Number(raw))) return `${settingLabel(name)} must be a number.`;
+    if (!supported(name) || isIgnored(name) || BOOLEAN_SETTINGS.includes(name)) continue;
+    const problem = settingProblem(name, form.numbers[name]);
+    if (problem) out[name] = problem;
   }
-  if (!form.name.trim()) return 'Give the config a name.';
+  return out;
+});
+
+/** Why Save is off, in words; null when it is on. */
+const invalid = computed(() => {
+  const first = SETTING_NAMES.find((name) => problems.value[name]);
+  if (first) return `Not saved yet: ${problems.value[first]}`;
+  if (!form.name.trim()) return 'Give the config a name to save it.';
   return null;
 });
 
@@ -364,7 +379,8 @@ function fieldOf(err: ApiError): string | null {
 const refusalFor = (field: string) => (refusal.value?.field === field ? refusal.value : null);
 
 async function save(thenRun: boolean) {
-  if (invalid.value || !harness.value || !prompt.value || !toolset.value) return;
+  const d0 = data.value;
+  if (invalid.value || !d0 || !harness.value || !prompt.value || !toolset.value) return;
   saving.value = true;
   refusal.value = null;
   try {
@@ -379,6 +395,9 @@ async function save(thenRun: boolean) {
       ...(seed.value ? { seed: seed.value } : {}),
       ...(forkOf.value ? { parent_hash: forkOf.value.hash } : {}),
     });
+    // The API returns the stored config when this content exists already, under the name it was
+    // first saved with; the name typed here is not used.
+    existed.value = d0.configs.some((c) => c.hash === config.hash) || config.name !== form.name.trim();
     saved.value = config;
     apiDiff.value = base.value && base.value.hash !== config.hash ? await api.configDiff(base.value.hash, config.hash) : [];
     if (thenRun) navigate(href.runNew(base.value && base.value.hash !== config.hash ? base.value.hash : undefined, config.hash));
@@ -402,6 +421,7 @@ watch(
   () => [form.harness, form.model, form.prompt, form.toolset, JSON.stringify(settings.value), JSON.stringify(harnessOptions.value), JSON.stringify(seed.value)],
   () => {
     saved.value = null;
+    existed.value = false;
     apiDiff.value = null;
   },
 );
@@ -806,9 +826,15 @@ watch(
                         class="num-input num"
                         :disabled="!supported(name) || isIgnored(name)"
                         :placeholder="supported(name) && !isIgnored(name) ? 'Unset' : 'Not available'"
-                        :aria-invalid="refusalFor(name) ? 'true' : undefined"
-                        :aria-describedby="refusalFor(name) ? `refusal-${name}` : undefined"
+                        :aria-invalid="refusalFor(name) || problems[name] ? 'true' : undefined"
+                        :aria-describedby="refusalFor(name) ? `refusal-${name}` : problems[name] ? `problem-${name}` : undefined"
                       >
+                      <span
+                        v-if="problems[name]"
+                        :id="`problem-${name}`"
+                        class="problem smaller"
+                        :data-test="`problem-${name}`"
+                      >{{ problems[name] }}</span>
                     </td>
                     <td
                       class="secondary"
@@ -929,6 +955,7 @@ watch(
                       v-model="k.name"
                       type="text"
                       class="mono"
+                      maxlength="64"
                       pattern="[a-z0-9][a-z0-9-]*"
                     >
                   </label>
@@ -937,6 +964,7 @@ watch(
                     <input
                       v-model="k.description"
                       type="text"
+                      maxlength="300"
                     >
                   </label>
                   <label class="field">
@@ -1034,9 +1062,11 @@ watch(
             <input
               v-model="form.name"
               type="text"
+              :maxlength="NAME_MAX"
               data-test="config-name"
               @input="nameTouched = true"
             >
+            <span class="secondary smaller">A label for lists: up to {{ NAME_MAX }} characters. It is not part of the config's identity.</span>
           </label>
           <div>
             <span class="secondary smaller block">Content hash</span>
@@ -1049,7 +1079,10 @@ watch(
               v-else
               class="hash-pending"
             >Not saved yet</span>
-            <span class="secondary smaller block">{{ sameAs && !saved ? 'Same content as a saved config, so saving returns it. ' : '' }}Changes whenever anything on this page changes.</span>
+            <span
+              class="secondary smaller block"
+              data-test="same-as"
+            ><template v-if="sameAs && !saved">Same content as “{{ sameAs.name }}”: saving returns that config, under its own name. </template>Changes whenever anything on this page changes.</span>
           </div>
           <div
             v-if="data.configs.length"
@@ -1118,10 +1151,16 @@ watch(
             ><strong>Fix:</strong> {{ refusal.fix }}</span>
           </p>
           <p
-            v-else-if="invalid"
-            class="secondary small"
+            v-else-if="saved && existed"
+            class="small saved"
+            role="status"
+            data-test="config-exists"
           >
-            {{ invalid }}
+            This config already exists as “{{ saved.name }}” (<span class="mono">{{ shortHash(saved.hash) }}</span>), so nothing new was saved and the name typed here was not used. A name is only a label: the same harness, model, prompt, tools and settings are one config, whatever it is called.
+            <a
+              :href="href.configPage(saved.hash)"
+              data-test="open-saved"
+            >Open it</a>
           </p>
           <p
             v-else-if="saved"
@@ -1138,6 +1177,7 @@ watch(
               type="button"
               class="btn"
               :disabled="saving || !!invalid"
+              :aria-describedby="invalid ? 'save-blocked' : undefined"
               data-test="save-config"
               @click="save(false)"
             >
@@ -1147,11 +1187,20 @@ watch(
               type="button"
               class="btn btn--quiet"
               :disabled="saving || !!invalid"
+              :aria-describedby="invalid ? 'save-blocked' : undefined"
               data-test="save-and-run"
               @click="save(true)"
             >
               Save and set up a run
             </button>
+            <p
+              v-if="invalid"
+              id="save-blocked"
+              class="secondary small"
+              data-test="save-blocked"
+            >
+              {{ invalid }}
+            </p>
           </div>
         </section>
         <section
@@ -1276,6 +1325,14 @@ watch(
 .refusal-row td {
   padding-top: 0;
   border-top: 0;
+}
+
+/* Why a typed value cannot be saved, by its field: in words, in the error colour. */
+.problem {
+  display: block;
+  margin-top: 4px;
+  max-width: 220px;
+  color: var(--error);
 }
 
 .ignored-reason {
