@@ -144,24 +144,53 @@ simulated-client task the API also summarises that file (profile and debts) into
   (`apps/api/src/experiments/order.ts`), so the order can be rebuilt anywhere from the seed. `seq`
   stays the slot's number in plan order (repeat, task, config), which the export and the trial
   list are sorted by.
-- `POST /experiments/:id/start` starts a `created` experiment or resumes a `paused` one (and
-  marks it `done` if nothing is left to claim); `POST /experiments/:id/cancel` (queued trials
-  become `cancelled`; running ones finish), from `created`, `running` or `paused`.
-- An experiment's `status` is `created`, `running`, `paused`, `done` or `cancelled`. **`paused`
-  (D26):** a report labelled `infra:config_error` moves a running experiment to `paused`, with
-  `paused_at` and a `paused_reason` naming the trial, its config, LiteLLM's status and the
-  provider's message. Nothing is claimed while paused; trials already running finish and report
-  (a re-queued attempt waits, queued, for the resume). Fix the setup (a key, the model, a refused
-  setting), then start it again, or cancel it.
+- **Run controls (D32, D37).** Each returns the experiment detail.
+
+  | Call | From | Does |
+  | --- | --- | --- |
+  | `POST /experiments/:id/start` | `created`, `paused` | starts it, or resumes it (as `/resume`); marks it `done` if nothing is left to claim |
+  | `POST /experiments/:id/pause` | `running` (a `paused` one: no-op) | no new claims; trials already running finish and report; event `paused` |
+  | `POST /experiments/:id/resume` | `paused` (a `running` one: no-op) | claims resume; event `resumed` |
+  | `POST /experiments/:id/stop` (also `/cancel`) | `created`, `running`, `paused` | queued trials become `cancelled`; running ones finish and are kept; status `cancelled` |
+  | `POST /experiments/:id/arms/:config/pause` | not `done` or `cancelled` | that arm claims nothing more; event `arm_paused` |
+  | `POST /experiments/:id/arms/:config/resume` | any | that arm's queued trials can be claimed again; event `arm_resumed` |
+
+  `:config` is the arm's config hash (or its letter, `A` or `B`). A wrong state is a 409
+  (`experiment_not_started`, `experiment_finished`) and an unknown arm a 404 `unknown_arm`, each
+  with a `fix`.
+- An experiment's `status` is `created`, `running`, `paused`, `done` or `cancelled`. `paused` is
+  the whole experiment, by hand or by D32's futility check and guards (below); `paused_at` and
+  `paused_reason` are the latest. A re-queued attempt made while paused waits, queued.
+- **A config error pauses only its arm (D37, amending D26).** A report labelled
+  `infra:config_error` pauses that trial's arm, not the experiment: claims skip the arm's trials,
+  its running trials finish, and the other arm keeps claiming. The arm's `paused_reason` names the
+  trial, its config, LiteLLM's status and the provider's message; its `fix` says what to do by
+  LiteLLM's status (401/403: the key in LiteLLM's environment; 404: the model's route; 400: a
+  setting the model rejects needs a forked config and a new experiment, a key or account problem
+  is fixed in LiteLLM), then resume the arm. If that was the last trial, the experiment is `done`
+  with the arm still paused, and compare waits until the arm is resumed.
+- `arms` in the experiment detail: `[{arm, config_hash, config_name, status, paused_at,
+  paused_reason, fix, counts}]`, arm A first. `status` is `not_started`, `active` (trials
+  queued or running), `paused`, `stopped` (some of its trials were cancelled) or `complete`
+  (every slot has a final attempt: done, or an infra failure that is not re-queued).
 - `GET /experiments` returns `[{id, name, axis, status, config_hashes, n, counts, spend_usd,
   estimate, created_at}]`, where `counts` is `{queued, running, done, infra_failed,
   abandoned, cancelled}` and done is split by label.
-- `GET /experiments/:id` adds `tasks`, `configs`, `paused_at`, `paused_reason`, `events`
-  (claims, infra failures, config errors, re-queues, budget trips, the latest pause and resume,
-  newest first).
+- `GET /experiments/:id` adds `tasks`, `configs`, `arms`, `order_seed`, `paused_at`,
+  `paused_reason` and `events`, newest first: `[{at, kind, trial_id, attempt, arm, config_hash,
+  detail}]`. Claims, infra failures, config errors, re-queues, budget trips, abandons and file
+  problems come from the trial rows; pauses and resumes (`paused`, `resumed`, `arm_paused`,
+  `arm_resumed`, `futility_pause`, `infra_guard_pause`, `spend_guard_pause`) and the `baseline`
+  decision are stored as they happen.
 - `GET /experiments/:id/trials?status=&config=&task=` returns trial summaries.
-- `GET /experiments/:id/compare` returns per task and arm `{task, config, passed, graded,
-  trials}` and, once SP6 exists, the intervals and verdict. Until then `stats` is `null`.
+- `GET /experiments/:id/compare` returns `{experiment_id, status, reason, arms, rows, stats}`.
+  **No comparison until every arm is complete** (D37, D32): while `status` is `incomplete`,
+  `reason` says why ("arm B is paused: ...", "the experiment was stopped before every trial ran
+  (...); a verdict needs the full planned N (D32)", "the experiment is paused: ...", "arm A has 3
+  trials queued or running", "the experiment has not been started") and `rows` is empty, so no
+  pass counts are shown off a partial run. Once `complete`, `rows` holds per task and arm `{task,
+  task_id, arm, config, config_name, passed, graded, trials, infra_failed, abandoned}` and, once
+  SP6 exists, the intervals and verdict. Until then `stats` is `null`.
 - `GET /experiments/:id/export?format=json|csv` streams trials joined with configs, tasks,
   grades and spend.
 
@@ -241,8 +270,8 @@ trial cannot read or change another trial's stored files (D3).
    is a no-op 200. The API revokes the trial's keys, stores the report, and sets the status:
    `done` for an `agent` label; for an `infra:*` label, `infra_failed` and, if this was
    attempt 1, a new `queued` attempt 2 (D16: re-queued once, never twice), except for the two
-   labels that are never re-queued (D26): `infra:config_error`, which also pauses the
-   experiment, and `infra:budget_net`. `infra:provider_error`, `infra:adapter_crash` and
+   labels that are never re-queued (D26): `infra:config_error`, which also pauses its arm
+   (D37), and `infra:budget_net`. `infra:provider_error`, `infra:adapter_crash` and
    `infra:timeout_kill` are re-queued once.
 6. A lease with no heartbeat for 60 s lapses: the API marks the attempt `abandoned`, revokes
    its keys, and queues the next attempt under the same cap (also while the experiment is

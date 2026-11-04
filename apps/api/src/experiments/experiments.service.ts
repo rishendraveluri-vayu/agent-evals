@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
+  ArmView,
   CompareResponse,
   CreateExperimentRequest,
   Estimate,
@@ -26,6 +27,7 @@ import { LiteLlmClient } from '../litellm/litellm.client';
 import { SIM_MAX_OUTPUT_TOKENS, simTemperature } from '../worker/spec-builder';
 import { type CellInput, type Price, estimate } from './estimate';
 import { claimOrder, isSeed, newSeed } from './order';
+import { type ArmRow, addEvent, pauseArm, pauseExperiment } from './run-state';
 
 /** D35: arm A and arm B, or one config for a pilot. */
 export const MAX_ARMS = 2;
@@ -291,28 +293,87 @@ export class ExperimentsService {
 
   // ---- lifecycle ----
 
-  /** Starts a created experiment, or resumes a paused one (D26); a running one is left as it is. */
+  /** Starts a created experiment, or resumes a paused one; a running one is left as it is. */
   async start(id: string): Promise<ExperimentDetail> {
     const exp = await this.row(id);
     if (exp.status === 'done' || exp.status === 'cancelled') {
-      throw conflict('experiment_finished', `experiment ${id} is ${exp.status} and cannot start again`);
+      throw conflict('experiment_finished', `experiment ${id} is ${exp.status} and cannot start again`, 'Create a new experiment, with this one as its parent.');
     }
+    if (exp.status === 'paused') return this.resume(id);
     await this.db.tx(async (client) => {
       await client.query(`UPDATE experiments SET status = 'running', started_at = coalesce(started_at, now()) WHERE id = $1 AND status = 'created'`, [id]);
-      await client.query(`UPDATE experiments SET status = 'running', resumed_at = now() WHERE id = $1 AND status = 'paused'`, [id]);
+      await finishIfDone(client, id);
+    });
+    return this.get(id);
+  }
+
+  /** D32: stops new claims; trials already running finish and report. A paused one stays paused. */
+  async pause(id: string): Promise<ExperimentDetail> {
+    const exp = await this.row(id);
+    if (exp.status === 'created') throw conflict('experiment_not_started', `experiment ${id} has not started`, 'Start it, or stop it; there is nothing to pause yet.');
+    if (exp.status === 'done' || exp.status === 'cancelled') throw conflict('experiment_finished', `experiment ${id} is ${exp.status}`);
+    await this.db.tx((client) => pauseExperiment(client, id, 'paused', 'paused by hand: new claims stop; trials already running finish'));
+    return this.get(id);
+  }
+
+  /** Resumes a paused experiment (whatever paused it); arm pauses are separate (D37). */
+  async resume(id: string): Promise<ExperimentDetail> {
+    const exp = await this.row(id);
+    if (exp.status === 'created') throw conflict('experiment_not_started', `experiment ${id} has not started`, `POST /experiments/${id}/start to start it.`);
+    if (exp.status === 'done' || exp.status === 'cancelled') throw conflict('experiment_finished', `experiment ${id} is ${exp.status} and cannot resume`);
+    await this.db.tx(async (client) => {
+      const { rowCount } = await client.query(`UPDATE experiments SET status = 'running', resumed_at = now() WHERE id = $1 AND status = 'paused'`, [id]);
+      if (rowCount) await addEvent(client, { experimentId: id, kind: 'resumed', detail: 'claims resumed' });
       // A pause can come with the last trial: then there is nothing left to claim.
       await finishIfDone(client, id);
     });
     return this.get(id);
   }
 
-  /** Queued trials become cancelled; claimed and running ones finish and are kept. */
+  /** Stop (D32), also served as cancel: queued trials become cancelled; claimed and running ones finish and are kept. */
   async cancel(id: string): Promise<ExperimentDetail> {
     const exp = await this.row(id);
     if (exp.status === 'done') throw conflict('experiment_finished', `experiment ${id} is already done`);
     await this.db.tx(async (client) => {
       await client.query(`UPDATE experiments SET status = 'cancelled', cancelled_at = now() WHERE id = $1 AND status IN ('created', 'running', 'paused')`, [id]);
       await client.query(`UPDATE trials SET status = 'cancelled', finished_at = now() WHERE experiment_id = $1 AND status = 'queued'`, [id]);
+    });
+    return this.get(id);
+  }
+
+  /** The arm row for `configHash` (its hash, or `A`/`B`), or a 404. */
+  private async armRow(id: string, configHash: string): Promise<ArmRow> {
+    const exp = await this.row(id);
+    const hash = normalizeSha(configHash);
+    const [arm] = await this.db.query<ArmRow>('SELECT * FROM experiment_arms WHERE experiment_id = $1 AND (config_hash = $2 OR arm = $3)', [exp.id, hash, configHash.toUpperCase()]);
+    if (!arm) throw notFound('unknown_arm', `experiment ${id} has no arm ${configHash}`, `Use one of the experiment's config hashes: ${exp.config_hashes.join(', ')}.`);
+    return arm;
+  }
+
+  /** D37: pauses one arm by hand. Its queued trials wait; the other arm keeps claiming. */
+  async pauseArm(id: string, configHash: string): Promise<ExperimentDetail> {
+    const arm = await this.armRow(id, configHash);
+    const exp = await this.row(id);
+    if (exp.status === 'done' || exp.status === 'cancelled') throw conflict('experiment_finished', `experiment ${id} is ${exp.status}`);
+    await this.db.tx((client) =>
+      pauseArm(client, id, arm.config_hash, 'paused by hand: this arm claims nothing more; its running trials finish', `POST /experiments/${id}/arms/${arm.config_hash}/resume to continue it.`),
+    );
+    return this.get(id);
+  }
+
+  /** D37: resumes a paused arm; its queued trials can be claimed again. */
+  async resumeArm(id: string, configHash: string): Promise<ExperimentDetail> {
+    const arm = await this.armRow(id, configHash);
+    await this.db.tx(async (client) => {
+      const { rowCount } = await client.query(
+        `UPDATE experiment_arms SET paused_at = NULL, paused_reason = NULL, paused_fix = NULL, resumed_at = now()
+         WHERE experiment_id = $1 AND config_hash = $2 AND paused_at IS NOT NULL`,
+        [id, arm.config_hash],
+      );
+      if (rowCount) {
+        await addEvent(client, { experimentId: id, kind: 'arm_resumed', detail: `arm ${arm.arm} resumed: its queued trials can be claimed`, configHash: arm.config_hash });
+      }
+      await finishIfDone(client, id);
     });
     return this.get(id);
   }
@@ -400,25 +461,76 @@ export class ExperimentsService {
       finished_at: iso(r.finished_at),
       paused_at: iso(r.paused_at),
       paused_reason: r.paused_reason,
+      arms: await this.arms(r),
       tasks: r.task_sha256s.map((s) => tasks.find((t) => t.sha256 === s)).filter((t): t is StoredTask => !!t).map((t) => taskView(t)),
       configs: r.config_hashes.map((h) => configs.find((c) => c.hash === h)).filter((c): c is ConfigRow => !!c).map(configView),
       events: await this.events(r),
     };
   }
 
-  /** Derived from the trial rows and the experiment's own times, so nothing extra is stored. */
+  /** Each arm's state and trial counts (D35, D37), arm A first. */
+  async arms(r: ExperimentRow): Promise<ArmView[]> {
+    const rows = await this.db.query<ArmRow & { config_name: string }>(
+      `SELECT a.*, c.name AS config_name FROM experiment_arms a JOIN configs c ON c.hash = a.config_hash WHERE a.experiment_id = $1 ORDER BY a.position`,
+      [r.id],
+    );
+    const counts = await this.db.query<{ config_hash: string; status: TrialStatus; n: number }>(
+      'SELECT config_hash, status, count(*)::int AS n FROM trials WHERE experiment_id = $1 GROUP BY config_hash, status',
+      [r.id],
+    );
+    return rows.map((a) => {
+      const c = { queued: 0, running: 0, done: 0, infra_failed: 0, abandoned: 0, cancelled: 0 };
+      for (const row of counts.filter((x) => x.config_hash === a.config_hash)) c[row.status === 'claimed' ? 'running' : row.status] += row.n;
+      const status: ArmView['status'] = a.paused_at
+        ? 'paused'
+        : r.status === 'created'
+          ? 'not_started'
+          : c.queued + c.running > 0
+            ? 'active'
+            : c.cancelled > 0
+              ? 'stopped'
+              : 'complete';
+      return {
+        arm: a.arm,
+        config_hash: a.config_hash,
+        config_name: a.config_name,
+        status,
+        paused_at: iso(a.paused_at),
+        paused_reason: a.paused_reason,
+        fix: a.paused_fix,
+        counts: c,
+      };
+    });
+  }
+
+  /**
+   * The trial rows' own events (claims, failures, re-queues) are derived from them; the run's
+   * state changes (pauses, resumes, the baseline decision) are stored in experiment_events.
+   */
   private async events(r: ExperimentRow): Promise<ExperimentEvent[]> {
     const events: ExperimentEvent[] = [];
-    const add = (at: Date | null, kind: ExperimentEventKind, detail: string, trial: { id: string; attempt: number } | null = null): void => {
-      if (at) events.push({ at: at.toISOString(), kind, trial_id: trial?.id ?? null, attempt: trial?.attempt ?? null, detail });
+    const armOf = new Map(r.config_hashes.map((h, i) => [h, String.fromCharCode(65 + i)]));
+    const add = (at: Date | null, kind: ExperimentEventKind, detail: string, trial: { id: string; attempt: number; config_hash?: string } | null = null): void => {
+      const configHash = trial?.config_hash ?? null;
+      if (at) {
+        events.push({ at: at.toISOString(), kind, trial_id: trial?.id ?? null, attempt: trial?.attempt ?? null, arm: configHash ? (armOf.get(configHash) ?? null) : null, config_hash: configHash, detail });
+      }
     };
+    const stored = await this.db.query<{ at: Date; kind: ExperimentEventKind; detail: string; config_hash: string | null; trial_id: string | null; attempt: number | null }>(
+      'SELECT at, kind, detail, config_hash, trial_id, attempt FROM experiment_events WHERE experiment_id = $1 ORDER BY at, id',
+      [r.id],
+    );
+    for (const s of stored) {
+      events.push({ at: s.at.toISOString(), kind: s.kind, trial_id: s.trial_id, attempt: s.attempt, arm: s.config_hash ? (armOf.get(s.config_hash) ?? null) : null, config_hash: s.config_hash, detail: s.detail });
+    }
     add(r.created_at, 'created', `${r.config_hashes.length} configs x ${r.task_sha256s.length} tasks x N=${r.n}`);
     add(r.started_at, 'started', 'trials can be claimed');
-    add(r.cancelled_at, 'cancelled', 'queued trials cancelled; claimed ones finish');
+    add(r.cancelled_at, 'cancelled', 'stopped: queued trials cancelled; claimed ones finish');
     add(r.finished_at, 'finished', 'every trial has finished');
-    // The latest pause and resume only: a second pause overwrites the first's time and reason.
-    add(r.paused_at, 'paused', r.paused_reason ?? 'paused');
-    add(r.resumed_at, 'resumed', 'claims resumed');
+    // Before migration 005 only the latest pause and resume were kept, on the experiment row.
+    const pauses: ExperimentEventKind[] = ['paused', 'futility_pause', 'infra_guard_pause', 'spend_guard_pause'];
+    if (!stored.some((s) => pauses.includes(s.kind))) add(r.paused_at, 'paused', r.paused_reason ?? 'paused');
+    if (!stored.some((s) => s.kind === 'resumed')) add(r.resumed_at, 'resumed', 'claims resumed');
     const trials = await this.db.query<{
       id: string;
       attempt: number;
@@ -431,10 +543,11 @@ export class ExperimentsService {
       created_at: Date;
       problems: string[];
       task_id: string;
+      config_hash: string;
       config_name: string;
     }>(
       `SELECT t.id, t.attempt, t.status, t.label, t.worker_id, t.claimed_at, t.finished_at, t.reported_at, t.created_at,
-              t.problems, k.id AS task_id, c.name AS config_name
+              t.problems, k.id AS task_id, t.config_hash, c.name AS config_name
        FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 JOIN configs c ON c.hash = t.config_hash
        WHERE t.experiment_id = $1`,
       [r.id],
@@ -476,8 +589,30 @@ export class ExperimentsService {
     return rows.map(trialRowSummary);
   }
 
+  /** Why no comparison can be offered yet (D37, D32), or null when every arm is complete. */
+  private incompleteReason(r: ExperimentRow, arms: ArmView[]): string | null {
+    if (r.status === 'created') return 'the experiment has not been started';
+    const paused = arms.filter((a) => a.status === 'paused');
+    if (paused.length) return paused.map((a) => `arm ${a.arm} is paused: ${a.paused_reason ?? 'paused'}`).join('; ');
+    const stopped = arms.filter((a) => a.status === 'stopped');
+    if (stopped.length) {
+      return (
+        `the experiment was stopped before every trial ran (${stopped.map((a) => `${a.counts.cancelled} of arm ${a.arm}'s trials cancelled`).join(', ')}); ` +
+        'a verdict needs the full planned N (D32)'
+      );
+    }
+    if (r.status === 'paused') return `the experiment is paused: ${r.paused_reason ?? 'paused'}`;
+    const active = arms.filter((a) => a.status === 'active');
+    if (active.length) return active.map((a) => `arm ${a.arm} has ${a.counts.queued + a.counts.running} trials queued or running`).join('; ');
+    return null;
+  }
+
   async compare(id: string): Promise<CompareResponse> {
     const r = await this.row(id);
+    const arms = await this.arms(r);
+    const reason = this.incompleteReason(r, arms);
+    if (reason) return { experiment_id: id, status: 'incomplete', reason, arms, rows: [], stats: null };
+    const armOf = new Map(arms.map((a) => [a.config_hash, a.arm]));
     const rows = await this.db.query<{
       task: string;
       task_id: string;
@@ -507,7 +642,14 @@ export class ExperimentsService {
     );
     const order = (task: string, config: string): number => r.task_sha256s.indexOf(task) * 1000 + r.config_hashes.indexOf(config);
     rows.sort((a, b) => order(a.task, a.config) - order(b.task, b.config));
-    return { experiment_id: id, rows, stats: null };
+    return {
+      experiment_id: id,
+      status: 'complete',
+      reason: null,
+      arms,
+      rows: rows.map((row) => ({ ...row, arm: armOf.get(row.config) ?? '?' })),
+      stats: null,
+    };
   }
 }
 

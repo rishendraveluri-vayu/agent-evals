@@ -653,7 +653,7 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     await request(env.http).get(`/api/experiments/${exp.id}/trials?status=bogus`).expect(400);
   });
 
-  it('pauses the experiment on infra:config_error, never re-queues it, and resumes on start (D26)', async () => {
+  it('pauses only the arm on infra:config_error, never re-queues it, and resumes the arm (D26 as amended by D37)', async () => {
     for (const { id } of (await env.pool.query("SELECT id FROM experiments WHERE status IN ('running', 'paused')")).rows as { id: string }[]) await cancel(id);
     const exp = await experiment({ configs: [configA, configB], n: 2 });
     const first = (await claim('w-cfg-1'))!;
@@ -680,26 +680,35 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     ).body as ReportResponse;
     expect(r1).toMatchObject({ status: 'infra_failed', requeued_trial_id: null });
 
+    const badConfig = (first.spec as { trial: { config_hash: string } }).trial.config_hash;
+    const goodConfig = badConfig === configA ? configB : configA;
     let detail = (await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body as ExperimentDetail;
-    expect(detail.status).toBe('paused');
-    expect(detail.paused_reason).toMatch(/emi-basic on arm [AB], attempt 1: infra:config_error \(LiteLLM status 400\): This API key is not scoped to a workspace/);
-    const paused = detail.events.find((e) => e.kind === 'paused');
-    expect(paused?.detail).toBe(detail.paused_reason);
+    expect(detail.status).toBe('running'); // D37: the experiment goes on
+    const bad = detail.arms.find((a) => a.config_hash === badConfig)!;
+    expect(bad.status).toBe('paused');
+    expect(bad.paused_reason).toMatch(/^emi-basic on arm [AB], attempt 1: infra:config_error \(LiteLLM status 400\): This API key is not scoped to a workspace/);
+    expect(bad.fix).toContain('a key or account problem is fixed in LiteLLM');
+    expect(detail.arms.find((a) => a.config_hash === goodConfig)!.status).toBe('active');
+    const paused = detail.events.find((e) => e.kind === 'arm_paused')!;
+    expect(paused).toMatchObject({ trial_id: first.trial_id, config_hash: badConfig, arm: bad.arm, detail: `arm ${bad.arm} paused: ${bad.paused_reason}` });
     expect(detail.events.filter((e) => e.kind === 'config_error').map((e) => e.trial_id)).toEqual([first.trial_id]);
-    expect(await claim('w-cfg-3')).toBeNull(); // nothing is claimed while paused
 
-    // The trial already running finishes and reports. Its provider error is re-queued once, as
-    // always, but the new attempt waits until the experiment resumes.
+    // The trial already running (the other arm) finishes; its provider error is re-queued once, as always.
+    expect((second.spec as { trial: { config_hash: string } }).trial.config_hash).toBe(goodConfig);
     const r2 = await report(second, 'w-cfg-2', 'infra:provider_error');
     expect(r2.requeued_trial_id).toEqual(expect.any(String));
-    expect(await claim('w-cfg-3')).toBeNull();
-    expect((await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body).toMatchObject({ status: 'paused' });
+    // Claims go on, from the good arm only: its re-queued attempt and its other slot.
+    const claimed = [];
+    for (let c = await claim('w-cfg-3'); c; c = await claim('w-cfg-3')) claimed.push(c);
+    expect(claimed.map((c) => (c.spec as { trial: { config_hash: string } }).trial.config_hash)).toEqual([goodConfig, goodConfig]);
+    for (const c of claimed) await report(c, 'w-cfg-3');
 
-    detail = (await request(env.http).post(`/api/experiments/${exp.id}/start`).expect(200)).body as ExperimentDetail;
-    expect(detail.status).toBe('running');
-    expect(detail.events.some((e) => e.kind === 'resumed')).toBe(true);
+    // Resuming the arm hands out its queued trial.
+    detail = (await request(env.http).post(`/api/experiments/${exp.id}/arms/${badConfig}/resume`).expect(200)).body as ExperimentDetail;
+    expect(detail.arms.find((a) => a.config_hash === badConfig)).toMatchObject({ status: 'active', paused_reason: null, fix: null });
+    expect(detail.events.some((e) => e.kind === 'arm_resumed' && e.config_hash === badConfig)).toBe(true);
     const next = (await claim('w-cfg-3'))!;
-    expect(next).not.toBeNull();
+    expect((next.spec as { trial: { config_hash: string } }).trial.config_hash).toBe(badConfig);
     // The config error's slot has its one attempt only: never re-queued.
     const all = (await env.pool.query('SELECT id, attempt, label FROM trials WHERE experiment_id = $1 ORDER BY seq, attempt', [exp.id])).rows as { id: string; attempt: number; label: string | null }[];
     expect(all.filter((t) => t.label === 'infra:config_error')).toEqual([{ id: first.trial_id, attempt: 1, label: 'infra:config_error' }]);
@@ -707,7 +716,7 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     await cancel(exp.id);
   });
 
-  it('finishes a paused experiment on resume when nothing is left to claim', async () => {
+  it('a config error on the last trial: the run is done, but compare waits until the arm is resumed', async () => {
     for (const { id } of (await env.pool.query("SELECT id FROM experiments WHERE status IN ('running', 'paused')")).rows as { id: string }[]) await cancel(id);
     const exp = await experiment();
     const c = (await claim('w-cfg-last'))!;
@@ -718,8 +727,13 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
       .set(auth)
       .send({ worker_id: 'w-cfg-last', attempt: 1, runner_report: rr, result: null, spans: [], files })
       .expect(200);
-    expect((await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body).toMatchObject({ status: 'paused' });
-    expect((await request(env.http).post(`/api/experiments/${exp.id}/start`).expect(200)).body).toMatchObject({ status: 'done' });
+    const detail = (await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body as ExperimentDetail;
+    expect(detail).toMatchObject({ status: 'done', arms: [{ arm: 'A', status: 'paused' }] });
+    const before = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as { status: string; reason: string; rows: unknown[] };
+    expect(before).toMatchObject({ status: 'incomplete', rows: [] });
+    expect(before.reason).toMatch(/^arm A is paused: emi-basic on arm A, attempt 1: infra:config_error/);
+    await request(env.http).post(`/api/experiments/${exp.id}/arms/A/resume`).expect(200);
+    expect((await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body).toMatchObject({ status: 'complete', reason: null });
   });
 
   it('estimates from earlier finished trials once there are some', async () => {

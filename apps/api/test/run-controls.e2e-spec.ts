@@ -89,6 +89,94 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
     expect((bad.body as { fix?: string }).fix).toEqual(expect.any(String));
   });
 
+  // ---- D32, D37: run controls ----
+
+  it('pauses and resumes by hand: nothing is claimed while paused, a running trial finishes', async () => {
+    const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 2 });
+    const running = (await e.claim('w-p'))!;
+    const paused = (await request(env.http).post(`/api/experiments/${exp.id}/pause`).expect(200)).body as ExperimentDetail;
+    expect(paused).toMatchObject({ status: 'paused', paused_reason: expect.stringContaining('paused by hand') as string });
+    expect(paused.events.find((x) => x.kind === 'paused')?.detail).toBe(paused.paused_reason);
+    await request(env.http).post(`/api/experiments/${exp.id}/pause`).expect(200); // already paused: no-op
+    expect(await e.claim('w-p')).toBeNull();
+    expect((await e.report(running, 'w-p')).status).toBe('done');
+    const compare = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as { status: string; reason: string };
+    expect(compare).toMatchObject({ status: 'incomplete', reason: expect.stringContaining('the experiment is paused: paused by hand') as string });
+
+    const resumed = (await request(env.http).post(`/api/experiments/${exp.id}/resume`).expect(200)).body as ExperimentDetail;
+    expect(resumed.status).toBe('running');
+    expect(resumed.events.filter((x) => x.kind === 'resumed')).toHaveLength(1);
+    expect(await e.claim('w-p')).not.toBeNull();
+
+    const created = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']] }, { start: false });
+    expect((await request(env.http).post(`/api/experiments/${created.id}/pause`).expect(409)).body).toMatchObject({ error: 'experiment_not_started', fix: expect.any(String) as string });
+    expect((await request(env.http).post(`/api/experiments/${created.id}/resume`).expect(409)).body).toMatchObject({ error: 'experiment_not_started' });
+  });
+
+  it('stops: queued trials are cancelled, a running one finishes and is kept, and compare says why there is no verdict', async () => {
+    const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 3 });
+    const running = (await e.claim('w-stop'))!;
+    const stopped = (await request(env.http).post(`/api/experiments/${exp.id}/stop`).expect(200)).body as ExperimentDetail;
+    expect(stopped).toMatchObject({ status: 'cancelled', counts: { cancelled: 5, running: 1 } });
+    expect(stopped.events.find((x) => x.kind === 'cancelled')?.detail).toContain('stopped');
+    expect(await e.claim('w-stop')).toBeNull();
+    expect(await e.report(running, 'w-stop')).toMatchObject({ status: 'done' });
+    const compare = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as { status: string; reason: string; rows: unknown[]; arms: { status: string }[] };
+    expect(compare.status).toBe('incomplete');
+    expect(compare.reason).toMatch(/^the experiment was stopped before every trial ran \([23] of arm A's trials cancelled, [23] of arm B's trials cancelled\); a verdict needs the full planned N/);
+    expect(compare.rows).toEqual([]);
+    expect(compare.arms.map((a) => a.status)).toEqual(['stopped', 'stopped']);
+    await request(env.http).post(`/api/experiments/${exp.id}/resume`).expect(409);
+  });
+
+  it('a config error pauses only its arm; the other keeps claiming; compare waits for both arms (D37)', async () => {
+    const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 3, order_seed: 11 });
+    const first = (await e.claim('w-ce'))!;
+    const bad = e.configOf(first);
+    const good = bad === A ? B : A;
+    await e.report(first, 'w-ce', 'infra:config_error', { last_status: '401' });
+    const d = await e.detail(exp.id);
+    expect(d.status).toBe('running');
+    expect(d.arms.find((a) => a.config_hash === bad)).toMatchObject({ status: 'paused', fix: expect.stringContaining('fix the provider key') as string });
+
+    const claimed: string[] = [];
+    for (let c = await e.claim('w-ce'); c; c = await e.claim('w-ce')) {
+      claimed.push(e.configOf(c));
+      await e.report(c, 'w-ce');
+    }
+    expect(claimed).toEqual([good, good, good]); // every good-arm trial ran; none of the paused arm's
+    const compare = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as { status: string; reason: string; arms: { config_hash: string; status: string }[] };
+    expect(compare.status).toBe('incomplete');
+    expect(compare.reason).toMatch(/^arm [AB] is paused: emi-basic on arm [AB], attempt 1: infra:config_error \(LiteLLM status 401\)/);
+    expect(compare.arms.find((a) => a.config_hash === good)?.status).toBe('complete');
+
+    await request(env.http).post(`/api/experiments/${exp.id}/arms/${bad}/resume`).expect(200);
+    for (let c = await e.claim('w-ce'); c; c = await e.claim('w-ce')) await e.report(c, 'w-ce');
+    const done = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as { status: string; rows: { arm: string; trials: number; infra_failed: number }[] };
+    expect(done.status).toBe('complete');
+    // The config error is kept and shown, never dropped (CLAUDE.md).
+    expect(done.rows.map((r) => [r.arm, r.trials, r.infra_failed]).sort()).toEqual([
+      ['A', bad === A ? 2 : 3, bad === A ? 1 : 0],
+      ['B', bad === B ? 2 : 3, bad === B ? 1 : 0],
+    ]);
+  });
+
+  it('pauses and resumes one arm by hand, by its hash or its letter', async () => {
+    const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 2 });
+    const d = (await request(env.http).post(`/api/experiments/${exp.id}/arms/${B}/pause`).expect(200)).body as ExperimentDetail;
+    expect(d.arms.map((a) => [a.arm, a.status])).toEqual([
+      ['A', 'active'],
+      ['B', 'paused'],
+    ]);
+    expect(d.arms[1].fix).toContain(`/arms/${B}/resume`);
+    const got = [];
+    for (let c = await e.claim('w-arm'); c; c = await e.claim('w-arm')) got.push(e.configOf(c));
+    expect(got).toEqual([A, A]);
+    await request(env.http).post(`/api/experiments/${exp.id}/arms/b/resume`).expect(200);
+    expect(e.configOf((await e.claim('w-arm'))!)).toBe(B);
+    expect((await request(env.http).post(`/api/experiments/${exp.id}/arms/C/pause`).expect(404)).body).toMatchObject({ error: 'unknown_arm', fix: expect.any(String) as string });
+  });
+
   it('keeps a re-queued attempt in its slot’s place, so it is claimed next', async () => {
     const exp: ExperimentDetail = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 3, order_seed: 7 });
     const first = (await e.claim('w-rq'))!;

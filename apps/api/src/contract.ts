@@ -279,7 +279,7 @@ export const TRIAL_STATUSES = [
 ] as const;
 export type TrialStatus = (typeof TRIAL_STATUSES)[number];
 
-/** `paused` (D26): an `infra:config_error` report stopped new claims; `POST .../start` resumes. */
+/** `paused` (D32): by hand, the futility check or a guard; `POST .../resume` (or `.../start`) resumes. */
 export type ExperimentStatus = 'created' | 'running' | 'paused' | 'done' | 'cancelled';
 
 /** Counts are trial rows (one row per attempt). `running` includes claimed rows. */
@@ -325,14 +325,47 @@ export type ExperimentEventKind =
   | 'config_error'
   | 'paused'
   | 'resumed'
-  | 'file_problem';
+  | 'file_problem'
+  // D37: an arm paused (its config error, or by hand) and resumed.
+  | 'arm_paused'
+  | 'arm_resumed'
+  // D32: the experiment paused by the futility check or a guard.
+  | 'futility_pause'
+  | 'infra_guard_pause'
+  | 'spend_guard_pause'
+  // D34: whether arm A reuses the parent's trials, and why.
+  | 'baseline';
 
 export interface ExperimentEvent {
   at: string;
   kind: ExperimentEventKind;
   trial_id: string | null;
   attempt: number | null;
+  /** The arm the event is about (`A` or `B`), or null for the whole experiment. */
+  arm: string | null;
+  config_hash: Sha256 | null;
   detail: string;
+}
+
+/**
+ * One arm of an experiment (D35, D37). `status`:
+ * - `not_started`: the experiment has not been started;
+ * - `active`: trials still queued or running (claims also wait while the whole experiment is paused);
+ * - `paused`: this arm claims nothing until it is resumed (`paused_reason`, `fix`);
+ * - `stopped`: the experiment was stopped, so some of this arm's trials were cancelled;
+ * - `complete`: every slot has a final attempt (done, or an infra failure that is not re-queued).
+ */
+export interface ArmView {
+  arm: string;
+  config_hash: Sha256;
+  config_name: string;
+  status: 'not_started' | 'active' | 'paused' | 'stopped' | 'complete';
+  paused_at: string | null;
+  paused_reason: string | null;
+  /** How to fix what paused the arm (D37), for the UI to show next to the reason. */
+  fix: string | null;
+  /** Trial rows of this arm in this experiment, by status (`running` includes claimed). */
+  counts: { queued: number; running: number; done: number; infra_failed: number; abandoned: number; cancelled: number };
 }
 
 /** GET /experiments/:id (and the POST /experiments response). */
@@ -347,9 +380,14 @@ export interface ExperimentDetail extends ExperimentSummary {
   budgets: { trial_usd: number; sim_usd: number };
   started_at: string | null;
   finished_at: string | null;
-  /** D26: when and why an `infra:config_error` last paused the experiment; null if never. */
+  /**
+   * When and why the whole experiment last paused (by hand, the futility check or a guard, D32);
+   * null if never. A config error pauses only its arm (D37): see `arms`.
+   */
   paused_at: string | null;
   paused_reason: string | null;
+  /** Arm A, then arm B (one arm for a pilot). */
+  arms: ArmView[];
   tasks: TaskView[];
   configs: ConfigView[];
   /** Newest first. */
@@ -387,6 +425,8 @@ export interface TrialRowSummary {
 export interface CompareRow {
   task: Sha256;
   task_id: string;
+  /** `A` or `B`. */
+  arm: string;
   config: Sha256;
   config_name: string;
   /** Agent-labelled trials whose every grade passed. */
@@ -399,8 +439,16 @@ export interface CompareRow {
   abandoned: number;
 }
 
+/**
+ * D37, D32: no comparison until every arm is complete. While `status` is `incomplete`, `reason`
+ * says why (an arm paused, trials left, a stop) and `rows` is empty, so nobody reads a verdict off
+ * a partial run; `arms` shows each arm's progress either way.
+ */
 export interface CompareResponse {
   experiment_id: string;
+  status: 'complete' | 'incomplete';
+  reason: string | null;
+  arms: ArmView[];
   rows: CompareRow[];
   /** SP6. Null until the stats exist. */
   stats: null;

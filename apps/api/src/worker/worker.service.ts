@@ -11,9 +11,10 @@ import { CONFIG_SELECT, type ConfigRow, configId } from '../configs/configs.serv
 import { Db, type Queryable } from '../database/db.service';
 import { type ExperimentRow, finishIfDone, isSimTask } from '../experiments/experiments.service';
 import { LiteLlmClient, LiteLlmHttpError, type MintedKey } from '../litellm/litellm.client';
-import { FINISHED, HELD, LEASE_S, PAUSES_EXPERIMENT, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
+import { FINISHED, HELD, LEASE_S, PAUSES_ARM, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
 import { MAX_FILE_BYTES, checkFiles, locate, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
-import { configErrorReason, parseReport, spanRows, usageOf } from './report';
+import { configErrorFix, configErrorReason, parseReport, spanRows, usageOf } from './report';
+import { pauseArm } from '../experiments/run-state';
 import { SIM_REPLIES_FILE, type SimReplyRow, type SimScope, parseSimReplies, simScope } from './sim-cache';
 import { clientSummary } from './client-summary';
 import { CLIENT_STATE_FILE, SIM_MAX_OUTPUT_TOKENS, buildSpec } from './spec-builder';
@@ -139,6 +140,9 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
          WHERE id = (
            SELECT t.id FROM trials t JOIN experiments e ON e.id = t.experiment_id
            WHERE t.status = 'queued' AND t.harness = $1 AND e.status = 'running'
+             -- D37: a paused arm's trials wait; the other arm keeps claiming.
+             AND NOT EXISTS (SELECT 1 FROM experiment_arms a
+                             WHERE a.experiment_id = t.experiment_id AND a.config_hash = t.config_hash AND a.paused_at IS NOT NULL)
            ORDER BY e.started_at, e.id, t.order_index, t.attempt
            LIMIT 1
            FOR UPDATE OF t SKIP LOCKED)
@@ -397,19 +401,17 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
         const exp = (await one<{ status: ExperimentRow['status'] }>(client, 'SELECT status FROM experiments WHERE id = $1', [locked.experiment_id]))!;
         requeued = await requeue(client, id, locked.attempt, exp.status, label);
       }
-      if (label === PAUSES_EXPERIMENT) {
-        // D26: the setup is wrong (a key, the model, a refused setting), so every later trial
-        // would fail the same way. Stop new claims until someone fixes it and resumes.
+      if (label === PAUSES_ARM) {
+        // D26, amended by D37: the setup is wrong (a key, the model, a refused setting), so every
+        // later trial of this config would fail the same way. Its arm stops claiming until someone
+        // fixes it and resumes the arm; the other arm keeps running.
         const where = await one<{ task_id: string; config_name: string }>(
           client,
           'SELECT k.id AS task_id, c.name AS config_name FROM tasks k, configs c WHERE k.sha256 = $1 AND c.hash = $2',
           [locked.task_sha256, locked.config_hash],
         );
         const reason = `${where?.task_id ?? locked.task_sha256} on ${where?.config_name ?? locked.config_hash}, attempt ${locked.attempt}: ${configErrorReason(body.result, body.runner_report)}`;
-        await client.query(
-          `UPDATE experiments SET status = 'paused', paused_at = now(), paused_reason = $2 WHERE id = $1 AND status = 'running'`,
-          [locked.experiment_id, reason],
-        );
+        await pauseArm(client, locked.experiment_id, locked.config_hash, reason, configErrorFix(body.runner_report), { id, attempt: locked.attempt });
       }
       await finishIfDone(client, locked.experiment_id);
       return { stored, requeued, simStored };
