@@ -111,15 +111,15 @@ Workers mount nothing from the host, so a trial cannot read another trial's stor
 
 ### 2.2 Settings, end states and labels
 
-**Settings.** The spec carries the full resolved set. An unsupported setting arrives as `null` with source `unsupported`; a non-null value for one makes the library refuse the trial [src]. `POST /api/configs` rejects a config that sets one (400 `unsupported_setting`) and fills every unset, supported setting with a platform default. Those defaults are in `apps/api/src/configs/settings.ts`, which marks them "not yet a decision of Rishi's" [src]:
+**Settings.** The spec carries the full resolved set. An unsupported setting arrives as `null` with source `unsupported`; a non-null value for one makes the library refuse the trial [src]. `POST /api/configs` rejects a config that sets one (400 `unsupported_setting`), and one that sets a setting the model refuses (D25: `temperature` on Haiku 5.5, a 400 `unsupported_setting` naming the model). An unset `temperature` or `parallel_tool_calls` is not sent: `null`, source `harness_default`. Every other unset, supported setting gets D25's platform default, in `apps/api/src/configs/settings.ts` [src]:
 
-| Setting | Meaning | Gate default | API platform default (provisional) |
+| Setting | Meaning | Gate default | API platform default (D25) |
 | --- | --- | --- | --- |
-| `temperature` | Sampling temperature | 0.2 | 0.2. **A null or missing value gets 0.2**, so a config cannot leave temperature unsent (question 15) |
-| `max_output_tokens` | Output cap per model call | 1024 | 1024 |
+| `temperature` | Sampling temperature | 0.2 | Not sent; refused in a config for Haiku 5.5 |
+| `max_output_tokens` | Output cap per model call | 1024 | 8192 |
 | `max_steps` | Agent model calls across the whole trial, conversation included (D17) | 10 | 15 |
 | `timeout_s` | Whole-trial wall clock, enforced by the library's watchdog | 60 | 300 |
-| `parallel_tool_calls` | Several tool calls in one model turn (D19) | false | false |
+| `parallel_tool_calls` | Several tool calls in one model turn (D19) | false | Not sent |
 | `memory`, `skills`, `compression` | Harness features (D23); detail in `harness_options` | off | off where supported |
 
 `applied_settings` records each setting's value and source (`config`, `platform_default`, `harness_default`, `unsupported`). Adapters add rows such as Hermes's `reasoning_effort`, LangGraph's `recursion_limit` and the Agents SDK's `tool_concurrency` [ran].
@@ -141,9 +141,10 @@ Workers mount nothing from the host, so a trial cannot read another trial's stor
 
 | Label | When |
 | --- | --- |
-| `agent` | Any understood ending, graded by `end_state`. **Today this includes a provider 400** (section 2.9) |
-| `infra:provider_error` | `harness_error` and LiteLLM's last status for the **agent** key was 429 or 5xx |
-| `infra:budget_net` | `harness_error` and the key's budget was exceeded |
+| `agent` | Any understood ending, graded by `end_state`. Includes a context-too-long 400 and any 400 the setup patterns do not match (D26) |
+| `infra:provider_error` | `harness_error` and LiteLLM's last status for the **agent** key was 429 or 5xx. Re-queued once |
+| `infra:config_error` | `harness_error` and the status was 401, 403 or 404, or a 400 about auth, an unknown model or a refused parameter (D26; both 4 Nov 400s). Never re-queued; the experiment pauses |
+| `infra:budget_net` | `harness_error` and the key's budget was exceeded. Never re-queued (D26) |
 | `infra:adapter_crash` | Non-zero exit, or a missing or invalid result |
 | `infra:timeout_kill` | The safety net killed the process group |
 
@@ -182,8 +183,8 @@ Span events carry `evals.error` (kinds `malformed_tool_call`, `unknown_tool`, `t
 **How it works** (`sim.py`, `adapter.py`) [src]:
 
 - After each agent turn that ends `answered`, the library asks the simulator for the next client message, unless the turn cap is reached.
-- The simulator sees only the visible transcript, with roles flipped (its own messages are `assistant`). It never sees tool calls or results [ran: gate assertion]. **Nor does it see the client file**, which is why it disowned the figures the agent read from it (section 2.9).
-- Its prompt is `configs/prompts/client-sim.v1.md` (a draft for your review) with persona, hidden facts, concerns, goal and end marker filled in. It is a plain non-streaming call to LiteLLM with its own key, budget, model, temperature and token cap, and no tools. The 4 Nov run used Haiku 5.5 at temperature 1, because Haiku rejects 0, with a 1,500-token cap that its own thinking also uses [unverified: Claude docs].
+- The simulator sees only the visible transcript, with roles flipped (its own messages are `assistant`). It never sees tool calls or results [ran: gate assertion]. On 4 Nov it did not see the client file either, which is why it disowned the figures the agent read from it (section 2.9). Since D27 the API puts a summary of the client file (profile and debts) in `client_sim.client_summary` and the v2 prompt shows it [ran: fake simulator only].
+- Its prompt is now `configs/prompts/client-sim.v2.md` (D27, a draft for your review; the API's default as the highest version), with persona, client summary, hidden facts, concerns, goal and end marker filled in. v2 adds the client file, chat text only (no narration or stage directions) and ending once the concerns are answered; it keeps v1's guards. It is a plain non-streaming call to LiteLLM with its own key, budget, model, token cap and, unless it is null, temperature, and no tools. The 4 Nov run used `client-sim.v1.md` and Haiku 5.5 at temperature 1, because Haiku rejects 0, with a 1,500-token cap that its own thinking also uses [unverified: Claude docs]. Engine runs on Haiku now send no simulator temperature (D27).
 - **End marker.** The client ends by writing `[[END_CONVERSATION]]`. Any text left with it (the goodbye) is added as a client turn and the conversation ends. **The agent never answers the goodbye.**
 - **Turn cap.** `max_client_turns` counts client messages after the opening one, so a cap of 3 allows up to 4 agent turns.
 - **Failures.** A simulator error ends the trial as `harness_error`, stop reason `simulator_error`.

@@ -12,7 +12,7 @@ same commit.
 | `v2/span.schema.json` | each line of `/trial/out/trace.jsonl` | adapter, and the runner for proxy spans |
 | `v2/runner-report.schema.json` | `/trial/out/runner-report.json` | runner |
 
-`v2/examples/` holds one valid example of each. The tests in `workers/adapterlib/tests/test_contract.py`
+`v2/examples/` holds one valid example of each, plus `spec-client-sim.json` (a simulated-client task) and `runner-report-config-error.json` (the 4 Nov own-loop trial that got Haiku's temperature 400, with the `infra:config_error` label D26 gives it). The tests in `workers/adapterlib/tests/test_contract.py`
 check that every example validates and that the mistakes the schemas exist to catch fail.
 
 All schemas use JSON Schema draft 2020-12. Spans follow the OTLP/JSON encoding of

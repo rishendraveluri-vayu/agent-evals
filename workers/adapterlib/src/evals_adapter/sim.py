@@ -40,15 +40,21 @@ class ClientReply:
     usage: dict[str, Any] | None
 
 
+NO_CLIENT_FILE = "(There is no client file for you.)"
+
+
 def render_prompt(template: str, sim: dict[str, Any]) -> str:
-    """Fill the versioned simulator prompt. Placeholders are {{persona}}, {{hidden_facts}},
-    {{concerns}}, {{goal}} and {{end_marker}}."""
+    """Fill the versioned simulator prompt. Placeholders are {{persona}}, {{client_summary}}
+    (D27: the API's summary of the task's client file, or a line saying there is none),
+    {{hidden_facts}}, {{concerns}}, {{goal}} and {{end_marker}}. A template without a placeholder
+    simply does not use that value (client-sim v1 has no {{client_summary}})."""
 
     def bullets(items: list[str]) -> str:
         return "\n".join(f"- {item}" for item in items) if items else "- (none)"
 
     values = {
         "persona": sim["persona"],
+        "client_summary": sim.get("client_summary") or NO_CLIENT_FILE,
         "hidden_facts": bullets(sim["hidden_facts"]),
         "concerns": bullets(sim["concerns"]),
         "goal": sim["goal"],
@@ -71,6 +77,9 @@ def client_view(transcript: list[dict[str, str]]) -> list[dict[str, str]]:
 
 
 def cache_key(spec: dict[str, Any], transcript: list[dict[str, str]]) -> str:
+    """One conversation state. A null temperature (not sent, D27) is part of the key as null.
+    The client summary is in the key only when the spec has one, so keys made before D27 are
+    unchanged."""
     sim = spec["task"]["client_sim"]
     model = sim["model"]
     material = {
@@ -78,11 +87,13 @@ def cache_key(spec: dict[str, Any], transcript: list[dict[str, str]]) -> str:
         "task_id": spec["trial"]["task_id"],
         "task_version": spec["trial"].get("task_version"),
         "sim_model": model["name"],
-        "temperature": model["temperature"],
+        "temperature": model.get("temperature"),
         "max_output_tokens": model["max_output_tokens"],
         "prompt_sha256": model["prompt"]["sha256"],
         "transcript": [{"role": t["role"], "content": t["content"]} for t in transcript],
     }
+    if sim.get("client_summary") is not None:
+        material["client_summary"] = sim["client_summary"]
     blob = json.dumps(material, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(blob.encode()).hexdigest()
 
@@ -130,14 +141,17 @@ class ClientSimulator:
         return ClientReply(message, done, False, key, usage)
 
     def _call(self, transcript: list[dict[str, str]]) -> tuple[str, dict[str, Any] | None]:
-        body = {
+        body: dict[str, Any] = {
             "model": self.model["name"],
             "messages": [{"role": "system", "content": self.system_prompt}]
             + client_view(transcript),
-            "temperature": self.model["temperature"],
             "max_tokens": self.model["max_output_tokens"],
             "stream": False,
         }
+        # D27: a null temperature is not sent, so the model's default applies (Haiku 5.5 refuses
+        # any temperature); the reply cache keeps the conversation repeatable.
+        if self.model.get("temperature") is not None:
+            body["temperature"] = self.model["temperature"]
         url = self.model["base_url"].rstrip("/") + "/chat/completions"
         req = urllib.request.Request(
             url,

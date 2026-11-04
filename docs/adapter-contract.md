@@ -89,11 +89,11 @@ Everything else is read-only. Nothing in `/trial` survives to the next trial; ev
     "api_format": "openai_chat"
   },
   "settings": {
-    "temperature": 0.2,
-    "max_output_tokens": 1024,
+    "temperature": null,
+    "max_output_tokens": 8192,
     "max_steps": 15,
     "timeout_s": 300,
-    "parallel_tool_calls": false,
+    "parallel_tool_calls": null,
     "memory": {"enabled": false},
     "skills": {"enabled": false},
     "compression": {"enabled": false}
@@ -113,10 +113,11 @@ Everything else is read-only. Nothing in `/trial` survives to the next trial; ev
 }
 ```
 
-- **`settings_sources`** says, for each setting, `config`, `platform_default` or `unsupported`. The adapter library copies it into `applied_settings`.
+- **`settings_sources`** says, for each setting, `config`, `platform_default`, `harness_default` or `unsupported`. The adapter library copies it into `applied_settings`.
 - **`settings` is the full, resolved set** (R10.4), filled by the API from the config and the platform defaults. **A platform default is applied only to settings the harness supports.** For an unsupported setting the field is `null`, and the harness's own behaviour is recorded and shown (section 5). A config that explicitly sets an unsupported setting is rejected at submission.
+- **An unset setting is not sent (D25).** `temperature` and `parallel_tool_calls` have no platform default: left unset, they are `null` with source `harness_default`, and **every adapter leaves a `null` setting out of every request**, so the harness's or provider's own default applies (the gate test `test_unset_not_sent` checks the wire for each harness). The platform defaults are `max_output_tokens` 8192, `max_steps` 15, `timeout_s` 300, and `memory`, `skills` and `compression` off. A setting the model refuses (the API's `MODEL_REJECTS` table: `temperature` on `claude-haiku-5-5`) cannot be set in a config for that model and is never filled with a default.
 - **`max_steps` counts the agent's model calls** across the whole trial, conversation included (D17). **`timeout_s`** is enforced by the adapter library's wrapper (R10.6). The runner's safety net is `timeout_s × 1.5 + 30 s` (D23).
-- **`parallel_tool_calls`** defaults to false where supported (D19).
+- **`parallel_tool_calls`** is a config setting (D19). Since D25 it is not sent unless the config sets it, so the harness's or provider's default applies; set it to `false` to force one tool call per turn.
 - **`memory`, `skills` and `compression`** are common settings (D23). Harness detail lives in `harness_options`, validated against the adapter's schema.
 - **`system_prompt` and `tools.toolset`** reference versioned config objects stored in the database, with text or manifest, hash, author and date (R11). The UI diffs two versions, and an experiment can vary exactly one of them (D9: prompt v1 versus v2). `allowed_tools` lets a toolset version expose a subset of the finance server's tools, which is how a "missing tool" is represented and later added.
 - **`model`**: LiteLLM only (R10.3). The per-trial key is in the environment variable named by `api_key_env`, never `OPENAI_API_KEY` (D23). The adapter passes it explicitly to its model client and starts child processes with a minimal environment that leaves it out.
@@ -227,18 +228,22 @@ Standard tools can read it directly. Our own UI renders it as the trial timeline
 | What happened | Adapter output | Runner label |
 | --- | --- | --- |
 | A run ended in any way the adapter understood | exit 0, valid `result.json` | agent outcome by `end_state`. Graded, except as the analysis plan says for `timeout`. |
-| An error persisted after LiteLLM's retries (D16) | exit 0, `harness_error` with exception detail | `infra:provider_error` if the proxy's last status was 429 or 5xx. Re-queued, capped. |
-| A spend safety net tripped | exit 0, `harness_error` | `infra:budget_net`. Investigate, never routine (R10.6). |
+| An error persisted after LiteLLM's retries (D16) | exit 0, `harness_error` with exception detail | `infra:provider_error` if the proxy's last status was 429 or 5xx. Re-queued once. |
+| The request setup is wrong (D26): a key, an unknown model, a refused setting | exit 0, `harness_error` with exception detail | `infra:config_error` if the proxy's last status was 401, 403 or 404, or a 400 whose error (in `end_detail`) is about authentication, an unknown model or a rejected or unsupported parameter. Never re-queued; the API pauses the experiment. |
+| The prompt is over the model's context window | exit 0, `harness_error` | `agent`: a 400 for context too long is the agent's outcome (D26), and so is any 400 that matches neither pattern. |
+| A spend safety net tripped | exit 0, `harness_error` | `infra:budget_net`. Never re-queued (D26). Investigate, never routine (R10.6). |
 | The adapter crashed, or the result is missing or invalid | non-zero exit | `infra:adapter_crash`. The trace so far and full logs are kept. |
 | A safety-net timeout fired | killed (process group, R10.12) | `infra:timeout_kill` |
 
 Nothing is truncated or dropped. Every trial, including infra failures, keeps its spans, result (if any) and full logs (R11).
 
+**How a provider error is labelled (D26).** `evals_adapter.runner.provider_label` reads LiteLLM's last status for the **agent** key (`proxy_usage.last_status`) and the error the adapter reported (`end_detail.harness_stop_reason` and `exception_message`). The status decides first: a budget stop is `infra:budget_net`, 429 or 5xx `infra:provider_error`, 401, 403 or 404 `infra:config_error`. For a 400, the message is checked for a context-too-long error first (`agent`), then for a setup error (`infra:config_error`); both pattern lists are in `runner.py`. With no LiteLLM record the label stays `agent`. The tests use the exact 4 Nov messages: the unscoped-key 400 ("This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header ...") and the temperature 400 ("`temperature` is deprecated for this model"), as the own loop, Hermes and the Agents SDK reported them.
+
 ## 8. Gate tests and effect checks (R7, R10.5, D24)
 
 **Gate tests.** All run through LiteLLM against the fake model server, with no real calls:
 
-1. **Settings test.** Each supported setting appears in the captured request.
+1. **Settings test.** Each supported setting appears in the captured request, and an unset `temperature` or `parallel_tool_calls` (null, `harness_default`) does not appear at all (D25).
 2. **Step test.** A script that keeps calling tools ends in `step_limit`, and the proxy's call count is no more than `max_steps` plus the declared extra.
 3. **Tool test.** The first request's `tools` array, normalised, equals the toolset snapshot apart from the declared rewrites.
 4. **Timeout test.** A `timeout` fault gives `end_state: timeout` within `timeout_s` plus a small margin.
@@ -266,29 +271,35 @@ A task with no `client_sim` block is a single prompt. With one, a second model p
 ```json
 "client_sim": {
   "persona": "Meera, 41, Pune. Widowed in March; her husband's ₹18 lakh home loan is now in her name ...",
+  "client_summary": "Profile:\n- name: Meera ...\nDebts (1, total balance ₹18,00,000.00, ...):\n- Home loan: balance ₹18,00,000.00 at 8.5% a year, ...",
   "hidden_facts": ["Monthly take-home ₹92,000", "₹6 lakh in an FD she has not touched"],
   "concerns": ["Can I keep the house?", "Should I use the FD to prepay?"],
   "goal": "Understand whether she can keep the house and what to do first",
   "opening_message": "I don't really know where to start. My husband handled all of this.",
   "max_client_turns": 3,
-  "model": {"name": "claude-haiku-5-5", "base_url": "http://litellm:4000/v1", "api_key_env": "EVALS_SIM_API_KEY", "temperature": 0, "max_output_tokens": 300,
-            "prompt": {"id": "client-sim", "version": "sim-v1", "sha256": "...", "text": "..."}}
+  "model": {"name": "claude-haiku-5-5", "base_url": "http://litellm:4000/v1", "api_key_env": "EVALS_SIM_API_KEY", "temperature": null, "max_output_tokens": 300,
+            "prompt": {"id": "client-sim", "version": "v2", "sha256": "...", "text": "..."}}
 }
 ```
 
 (The persona is an invented illustration, not a task.)
 
+- **The prompt (D27)** is `configs/prompts/client-sim.v2.md`, the API's default as the highest version; `client-sim.v1.md` is kept unchanged. The library fills `{{persona}}`, `{{client_summary}}`, `{{hidden_facts}}`, `{{concerns}}`, `{{goal}}` and `{{end_marker}}` (`evals_adapter.sim.render_prompt`; a template without a placeholder ignores that value).
+- **`client_summary` (D27, optional)** is a short summary of the task's client file, built by the API from the task's `client_state` (`apps/api/src/worker/client-summary.ts`): the profile as recorded, and the debts with their balances, rates, minimum payments and totals as the finance tools write them. Transactions are left out. The field is absent when the task has no client file. It is part of the reply-cache key when present.
+- **`model.temperature` (D27) is optional.** Null or absent means it is not sent, so the model's default applies. The API sends none for a simulator model that refuses temperature (Haiku 5.5, from the `MODEL_REJECTS` table) and D22's 0 otherwise; the reply cache gives repeatability.
+
 - **The conversation loop lives once, in the shared adapter library.** Each harness only implements `run_turn(history)` within one process, using its native session: Hermes passes the history back in, ADK keeps one session id, the Agents SDK carries the input list, LangGraph appends messages, and the Claude SDK uses a multi-turn client. **Not yet run** (R11: "not sure this works"), so it is proven first on Hermes and the own loop in the conversation test. The fallback for any harness that fails is to re-send the full transcript each turn as fresh input.
-- **What the client sees:** only the agent's visible replies, not tool calls or results. It reveals a hidden fact only when the agent asks for it. Graders know every fact.
+- **What the client sees:** only the agent's visible replies, not tool calls or results, plus its own client summary, so it never contradicts the records the tools return (D27). It reveals a hidden fact only when the agent asks for it. Graders know every fact.
+- **How the client writes (D27):** only the words it would type in a chat, as the client. No narration, no stage directions, no actions between asterisks or brackets.
 - **Guarding against a yes-man client** (R11: "the problem is yes man"):
-  - The simulator prompt sets behaviour rules: stay in the emotional state, never volunteer facts, push back on generic or irrelevant advice, ask again if confused, never praise advice that misses the concerns.
-  - The client may end only when every listed `concern` has been addressed, or at the turn cap.
+  - The simulator prompt sets behaviour rules: stay in the emotional state, never volunteer facts, push back on generic or irrelevant advice, ask again if confused, never praise advice that misses the concerns. v2 keeps v1's wording for each.
+  - The client ends once its concerns have been answered in a way it can act on, or it has what it came for (D27), and otherwise asks about what is still open; the turn cap is the backstop.
   - If Haiku proves too agreeable, the simulator model can be changed in config.
   - **Rishi reviews about 10 simulator transcripts** before the experiment, like a small judge validation, and the simulator prompt is versioned.
   - Simulated tasks stay a small share of the set, about 5 to 8, because each needs a persona and this review.
 - **Simulator settings** (model, temperature, token cap, prompt version) are configurable, recorded in every trial, and identical across all configs in an experiment, which the invariance check enforces.
 - **One set of responses where the conversation is the same.** Client replies are cached by task, simulator settings and exact visible transcript. The agent's calls are never cached.
-- **Ending.** The client ends by writing `[[END_CONVERSATION]]`; `max_client_turns` counts simulated messages after the opening one. The conversation ends when the client's concerns are covered or at `max_client_turns`. The agent's last reply is graded, and `max_steps` and `timeout_s` cover the whole conversation.
+- **Ending.** The client ends by writing `[[END_CONVERSATION]]`; `max_client_turns` counts simulated messages after the opening one. The conversation ends when the client sends the marker (its concerns answered, or it has what it came for) or at `max_client_turns`. The agent's last reply is graded, and `max_steps` and `timeout_s` cover the whole conversation.
 
 ## 10. Storage and traceability (R11)
 

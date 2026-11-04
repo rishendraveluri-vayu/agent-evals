@@ -47,6 +47,30 @@ export function parseReport(body: unknown): ReportRequest {
   };
 }
 
+/**
+ * D26: why an `infra:config_error` report paused its experiment, in plain words for the events
+ * list: LiteLLM's last status and the provider's own message from the adapter's end_detail (the
+ * first JSON `"message"` in it, which is the provider's text inside LiteLLM's wrapping), else the
+ * start of the whole error.
+ */
+export function configErrorReason(result: JsonObject | null, runnerReport: JsonObject): string {
+  const usage = runnerReport.proxy_usage;
+  const status = isObj(usage) && typeof usage.last_status === 'string' ? usage.last_status : null;
+  const detail = isObj(result) && isObj(result.end_detail) ? result.end_detail : {};
+  const raw = typeof detail.exception_message === 'string' ? detail.exception_message : '';
+  let message = raw.replace(/\s+/g, ' ').trim().slice(0, 300);
+  const inner = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(raw);
+  if (inner) {
+    try {
+      message = (JSON.parse(`"${inner[1]}"`) as string).slice(0, 300);
+    } catch {
+      message = inner[1].slice(0, 300);
+    }
+  }
+  const head = `infra:config_error (LiteLLM status ${status ?? 'unknown'})`;
+  return `${head}${message ? `: ${message}` : ''}. New claims are paused; fix the setup and POST /experiments/:id/start to resume, or cancel`;
+}
+
 export interface SpanRow {
   span_id: string;
   parent_span_id: string | null;

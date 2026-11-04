@@ -39,7 +39,10 @@ export interface Toggle {
   enabled: boolean;
 }
 
-/** Resolved settings: an unsupported setting is null. */
+/**
+ * Resolved settings: an unsupported setting is null (source `unsupported`), and so is one that is
+ * not sent (source `harness_default`, D25): the harness's or provider's own default applies.
+ */
 export interface Settings {
   temperature: number | null;
   max_output_tokens: number | null;
@@ -51,7 +54,7 @@ export interface Settings {
   compression: Toggle | null;
 }
 
-export type SettingSource = 'config' | 'platform_default' | 'unsupported';
+export type SettingSource = 'config' | 'platform_default' | 'harness_default' | 'unsupported';
 export type SettingsSources = Record<SettingName, SettingSource>;
 
 // ---- Catalogue -----------------------------------------------------------------------
@@ -221,7 +224,7 @@ export interface CreateExperimentRequest {
   sim_model?: string | null;
   budget_usd: number;
   plan_commit?: string | null;
-  /** Optional; defaults to the highest version of the `client-sim` prompt. */
+  /** Optional; defaults to the highest version of the `client-sim` prompt (v2 since D27). */
   sim_prompt_sha256?: Sha256 | null;
 }
 
@@ -236,7 +239,8 @@ export const TRIAL_STATUSES = [
 ] as const;
 export type TrialStatus = (typeof TRIAL_STATUSES)[number];
 
-export type ExperimentStatus = 'created' | 'running' | 'done' | 'cancelled';
+/** `paused` (D26): an `infra:config_error` report stopped new claims; `POST .../start` resumes. */
+export type ExperimentStatus = 'created' | 'running' | 'paused' | 'done' | 'cancelled';
 
 /** Counts are trial rows (one row per attempt). `running` includes claimed rows. */
 export interface ExperimentCounts {
@@ -278,6 +282,9 @@ export type ExperimentEventKind =
   | 'requeue'
   | 'abandoned'
   | 'budget_trip'
+  | 'config_error'
+  | 'paused'
+  | 'resumed'
   | 'file_problem';
 
 export interface ExperimentEvent {
@@ -291,12 +298,16 @@ export interface ExperimentEvent {
 /** GET /experiments/:id (and the POST /experiments response). */
 export interface ExperimentDetail extends ExperimentSummary {
   sim_model: string | null;
-  sim: { prompt: VersionRef; temperature: number; max_output_tokens: number } | null;
+  /** `temperature` null: not sent, the model's default applies (D27; Haiku 5.5 refuses any). */
+  sim: { prompt: VersionRef; temperature: number | null; max_output_tokens: number } | null;
   platform_commit: string | null;
   plan_commit: string | null;
   budgets: { trial_usd: number; sim_usd: number };
   started_at: string | null;
   finished_at: string | null;
+  /** D26: when and why an `infra:config_error` last paused the experiment; null if never. */
+  paused_at: string | null;
+  paused_reason: string | null;
   tasks: TaskView[];
   configs: ConfigView[];
   /** Newest first. */

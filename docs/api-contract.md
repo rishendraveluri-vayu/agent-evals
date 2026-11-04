@@ -45,14 +45,33 @@ and passed through unread:
 ```
 
 `client_sim` is contract v2's object without `model` (the experiment supplies the simulator
-model). `client_state` names a file next to `task.json` that the runner places in the trial's
-state folder for the finance MCP server.
+model) and without `client_summary` (the API builds it). `client_state` names a file next to
+`task.json` that the runner places in the trial's state folder for the finance MCP server. For a
+simulated-client task the API also summarises that file (profile and debts) into the spec's
+`client_sim.client_summary`, so the simulator never contradicts what the tools return (D27).
 
 ## Configs
 
 - `POST /configs` with `{name, harness, model, prompt_sha256, toolset_sha256, settings, harness_options}`.
   The API checks every set setting against the harness's capabilities (an unsupported one
-  is a 400 `unsupported_setting` naming it), fills `settings_sources`, and computes
+  is a 400 `unsupported_setting` naming it) and against the model (D25): a setting the model
+  refuses is a 400 `unsupported_setting` naming the model. The table of refused settings is
+  `MODEL_REJECTS` in `apps/api/src/configs/settings.ts`; today it holds one entry,
+  `claude-haiku-5-5` refuses `temperature` (the provider's 400 "`temperature` is deprecated for
+  this model", 4 Nov). It then fills every setting the config leaves out (or sets to null), with
+  its source in `settings_sources`:
+
+  | Setting | Left unset | Source |
+  | --- | --- | --- |
+  | `temperature`, `parallel_tool_calls` | `null`: not sent, so the harness's or provider's default applies (D25) | `harness_default` |
+  | `max_output_tokens` | 8192 | `platform_default` |
+  | `max_steps` | 15 | `platform_default` |
+  | `timeout_s` | 300 | `platform_default` |
+  | `memory`, `skills`, `compression` | `{"enabled": false}` | `platform_default` |
+  | any setting the harness cannot take | `null` | `unsupported` |
+  | any setting the model refuses | `null`, never a platform default | `harness_default` |
+
+  It then computes
   `hash = sha256(canonical JSON of harness ref, adapter version, capabilities sha256, model,
   prompt sha256, toolset sha256, settings, harness_options)`. Posting the same content twice
   returns the same config (200, not a duplicate).
@@ -68,16 +87,28 @@ state folder for the finance MCP server.
   there are any, otherwise the assumptions in `docs/cost.md` (64k input, 2.4k output per
   trial). Prices come from LiteLLM. No power estimate yet; SP6 adds `min_detectable_effect`.
 - `POST /experiments` with `{name, axis, config_hashes, task_sha256s, n, sim_model,
-  budget_usd, plan_commit}` creates the experiment and all its trial rows (`queued`), records
-  the platform commit (`EVALS_PLATFORM_COMMIT`), and sets a LiteLLM budget for the whole
-  experiment. It returns the experiment. Nothing runs until it is started.
-- `POST /experiments/:id/start`, `POST /experiments/:id/cancel` (queued trials become
-  `cancelled`; running ones finish).
+  budget_usd, plan_commit, sim_prompt_sha256}` creates the experiment and all its trial rows
+  (`queued`), records the platform commit (`EVALS_PLATFORM_COMMIT`), and sets a LiteLLM budget
+  for the whole experiment. It returns the experiment. Nothing runs until it is started. The
+  simulator prompt defaults to the highest version of `client-sim` (v2 since D27). The simulator
+  runs at D22's temperature 0, except on a model that refuses temperature (Haiku 5.5), where its
+  temperature is `null` and not sent (D27); the token cap is 300. `sim` in the experiment shows
+  all three.
+- `POST /experiments/:id/start` starts a `created` experiment or resumes a `paused` one (and
+  marks it `done` if nothing is left to claim); `POST /experiments/:id/cancel` (queued trials
+  become `cancelled`; running ones finish), from `created`, `running` or `paused`.
+- An experiment's `status` is `created`, `running`, `paused`, `done` or `cancelled`. **`paused`
+  (D26):** a report labelled `infra:config_error` moves a running experiment to `paused`, with
+  `paused_at` and a `paused_reason` naming the trial, its config, LiteLLM's status and the
+  provider's message. Nothing is claimed while paused; trials already running finish and report
+  (a re-queued attempt waits, queued, for the resume). Fix the setup (a key, the model, a refused
+  setting), then start it again, or cancel it.
 - `GET /experiments` returns `[{id, name, axis, status, config_hashes, n, counts, spend_usd,
   estimate, created_at}]`, where `counts` is `{queued, running, done, infra_failed,
   abandoned, cancelled}` and done is split by label.
-- `GET /experiments/:id` adds `tasks`, `configs`, `events` (claims, infra failures,
-  re-queues, budget trips, newest first).
+- `GET /experiments/:id` adds `tasks`, `configs`, `paused_at`, `paused_reason`, `events`
+  (claims, infra failures, config errors, re-queues, budget trips, the latest pause and resume,
+  newest first).
 - `GET /experiments/:id/trials?status=&config=&task=` returns trial summaries.
 - `GET /experiments/:id/compare` returns per task and arm `{task, config, passed, graded,
   trials}` and, once SP6 exists, the intervals and verdict. Until then `stats` is `null`.
@@ -110,9 +141,10 @@ trial cannot read or change another trial's stored files (D3).
    LOCKED)`, so two workers never get the same trial.
 
    `sim_cache` (D22) is `{<cache key>: <reply>}`: every simulator reply stored so far for the
-   same task (sha256), simulator model, temperature, token cap and simulator prompt, from any
-   earlier trial, experiment or harness. Keys are `evals_adapter.sim.cache_key`, which hashes
-   those same values plus the visible transcript, so one key is one conversation state. It is
+   same task (sha256), simulator model, temperature (a `null` one, not sent, is its own scope),
+   token cap and simulator prompt, from any earlier trial, experiment or harness. Keys are
+   `evals_adapter.sim.cache_key`, which hashes those same values, the client summary when there
+   is one, and the visible transcript, so one key is one conversation state. It is
    `{}` before any reply is stored, and `null` for a task without a simulated client. The
    worker's runner writes it to `/trial/sim_cache.json`; a turn whose state is in it gets the
    stored reply and makes no simulator call. The agent's own calls are never cached.
@@ -158,9 +190,13 @@ trial cannot read or change another trial's stored files (D3).
    counts the replies added. Reporting the same attempt twice
    is a no-op 200. The API revokes the trial's keys, stores the report, and sets the status:
    `done` for an `agent` label; for an `infra:*` label, `infra_failed` and, if this was
-   attempt 1, a new `queued` attempt 2 (D16: re-queued once, never twice).
+   attempt 1, a new `queued` attempt 2 (D16: re-queued once, never twice), except for the two
+   labels that are never re-queued (D26): `infra:config_error`, which also pauses the
+   experiment, and `infra:budget_net`. `infra:provider_error`, `infra:adapter_crash` and
+   `infra:timeout_kill` are re-queued once.
 6. A lease with no heartbeat for 60 s lapses: the API marks the attempt `abandoned`, revokes
-   its keys, and queues the next attempt under the same cap.
+   its keys, and queues the next attempt under the same cap (also while the experiment is
+   paused; the attempt waits for the resume).
 
 ## UI-only endpoints
 

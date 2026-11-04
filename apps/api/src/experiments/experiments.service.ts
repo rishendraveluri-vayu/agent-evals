@@ -22,7 +22,7 @@ import { CatalogueService, type StoredPrompt, type StoredTask, taskView } from '
 import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.service';
 import { Db, type Queryable } from '../database/db.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
-import { SIM_MAX_OUTPUT_TOKENS, SIM_TEMPERATURE } from '../worker/spec-builder';
+import { SIM_MAX_OUTPUT_TOKENS, simTemperature } from '../worker/spec-builder';
 import { type CellInput, type Price, estimate } from './estimate';
 
 export interface ExperimentRow {
@@ -48,6 +48,9 @@ export interface ExperimentRow {
   started_at: Date | null;
   finished_at: Date | null;
   cancelled_at: Date | null;
+  paused_at: Date | null;
+  paused_reason: string | null;
+  resumed_at: Date | null;
 }
 
 const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
@@ -217,7 +220,7 @@ export class ExperimentsService {
           plan.n,
           plan.simModel,
           simPrompt?.sha256 ?? null,
-          plan.simModel ? SIM_TEMPERATURE : null,
+          plan.simModel ? simTemperature(plan.simModel) : null, // null with a simulator: not sent (D27)
           plan.simModel ? SIM_MAX_OUTPUT_TOKENS : null,
           body.budget_usd,
           plan.estimate.budgets.trial_usd,
@@ -244,12 +247,18 @@ export class ExperimentsService {
 
   // ---- lifecycle ----
 
+  /** Starts a created experiment, or resumes a paused one (D26); a running one is left as it is. */
   async start(id: string): Promise<ExperimentDetail> {
     const exp = await this.row(id);
     if (exp.status === 'done' || exp.status === 'cancelled') {
       throw conflict('experiment_finished', `experiment ${id} is ${exp.status} and cannot start again`);
     }
-    await this.db.query(`UPDATE experiments SET status = 'running', started_at = coalesce(started_at, now()) WHERE id = $1 AND status = 'created'`, [id]);
+    await this.db.tx(async (client) => {
+      await client.query(`UPDATE experiments SET status = 'running', started_at = coalesce(started_at, now()) WHERE id = $1 AND status = 'created'`, [id]);
+      await client.query(`UPDATE experiments SET status = 'running', resumed_at = now() WHERE id = $1 AND status = 'paused'`, [id]);
+      // A pause can come with the last trial: then there is nothing left to claim.
+      await finishIfDone(client, id);
+    });
     return this.get(id);
   }
 
@@ -258,7 +267,7 @@ export class ExperimentsService {
     const exp = await this.row(id);
     if (exp.status === 'done') throw conflict('experiment_finished', `experiment ${id} is already done`);
     await this.db.tx(async (client) => {
-      await client.query(`UPDATE experiments SET status = 'cancelled', cancelled_at = now() WHERE id = $1 AND status IN ('created', 'running')`, [id]);
+      await client.query(`UPDATE experiments SET status = 'cancelled', cancelled_at = now() WHERE id = $1 AND status IN ('created', 'running', 'paused')`, [id]);
       await client.query(`UPDATE trials SET status = 'cancelled', finished_at = now() WHERE experiment_id = $1 AND status = 'queued'`, [id]);
     });
     return this.get(id);
@@ -333,7 +342,7 @@ export class ExperimentsService {
     let sim: ExperimentDetail['sim'] = null;
     if (r.sim_model && r.sim_prompt_sha256) {
       const [p] = await this.db.query<{ id: string; version: string; sha256: string }>('SELECT id, version, sha256 FROM prompts WHERE sha256 = $1', [r.sim_prompt_sha256]);
-      if (p) sim = { prompt: { id: p.id, version: p.version, sha256: p.sha256 }, temperature: r.sim_temperature ?? SIM_TEMPERATURE, max_output_tokens: r.sim_max_output_tokens ?? SIM_MAX_OUTPUT_TOKENS };
+      if (p) sim = { prompt: { id: p.id, version: p.version, sha256: p.sha256 }, temperature: r.sim_temperature, max_output_tokens: r.sim_max_output_tokens ?? SIM_MAX_OUTPUT_TOKENS };
     }
     return {
       ...this.summary(r, extra),
@@ -344,6 +353,8 @@ export class ExperimentsService {
       budgets: { trial_usd: r.trial_budget_usd, sim_usd: r.sim_budget_usd },
       started_at: iso(r.started_at),
       finished_at: iso(r.finished_at),
+      paused_at: iso(r.paused_at),
+      paused_reason: r.paused_reason,
       tasks: r.task_sha256s.map((s) => tasks.find((t) => t.sha256 === s)).filter((t): t is StoredTask => !!t).map((t) => taskView(t)),
       configs: r.config_hashes.map((h) => configs.find((c) => c.hash === h)).filter((c): c is ConfigRow => !!c).map(configView),
       events: await this.events(r),
@@ -360,6 +371,9 @@ export class ExperimentsService {
     add(r.started_at, 'started', 'trials can be claimed');
     add(r.cancelled_at, 'cancelled', 'queued trials cancelled; claimed ones finish');
     add(r.finished_at, 'finished', 'every trial has finished');
+    // The latest pause and resume only: a second pause overwrites the first's time and reason.
+    add(r.paused_at, 'paused', r.paused_reason ?? 'paused');
+    add(r.resumed_at, 'resumed', 'claims resumed');
     const trials = await this.db.query<{
       id: string;
       attempt: number;
@@ -385,7 +399,8 @@ export class ExperimentsService {
       add(t.claimed_at, 'claim', `${what} claimed by ${t.worker_id ?? 'unknown'}`, t);
       if (t.attempt > 1) add(t.created_at, 'requeue', `${what} queued`, t);
       if (t.status === 'infra_failed') {
-        add(t.finished_at, t.label === 'infra:budget_net' ? 'budget_trip' : 'infra_failure', `${what}: ${t.label ?? 'infra'}`, t);
+        const kind = t.label === 'infra:budget_net' ? 'budget_trip' : t.label === 'infra:config_error' ? 'config_error' : 'infra_failure';
+        add(t.finished_at, kind, `${what}: ${t.label ?? 'infra'}`, t);
       }
       if (t.status === 'abandoned') add(t.finished_at, 'abandoned', `${what}: no heartbeat for 60 s`, t);
       if (t.problems.length) add(t.reported_at, 'file_problem', `${what}: ${t.problems.join('; ')}`, t);
