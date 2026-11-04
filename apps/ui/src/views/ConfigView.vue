@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref, shallowRef, watch } from 'vue';
 import { api } from '../api/client';
-import { ApiError, errorText } from '../api/errors';
-import { SETTING_NAMES, type ConfigDiffEntry, type ConfigView, type ConfigWarning, type Harness, type JsonObject, type ModelView, type PromptView, type SettingName, type ToolsetView } from '../api/types';
+import { ApiError, errorText, errorWithFix } from '../api/errors';
+import { SETTING_NAMES, type ConfigDiffEntry, type ConfigView, type ConfigWarning, type CreatedPrompt, type Harness, type JsonObject, type ModelView, type PromptView, type SeedSkill, type SettingName, type ToolsetView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import { useLoad } from '../lib/async';
@@ -11,6 +11,7 @@ import { changedLineCount, lineChanges, sentenceChanges } from '../lib/diff';
 import { mdBlocks } from '../lib/markdown';
 import { shortHash, shortRef } from '../lib/format';
 import { BOOLEAN_SETTINGS, harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
+import { agentModels, fakeDoes, isFake } from '../lib/models';
 import { ignoredReasons, toggleValue } from '../lib/settings';
 import { href, navigate } from '../router';
 import { text } from '../trials';
@@ -55,6 +56,9 @@ const showPrompt = ref(false);
 const showPromptDiff = ref(false);
 /** Model refusals learnt from a 400 this session, by model, for configs not saved yet. */
 const learnt = reactive<Record<string, Partial<Record<SettingName, string>>>>({});
+/** Seeds (D39): the memory entries, one per line, and the skills every trial starts with. */
+const seedMemory = ref('');
+const seedSkills = reactive<SeedSkill[]>([]);
 
 const versionNumber = (v: string) => Number(v.replace(/^v/, '')) || 0;
 const byAge = (configs: ConfigView[]) => [...configs].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
@@ -68,7 +72,7 @@ watch(data, (d) => {
   const base = forked ?? byAge(d.configs)[0];
   baseHash.value = base?.hash ?? '';
   form.harness = base?.harness ?? d.harnesses[0]?.name ?? '';
-  form.model = base?.model ?? d.models[0]?.name ?? '';
+  form.model = base?.model ?? d.models[0]?.name ?? agentModels([]).fake[0]?.name ?? '';
   const promptId = base?.prompt.id ?? d.prompts.find((p) => p.id !== 'client-sim' && p.id !== 'conflict-check')?.id ?? d.prompts[0]?.id;
   const newest = d.prompts.filter((p) => p.id === promptId).sort((a, b) => versionNumber(b.version) - versionNumber(a.version))[0];
   form.prompt = forked ? forked.prompt.sha256 : (newest?.sha256 ?? d.prompts[0]?.sha256 ?? '');
@@ -81,6 +85,8 @@ watch(data, (d) => {
     else form.numbers[name] = own && typeof value === 'number' ? String(value) : '';
   }
   for (const [k, v] of Object.entries(base?.harness_options ?? {})) form.options[k] = text(v);
+  seedMemory.value = (base?.seed?.memory ?? []).join('\n');
+  seedSkills.splice(0, seedSkills.length, ...(base?.seed?.skills ?? []).map((k) => ({ ...k })));
   if (forked) {
     form.name = `${forked.name}, fork`;
     nameTouched.value = true;
@@ -94,6 +100,7 @@ const toolset = computed(() => data.value?.toolsets.find((t) => t.sha256 === for
 const base = computed(() => data.value?.configs.find((c) => c.hash === baseHash.value) ?? null);
 const forkOf = computed(() => (props.fork ? (data.value?.configs.find((c) => c.hash === props.fork) ?? null) : null));
 const tools = computed(() => toolset.value?.servers.flatMap((s) => s.allowed_tools) ?? []);
+const modelGroups = computed(() => agentModels(data.value?.models ?? []));
 /** Task prompts only: the simulator's and the checker's prompts are not a config's to pick. */
 const taskPrompts = computed(() => data.value?.prompts.filter((p) => p.id !== 'client-sim' && p.id !== 'conflict-check') ?? []);
 
@@ -133,6 +140,68 @@ const harnessOptions = computed(() => {
   return out;
 });
 
+/** What the config seeds, when memory or skills is on for a harness that takes it; null for none,
+ *  so a config without seeds keeps its hash. */
+const seed = computed(() => {
+  const memory = supported('memory') && form.toggles.memory ? seedMemory.value.split('\n').map((line) => line.trim()).filter(Boolean) : [];
+  const skills =
+    supported('skills') && form.toggles.skills
+      ? seedSkills.filter((k) => k.name.trim() || k.body.trim()).map((k) => ({ name: k.name.trim(), description: k.description.trim(), body: k.body }))
+      : [];
+  return memory.length || skills.length ? { memory, skills } : null;
+});
+const seedWords = (s: { memory?: string[]; skills?: SeedSkill[] } | null | undefined) => {
+  const m = s?.memory?.length ?? 0;
+  const k = s?.skills?.length ?? 0;
+  if (!m && !k) return 'none';
+  return [m ? `${m} memory ${m === 1 ? 'entry' : 'entries'}` : '', k ? `${k} ${k === 1 ? 'skill' : 'skills'}` : ''].filter(Boolean).join(', ');
+};
+const addSkill = () => seedSkills.push({ name: '', description: '', body: '' });
+const removeSkill = (i: number) => seedSkills.splice(i, 1);
+
+// ---------------------------------------------------------------- a new prompt version
+
+const editingPrompt = ref(false);
+const draftText = ref('');
+const promptSaving = ref(false);
+const promptRefusal = ref<string | null>(null);
+const promptSaved = ref<{ created: CreatedPrompt; existed: boolean } | null>(null);
+const draftLines = computed(() => (prompt.value ? changedLineCount(lineChanges(prompt.value.text, draftText.value)) : 0));
+/** The version POST /prompts will write: the highest v<n> of this prompt plus one. */
+const nextVersion = computed(() => {
+  const p = prompt.value;
+  if (!p || !data.value) return '';
+  const n = Math.max(0, ...data.value.prompts.filter((x) => x.id === p.id).map((x) => Number(/^v(\d+)$/.exec(x.version)?.[1] ?? 0)));
+  return `v${n + 1}`;
+});
+function startPromptEdit() {
+  if (!prompt.value) return;
+  draftText.value = prompt.value.text;
+  promptRefusal.value = null;
+  promptSaved.value = null;
+  editingPrompt.value = true;
+}
+async function savePrompt() {
+  const base = prompt.value;
+  const d = data.value;
+  if (!base || !d || !draftText.value.trim() || !draftLines.value) return;
+  promptSaving.value = true;
+  promptRefusal.value = null;
+  try {
+    const known = new Set(d.prompts.map((p) => p.sha256));
+    const created = await api.createPrompt({ id: base.id, base_version: base.version, text: draftText.value });
+    const prompts = await api.prompts();
+    data.value = { ...d, prompts };
+    form.prompt = created.sha256;
+    promptSaved.value = { created, existed: known.has(created.sha256) };
+    editingPrompt.value = false;
+  } catch (err) {
+    promptRefusal.value = errorWithFix(err);
+  } finally {
+    promptSaving.value = false;
+  }
+}
+
 const suggestedName = computed(() => (prompt.value && harness.value ? `Prompt ${prompt.value.version} on ${harnessShort(harness.value.name)}` : ''));
 watch(suggestedName, (n) => {
   if (!nameTouched.value) form.name = n;
@@ -147,9 +216,22 @@ const invalid = computed(() => {
   return null;
 });
 
-/** A saved config's own value for a setting, as the form compares it: unset when a default. */
-const ownValue = (c: ConfigView, name: SettingName) => (c.settings_sources[name] === 'config' ? c.settings[name] : undefined);
-const shown = (v: unknown) => (v === undefined ? 'unset' : typeof v === 'object' && v !== null && 'enabled' in v ? ((v as { enabled: boolean }).enabled ? 'on' : 'off') : text(v));
+/** PLATFORM_DEFAULTS in apps/api/src/configs/settings.ts: what the API stores for a setting left unset. */
+const PLATFORM_DEFAULTS: Record<SettingName, unknown> = {
+  temperature: null,
+  max_output_tokens: 8192,
+  max_steps: 15,
+  timeout_s: 300,
+  parallel_tool_calls: false,
+  memory: { enabled: false },
+  skills: { enabled: false },
+  compression: { enabled: false },
+};
+/** The value the API would store for a setting from this form: the hash is over these, so a value
+ *  set to its default is no change. */
+const resolvedNow = (name: SettingName) => (!supported(name) || isIgnored(name) ? null : (settings.value[name] ?? PLATFORM_DEFAULTS[name]));
+const shown = (v: unknown) =>
+  v === undefined || v === null ? 'not sent' : typeof v === 'object' && 'enabled' in v ? ((v as { enabled: boolean }).enabled ? 'on' : 'off') : text(v);
 
 /** What differs from the comparison config, in words. */
 const changes = computed(() => {
@@ -161,10 +243,11 @@ const changes = computed(() => {
   if (b.prompt.sha256 !== form.prompt) out.push(`Prompt: ${b.prompt.id === prompt.value?.id ? '' : `${b.prompt.id} `}${b.prompt.version} to ${prompt.value?.id === b.prompt.id ? '' : `${prompt.value?.id} `}${prompt.value?.version ?? '?'}`);
   if (b.toolset.sha256 !== form.toolset) out.push(`Toolset: ${b.toolset.id} ${b.toolset.version} to ${toolset.value?.id} ${toolset.value?.version}`);
   for (const name of SETTING_NAMES) {
-    const was = ownValue(b, name);
-    const now = settings.value[name];
+    const was = b.settings[name];
+    const now = resolvedNow(name);
     if (shown(was) !== shown(now)) out.push(`${settingLabel(name)}: ${shown(was)} to ${shown(now)}`);
   }
+  if (JSON.stringify(b.seed?.memory?.length || b.seed?.skills?.length ? b.seed : null) !== JSON.stringify(seed.value)) out.push(`Seed: ${seedWords(b.seed)} to ${seedWords(seed.value)}`);
   const keys = new Set([...Object.keys(b.harness_options), ...Object.keys(harnessOptions.value)]);
   for (const k of keys) {
     if (text(b.harness_options[k]) !== text(harnessOptions.value[k])) out.push(`${settingLabel(k)}: ${text(b.harness_options[k] ?? 'default')} to ${text(harnessOptions.value[k] ?? 'default')}`);
@@ -181,7 +264,8 @@ const sameAs = computed(() => {
     c.model === form.model &&
     c.prompt.sha256 === form.prompt &&
     c.toolset.sha256 === form.toolset &&
-    SETTING_NAMES.every((name) => shown(ownValue(c, name)) === shown(settings.value[name])) &&
+    SETTING_NAMES.every((name) => shown(c.settings[name]) === shown(resolvedNow(name))) &&
+    JSON.stringify(c.seed?.memory?.length || c.seed?.skills?.length ? c.seed : null) === JSON.stringify(seed.value) &&
     JSON.stringify(Object.entries(c.harness_options).sort()) === JSON.stringify(Object.entries(harnessOptions.value).sort());
   return d.configs.find(same) ?? null;
 });
@@ -265,6 +349,9 @@ const FIELD_OF_CODE: Record<string, string> = {
   unknown_prompt: 'prompt',
   unknown_toolset: 'toolset',
   invalid_harness_options: 'options',
+  invalid_seed: 'seed',
+  unsupported_seed: 'seed',
+  seed_feature_off: 'seed',
 };
 function fieldOf(err: ApiError): string | null {
   if (FIELD_OF_CODE[err.code]) return FIELD_OF_CODE[err.code];
@@ -289,6 +376,7 @@ async function save(thenRun: boolean) {
       toolset_sha256: form.toolset,
       settings: settings.value,
       harness_options: harnessOptions.value,
+      ...(seed.value ? { seed: seed.value } : {}),
       ...(forkOf.value ? { parent_hash: forkOf.value.hash } : {}),
     });
     saved.value = config;
@@ -311,7 +399,7 @@ async function save(thenRun: boolean) {
 }
 
 watch(
-  () => [form.harness, form.model, form.prompt, form.toolset, JSON.stringify(settings.value), JSON.stringify(harnessOptions.value)],
+  () => [form.harness, form.model, form.prompt, form.toolset, JSON.stringify(settings.value), JSON.stringify(harnessOptions.value), JSON.stringify(seed.value)],
   () => {
     saved.value = null;
     apiDiff.value = null;
@@ -405,16 +493,30 @@ watch(
               v-model="form.model"
               data-test="model-select"
             >
-              <option
-                v-for="m in data.models"
-                :key="m.name"
-                :value="m.name"
-              >{{ modelName(m.name) }}</option>
+              <optgroup label="Real models: each call costs money">
+                <option
+                  v-for="m in modelGroups.real"
+                  :key="m.name"
+                  :value="m.name"
+                >{{ modelName(m.name) }}</option>
+              </optgroup>
+              <optgroup label="Fake models: scripted replies, free">
+                <option
+                  v-for="m in modelGroups.fake"
+                  :key="m.name"
+                  :value="m.name"
+                >{{ modelName(m.name) }}: {{ m.does }}</option>
+              </optgroup>
             </select>
             <span
-              v-if="model"
+              v-if="isFake(form.model)"
               class="secondary smaller"
-            >Price per million tokens: {{ perMillion(model.input_per_mtok) }} in, {{ perMillion(model.output_per_mtok) }} out, from the LiteLLM config</span>
+              data-test="fake-model-note"
+            >Fake: the fake LLM server plays a script ({{ fakeDoes(form.model) }}). No real model and no real spend; LiteLLM still counts made-up prices, so budgets and spend work as they would.</span>
+            <span
+              v-else-if="model"
+              class="secondary smaller"
+            >Price per million tokens: {{ perMillion(model.input_per_mtok) }} in, {{ perMillion(model.output_per_mtok) }} out, from the LiteLLM config. A real model: each call costs money.</span>
             <span
               v-if="refusalFor('model')"
               class="refusal small"
@@ -497,6 +599,82 @@ watch(
             >
               {{ showPrompt ? 'Show less' : 'Show the whole prompt' }}
             </button>
+          </div>
+          <div
+            v-if="prompt && !editingPrompt"
+            class="prompt-actions"
+          >
+            <button
+              type="button"
+              class="btn btn--quiet"
+              data-test="new-prompt"
+              @click="startPromptEdit"
+            >
+              New prompt version…
+            </button>
+            <span class="secondary smaller">Starts from {{ prompt.id }} {{ prompt.version }}; saving writes {{ nextVersion }} beside it and never changes {{ prompt.version }}.</span>
+          </div>
+          <p
+            v-if="promptSaved && !editingPrompt"
+            class="small saved"
+            role="status"
+            data-test="prompt-saved"
+          >
+            <template v-if="promptSaved.existed">
+              That text is already {{ promptSaved.created.id }} {{ promptSaved.created.version }}, so it is picked; nothing was written.
+            </template>
+            <template v-else>
+              Saved as {{ promptSaved.created.id }} {{ promptSaved.created.version }} (<span class="mono">{{ promptSaved.created.path }}</span>) and picked for this config. The file is in the working tree until someone commits it.
+            </template>
+          </p>
+          <div
+            v-if="editingPrompt && prompt"
+            class="prompt-editor"
+            data-test="prompt-editor"
+          >
+            <label class="field">
+              <span class="strong">{{ prompt.id }} {{ nextVersion }}, from {{ prompt.version }}</span>
+              <textarea
+                v-model="draftText"
+                rows="18"
+                class="mono prompt-draft"
+                spellcheck="true"
+                data-test="prompt-draft"
+              />
+            </label>
+            <p
+              class="secondary smaller"
+              data-test="prompt-draft-lines"
+            >
+              {{ draftLines ? `${draftLines} ${draftLines === 1 ? 'line differs' : 'lines differ'} from ${prompt.version}.` : `No change from ${prompt.version} yet.` }} A version a run has used is never edited: every change is a new version, so every result keeps pointing at the text it ran.
+            </p>
+            <p
+              v-if="promptRefusal"
+              class="refusal small"
+              role="alert"
+              data-test="prompt-refusal"
+            >
+              {{ promptRefusal }}
+            </p>
+            <div class="prompt-actions">
+              <button
+                type="button"
+                class="btn"
+                :disabled="promptSaving || !draftLines || !draftText.trim()"
+                data-test="save-prompt"
+                @click="savePrompt"
+              >
+                Save as {{ nextVersion }}
+              </button>
+              <button
+                type="button"
+                class="btn btn--quiet"
+                :disabled="promptSaving"
+                @click="editingPrompt = false"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </fieldset>
 
@@ -684,6 +862,115 @@ watch(
               </tbody>
             </table>
           </div>
+          <section
+            v-if="supported('memory') || supported('skills')"
+            class="seeds"
+            aria-labelledby="seeds-title"
+            data-test="seeds"
+          >
+            <h3
+              id="seeds-title"
+              class="seeds-title"
+            >
+              Seeds
+            </h3>
+            <p class="hint">
+              What every trial of this config starts with: memory entries and skills given by the config, never learned ones (D39). A seed changes the hash.
+            </p>
+            <template v-if="supported('memory') && !isIgnored('memory')">
+              <label
+                v-if="form.toggles.memory"
+                class="field"
+              >
+                <span class="strong">Memory, one entry per line</span>
+                <textarea
+                  v-model="seedMemory"
+                  rows="4"
+                  data-test="seed-memory"
+                  placeholder="Client prefers Hindi terms for loans"
+                />
+              </label>
+              <p
+                v-else
+                class="secondary small"
+              >
+                Turn memory on to seed it.
+              </p>
+            </template>
+            <template v-if="supported('skills') && !isIgnored('skills')">
+              <div
+                v-if="form.toggles.skills"
+                class="skills"
+              >
+                <span class="strong">Skills</span>
+                <fieldset
+                  v-for="(k, ki) in seedSkills"
+                  :key="ki"
+                  class="skill"
+                  data-test="seed-skill"
+                >
+                  <legend class="visually-hidden">
+                    Skill {{ ki + 1 }}
+                  </legend>
+                  <label class="field">
+                    <span class="smaller">Name: lower-case letters, digits and hyphens</span>
+                    <input
+                      v-model="k.name"
+                      type="text"
+                      class="mono"
+                      pattern="[a-z0-9][a-z0-9-]*"
+                    >
+                  </label>
+                  <label class="field">
+                    <span class="smaller">Description</span>
+                    <input
+                      v-model="k.description"
+                      type="text"
+                    >
+                  </label>
+                  <label class="field">
+                    <span class="smaller">Body</span>
+                    <textarea
+                      v-model="k.body"
+                      rows="4"
+                      class="mono"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    class="link-button smaller"
+                    @click="removeSkill(ki)"
+                  >
+                    Remove this skill
+                  </button>
+                </fieldset>
+                <button
+                  type="button"
+                  class="btn btn--quiet"
+                  data-test="add-skill"
+                  @click="addSkill"
+                >
+                  Add a skill
+                </button>
+              </div>
+              <p
+                v-else
+                class="secondary small"
+              >
+                Turn skills on to seed them.
+              </p>
+            </template>
+            <p
+              v-if="refusalFor('seed')"
+              class="refusal small"
+              role="alert"
+              data-test="refusal-seed"
+            >
+              {{ refusalFor('seed')?.message }}<template v-if="refusalFor('seed')?.fix">
+                <span class="block"><strong>Fix:</strong> {{ refusalFor('seed')?.fix }}</span>
+              </template>
+            </p>
+          </section>
           <details
             v-if="optionProps.length"
             class="options"
@@ -921,6 +1208,50 @@ watch(
 </template>
 
 <style scoped>
+.prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+}
+
+.prompt-editor {
+  margin-top: 12px;
+}
+
+.prompt-draft {
+  width: 100%;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.seeds {
+  margin-top: 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.seeds-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.skills {
+  display: grid;
+  gap: 10px;
+}
+
+.skill {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+}
+
 .refusal {
   display: block;
   margin: 6px 0 0;

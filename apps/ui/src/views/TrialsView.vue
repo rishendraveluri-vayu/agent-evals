@@ -56,66 +56,70 @@ onMounted(async () => {
     </p>
     <template v-else>
       <SpendChart :trials="trials" />
-      <table
+      <div
         v-if="configs.length"
-        class="data"
-        data-test="config-table"
+        class="scroll-x"
       >
-        <thead>
-          <tr>
-            <th>Config</th>
-            <th class="num">
-              Trials
-            </th>
-            <th class="num">
-              Total
-            </th>
-            <th class="num">
-              Mean / trial
-            </th>
-            <th class="num">
-              Model calls (proxy)
-            </th>
-            <th class="num">
-              Model calls (harness)
-            </th>
-            <th class="num">
-              Infra failures
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="c in configs"
-            :key="c.key"
-          >
-            <td>
-              <span
-                class="swatch"
-                :style="{ background: `var(--series-${harnessSlot(c.harness)})` }"
-              />{{ c.label }}
-            </td>
-            <td class="num">
-              {{ c.trials }}
-            </td>
-            <td class="num">
-              {{ usd(c.totalUsd) }}
-            </td>
-            <td class="num">
-              {{ usd(c.meanUsd) }}
-            </td>
-            <td class="num">
-              {{ c.meanProxyCalls?.toFixed(1) ?? '–' }}
-            </td>
-            <td class="num">
-              {{ c.meanHarnessCalls?.toFixed(1) ?? '–' }}
-            </td>
-            <td class="num">
-              {{ c.infra }}
-            </td>
-          </tr>
-        </tbody>
-      </table>
+        <table
+          class="data"
+          data-test="config-table"
+        >
+          <thead>
+            <tr>
+              <th>Config</th>
+              <th class="num">
+                Trials
+              </th>
+              <th class="num">
+                Total
+              </th>
+              <th class="num">
+                Mean / trial
+              </th>
+              <th class="num">
+                Model calls (proxy)
+              </th>
+              <th class="num">
+                Model calls (harness)
+              </th>
+              <th class="num">
+                Infra failures
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="c in configs"
+              :key="c.key"
+            >
+              <td>
+                <span
+                  class="swatch"
+                  :style="{ background: `var(--series-${harnessSlot(c.harness)})` }"
+                />{{ c.label }}
+              </td>
+              <td class="num">
+                {{ c.trials }}
+              </td>
+              <td class="num">
+                {{ usd(c.totalUsd) }}
+              </td>
+              <td class="num">
+                {{ usd(c.meanUsd) }}
+              </td>
+              <td class="num">
+                {{ c.meanProxyCalls?.toFixed(1) ?? '–' }}
+              </td>
+              <td class="num">
+                {{ c.meanHarnessCalls?.toFixed(1) ?? '–' }}
+              </td>
+              <td class="num">
+                {{ c.infra }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </template>
   </section>
 
@@ -127,78 +131,88 @@ onMounted(async () => {
     <h2 id="trials-heading">
       Trials
     </h2>
-    <table
-      class="data"
-      data-test="trials-table"
-    >
-      <thead>
-        <tr>
-          <th>Trial</th>
-          <th>Harness</th>
-          <th>Model</th>
-          <th>Task</th>
-          <th>End state</th>
-          <th>Label</th>
-          <th class="num">
-            Turns
-          </th>
-          <th class="num">
-            Calls (proxy / harness)
-          </th>
-          <th class="num">
-            Tools (errors)
-          </th>
-          <th class="num">
-            Cost
-          </th>
-          <th class="num">
-            Wall
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr
-          v-for="t in newestFirst"
-          :key="t.trialId"
-        >
-          <td>
-            <a :href="`#/trials/${encodeURIComponent(t.trialId)}`">{{ t.trialId }}</a>
-          </td>
-          <td>
-            <span
-              class="swatch"
-              :style="{ background: `var(--series-${harnessSlot(t.harness)})` }"
-            />{{ t.harness }}
-          </td>
-          <td>{{ t.model }}</td>
-          <td>{{ t.taskId }}</td>
-          <td><span class="tag">{{ t.endState ?? 'none' }}</span></td>
-          <td>
-            <span
-              class="tag"
-              :class="{ 'tag--infra': t.label.startsWith('infra:') }"
-            >{{ t.label }}</span>
-          </td>
-          <td class="num">
-            {{ t.agentTurns ?? '–' }}
-          </td>
-          <td class="num">
-            {{ t.proxyCalls ?? '–' }} / {{ t.harnessCalls ?? '–' }}<span
-              v-if="t.proxyComplete === false"
-              title="LiteLLM's log never caught up: not trusted"
-            > (log incomplete)</span>
-          </td>
-          <td class="num">
-            {{ t.toolCalls ?? '–' }} ({{ t.toolErrors ?? 0 }})
-          </td>
-          <td class="num">
-            {{ usd(t.proxyCostUsd) }}
-          </td>
-          <td class="num">
-            {{ t.wallS?.toFixed(1) ?? '–' }} s
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div class="scroll-x">
+      <table
+        class="data"
+        data-test="trials-table"
+      >
+        <thead>
+          <tr>
+            <th>Trial</th>
+            <th>Harness</th>
+            <th>Model</th>
+            <th>Task</th>
+            <th>End state</th>
+            <th>Label</th>
+            <th class="num">
+              Turns
+            </th>
+            <th class="num">
+              Calls (proxy / harness)
+            </th>
+            <th class="num">
+              Tools (errors)
+            </th>
+            <th class="num">
+              Cost
+            </th>
+            <th class="num">
+              Wall
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="t in newestFirst"
+            :key="t.trialId"
+          >
+            <td>
+              <a :href="`#/trials/${encodeURIComponent(t.trialId)}`">{{ t.trialId }}</a>
+            </td>
+            <td>
+              <span
+                class="swatch"
+                :style="{ background: `var(--series-${harnessSlot(t.harness)})` }"
+              />{{ t.harness }}
+            </td>
+            <td>{{ t.model }}</td>
+            <td>{{ t.taskId }}</td>
+            <td><span class="tag">{{ t.endState ?? 'none' }}</span></td>
+            <td>
+              <span
+                class="tag"
+                :class="{ 'tag--infra': t.label.startsWith('infra:') }"
+              >{{ t.label }}</span>
+            </td>
+            <td class="num">
+              {{ t.agentTurns ?? '–' }}
+            </td>
+            <td class="num">
+              {{ t.proxyCalls ?? '–' }} / {{ t.harnessCalls ?? '–' }}<span
+                v-if="t.proxyComplete === false"
+                title="LiteLLM's log never caught up: not trusted"
+              > (log incomplete)</span>
+            </td>
+            <td class="num">
+              {{ t.toolCalls ?? '–' }} ({{ t.toolErrors ?? 0 }})
+            </td>
+            <td class="num">
+              {{ usd(t.proxyCostUsd) }}
+            </td>
+            <td class="num">
+              {{ t.wallS?.toFixed(1) ?? '–' }} s
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </section>
 </template>
+
+<style scoped>
+/* A wide table scrolls inside its card on a phone, never the page. */
+.scroll-x {
+  position: relative;
+  overflow-x: auto;
+}
+</style>

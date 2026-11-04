@@ -1,59 +1,15 @@
 {
-  "checks": [
-    {
-      "id": "number_provenance",
-      "version": "1",
-      "passed": false,
-      "amounts": [
-        {
-          "text": "₹5 lakh",
-          "value": 500000,
-          "supported": true,
-          "source": "the client's message"
-        },
-        {
-          "text": "7.1%",
-          "value": 7.1,
-          "supported": true,
-          "source": "fd_maturity arguments"
-        },
-        {
-          "text": "₹7,10,870",
-          "value": 710870,
-          "supported": true,
-          "source": "fd_maturity"
-        },
-        {
-          "text": "₹6,87,400",
-          "value": 687400,
-          "supported": true,
-          "source": "sip_future_value"
-        },
-        {
-          "text": "₹8,333",
-          "value": 8333,
-          "supported": true,
-          "source": "sip_future_value arguments"
-        },
-        {
-          "text": "12%",
-          "value": 12,
-          "supported": true,
-          "source": "sip_future_value arguments"
-        },
-        {
-          "text": "₹4 lakh",
-          "value": 400000,
-          "supported": false,
-          "source": null
-        },
-        {
-          "text": "₹1 lakh",
-          "value": 100000,
-          "supported": false,
-          "source": null
-        }
-      ]
-    }
-  ]
+  "number_provenance": {
+    "total": 8,
+    "unsupported": [
+      {
+        "text": "₹4 lakh",
+        "value": 400000
+      },
+      {
+        "text": "₹1 lakh",
+        "value": 100000
+      }
+    ]
+  }
 }

@@ -23,7 +23,8 @@ export function axisFromDiff(diff: ConfigDiffEntry[], sameConfig: boolean): stri
   const areas = new Set(
     content.map((d) => {
       const [head, sub] = d.path.split('.');
-      if (head === 'harness' || head === 'harness_ref') return 'harness';
+      // The adapter's version and its capabilities file come with the harness (GET /configs/:a/diff/:b lists them).
+      if (head === 'harness' || head === 'harness_ref' || head === 'adapter_version' || head === 'capabilities_sha256') return 'harness';
       // A setting only one of the two harnesses supports is part of changing the harness.
       if (harnessChanges && (head === 'harness_options' || (head === 'settings' && (d.a === null || d.a === undefined || d.b === null || d.b === undefined)))) return 'harness';
       if (head === 'settings' && sub) return sub;

@@ -133,6 +133,17 @@ describe('checks before a run', () => {
   it('finds the one thing two configs differ in', () => {
     expect(axisFromDiff([{ path: 'prompt.version', a: 'v1', b: 'v2' }, { path: 'prompt.sha256', a: 'x', b: 'y' }, { path: 'name', a: 'p', b: 'q' }], false)).toBe('prompt');
     expect(axisFromDiff([{ path: 'harness', a: 'ownloop', b: 'hermes' }, { path: 'settings.memory', a: null, b: false }], false)).toBe('harness');
+    // As the live API diffs two harnesses: the adapter version and the capabilities file come with it.
+    expect(
+      axisFromDiff(
+        [
+          { path: 'capabilities_sha256', a: 'sha256:f42c', b: 'sha256:4134' },
+          { path: 'harness', a: 'ownloop', b: 'langgraph' },
+          { path: 'harness_ref', a: '0.1.0', b: '1.2.16' },
+        ],
+        false,
+      ),
+    ).toBe('harness');
     expect(axisFromDiff([{ path: 'model', a: 'a', b: 'b' }, { path: 'settings.temperature', a: 0.2, b: 0.7 }], false)).toBeNull();
     expect(armsCheck([{ path: 'model', a: 'a', b: 'b' }, { path: 'settings.temperature', a: 0.2, b: 0.7 }], false).ok).toBe(false);
   });

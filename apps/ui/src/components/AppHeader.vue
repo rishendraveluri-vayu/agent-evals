@@ -205,11 +205,11 @@ onMounted(async () => {
           v-else
           class="health"
           data-test="health-ok"
-        >API <span data-test="health-status">{{ health.health.status }}</span>, database
+        ><span>API <span data-test="health-status">{{ health.health.status }}</span>, database
           <span
             data-test="health-db"
             :class="{ 'health--down': health.health.db === 'down' }"
-          >{{ dbWords[health.health.db] }}</span></span>
+          >{{ dbWords[health.health.db] }}</span></span></span>
       </template>
       <button
         type="button"

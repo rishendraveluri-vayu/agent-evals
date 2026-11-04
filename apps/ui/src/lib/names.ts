@@ -21,8 +21,10 @@ export function harnessShort(name: string): string {
   return HARNESS_SHORT[name] ?? harnessName(name);
 }
 
-/** claude-haiku-5-5 → Claude Haiku 5.5; gemini-3.8-flash → Gemini 3.8 Flash. */
+/** claude-haiku-5-5 → Claude Haiku 5.5; gemini-3.8-flash → Gemini 3.8 Flash; a fake model
+ *  says so plainly: fake/finance-emi → Fake model finance-emi. */
 export function modelName(name: string): string {
+  if (name.startsWith('fake/')) return `Fake model ${name.slice(5)}`;
   const parts = name.split(/[-/]/).filter(Boolean);
   const out: string[] = [];
   for (const part of parts) {

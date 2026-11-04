@@ -14,6 +14,7 @@ import { capitalise, clock, minutes, money, plural, shortHash, wholeMoney } from
 import { modelName, splitName } from '../lib/names';
 import { href, navigate } from '../router';
 import { eventView, pauseCause } from '../lib/runs';
+import { FAKE_SIM_MODEL, isFake, simModels } from '../lib/models';
 import { text } from '../trials';
 
 const props = defineProps<{ experimentId?: string; a?: string | null; b?: string | null }>();
@@ -46,27 +47,56 @@ const { data, error, loading, reload } = useLoad<Loaded>(async () => {
 
 // ---------------------------------------------------------------- what is being run
 
-const setup = reactive({ a: props.a ?? '', b: props.b ?? '', split: 'held_out', n: 5, simModel: '', budget: '', plan: '', name: '' });
-const touched = reactive({ budget: false, name: false });
+const setup = reactive({ a: props.a ?? '', b: props.b ?? '', split: 'held_out', n: 5, simModel: '', budget: '', plan: '', name: '', seed: '' });
+const touched = reactive({ budget: false, name: false, sim: false });
+/** Tasks taken out of the run by hand, by sha256. Engine tests start out of it. */
+const excluded = reactive(new Set<string>());
+const isEngineTest = (t: TaskView) => t.summary.startsWith('ENGINE TEST ONLY');
 
 watch(data, (d) => {
   if (!d || !draft || setup.simModel) return;
   // GET /configs lists the oldest first: arm A defaults to the oldest, the baseline.
   if (!setup.a) setup.a = d.configs[0]?.hash ?? '';
-  if (!setup.b) setup.b = d.configs.find((c) => c.hash !== setup.a)?.hash ?? setup.a;
-  setup.simModel = d.models[0]?.name ?? '';
+  // An arm B passed as empty in the address means a one-arm run.
+  if (!setup.b && props.b !== '') setup.b = d.configs.find((c) => c.hash !== setup.a)?.hash ?? setup.a;
+  setup.simModel = defaultSim.value;
   if (!d.allTasks.some((t) => t.split === setup.split)) setup.split = 'all';
+  for (const t of d.allTasks) if (isEngineTest(t)) excluded.add(t.sha256);
 });
 
 const hashes = computed<string[]>(() => (draft ? [setup.a, setup.b].filter(Boolean) : (data.value?.experiment?.config_hashes ?? [])));
+/** Every arm on a fake model: the run is free, and the simulated client defaults to the fake one. */
+const allFake = computed(() => hashes.value.length > 0 && hashes.value.every((h) => isFake(data.value?.configs.find((c) => c.hash === h)?.model)));
+const defaultSim = computed(() => (allFake.value ? FAKE_SIM_MODEL : (data.value?.models[0]?.name ?? FAKE_SIM_MODEL)));
+watch(defaultSim, (v) => {
+  if (draft && !touched.sim && setup.simModel) setup.simModel = v;
+});
+const simGroups = computed(() => simModels(data.value?.models ?? []));
+/** What this run calls that costs money, for the start panel. */
+const realModels = computed(() => {
+  const models = hashes.value.map((h) => data.value?.configs.find((c) => c.hash === h)?.model).filter((m): m is string => !!m && !isFake(m));
+  const conversation = tasks.value.some((t) => t.kind === 'conversation');
+  if (conversation && setup.simModel && !isFake(setup.simModel)) models.push(setup.simModel);
+  return [...new Set(models)];
+});
 const configOf = (h: string) => data.value?.configs.find((c) => c.hash === h);
 const sameConfig = computed(() => hashes.value.length === 2 && hashes.value[0] === hashes.value[1]);
+/** The tasks of the chosen split, before any is taken out by hand. */
+const splitTasks = computed<TaskView[]>(() => {
+  const d = data.value;
+  if (!d || !draft) return [];
+  return setup.split === 'all' ? d.allTasks : d.allTasks.filter((t) => t.split === setup.split);
+});
 const tasks = computed<TaskView[]>(() => {
   const d = data.value;
   if (!d) return [];
   if (!draft) return d.experiment?.tasks ?? [];
-  return setup.split === 'all' ? d.allTasks : d.allTasks.filter((t) => t.split === setup.split);
+  return splitTasks.value.filter((t) => !excluded.has(t.sha256));
 });
+function toggleTask(sha: string) {
+  if (excluded.has(sha)) excluded.delete(sha);
+  else excluded.add(sha);
+}
 const splits = computed(() => [...new Set(data.value?.allTasks.map((t) => t.split) ?? [])]);
 const n = computed(() => (draft ? Math.max(1, Math.round(Number(setup.n) || 1)) : (data.value?.experiment?.n ?? 0)));
 
@@ -121,7 +151,8 @@ const checks = computed<Check[]>(() => {
   const list = [
     ...(hashes.value.length === 2 ? [armsCheck(diff.value, sameConfig.value)] : []),
     capabilityCheck(configs, d.harnesses),
-    planCheck(plan),
+    // A plan is committed before a run that measures something; a run on fake models only tries the platform out.
+    allFake.value && draft ? { ok: true, title: 'No analysis plan needed: every arm runs on a fake model', detail: 'A fake run tries the platform out; it measures nothing about a real agent.' } : planCheck(plan),
     splitCheck(tasks.value, d.allTasks),
   ];
   list.push(budgetCheck(budget.value, estimate.value));
@@ -177,7 +208,8 @@ async function startNew() {
       n: n.value,
       sim_model: setup.simModel || null,
       budget_usd: Number(setup.budget),
-      plan_commit: setup.plan.trim(),
+      plan_commit: setup.plan.trim() || null,
+      ...(setup.seed.trim() !== '' && Number.isInteger(Number(setup.seed)) ? { order_seed: Number(setup.seed) } : {}),
     });
     await api.startExperiment(created.id);
     navigate(href.run(created.id));
@@ -366,6 +398,8 @@ const infraInGrid = computed(() => {
   const cells = grid.value.flatMap((row) => row.arms.flat());
   return { requeued: cells.some((c) => c.state === 'infra'), retried: cells.some((c) => c.retried), gaveUp: cells.some((c) => c.state === 'abandoned') };
 });
+/** Done trials with no grade yet (grading is its own step), for the legend: only when present. */
+const ungradedInGrid = computed(() => grid.value.some((row) => row.arms.flat().some((c) => c.state === 'ungraded')));
 const showInfraLegend = computed(() => infraInGrid.value.requeued || infraInGrid.value.retried || infraInGrid.value.gaveUp);
 
 /** The run's log, oldest first, so it reads in the order things happened. Claims are many and
@@ -519,7 +553,7 @@ const planNote = computed(() => {
         v-if="!started"
         class="lede"
       >
-        Nothing starts unless the run can finish. The estimates come from {{ estimate?.basis ? estimate.basis.charAt(0).toLowerCase() + estimate.basis.slice(1) : 'earlier trials and the prices in LiteLLM' }}.
+        Nothing starts unless the run can finish. The estimates come from {{ estimate?.basis ? (estimate.basis.charAt(0).toLowerCase() + estimate.basis.slice(1)).replace(/[.\s]+$/, '') : 'earlier trials and the prices in LiteLLM' }}.
       </p>
     </div>
     <div
@@ -672,6 +706,9 @@ const planNote = computed(() => {
                   v-model="setup.b"
                   data-test="arm-b"
                 >
+                  <option value="">
+                    None: one arm, a pilot
+                  </option>
                   <option
                     v-for="c in data.configs"
                     :key="c.hash"
@@ -701,13 +738,27 @@ const planNote = computed(() => {
               </fieldset>
               <label class="field">
                 <span class="field-label">Simulated client model</span>
-                <select v-model="setup.simModel">
-                  <option
-                    v-for="m in data.models"
-                    :key="m.name"
-                    :value="m.name"
-                  >{{ modelName(m.name) }}</option>
+                <select
+                  v-model="setup.simModel"
+                  data-test="sim-model"
+                  @change="touched.sim = true"
+                >
+                  <optgroup label="Fake: scripted, free">
+                    <option
+                      v-for="m in simGroups.fake"
+                      :key="m.name"
+                      :value="m.name"
+                    >{{ modelName(m.name) }}</option>
+                  </optgroup>
+                  <optgroup label="Real: each call costs money">
+                    <option
+                      v-for="m in simGroups.real"
+                      :key="m.name"
+                      :value="m.name"
+                    >{{ modelName(m.name) }}</option>
+                  </optgroup>
                 </select>
+                <span class="secondary smaller">Plays the client in conversation tasks only.</span>
               </label>
               <label class="field">
                 <span class="field-label">Name</span>
@@ -727,6 +778,39 @@ const planNote = computed(() => {
                   data-test="plan-commit"
                 >
               </label>
+              <label class="field">
+                <span class="field-label">Claim-order seed, optional</span>
+                <input
+                  v-model="setup.seed"
+                  type="text"
+                  inputmode="numeric"
+                  class="mono"
+                  placeholder="Random, and recorded"
+                  data-test="order-seed"
+                >
+                <span class="secondary smaller">The trials run in an order shuffled from it, arms interleaved (D32).</span>
+              </label>
+              <fieldset
+                class="field fieldset task-pick"
+                data-test="task-pick"
+              >
+                <legend class="field-label">
+                  {{ tasks.length }} of {{ splitTasks.length }} tasks in the run
+                </legend>
+                <label
+                  v-for="t in splitTasks"
+                  :key="t.sha256"
+                  class="task-option small"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="!excluded.has(t.sha256)"
+                    :data-test="`task-${t.id}`"
+                    @change="toggleTask(t.sha256)"
+                  >
+                  <span><span class="mono">{{ t.id }}</span> <span class="secondary">{{ t.kind === 'conversation' ? 'conversation' : 'one prompt' }}{{ isEngineTest(t) ? ', engine test' : '' }}</span></span>
+                </label>
+              </fieldset>
             </div>
           </section>
 
@@ -823,6 +907,22 @@ const planNote = computed(() => {
               >
             </label>
           </template>
+          <p
+            v-if="draft"
+            class="small spend-kind"
+            :class="{ 'spend-kind--real': realModels.length }"
+            data-test="spend-kind"
+          >
+            <template v-if="realModels.length">
+              <AppIcon
+                name="alert"
+                :size="14"
+              /> Real models: {{ realModels.map(modelName).join(' and ') }}. This run costs real money and needs Rishi's go-ahead first (R8).
+            </template>
+            <template v-else>
+              Every model here is fake: the run is free, and nothing it finds is about a real agent.
+            </template>
+          </p>
           <p
             v-if="budgetNote"
             class="secondary small"
@@ -1014,6 +1114,11 @@ const planNote = computed(() => {
                 /></span>Fail</span>
                 <span class="legend-item"><span class="cell cell--running" />Running</span>
                 <span class="legend-item"><span class="cell cell--waiting" />Waiting</span>
+                <span
+                  v-if="ungradedInGrid"
+                  class="legend-item"
+                  data-test="legend-ungraded"
+                ><span class="cell cell--ungraded" />Done, not graded yet</span>
               </div>
               <div
                 v-if="showInfraLegend"
@@ -1341,6 +1446,32 @@ const planNote = computed(() => {
 </template>
 
 <style scoped>
+.task-pick {
+  display: grid;
+  gap: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+@media (min-width: 720px) {
+  .task-pick {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+}
+
+.task-option {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  min-height: 32px;
+}
+
+.spend-kind--real {
+  font-weight: 600;
+}
+
 .control-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -1668,6 +1799,7 @@ const planNote = computed(() => {
 }
 
 .grid-scroll {
+  position: relative;
   overflow-x: auto;
 }
 

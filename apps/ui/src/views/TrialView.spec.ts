@@ -39,16 +39,16 @@ describe('TrialView in fixture mode', () => {
     // The highlight links to the check that quoted it, and says so to a screen reader.
     const quote = messages[1].get('[data-test="quote-link"]');
     expect(quote.attributes('href')).toBe('#grade-1');
-    expect(quote.get('.visually-hidden').text()).toBe('Quoted by the judge for Accounts for tax on FD interest:');
+    expect(quote.get('.visually-hidden').text()).toBe('Quoted by the judge for fd-tax:');
     expect(w.get('[data-test="mark-key"]').text()).toBe('Highlighted: text the judge quoted for a failed check.');
     expect(w.findAll('[data-test="mark-key"]')).toHaveLength(1);
     const grades = w.findAll('[data-test="grade"]');
     expect(grades).toHaveLength(3);
-    expect(grades[1].text()).toContain('Accounts for tax on FD interest');
+    expect(grades[1].text()).toContain('fd-tax');
     expect(grades[1].text()).toContain('Fail');
     expect(grades[1].get('[data-test="grade-kind"]').text()).toBe('Judge claude-haiku-5-5, rubric v3');
     expect(grades[1].get('[data-test="grade-kind"] .mono').text()).toBe('claude-haiku-5-5');
-    expect(grades[0].get('[data-test="grade-kind"]').text()).toBe('Unit test');
+    expect(grades[0].get('[data-test="grade-kind"]').text()).toBe('Exact match, number');
     const at = w.findAll('[data-test="tool-call"] .at');
     expect(at[0].text()).toMatch(/^at \d+\.\d s$/);
     expect(at[0].attributes('title')).toMatch(/^Started \d+\.\d s in, took \d+\.\d s$/);
@@ -70,7 +70,7 @@ describe('TrialView in fixture mode', () => {
     // fd-vs-sip-07 has no output in the queue, but your label on this trial disputes the judge.
     const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
     await settle();
-    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: Accounts for tax on FD interest (judge)');
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge)');
     expect(w.find('[data-test="dispute"]').exists()).toBe(false);
     expect(w.text()).not.toContain('Your held-out label');
     expect(w.text()).not.toContain('your label');
@@ -197,17 +197,17 @@ describe('TrialView against the API: blind labelling', () => {
       expect(g.find('blockquote').exists()).toBe(false);
       expect(g.get('[data-test="hidden-reasons"]').text()).toBe("The judge's reasons for this task are hidden while 1 of its held-out outputs is still to label.");
     }
-    expect(grades[1].text()).toContain('Accounts for tax on FD interest');
+    expect(grades[1].text()).toContain('fd-tax');
     expect(grades[1].get('.pill').text()).toBe('Fail');
     expect(grades[1].text()).not.toContain('The profile shows a 30% slab');
     // A code-graded check is unchanged.
-    expect(grades[0].text()).toContain('All 3 amounts in the reply match a tool result exactly.');
+    expect(grades[0].text()).toContain('found ₹7,10,870, within ±1 of 710870 (fd_maturity maturity_rupees)');
     expect(grades[0].find('[data-test="hidden-reasons"]').exists()).toBe(false);
     // No highlight in the transcript, and no key for one.
     expect(w.find('mark').exists()).toBe(false);
     expect(w.find('[data-test="quote-link"]').exists()).toBe(false);
     expect(w.find('[data-test="mark-key"]').exists()).toBe(false);
-    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: Accounts for tax on FD interest (judge)');
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge)');
     expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 checks');
   });
 
@@ -223,7 +223,7 @@ describe('TrialView against the API: blind labelling', () => {
     routes({ queue: [] });
     const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
     await settle();
-    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: Accounts for tax on FD interest (judge; your label passes it)');
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge; your label passes it)');
     const grades = w.findAll('[data-test="grade"]');
     const dispute = grades[1].get('[data-test="dispute"]');
     expect(dispute.text()).toBe('Your held-out label: Yes. You and the judge disagree on this check. See judge agreement');

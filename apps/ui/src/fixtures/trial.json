@@ -227,56 +227,87 @@
   "grades": [
     {
       "id": 101,
-      "grader_id": "amounts-from-tools",
-      "grader_version": "1",
-      "kind": "unit",
+      "grader_id": "fd-maturity",
+      "grader_version": "sha256:ca1959be507347c9aa15b52c84a03f1a5ad25a5ba0a9e9e599c04311402ab2e1",
+      "kind": "exact",
+      "type": "number",
+      "required": true,
       "verdict": "pass",
       "score": 1,
+      "reason": "found ₹7,10,870, within ±1 of 710870 (fd_maturity maturity_rupees)",
+      "evidence": [
+        {
+          "source": "final_answer",
+          "quote": "₹7,10,870"
+        },
+        {
+          "source": "tool_result",
+          "tool": "fd_maturity",
+          "field": "maturity_rupees",
+          "quote": "\"maturity_rupees\": 710870"
+        }
+      ],
       "judge_model": null,
       "run_index": 0,
-      "created_at": "2026-11-05T12:10:00.000Z",
-      "evidence": {
-        "name": "Every amount comes from a tool",
-        "reason": "All 3 amounts in the reply match a tool result exactly.",
-        "quotes": []
-      }
+      "created_at": "2026-11-05T12:10:00.000Z"
     },
     {
       "id": 102,
       "grader_id": "fd-tax",
       "grader_version": "v3",
       "kind": "judge",
+      "type": "judge",
+      "required": true,
       "verdict": "fail",
       "score": 0,
+      "reason": "The profile shows a 30% slab, but the comparison uses the pre-tax FD amount. After tax the FD gives about ₹6,47,600, which changes the comparison.",
+      "evidence": [
+        {
+          "source": "final_answer",
+          "quote": "an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870"
+        }
+      ],
       "judge_model": "claude-haiku-5-5",
       "run_index": 0,
-      "created_at": "2026-11-05T12:10:00.000Z",
-      "evidence": {
-        "name": "Accounts for tax on FD interest",
-        "reason": "The profile shows a 30% slab, but the comparison uses the pre-tax FD amount. After tax the FD gives about ₹6,47,600, which changes the comparison.",
-        "quotes": [
-          "an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870"
-        ]
-      }
+      "created_at": "2026-11-05T12:10:00.000Z"
     },
     {
       "id": 103,
       "grader_id": "horizon",
       "grader_version": "v3",
       "kind": "judge",
+      "type": "judge",
+      "required": true,
       "verdict": "pass",
       "score": 1,
+      "reason": "The recommendation is built around the stated deadline.",
+      "evidence": [
+        {
+          "source": "final_answer",
+          "quote": "Since you'll need this in about five years for a flat"
+        }
+      ],
       "judge_model": "claude-haiku-5-5",
       "run_index": 0,
-      "created_at": "2026-11-05T12:10:00.000Z",
-      "evidence": {
-        "name": "Respects the five-year horizon",
-        "reason": "The recommendation is built around the stated deadline.",
-        "quotes": [
-          "Since you'll need this in about five years for a flat"
-        ]
-      }
+      "created_at": "2026-11-05T12:10:00.000Z"
     }
   ],
+  "grading": {
+    "current": {
+      "job_id": "gj_fd_b_3",
+      "status": "done",
+      "reason": "trial_done",
+      "grader_source": "catalogue",
+      "source_note": null,
+      "task_sha256": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
+      "framework_version": "0.1.0",
+      "passed": false,
+      "outcome": "fail",
+      "error": null,
+      "queued_at": "2026-11-05T12:09:00.000Z",
+      "graded_at": "2026-11-05T12:10:00.000Z"
+    },
+    "pending": null
+  },
   "problems": []
 }

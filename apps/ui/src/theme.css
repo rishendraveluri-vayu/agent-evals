@@ -580,7 +580,10 @@ code,
 }
 
 /* Tables */
+/* Positioned, so the visually hidden labels inside a scrolled table stay inside it and never widen
+   the page. */
 .table-wrap {
+  position: relative;
   overflow-x: auto;
   background: var(--surface);
   border: 1px solid var(--rule);

@@ -12,7 +12,9 @@ import type {
   ConfigDiffEntry,
   ConfigView,
   ConflictCheckView,
+  CreatedPrompt,
   CreateConfigRequest,
+  CreatePromptRequest,
   CreateExperimentRequest,
   CreateLabelRequest,
   EstimateRequest,
@@ -21,6 +23,7 @@ import type {
   ExperimentStatus,
   ExperimentSummary,
   Harness,
+  PromptView,
   RenderedPromptView,
   SettingName,
   TaskView,
@@ -68,7 +71,24 @@ const trial = trialJson as unknown as { id: string };
 const recordedTrial = recordedTrialJson as unknown as { summary: { trialId: string } };
 
 /** Session-only writes. */
-const created = { configs: [] as ConfigView[], experiments: new Map<string, ExperimentDetail>() };
+const created = { configs: [] as ConfigView[], experiments: new Map<string, ExperimentDetail>(), prompts: [] as PromptView[] };
+const allPrompts = () => [...(promptsJson as PromptView[]), ...created.prompts];
+
+/** POST /prompts by the API's rules: the next v<n> of an existing id; the same text returns its
+ *  version and writes nothing. */
+function createPrompt(body: CreatePromptRequest): CreatedPrompt {
+  const versions = allPrompts().filter((p) => p.id === body.id);
+  if (!versions.length) throw new ApiError(400, 'unknown_prompt_id', `no prompt ${body.id}`, 'Start from a prompt listed in GET /prompts.');
+  if (!versions.some((p) => p.version === body.base_version)) throw new ApiError(400, 'unknown_base_version', `${body.base_version} is not a version of ${body.id}`, 'Pick the version you edited from.');
+  const text = body.text.trim();
+  if (!text) throw new ApiError(400, 'invalid_prompt', 'text is empty', 'Write the prompt text.');
+  const same = versions.find((p) => p.text.trim() === text);
+  if (same) return { id: same.id, version: same.version, sha256: same.sha256, path: same.path };
+  const n = Math.max(...versions.map((p) => Number(/^v(\d+)$/.exec(p.version)?.[1] ?? 0))) + 1;
+  const prompt: PromptView = { id: body.id, version: `v${n}`, sha256: sampleHash(`prompt:${text}`), path: `configs/prompts/${body.id}.v${n}.md`, text };
+  created.prompts.push(prompt);
+  return { id: prompt.id, version: prompt.version, sha256: prompt.sha256, path: prompt.path };
+}
 
 const clone = <T>(value: T): T => structuredClone(value);
 const notFound = (what: string) => new ApiError(404, 'not_found', `No sample data for ${what}.`);
@@ -160,11 +180,11 @@ function createConfig(body: CreateConfigRequest): ConfigView {
     }
     if (refused && rejected) unsupported[name] = `${rejected.label} rejects ${name}, so it is not sent and the provider's default applies`;
   }
-  const prompt = (promptsJson as { id: string; version: string; sha256: string }[]).find((p) => p.sha256 === body.prompt_sha256);
+  const prompt = allPrompts().find((p) => p.sha256 === body.prompt_sha256);
   if (!prompt) throw new ApiError(400, 'unknown_prompt', `no prompt with ${body.prompt_sha256}; see GET /prompts`, 'Pick a prompt sha256 from GET /prompts.');
   const toolset = (toolsetsJson as { id: string; version: string; sha256: string }[]).find((t) => t.sha256 === body.toolset_sha256);
   if (!toolset) throw new ApiError(400, 'unknown_toolset', `no toolset with ${body.toolset_sha256}; see GET /toolsets`, 'Pick a toolset sha256 from GET /toolsets.');
-  const content = canonical({ ref: harness.ref, model: body.model, prompt: prompt.sha256, toolset: toolset.sha256, settings, harness_options: body.harness_options ?? {} });
+  const content = canonical({ ref: harness.ref, model: body.model, prompt: prompt.sha256, toolset: toolset.sha256, settings, harness_options: body.harness_options ?? {}, seed: body.seed ?? null });
   const hash = sampleHash(content);
   const parent = body.parent_hash ? allConfigs().find((c) => c.hash === body.parent_hash) : null;
   if (body.parent_hash && !parent) throw new ApiError(400, 'unknown_parent', `no config ${body.parent_hash} to be the parent`, 'Fork from a config in GET /configs, or leave parent_hash out.');
@@ -384,7 +404,8 @@ const id1 = (m: RegExpExecArray) => decodeURIComponent(m[1]);
 
 const routes: [string, RegExp, Handler][] = [
   ['GET', /^\/harnesses$/, () => harnesses],
-  ['GET', /^\/prompts$/, () => promptsJson],
+  ['GET', /^\/prompts$/, () => allPrompts()],
+  ['POST', /^\/prompts$/, (_m, _p, body) => createPrompt(body as CreatePromptRequest)],
   ['GET', /^\/toolsets$/, () => toolsetsJson],
   ['GET', /^\/tasks$/, () => tasks],
   ['GET', /^\/models$/, () => modelsJson],

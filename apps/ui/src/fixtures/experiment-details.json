@@ -300,6 +300,10 @@
         },
         "warnings": [],
         "harness_options": {},
+        "seed": {
+          "memory": [],
+          "skills": []
+        },
         "parent_hash": null,
         "created_at": "2026-11-02T14:08:00.000Z"
       },
@@ -350,6 +354,10 @@
         "unsupported": {},
         "warnings": [],
         "harness_options": {},
+        "seed": {
+          "memory": [],
+          "skills": []
+        },
         "parent_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
         "created_at": "2026-11-05T07:28:00.000Z"
       }
@@ -643,6 +651,10 @@
         },
         "warnings": [],
         "harness_options": {},
+        "seed": {
+          "memory": [],
+          "skills": []
+        },
         "parent_hash": null,
         "created_at": "2026-11-02T14:08:00.000Z"
       },
@@ -695,6 +707,10 @@
         },
         "warnings": [],
         "harness_options": {},
+        "seed": {
+          "memory": [],
+          "skills": []
+        },
         "parent_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
         "created_at": "2026-11-03T10:48:00.000Z"
       }
@@ -1140,6 +1156,10 @@
         },
         "warnings": [],
         "harness_options": {},
+        "seed": {
+          "memory": [],
+          "skills": []
+        },
         "parent_hash": null,
         "created_at": "2026-11-04T09:08:00.000Z"
       },
@@ -1192,6 +1212,10 @@
         },
         "warnings": [],
         "harness_options": {},
+        "seed": {
+          "memory": [],
+          "skills": []
+        },
         "parent_hash": null,
         "created_at": "2026-11-02T14:08:00.000Z"
       }
@@ -1645,6 +1669,10 @@
         },
         "warnings": [],
         "harness_options": {},
+        "seed": {
+          "memory": [],
+          "skills": []
+        },
         "parent_hash": null,
         "created_at": "2026-11-02T14:08:00.000Z"
       },
@@ -1697,6 +1725,10 @@
         },
         "warnings": [],
         "harness_options": {},
+        "seed": {
+          "memory": [],
+          "skills": []
+        },
         "parent_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
         "created_at": "2026-11-03T10:48:00.000Z"
       }
@@ -2046,6 +2078,10 @@
         },
         "warnings": [],
         "harness_options": {},
+        "seed": {
+          "memory": [],
+          "skills": []
+        },
         "parent_hash": null,
         "created_at": "2026-11-02T14:08:00.000Z"
       },
@@ -2098,6 +2134,10 @@
         },
         "warnings": [],
         "harness_options": {},
+        "seed": {
+          "memory": [],
+          "skills": []
+        },
         "parent_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
         "created_at": "2026-11-03T10:48:00.000Z"
       }
@@ -2477,6 +2517,10 @@
         },
         "warnings": [],
         "harness_options": {},
+        "seed": {
+          "memory": [],
+          "skills": []
+        },
         "parent_hash": null,
         "created_at": "2026-11-02T14:08:00.000Z"
       }
@@ -2806,6 +2850,10 @@
         },
         "warnings": [],
         "harness_options": {},
+        "seed": {
+          "memory": [],
+          "skills": []
+        },
         "parent_hash": null,
         "created_at": "2026-11-02T14:08:00.000Z"
       }

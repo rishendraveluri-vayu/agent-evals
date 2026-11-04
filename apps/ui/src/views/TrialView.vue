@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { api, type AnyTrial } from '../api/client';
+import { api, bareToolName, type AnyTrial } from '../api/client';
 import { isFixtureMode } from '../api/mode';
 import type { BlindItem, ExperimentDetail, TrialRowSummary, JudgeAgreement, PromptView, TrialResult, VersionRef } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import SpanTimeline from '../components/SpanTimeline.vue';
 import { armIndexOf, armsOf } from '../lib/arms';
-import { gradeView, markAmounts, provenanceOf, type AmountCheck, type GradeView, type ProvenanceView } from '../lib/grading';
+import { gradeView, markAmounts, outcomeOf, provenanceOf, type AmountCheck, type GradeView, type ProvenanceView } from '../lib/grading';
 import { optional, useLoad } from '../lib/async';
 import { capitalise, count, money, seconds } from '../lib/format';
 import { endStateName, graderName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
@@ -80,6 +80,8 @@ const vm = computed(() => {
       outputTokens: t.usage?.output_tokens ?? null,
       wallS: t.timing.wall_s ?? result.timing?.wall_s ?? null,
       grades: t.grades.map(gradeView),
+      /** A regrade on its way (SP4), if any. */
+      gradingPending: t.grading?.pending ?? null,
       files: t.files.map((f) => f.path),
       badFiles: t.files.filter((f) => f.ok === false).map((f) => `${f.path}${f.problem ? `: ${f.problem}` : ''}`),
       problems: t.problems,
@@ -109,6 +111,7 @@ const vm = computed(() => {
     outputTokens: summary.proxyOutputTokens,
     wallS: summary.wallS,
     grades: [] as GradeView[],
+    gradingPending: null,
     files: ['result.json', 'trace.jsonl', 'runner-report.json', 'stdout.log', 'stderr.log'],
     badFiles: [] as string[],
     problems: [] as string[],
@@ -172,15 +175,19 @@ const outcome = computed(() => {
   if (!v) return null;
   if (isInfra.value) return { kind: 'infra', text: `Infra failure: ${infraReason(v.label)}, not graded` };
   if (v.probe) return { kind: 'pending', text: 'Probe: never graded or counted' };
-  if (v.grades.length) {
-    // The pill says what happened in the trial's own terms: how many checks it failed.
-    const n = v.grades.length;
-    const failed = v.grades.filter((g) => g.verdict !== 'pass').length;
-    if (!failed) return { kind: 'pass', text: n === 1 ? 'Passed its one check' : `Passed all ${n} checks` };
-    return { kind: 'fail', text: n === 1 ? 'Failed its one check' : `Failed ${failed} of ${n} checks` };
+  // The pill says what happened in the trial's own terms: how many required checks it failed, or
+  // how many could not decide (an error, not applicable, the unbuilt judge), so nothing counts as a
+  // pass or a fail by default.
+  const o = outcomeOf(v.grades);
+  if (o) {
+    const n = o.required;
+    if (o.kind === 'pass') return { kind: 'pass', text: n === 1 ? 'Passed its one check' : `Passed all ${n} checks` };
+    if (o.kind === 'fail') return { kind: 'fail', text: n === 1 ? 'Failed its one check' : `Failed ${o.failed} of ${n} checks` };
+    return { kind: 'pending', text: o.required ? `Incomplete: ${o.undetermined} of ${n} checks undecided` : 'Incomplete: no required check' };
   }
   if (v.status === 'running' || v.status === 'claimed') return { kind: 'pending', text: 'Running' };
   if (v.status === 'queued') return { kind: 'pending', text: 'Queued' };
+  if (v.gradingPending) return { kind: 'pending', text: 'Grading queued' };
   return { kind: 'pending', text: 'Not graded yet' };
 });
 
@@ -215,7 +222,13 @@ const facts = computed(() => {
     {
       k: 'Cost',
       v: money(v.cost),
-      n: v.cost === null ? 'Not logged' : v.costComplete === false ? "LiteLLM's log is incomplete" : `From LiteLLM${v.simCost ? `; the client's calls ${money(v.simCost)} more` : ''}`,
+      n: v.probe
+        ? 'Made-up money: a probe runs on the fake model'
+        : v.cost === null
+          ? 'Not logged'
+          : v.costComplete === false
+            ? "LiteLLM's log is incomplete"
+            : `From LiteLLM${v.simCost ? `; the client's calls ${money(v.simCost)} more` : ''}`,
     },
     {
       k: 'Model calls',
@@ -331,7 +344,8 @@ const conversation = computed<(ToolItem | MessageItem)[]>(() => {
       .map<ToolItem>((r) => ({
         kind: 'tool',
         id: r.span.spanId,
-        name: text(r.span.attributes['gen_ai.tool.name'] ?? r.span.name.replace(/^execute_tool /, '')),
+        // The tool as the server names it; a harness's prefix (Hermes: mcp__finance__) is in the timeline and the request files.
+        name: bareToolName(text(r.span.attributes['gen_ai.tool.name'] ?? r.span.name.replace(/^execute_tool /, ''))),
         summary: summarise(r.span.attributes['evals.tool.arguments']),
         at: `at ${(r.startMs / 1000).toFixed(1)} s`,
         title: `Started ${(r.startMs / 1000).toFixed(1)} s in, took ${(r.durationMs / 1000).toFixed(1)} s`,
@@ -418,17 +432,26 @@ const files = computed(() => {
 });
 const fileUrl = (path: string) => api.trialFileUrl(props.trialId, path);
 
-const gradeKind = (g: GradeView) => (g.kind === 'judge' ? `Judge, rubric ${g.graderVersion}` : graderName(g.kind));
+const gradeKind = (g: GradeView) => {
+  if (g.kind === 'judge') return `Judge, rubric ${g.graderVersion}`;
+  const type = g.type && g.type !== g.kind ? `, ${g.type.replace(/_/g, ' ')}` : '';
+  return `${graderName(g.kind)}${type}${g.required ? '' : ', not required'}`;
+};
 const isJudge = (g: GradeView) => g.kind === 'judge' || !!g.judgeModel;
-const verdictWord = (g: GradeView) => (g.verdict === 'pass' ? 'Pass' : g.verdict === 'fail' ? 'Fail' : (g.rawVerdict ?? 'No verdict'));
+const verdictWord = (g: GradeView) => g.verdictWord;
+const sourceWords = (source: string | null, tool: string | null) =>
+  ({ tool_result: `${tool ?? 'a tool'}'s result`, span: `${tool ?? 'a tool'} call`, result: 'result.json', checks: 'the number check' })[source ?? ''] ?? source ?? 'the trial';
 
 /** The number check in words: how many amounts trace to a source, and which do not. */
 const numberCheck = computed(() => {
   const c = data.value?.checks;
   if (!c) return null;
-  const ok = c.amounts.length - c.unsupported.length;
+  const n = c.unsupportedCount;
+  const of = c.total !== null ? ` of ${c.total}` : '';
   return {
-    summary: `${ok} of ${c.amounts.length} amounts in the answer come from a tool result or the client's own words.`,
+    summary: n
+      ? `${n}${of} ${n === 1 ? 'amount' : 'amounts'} in the answer ${n === 1 ? 'comes' : 'come'} from no tool result and not from the client's own words.`
+      : `Every amount${of ? ` (${c.total})` : ''} in the answer comes from a tool result or the client's own words.`,
     unsupported: c.unsupported,
     supported: c.amounts.filter((a) => a.supported),
   };
@@ -496,7 +519,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             aria-label="Breadcrumb"
             class="crumbs"
           >
-            <a :href="href.experiments()">Experiments</a> /
+            <a :href="vm.probe ? href.config() : href.experiments()">{{ vm.probe ? 'Configs' : 'Experiments' }}</a> /
             <template v-if="data.experiment">
               <a :href="href.compare(data.experiment.id)">{{ data.experiment.name }}</a> /
             </template>
@@ -858,6 +881,15 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               >
                 “{{ q }}”
               </blockquote>
+              <div
+                v-for="(ev, ei) in g.evidence"
+                :key="`e${ei}`"
+                class="small"
+                data-test="grade-evidence"
+              >
+                <span class="secondary smaller block">From {{ sourceWords(ev.source, ev.tool) }}</span>
+                <code class="mono evidence-quote">{{ ev.quote }}</code>
+              </div>
             </template>
             <p
               v-if="disputeOf(g)"
@@ -873,13 +905,13 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             class="secondary small"
             data-test="not-graded"
           >
-            {{ isInfra ? 'Infra failures are not graded: they say nothing about the agent.' : vm.probe ? 'A probe only renders the prompt; it is never graded.' : 'Not graded yet. Grading runs as its own step after the trial.' }}
+            {{ isInfra ? 'Infra failures are not graded: they say nothing about the agent.' : vm.probe ? 'A probe only renders the prompt; it is never graded.' : vm.gradingPending ? 'Grading is queued: it runs as its own step after the trial, and this page shows it once it is done.' : 'Not graded yet. Grading runs as its own step after the trial.' }}
           </p>
           <p
             v-else
             class="secondary smaller"
           >
-            A task passes only when every check passes. The judge never sees the harness, the model or the arm.
+            A trial passes only when every required check passes; a check that could not decide leaves it incomplete. The judge never sees the harness, the model or the arm.
           </p>
 
           <section
@@ -1049,6 +1081,15 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 </template>
 
 <style scoped>
+.evidence-quote {
+  display: block;
+  padding: 4px 8px;
+  background: var(--ground);
+  border-radius: 4px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 /* An amount with no source: the highlight and a wavy underline, so it reads apart from a judge's
    quote, and the words say what it means. */
 .amount-mark {
@@ -1169,6 +1210,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 
 .fact-note {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .strong {
@@ -1375,5 +1417,11 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
     order: 1;
     flex-basis: 100%;
   }
+}
+
+/* Arguments are often one long JSON line: it wraps anywhere rather than widening the page. */
+.tool-args {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 </style>

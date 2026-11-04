@@ -19,6 +19,8 @@ interface Loaded {
   configs: ConfigView[];
   harnesses: Harness[];
   heldoutToGo: number | null;
+  /** Tuning outputs still to label (open coding before any rubric). */
+  tuningToGo: number;
   /** The same outputs counted in checks (one output, one question). */
   heldoutChecksToGo: number;
   compares: Map<string, Compare | null>;
@@ -33,11 +35,12 @@ const updatedAt = (e: ExperimentSummary, detail?: ExperimentDetail | null) => de
 const twoArms = (e: ExperimentSummary) => e.config_hashes.length === 2;
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
-  const [experiments, configs, harnesses, queue] = await Promise.all([
+  const [experiments, configs, harnesses, queue, tuning] = await Promise.all([
     api.experiments(),
     api.configs(),
     optional(api.harnesses(), [] as Harness[]),
     optional(api.labelQueue('heldout'), null),
+    optional(api.labelQueue('tuning'), []),
   ]);
   const finished = experiments.filter((e) => e.status === 'done' && twoArms(e));
   const compares = new Map(await Promise.all(finished.map(async (e) => [e.id, await optional(api.compare(e.id), null)] as const)));
@@ -53,7 +56,7 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
   const live = new Map(
     (await Promise.all(liveIds.map(async (id) => [id, await optional(api.experiment(id), null)] as const))).filter((x): x is readonly [string, ExperimentDetail] => x[1] !== null),
   );
-  return { experiments, configs, harnesses, heldoutToGo: queue ? queue.length : null, heldoutChecksToGo: checksToGo(queue ?? []), compares, latest, latestFailed, live };
+  return { experiments, configs, harnesses, heldoutToGo: queue ? queue.length : null, tuningToGo: tuning.length, heldoutChecksToGo: checksToGo(queue ?? []), compares, latest, latestFailed, live };
 });
 
 const show = ref<'all' | 'running' | 'done'>('all');
@@ -152,6 +155,16 @@ const attention = computed<Attention[]>(() => {
         detail: `${e.name}. Each is re-queued once. Not counted as agent failures.`,
       });
     }
+  }
+  if (d.tuningToGo) {
+    out.push({
+      key: 'labels-tuning',
+      to: '#/labels?set=tuning',
+      icon: 'tag',
+      infra: false,
+      title: `${plural(d.tuningToGo, 'tuning output')} to label`,
+      detail: 'Open coding before any rubric: your pass or fail, and a line on why.',
+    });
   }
   if (d.heldoutToGo) {
     out.push({

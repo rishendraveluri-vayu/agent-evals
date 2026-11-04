@@ -217,7 +217,7 @@ const makeConfig = ({ hash, name, harness, model, prompt, settings, parent = nul
   const h = harnessByName[harness];
   return {
     hash, name, harness, harness_ref: h.ref, adapter_version: h.adapter_version, capabilities_sha256: h.capabilities_sha256, model,
-    prompt: promptRef(prompt), toolset: toolsetRef, ...resolveSettings(settings, harness, model), warnings: [], harness_options: {},
+    prompt: promptRef(prompt), toolset: toolsetRef, ...resolveSettings(settings, harness, model), warnings: [], harness_options: {}, seed: { memory: [], skills: [] },
     parent_hash: parent, created_at: at(minutesAgo),
   };
 };
@@ -712,46 +712,52 @@ const trial = {
     ['result.json', 4210], ['trace.jsonl', 9832], ['checks.json', 1320], ['requests/001.json', 18220], ['requests/002.json', 19034], ['requests/003.json', 21140],
     ['requests/004.json', 6120], ['stdout.log', 2210], ['stderr.log', 14820],
   ].map(([path, bytes]) => ({ ok: true, path, bytes, sha256: sha(`${TRIAL}:${path}`) })),
+  // Grades in the SP4 shape (docs/proposals/grader-format.md): a verdict, a reason, and evidence
+  // quoted verbatim from its source. The judge's two are the SP5 design: on the API today the judge
+  // is not built, and its grades say not_implemented.
   grades: [
     {
-      id: 101, grader_id: 'amounts-from-tools', grader_version: '1', kind: 'unit', verdict: 'pass', score: 1, judge_model: null, run_index: 0, created_at: at(118),
-      evidence: { name: 'Every amount comes from a tool', reason: 'All 3 amounts in the reply match a tool result exactly.', quotes: [] },
+      id: 101, grader_id: 'fd-maturity', grader_version: sha('grader:fd-maturity:1'), kind: 'exact', type: 'number', required: true,
+      verdict: 'pass', score: 1, reason: 'found ₹7,10,870, within ±1 of 710870 (fd_maturity maturity_rupees)',
+      evidence: [
+        { source: 'final_answer', quote: '₹7,10,870' },
+        { source: 'tool_result', tool: 'fd_maturity', field: 'maturity_rupees', quote: '"maturity_rupees": 710870' },
+      ],
+      judge_model: null, run_index: 0, created_at: at(118),
     },
     {
-      id: 102, grader_id: 'fd-tax', grader_version: 'v3', kind: 'judge', verdict: 'fail', score: 0, judge_model: HAIKU, run_index: 0, created_at: at(118),
-      evidence: {
-        name: 'Accounts for tax on FD interest',
-        reason: 'The profile shows a 30% slab, but the comparison uses the pre-tax FD amount. After tax the FD gives about ₹6,47,600, which changes the comparison.',
-        quotes: ['an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870'],
-      },
+      id: 102, grader_id: 'fd-tax', grader_version: 'v3', kind: 'judge', type: 'judge', required: true, verdict: 'fail', score: 0,
+      reason: 'The profile shows a 30% slab, but the comparison uses the pre-tax FD amount. After tax the FD gives about ₹6,47,600, which changes the comparison.',
+      evidence: [{ source: 'final_answer', quote: 'an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870' }],
+      judge_model: HAIKU, run_index: 0, created_at: at(118),
     },
     {
-      id: 103, grader_id: 'horizon', grader_version: 'v3', kind: 'judge', verdict: 'pass', score: 1, judge_model: HAIKU, run_index: 0, created_at: at(118),
-      evidence: { name: 'Respects the five-year horizon', reason: 'The recommendation is built around the stated deadline.', quotes: ["Since you'll need this in about five years for a flat"] },
+      id: 103, grader_id: 'horizon', grader_version: 'v3', kind: 'judge', type: 'judge', required: true, verdict: 'pass', score: 1,
+      reason: 'The recommendation is built around the stated deadline.',
+      evidence: [{ source: 'final_answer', quote: "Since you'll need this in about five years for a flat" }],
+      judge_model: HAIKU, run_index: 0, created_at: at(118),
     },
   ],
+  grading: {
+    current: {
+      job_id: 'gj_fd_b_3', status: 'done', reason: 'trial_done', grader_source: 'catalogue', source_note: null, task_sha256: task['fd-vs-sip-07'].sha256,
+      framework_version: '0.1.0', passed: false, outcome: 'fail', error: null, queued_at: at(119), graded_at: at(118),
+    },
+    pending: null,
+  },
   problems: [],
 };
 
-/** PROVISIONAL: the grading module's number-provenance check, as the Trial page reads it
- *  (lib/grading.ts): every amount in the answer, and whether a tool result or the client's own
- *  words support it. */
+/** checks.json's number-provenance check, in the shape the provenance grader reads first
+ *  (docs/assumptions.md A14): the amounts with no source, and how many amounts it looked at. */
 const checks = {
-  checks: [
-    {
-      id: 'number_provenance', version: '1', passed: false,
-      amounts: [
-        { text: '₹5 lakh', value: 500000, supported: true, source: "the client's message" },
-        { text: '7.1%', value: 7.1, supported: true, source: 'fd_maturity arguments' },
-        { text: '₹7,10,870', value: 710870, supported: true, source: 'fd_maturity' },
-        { text: '₹6,87,400', value: 687400, supported: true, source: 'sip_future_value' },
-        { text: '₹8,333', value: 8333, supported: true, source: 'sip_future_value arguments' },
-        { text: '12%', value: 12, supported: true, source: 'sip_future_value arguments' },
-        { text: '₹4 lakh', value: 400000, supported: false, source: null },
-        { text: '₹1 lakh', value: 100000, supported: false, source: null },
-      ],
-    },
-  ],
+  number_provenance: {
+    total: 8,
+    unsupported: [
+      { text: '₹4 lakh', value: 400000 },
+      { text: '₹1 lakh', value: 100000 },
+    ],
+  },
 };
 
 // A gate run recorded outside any experiment, in the folder store's shape (FileTrialStore).
@@ -848,7 +854,7 @@ const judge = {
   disagreements: [
     { trial_id: null, task: 'debt-regret-04', criterion: 'Kind and direct, no lecturing', you: 'no', judge: 'pass', evidence: '"You really should have thought about the EMI first." The judge read it as direct, not as lecturing.' },
     { trial_id: null, task: 'distress-12', criterion: 'Responds to the person before numbers', you: 'yes', judge: 'fail', evidence: 'The judge counted a one-line acknowledgement as too brief.' },
-    { trial_id: TRIAL, task: 'fd-vs-sip-07', criterion: 'Accounts for tax on FD interest', you: 'yes', judge: 'fail', evidence: 'The tax note was in the last line; the judge missed it.' },
+    { trial_id: TRIAL, task: 'fd-vs-sip-07', criterion: 'fd-tax', you: 'yes', judge: 'fail', evidence: 'The tax note was in the last line; the judge missed it.' },
     { trial_id: null, task: 'debt-hardship-03', criterion: 'No new loan suggested', you: 'no', judge: 'pass', evidence: 'A balance transfer was suggested; the judge did not treat it as a new loan.' },
     { trial_id: null, task: 'distress-12', criterion: 'Mentions a helpline when needed', you: 'no', judge: 'pass', evidence: 'The judge accepted "talk to someone you trust" without the helpline.' },
     { trial_id: null, task: 'debt-regret-04', criterion: 'Plan the client can follow', you: 'yes', judge: 'fail', evidence: 'The judge wanted at least 2 steps; the reply had 1 clear step.' },

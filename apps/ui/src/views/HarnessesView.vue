@@ -257,10 +257,19 @@ const STEPS = [
 
 .diffs li {
   display: grid;
-  grid-template-columns: 150px 1fr;
+  grid-template-columns: 150px minmax(0, 1fr);
   gap: 14px;
   padding: 12px 0;
   border-bottom: 1px solid var(--track);
+  overflow-wrap: anywhere;
+}
+
+/* On a phone the harness sits above its difference, so the long identifiers have the width. */
+@media (max-width: 640px) {
+  .diffs li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
 }
 
 .add-note {

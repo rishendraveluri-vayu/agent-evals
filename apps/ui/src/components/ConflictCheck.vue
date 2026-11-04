@@ -249,9 +249,7 @@ const who = computed(() => harnessShort(props.harness));
           Cost $0.
         </template>
         <template v-else>
-          This check cost <span class="num">{{ state.check.cost_usd === null ? 'an amount LiteLLM never reported' : money(state.check.cost_usd) }}</span> when it ran<template v-if="state.check.cached">
-            ; showing the stored result, so this view spent nothing
-          </template>.
+          This check cost <span class="num">{{ state.check.cost_usd === null ? 'an amount LiteLLM never reported' : money(state.check.cost_usd) }}</span> {{ state.check.cached ? 'when it ran; showing the stored result, so this view spent nothing.' : 'when it ran.' }}
         </template>
         <span class="secondary"> Input <span class="mono">{{ shortHash(state.check.input_sha256) }}</span>: a change to the prompt, the harness text or the settings makes a new check.</span>
       </p>
