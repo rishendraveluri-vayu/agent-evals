@@ -88,13 +88,21 @@ state folder for the finance MCP server.
   budget_usd, plan_commit}` creates the experiment and all its trial rows (`queued`), records
   the platform commit (`EVALS_PLATFORM_COMMIT`), and sets a LiteLLM budget for the whole
   experiment. It returns the experiment. Nothing runs until it is started.
-- `POST /experiments/:id/start`, `POST /experiments/:id/cancel` (queued trials become
-  `cancelled`; running ones finish).
+- `POST /experiments/:id/start` starts a `created` experiment or resumes a `paused` one (and
+  marks it `done` if nothing is left to claim); `POST /experiments/:id/cancel` (queued trials
+  become `cancelled`; running ones finish), from `created`, `running` or `paused`.
+- An experiment's `status` is `created`, `running`, `paused`, `done` or `cancelled`. **`paused`
+  (D26):** a report labelled `infra:config_error` moves a running experiment to `paused`, with
+  `paused_at` and a `paused_reason` naming the trial, its config, LiteLLM's status and the
+  provider's message. Nothing is claimed while paused; trials already running finish and report
+  (a re-queued attempt waits, queued, for the resume). Fix the setup (a key, the model, a refused
+  setting), then start it again, or cancel it.
 - `GET /experiments` returns `[{id, name, axis, status, config_hashes, n, counts, spend_usd,
   estimate, created_at}]`, where `counts` is `{queued, running, done, infra_failed,
   abandoned, cancelled}` and done is split by label.
-- `GET /experiments/:id` adds `tasks`, `configs`, `events` (claims, infra failures,
-  re-queues, budget trips, newest first).
+- `GET /experiments/:id` adds `tasks`, `configs`, `paused_at`, `paused_reason`, `events`
+  (claims, infra failures, config errors, re-queues, budget trips, the latest pause and resume,
+  newest first).
 - `GET /experiments/:id/trials?status=&config=&task=` returns trial summaries.
 - `GET /experiments/:id/compare` returns per task and arm `{task, config, passed, graded,
   trials}` and, once SP6 exists, the intervals and verdict. Until then `stats` is `null`.
@@ -175,9 +183,13 @@ trial cannot read or change another trial's stored files (D3).
    counts the replies added. Reporting the same attempt twice
    is a no-op 200. The API revokes the trial's keys, stores the report, and sets the status:
    `done` for an `agent` label; for an `infra:*` label, `infra_failed` and, if this was
-   attempt 1, a new `queued` attempt 2 (D16: re-queued once, never twice).
+   attempt 1, a new `queued` attempt 2 (D16: re-queued once, never twice), except for the two
+   labels that are never re-queued (D26): `infra:config_error`, which also pauses the
+   experiment, and `infra:budget_net`. `infra:provider_error`, `infra:adapter_crash` and
+   `infra:timeout_kill` are re-queued once.
 6. A lease with no heartbeat for 60 s lapses: the API marks the attempt `abandoned`, revokes
-   its keys, and queues the next attempt under the same cap.
+   its keys, and queues the next attempt under the same cap (also while the experiment is
+   paused; the attempt waits for the resume).
 
 ## UI-only endpoints
 

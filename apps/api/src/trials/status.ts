@@ -48,9 +48,21 @@ export function statusForLabel(label: string): 'done' | 'infra_failed' {
 }
 
 /**
- * Whether a failed attempt (infra label, or a lapsed lease) gets a next attempt: only while
- * the experiment is running and the slot is still under the cap.
+ * Labels whose attempt is never re-queued (D26): a config error would fail the same way again,
+ * and a budget stop is a safety net to investigate, not a fault to retry (R10.6).
  */
-export function shouldRequeue(attempt: number, experiment: ExperimentStatus): boolean {
-  return experiment === 'running' && attempt < MAX_ATTEMPTS;
+export const NEVER_REQUEUED: readonly string[] = ['infra:config_error', 'infra:budget_net'];
+
+/** D26: the label that pauses the experiment, so nothing more is claimed until it is fixed. */
+export const PAUSES_EXPERIMENT = 'infra:config_error';
+
+/**
+ * Whether a failed attempt (an infra label, or a lapsed lease with `label` null) gets a next
+ * attempt: only while the experiment is running or paused (a paused experiment's new attempt
+ * waits, queued, until it resumes), the slot is still under the cap, and the label is one that
+ * is re-queued (D16, D26).
+ */
+export function shouldRequeue(attempt: number, experiment: ExperimentStatus, label: string | null = null): boolean {
+  if (label !== null && NEVER_REQUEUED.includes(label)) return false;
+  return (experiment === 'running' || experiment === 'paused') && attempt < MAX_ATTEMPTS;
 }

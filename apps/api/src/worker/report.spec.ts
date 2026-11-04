@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { ApiError } from '../common/api-error';
-import { parseReport, reportedSha, spanRows, usageOf } from './report';
+import type { JsonObject } from '../contract';
+import { configErrorReason, parseReport, reportedSha, spanRows, usageOf } from './report';
 
 const EXAMPLES = path.resolve(__dirname, '../../../../contract/v2/examples');
 const exampleSpans = readFileSync(path.join(EXAMPLES, 'trace.jsonl'), 'utf8')
@@ -79,5 +80,28 @@ describe('usageOf', () => {
     const usage = usageOf({ ...exampleReport, proxy_usage: null }, null, []);
     expect(usage.cost_usd).toBeNull();
     expect(usage.sim_cost_usd).toBeNull();
+  });
+});
+
+describe('configErrorReason (D26)', () => {
+  const configReport = JSON.parse(readFileSync(path.join(EXAMPLES, 'runner-report-config-error.json'), 'utf8')) as JsonObject;
+  // Exactly as the own loop and the Agents SDK reported the 4 Nov 400s.
+  const unscoped =
+    'Error code: 400 - litellm.BadRequestError: AnthropicException - {"type":"error","error":{"type":"invalid_request_error","message":"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header with the ID of the workspace to use. Add the header, or use an API key that is scoped to a workspace."},"request_id":"req_011CghWkuA86P2P7Ev167Xxo"}. Received Model Group=claude-haiku-5-5\nAvailable Model Group Fallbacks=None';
+  const temperatureSdk =
+    'Error code: 400 - {\'error\': {\'message\': \'litellm.BadRequestError: AnthropicException - {"type":"error","error":{"type":"invalid_request_error","message":"`temperature` is deprecated for this model."},"request_id":"req_011Cghb1y9rKSsk3uuNY1phY"}. Received Model Group=claude-haiku-5-5\\nAvailable Model Group Fallbacks=None\', \'type\': None, \'param\': None, \'code\': \'400\'}}';
+  const result = (message: string | null) => ({ end_state: 'harness_error', end_detail: { harness_stop_reason: 'model call failed: BadRequestError', exception_message: message } });
+
+  it("names LiteLLM's status and the provider's own message", () => {
+    expect(configReport.label).toBe('infra:config_error');
+    const reason = configErrorReason(result(unscoped), configReport);
+    expect(reason).toContain('infra:config_error (LiteLLM status 400): This API key is not scoped to a workspace');
+    expect(reason).toContain('POST /experiments/:id/start to resume');
+    expect(configErrorReason(result(temperatureSdk), configReport)).toContain(': `temperature` is deprecated for this model.');
+  });
+
+  it('still says something without a result or a provider message', () => {
+    expect(configErrorReason(null, { ...configReport, proxy_usage: null })).toMatch(/^infra:config_error \(LiteLLM status unknown\)\. New claims are paused/);
+    expect(configErrorReason(result('HTTP 401: no JSON here'), configReport)).toContain(': HTTP 401: no JSON here.');
   });
 });

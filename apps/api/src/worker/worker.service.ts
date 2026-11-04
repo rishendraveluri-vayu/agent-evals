@@ -11,9 +11,9 @@ import { CONFIG_SELECT, type ConfigRow, configId } from '../configs/configs.serv
 import { Db, type Queryable } from '../database/db.service';
 import { type ExperimentRow, finishIfDone, isSimTask } from '../experiments/experiments.service';
 import { LiteLlmClient, LiteLlmHttpError, type MintedKey } from '../litellm/litellm.client';
-import { FINISHED, HELD, LEASE_S, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
+import { FINISHED, HELD, LEASE_S, PAUSES_EXPERIMENT, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
 import { MAX_FILE_BYTES, checkFiles, locate, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
-import { parseReport, spanRows, usageOf } from './report';
+import { configErrorReason, parseReport, spanRows, usageOf } from './report';
 import { SIM_REPLIES_FILE, type SimReplyRow, type SimScope, parseSimReplies, simScope } from './sim-cache';
 import { CLIENT_STATE_FILE, SIM_MAX_OUTPUT_TOKENS, SIM_TEMPERATURE, buildSpec } from './spec-builder';
 
@@ -62,9 +62,9 @@ async function drained(req: IncomingMessage, err: ApiError): Promise<ApiError> {
   return err;
 }
 
-/** Queues the slot's next attempt, if the cap and the experiment allow it (D16). */
-async function requeue(q: Queryable, trialId: string, attempt: number, experimentStatus: ExperimentRow['status']): Promise<string | null> {
-  if (!shouldRequeue(attempt, experimentStatus)) return null;
+/** Queues the slot's next attempt, if the cap, the label and the experiment allow it (D16, D26). */
+async function requeue(q: Queryable, trialId: string, attempt: number, experimentStatus: ExperimentRow['status'], label: string | null): Promise<string | null> {
+  if (!shouldRequeue(attempt, experimentStatus, label)) return null;
   const next = await one<{ id: string }>(
     q,
     `INSERT INTO trials (id, experiment_id, task_sha256, config_hash, repeat_index, attempt, seq, harness, status)
@@ -392,7 +392,21 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
       let requeued: string | null = null;
       if (status === 'infra_failed') {
         const exp = (await one<{ status: ExperimentRow['status'] }>(client, 'SELECT status FROM experiments WHERE id = $1', [locked.experiment_id]))!;
-        requeued = await requeue(client, id, locked.attempt, exp.status);
+        requeued = await requeue(client, id, locked.attempt, exp.status, label);
+      }
+      if (label === PAUSES_EXPERIMENT) {
+        // D26: the setup is wrong (a key, the model, a refused setting), so every later trial
+        // would fail the same way. Stop new claims until someone fixes it and resumes.
+        const where = await one<{ task_id: string; config_name: string }>(
+          client,
+          'SELECT k.id AS task_id, c.name AS config_name FROM tasks k, configs c WHERE k.sha256 = $1 AND c.hash = $2',
+          [locked.task_sha256, locked.config_hash],
+        );
+        const reason = `${where?.task_id ?? locked.task_sha256} on ${where?.config_name ?? locked.config_hash}, attempt ${locked.attempt}: ${configErrorReason(body.result, body.runner_report)}`;
+        await client.query(
+          `UPDATE experiments SET status = 'paused', paused_at = now(), paused_reason = $2 WHERE id = $1 AND status = 'running'`,
+          [locked.experiment_id, reason],
+        );
       }
       await finishIfDone(client, locked.experiment_id);
       return { stored, requeued, simStored };
@@ -475,7 +489,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
       );
       const requeued: string[] = [];
       for (const r of rows) {
-        const next = await requeue(client, r.id, r.attempt, r.status);
+        const next = await requeue(client, r.id, r.attempt, r.status, null);
         if (next) requeued.push(next);
       }
       for (const exp of new Set(rows.map((r) => r.experiment_id))) await finishIfDone(client, exp);

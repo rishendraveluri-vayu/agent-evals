@@ -239,7 +239,8 @@ export const TRIAL_STATUSES = [
 ] as const;
 export type TrialStatus = (typeof TRIAL_STATUSES)[number];
 
-export type ExperimentStatus = 'created' | 'running' | 'done' | 'cancelled';
+/** `paused` (D26): an `infra:config_error` report stopped new claims; `POST .../start` resumes. */
+export type ExperimentStatus = 'created' | 'running' | 'paused' | 'done' | 'cancelled';
 
 /** Counts are trial rows (one row per attempt). `running` includes claimed rows. */
 export interface ExperimentCounts {
@@ -281,6 +282,9 @@ export type ExperimentEventKind =
   | 'requeue'
   | 'abandoned'
   | 'budget_trip'
+  | 'config_error'
+  | 'paused'
+  | 'resumed'
   | 'file_problem';
 
 export interface ExperimentEvent {
@@ -300,6 +304,9 @@ export interface ExperimentDetail extends ExperimentSummary {
   budgets: { trial_usd: number; sim_usd: number };
   started_at: string | null;
   finished_at: string | null;
+  /** D26: when and why an `infra:config_error` last paused the experiment; null if never. */
+  paused_at: string | null;
+  paused_reason: string | null;
   tasks: TaskView[];
   configs: ConfigView[];
   /** Newest first. */

@@ -1,6 +1,6 @@
 import { TRIAL_STATUSES } from '../contract';
 import type { TrialStatus } from '../contract';
-import { FINISHED, MAX_ATTEMPTS, canTransition, isLabel, shouldRequeue, statusForLabel } from './status';
+import { FINISHED, MAX_ATTEMPTS, NEVER_REQUEUED, PAUSES_EXPERIMENT, canTransition, isLabel, shouldRequeue, statusForLabel } from './status';
 
 describe('trial status machine', () => {
   it.each<[TrialStatus, TrialStatus]>([
@@ -36,7 +36,7 @@ describe('trial status machine', () => {
 
   it('maps the agent label to done and every infra label to infra_failed', () => {
     expect(statusForLabel('agent')).toBe('done');
-    for (const label of ['infra:provider_error', 'infra:budget_net', 'infra:adapter_crash', 'infra:timeout_kill']) {
+    for (const label of ['infra:provider_error', 'infra:config_error', 'infra:budget_net', 'infra:adapter_crash', 'infra:timeout_kill']) {
       expect(statusForLabel(label)).toBe('infra_failed');
     }
     expect(isLabel('infra:')).toBe(false);
@@ -44,11 +44,25 @@ describe('trial status machine', () => {
     expect(() => statusForLabel('passed')).toThrow();
   });
 
-  it('re-queues once, never twice (D16), and only while the experiment runs', () => {
+  it('re-queues once, never twice (D16), and only while the experiment runs or is paused', () => {
     expect(MAX_ATTEMPTS).toBe(2);
     expect(shouldRequeue(1, 'running')).toBe(true);
     expect(shouldRequeue(2, 'running')).toBe(false);
+    expect(shouldRequeue(1, 'paused')).toBe(true); // queued, claimed only after a resume
     expect(shouldRequeue(1, 'cancelled')).toBe(false);
     expect(shouldRequeue(1, 'done')).toBe(false);
+  });
+
+  it('never re-queues a config error or a budget stop; re-queues a provider error once (D26)', () => {
+    expect(statusForLabel('infra:config_error')).toBe('infra_failed');
+    expect(shouldRequeue(1, 'running', 'infra:config_error')).toBe(false);
+    expect(shouldRequeue(1, 'running', 'infra:budget_net')).toBe(false);
+    expect(shouldRequeue(1, 'running', 'infra:provider_error')).toBe(true);
+    expect(shouldRequeue(2, 'running', 'infra:provider_error')).toBe(false);
+    expect(shouldRequeue(1, 'running', 'infra:adapter_crash')).toBe(true);
+    expect(shouldRequeue(1, 'running', 'infra:timeout_kill')).toBe(true);
+    expect(shouldRequeue(1, 'running', null)).toBe(true); // a lapsed lease
+    expect(NEVER_REQUEUED).toEqual(['infra:config_error', 'infra:budget_net']);
+    expect(PAUSES_EXPERIMENT).toBe('infra:config_error');
   });
 });
