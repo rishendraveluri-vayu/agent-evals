@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { api, bareToolName, type AnyTrial } from '../api/client';
+import { ApiError } from '../api/errors';
 import { isFixtureMode } from '../api/mode';
 import type { BlindItem, ExperimentDetail, TrialRowSummary, JudgeAgreement, PromptView, TrialResult, VersionRef } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
+import NotFound from '../components/NotFound.vue';
 import ReplyText from '../components/ReplyText.vue';
 import SpanTimeline from '../components/SpanTimeline.vue';
 import { armIndexOf, armLetter, armsOf, namedByHash } from '../lib/arms';
@@ -34,9 +36,20 @@ interface Loaded {
   checks: ProvenanceView | null;
 }
 
+/** The address names a trial that does not exist (a mistyped or stale link). */
+const missing = ref(false);
+async function trialOrMissing(id: string): Promise<AnyTrial> {
+  try {
+    return await api.trial(id);
+  } catch (err) {
+    if (err instanceof ApiError && (err.code === 'unknown_trial' || err.status === 404)) missing.value = true;
+    throw err;
+  }
+}
+
 const { data, error, loading } = useLoad<Loaded>(async () => {
   const [any, spans, judge, queue] = await Promise.all([
-    api.trial(props.trialId),
+    trialOrMissing(props.trialId),
     optional(api.trialSpans(props.trialId), [] as SpanView[]),
     optional(api.judgeAgreement('heldout'), null),
     optional(api.labelQueue('heldout'), [] as BlindItem[]),
@@ -568,7 +581,19 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 </script>
 
 <template>
+  <NotFound
+    v-if="missing"
+    :crumbs="[{ href: href.experiments(), text: 'Experiments' }]"
+    title="No trial with that id"
+    :item-id="trialId"
+  >
+    <a :href="href.experiments()">Experiments</a> lists every run, and each comparison opens its trials; <a :href="href.recorded()">Recorded runs</a> lists the gate and smoke runs.
+    <template v-if="fixtures && error">
+      {{ plainText(error) }}
+    </template>
+  </NotFound>
   <LoadState
+    v-else
     :loading="loading"
     :error="error"
     :what="`trial ${trialId}`"
@@ -1259,6 +1284,8 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 .applied {
   grid-area: applied;
   align-self: start;
+  /* Its table reads its own width (below), not the window's. */
+  container-type: inline-size;
   min-width: 0;
 }
 
@@ -1489,6 +1516,41 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 
 .applied-table tr > :last-child {
   padding-right: 14px;
+}
+
+/* In a narrow column (a 320 px phone) three columns leave a setting's name too little room, and
+   it would break mid-word ("Compressio n"). Each row stacks instead: the name and its value on one
+   line, where the value came from under them. */
+@container (max-width: 340px) {
+  .applied .applied-table,
+  .applied .applied-table tbody {
+    display: block;
+  }
+
+  .applied .applied-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
+  }
+
+  .applied .applied-table tr > th,
+  .applied .applied-table tr > td.num {
+    width: auto;
+    padding-bottom: 0;
+    border-bottom: 0;
+    overflow-wrap: break-word;
+  }
+
+  .applied .applied-table tr > td.num {
+    padding-left: 0;
+    padding-right: 14px;
+    text-align: right;
+  }
+
+  .applied .applied-table tr > td:last-child {
+    grid-column: 1 / -1;
+    padding: 2px 14px 8px;
+  }
 }
 
 .files {

@@ -28,6 +28,17 @@ describe('TrialView in fixture mode', () => {
     expect(facts).toContain('19,240');
   });
 
+  it('says a trial that does not exist is not found, under a breadcrumb, with a way out', async () => {
+    const w = mount(TrialView, { props: { trialId: 't_nope' } });
+    await settle();
+    expect(w.find('[data-test="load-error"]').exists()).toBe(false);
+    const page = w.get('[data-test="not-found"]');
+    expect(page.get('nav').text()).toBe('Experiments / Not found');
+    expect(page.get('h1').text()).toBe('No trial with that id');
+    expect(page.text()).toContain('Nothing is saved as t_nope');
+    expect(page.findAll('a').map((a) => a.attributes('href'))).toEqual(['#/experiments', '#/experiments', '#/trials']);
+  });
+
   it('puts the tool calls before the reply and marks what the failed check quoted', async () => {
     const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
     await settle();
@@ -176,10 +187,10 @@ describe('TrialView in fixture mode', () => {
     expect(w.get('[data-test="span-detail"]').text()).toContain('execute_tool get_client_profile');
   });
 
-  it('says plainly when the sample data has no such trial', async () => {
+  it('says plainly when the sample data has no such trial, and which one it has', async () => {
     const w = mount(TrialView, { props: { trialId: 'nope' } });
     await settle();
-    expect(w.get('[data-test="load-error"]').text()).toContain('No sample data for trial nope');
+    expect(w.get('[data-test="not-found"]').text()).toContain('No sample data for trial nope. The sample covers one trial in full');
   });
 });
 
