@@ -1,0 +1,69 @@
+{
+  "id": "draft-convo-payoff",
+  "version": "1",
+  "split": "discovery",
+  "kind": "conversation",
+  "summary": "DRAFT for Rishi: Meera wants to be debt-free and asks what to do.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "I have three loans and I want to be debt-free. What should I do?"
+    }
+  ],
+  "client_sim": {
+    "persona": "Meera Raghavan, 34, a QA engineer in Pune who supports her son, 6, and her mother, 63. Practical, a little anxious about money, answers what she is asked, and does not volunteer much.",
+    "hidden_facts": [
+      "She can put about Rs 20,000 a month towards her debts"
+    ],
+    "concerns": [
+      "Which debt should I pay first?"
+    ],
+    "goal": "Know which debt to pay first and roughly when she will be debt-free",
+    "opening_message": "I have three loans and I want to be debt-free. What should I do?",
+    "max_client_turns": 4
+  },
+  "client_state": "client.json",
+  "graders": [
+    {
+      "id": "read-debts",
+      "type": "tool_called",
+      "required": true,
+      "tool": "list_debts"
+    },
+    {
+      "id": "used-payoff-plan",
+      "type": "tool_called",
+      "required": true,
+      "tool": "debt_payoff_plan"
+    },
+    {
+      "id": "card-first",
+      "type": "regex_present",
+      "required": true,
+      "target": "all_agent_text",
+      "pattern": "credit card"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding before the rubric: overall verdict plus a note.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        }
+      ]
+    }
+  ],
+  "judge_criteria_to_write": "Judgment: asks for (or works out) the monthly budget before planning; avalanche order with the card first."
+}

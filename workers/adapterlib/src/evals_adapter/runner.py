@@ -343,16 +343,19 @@ def provider_label(last_status: str | None, result: dict[str, Any]) -> str | Non
 
     - budget stop: infra:budget_net;
     - 429 or 5xx: infra:provider_error (the API re-queues it once);
+    - 408, LiteLLM's per-call timeout: infra:provider_error too (D16: a call LiteLLM retried
+      that still fails is infra);
     - 401, 403, 404: infra:config_error (the API never re-queues it and pauses the experiment);
     - 400: a context-too-long error stays the agent's; one about the request setup (auth, an
       unknown model, a rejected or unsupported parameter) is infra:config_error; any other 400
       stays the agent's.
+    By the time a status reaches here LiteLLM has already retried it (D16).
     """
     if last_status is None:
         return None
     if last_status == "budget_exceeded":
         return "infra:budget_net"
-    if last_status == "429" or last_status.startswith("5"):
+    if last_status in ("408", "429") or last_status.startswith("5"):
         return "infra:provider_error"
     if last_status in CONFIG_STATUSES:
         return "infra:config_error"

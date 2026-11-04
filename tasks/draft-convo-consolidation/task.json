@@ -1,0 +1,63 @@
+{
+  "id": "draft-convo-consolidation",
+  "version": "1",
+  "split": "discovery",
+  "kind": "conversation",
+  "summary": "DRAFT for Rishi: A finance company offers Meera a loan to clear her card.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "A finance company called and offered me a loan to clear my credit card. Should I take it?"
+    }
+  ],
+  "client_sim": {
+    "persona": "Meera Raghavan, 34, a QA engineer in Pune who supports her son, 6, and her mother, 63. Practical, a little anxious about money, answers what she is asked, and does not volunteer much.",
+    "hidden_facts": [
+      "The offer is Rs 1 lakh at 24% a year for 2 years",
+      "She still uses the credit card for groceries some months"
+    ],
+    "concerns": [
+      "Will this save me money?"
+    ],
+    "goal": "Decide whether to take the offer",
+    "opening_message": "A finance company called and offered me a loan to clear my credit card. Should I take it?",
+    "max_client_turns": 4
+  },
+  "client_state": "client.json",
+  "graders": [
+    {
+      "id": "read-debts",
+      "type": "tool_called",
+      "required": true,
+      "tool": "list_debts"
+    },
+    {
+      "id": "compared-with-a-tool",
+      "type": "tool_called",
+      "required": true,
+      "tool": "calculate_emi"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding before the rubric: overall verdict plus a note.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        }
+      ]
+    }
+  ],
+  "judge_criteria_to_write": "Judgment: asks the offer's terms, compares 24% with 42% using a tool, names the risk of running the card up again."
+}

@@ -44,13 +44,14 @@ workers/base/            Worker base image and the D3 isolation check
 workers/<harness>/       One Python project and image per harness (later, SP1)
 scripts/                 Smoke test, config check, probes
 tasks/                   Task set, one folder per task (later, SP4)
+graders/                 Grader framework and the grader worker, Python (SP4)
 configs/                 Versioned configs (later, SP2)
 labels/                  Rishi's hand labels only (later, SP5)
 experiments/             Exported results for the real experiment (later, SP8)
 docs/                    See the docs register
 ```
 
-Graders and stats are Python (D1); where their project lives is set in SP4.
+Graders and stats are Python (D1). The grader framework lives in `graders/` at the repo root (SP4).
 
 ## Docs register
 
@@ -182,7 +183,7 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [x] Run tasks × configs × N trials (`scripts/sp3_kill_test.py`: 20 trials over 2 harnesses)
 - [x] Implement isolation per D3: one trial folder at a fixed path, leftover-process sweep, wipe and empty check between trials, with a test proving no state leaks from one trial to the next in the same container (image tests in all five worker images; files reach the API over HTTP, so workers mount no shared folder)
 - [x] Use a fixed `HERMES_HOME` path per trial, because the path appears in the system prompt (`/trial` in every container)
-- [ ] Set LiteLLM per-call retries with backoff and a capped trial re-queue (D16), tested against the fake's forced 429s; update the config check
+- [x] Set LiteLLM per-call retries with backoff and a capped trial re-queue (D16), tested against the fake's forced 429s; update the config check (4 Nov: also 503s, 400s and a hung call, on a throwaway LiteLLM of the pinned image; attempts counted per trial in `proxy_usage`)
 - [ ] Handle timeouts, rate limits and retries: tested with the fake's forced faults, then seen on a signed-off real dev run (R9)
 - [ ] Separate infra failures from agent failures, including budget stops
 - [x] Make trial claiming idempotent and runs resumable (SKIP LOCKED claims, 60 s lease; passed the kill test on 4 Nov)
@@ -198,11 +199,11 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [ ] **[Rishi designs]** Task format and task set. Domain: personal-finance assistant (D13, R6)
 - [ ] Split tasks into discovery and held-out sets for the prompt experiment (D9); keep simulated-client tasks to about 5 to 8 (D22)
 - [ ] Rishi reviews about 10 simulated-client transcripts and the simulator prompt is versioned before the experiment (D22, R11)
-- [ ] Build deterministic graders: exact match, unit tests, state checks
+- [x] Build deterministic graders: exact match, unit tests, state checks (`graders/`, nine types incl. a reserved judge; grading as its own step through the API and a `grader` service, R14; the spec format is a draft for Rishi, `docs/proposals/grader-format.md`)
 - [ ] **[Rishi designs]** Judge rubric format. Judge is blind to harness and model, with a pinned model and a verdict and quoted evidence per criterion
 - [ ] Write tasks where skills or memory should help
 - [ ] Seed skills and memory explicitly per config, since a fresh Hermes home has no skills
-- [ ] Test each grader against known pass and fail outputs
+- [x] Test each grader against known pass and fail outputs (96 tests in `graders/tests`, incl. the real 4 Nov transcripts of all five harnesses; API grading e2e with the real grader worker)
 
 ### SP5 Judge validation (Thu to Fri)
 
@@ -281,3 +282,5 @@ Only if the frozen plan has slack.
 - [ ] Failure analysis: rule-based categories over traces (wrong tool, hallucinated tool args, gave up early, loop or step exhaustion, grader disagreement)
 - [ ] A third harness on an existing framework
 - [ ] Tools beyond MCP, to show the tools axis is more than "which MCP server" (Rishi, 3 Nov): e.g. a harness built-in such as Hermes code execution as a config setting, one tool delivered natively per adapter, or a plain HTTP API tool. Revisit after the first end-to-end run.
+- [ ] Conflict check: mark each finding whose `harness_says` or `we_say` quote is not in the text verbatim, so an invented quote is visible (no extra call).
+- [ ] Probe on `fake/<real model name>` instead of `fake/finance-emi`, so Hermes's model-name-gated guidance (gpt, gemini, ...) appears in the rendered prompt. The fake server falls back to its default script for an unknown name. Needs Rishi's call (known-limits, "Pre-run checks").

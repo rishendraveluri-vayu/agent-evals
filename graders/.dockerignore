@@ -1,0 +1,7 @@
+# Build context for graders/Dockerfile: only what the image copies.
+*
+!pyproject.toml
+!uv.lock
+!.python-version
+!src/
+**/__pycache__

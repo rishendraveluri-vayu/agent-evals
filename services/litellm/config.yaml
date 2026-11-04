@@ -44,6 +44,24 @@ model_list:
       cache_creation_input_token_cost: 0.000000125
       cache_read_input_token_cost: 0.00000001
 
+  # Claude Sonnet 5.5, platform.claude.com/docs/en/about-claude/pricing, checked 4 Nov
+  # 2026: $2.00 in, $10.00 out, $2.50 cache write (5 min), $0.10 cache read (0.05x input),
+  # per million tokens; no long-context tier. Used by the platform's pre-run conflict check
+  # (D38), from a standing $2 allowance; not a trial model unless a config names it.
+  - model_name: claude-sonnet-5-5
+    litellm_params:
+      model: anthropic/claude-sonnet-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      input_cost_per_token: 0.000002
+      output_cost_per_token: 0.00001
+      cache_creation_input_token_cost: 0.0000025
+      cache_read_input_token_cost: 0.0000001
+    model_info:
+      input_cost_per_token: 0.000002
+      output_cost_per_token: 0.00001
+      cache_creation_input_token_cost: 0.0000025
+      cache_read_input_token_cost: 0.0000001
+
   # Gemini 3.8 Flash, aistudio.google.com/docs/pricing (paid tier, standard):
   # $0.75 in, $3.75 out including thinking, $0.075 cache read, per million
   # tokens, through 31 Dec 2026 (then $1.50 / $7.50). No long-context tier.
@@ -68,9 +86,36 @@ litellm_settings:
   drop_params: false
 
 router_settings:
-  # No silent retries inside the proxy, so every fault reaches the caller and
-  # can be counted. SP3 decides the retry policy.
-  num_retries: 0
+  # D16: the proxy is the one retry layer inside a trial (harness retries are
+  # off, R10.11). Read in LiteLLM v1.99.4's router.py and utils.py and tested
+  # on 4 Nov against the fake: 429, 500, 502, 503 and timeouts get up to 3
+  # retries (4 attempts); 400, 401, 403 and 404 got 1 attempt. A retried call
+  # is still one spend-log row, with metadata.attempted_retries (proxy.py).
+  num_retries: 3
+  # Backoff is LiteLLM's built-in exponential one: 0.5 s doubling per retry,
+  # capped at 8 s, plus up to 0.75 s of jitter; a Retry-After of 1 to 60 s
+  # replaces it. retry_after is the floor, so the waits are about 1, 1, 2 s,
+  # and LiteLLM waits once more (4 s) after the last failure before giving up:
+  # an always-503 call took about 10 s, an always-429 one about 6 s.
+  retry_after: 1
+  # Per error type; this wins over num_retries. 400, 401 and content-policy
+  # errors are never retried (D26 labels them infra:config_error or the
+  # agent's outcome). v1.99.4 reads only these keys: it ignores
+  # InternalServerErrorRetries, so 5xx take num_retries, and it has no key for
+  # 403 or 404. A 404 is never retried anyway; a 403 is not when LiteLLM maps
+  # it to BadRequestError, as on this fake route (see known-limits).
+  retry_policy:
+    BadRequestErrorRetries: 0
+    AuthenticationErrorRetries: 0
+    ContentPolicyViolationErrorRetries: 0
+    RateLimitErrorRetries: 3
+    TimeoutErrorRetries: 3
+  # Per attempt, in seconds: a hung call fails as a 408 (and is retried)
+  # instead of holding the trial until its watchdog; tested with 5 s, stream
+  # and not, on a call that sent nothing. Mid-stream it should bound each gap
+  # between chunks rather than the whole reply (httpx read timeout; untested).
+  timeout: 180
+  stream_timeout: 180
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

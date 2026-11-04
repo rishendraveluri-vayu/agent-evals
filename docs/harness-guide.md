@@ -150,7 +150,7 @@ Workers mount nothing from the host, so a trial cannot read another trial's stor
 | Label | When |
 | --- | --- |
 | `agent` | Any understood ending, graded by `end_state`. Includes a context-too-long 400 and any 400 the setup patterns do not match (D26) |
-| `infra:provider_error` | `harness_error` and LiteLLM's last status for the **agent** key was 429 or 5xx. Re-queued once |
+| `infra:provider_error` | `harness_error` and LiteLLM's last status for the **agent** key was 429, 5xx or 408 (LiteLLM's per-call timeout), after LiteLLM's own retries (D16). Re-queued once |
 | `infra:config_error` | `harness_error` and the status was 401, 403 or 404, or a 400 about auth, an unknown model or a refused parameter (D26; both 4 Nov 400s). Never re-queued; the experiment pauses |
 | `infra:budget_net` | `harness_error` and the key's budget was exceeded. Never re-queued (D26) |
 | `infra:adapter_crash` | Non-zero exit, or a missing or invalid result |
@@ -179,13 +179,13 @@ In an experiment, everything under `out/` is uploaded and stored at `runs/<exper
 | --- | --- | --- |
 | `invoke_agent <harness>` (root) | library | trial id, attempt, config hash, task id, prompt version, toolset version, end state |
 | `agent.turn` | library | `evals.turn.index`, `evals.turn.stop`, `evals.turn.model_calls`, stop reason |
-| `chat <model>` | LiteLLM, merged by the runner | tokens, finish reasons, temperature, max tokens, `evals.cost_usd`, `evals.role` (`agent` or `sim`), `evals.attempt`, `evals.proxy.status`, request and response refs, `evals.request.truncated`, `evals.request.tool_count`, `evals.request.stream` |
+| `chat <model>` | LiteLLM, merged by the runner | tokens, finish reasons, temperature, max tokens, `evals.cost_usd`, `evals.role` (`agent` or `sim`), `evals.attempt`, `evals.proxy.attempts`, `evals.proxy.status`, request and response refs, `evals.request.truncated`, `evals.request.tool_count`, `evals.request.stream` |
 | `execute_tool <name>` | adapter | tool name, call id, `evals.tool.arguments`, `evals.tool.result`, `evals.tool.is_error`, `evals.error.kind` |
 | `client_sim.turn` | library | `evals.sim.message`, `evals.sim.cache_hit`, `evals.sim.cache_key`, `evals.sim.done` |
 
 Span events carry `evals.error` (kinds `malformed_tool_call`, `unknown_tool`, `tool_error`, plus `tool_failure` for a call that raised) and `evals.compression`. The contract also defines `evals.memory.*` and `evals.skill.*` events, but **no adapter emits them yet** [src].
 
-**LiteLLM's records** are the source of truth for calls, tokens, cost and latency (R10.9). Full bodies are stored; a body LiteLLM still cut is flagged with `evals.request.truncated`. `evals.attempt` rises above 1 only when the same messages are sent again, which is how a hidden retry shows. If the log never reaches the harness's own count, `proxy_usage.complete` is false and the numbers are not trusted [src]. In all 15 real trials it was complete and matched [ran, 4 Nov].
+**LiteLLM's records** are the source of truth for calls, tokens, cost and latency (R10.9). Full bodies are stored; a body LiteLLM still cut is flagged with `evals.request.truncated`. `evals.attempt` rises above 1 only when the same messages are sent again, which is how a hidden retry shows. LiteLLM's own retries (D16) stay inside one span: `evals.proxy.attempts` counts them, and `proxy_usage` has `attempts` and `retried_calls` beside `model_calls` [ran, 4 Nov, fake]. If the log never reaches the harness's own count, `proxy_usage.complete` is false and the numbers are not trusted [src]. In all 15 real trials it was complete and matched [ran, 4 Nov].
 
 ### 2.4 The simulated client (D22)
 
@@ -962,7 +962,7 @@ At `max_turns` 3 the SDK makes exactly 3 calls and raises `MaxTurnsExceeded`: 0 
 - **LiteLLM** records every call with its full body, whatever the harness reports (R10.9). It matched every harness's count on the real run.
 - **The invariance diff** catches off-axis changes in the first request.
 - **`applied_settings`** shows every value and where it came from, including harness defaults.
-- **Retries are off in every harness** (R10.11). LiteLLM's own `num_retries` is still 0 ("SP3 decides the retry policy" in `services/litellm/config.yaml`), so today a 429 ends a trial as `infra:provider_error`, and the API re-queues it once as attempt 2 [src].
+- **Retries are off in every harness** (R10.11), and LiteLLM is the one retry layer inside a trial (D16, set 4 Nov). It retries 429, 5xx and its own 180 s per-call timeout up to 3 times with backoff (about 1, 1, 2 s, or the provider's Retry-After), and never retries 400, 401, 403 or 404 [ran, 4 Nov, fake]. Every harness gets the same retries, and the harness never sees them: a call that failed twice and then succeeded is one `chat` span with `evals.proxy.attempts: 3`, and the trial goes on as usual. A call that still fails after 4 attempts ends the trial as `infra:provider_error`, and the API re-queues it once as attempt 2 [src]. So "1 harness request, 3 attempts" (`proxy_usage.model_calls` against `attempts`) is LiteLLM working, and a second span with `evals.attempt: 2` is the harness retrying, which the gate forbids. The proxy gate tests check both on the own loop [ran, 4 Nov]. Caveats are in `known-limits.md` under "LiteLLM retries": failed attempts have no row of their own, waits add latency, and four 180 s attempts outlast a 300 s trial.
 - **Per-trial keys**, minted and revoked by the API, limit each trial to its model and budget; the simulator has its own key and budget.
 
 ## 9. Open questions for Rishi
@@ -996,7 +996,7 @@ Raised by the sources and not settled in `docs/decisions.md`. Listed, not answer
 
 15. **Temperature on Haiku 5.5.** Haiku rejects any temperature except its default, and the API fills an unset temperature with 0.2, so every engine trial on Haiku would fail with a 400. Let configs leave temperature unsent (null meaning "not sent"), make the default per model, or keep Haiku out of temperature-bearing configs? And D24's temperature check needs another model.
 16. **Reasoning and thinking.** No platform setting covers them. Haiku 5.5 thinks by default (up to 1,520 reasoning tokens per call), the thinking counts toward `max_output_tokens`, and no harness sends thinking blocks back. Make effort a setting, pin it the same everywhere, or record it only? And is the provisional 1,024-token default enough when thinking shares it?
-17. **LiteLLM retries (D16).** The engine re-queues an infra trial once, but LiteLLM's `num_retries` is still 0, so a single 429 costs a whole attempt. Set the D16 retry policy before the experiment?
+17. **LiteLLM retries (D16).** Set on 4 Nov (section 8.3). Still open: the 180 s per-call timeout with 3 timeout retries can take about 12 minutes, longer than the default 300 s trial, so a provider that hangs every attempt still ends the trial as `timeout` (labelled `agent`). Fewer timeout retries, a shorter per-call timeout, or leave it?
 
 **Simulated client**
 

@@ -1,0 +1,68 @@
+{
+  "id": "draft-emi-home-loan",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "DRAFT for Rishi: EMI and total interest on a Rs 45 lakh home loan at 8.6% for 20 years.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "I'm taking a ₹45 lakh home loan at 8.6% for 20 years. What will my EMI be, and how much interest will I pay in total?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": null,
+  "graders": [
+    {
+      "id": "used-calculate-emi",
+      "type": "tool_called",
+      "required": true,
+      "tool": "calculate_emi",
+      "args": {
+        "principal": 4500000,
+        "annual_rate_pct": 8.6,
+        "tenure_months": 240
+      }
+    },
+    {
+      "id": "emi-value",
+      "type": "number",
+      "required": true,
+      "expected": 39337.32,
+      "tolerance": {
+        "abs": 1
+      }
+    },
+    {
+      "id": "total-interest",
+      "type": "number",
+      "required": true,
+      "expected": 4940959.34,
+      "tolerance": {
+        "rel": 0.002
+      }
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding before the rubric: overall verdict plus a note.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        }
+      ]
+    }
+  ],
+  "judge_criteria_to_write": "Clarity: does the answer lead with the EMI? Does it put Rs 49.4 lakh of interest in plain terms?"
+}

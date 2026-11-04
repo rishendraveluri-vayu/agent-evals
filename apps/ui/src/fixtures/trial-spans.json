@@ -1,0 +1,483 @@
+[
+  {
+    "traceId": "a96c5255c8e500289c8d55c66461918d",
+    "spanId": "c84153e09bd9c43f",
+    "name": "invoke_agent hermes",
+    "kind": 1,
+    "startTimeUnixNano": "1793878272000000000",
+    "endTimeUnixNano": "1793878296600000000",
+    "attributes": [
+      {
+        "key": "gen_ai.operation.name",
+        "value": {
+          "stringValue": "invoke_agent"
+        }
+      },
+      {
+        "key": "gen_ai.agent.name",
+        "value": {
+          "stringValue": "hermes"
+        }
+      }
+    ],
+    "status": {
+      "code": 1
+    }
+  },
+  {
+    "traceId": "a96c5255c8e500289c8d55c66461918d",
+    "spanId": "1b8541be7ad7bf1f",
+    "parentSpanId": "c84153e09bd9c43f",
+    "name": "agent.turn",
+    "kind": 1,
+    "startTimeUnixNano": "1793878277400000000",
+    "endTimeUnixNano": "1793878291600000000",
+    "attributes": [
+      {
+        "key": "evals.turn.index",
+        "value": {
+          "intValue": "0"
+        }
+      },
+      {
+        "key": "evals.turn.stop",
+        "value": {
+          "stringValue": "answered"
+        }
+      },
+      {
+        "key": "evals.turn.model_calls",
+        "value": {
+          "intValue": "3"
+        }
+      }
+    ],
+    "status": {
+      "code": 1
+    }
+  },
+  {
+    "traceId": "a96c5255c8e500289c8d55c66461918d",
+    "spanId": "7baa1ec7cbf88a9c",
+    "parentSpanId": "1b8541be7ad7bf1f",
+    "name": "chat claude-haiku-5-5",
+    "kind": 1,
+    "startTimeUnixNano": "1793878277400000000",
+    "endTimeUnixNano": "1793878280000000000",
+    "attributes": [
+      {
+        "key": "gen_ai.operation.name",
+        "value": {
+          "stringValue": "chat"
+        }
+      },
+      {
+        "key": "gen_ai.request.model",
+        "value": {
+          "stringValue": "claude-haiku-5-5"
+        }
+      },
+      {
+        "key": "gen_ai.usage.input_tokens",
+        "value": {
+          "intValue": "5210"
+        }
+      },
+      {
+        "key": "gen_ai.usage.output_tokens",
+        "value": {
+          "intValue": "120"
+        }
+      },
+      {
+        "key": "evals.cost_usd",
+        "value": {
+          "doubleValue": 0.0412
+        }
+      },
+      {
+        "key": "evals.role",
+        "value": {
+          "stringValue": "agent"
+        }
+      },
+      {
+        "key": "evals.source",
+        "value": {
+          "stringValue": "proxy"
+        }
+      },
+      {
+        "key": "evals.request_ref",
+        "value": {
+          "stringValue": "requests/001.json"
+        }
+      },
+      {
+        "key": "evals.response_ref",
+        "value": {
+          "stringValue": "responses/001.json"
+        }
+      }
+    ],
+    "status": {
+      "code": 1
+    }
+  },
+  {
+    "traceId": "a96c5255c8e500289c8d55c66461918d",
+    "spanId": "0e78afc35e6e4063",
+    "parentSpanId": "1b8541be7ad7bf1f",
+    "name": "execute_tool get_client_profile",
+    "kind": 1,
+    "startTimeUnixNano": "1793878280000000000",
+    "endTimeUnixNano": "1793878280200000000",
+    "attributes": [
+      {
+        "key": "gen_ai.operation.name",
+        "value": {
+          "stringValue": "execute_tool"
+        }
+      },
+      {
+        "key": "gen_ai.tool.name",
+        "value": {
+          "stringValue": "get_client_profile"
+        }
+      },
+      {
+        "key": "evals.tool.arguments",
+        "value": {
+          "stringValue": "{}"
+        }
+      },
+      {
+        "key": "evals.tool.result",
+        "value": {
+          "stringValue": "{\n  \"age\": 34,\n  \"city\": \"Pune\",\n  \"tax_slab_percent\": 30,\n  \"monthly_income_rupees\": 185000\n}"
+        }
+      },
+      {
+        "key": "evals.tool.is_error",
+        "value": {
+          "boolValue": false
+        }
+      }
+    ],
+    "status": {
+      "code": 1
+    }
+  },
+  {
+    "traceId": "a96c5255c8e500289c8d55c66461918d",
+    "spanId": "0dc0d9461e5ca218",
+    "parentSpanId": "1b8541be7ad7bf1f",
+    "name": "chat claude-haiku-5-5",
+    "kind": 1,
+    "startTimeUnixNano": "1793878280200000000",
+    "endTimeUnixNano": "1793878282900000000",
+    "attributes": [
+      {
+        "key": "gen_ai.operation.name",
+        "value": {
+          "stringValue": "chat"
+        }
+      },
+      {
+        "key": "gen_ai.request.model",
+        "value": {
+          "stringValue": "claude-haiku-5-5"
+        }
+      },
+      {
+        "key": "gen_ai.usage.input_tokens",
+        "value": {
+          "intValue": "5480"
+        }
+      },
+      {
+        "key": "gen_ai.usage.output_tokens",
+        "value": {
+          "intValue": "260"
+        }
+      },
+      {
+        "key": "evals.cost_usd",
+        "value": {
+          "doubleValue": 0.0461
+        }
+      },
+      {
+        "key": "evals.role",
+        "value": {
+          "stringValue": "agent"
+        }
+      },
+      {
+        "key": "evals.source",
+        "value": {
+          "stringValue": "proxy"
+        }
+      },
+      {
+        "key": "evals.request_ref",
+        "value": {
+          "stringValue": "requests/002.json"
+        }
+      },
+      {
+        "key": "evals.response_ref",
+        "value": {
+          "stringValue": "responses/002.json"
+        }
+      }
+    ],
+    "status": {
+      "code": 1
+    }
+  },
+  {
+    "traceId": "a96c5255c8e500289c8d55c66461918d",
+    "spanId": "eed114ee064ae010",
+    "parentSpanId": "1b8541be7ad7bf1f",
+    "name": "execute_tool fd_maturity",
+    "kind": 1,
+    "startTimeUnixNano": "1793878282900000000",
+    "endTimeUnixNano": "1793878283100000000",
+    "attributes": [
+      {
+        "key": "gen_ai.operation.name",
+        "value": {
+          "stringValue": "execute_tool"
+        }
+      },
+      {
+        "key": "gen_ai.tool.name",
+        "value": {
+          "stringValue": "fd_maturity"
+        }
+      },
+      {
+        "key": "evals.tool.arguments",
+        "value": {
+          "stringValue": "{\n  \"principal_rupees\": 500000,\n  \"annual_rate_percent\": 7.1,\n  \"years\": 5,\n  \"compounding\": \"quarterly\"\n}"
+        }
+      },
+      {
+        "key": "evals.tool.result",
+        "value": {
+          "stringValue": "{\n  \"maturity_rupees\": 710870,\n  \"interest_rupees\": 210870\n}"
+        }
+      },
+      {
+        "key": "evals.tool.is_error",
+        "value": {
+          "boolValue": false
+        }
+      }
+    ],
+    "status": {
+      "code": 1
+    }
+  },
+  {
+    "traceId": "a96c5255c8e500289c8d55c66461918d",
+    "spanId": "f974528d9d4e8cc0",
+    "parentSpanId": "1b8541be7ad7bf1f",
+    "name": "execute_tool sip_future_value",
+    "kind": 1,
+    "startTimeUnixNano": "1793878283100000000",
+    "endTimeUnixNano": "1793878283300000000",
+    "attributes": [
+      {
+        "key": "gen_ai.operation.name",
+        "value": {
+          "stringValue": "execute_tool"
+        }
+      },
+      {
+        "key": "gen_ai.tool.name",
+        "value": {
+          "stringValue": "sip_future_value"
+        }
+      },
+      {
+        "key": "evals.tool.arguments",
+        "value": {
+          "stringValue": "{\n  \"monthly_rupees\": 8333,\n  \"annual_return_percent\": 12,\n  \"years\": 5\n}"
+        }
+      },
+      {
+        "key": "evals.tool.result",
+        "value": {
+          "stringValue": "{\n  \"future_value_rupees\": 687400,\n  \"invested_rupees\": 499980\n}"
+        }
+      },
+      {
+        "key": "evals.tool.is_error",
+        "value": {
+          "boolValue": false
+        }
+      }
+    ],
+    "status": {
+      "code": 1
+    }
+  },
+  {
+    "traceId": "a96c5255c8e500289c8d55c66461918d",
+    "spanId": "9d0c4cdfa4361fe4",
+    "parentSpanId": "1b8541be7ad7bf1f",
+    "name": "chat claude-haiku-5-5",
+    "kind": 1,
+    "startTimeUnixNano": "1793878283300000000",
+    "endTimeUnixNano": "1793878291600000000",
+    "attributes": [
+      {
+        "key": "gen_ai.operation.name",
+        "value": {
+          "stringValue": "chat"
+        }
+      },
+      {
+        "key": "gen_ai.request.model",
+        "value": {
+          "stringValue": "claude-haiku-5-5"
+        }
+      },
+      {
+        "key": "gen_ai.usage.input_tokens",
+        "value": {
+          "intValue": "6220"
+        }
+      },
+      {
+        "key": "gen_ai.usage.output_tokens",
+        "value": {
+          "intValue": "1950"
+        }
+      },
+      {
+        "key": "evals.cost_usd",
+        "value": {
+          "doubleValue": 0.0717
+        }
+      },
+      {
+        "key": "evals.role",
+        "value": {
+          "stringValue": "agent"
+        }
+      },
+      {
+        "key": "evals.source",
+        "value": {
+          "stringValue": "proxy"
+        }
+      },
+      {
+        "key": "evals.request_ref",
+        "value": {
+          "stringValue": "requests/003.json"
+        }
+      },
+      {
+        "key": "evals.response_ref",
+        "value": {
+          "stringValue": "responses/003.json"
+        }
+      }
+    ],
+    "status": {
+      "code": 1
+    }
+  },
+  {
+    "traceId": "a96c5255c8e500289c8d55c66461918d",
+    "spanId": "3c1661c86c2615d0",
+    "parentSpanId": "c84153e09bd9c43f",
+    "name": "client_sim.turn",
+    "kind": 1,
+    "startTimeUnixNano": "1793878291700000000",
+    "endTimeUnixNano": "1793878294400000000",
+    "attributes": [
+      {
+        "key": "evals.sim.index",
+        "value": {
+          "intValue": "0"
+        }
+      },
+      {
+        "key": "evals.sim.ended",
+        "value": {
+          "boolValue": true
+        }
+      }
+    ],
+    "status": {
+      "code": 1
+    }
+  },
+  {
+    "traceId": "a96c5255c8e500289c8d55c66461918d",
+    "spanId": "6252b743ad0e9d5c",
+    "parentSpanId": "3c1661c86c2615d0",
+    "name": "chat claude-haiku-5-5",
+    "kind": 1,
+    "startTimeUnixNano": "1793878291700000000",
+    "endTimeUnixNano": "1793878294400000000",
+    "attributes": [
+      {
+        "key": "gen_ai.operation.name",
+        "value": {
+          "stringValue": "chat"
+        }
+      },
+      {
+        "key": "gen_ai.request.model",
+        "value": {
+          "stringValue": "claude-haiku-5-5"
+        }
+      },
+      {
+        "key": "gen_ai.usage.input_tokens",
+        "value": {
+          "intValue": "1890"
+        }
+      },
+      {
+        "key": "gen_ai.usage.output_tokens",
+        "value": {
+          "intValue": "40"
+        }
+      },
+      {
+        "key": "evals.cost_usd",
+        "value": {
+          "doubleValue": 0.021
+        }
+      },
+      {
+        "key": "evals.role",
+        "value": {
+          "stringValue": "sim"
+        }
+      },
+      {
+        "key": "evals.source",
+        "value": {
+          "stringValue": "proxy"
+        }
+      },
+      {
+        "key": "evals.request_ref",
+        "value": {
+          "stringValue": "requests/004.json"
+        }
+      }
+    ],
+    "status": {
+      "code": 1
+    }
+  }
+]

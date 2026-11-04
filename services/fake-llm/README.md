@@ -107,7 +107,7 @@ steps:
 - **Fields that change on every response.** The completion `id` and `created` are different
   each time, so anything keyed on the response id never collides.
 
-Example scripts: `echo`, `two-tools`, `rate-limited` and `flaky-stream`. For the harness gate tests: `finance-emi` (one finance tool call, then an answer) and `finance-loop` (a tool call on every step, never an answer). For the own loop's retry on a cut-off reply (D36): `finance-length` (a tool call, then an answer cut off at the cap once and served whole when the same request is sent again) and `finance-length-always` (the answer is cut off every time). For the simulated client: `sim-client` (two client replies, then the end marker) and `sim-empty` (a reply with no text, as Haiku 5.5 gave when its whole token cap went to reasoning; the adapter library must call it a simulator failure).
+Example scripts: `echo`, `two-tools`, `rate-limited` and `flaky-stream`. For the harness gate tests: `finance-emi` (one finance tool call, then an answer) and `finance-loop` (a tool call on every step, never an answer). For LiteLLM's retries (D16): `finance-429` (always 429), `finance-429-twice` and `finance-503-twice` (the first call fails twice, then the `finance-emi` flow), `finance-503` (always 503) and `finance-400` (always 400, worded like Haiku 5.5's rejected-temperature error). For the own loop's retry on a cut-off reply (D36): `finance-length` (a tool call, then an answer cut off at the cap once and served whole when the same request is sent again) and `finance-length-always` (the answer is cut off every time). For the simulated client: `sim-client` (two client replies, then the end marker) and `sim-empty` (a reply with no text, as Haiku 5.5 gave when its whole token cap went to reasoning; the adapter library must call it a simulator failure).
 
 ## Faults
 
@@ -121,14 +121,17 @@ requests. Clear it with `DELETE /_fake/faults`.
 | --- | --- |
 | `429` | 429 with an OpenAI rate-limit error. Sends `Retry-After: ceil(retry_after)` and `retry-after-ms`. `retry_after` defaults to 1 second and may be fractional. |
 | `500` | 500 with an OpenAI `server_error` body. |
+| `400`, `401`, `403`, `404` | That status with an OpenAI `invalid_request_error` body (`invalid_api_key` code for 401, `model_not_found` for 404). |
+| `502`, `503` | That status with a `server_error` body. The 503 says "This model is currently experiencing high demand. Please try again later", as Gemini did on 4 Nov, and sends no `Retry-After`. |
 | `timeout` | Sleeps `seconds` (default 30), then serves the step normally. The sleep stops early if the client disconnects, so abandoned requests do not pile up. |
 | `broken_stream` | **Streaming:** sends the role chunk and the first half (rounded up) of the content or argument chunks, then closes the TCP connection. There is no `finish_reason`, no usage chunk and no `[DONE]`. For a tool-call step, the client gets the tool-call header and part of the arguments. **Non-stream:** sends a `Content-Length` for the full body, sends half of it, then closes. Either way the client sees a protocol error; the official openai client raises `APIConnectionError`. |
 | `malformed_tool_call` | Tool-call arguments that are not valid JSON (the closing `}` is dropped), on every call in the step. The step must have `tool_calls`. |
 | `length` | The reply stops at the output token cap: the first half (rounded up) of the step's text, no tool calls, and `finish_reason: length` (also in the last stream chunk). The step must have non-empty `text`. With `times: 1`, the same messages sent again get the whole step, whatever the new `max_tokens`. |
 
-`kind` can be written `429` or `"429"`. 429 and 500 respond before any stream starts, as
-OpenAI does. A step whose fault always fires (no `times`) and is 429 or 500 may omit `text` and
-`tool_calls`.
+`kind` can be written `429` or `"429"`. The status faults (400 to 503) respond before any stream
+starts, as OpenAI does, and take an optional `message` that replaces the default error text (for
+example a provider's own 400 wording). A step whose status fault always fires (no `times`) may
+omit `text` and `tool_calls`.
 
 A broken connection makes uvicorn log `ASGI callable returned without completing response.`
 at ERROR level. That line is expected.

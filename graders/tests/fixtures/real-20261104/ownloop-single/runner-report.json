@@ -1,0 +1,98 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-ownloop-smoke-a64f70",
+ "attempt": 1,
+ "harness": "ownloop",
+ "label": "agent",
+ "end_state": "answered",
+ "adapter": {
+  "exit_code": 0,
+  "signal": null,
+  "result_valid": true,
+  "result_errors": [],
+  "trace_valid": true,
+  "trace_errors": [],
+  "leftover_processes": 0
+ },
+ "proxy_usage": {
+  "complete": true,
+  "model_calls": 3,
+  "failed_calls": 0,
+  "input_tokens": 16993,
+  "output_tokens": 1423,
+  "cost_usd": 0.0024108,
+  "last_status": "200"
+ },
+ "logs": {
+  "stdout": {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "truncated": false
+  },
+  "stderr": {
+   "path": "stderr.log",
+   "bytes": 188,
+   "sha256": "cda14304d5df6103533e3200fec9a51f7292edc236af60e2233d44a4cb7d7fdb",
+   "truncated": false
+  }
+ },
+ "files": [
+  {
+   "path": "artifacts/proxy/0001.request.json",
+   "bytes": 16409,
+   "sha256": "be1b2682e944b3d9e92ec58c692a46bf9794d5ca35451e8ab8a91f2b8e773322"
+  },
+  {
+   "path": "artifacts/proxy/0001.response.json",
+   "bytes": 3947,
+   "sha256": "97717cf5718e115ec81817db2adaf71c1c227809ffd1a10c4480d7e27fcc18a7"
+  },
+  {
+   "path": "artifacts/proxy/0002.request.json",
+   "bytes": 18046,
+   "sha256": "27fdf314c57c323256457cc03e480df571b859ebe9d6ba90e2bd76039dab27ca"
+  },
+  {
+   "path": "artifacts/proxy/0002.response.json",
+   "bytes": 4454,
+   "sha256": "3f4954c62b35beb6c0db5d632ea7b7a5295fef6a5bb3a97b61c147d70369c89b"
+  },
+  {
+   "path": "artifacts/proxy/0003.request.json",
+   "bytes": 20078,
+   "sha256": "edde8d6a25415dd0799ac3cc58110f775d0be6ffdebf7c431064552b04bb0fb5"
+  },
+  {
+   "path": "artifacts/proxy/0003.response.json",
+   "bytes": 7600,
+   "sha256": "823d958cb830580a8b9a584eb67c6348909c014c695e83bf04849bbc21b9aad1"
+  },
+  {
+   "path": "result.json",
+   "bytes": 7461,
+   "sha256": "a563246c8c5e6197390a92b68fb844644f85c65c9ca1fd5b7a17770eb20d93fd"
+  },
+  {
+   "path": "stderr.log",
+   "bytes": 188,
+   "sha256": "cda14304d5df6103533e3200fec9a51f7292edc236af60e2233d44a4cb7d7fdb"
+  },
+  {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "path": "trace.jsonl",
+   "bytes": 10233,
+   "sha256": "2d9dc3375a79084e59c64169134382947a430b3842c2e1ff1c524b24cba12ea6"
+  }
+ ],
+ "timing": {
+  "started_at": "2026-11-04T08:31:11.443234Z",
+  "ended_at": "2026-11-04T08:31:29.460899Z",
+  "wall_s": 18.018,
+  "safety_net_s": 390.0
+ }
+}

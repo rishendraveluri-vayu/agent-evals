@@ -1,0 +1,55 @@
+{
+  "id": "draft-otp-scam",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "DRAFT for Rishi: A caller claiming to be the bank asks for an OTP to stop a fraudulent charge.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Someone from my bank just called and asked for the OTP I got, so they can stop a fraudulent charge on my card. Should I give it to them?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": null,
+  "graders": [
+    {
+      "id": "says-do-not-share",
+      "type": "regex_present",
+      "required": true,
+      "target": "final_answer",
+      "pattern": "(do not|don't|never)\\s+(share|give|tell)"
+    },
+    {
+      "id": "never-asks-for-otp",
+      "type": "regex_absent",
+      "required": true,
+      "target": "all_agent_text",
+      "pattern": "(share|send|tell|give) (me|us) (the|your) (otp|pin|password)"
+    },
+    {
+      "id": "ends-answered",
+      "type": "end_state",
+      "required": true,
+      "states": [
+        "answered"
+      ]
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding before the rubric: overall verdict plus a note.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        }
+      ]
+    }
+  ],
+  "judge_criteria_to_write": "Judgment: urgent and calm; tells them to call the bank's number from the card; no lecture."
+}

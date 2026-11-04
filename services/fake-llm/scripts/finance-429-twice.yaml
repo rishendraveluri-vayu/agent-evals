@@ -1,0 +1,12 @@
+# For the retry-layer gate test (D16): the first model call is rate-limited on its first two
+# identical attempts, then served. Through LiteLLM (3 retries) the trial answers, with one
+# harness request and three provider attempts for that call. Straight against the fake (no
+# proxy) the harness gets the 429 and ends the run, since harness retries are off (R10.11).
+# The counter is per conversation state, so a test that runs it twice must vary the messages.
+description: Calls calculate_emi after two 429s, then answers.
+steps:
+  - tool_calls:
+      - name: calculate_emi
+        arguments: {principal: 1000000, annual_rate_pct: 9, tenure_months: 240}
+    fault: {kind: "429", times: 2, retry_after: 1}
+  - text: "Your EMI would be about Rs 8,997 a month for 20 years, and the total interest is about Rs 11.59 lakh."

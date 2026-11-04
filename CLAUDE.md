@@ -65,6 +65,11 @@ cd services/fake-llm && uv sync --locked && uv run ruff check . && uv run ruff f
 uv run --no-project --with pyyaml==6.0.3 python scripts/check_litellm_config.py   # no cache, no dropped params, prices set
 uv run --no-project --with pyyaml==6.0.3 python scripts/check_compose.py         # API and workers share one worker token
 
+cd graders && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run pytest -q   # grader framework (SP4), incl. the 4 Nov real trials
+cd graders && uv run evals-grade <trial out/ folder> --task ../tasks/<id>/task.json            # grade one trial folder, print the grades as JSON
+# API grading e2e with the real Python grader (throwaway Postgres as in apps/api/test/support/db.ts)
+TEST_DATABASE_URL=postgresql://postgres:x@127.0.0.1:55432/postgres EVALS_GRADER_BIN=$PWD/graders/.venv/bin/evals-grader pnpm --filter @agent-evals/api test -- grading
+
 cd workers/adapterlib && uv sync --locked && uv run pytest -q     # contract schemas, adapter library, runner
 cd workers/ownloop && uv sync --locked && uv run pytest -q        # own loop gate tests (needs uv sync in services/fake-llm and services/finance-mcp)
 cd workers/langgraph && uv sync --locked && uv run pytest -q      # LangGraph gates (same for workers/adk and workers/openai-agents)
@@ -87,6 +92,9 @@ API_PORT=3001 docker compose up -d --build --wait     # includes the five worker
 python3 scripts/sp3_kill_test.py --n 10              # engine check on fake models: kill a worker mid-run, every trial done once
 # configs, experiments, start, progress, export: see docs/api-contract.md (all paths under /api)
 curl -s http://127.0.0.1:3001/api/experiments/<id>/export?format=csv > results.csv
+# grading runs by itself in the grader service once trials are done (SP4, R14); after a grader fix:
+curl -s -X POST http://127.0.0.1:3001/api/experiments/<id>/regrade   # new grade versions, no trial re-run
+docker build -t agent-evals/grader:dev graders                        # the grader image alone
 workers/build_images.sh                               # build the worker images (EVALS_IMAGE_TAG sets the tag)
 cd workers/adapterlib && EVALS_IMAGE_TESTS=1 uv run pytest -q tests/test_images.py   # D3 leak and kill tests per image
 VITE_FIXTURES=1 pnpm --dir apps/ui dev                # UI with sample data, no backend

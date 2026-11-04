@@ -1,0 +1,74 @@
+{
+  "id": "draft-fd-real-value",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "DRAFT for Rishi: Rs 5 lakh FD at 7.25% for 5 years: maturity, and its value in today's money at 6% inflation.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "I'm putting ₹5 lakh in a fixed deposit at 7.25% for 5 years. What will I get at maturity, and what is that worth in today's money if inflation stays at 6%?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": null,
+  "graders": [
+    {
+      "id": "used-fd",
+      "type": "tool_called",
+      "required": true,
+      "tool": "fd_maturity",
+      "args": {
+        "principal": 500000,
+        "annual_rate_pct": 7.25,
+        "years": 5
+      }
+    },
+    {
+      "id": "used-inflation",
+      "type": "tool_called",
+      "required": true,
+      "tool": "inflation_adjusted_value"
+    },
+    {
+      "id": "maturity",
+      "type": "number",
+      "required": true,
+      "expected": 716130.28,
+      "tolerance": {
+        "rel": 0.002
+      }
+    },
+    {
+      "id": "todays-value",
+      "type": "number",
+      "required": true,
+      "expected": 535134.2,
+      "tolerance": {
+        "rel": 0.01
+      }
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding before the rubric: overall verdict plus a note.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        }
+      ]
+    }
+  ],
+  "judge_criteria_to_write": "Judgment: does it explain that the real gain is small, and mention that FD interest is taxed?"
+}

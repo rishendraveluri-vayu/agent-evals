@@ -1,0 +1,49 @@
+{
+  "comment": "Shared with apps/api/src/grading/grading.spec.ts: both languages must give these hashes for these specs, or a grade's version would not match the API's.",
+  "framework_version": "0.1.0",
+  "cases": [
+    {
+      "spec": {
+        "id": "interest",
+        "type": "number",
+        "expected": {
+          "from_tool": "debt_payoff_plan",
+          "field": "total_interest"
+        },
+        "tolerance": {
+          "rel": 1.5e-05,
+          "abs": 1.0
+        },
+        "description": "₹1,01,341 \"quoted\"\n"
+      },
+      "files": {},
+      "spec_sha256": "sha256:e992bcdbf0578e7f664ba82ad22a9f270cdecf2b7824fc7a6f18ceab6494e26a",
+      "grader_version": "sha256:b8ce759d512d8efc4b6896a6aa6cc4ae3263903ee706fca3d52e1cdca3517653"
+    },
+    {
+      "spec": {
+        "type": "unit_test",
+        "id": "emi-unit",
+        "timeout_s": 5.0
+      },
+      "files": {
+        "grader.py": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+      },
+      "spec_sha256": "sha256:4b87db7276f50caa9dda39c14e3f9291380e24b26b7f140cda49d2067892ac68",
+      "grader_version": "sha256:3fd5769cba2067f7524f1960c9cd774a5a9f291af90fdf391bea3f001e1d6d60"
+    },
+    {
+      "spec": {
+        "id": "big",
+        "type": "number",
+        "expected": 1e+21,
+        "tolerance": {
+          "abs": 1e-07
+        }
+      },
+      "files": {},
+      "spec_sha256": "sha256:77912af632bb9415ba4b5285da682e41d1a2da88c730e5dedd95355f43d11a95",
+      "grader_version": "sha256:c11af7c42c51b5fb4229e564306d6cbad77d6a104f7d22e8342001f82e907c5b"
+    }
+  ]
+}

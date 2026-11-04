@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { ApiError } from '../common/api-error';
 import type { JsonObject } from '../contract';
-import { configErrorReason, parseReport, reportedSha, spanRows, usageOf } from './report';
+import { configErrorFix, configErrorReason, parseReport, reportedSha, spanRows, usageOf } from './report';
 
 const EXAMPLES = path.resolve(__dirname, '../../../../contract/v2/examples');
 const exampleSpans = readFileSync(path.join(EXAMPLES, 'trace.jsonl'), 'utf8')
@@ -96,12 +96,27 @@ describe('configErrorReason (D26)', () => {
     expect(configReport.label).toBe('infra:config_error');
     const reason = configErrorReason(result(unscoped), configReport);
     expect(reason).toContain('infra:config_error (LiteLLM status 400): This API key is not scoped to a workspace');
-    expect(reason).toContain('POST /experiments/:id/start to resume');
     expect(configErrorReason(result(temperatureSdk), configReport)).toContain(': `temperature` is deprecated for this model.');
   });
 
   it('still says something without a result or a provider message', () => {
-    expect(configErrorReason(null, { ...configReport, proxy_usage: null })).toMatch(/^infra:config_error \(LiteLLM status unknown\)\. New claims are paused/);
-    expect(configErrorReason(result('HTTP 401: no JSON here'), configReport)).toContain(': HTTP 401: no JSON here.');
+    expect(configErrorReason(null, { ...configReport, proxy_usage: null })).toBe('infra:config_error (LiteLLM status unknown)');
+    expect(configErrorReason(result('HTTP 401: no JSON here'), configReport)).toContain(': HTTP 401: no JSON here');
+  });
+});
+
+describe('configErrorFix (D37)', () => {
+  const report = (status: string | null) => ({ proxy_usage: status === null ? null : { last_status: status } });
+
+  it.each([
+    ['401', "fix the provider key or its permissions in LiteLLM's environment"],
+    ['403', "fix the provider key or its permissions in LiteLLM's environment"],
+    ['404', "fix the model's route in LiteLLM's config"],
+    ['400', 'A setting the model rejects needs a forked config without it and a new experiment'],
+    [null, "Find the setup problem in the trial's result and LiteLLM's logs"],
+  ])('says how to fix a %s and how to resume the arm', (status, text) => {
+    const fix = configErrorFix(report(status));
+    expect(fix).toContain(text);
+    expect(fix).toContain('/arms/:config_hash/resume');
   });
 });

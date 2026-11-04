@@ -18,6 +18,20 @@ export interface AppConfig {
   tasksDir: string;
   labelsDir: string;
   runsDir: string;
+  /** D38: the standing allowance for pre-run conflict checks, in USD. */
+  conflictCheckAllowanceUsd: number;
+}
+
+/** D38's standing allowance when EVALS_CONFLICT_CHECK_ALLOWANCE_USD is unset. */
+export const DEFAULT_CONFLICT_CHECK_ALLOWANCE_USD = 2;
+
+/** A non-negative amount of USD, or the default when unset. A bad value stops the API at startup. */
+function usd(name: string, raw: string | undefined, fallback: number): number {
+  const text = nonEmpty(raw);
+  if (text === null) return fallback;
+  const value = Number(text);
+  if (!Number.isFinite(value) || value < 0) throw new Error(`${name} must be a non-negative number of USD, got "${text}"`);
+  return value;
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -42,5 +56,6 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     labelsDir: dir('LABELS_DIR', 'labels'),
     // RUNS_DIR keeps its SP1 meaning: relative to the working directory.
     runsDir: path.resolve(nonEmpty(env.RUNS_DIR) ?? 'runs'),
+    conflictCheckAllowanceUsd: usd('EVALS_CONFLICT_CHECK_ALLOWANCE_USD', env.EVALS_CONFLICT_CHECK_ALLOWANCE_USD, DEFAULT_CONFLICT_CHECK_ALLOWANCE_USD),
   };
 }

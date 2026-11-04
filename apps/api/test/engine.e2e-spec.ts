@@ -657,13 +657,15 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     expect(json.headers['content-type']).toContain('application/json');
     const body = JSON.parse(json.text) as { experiment: { id: string; platform_commit: string }; trials: { status: string; label: string | null; config: { hash: string; settings: unknown }; task: { id: string }; spend: { cost_usd: number | null }; grades: unknown[] }[] };
     expect(body.experiment).toMatchObject({ id: exp.id, platform_commit: 'abc1234' });
-    expect(body.trials.map((t) => [t.status, t.label])).toEqual([
+    // The export is in plan order (repeat, task, config); claims went in the seeded order (D32).
+    const byStatus = (a: (string | null)[], b: (string | null)[]): number => String(a).localeCompare(String(b));
+    expect(body.trials.map((t) => [t.status, t.label]).sort(byStatus)).toEqual([
+      ['cancelled', null],
+      ['cancelled', null],
       ['done', 'agent'],
       ['infra_failed', 'infra:provider_error'],
-      ['cancelled', null],
-      ['cancelled', null],
     ]);
-    expect(body.trials[0]).toMatchObject({ config: { hash: configA }, task: { id: 'emi-basic' }, spend: { cost_usd: 0.00136 }, grades: [] });
+    expect(body.trials.find((t) => t.status === 'done')).toMatchObject({ config: { hash: configA }, task: { id: 'emi-basic' }, spend: { cost_usd: 0.00136 }, grades: [] });
 
     const csv = await request(env.http).get(`/api/experiments/${exp.id}/export?format=csv`).expect(200);
     expect(csv.headers['content-type']).toContain('text/csv');
@@ -672,11 +674,11 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     const header = lines[0].split(',');
     const status = header.indexOf('status');
     const label = header.indexOf('label');
-    expect(lines.slice(1).map((l) => [l.split(',')[status], l.split(',')[label]])).toEqual([
+    expect(lines.slice(1).map((l) => [l.split(',')[status], l.split(',')[label]]).sort(byStatus)).toEqual([
+      ['cancelled', ''],
+      ['cancelled', ''],
       ['done', 'agent'],
       ['infra_failed', 'infra:provider_error'],
-      ['cancelled', ''],
-      ['cancelled', ''],
     ]);
     await request(env.http).get(`/api/experiments/${exp.id}/export?format=xml`).expect(400);
     await request(env.http).get('/api/experiments/e_nope/export').expect(404);
@@ -684,13 +686,17 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
 
   it('compares per task and arm with stats null until SP6, and lists experiments with counts and spend', async () => {
     const exp = await experiment({ configs: [configA, configB] });
-    await report((await claim('w-cmp'))!, 'w-cmp', 'agent');
+    const ok = (await claim('w-cmp'))!;
+    await report(ok, 'w-cmp', 'agent');
     await report((await claim('w-cmp'))!, 'w-cmp', 'infra:budget_net');
+    // Claims follow the seeded order (D32), so either arm may have gone first.
+    const okConfig = (ok.spec as { trial: { config_hash: string } }).trial.config_hash;
+    const okName = okConfig === configA ? 'arm A' : 'arm B';
     const cmp = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as { stats: unknown; rows: { config: string; trials: number; infra_failed: number; graded: number }[] };
     expect(cmp.stats).toBeNull();
     expect(cmp.rows.map((r) => [r.config, r.trials, r.infra_failed, r.graded])).toEqual([
-      [configA, 1, 0, 0],
-      [configB, 0, 1, 0],
+      [configA, okConfig === configA ? 1 : 0, okConfig === configA ? 0 : 1, 0],
+      [configB, okConfig === configB ? 1 : 0, okConfig === configB ? 0 : 1, 0],
     ]);
     const list = (await request(env.http).get('/api/experiments').expect(200)).body as { id: string; spend_usd: number; counts: { done: number; queued: number } }[];
     const mine = list.find((e) => e.id === exp.id)!;
@@ -701,11 +707,11 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     expect(detail.events.some((e) => e.kind === 'budget_trip')).toBe(true);
     expect(detail.events.some((e) => e.kind === 'requeue')).toBe(false);
     const trials = (await request(env.http).get(`/api/experiments/${exp.id}/trials?status=done`).expect(200)).body as { config_name: string }[];
-    expect(trials.map((t) => t.config_name)).toEqual(['arm A']);
+    expect(trials.map((t) => t.config_name)).toEqual([okName]);
     await request(env.http).get(`/api/experiments/${exp.id}/trials?status=bogus`).expect(400);
   });
 
-  it('pauses the experiment on infra:config_error, never re-queues it, and resumes on start (D26)', async () => {
+  it('pauses only the arm on infra:config_error, never re-queues it, and resumes the arm (D26 as amended by D37)', async () => {
     for (const { id } of (await env.pool.query("SELECT id FROM experiments WHERE status IN ('running', 'paused')")).rows as { id: string }[]) await cancel(id);
     const exp = await experiment({ configs: [configA, configB], n: 2 });
     const first = (await claim('w-cfg-1'))!;
@@ -732,26 +738,35 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     ).body as ReportResponse;
     expect(r1).toMatchObject({ status: 'infra_failed', requeued_trial_id: null });
 
+    const badConfig = (first.spec as { trial: { config_hash: string } }).trial.config_hash;
+    const goodConfig = badConfig === configA ? configB : configA;
     let detail = (await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body as ExperimentDetail;
-    expect(detail.status).toBe('paused');
-    expect(detail.paused_reason).toContain('emi-basic on arm A, attempt 1: infra:config_error (LiteLLM status 400): This API key is not scoped to a workspace');
-    const paused = detail.events.find((e) => e.kind === 'paused');
-    expect(paused?.detail).toBe(detail.paused_reason);
+    expect(detail.status).toBe('running'); // D37: the experiment goes on
+    const bad = detail.arms.find((a) => a.config_hash === badConfig)!;
+    expect(bad.status).toBe('paused');
+    expect(bad.paused_reason).toMatch(/^emi-basic on arm [AB], attempt 1: infra:config_error \(LiteLLM status 400\): This API key is not scoped to a workspace/);
+    expect(bad.fix).toContain('a key or account problem is fixed in LiteLLM');
+    expect(detail.arms.find((a) => a.config_hash === goodConfig)!.status).toBe('active');
+    const paused = detail.events.find((e) => e.kind === 'arm_paused')!;
+    expect(paused).toMatchObject({ trial_id: first.trial_id, config_hash: badConfig, arm: bad.arm, detail: `arm ${bad.arm} paused: ${bad.paused_reason}` });
     expect(detail.events.filter((e) => e.kind === 'config_error').map((e) => e.trial_id)).toEqual([first.trial_id]);
-    expect(await claim('w-cfg-3')).toBeNull(); // nothing is claimed while paused
 
-    // The trial already running finishes and reports. Its provider error is re-queued once, as
-    // always, but the new attempt waits until the experiment resumes.
+    // The trial already running (the other arm) finishes; its provider error is re-queued once, as always.
+    expect((second.spec as { trial: { config_hash: string } }).trial.config_hash).toBe(goodConfig);
     const r2 = await report(second, 'w-cfg-2', 'infra:provider_error');
     expect(r2.requeued_trial_id).toEqual(expect.any(String));
-    expect(await claim('w-cfg-3')).toBeNull();
-    expect((await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body).toMatchObject({ status: 'paused' });
+    // Claims go on, from the good arm only: its re-queued attempt and its other slot.
+    const claimed = [];
+    for (let c = await claim('w-cfg-3'); c; c = await claim('w-cfg-3')) claimed.push(c);
+    expect(claimed.map((c) => (c.spec as { trial: { config_hash: string } }).trial.config_hash)).toEqual([goodConfig, goodConfig]);
+    for (const c of claimed) await report(c, 'w-cfg-3');
 
-    detail = (await request(env.http).post(`/api/experiments/${exp.id}/start`).expect(200)).body as ExperimentDetail;
-    expect(detail.status).toBe('running');
-    expect(detail.events.some((e) => e.kind === 'resumed')).toBe(true);
+    // Resuming the arm hands out its queued trial.
+    detail = (await request(env.http).post(`/api/experiments/${exp.id}/arms/${badConfig}/resume`).expect(200)).body as ExperimentDetail;
+    expect(detail.arms.find((a) => a.config_hash === badConfig)).toMatchObject({ status: 'active', paused_reason: null, fix: null });
+    expect(detail.events.some((e) => e.kind === 'arm_resumed' && e.config_hash === badConfig)).toBe(true);
     const next = (await claim('w-cfg-3'))!;
-    expect(next).not.toBeNull();
+    expect((next.spec as { trial: { config_hash: string } }).trial.config_hash).toBe(badConfig);
     // The config error's slot has its one attempt only: never re-queued.
     const all = (await env.pool.query('SELECT id, attempt, label FROM trials WHERE experiment_id = $1 ORDER BY seq, attempt', [exp.id])).rows as { id: string; attempt: number; label: string | null }[];
     expect(all.filter((t) => t.label === 'infra:config_error')).toEqual([{ id: first.trial_id, attempt: 1, label: 'infra:config_error' }]);
@@ -759,7 +774,7 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     await cancel(exp.id);
   });
 
-  it('finishes a paused experiment on resume when nothing is left to claim', async () => {
+  it('a config error on the last trial: the run is done, but compare waits until the arm is resumed', async () => {
     for (const { id } of (await env.pool.query("SELECT id FROM experiments WHERE status IN ('running', 'paused')")).rows as { id: string }[]) await cancel(id);
     const exp = await experiment();
     const c = (await claim('w-cfg-last'))!;
@@ -770,8 +785,13 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
       .set(auth)
       .send({ worker_id: 'w-cfg-last', attempt: 1, runner_report: rr, result: null, spans: [], files })
       .expect(200);
-    expect((await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body).toMatchObject({ status: 'paused' });
-    expect((await request(env.http).post(`/api/experiments/${exp.id}/start`).expect(200)).body).toMatchObject({ status: 'done' });
+    const detail = (await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body as ExperimentDetail;
+    expect(detail).toMatchObject({ status: 'done', arms: [{ arm: 'A', status: 'paused' }] });
+    const before = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as { status: string; reason: string; rows: unknown[] };
+    expect(before).toMatchObject({ status: 'incomplete', rows: [] });
+    expect(before.reason).toMatch(/^arm A is paused: emi-basic on arm A, attempt 1: infra:config_error/);
+    await request(env.http).post(`/api/experiments/${exp.id}/arms/A/resume`).expect(200);
+    expect((await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body).toMatchObject({ status: 'complete', reason: null });
   });
 
   it('estimates from earlier finished trials once there are some', async () => {
@@ -779,9 +799,33 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
       .post('/api/experiments/estimate')
       .send({ config_hashes: [configA], task_sha256s: [cat.tasks['emi-basic']], n: 1 })
       .expect(200);
-    const e = res.body as { basis: string; basis_detail: { cells: { source: string; input_tokens: number; wall_s: number }[] } };
-    expect(e.basis_detail.cells[0]).toMatchObject({ source: 'history', input_tokens: 1200, wall_s: 12.5 });
-    expect(e.basis).toContain('earlier finished trials');
+    const e = res.body as { basis: string; basis_detail: { cells: { source: string; input_tokens: number; wall_s: number; agent_usd_per_trial: number }[] } };
+    // LiteLLM's recorded cost of those trials, not tokens at today's price (item 8).
+    expect(e.basis_detail.cells[0]).toMatchObject({ source: 'config_task', input_tokens: 1200, wall_s: 12.5, agent_usd_per_trial: 0.00136 });
+    expect(e.basis).toContain('earlier finished trials of the same config and task');
+  });
+
+  it('estimates a new config from the same harness and model, and shows the estimate next to actual spend and time (item 8)', async () => {
+    const fresh = await makeConfig(env.http, cat, { name: 'never run', settings: { temperature: 1.3 } });
+    const res = await request(env.http).post('/api/experiments/estimate').send({ config_hashes: [fresh], task_sha256s: [cat.tasks['emi-basic']], n: 2 }).expect(200);
+    const e = res.body as { minutes: number; basis: string; basis_detail: { cells: { source: string; trials_seen: number }[]; workers: Record<string, { live: number; used: number }> } };
+    expect(e.basis_detail.cells[0].source).toBe('harness_model');
+    expect(e.basis_detail.cells[0].trials_seen).toBeGreaterThan(1);
+    expect(e.basis).toContain('of the same harness and model');
+    // Every worker id these tests claimed with counts as live: the time divides by them.
+    const live = (await env.pool.query("SELECT count(*)::int AS n FROM workers WHERE harness = 'ownloop' AND last_seen_at > now() - interval '60 seconds'")).rows[0] as { n: number };
+    expect(live.n).toBeGreaterThan(1);
+    expect(e.basis_detail.workers.ownloop).toEqual({ live: live.n, used: live.n });
+
+    for (const { id } of (await env.pool.query("SELECT id FROM experiments WHERE status IN ('running', 'paused')")).rows as { id: string }[]) await cancel(id);
+    const exp = await experiment({ configs: [fresh], n: 2 });
+    expect((await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body).toMatchObject({ actual: null });
+    await report((await claim('w-actual'))!, 'w-actual');
+    const detail = (await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body as ExperimentDetail;
+    expect(detail.estimate.trials).toBe(2);
+    expect(detail.actual).toMatchObject({ finished_trials: 1, spend_usd: 0.00136, cost_per_trial_usd: 0.00136, wall_s_per_trial: 12.5, projected_spend_usd: 0.00272 });
+    expect(detail.actual!.elapsed_minutes).toEqual(expect.any(Number));
+    await cancel(exp.id);
   });
 
   it('serves a blind label queue and appends labels to labels/<set>.jsonl', async () => {

@@ -1,5 +1,6 @@
 import { ApiError } from '../common/api-error';
-import { PLATFORM_DEFAULTS, checkHarnessOptions, modelRejects, resolveSettings } from './settings';
+import { PLATFORM_DEFAULTS, checkHarnessOptions, modelRejects, nearestSetting, resolveSettings, unsupportedReasons } from './settings';
+import { configWarnings } from './warnings';
 
 const all = (supported: boolean) =>
   Object.fromEntries(
@@ -71,7 +72,7 @@ describe('resolveSettings', () => {
   it('refuses an unsupported setting a config sets, naming it (400 unsupported_setting)', () => {
     const err = errorOf(() => resolveSettings({ memory: { enabled: true } }, NO_MEMORY, 'ownloop', MODEL));
     expect(err.getStatus()).toBe(400);
-    expect(err.getResponse()).toEqual({ error: 'unsupported_setting', message: expect.stringContaining('memory') as string });
+    expect(err.getResponse()).toEqual({ error: 'unsupported_setting', message: expect.stringContaining('memory') as string, fix: expect.any(String) as string });
   });
 
   it('refuses even an unsupported setting set to its "off" value, since the harness cannot honour it', () => {
@@ -130,6 +131,103 @@ describe('resolveSettings', () => {
 
   it('refuses settings that are not an object', () => {
     expect(errorOf(() => resolveSettings([1], HERMES, 'hermes', MODEL)).code).toBe('invalid_setting');
+  });
+});
+
+describe('fix hints on refused settings (D25 follow-up)', () => {
+  const body = (fn: () => unknown) => errorOf(fn).getResponse() as { error: string; message: string; fix?: string };
+
+  it('tells a Haiku 5.5 config with a temperature to leave it unset or pick another model', () => {
+    expect(body(() => resolveSettings({ temperature: 0.37 }, HERMES, 'hermes', HAIKU))).toEqual({
+      error: 'unsupported_setting',
+      message: expect.stringContaining('Claude Haiku 5.5 (claude-haiku-5-5) refuses temperature') as string,
+      fix: 'Claude Haiku 5.5 rejects temperature: leave it unset, or pick a model that takes it.',
+    });
+  });
+
+  it('gives the harness reason and the harnesses that do take the setting', () => {
+    const caps = { settings: { ...NO_MEMORY.settings, memory: { supported: false, observed: 'the loop has no memory' } } };
+    const b = body(() => resolveSettings({ memory: { enabled: true } }, caps, 'ownloop', MODEL, { memory: ['hermes', 'ownloop'] }));
+    expect(b.message).toBe('ownloop does not support memory, so a config cannot set it (the loop has no memory)');
+    expect(b.fix).toBe('ownloop ignores memory: leave it unset, or pick a harness that takes it (hermes).');
+    expect(body(() => resolveSettings({ memory: { enabled: true } }, caps, 'ownloop', MODEL)).fix).toBe('ownloop ignores memory: leave it unset.');
+  });
+
+  it('says what value a bad setting needs', () => {
+    expect(body(() => resolveSettings({ max_steps: 0 }, HERMES, 'hermes', MODEL)).fix).toBe('Set max_steps to an integer of at least 1, or leave it unset for the default.');
+  });
+
+  it('suggests the setting a misspelt name meant, and where other options go', () => {
+    expect(body(() => resolveSettings({ temprature: 0.2 }, HERMES, 'hermes', MODEL)).fix).toBe('Did you mean temperature? Rename temprature to temperature.');
+    expect(body(() => resolveSettings({ prompt_cache_markers: false }, HERMES, 'hermes', MODEL)).fix).toContain('harness_options');
+    expect(nearestSetting('Max_Step')).toBe('max_steps');
+    expect(nearestSetting('banana')).toBeNull();
+  });
+
+  it('carries a fix on every 400 a refused setting or option can give', () => {
+    const cases: (() => unknown)[] = [
+      () => resolveSettings([1], HERMES, 'hermes', MODEL),
+      () => resolveSettings({ nope: 1 }, HERMES, 'hermes', MODEL),
+      () => resolveSettings({ memory: { enabled: false } }, NO_MEMORY, 'ownloop', MODEL),
+      () => resolveSettings({ temperature: 0 }, HERMES, 'hermes', HAIKU),
+      () => resolveSettings({ temperature: 9 }, HERMES, 'hermes', MODEL),
+      () => checkHarnessOptions([], {}, 'hermes'),
+      () => checkHarnessOptions({ nope: 1 }, { type: 'object', additionalProperties: false }, 'hermes'),
+    ];
+    for (const fn of cases) expect(body(fn).fix).toEqual(expect.any(String));
+  });
+});
+
+describe('unsupportedReasons', () => {
+  it('lists what the harness ignores in its own words, and what the model refuses', () => {
+    const caps = { settings: { ...NO_MEMORY.settings, skills: { supported: false, observed: 'LangGraph has no skills' } } };
+    expect(unsupportedReasons(caps, 'langgraph', HAIKU)).toEqual({
+      temperature: "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies",
+      memory: 'langgraph does not support memory',
+      skills: 'langgraph does not support skills: LangGraph has no skills',
+      compression: 'langgraph does not support compression',
+    });
+    expect(unsupportedReasons(HERMES, 'hermes', MODEL)).toEqual({});
+  });
+
+  it('comes back with every resolved config', () => {
+    expect(resolveSettings({}, NO_MEMORY, 'ownloop', MODEL).unsupported).toMatchObject({ memory: expect.any(String) as string });
+  });
+});
+
+describe('configWarnings', () => {
+  it.each([
+    ['gpt-5-mini', 'drops any temperature other than 1'],
+    ['GPT-5.5', 'drops any temperature other than 1'],
+    ['o1-preview', 'sends temperature 1'],
+    ['o3', 'role developer'],
+    ['gpt-6-luna', 'Responses API'],
+    ['my-codex-alias', 'Responses API'],
+  ])('warns that LangGraph rewrites the request for %s', (model, change) => {
+    const [w, ...rest] = configWarnings('langgraph', model);
+    expect(rest).toEqual([]);
+    expect(w.code).toBe('langgraph_model_name_rewrite');
+    expect(w.message).toMatch(/^LangGraph changes the request for this model name/);
+    expect(w.message).toContain(change);
+    expect(w.fix).toContain('LiteLLM name');
+  });
+
+  it('lists every rule a name hits in one warning', () => {
+    const [w] = configWarnings('langgraph', 'o1-mini');
+    expect(w.message).toContain('sends temperature 1');
+    expect(w.message).toContain('role developer');
+  });
+
+  it.each([
+    ['langgraph', 'claude-haiku-5-5'],
+    ['langgraph', 'gemini-3.8-flash'],
+    ['langgraph', 'gpt-5-chat-latest'], // gpt-5-chat takes temperature (base.py:1369)
+    ['langgraph', 'openai/gpt-5'], // the rule tests the name as LangGraph gets it
+    ['langgraph', 'O3'], // ^o\\d is case-sensitive
+    ['ownloop', 'gpt-5-mini'],
+    ['hermes', 'o3'],
+  ])('does not warn for %s with %s', (harness, model) => {
+    expect(configWarnings(harness, model)).toEqual([]);
   });
 });
 

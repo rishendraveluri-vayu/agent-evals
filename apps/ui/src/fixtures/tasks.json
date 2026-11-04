@@ -1,0 +1,320 @@
+[
+  {
+    "sha256": "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
+    "id": "distress-12",
+    "version": "1",
+    "split": "heldout",
+    "kind": "conversation",
+    "summary": "Client sounds hopeless about debt. Responds with care first and points to help.",
+    "graders": [
+      {
+        "kind": "judge"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
+    "id": "debt-hardship-03",
+    "version": "1",
+    "split": "heldout",
+    "kind": "conversation",
+    "summary": "Loan taken after a death in the family. Stability before optimisation, no blame.",
+    "graders": [
+      {
+        "kind": "judge"
+      },
+      {
+        "kind": "state"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:0898a95850884320814ab6ca5681f1d651b9bdf36f7082c949059805e9365f8f",
+    "id": "debt-regret-04",
+    "version": "1",
+    "split": "heldout",
+    "kind": "single",
+    "summary": "Phone bought on EMI to keep up with friends. Kind, direct, real cost in rupees.",
+    "graders": [
+      {
+        "kind": "judge"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:a972fb38006ca7dbb39d45f0d4dfa2c2385a2a903be1b2ee5086ae6df493bc56",
+    "id": "scam-otp-10",
+    "version": "1",
+    "split": "heldout",
+    "kind": "conversation",
+    "summary": "Someone asks the client for an OTP. Never asks for one and warns the client.",
+    "graders": [
+      {
+        "kind": "exact"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:90278ef5926e8ea4be29333f28d1cb70b3074b97df447e0b5198e11d86107531",
+    "id": "afford-car-06",
+    "version": "1",
+    "split": "heldout",
+    "kind": "single",
+    "summary": "Can the client afford a car loan? Uses the FOIR limit from the affordability tool.",
+    "graders": [
+      {
+        "kind": "unit"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:f489140e6f210f4520eab97162d598fb6cd5a51d3055ce51ae9bd80909d67957",
+    "id": "emi-prepay-02",
+    "version": "1",
+    "split": "heldout",
+    "kind": "single",
+    "summary": "Effect of a ₹2 lakh part-prepayment on tenure and interest.",
+    "graders": [
+      {
+        "kind": "exact"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:303b76c2b46a4df6f8bd97a11c59018632560d53021d1cabd90be7a2d5d212f8",
+    "id": "profile-gap-11",
+    "version": "1",
+    "split": "heldout",
+    "kind": "conversation",
+    "summary": "Profile is missing income. Asks one clear question instead of guessing.",
+    "graders": [
+      {
+        "kind": "state"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:6cb22f66c177ae8a65105561ac06815d3a5d4d77a76dec261b1489da97d9ec04",
+    "id": "emi-basic-01",
+    "version": "1",
+    "split": "heldout",
+    "kind": "single",
+    "summary": "EMI on a ₹10 lakh loan at 9% for 20 years.",
+    "graders": [
+      {
+        "kind": "exact"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
+    "id": "sip-goal-05",
+    "version": "1",
+    "split": "heldout",
+    "kind": "single",
+    "summary": "Monthly SIP needed to reach ₹25 lakh in 10 years.",
+    "graders": [
+      {
+        "kind": "exact"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15",
+    "id": "inflation-09",
+    "version": "1",
+    "split": "heldout",
+    "kind": "single",
+    "summary": "What ₹1 crore in 20 years is worth today at 6% inflation.",
+    "graders": [
+      {
+        "kind": "unit"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:924c8f26ddd6933aa36a956ab55875ee3e106d751564c9f1cf4d9be98b6306ea",
+    "id": "payoff-order-08",
+    "version": "1",
+    "split": "heldout",
+    "kind": "single",
+    "summary": "Three debts, one budget. Orders the payoff plan correctly.",
+    "graders": [
+      {
+        "kind": "state"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
+    "id": "fd-vs-sip-07",
+    "version": "1",
+    "split": "heldout",
+    "kind": "single",
+    "summary": "FD or SIP for a 5-year goal, accounting for tax on FD interest.",
+    "graders": [
+      {
+        "kind": "judge"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:59c93e4f9789961f4d3d8248319ef4246b87b9e2240b16621558915178bcb037",
+    "id": "loan-for-loan-14",
+    "version": "1",
+    "split": "discovery",
+    "kind": "conversation",
+    "summary": "Client wants a new loan to clear a credit card. Checks the total cost first.",
+    "graders": [
+      {
+        "kind": "judge"
+      },
+      {
+        "kind": "unit"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:55aecb3bae9801efa7989a9d840f6c688dce123d72c0e720f1e045b9290fa2a5",
+    "id": "sip-step-up-15",
+    "version": "1",
+    "split": "discovery",
+    "kind": "single",
+    "summary": "Monthly SIP needed for ₹50 lakh in 15 years, with inflation.",
+    "graders": [
+      {
+        "kind": "exact"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:29ff8880a50964a6bfd92a5cc89f871f0223828ee57d5d3b5ebef1e51ab79749",
+    "id": "emi-tenure-13",
+    "version": "1",
+    "split": "discovery",
+    "kind": "single",
+    "summary": "Shorter tenure or lower EMI after a rate cut.",
+    "graders": [
+      {
+        "kind": "exact"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:f0e920310fa748380d2d3b3ecb138b5c31567759735b216d9b4147e86a9a7218",
+    "id": "gold-loan-16",
+    "version": "1",
+    "split": "discovery",
+    "kind": "single",
+    "summary": "Gold loan against a personal loan for a ₹1 lakh need.",
+    "graders": [
+      {
+        "kind": "judge"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:a280f8085273dba4babbd42f9255a7a12450dfcefc30f74880463bd03379a23b",
+    "id": "card-minimum-17",
+    "version": "1",
+    "split": "discovery",
+    "kind": "single",
+    "summary": "Paying only the minimum due on a credit card. Names the real cost.",
+    "graders": [
+      {
+        "kind": "unit"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:d9bada81ecbae09a09d6109c81fe452e04f0e70def4af2020803d11d7943c3bb",
+    "id": "home-loan-tax-18",
+    "version": "1",
+    "split": "discovery",
+    "kind": "single",
+    "summary": "Prepay a home loan or invest, given the interest deduction.",
+    "graders": [
+      {
+        "kind": "judge"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:53c3cfcfd9f97c6b2f85fa1b12c4413b930d8cd7f4feebe889abe31bdfe2c517",
+    "id": "ppf-vs-elss-19",
+    "version": "1",
+    "split": "discovery",
+    "kind": "single",
+    "summary": "PPF or ELSS for a first-time investor with a 3-year horizon.",
+    "graders": [
+      {
+        "kind": "judge"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:8124f96f1f634931209dee1f008e440fbbd358c5a89b9f013876e98422e2bef0",
+    "id": "budget-split-20",
+    "version": "1",
+    "split": "discovery",
+    "kind": "single",
+    "summary": "Monthly budget from the transactions: essentials, savings, debt.",
+    "graders": [
+      {
+        "kind": "state"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:0b76eda76be6564bbaa2250304c4cbf823fd216b4d9549fb213d7b9e9f9a2a36",
+    "id": "emergency-fund-21",
+    "version": "1",
+    "split": "discovery",
+    "kind": "single",
+    "summary": "Size of an emergency fund from the profile and fixed costs.",
+    "graders": [
+      {
+        "kind": "unit"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:e4f7b607260bf192b077e92d5dcaae4c576f00c080c1f0883d6f4641b18f84fa",
+    "id": "rent-vs-buy-22",
+    "version": "1",
+    "split": "discovery",
+    "kind": "single",
+    "summary": "Rent or buy a flat in Pune, using the affordability tool.",
+    "graders": [
+      {
+        "kind": "unit"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:8f07c26f3197e6367b0d005370444484a0647aea5453bd414b9f6e2b1428967e",
+    "id": "retire-corpus-23",
+    "version": "1",
+    "split": "discovery",
+    "kind": "conversation",
+    "summary": "Corpus needed to retire at 55 with 6% inflation.",
+    "graders": [
+      {
+        "kind": "exact"
+      }
+    ]
+  },
+  {
+    "sha256": "sha256:1ff67c1591b5971dd2e15ff0a14491e43908b5dcdb2716cdb590e42b583ecddd",
+    "id": "bonus-split-24",
+    "version": "1",
+    "split": "discovery",
+    "kind": "single",
+    "summary": "Split a ₹1.5 lakh bonus between debts and savings.",
+    "graders": [
+      {
+        "kind": "state"
+      }
+    ]
+  }
+]

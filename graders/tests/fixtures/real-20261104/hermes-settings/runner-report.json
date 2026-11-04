@@ -1,0 +1,113 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-hermes-smoke-cef7ec",
+ "attempt": 1,
+ "harness": "hermes",
+ "label": "agent",
+ "end_state": "harness_error",
+ "adapter": {
+  "exit_code": 0,
+  "signal": null,
+  "result_valid": true,
+  "result_errors": [],
+  "trace_valid": true,
+  "trace_errors": [],
+  "leftover_processes": 2
+ },
+ "proxy_usage": {
+  "complete": true,
+  "model_calls": 1,
+  "failed_calls": 1,
+  "input_tokens": 1671,
+  "output_tokens": 0,
+  "cost_usd": 0.0,
+  "last_status": "400"
+ },
+ "logs": {
+  "stdout": {
+   "path": "stdout.log",
+   "bytes": 1170,
+   "sha256": "7fb5b20c0759b7993174fc2c8aba5194739c7c960b38bb6353ec84f2ef71c823",
+   "truncated": false
+  },
+  "stderr": {
+   "path": "stderr.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "truncated": false
+  }
+ },
+ "files": [
+  {
+   "path": "artifacts/hermes-config.yaml",
+   "bytes": 2164,
+   "sha256": "22a20079c84d14c87fb1d09ec3080567f27c59611d7f9208cf11bdc59b6a5e00"
+  },
+  {
+   "path": "artifacts/hermes-logs/agent.log",
+   "bytes": 7121,
+   "sha256": "9366569b96bf96fbeb2023b9ed34e628cdcf5498712672cfba2bbc1838c72741"
+  },
+  {
+   "path": "artifacts/hermes-logs/errors.log",
+   "bytes": 6187,
+   "sha256": "115f3e49e3e9a7cf7599851fb54b65e9f887fe3000925f3df388ef1c56215067"
+  },
+  {
+   "path": "artifacts/hermes-logs/mcp-stderr.log",
+   "bytes": 280,
+   "sha256": "02533b97e6c06afe7cf3a1afbb79368908417582bc41949d311f6a7a55efc6bf"
+  },
+  {
+   "path": "artifacts/hermes-messages.json",
+   "bytes": 271,
+   "sha256": "b34737210b4f55a18a4db326fe5de208396ca00fe048e7bd5b7355b654da6fbb"
+  },
+  {
+   "path": "artifacts/hermes-sessions/request_dump_20261104_140429_111ee9_20261104_140431_174413.json",
+   "bytes": 27137,
+   "sha256": "888c84947cea3e1ca857d6df15426f9b403c6c8c2f38bb5d15ae66f855bc0497"
+  },
+  {
+   "path": "artifacts/hermes-system-prompt.txt",
+   "bytes": 7101,
+   "sha256": "4c397edc22b60fa2315d0d79e3617b66e3194a87727652cb7c1e3f721dccdb4a"
+  },
+  {
+   "path": "artifacts/proxy/0001.request.json",
+   "bytes": 21228,
+   "sha256": "a539fce84e4ca4f3da5e9cc5b4dd9f58bc9b2c4ef3c4fb08904e15b10e29255c"
+  },
+  {
+   "path": "artifacts/proxy/0001.response.json",
+   "bytes": 2,
+   "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  },
+  {
+   "path": "result.json",
+   "bytes": 4085,
+   "sha256": "69b65f5ebf032677ccc0cd4dae8e9fc8c8a89deb6f7be89e63a685b8a1a43544"
+  },
+  {
+   "path": "stderr.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "path": "stdout.log",
+   "bytes": 1170,
+   "sha256": "7fb5b20c0759b7993174fc2c8aba5194739c7c960b38bb6353ec84f2ef71c823"
+  },
+  {
+   "path": "trace.jsonl",
+   "bytes": 3438,
+   "sha256": "1b1447748d87e4a68c8caa8ee7e4c34fd28609fee6688c5f29bc2081e2181f28"
+  }
+ ],
+ "timing": {
+  "started_at": "2026-11-04T08:34:25.281657Z",
+  "ended_at": "2026-11-04T08:34:31.329561Z",
+  "wall_s": 6.048,
+  "safety_net_s": 390.0
+ }
+}

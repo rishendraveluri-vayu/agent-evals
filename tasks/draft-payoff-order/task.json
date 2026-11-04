@@ -1,0 +1,68 @@
+{
+  "id": "draft-payoff-order",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "DRAFT for Rishi: Meera can put Rs 20,000 a month towards her three debts: which first, and when is she debt-free?",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "I can put about ₹20,000 a month towards my debts. Which one should I pay off first, and when will I be debt-free?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": "client.json",
+  "graders": [
+    {
+      "id": "read-debts",
+      "type": "tool_called",
+      "required": true,
+      "tool": "list_debts"
+    },
+    {
+      "id": "used-payoff-plan",
+      "type": "tool_called",
+      "required": true,
+      "tool": "debt_payoff_plan",
+      "args": {
+        "monthly_budget": 20000
+      }
+    },
+    {
+      "id": "card-first",
+      "type": "regex_present",
+      "required": true,
+      "target": "final_answer",
+      "pattern": "credit card"
+    },
+    {
+      "id": "debt-free-months",
+      "type": "regex_present",
+      "required": true,
+      "target": "final_answer",
+      "pattern": "\\b28\\s*months?\\b"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding before the rubric: overall verdict plus a note.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        }
+      ]
+    }
+  ],
+  "judge_criteria_to_write": "Avalanche order: ['Credit card', 'Personal loan', 'Two-wheeler loan']. Judgment: kind about her mother's costs; a plan she can follow."
+}

@@ -11,16 +11,21 @@ import { CONFIG_SELECT, type ConfigRow, configId } from '../configs/configs.serv
 import { Db, type Queryable } from '../database/db.service';
 import { type ExperimentRow, finishIfDone, isSimTask } from '../experiments/experiments.service';
 import { LiteLlmClient, LiteLlmHttpError, type MintedKey } from '../litellm/litellm.client';
-import { FINISHED, HELD, LEASE_S, PAUSES_EXPERIMENT, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
+import { FINISHED, HELD, LEASE_S, PAUSES_ARM, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
 import { MAX_FILE_BYTES, checkFiles, locate, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
-import { configErrorReason, parseReport, spanRows, usageOf } from './report';
+import { configErrorFix, configErrorReason, parseReport, spanRows, usageOf } from './report';
+import { applyRunRules } from '../experiments/rules';
+import { pauseArm } from '../experiments/run-state';
 import { SIM_REPLIES_FILE, type SimReplyRow, type SimScope, parseSimReplies, simScope } from './sim-cache';
 import { clientSummary } from './client-summary';
 import { CLIENT_STATE_FILE, SIM_MAX_OUTPUT_TOKENS, buildSpec } from './spec-builder';
+import { PROBE_BUDGET_USD, PROBE_FOLDER, PROBE_MODEL } from '../preflight/probe';
 
 interface TrialRow {
   id: string;
-  experiment_id: string;
+  /** Null for a probe trial (D33). */
+  experiment_id: string | null;
+  probe: boolean;
   task_sha256: string;
   config_hash: string;
   repeat_index: number;
@@ -37,6 +42,10 @@ interface TrialRow {
 
 const one = async <T>(q: Queryable, sql: string, params: unknown[]): Promise<T | undefined> =>
   ((await q.query(sql, params)).rows as T[])[0];
+
+/** Where an attempt's files go: under its experiment, or under runs/probes/ for a probe (D33). */
+const folderOf = (t: { experiment_id: string | null; id: string; attempt: number; folder?: string | null }): string =>
+  t.folder ?? trialFolder(t.experiment_id ?? PROBE_FOLDER, t.id, t.attempt);
 
 /**
  * Every stored simulator reply for this task, simulator model, settings and prompt (D22). An empty
@@ -73,8 +82,8 @@ async function requeue(q: Queryable, trialId: string, attempt: number, experimen
   if (!shouldRequeue(attempt, experimentStatus, label)) return null;
   const next = await one<{ id: string }>(
     q,
-    `INSERT INTO trials (id, experiment_id, task_sha256, config_hash, repeat_index, attempt, seq, harness, status)
-     SELECT $2, experiment_id, task_sha256, config_hash, repeat_index, attempt + 1, seq, harness, 'queued'
+    `INSERT INTO trials (id, experiment_id, task_sha256, config_hash, repeat_index, attempt, seq, order_index, harness, status)
+     SELECT $2, experiment_id, task_sha256, config_hash, repeat_index, attempt + 1, seq, order_index, harness, 'queued'
      FROM trials WHERE id = $1
      ON CONFLICT (experiment_id, task_sha256, config_hash, repeat_index, attempt) DO NOTHING
      RETURNING id`,
@@ -136,21 +145,28 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     const workerId = b.worker_id;
     const harness = b.harness;
     const modelBaseUrl = this.litellm.workerBaseUrl; // fails early when LiteLLM is not configured
+    // Item 8: a worker that asks for work is live, whether or not it gets any.
+    await this.seen(workerId, harness);
     return this.db.tx(async (client) => {
+      // A probe trial (D33) has no experiment and goes first: it is a short pre-run check.
       const t = await one<TrialRow>(
         client,
         `UPDATE trials SET status = 'claimed', worker_id = $2, claimed_at = now(), heartbeat_at = now()
          WHERE id = (
-           SELECT t.id FROM trials t JOIN experiments e ON e.id = t.experiment_id
-           WHERE t.status = 'queued' AND t.harness = $1 AND e.status = 'running'
-           ORDER BY e.started_at, e.id, t.seq, t.attempt
+           SELECT t.id FROM trials t LEFT JOIN experiments e ON e.id = t.experiment_id
+           WHERE t.status = 'queued' AND t.harness = $1 AND (t.probe OR e.status = 'running')
+             -- D37: a paused arm's trials wait; the other arm keeps claiming. A probe has no arm.
+             AND NOT EXISTS (SELECT 1 FROM experiment_arms a
+                             WHERE a.experiment_id = t.experiment_id AND a.config_hash = t.config_hash AND a.paused_at IS NOT NULL)
+           -- Probes first (D33), then each experiment in its seeded claim order (D32).
+           ORDER BY t.probe DESC, e.started_at, e.id, t.order_index, t.attempt, t.created_at
            LIMIT 1
            FOR UPDATE OF t SKIP LOCKED)
-         RETURNING id, experiment_id, task_sha256, config_hash, repeat_index, attempt`,
+         RETURNING id, experiment_id, probe, task_sha256, config_hash, repeat_index, attempt`,
         [harness, workerId],
       );
       if (!t) return null;
-      const exp = (await one<ExperimentRow>(client, 'SELECT * FROM experiments WHERE id = $1', [t.experiment_id])) as ExperimentRow;
+      const exp = t.experiment_id ? ((await one<ExperimentRow>(client, 'SELECT * FROM experiments WHERE id = $1', [t.experiment_id])) as ExperimentRow) : null;
       const cfg = (await one<ConfigRow>(client, `${CONFIG_SELECT} WHERE c.hash = $1`, [t.config_hash])) as ConfigRow;
       const task = (await one<StoredTask>(client, 'SELECT * FROM tasks WHERE sha256 = $1', [t.task_sha256])) as StoredTask;
       const prompt = (await one<{ id: string; version: string; sha256: string; text: string }>(client, 'SELECT * FROM prompts WHERE sha256 = $1', [cfg.prompt_sha256]))!;
@@ -162,6 +178,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
       const withSim = isSimTask(task);
       let sim = null;
       if (withSim) {
+        if (!exp) throw new ApiError(500, 'probe_with_simulator', `probe ${t.id} has a simulated-client task`);
         const simPrompt = await one<{ id: string; version: string; sha256: string; text: string }>(client, 'SELECT * FROM prompts WHERE sha256 = $1', [exp.sim_prompt_sha256]);
         if (!exp.sim_model || !simPrompt) throw new ApiError(500, 'experiment_without_simulator', `experiment ${exp.id} has a simulated-client task but no simulator`);
         sim = {
@@ -172,37 +189,41 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
           prompt: simPrompt,
         };
       }
+      // A probe runs the config as it is, except on the fake model, so it costs nothing (D33).
+      const model = exp ? cfg.model : PROBE_MODEL;
+      const budgets = exp ? { trial_usd: exp.trial_budget_usd, sim_usd: exp.sim_budget_usd } : { trial_usd: PROBE_BUDGET_USD, sim_usd: 0 };
       const spec = buildSpec({
         trial: { id: t.id, experimentId: t.experiment_id, repeatIndex: t.repeat_index, attempt: t.attempt },
         config: {
           id: configId(cfg.hash),
           hash: cfg.hash,
-          model: cfg.model,
+          model,
           apiFormat: cfg.api_format,
           settings: cfg.settings,
           settingsSources: cfg.settings_sources,
           harnessOptions: cfg.harness_options,
         },
-        task: { id: task.id, sha256: task.sha256, split: task.split, body: task.body, clientSummary: withSim ? clientSummary(task.client_state) : null },
+        task: { id: task.id, sha256: task.sha256, split: exp ? task.split : null, body: task.body, clientSummary: withSim ? clientSummary(task.client_state) : null },
         prompt,
         toolset,
         sim,
         modelBaseUrl,
       });
-      const folder = trialFolder(t.experiment_id, t.id, t.attempt);
+      const folder = folderOf(t);
       const minted: MintedKey[] = [];
       try {
         const agent = await this.litellm.generateKey({
           trialId: t.id,
           role: 'agent',
-          model: cfg.model,
-          maxBudgetUsd: exp.trial_budget_usd,
-          teamId: exp.litellm_team_id,
-          experimentId: exp.id,
+          model,
+          maxBudgetUsd: budgets.trial_usd,
+          teamId: exp?.litellm_team_id ?? null,
+          experimentId: exp?.id ?? null,
+          probe: !exp,
         });
         minted.push(agent);
         let simKey: MintedKey | null = null;
-        if (sim) {
+        if (sim && exp) {
           simKey = await this.litellm.generateKey({
             trialId: t.id,
             role: 'sim',
@@ -230,7 +251,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
           spec,
           state_files: stateFiles,
           keys: { model: agent.key, sim: simKey?.key ?? null },
-          budgets: { trial_usd: exp.trial_budget_usd, sim_usd: exp.sim_budget_usd },
+          budgets,
           lease_s: LEASE_S,
           folder,
           sim_cache: scope ? await simCache(client, scope) : null,
@@ -242,6 +263,15 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     });
   }
 
+  /** Records that a worker of this harness is alive now (the estimate's live workers, item 8). */
+  private async seen(workerId: string, harness: string): Promise<void> {
+    await this.db.query(
+      `INSERT INTO workers (worker_id, harness, last_seen_at) VALUES ($1, $2, now())
+       ON CONFLICT (worker_id) DO UPDATE SET harness = EXCLUDED.harness, last_seen_at = now()`,
+      [workerId, harness],
+    );
+  }
+
   // ---- heartbeat ----
 
   async heartbeat(id: string, body: unknown): Promise<HeartbeatResponse> {
@@ -249,12 +279,15 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     if (typeof b.worker_id !== 'string' || typeof b.attempt !== 'number') {
       throw badRequest('invalid_heartbeat', 'worker_id and attempt are required');
     }
-    const kept = await this.db.query(
+    const kept = await this.db.query<{ harness: string }>(
       `UPDATE trials SET heartbeat_at = now(), status = 'running'
-       WHERE id = $1 AND attempt = $2 AND worker_id = $3 AND status IN ('claimed', 'running') RETURNING id`,
+       WHERE id = $1 AND attempt = $2 AND worker_id = $3 AND status IN ('claimed', 'running') RETURNING harness`,
       [id, b.attempt, b.worker_id],
     );
-    if (kept.length) return { lease_s: LEASE_S };
+    if (kept.length) {
+      await this.seen(b.worker_id, kept[0].harness);
+      return { lease_s: LEASE_S };
+    }
     const [exists] = await this.db.query('SELECT 1 FROM trials WHERE id = $1', [id]);
     if (!exists) throw notFound('unknown_trial', `no trial ${id}`);
     throw conflict('claim_lost', `trial ${id} attempt ${b.attempt} is no longer held by ${b.worker_id}; stop it and report nothing`);
@@ -313,7 +346,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     if (t.worker_id !== workerId || (!reported && !HELD.includes(t.status))) {
       throw await drained(body, conflict('claim_lost', `trial ${id} is ${t.status} and no longer held by ${workerId}`));
     }
-    const folder = t.folder ?? trialFolder(t.experiment_id, t.id, t.attempt);
+    const folder = folderOf(t);
     return storeUpload(this.config.runsDir, folder, rel, body, sha256, { allowNew: !reported });
   }
 
@@ -333,7 +366,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     if (typeof body.runner_report.trial_id === 'string' && body.runner_report.trial_id !== id) {
       throw badRequest('report_mismatch', `the runner report is for ${body.runner_report.trial_id}, not ${id}`);
     }
-    const folder = trial.folder ?? trialFolder(trial.experiment_id, trial.id, trial.attempt);
+    const folder = folderOf(trial);
     const files = await checkFiles(this.config.runsDir, folder, body.files);
     const { rows: spans, problems } = spanRows(body.spans);
     const bad = files.filter((f) => !f.ok);
@@ -397,25 +430,28 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
         simStored = res.rowCount ?? 0;
       }
       let requeued: string | null = null;
+      // A probe (no experiment) is never re-queued and pauses nothing: POST rendered-prompt probes again.
+      const experimentId = locked.experiment_id;
+      if (experimentId === null) return { stored, requeued, simStored };
       if (status === 'infra_failed') {
-        const exp = (await one<{ status: ExperimentRow['status'] }>(client, 'SELECT status FROM experiments WHERE id = $1', [locked.experiment_id]))!;
+        const exp = (await one<{ status: ExperimentRow['status'] }>(client, 'SELECT status FROM experiments WHERE id = $1', [experimentId]))!;
         requeued = await requeue(client, id, locked.attempt, exp.status, label);
       }
-      if (label === PAUSES_EXPERIMENT) {
-        // D26: the setup is wrong (a key, the model, a refused setting), so every later trial
-        // would fail the same way. Stop new claims until someone fixes it and resumes.
+      if (label === PAUSES_ARM) {
+        // D26, amended by D37: the setup is wrong (a key, the model, a refused setting), so every
+        // later trial of this config would fail the same way. Its arm stops claiming until someone
+        // fixes it and resumes the arm; the other arm keeps running.
         const where = await one<{ task_id: string; config_name: string }>(
           client,
           'SELECT k.id AS task_id, c.name AS config_name FROM tasks k, configs c WHERE k.sha256 = $1 AND c.hash = $2',
           [locked.task_sha256, locked.config_hash],
         );
         const reason = `${where?.task_id ?? locked.task_sha256} on ${where?.config_name ?? locked.config_hash}, attempt ${locked.attempt}: ${configErrorReason(body.result, body.runner_report)}`;
-        await client.query(
-          `UPDATE experiments SET status = 'paused', paused_at = now(), paused_reason = $2 WHERE id = $1 AND status = 'running'`,
-          [locked.experiment_id, reason],
-        );
+        await pauseArm(client, experimentId, locked.config_hash, reason, configErrorFix(body.runner_report), { id, attempt: locked.attempt });
       }
-      await finishIfDone(client, locked.experiment_id);
+      await finishIfDone(client, experimentId);
+      // D32: the futility check and the guards, which may pause the experiment for review.
+      await applyRunRules(client, experimentId);
       return { stored, requeued, simStored };
     });
     if (!outcome) return this.duplicate((await this.db.query<TrialRow>('SELECT * FROM trials WHERE id = $1', [id]))[0]);
@@ -483,7 +519,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
    */
   async sweep(): Promise<{ abandoned: string[]; requeued: string[] }> {
     const changed = await this.db.tx(async (client) => {
-      const { rows } = await client.query<{ id: string; experiment_id: string; attempt: number; status: ExperimentRow['status'] }>(
+      const { rows } = await client.query<{ id: string; experiment_id: string | null; attempt: number; status: ExperimentRow['status'] | null }>(
         `WITH lapsed AS (
            UPDATE trials SET status = 'abandoned', finished_at = now()
            WHERE id IN (
@@ -491,15 +527,20 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
              WHERE status IN ('claimed', 'running') AND heartbeat_at < now() - make_interval(secs => $1::double precision)
              FOR UPDATE SKIP LOCKED)
            RETURNING id, experiment_id, attempt)
-         SELECT l.id, l.experiment_id, l.attempt, e.status FROM lapsed l JOIN experiments e ON e.id = l.experiment_id`,
+         SELECT l.id, l.experiment_id, l.attempt, e.status FROM lapsed l LEFT JOIN experiments e ON e.id = l.experiment_id`,
         [LEASE_S],
       );
       const requeued: string[] = [];
       for (const r of rows) {
-        const next = await requeue(client, r.id, r.attempt, r.status, null);
+        // A lapsed probe (no experiment) is not re-queued; POST rendered-prompt probes again.
+        const next = r.status === null ? null : await requeue(client, r.id, r.attempt, r.status, null);
         if (next) requeued.push(next);
       }
-      for (const exp of new Set(rows.map((r) => r.experiment_id))) await finishIfDone(client, exp);
+      for (const exp of new Set(rows.map((r) => r.experiment_id))) {
+        if (exp === null) continue; // a probe
+        await finishIfDone(client, exp);
+        await applyRunRules(client, exp); // D32: an abandoned attempt counts for the infra guard
+      }
       return { abandoned: rows.map((r) => r.id), requeued };
     });
     if (changed.abandoned.length) this.logger.warn(`abandoned lapsed trials: ${changed.abandoned.join(', ')}`);

@@ -1,0 +1,10 @@
+# For the retry-layer gate test (D16): the first model call gets Gemini's "high demand" 503
+# (seen 4 Nov) on its first two identical attempts, with no Retry-After, then is served.
+# The counter is per conversation state, so a test that runs it twice must vary the messages.
+description: Calls calculate_emi after two 503s, then answers.
+steps:
+  - tool_calls:
+      - name: calculate_emi
+        arguments: {principal: 1000000, annual_rate_pct: 9, tenure_months: 240}
+    fault: {kind: "503", times: 2}
+  - text: "Your EMI would be about Rs 8,997 a month for 20 years, and the total interest is about Rs 11.59 lakh."

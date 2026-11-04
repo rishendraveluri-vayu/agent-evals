@@ -9,7 +9,8 @@ Vue UI. Change it only by editing this file in the same commit as the code.
 All bodies are JSON. Times are RFC 3339 UTC. Money is USD as a number. Hashes are
 `sha256:<hex>`; every hash the API takes in, a worker's report included, may also be bare hex
 (any case), and the API stores and returns it as `sha256:<hex>`. Errors are `{"error": "<code>", "message": "<plain words>"}` with a 4xx/5xx
-status. The trial spec, result, span and runner-report shapes are contract v2
+status, plus `"fix": "<what to change>"` where the API can say how to put the request right
+(every refused setting on `POST /configs` has one; so do the experiment refusals below). The trial spec, result, span and runner-report shapes are contract v2
 (`contract/v2/*.schema.json`); this API carries them unchanged.
 
 ## Who holds which secret
@@ -18,7 +19,9 @@ status. The trial spec, result, span and runner-report shapes are contract v2
   time (agent key, plus a simulator key when the task has a client simulator), each limited
   to that trial's model and given a budget, and revokes them when the trial is reported or
   its claim lapses. Workers never see the master key, so nothing an agent runs can read it
-  (R10.3 tightened; D2).
+  (R10.3 tightened; D2). For a call the platform makes itself (the conflict check, D38) it
+  mints a key for that one call, limited to the checker model with a $0.10 budget, makes the
+  call with that key (never the master key), and revokes it straight after.
 - Workers hold only a worker token (`EVALS_WORKER_TOKEN`), sent as `Authorization: Bearer`.
   Provider keys live only in LiteLLM.
 
@@ -56,7 +59,11 @@ simulated-client task the API also summarises that file (profile and debts) into
 
 ## Configs
 
-- `POST /configs` with `{name, harness, model, prompt_sha256, toolset_sha256, settings, harness_options}`.
+- `POST /configs` with `{name, harness, model, prompt_sha256, toolset_sha256, settings, harness_options, parent_hash}`.
+  `parent_hash` (optional, D34) names the config this one was forked from: it must exist (400
+  `unknown_parent`), and a fork identical to its parent is a 400 `same_as_parent` ("change the one
+  thing this fork is meant to test"). Lineage is not behaviour, so it is not in the hash; the
+  first post of a config's content records its parent, and a later post of the same content keeps it.
   The API checks every set setting against the harness's capabilities (an unsupported one
   is a 400 `unsupported_setting` naming it) and against the model (D25): a setting the model
   refuses is a 400 `unsupported_setting` naming the model. The table of refused settings is
@@ -80,19 +87,175 @@ simulated-client task the API also summarises that file (profile and debts) into
   `hash = sha256(canonical JSON of harness ref, adapter version, capabilities sha256, model,
   prompt sha256, toolset sha256, settings, harness_options)`. Posting the same content twice
   returns the same config (200, not a duplicate).
+
+  **Refusals carry a fix** (D25 follow-up, Rishi's guide review item 1). Every 400 for a refused
+  setting has a `fix` the Config screen shows by the field:
+
+  | `error` | When | `fix`, for example |
+  | --- | --- | --- |
+  | `unsupported_setting` | the model refuses it | "Claude Haiku 5.5 rejects temperature: leave it unset, or pick a model that takes it." |
+  | `unsupported_setting` | the harness cannot take it (the message quotes the capabilities file's reason) | "ownloop ignores memory: leave it unset, or pick a harness that takes it (hermes)." |
+  | `invalid_setting` | a bad value | "Set max_steps to an integer of at least 1, or leave it unset for the default." |
+  | `unknown_setting` | a name that is not a setting | "Did you mean temperature? Rename temprature to temperature." |
+  | `invalid_harness_options`, `unknown_harness`, `unknown_model`, `unknown_prompt`, `unknown_toolset` | | where to pick a valid one |
+
+  **Warnings** (valid but risky, stored anyway): `warnings: [{code, message, fix}]`. Today one
+  code: `langgraph_model_name_rewrite`, for a LangGraph config whose model name langchain-openai
+  1.7.2 rewrites the request for (`workers/langgraph/README.md`, finding 6): names starting
+  `gpt-5` (without `chat`) drop any temperature but 1; `o1` names send temperature 1 when unset;
+  `^o\d` names send the system prompt as `developer`; `gpt-6` and `codex` names would move to the
+  Responses API, which the adapter turns off (`use_responses_api=False`), so for those two the
+  warning asks for the captured request to be checked. The message starts "LangGraph changes the
+  request for this model name"; the fix is to serve the model under another LiteLLM name, or to
+  run it on another harness.
+
+  **Ignored settings:** `unsupported: {<setting>: <reason>}` lists every setting this harness or
+  model ignores, for the UI to grey out with the reason: the harness's own words from its
+  capabilities file ("langgraph does not support skills: LangGraph has no skills"), or the
+  model's refusal ("Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's
+  default applies").
 - `GET /configs`, `GET /configs/:hash` return `{hash, name, harness, harness_ref, model,
-  prompt, toolset, settings, settings_sources, harness_options, created_at}`.
-- `GET /configs/:a/diff/:b` returns `[{path, a, b}]`: every field that differs.
+  prompt, toolset, settings, settings_sources, unsupported, warnings, harness_options,
+  parent_hash, created_at}`. `unsupported` and `warnings` are worked out from the stored
+  capabilities, so every read has them, not only the POST. `GET /configs/:hash` adds
+  `children: [{hash, name, created_at}]`, the configs forked from it, oldest first.
+- `GET /configs/:a/diff/:b` returns `[{path, a, b}]`: every field that differs (`unsupported`,
+  `warnings` and `parent_hash` are left out: derived, or not behaviour).
+
+## Pre-run checks: rendered prompt and conflict check (D33, D38)
+
+Harnesses such as Hermes wrap our task prompt in text of their own (harness guide 3.3), and ours
+can quietly contradict it. Before a run, a config's screen shows the full system prompt the
+model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictCheckView` in
+`apps/api/src/contract.ts`.
+
+### Rendered prompt
+
+- `POST /configs/:hash/rendered-prompt` makes sure the config has a rendered prompt.
+  - Stored already (one per config hash, never re-made): 200, `status: "ready"`, `cached: true`.
+  - Otherwise, if the config has no probe trial yet, or its last probe gave no prompt, the API
+    queues a **probe trial** and answers 202 with `status: "queued"`. While a probe is queued
+    or running, a POST answers 202 with that probe (`queued` or `running`); there is at most one
+    live probe per config, so a second click queues nothing.
+  - Once the probe has reported, the next call reads the prompt from it: 200 with `status:
+    "ready"`, `cached: false` (stored from then on), or `status: "failed"` with `error` saying
+    why, in which case a POST queues a new probe.
+- `GET /configs/:hash/rendered-prompt` returns the same view without starting anything;
+  `status: "none"` before the first probe. The UI polls this one.
+- Body: `{config_hash, status, probe: {trial_id, status, label, model} | null, cached, error,
+  rendered}` where `rendered` is null until ready, then:
+
+  | Field | Meaning |
+  | --- | --- |
+  | `system_text` | The system message of the probe's stored first request (`artifacts/proxy/0001.request.json`, written from LiteLLM's spend log, so exactly what the model received). Several leading system messages are joined by a blank line. Normalised the way `evals_adapter.invariance.normalise` does: Hermes's `Conversation started: ...` line becomes `Conversation started: <date>`, and every mention of the probe model (Hermes's `Model:` line) becomes `<model>`. |
+  | `sha256` | Of `system_text`. The conflict-check cache keys on it. |
+  | `tools` | Tool names in the request's order, e.g. `mcp__finance__calculate_emi`. |
+  | `ours` | `{start, end}`: our task prompt's place in `system_text`, as JavaScript string indices (UTF-16 code units), end exclusive. It is found verbatim, then without its trailing newline. Null if not found. |
+  | `harness_text` | `system_text` with our prompt replaced by `<<OUR TASK PROMPT>>`: the harness's own text, and where ours sits in it. Equal to the marker alone when the harness adds nothing (own loop, Agents SDK). |
+  | `normalised`, `caveats` | What was normalised, and why the text may differ from what the real model gets (see below). |
+  | `trial_id`, `created_at` | The probe it came from; `GET /trials/:id` shows its trace. |
+
+- **A probe trial** runs the config once through the harness's own worker and the normal
+  claim and report protocol, with exactly two changes: the model is `fake/finance-emi` (the
+  fake model through LiteLLM, so it costs nothing real; its key is limited to that model with a
+  $0.50 budget of made-up fake money), and the task is the built-in `prompt-probe` task (one EMI
+  question, no client file, not in `GET /tasks`). Its row has `probe: true` and
+  `experiment_id: null`, it is stored under `runs/probes/<trial_id>/attempt-1/`, and it is
+  claimed ahead of queued experiment trials for the same harness. It is never re-queued, never
+  pauses anything, and is never counted in experiment results, estimates, the label queue or
+  `trials_usd`.
+- **Caveat on every rendered prompt:** text a harness adds only for some model names is
+  missing, because the probe ran on the fake model. Hermes adds tool-use guidance for model
+  names containing `gpt`, `gemini`, `qwen`, `deepseek` and a few others, and Google guidance for
+  `gemini` (`agent/system_prompt.py:580`); a Hermes config on Gemini really gets more text than
+  its rendered prompt shows (`docs/known-limits.md`).
+- A probe that cannot give a prompt says why in `error`: it stored no first request (it never
+  reached the model; its label and end state are named), the file is not intact or not JSON,
+  LiteLLM cut the body short (`MAX_STRING_LENGTH_PROMPT_IN_DB`), the request has no system
+  message, or the worker's lease lapsed.
+
+### Conflict check
+
+- `POST /configs/:hash/conflict-check` (200) checks our task prompt and the config's settings
+  against the harness's own text. It needs a ready rendered prompt (409
+  `rendered_prompt_required` otherwise).
+  - **Input.** System message: the highest version of `configs/prompts/conflict-check.v<n>.md`
+    (review header stripped). User message: `<harness_text>`, `<task_prompt>` and `<settings>`
+    blocks (the config's resolved settings as JSON).
+  - **Call.** `claude-sonnet-5-5` through LiteLLM's `/v1/chat/completions`, with a key the API
+    mints for this call (model-limited, budget $0.10) and revokes after. `max_tokens: 2000`;
+    temperature is not sent and no thinking setting is sent, so the model's defaults apply
+    (D38). Thinking counts towards `max_tokens`, so a long think can cut the reply short; that
+    reply is refused, not repaired.
+  - **Reply.** JSON only: `{conflicts: [{harness_says, we_say, why_it_matters, severity:
+    high|medium|low}], notes}`. A code fence or prose around the object is tolerated; anything
+    else (no object, no `conflicts` list, a missing field, another severity) is 502
+    `checker_output_invalid`, recorded as spend and not cached, so the next POST calls again.
+    A LiteLLM or provider error is 502 `checker_call_failed`, also recorded.
+  - **Cache.** By (`input_sha256`, checker prompt sha256, model), where `input_sha256` hashes
+    the rendered prompt's sha256, our prompt's sha256 and the settings: everything the checker
+    is given. The same input never pays twice; a hit returns `cached: true` and makes no call.
+    *Deviation from the brief, for Rishi:* the brief keyed the cache on the rendered prompt sha,
+    checker version and model only. The settings are part of the checker's input, so two configs
+    with the same rendered prompt and different settings (say `max_steps` 5 and 15) would
+    otherwise share findings that name the other's settings.
+  - **One at a time.** Only one check runs anywhere at once (a Postgres advisory lock); a
+    second one meanwhile gets 409 `conflict_check_busy`, and on retry finds the cache. Two clicks
+    never both pay.
+  - **No harness text.** When `harness_text` is only the marker (the harness adds nothing), the
+    answer is 200 with `skipped: "no_harness_text"`, no conflicts, `cost_usd: 0`, and no call.
+    When our prompt was not found in the rendered prompt, 409 `task_prompt_not_located`.
+  - **Allowance (D38).** Before the call the API reserves the check's worst case: input
+    characters ÷ 2 as tokens at the input price plus 2,000 output tokens at the output price
+    (about $0.03 today), at LiteLLM's prices for the model. If settled spend plus open
+    reservations plus this one would pass the allowance (`EVALS_CONFLICT_CHECK_ALLOWANCE_USD`,
+    default 2), the answer is 402 `allowance_exhausted`, and nothing is minted, called or
+    recorded. A cached result is still returned, since it costs nothing.
+  - **Spend.** Each call is one `system_spend` row (kind `conflict_check`): written `pending`
+    with the reservation before the call, then settled with the cost and tokens from LiteLLM's
+    spend log for the key (waiting up to 10 s for the row), else from the
+    `x-litellm-response-cost` header (`cost_source` says which). A cost never reported stays
+    null and its reservation keeps counting against the allowance.
+- `GET /configs/:hash/conflict-check` returns the stored result for the config as it is now,
+  without a call; 404 `no_conflict_check` before any.
+- Body: `{config_hash, rendered_sha256, input_sha256, checker: {id, version, sha256}, model,
+  conflicts, notes, cost_usd, cached, skipped, spend_id, checked_at, allowance}`. `cost_usd` is
+  what the check cost when it ran (also on a cached answer; `cached: true` means this request
+  spent nothing). `allowance` is `{kind, limit_usd, used_usd, remaining_usd, calls,
+  half_reached}`; `used_usd` counts settled costs and open reservations.
+
+## Spend
+
+- `GET /spend` returns `{trials_usd, system_usd, total_usd, system_by_kind: {<kind>: {usd,
+  calls}}, allowances: [{kind, limit_usd, used_usd, remaining_usd, calls, half_reached}]}`.
+  `trials_usd` is every experiment trial's agent and simulator cost (fake-model experiment
+  trials included, at the made-up fake prices, as in each experiment's `spend_usd`); probe trials
+  are left out. `system_usd` is the platform's own calls with a known cost, shown as its own line
+  (D38).
+- `GET /spend/system?kind=conflict_check` returns one row per platform-made call, newest first:
+  `{id, kind, model, status: pending|done|failed, reserved_usd, cost_usd, cost_source, input_tokens,
+  output_tokens, ref, error, created_at, settled_at}`. `ref` names what it was for
+  (`config:<hash>`). `scripts/log_system_spend.py` appends the settled rows to `docs/cost.md`.
 
 ## Experiments
 
-- `POST /experiments/estimate` with `{config_hashes, task_sha256s, n, sim_model}` returns
-  `{trials, cost_usd: {expected, low, high}, minutes, basis}`. `basis` says where per-trial
-  tokens came from: the mean of earlier finished trials of the same config and task when
-  there are any, otherwise the assumptions in `docs/cost.md` (64k input, 2.4k output per
-  trial). Prices come from LiteLLM. No power estimate yet; SP6 adds `min_detectable_effect`.
+- `POST /experiments/estimate` with `{config_hashes, task_sha256s, n, sim_model,
+  sim_prompt_sha256, parent_experiment_id, reuse_baseline}` returns `{trials, cost_usd:
+  {expected, low, high}, minutes, basis, basis_detail, budgets, baseline}`. **From history
+  (Rishi's guide review, item 8):** each config x task cell takes the mean tokens, cost and wall
+  time of earlier finished trials (`done`, LiteLLM's record complete) of the same config and task
+  (`source: config_task`), else of the same harness and model, any config or task
+  (`harness_model`), and only with neither the `docs/cost.md` assumptions (`assumption`: 64k
+  input, 2.4k output, 60 s per trial). The cost is LiteLLM's recorded mean cost where history has
+  it, else tokens at LiteLLM's prices. The simulator's cost per trial comes from the same cell,
+  else from earlier trials of the same task with the same simulator model, else the
+  assumptions. **Time** divides each harness's trial time by its live workers (a worker is live
+  if it asked for a trial, 204 included, or heartbeat in the last 60 s; none seen counts as one),
+  harnesses in parallel; `basis_detail.workers` is `{<harness>: {live, used}}`. `basis` says all
+  of this in words. No power estimate yet; SP6 adds `min_detectable_effect`.
 - `POST /experiments` with `{name, axis, config_hashes, task_sha256s, n, sim_model,
-  budget_usd, plan_commit, sim_prompt_sha256}` creates the experiment and all its trial rows
+  budget_usd, plan_commit, sim_prompt_sha256, order_seed, futility, parent_experiment_id,
+  reuse_baseline}` creates the experiment and all its trial rows
   (`queued`), records the platform commit (`EVALS_PLATFORM_COMMIT`), and sets a LiteLLM budget
   for the whole experiment. It returns the experiment. Nothing runs until it is started. The
   simulator prompt defaults to the highest version of `client-sim` (v2 since D27). The simulator
@@ -100,32 +263,121 @@ simulated-client task the API also summarises that file (profile and debts) into
   temperature is `null` and not sent (D27); the token cap is 2048, because Haiku 5.5's reasoning
   counts towards it (at 300 on 4 Nov it took the whole cap and the reply was empty). An
   experiment keeps the cap it was created with. `sim` in the experiment shows all three.
-- `POST /experiments/:id/start` starts a `created` experiment or resumes a `paused` one (and
-  marks it `done` if nothing is left to claim); `POST /experiments/:id/cancel` (queued trials
-  become `cancelled`; running ones finish), from `created`, `running` or `paused`.
-- An experiment's `status` is `created`, `running`, `paused`, `done` or `cancelled`. **`paused`
-  (D26):** a report labelled `infra:config_error` moves a running experiment to `paused`, with
-  `paused_at` and a `paused_reason` naming the trial, its config, LiteLLM's status and the
-  provider's message. Nothing is claimed while paused; trials already running finish and report
-  (a re-queued attempt waits, queued, for the resume). Fix the setup (a key, the model, a refused
-  setting), then start it again, or cancel it.
+- **Lineage and baseline reuse (D34).** `parent_experiment_id` (optional) names the experiment
+  this one follows from (400 `unknown_parent_experiment` if there is none). With
+  `reuse_baseline: true` (which needs a parent and two arms), arm A takes the parent's finished
+  arm-A trials instead of running again, only when all of these hold: the parent's arm-A config
+  hash is this arm A; the task hashes are the same set; both ran under the same, known platform
+  commit; the simulator model and prompt are the same; and the parent has at least N `done`
+  arm-A trials for every task (its own, or ones it reused itself). Then the first N per task (by
+  repeat, then attempt) are recorded on arm A, nothing is copied, only arm B is queued, and the
+  estimate and budget check cover arm B alone. Otherwise arm A is queued as usual. Either way a
+  `baseline` event and `baseline: {applied, reason, reused_trials}` in the detail say which
+  applied and why ("arm A runs again: the platform commit differs (parent old0000, now
+  abc1234)"). A reused arm shows `status: complete`, `reused_from` and `reused_trials`, its
+  counts are the reused trials, and compare's arm-A rows are those trials. The estimate endpoint
+  takes the same two fields and returns `baseline` too.
+- **Arms (D35).** `config_hashes` holds one config (a pilot) or two: arm A, then arm B. More is a
+  400 `too_many_arms` (on the estimate too), with the fix "Run several A/B experiments against
+  the same parent".
+- **Claim order (D32).** `order_seed` (optional, 0 to 2^32 - 1) seeds the shuffle; without one a
+  random seed is drawn, and either way it is stored and shown as `order_seed`. Every (task,
+  repeat) is a block with one trial per arm; the blocks are shuffled, and so is the arm order
+  inside each block, so the arms alternate and any early batch is a random sample. Each trial's
+  place is its `order_index` (in the trial summaries); claims go in `order_index` order, and a
+  re-queued attempt keeps its slot's place. The i-th random number is the first 4 bytes of
+  `sha256("<seed>:<i>")` over 2^32, used in a Fisher-Yates shuffle
+  (`apps/api/src/experiments/order.ts`), so the order can be rebuilt anywhere from the seed. `seq`
+  stays the slot's number in plan order (repeat, task, config), which the export and the trial
+  list are sorted by.
+- **Run controls (D32, D37).** Each returns the experiment detail.
+
+  | Call | From | Does |
+  | --- | --- | --- |
+  | `POST /experiments/:id/start` | `created`, `paused` | starts it, or resumes it (as `/resume`); marks it `done` if nothing is left to claim |
+  | `POST /experiments/:id/pause` | `running` (a `paused` one: no-op) | no new claims; trials already running finish and report; event `paused` |
+  | `POST /experiments/:id/resume` | `paused` (a `running` one: no-op) | claims resume; event `resumed` |
+  | `POST /experiments/:id/stop` (also `/cancel`) | `created`, `running`, `paused` | queued trials become `cancelled`; running ones finish and are kept; status `cancelled` |
+  | `POST /experiments/:id/arms/:config/pause` | not `done` or `cancelled` | that arm claims nothing more; event `arm_paused` |
+  | `POST /experiments/:id/arms/:config/resume` | any | that arm's queued trials can be claimed again; event `arm_resumed` |
+
+  `:config` is the arm's config hash (or its letter, `A` or `B`). A wrong state is a 409
+  (`experiment_not_started`, `experiment_finished`) and an unknown arm a 404 `unknown_arm`, each
+  with a `fix`.
+- An experiment's `status` is `created`, `running`, `paused`, `done` or `cancelled`. `paused` is
+  the whole experiment, by hand or by D32's futility check and guards (below); `paused_at` and
+  `paused_reason` are the latest. A re-queued attempt made while paused waits, queued.
+- **Automatic pauses (D32).** Checked after every report and every lapsed lease, only while the
+  experiment is `running`. Each pauses the whole experiment with an event whose `detail` is the
+  `paused_reason`; resume or stop after review. None of them looks at the difference between the
+  arms: the verdict uses the full planned N, so nothing stops or decides on an apparent win.
+  - **Futility**, `futility: {enabled, after, min_passed}` on `POST /experiments` (left out:
+    `{enabled: true, after: 3, min_passed: 1}`; `{"enabled": false}` turns it off; shown resolved
+    as `futility` in the detail). Once per arm: when the arm has `after` finished (`done`) trials,
+    it pauses the run if fewer than `min_passed` of them passed. Event `futility_pause`, for
+    example "futility check (D32): arm B passed 0 of its first 3 finished trials, fewer than the 1
+    the rule asks for (passed means label agent and end state answered until graders exist
+    (SP4)) ...". Until graders exist (SP4), **passed means label `agent` and end state
+    `answered`**. The first batch is a random sample because of the claim order. An arm whose
+    trials are reused from the parent is not checked.
+  - **Infra guard**: more than 30% infra failures (`infra_failed` or `abandoned`) among at least 5
+    trials finished since the run started or was last resumed. Event `infra_guard_pause`, naming
+    the failure labels. The count starts again at each resume.
+  - **Spend guard**, once per experiment: spend so far plus every queued or running trial at its
+    arm's mean cost so far (the estimate's per-trial cost for an arm with none finished) passes
+    `budget_usd`. Event `spend_guard_pause`. After a resume it does not fire again; LiteLLM's
+    experiment budget still stops spend at the cap.
+- **A config error pauses only its arm (D37, amending D26).** A report labelled
+  `infra:config_error` pauses that trial's arm, not the experiment: claims skip the arm's trials,
+  its running trials finish, and the other arm keeps claiming. The arm's `paused_reason` names the
+  trial, its config, LiteLLM's status and the provider's message; its `fix` says what to do by
+  LiteLLM's status (401/403: the key in LiteLLM's environment; 404: the model's route; 400: a
+  setting the model rejects needs a forked config and a new experiment, a key or account problem
+  is fixed in LiteLLM), then resume the arm. If that was the last trial, the experiment is `done`
+  with the arm still paused, and compare waits until the arm is resumed.
+- `arms` in the experiment detail: `[{arm, config_hash, config_name, status, paused_at,
+  paused_reason, fix, counts}]`, arm A first. `status` is `not_started`, `active` (trials
+  queued or running), `paused`, `stopped` (some of its trials were cancelled) or `complete`
+  (every slot has a final attempt: done, or an infra failure that is not re-queued).
 - `GET /experiments` returns `[{id, name, axis, status, config_hashes, n, counts, spend_usd,
   estimate, created_at}]`, where `counts` is `{queued, running, done, infra_failed,
   abandoned, cancelled}` and done is split by label.
-- `GET /experiments/:id` adds `tasks`, `configs`, `paused_at`, `paused_reason`, `events`
-  (claims, infra failures, config errors, re-queues, budget trips, the latest pause and resume,
-  newest first).
+- `GET /experiments/:id` adds `actual` next to `estimate` (item 8): null until a trial has
+  finished, then `{finished_trials, spend_usd, cost_per_trial_usd, wall_s_per_trial,
+  elapsed_minutes, projected_spend_usd}` (elapsed from the start to the finish or now; the
+  projection is the spend guard's). Reused trials are the parent's spend, not this one's.
+- `GET /experiments/:id` also adds `tasks`, `configs`, `arms`, `order_seed`, `futility`,
+  `parent_experiment_id`, `baseline`, `paused_at`, `paused_reason` and `events`, newest first: `[{at, kind, trial_id, attempt, arm, config_hash,
+  detail}]`. Claims, infra failures, config errors, re-queues, budget trips, abandons and file
+  problems come from the trial rows; pauses and resumes (`paused`, `resumed`, `arm_paused`,
+  `arm_resumed`, `futility_pause`, `infra_guard_pause`, `spend_guard_pause`) and the `baseline`
+  decision are stored as they happen.
 - `GET /experiments/:id/trials?status=&config=&task=` returns trial summaries.
-- `GET /experiments/:id/compare` returns per task and arm `{task, config, passed, graded,
-  trials}` and, once SP6 exists, the intervals and verdict. Until then `stats` is `null`.
+- `GET /experiments/:id/compare` returns `{experiment_id, status, reason, arms, rows, stats}`.
+  **No comparison until every arm is complete** (D37, D32): while `status` is `incomplete`,
+  `reason` says why ("arm B is paused: ...", "the experiment was stopped before every trial ran
+  (...); a verdict needs the full planned N (D32)", "the experiment is paused: ...", "arm A has 3
+  trials queued or running", "the experiment has not been started") and `rows` is empty, so no
+  pass counts are shown off a partial run. Once `complete`, `rows` holds per task and arm `{task,
+  task_id, arm, config, config_name, passed, graded, trials, infra_failed, abandoned}` and, once
+  SP6 exists, the intervals and verdict. Until then `stats` is `null`.
 - `GET /experiments/:id/export?format=json|csv` streams trials joined with configs, tasks,
   grades and spend.
 
 ## Trials
 
-- `GET /trials/:id` returns `{id, experiment_id, task, config, repeat_index, attempt, status,
+- `GET /trials/:id` returns `{id, experiment_id, probe, task, config, repeat_index, attempt, status,
   label, end_state, result, runner_report, usage, timing, files: [{path, bytes, sha256}],
-  grades: []}`.
+  grades, grading}`. A probe trial (D33) has `probe: true` and `experiment_id: null`. `grades` are
+  those of the trial's latest finished grading job (see Grading), each `{id, grader_id,
+  grader_version, kind, type, required, verdict, score, reason, evidence, judge_model, run_index,
+  created_at}`; `grading` is `{current, pending}`: the job those grades came from (`job_id,
+  status, reason, grader_source, source_note, task_sha256, framework_version, passed, outcome,
+  error, queued_at, graded_at`), and a newer job still queued, claimed or failed. Both are null
+  before the first grading.
+  `runner_report.proxy_usage` is stored as the runner wrote it; since D16 it carries `attempts`
+  (LiteLLM's tries at the provider) and `retried_calls` beside `model_calls` (the harness's
+  requests). The API does not index those two yet.
 - `GET /trials/:id/spans` returns contract v2 spans in time order.
 - `GET /trials/:id/files/*path` streams one stored file (path traversal refused).
 - The existing folder-based `/trials` endpoints (`FileTrialStore`) stay for runs recorded
@@ -145,6 +397,12 @@ trial cannot read or change another trial's stored files (D3).
    `folder` is where the API will store the attempt's files, relative to `runs/`; the worker
    does not use it. The claim is one `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP
    LOCKED)`, so two workers never get the same trial.
+
+   A probe trial (D33, see Pre-run checks) is claimed the same way, ahead of queued experiment
+   trials for that harness, with `experiment_id: null` (also in `spec.trial`, with `task_split:
+   null`, as contract v2 allows outside an experiment), `spec.model.name: "fake/finance-emi"`,
+   `budgets: {trial_usd: 0.5, sim_usd: 0}`, `folder: "probes/<trial_id>/attempt-1"` and
+   `sim_cache: null`. Workers need no change for it.
 
    `sim_cache` (D22) is `{<cache key>: <reply>}`: every non-empty simulator reply stored so far
    for the same task (sha256), simulator model, temperature (a `null` one, not sent, is its own scope),
@@ -201,14 +459,77 @@ trial cannot read or change another trial's stored files (D3).
    is a no-op 200. The API revokes the trial's keys, stores the report, and sets the status:
    `done` for an `agent` label; for an `infra:*` label, `infra_failed` and, if this was
    attempt 1, a new `queued` attempt 2 (D16: re-queued once, never twice), except for the two
-   labels that are never re-queued (D26): `infra:config_error`, which also pauses the
-   experiment, and `infra:budget_net`. `infra:provider_error`, `infra:sim_error` (the simulated
+   labels that are never re-queued (D26): `infra:config_error`, which also pauses its arm
+   (D37), and `infra:budget_net`. `infra:provider_error` (429, 5xx or LiteLLM's 408 timeout,
+   still failing after LiteLLM's own retries, D16), `infra:sim_error` (the simulated
    client's call failed or its reply had no text, D26), `infra:adapter_crash` and
    `infra:timeout_kill` are re-queued once. Each infra attempt is an `infra_failure` event
-   naming its label, and each re-queued attempt a `requeue` event.
+   naming its label, and each re-queued attempt a `requeue` event. After the report, D32's
+   futility check and guards run for the experiment.
+   A probe trial is never re-queued and pauses nothing (no arm, no guard)
+   (nor is a lapsed one); `POST /configs/:hash/rendered-prompt` probes again. Claims hand out
+   queued probes first, then each running experiment's trials in `order_index` order, skipping
+   paused arms.
 6. A lease with no heartbeat for 60 s lapses: the API marks the attempt `abandoned`, revokes
    its keys, and queues the next attempt under the same cap (also while the experiment is
    paused; the attempt waits for the resume).
+
+## Grading (SP4, R14)
+
+Grading is its own step after the trial, so a grader fix re-grades old trials without re-running
+them. The grader worker (`evals-grader`, `graders/`, compose service `grader`) uses the worker
+token and talks to the API only over HTTP (D2). The grader format is a draft for Rishi:
+`docs/proposals/grader-format.md`. Types: `GraderClaimResponse`, `GradesReportResponse`,
+`RegradeResponse`, `Grade`, `TrialGrading` in `apps/api/src/contract.ts`. Tables: `grading_jobs`
+and `grades` (migration `007_grading.sql`).
+
+- **A grading job** is one grading of one trial with a frozen grader set: the task's grader specs,
+  each with the API's `spec_sha256` (canonical JSON of `{spec, files}`, where `files` holds the
+  sha256 of a unit_test's grader file, or null when it is missing), and the grader files
+  themselves. Jobs are queued, at claim time, for every `done` trial (never a probe, never an infra
+  failure) that has none; a task with no graders gets a `no_graders` job with nothing to claim.
+- **Which graders.** The current `tasks/<id>/task.json` when it differs from the trial's task only
+  in `graders`, `version` or `summary` (`grader_source: catalogue`), so a grader fix applies.
+  Otherwise, when the task itself changed (its messages, simulated client or client file) or is
+  gone, the trial's own task (`grader_source: trial_task`, with `source_note` saying why); its
+  unit_test files are then unknown (`null`), so those grades are `error`.
+- **A grade's version** is `sha256(canonical {"framework": <framework version>, "spec":
+  <spec_sha256>})`, the same in Python (`evals_graders.canonical`) and TypeScript
+  (`apps/api/src/grading/grading-core.ts`), checked by shared vectors in
+  `graders/tests/hash_vectors.json`.
+
+1. `POST /grader/claim` with `{worker_id}`. 204 when nothing needs grading, or 200 with
+   `{job_id, attempt, trial_id, lease_s: 120, task: {id, sha256, grader_source, note}, graders:
+   [{spec, spec_sha256}], grader_files: {<name>: {sha256, base64} | null}, trial: {files,
+   end_state, label}}`. `attempt` counts the job's claims. The claim is `FOR UPDATE SKIP LOCKED`
+   over queued jobs and claimed jobs whose lease has lapsed, so a crashed grader's job is claimed
+   again; after 3 lapsed claims the job is `failed` instead.
+2. The worker downloads `result.json`, `trace.jsonl`, `runner-report.json` and `checks.json` (those
+   in `trial.files`) with `GET /trials/:id/files/<path>` and checks each against the manifest's
+   sha256. A file that differs is reported as `error` grades; a network error or 5xx leaves the
+   job unreported, to lapse and be claimed again.
+3. `POST /grader/trials/:id/grades` with `{worker_id, job_id, attempt, framework_version, grades,
+   problems}`. `grades` has one entry per grader of the job, in order: `{grader_id, type, required,
+   verdict, score, reason, evidence, grader_version}`. Answers:
+   - 200 `{job_id, trial_id, status: "done", duplicate: false, passed, outcome, grades_stored,
+     grades_reused}`. The API computes `passed` and `outcome` itself: `pass` when every required
+     grader passed, `fail` when one failed, `incomplete` (passed null) otherwise.
+   - 200 with `duplicate: true`: the same job and claim reported again; nothing changes.
+   - 400 `grades_mismatch` (a grader missing, extra or out of order), `grader_version_mismatch`
+     (the version is not the one the job's spec and the reported framework version give),
+     `invalid_grade`, `invalid_report`.
+   - 404 `unknown_job`; 409 `claim_lost` (the lease lapsed and another claim holds the job, or it
+     is no longer claimed): drop it.
+   Grades are never overwritten. A grade is `(trial, grader_id, grader_version, run_index)`: the
+   same answer from the same version reuses its row; a different one (a flaky unit test, a judge
+   re-run) is the next `run_index`. The job keeps the ids of its grades.
+- `POST /experiments/:id/regrade` with `{}` or `{trial_ids: [...]}` (202) queues a `regrade` job for
+  every `done` trial of the experiment (or those named), with the graders as above, and supersedes
+  any job still queued for them. It returns `{experiment_id, trials, queued, no_graders,
+  superseded, from_trial_task}`. 404 `unknown_experiment`. Nothing is re-run; old grades stay.
+- Views: `current_grading` (each trial's latest `done` job, by queue order) and `current_grades`
+  (its grades). `GET /experiments/:id/compare` and the export still count every stored grade row
+  of a trial, all versions, until SP6 reads these (`docs/known-limits.md`).
 
 ## UI-only endpoints
 

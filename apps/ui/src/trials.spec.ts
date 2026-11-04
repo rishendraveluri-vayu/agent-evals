@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { spanRole, spendByConfig, timelineRows, usd, type SpanView, type TrialSummary } from './trials';
+import { spanBars, spanRole, spendByConfig, timelineRows, usd, type SpanView, type TrialSummary } from './trials';
 
 function span(id: string, parent: string | null, name: string, start: number, end: number, attrs = {}): SpanView {
   return {
@@ -50,6 +50,39 @@ describe('timelineRows', () => {
 
   it('tells simulator model calls from agent model calls', () => {
     expect(spanRole(span('s', 'p', 'chat fake/sim', 0, 1, { 'evals.role': 'sim' }))).toBe('chat-sim');
+  });
+});
+
+describe('spanBars', () => {
+  const spans = [
+    span('a', null, 'invoke_agent hermes', 0, 1000),
+    span('b', 'a', 'agent.turn', 100, 900),
+    span('c', 'b', 'chat claude-haiku-5-5', 100, 200, { 'evals.role': 'agent', 'gen_ai.request.model': 'claude-haiku-5-5' }),
+    span('d', 'b', 'execute_tool fd_maturity', 200, 210, { 'gen_ai.tool.name': 'fd_maturity' }),
+    span('e', 'b', 'chat claude-haiku-5-5', 210, 300, { 'evals.role': 'agent', 'gen_ai.request.model': 'claude-haiku-5-5' }),
+    span('f', 'b', 'chat claude-haiku-5-5', 300, 800, { 'evals.role': 'agent', 'gen_ai.request.model': 'claude-haiku-5-5' }),
+  ];
+
+  it('numbers the agent model calls and marks the final reply, keeping the model for the tooltip', () => {
+    const { bars } = spanBars(spans, 'hermes');
+    expect(bars.map((b) => b.label)).toEqual(['Hermes start-up', 'Agent call 1', 'tool fd_maturity', 'Agent call 2', 'Agent call 3, final reply', 'Shut down and collect files']);
+    const agent = bars.filter((b) => b.role === 'agent');
+    expect(agent.map((b) => b.title)).toEqual([
+      'Agent call 1: chat claude-haiku-5-5',
+      'Agent call 2: chat claude-haiku-5-5',
+      'Agent call 3, final reply: chat claude-haiku-5-5',
+    ]);
+    expect(bars.find((b) => b.role === 'tool')?.title).toBe('tool fd_maturity');
+    // The tool's name on its own, for the row to set in mono; no other bar has one.
+    expect(bars.find((b) => b.role === 'tool')?.ident).toBe('fd_maturity');
+    expect(bars.filter((b) => b.ident !== undefined)).toHaveLength(1);
+    // No label carries the model id, so none is long enough to be cut short.
+    expect(bars.every((b) => !b.label.includes('claude'))).toBe(true);
+  });
+
+  it('calls a single agent call just that, with no final-reply mark', () => {
+    const { bars } = spanBars(spans.slice(0, 3));
+    expect(bars.filter((b) => b.role === 'agent').map((b) => b.label)).toEqual(['Agent call 1']);
   });
 });
 

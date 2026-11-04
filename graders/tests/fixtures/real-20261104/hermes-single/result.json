@@ -1,0 +1,152 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-hermes-smoke-585e22",
+ "end_state": "answered",
+ "end_detail": {
+  "harness_stop_reason": "text_response(finish_reason=stop)",
+  "exception_type": null,
+  "exception_message": null,
+  "last_message_excerpt": "I'm sorry about your mother's medical costs. That's a lot to carry at once. The plan below keeps every minimum payment current while the credit card gets the extra money.\n\n**Pay the credit card first.** At 42% a year, it costs far more than your other debts. Your ₹20,000 covers the minimums (₹18,332.50) plus ₹1,667.50 extra each month.\n\nWith that plan:\n- **Two-wheeler loan** (11%): clears in month 15, about ₹3,409 interest.\n- **Credit card** (42%): clears in month 19, about ₹33,492 interest.\n- **Personal loan** (14.5%): clears in month 28, about ₹64,441 interest.\n- **Total:** debt-free in **28 months** (about 2 years 4 months), with about ₹1,01,341 in interest and ₹5,42,391 paid overall.\n\n**What I'd do:**\n1. **Keep every minimum paid on time, starting now.** Missed payments bring late fees and hurt your CIBIL score. If the card payment is the one you're behind on, call Kaveri Bank this week and ask about a hardship programme. Lower interest or a temporary reduced payment may be available.\n2. **Put the ₹20,000 toward the card once minimums are covered, and stop using the card.** The plan assumes no new card spending.\n3. **Check your medical costs for insurance or cashless options.** Recovering part of the cost, or changing the plan, could free up cash for the debt.\n\nThe margin is thin. A single unexpected bill could knock the plan off track, so if you can build even a small buffer, it's worth doing. If you tell me your monthly take-home pay and the medical costs still ahead, I can check how much room you really have."
+ },
+ "final_answer": "I'm sorry about your mother's medical costs. That's a lot to carry at once. The plan below keeps every minimum payment current while the credit card gets the extra money.\n\n**Pay the credit card first.** At 42% a year, it costs far more than your other debts. Your ₹20,000 covers the minimums (₹18,332.50) plus ₹1,667.50 extra each month.\n\nWith that plan:\n- **Two-wheeler loan** (11%): clears in month 15, about ₹3,409 interest.\n- **Credit card** (42%): clears in month 19, about ₹33,492 interest.\n- **Personal loan** (14.5%): clears in month 28, about ₹64,441 interest.\n- **Total:** debt-free in **28 months** (about 2 years 4 months), with about ₹1,01,341 in interest and ₹5,42,391 paid overall.\n\n**What I'd do:**\n1. **Keep every minimum paid on time, starting now.** Missed payments bring late fees and hurt your CIBIL score. If the card payment is the one you're behind on, call Kaveri Bank this week and ask about a hardship programme. Lower interest or a temporary reduced payment may be available.\n2. **Put the ₹20,000 toward the card once minimums are covered, and stop using the card.** The plan assumes no new card spending.\n3. **Check your medical costs for insurance or cashless options.** Recovering part of the cost, or changing the plan, could free up cash for the debt.\n\nThe margin is thin. A single unexpected bill could knock the plan off track, so if you can build even a small buffer, it's worth doing. If you tell me your monthly take-home pay and the medical costs still ahead, I can check how much room you really have.",
+ "conversation": {
+  "agent_turns": 1,
+  "client_turns": 0,
+  "ended_by": null,
+  "transcript": [
+   {
+    "role": "user",
+    "content": "My mother's medical costs went up this year and I'm falling behind on my credit card. I can put about Rs 20,000 a month towards my debts. What should I pay off first, and how long will it take?",
+    "source": "task"
+   },
+   {
+    "role": "assistant",
+    "content": "I'm sorry about your mother's medical costs. That's a lot to carry at once. The plan below keeps every minimum payment current while the credit card gets the extra money.\n\n**Pay the credit card first.** At 42% a year, it costs far more than your other debts. Your ₹20,000 covers the minimums (₹18,332.50) plus ₹1,667.50 extra each month.\n\nWith that plan:\n- **Two-wheeler loan** (11%): clears in month 15, about ₹3,409 interest.\n- **Credit card** (42%): clears in month 19, about ₹33,492 interest.\n- **Personal loan** (14.5%): clears in month 28, about ₹64,441 interest.\n- **Total:** debt-free in **28 months** (about 2 years 4 months), with about ₹1,01,341 in interest and ₹5,42,391 paid overall.\n\n**What I'd do:**\n1. **Keep every minimum paid on time, starting now.** Missed payments bring late fees and hurt your CIBIL score. If the card payment is the one you're behind on, call Kaveri Bank this week and ask about a hardship programme. Lower interest or a temporary reduced payment may be available.\n2. **Put the ₹20,000 toward the card once minimums are covered, and stop using the card.** The plan assumes no new card spending.\n3. **Check your medical costs for insurance or cashless options.** Recovering part of the cost, or changing the plan, could free up cash for the debt.\n\nThe margin is thin. A single unexpected bill could knock the plan off track, so if you can build even a small buffer, it's worth doing. If you tell me your monthly take-home pay and the medical costs still ahead, I can check how much room you really have.",
+    "source": "agent"
+   }
+  ]
+ },
+ "harness": {
+  "name": "hermes",
+  "version": "6112c2adb9e1",
+  "extra": {
+   "mcp_tools_registered": [
+    "mcp__finance__amortization_schedule",
+    "mcp__finance__calculate_emi",
+    "mcp__finance__debt_payoff_plan",
+    "mcp__finance__fd_maturity",
+    "mcp__finance__get_client_profile",
+    "mcp__finance__inflation_adjusted_value",
+    "mcp__finance__list_debts",
+    "mcp__finance__list_transactions",
+    "mcp__finance__loan_affordability",
+    "mcp__finance__prepayment_impact",
+    "mcp__finance__sip_future_value"
+   ],
+   "tool_names": [
+    "mcp__finance__amortization_schedule",
+    "mcp__finance__calculate_emi",
+    "mcp__finance__debt_payoff_plan",
+    "mcp__finance__fd_maturity",
+    "mcp__finance__get_client_profile",
+    "mcp__finance__inflation_adjusted_value",
+    "mcp__finance__list_debts",
+    "mcp__finance__list_transactions",
+    "mcp__finance__loan_affordability",
+    "mcp__finance__prepayment_impact",
+    "mcp__finance__sip_future_value"
+   ],
+   "prompt_cache_markers": false
+  }
+ },
+ "applied_settings": {
+  "temperature": {
+   "value": null,
+   "source": "harness_default"
+  },
+  "max_output_tokens": {
+   "value": 4096,
+   "source": "config"
+  },
+  "max_steps": {
+   "value": 12,
+   "source": "config"
+  },
+  "timeout_s": {
+   "value": 240,
+   "source": "config"
+  },
+  "parallel_tool_calls": {
+   "value": false,
+   "source": "platform_default"
+  },
+  "memory": {
+   "value": {
+    "enabled": false
+   },
+   "source": "platform_default"
+  },
+  "skills": {
+   "value": {
+    "enabled": false
+   },
+   "source": "platform_default"
+  },
+  "compression": {
+   "value": {
+    "enabled": false
+   },
+   "source": "platform_default"
+  },
+  "prompt_cache_markers": {
+   "value": false,
+   "source": "harness_default",
+   "observed": "Hermes adds cache_control markers for claude models on a host named litellm"
+  },
+  "api_max_retries": {
+   "value": 1,
+   "source": "platform_default",
+   "observed": "R10.11: one attempt"
+  },
+  "reasoning_effort": {
+   "value": null,
+   "source": "platform_default",
+   "observed": "kept off the wire"
+  }
+ },
+ "harness_usage": {
+  "model_calls": 3,
+  "input_tokens": 22639,
+  "output_tokens": 1464,
+  "cost_usd": null
+ },
+ "counts": {
+  "model_calls": 3,
+  "tool_calls": 2,
+  "tool_errors": 0,
+  "malformed_tool_calls": 0
+ },
+ "integrity": {
+  "before": {
+   "config.yaml": "sha256:810d19e7898ed005965dca737a3387adf39af5df0f5375bcbde10197c6214d02",
+   "SOUL.md": "sha256:36c1f5a2e92cd1d018311eaf4c8f1e8886672eae78212e033c681d0e3d5d506f",
+   "AGENTS.md": null
+  },
+  "after": {
+   "config.yaml": "sha256:810d19e7898ed005965dca737a3387adf39af5df0f5375bcbde10197c6214d02",
+   "SOUL.md": "sha256:36c1f5a2e92cd1d018311eaf4c8f1e8886672eae78212e033c681d0e3d5d506f",
+   "AGENTS.md": null
+  }
+ },
+ "timing": {
+  "started_at": "2026-11-04T08:33:05.348645Z",
+  "ended_at": "2026-11-04T08:33:24.333487Z",
+  "wall_s": 18.985
+ },
+ "artifacts": [
+  "artifacts/hermes-config.yaml",
+  "artifacts/hermes-logs",
+  "artifacts/hermes-messages.json",
+  "artifacts/hermes-system-prompt.txt"
+ ]
+}

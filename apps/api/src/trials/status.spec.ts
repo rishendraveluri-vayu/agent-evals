@@ -1,6 +1,6 @@
 import { TRIAL_STATUSES } from '../contract';
 import type { TrialStatus } from '../contract';
-import { FINISHED, MAX_ATTEMPTS, NEVER_REQUEUED, PAUSES_EXPERIMENT, canTransition, isLabel, shouldRequeue, statusForLabel } from './status';
+import { FINISHED, MAX_ATTEMPTS, NEVER_REQUEUED, PAUSES_ARM, canTransition, isLabel, shouldRequeue, statusForLabel } from './status';
 
 describe('trial status machine', () => {
   it.each<[TrialStatus, TrialStatus]>([
@@ -66,6 +66,6 @@ describe('trial status machine', () => {
     expect(shouldRequeue(1, 'running', 'infra:sim_error')).toBe(true);
     expect(shouldRequeue(2, 'running', 'infra:sim_error')).toBe(false);
     expect(NEVER_REQUEUED).toEqual(['infra:config_error', 'infra:budget_net']);
-    expect(PAUSES_EXPERIMENT).toBe('infra:config_error');
+    expect(PAUSES_ARM).toBe('infra:config_error');
   });
 });

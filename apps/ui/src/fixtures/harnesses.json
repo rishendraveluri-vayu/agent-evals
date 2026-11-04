@@ -1,0 +1,437 @@
+[
+  {
+    "name": "hermes",
+    "package": "hermes-agent",
+    "ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+    "python": "3.11",
+    "capabilities": {
+      "contract_version": "2",
+      "harness": "hermes",
+      "version": {
+        "package": "hermes-agent",
+        "ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a"
+      },
+      "model_api_formats": [
+        "openai_chat"
+      ],
+      "settings": {
+        "temperature": {
+          "supported": true,
+          "evidence": "probe:2026-11-03",
+          "native": "temperature",
+          "default": null,
+          "observed": "Not sent unless set",
+          "effect": {
+            "claude-haiku-5-5": {
+              "status": "effective",
+              "evidence": "effect check 2026-11-04"
+            }
+          }
+        },
+        "max_output_tokens": {
+          "supported": true,
+          "evidence": "probe:2026-11-03",
+          "native": "max_tokens",
+          "default": null,
+          "observed": "Sent as max_tokens",
+          "effect": {
+            "claude-haiku-5-5": {
+              "status": "effective",
+              "evidence": "effect check 2026-11-04"
+            }
+          }
+        },
+        "max_steps": {
+          "supported": true,
+          "evidence": "probe:2026-11-03",
+          "native": "max_iterations, per turn",
+          "extra_calls_at_limit": 2,
+          "observed": "2 extra calls at the limit; it counts only its own",
+          "effect": {
+            "claude-haiku-5-5": {
+              "status": "effective",
+              "evidence": "effect check 2026-11-04"
+            }
+          }
+        },
+        "timeout_s": {
+          "supported": true,
+          "evidence": "declared:the adapter library's watchdog",
+          "native": "adapter watchdog",
+          "observed": "Adapter watchdog"
+        },
+        "parallel_tool_calls": {
+          "supported": true,
+          "evidence": "probe:2026-11-03",
+          "native": "parallel_tool_calls",
+          "default": null,
+          "effect": {
+            "claude-haiku-5-5": {
+              "status": "not_checked",
+              "evidence": "not run yet"
+            }
+          }
+        },
+        "memory": {
+          "supported": true,
+          "evidence": "declared:a request cannot show memory being off",
+          "native": "memory toolset",
+          "default": false,
+          "observed": "Off unless the config turns it on",
+          "effect": {
+            "claude-haiku-5-5": {
+              "status": "not_checked",
+              "evidence": "not run yet"
+            }
+          }
+        },
+        "skills": {
+          "supported": true,
+          "evidence": "declared:a request cannot show skills being off",
+          "native": "skills toolset",
+          "default": false,
+          "observed": "Off unless the config turns it on",
+          "effect": {
+            "claude-haiku-5-5": {
+              "status": "not_checked",
+              "evidence": "not run yet"
+            }
+          }
+        },
+        "compression": {
+          "supported": true,
+          "evidence": "declared:hermes-notes",
+          "native": "compression.enabled",
+          "default": true,
+          "observed": "Hermes turns it on by default; we turn it off",
+          "effect": {
+            "claude-haiku-5-5": {
+              "status": "not_checked",
+              "evidence": "not run yet"
+            }
+          }
+        }
+      },
+      "harness_options_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "prompt_cache_markers": {
+            "type": "boolean",
+            "description": "Hermes's own cache_control markers for Claude models. Default: Hermes's behaviour (on)."
+          }
+        }
+      },
+      "known_differences": [
+        "Repairs broken tool-call JSON and runs the tool without telling the model. If it can't, it runs the tool with empty arguments.",
+        "Tool names reach the model as mcp__finance__<name>, and tool results are wrapped as untrusted content.",
+        "Adds its own identity text and the date to the system prompt."
+      ]
+    }
+  },
+  {
+    "name": "ownloop",
+    "package": "ownloop",
+    "ref": "0.1.0",
+    "python": "3.11",
+    "capabilities": {
+      "contract_version": "2",
+      "harness": "ownloop",
+      "version": {
+        "package": "ownloop",
+        "ref": "0.1.0"
+      },
+      "model_api_formats": [
+        "openai_chat"
+      ],
+      "settings": {
+        "temperature": {
+          "supported": true,
+          "evidence": "probe:2026-11-03",
+          "native": "temperature",
+          "default": null,
+          "observed": "Not sent unless set",
+          "effect": {
+            "claude-haiku-5-5": {
+              "status": "effective",
+              "evidence": "effect check 2026-11-04"
+            }
+          }
+        },
+        "max_output_tokens": {
+          "supported": true,
+          "evidence": "probe:2026-11-03",
+          "native": "max_tokens",
+          "default": null,
+          "observed": "Sent as max_tokens",
+          "effect": {
+            "claude-haiku-5-5": {
+              "status": "effective",
+              "evidence": "effect check 2026-11-04"
+            }
+          }
+        },
+        "max_steps": {
+          "supported": true,
+          "evidence": "probe:2026-11-03",
+          "native": "loop counter",
+          "extra_calls_at_limit": 0,
+          "observed": "Stops exactly at the limit",
+          "effect": {
+            "claude-haiku-5-5": {
+              "status": "effective",
+              "evidence": "effect check 2026-11-04"
+            }
+          }
+        },
+        "timeout_s": {
+          "supported": true,
+          "evidence": "declared:the adapter library's watchdog",
+          "native": "adapter watchdog",
+          "observed": "Adapter watchdog"
+        },
+        "parallel_tool_calls": {
+          "supported": true,
+          "evidence": "probe:2026-11-03",
+          "native": "parallel_tool_calls",
+          "default": null
+        },
+        "memory": {
+          "supported": false,
+          "evidence": "declared:no such feature",
+          "observed": ""
+        },
+        "skills": {
+          "supported": false,
+          "evidence": "declared:no such feature",
+          "observed": ""
+        },
+        "compression": {
+          "supported": false,
+          "evidence": "declared:no such feature",
+          "observed": "Always sends the full history"
+        }
+      },
+      "harness_options_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "known_differences": [
+        "Sends the task system prompt as it is, with nothing added."
+      ]
+    }
+  },
+  {
+    "name": "langgraph",
+    "package": "langgraph",
+    "ref": "1.2.16",
+    "python": "3.12",
+    "capabilities": {
+      "contract_version": "2",
+      "harness": "langgraph",
+      "version": {
+        "package": "langgraph",
+        "ref": "1.2.16"
+      },
+      "model_api_formats": [
+        "openai_chat"
+      ],
+      "settings": {
+        "temperature": {
+          "supported": true,
+          "evidence": "none",
+          "native": "ChatOpenAI(temperature=)"
+        },
+        "max_output_tokens": {
+          "supported": true,
+          "evidence": "none",
+          "native": "ChatOpenAI(max_tokens=)"
+        },
+        "max_steps": {
+          "supported": true,
+          "evidence": "none",
+          "native": "ModelCallLimitMiddleware"
+        },
+        "timeout_s": {
+          "supported": true,
+          "evidence": "declared:the adapter library's watchdog",
+          "native": "adapter watchdog",
+          "observed": "Adapter watchdog"
+        },
+        "parallel_tool_calls": {
+          "supported": true,
+          "evidence": "none",
+          "native": "bind_tools(parallel_tool_calls=)"
+        },
+        "memory": {
+          "supported": true,
+          "evidence": "none",
+          "native": ""
+        },
+        "skills": {
+          "supported": true,
+          "evidence": "none",
+          "native": ""
+        },
+        "compression": {
+          "supported": true,
+          "evidence": "none",
+          "native": ""
+        }
+      },
+      "harness_options_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "known_differences": [
+        "Switches to the Responses API for some model names; the adapter pins Chat Completions."
+      ]
+    }
+  },
+  {
+    "name": "adk",
+    "package": "google-adk",
+    "ref": "2.12.0",
+    "python": "3.12",
+    "capabilities": {
+      "contract_version": "2",
+      "harness": "adk",
+      "version": {
+        "package": "google-adk",
+        "ref": "2.12.0"
+      },
+      "model_api_formats": [
+        "openai_chat"
+      ],
+      "settings": {
+        "temperature": {
+          "supported": true,
+          "evidence": "probe:2026-11-04",
+          "native": "generate_content_config.temperature",
+          "default": null,
+          "observed": "Not sent unless set",
+          "effect": {
+            "claude-haiku-5-5": {
+              "status": "inert",
+              "evidence": "effect check 2026-11-04: no change between 0 and 1"
+            }
+          }
+        },
+        "max_output_tokens": {
+          "supported": true,
+          "evidence": "none",
+          "native": "generate_content_config.max_output_tokens"
+        },
+        "max_steps": {
+          "supported": true,
+          "evidence": "none",
+          "native": "RunConfig.max_llm_calls"
+        },
+        "timeout_s": {
+          "supported": true,
+          "evidence": "declared:the adapter library's watchdog",
+          "native": "adapter watchdog",
+          "observed": "Adapter watchdog"
+        },
+        "parallel_tool_calls": {
+          "supported": true,
+          "evidence": "none",
+          "native": "LiteLlm(parallel_tool_calls=)"
+        },
+        "memory": {
+          "supported": true,
+          "evidence": "none",
+          "native": ""
+        },
+        "skills": {
+          "supported": true,
+          "evidence": "none",
+          "native": ""
+        },
+        "compression": {
+          "supported": true,
+          "evidence": "none",
+          "native": ""
+        }
+      },
+      "harness_options_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "known_differences": [
+        "Wraps every tool description in untrusted-content markers and adds an identity line."
+      ]
+    }
+  },
+  {
+    "name": "openai-agents",
+    "package": "openai-agents",
+    "ref": "0.24.0",
+    "python": "3.12",
+    "capabilities": {
+      "contract_version": "2",
+      "harness": "openai-agents",
+      "version": {
+        "package": "openai-agents",
+        "ref": "0.24.0"
+      },
+      "model_api_formats": [
+        "openai_chat"
+      ],
+      "settings": {
+        "temperature": {
+          "supported": true,
+          "evidence": "none",
+          "native": "ModelSettings.temperature"
+        },
+        "max_output_tokens": {
+          "supported": true,
+          "evidence": "none",
+          "native": "ModelSettings.max_tokens"
+        },
+        "max_steps": {
+          "supported": true,
+          "evidence": "none",
+          "native": "Runner.run max_turns"
+        },
+        "timeout_s": {
+          "supported": true,
+          "evidence": "declared:the adapter library's watchdog",
+          "native": "adapter watchdog",
+          "observed": "Adapter watchdog"
+        },
+        "parallel_tool_calls": {
+          "supported": true,
+          "evidence": "none",
+          "native": "ModelSettings.parallel_tool_calls"
+        },
+        "memory": {
+          "supported": true,
+          "evidence": "none",
+          "native": ""
+        },
+        "skills": {
+          "supported": true,
+          "evidence": "none",
+          "native": ""
+        },
+        "compression": {
+          "supported": true,
+          "evidence": "none",
+          "native": ""
+        }
+      },
+      "harness_options_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "known_differences": [
+        "Replaces malformed-argument errors with a fixed \"please try again\" message."
+      ]
+    }
+  }
+]

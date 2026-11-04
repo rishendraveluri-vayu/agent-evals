@@ -22,21 +22,30 @@ export const PLATFORM_DEFAULTS: Settings = {
 
 /**
  * Settings a model refuses outright, by the model's LiteLLM name, each with its evidence (D25).
- * A config for that model cannot set them (400 `unsupported_setting` naming the model), no
- * platform default is filled in for them, and a simulator on that model is not sent them either.
+ * A config for that model cannot set them (400 `unsupported_setting` naming the model, with a
+ * fix), no platform default is filled in for them, and a simulator on that model is not sent them
+ * either. `label` is the name people know the model by, for messages and fixes.
  */
-export const MODEL_REJECTS: Readonly<Record<string, Partial<Record<SettingName, string>>>> = {
+export const MODEL_REJECTS: Readonly<Record<string, { label: string; rejects: Partial<Record<SettingName, string>> }>> = {
   'claude-haiku-5-5': {
-    temperature: 'the provider answered 400 "`temperature` is deprecated for this model" on 4 Nov (request req_011CghaVC7rWXY8fBDCspAvF)',
+    label: 'Claude Haiku 5.5',
+    rejects: {
+      temperature: 'the provider answered 400 "`temperature` is deprecated for this model" on 4 Nov (request req_011CghaVC7rWXY8fBDCspAvF)',
+    },
   },
 };
 
 /** Why `model` refuses the setting, or null if it takes it. */
 export function modelRejects(model: string, name: SettingName): string | null {
-  return MODEL_REJECTS[model]?.[name] ?? null;
+  return MODEL_REJECTS[model]?.rejects[name] ?? null;
 }
 
-type Caps = { settings?: Record<string, { supported?: unknown }> };
+/** The name people know the model by ("Claude Haiku 5.5"), else its LiteLLM name. */
+export function modelLabel(model: string): string {
+  return MODEL_REJECTS[model]?.label ?? model;
+}
+
+type Caps = { settings?: Record<string, { supported?: unknown; observed?: unknown }> };
 
 function isToggle(v: unknown): v is Toggle {
   return (
@@ -71,6 +80,58 @@ export function supports(caps: Caps, name: SettingName): boolean {
   return caps.settings?.[name]?.supported === true;
 }
 
+/** The harness's own words for why it cannot take a setting (capabilities.json `observed`). */
+function harnessReason(caps: Caps, name: SettingName): string | null {
+  const observed = caps.settings?.[name]?.observed;
+  return typeof observed === 'string' && observed.trim() ? observed.trim() : null;
+}
+
+/**
+ * Every setting this harness and model ignore, with a reason the UI can show next to the greyed
+ * field: the harness's own words from its capabilities file, or the model's refusal (D25).
+ */
+export function unsupportedReasons(caps: Caps, harness: string, model: string): Partial<Record<SettingName, string>> {
+  const out: Partial<Record<SettingName, string>> = {};
+  for (const name of SETTING_NAMES) {
+    if (!supports(caps, name)) {
+      const why = harnessReason(caps, name);
+      out[name] = why ? `${harness} does not support ${name}: ${why}` : `${harness} does not support ${name}`;
+    } else if (modelRejects(model, name)) {
+      out[name] = `${modelLabel(model)} rejects ${name}, so it is not sent and the provider's default applies`;
+    }
+  }
+  return out;
+}
+
+/** Edit distance, for suggesting the setting a misspelt name meant. */
+function editDistance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diagonal = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const above = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return row[b.length];
+}
+
+/** The setting a misspelt name most likely meant: within two edits, else null. */
+export function nearestSetting(key: string): SettingName | null {
+  let best: SettingName | null = null;
+  let bestDistance = 3;
+  for (const name of SETTING_NAMES) {
+    const d = editDistance(key.toLowerCase(), name);
+    if (d < bestDistance) {
+      best = name;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
 /**
  * Checks what a config sets against the harness's capabilities and the model, then fills the
  * full set. A setting the config leaves out (or sets to null):
@@ -79,21 +140,28 @@ export function supports(caps: Caps, name: SettingName): boolean {
  *   model refuses it;
  * - otherwise takes the platform default.
  * Setting one the harness cannot take, or one the model refuses, is a 400 `unsupported_setting`
- * naming the harness or the model (R10.4, D25).
+ * naming the harness or the model (R10.4, D25). Every refusal carries a `fix`. `elsewhere` names,
+ * per setting, the harnesses that do take it, so the fix can offer them.
  */
 export function resolveSettings(
   given: unknown,
   caps: Caps,
   harness: string,
   model: string,
-): { settings: Settings; settings_sources: SettingsSources } {
+  elsewhere: Partial<Record<SettingName, string[]>> = {},
+): { settings: Settings; settings_sources: SettingsSources; unsupported: Partial<Record<SettingName, string>> } {
   if (given !== undefined && given !== null && (typeof given !== 'object' || Array.isArray(given))) {
-    throw badRequest('invalid_setting', 'settings must be an object');
+    throw badRequest('invalid_setting', 'settings must be an object', 'Send settings as an object of only the ones you set, such as {"max_steps": 10}.');
   }
   const input = (given ?? {}) as Record<string, unknown>;
   for (const key of Object.keys(input)) {
     if (!(SETTING_NAMES as readonly string[]).includes(key)) {
-      throw badRequest('unknown_setting', `${key} is not a setting; the settings are ${SETTING_NAMES.join(', ')}`);
+      const near = nearestSetting(key);
+      throw badRequest(
+        'unknown_setting',
+        `${key} is not a setting; the settings are ${SETTING_NAMES.join(', ')}`,
+        near ? `Did you mean ${near}? Rename ${key} to ${near}.` : `Remove ${key}; options for one harness go in harness_options.`,
+      );
     }
   }
   const settings = {} as Record<SettingName, unknown>;
@@ -103,14 +171,25 @@ export function resolveSettings(
     const set = value !== undefined && value !== null;
     const rejected = modelRejects(model, name);
     if (set && !supports(caps, name)) {
-      throw badRequest('unsupported_setting', `${harness} does not support ${name}, so a config cannot set it`);
+      const why = harnessReason(caps, name);
+      const others = (elsewhere[name] ?? []).filter((h) => h !== harness);
+      throw badRequest(
+        'unsupported_setting',
+        `${harness} does not support ${name}, so a config cannot set it${why ? ` (${why})` : ''}`,
+        `${harness} ignores ${name}: leave it unset${others.length ? `, or pick a harness that takes it (${others.join(', ')})` : ''}.`,
+      );
     }
     if (set && rejected) {
-      throw badRequest('unsupported_setting', `${model} refuses ${name}: ${rejected}. Leave ${name} unset for ${model}`);
+      const label = modelLabel(model);
+      throw badRequest(
+        'unsupported_setting',
+        `${label} (${model}) refuses ${name}: ${rejected}. Leave ${name} unset for ${model}`,
+        `${label} rejects ${name}: leave it unset, or pick a model that takes it.`,
+      );
     }
     if (set) {
       const problem = settingProblem(name, value);
-      if (problem) throw badRequest('invalid_setting', `${name} must be ${problem}`);
+      if (problem) throw badRequest('invalid_setting', `${name} must be ${problem}`, `Set ${name} to ${problem}, or leave it unset for the default.`);
     }
     if (!supports(caps, name)) {
       settings[name] = null;
@@ -126,7 +205,7 @@ export function resolveSettings(
       sources[name] = 'platform_default';
     }
   }
-  return { settings: settings as unknown as Settings, settings_sources: sources };
+  return { settings: settings as unknown as Settings, settings_sources: sources, unsupported: unsupportedReasons(caps, harness, model) };
 }
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
@@ -134,12 +213,13 @@ const ajv = new Ajv2020({ allErrors: true, strict: false });
 /** Validates harness_options against the adapter's harness_options_schema (400 if not). */
 export function checkHarnessOptions(options: unknown, schema: unknown, harness: string): JsonObject {
   const value = options ?? {};
-  if (typeof value !== 'object' || Array.isArray(value)) throw badRequest('invalid_harness_options', 'harness_options must be an object');
+  const fix = `Make harness_options fit ${harness}'s harness_options_schema (GET /harnesses), or leave them out.`;
+  if (typeof value !== 'object' || Array.isArray(value)) throw badRequest('invalid_harness_options', 'harness_options must be an object', fix);
   if (typeof schema !== 'object' || schema === null) return value as JsonObject;
   const validate = ajv.compile(schema);
   if (!validate(value)) {
     const why = (validate.errors ?? []).map((e) => `${e.instancePath || '/'} ${e.message ?? ''}`.trim()).join('; ');
-    throw badRequest('invalid_harness_options', `harness_options do not fit ${harness}'s schema: ${why}`);
+    throw badRequest('invalid_harness_options', `harness_options do not fit ${harness}'s schema: ${why}`, fix);
   }
   return value as JsonObject;
 }

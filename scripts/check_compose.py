@@ -3,7 +3,7 @@
 Run: uv run --no-project --with pyyaml==6.0.3 python scripts/check_compose.py [FILE]
 
 Checks, with compose's `${NAME:-default}` filled in the way compose fills it:
-- the API and every harness worker read the worker token from the one variable
+- the API, every harness worker and the grader read the worker token from the one variable
   EVALS_WORKER_TOKEN, and with it unset (out of the box) they get the same non-empty
   default, so a worker is never refused by a fresh stack;
 - no worker (nor netcheck, which checks the worker runtime) mounts runs/ or anything else
@@ -45,7 +45,9 @@ def environment(service: dict) -> dict[str, str]:
 
 
 def workers(cfg: dict) -> dict[str, dict]:
-    return {n: s for n, s in (cfg.get("services") or {}).items() if n.startswith("worker-")}
+    """Harness workers, and the grader (SP4), which uses the same token and mounts nothing."""
+    services = cfg.get("services") or {}
+    return {n: s for n, s in services.items() if n.startswith("worker-") or n == "grader"}
 
 
 def token_problems(cfg: dict) -> list[str]:

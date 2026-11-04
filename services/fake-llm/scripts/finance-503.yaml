@@ -1,0 +1,5 @@
+# For the retry-layer gate test (D16): always 503, so LiteLLM's retries run out and the trial
+# ends as infra:provider_error (D26).
+description: Always 503.
+steps:
+  - fault: {kind: "503"}
