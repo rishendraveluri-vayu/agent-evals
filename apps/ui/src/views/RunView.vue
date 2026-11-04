@@ -1,18 +1,19 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue';
 import { api } from '../api/client';
-import { errorText } from '../api/errors';
+import { errorText, errorWithFix } from '../api/errors';
 import { isFixtureMode } from '../api/mode';
-import type { Config, ConfigDiffEntry, Estimate, ExperimentDetail, ExperimentTrial, Harness, ModelInfo, Prompt, TaskInfo } from '../api/types';
+import type { ConfigView, ConfigDiffEntry, Estimate, ExperimentDetail, TrialRowSummary, Harness, ModelView, PromptView, TaskView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
-import { armsOf, NBSP, timeLeft, totalTrials } from '../lib/arms';
+import { armIndexOf, armsOf, timeLeft, totalTrials } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, contentDiff, planCheck, splitCheck, type Check } from '../lib/checks';
 import { changedLineCount, lineChanges, sentenceChanges, type LineChange } from '../lib/diff';
-import { capitalise, clock, minutes, money, shortHash, wholeMoney } from '../lib/format';
+import { capitalise, clock, minutes, money, plural, shortHash, wholeMoney } from '../lib/format';
 import { modelName, splitName } from '../lib/names';
 import { href, navigate } from '../router';
+import { eventView, pauseCause } from '../lib/runs';
 import { text } from '../trials';
 
 const props = defineProps<{ experimentId?: string; a?: string | null; b?: string | null }>();
@@ -20,37 +21,38 @@ const draft = !props.experimentId;
 const fixtures = isFixtureMode();
 
 interface Loaded {
-  configs: Config[];
-  allTasks: TaskInfo[];
-  models: ModelInfo[];
+  configs: ConfigView[];
+  allTasks: TaskView[];
+  models: ModelView[];
   harnesses: Harness[];
-  prompts: Prompt[];
+  prompts: PromptView[];
   experiment: ExperimentDetail | null;
-  trials: ExperimentTrial[];
+  trials: TrialRowSummary[];
 }
 
 const { data, error, loading, reload } = useLoad<Loaded>(async () => {
-  const [harnesses, prompts] = await Promise.all([optional(api.harnesses(), [] as Harness[]), optional(api.prompts(), [] as Prompt[])]);
+  const [harnesses, prompts] = await Promise.all([optional(api.harnesses(), [] as Harness[]), optional(api.prompts(), [] as PromptView[])]);
   if (props.experimentId) {
     const [experiment, trials, allTasks] = await Promise.all([
       api.experiment(props.experimentId),
-      optional(api.experimentTrials(props.experimentId), [] as ExperimentTrial[]),
-      optional(api.tasks(), [] as TaskInfo[]),
+      optional(api.experimentTrials(props.experimentId), [] as TrialRowSummary[]),
+      optional(api.tasks(), [] as TaskView[]),
     ]);
     return { configs: experiment.configs, allTasks: allTasks.length ? allTasks : experiment.tasks, models: [], harnesses, prompts, experiment, trials };
   }
-  const [configs, allTasks, models] = await Promise.all([api.configs(), api.tasks(), optional(api.models(), [] as ModelInfo[])]);
+  const [configs, allTasks, models] = await Promise.all([api.configs(), api.tasks(), optional(api.models(), [] as ModelView[])]);
   return { configs, allTasks, models, harnesses, prompts, experiment: null, trials: [] };
 });
 
 // ---------------------------------------------------------------- what is being run
 
-const setup = reactive({ a: props.a ?? '', b: props.b ?? '', split: 'heldout', n: 5, simModel: '', budget: '', plan: '', name: '' });
+const setup = reactive({ a: props.a ?? '', b: props.b ?? '', split: 'held_out', n: 5, simModel: '', budget: '', plan: '', name: '' });
 const touched = reactive({ budget: false, name: false });
 
 watch(data, (d) => {
   if (!d || !draft || setup.simModel) return;
-  if (!setup.a) setup.a = d.configs[d.configs.length - 1]?.hash ?? '';
+  // GET /configs lists the oldest first: arm A defaults to the oldest, the baseline.
+  if (!setup.a) setup.a = d.configs[0]?.hash ?? '';
   if (!setup.b) setup.b = d.configs.find((c) => c.hash !== setup.a)?.hash ?? setup.a;
   setup.simModel = d.models[0]?.name ?? '';
   if (!d.allTasks.some((t) => t.split === setup.split)) setup.split = 'all';
@@ -59,7 +61,7 @@ watch(data, (d) => {
 const hashes = computed<string[]>(() => (draft ? [setup.a, setup.b].filter(Boolean) : (data.value?.experiment?.config_hashes ?? [])));
 const configOf = (h: string) => data.value?.configs.find((c) => c.hash === h);
 const sameConfig = computed(() => hashes.value.length === 2 && hashes.value[0] === hashes.value[1]);
-const tasks = computed<TaskInfo[]>(() => {
+const tasks = computed<TaskView[]>(() => {
   const d = data.value;
   if (!d) return [];
   if (!draft) return d.experiment?.tasks ?? [];
@@ -68,7 +70,7 @@ const tasks = computed<TaskInfo[]>(() => {
 const splits = computed(() => [...new Set(data.value?.allTasks.map((t) => t.split) ?? [])]);
 const n = computed(() => (draft ? Math.max(1, Math.round(Number(setup.n) || 1)) : (data.value?.experiment?.n ?? 0)));
 
-const diff = ref<ConfigDiffEntry[]>([]);
+const diff = shallowRef<ConfigDiffEntry[]>([]);
 watch(
   () => [hashes.value[0], hashes.value[1]],
   async ([a, b]) => {
@@ -114,7 +116,7 @@ watch(suggestedName, (v) => {
 const checks = computed<Check[]>(() => {
   const d = data.value;
   if (!d) return [];
-  const configs = hashes.value.map(configOf).filter((c): c is Config => !!c);
+  const configs = hashes.value.map(configOf).filter((c): c is ConfigView => !!c);
   const plan = draft ? setup.plan : d.experiment?.plan_commit;
   const list = [
     ...(hashes.value.length === 2 ? [armsCheck(diff.value, sameConfig.value)] : []),
@@ -122,7 +124,7 @@ const checks = computed<Check[]>(() => {
     planCheck(plan),
     splitCheck(tasks.value, d.allTasks),
   ];
-  if (draft || d.experiment?.budget_usd !== undefined) list.push(budgetCheck(budget.value, estimate.value));
+  list.push(budgetCheck(budget.value, estimate.value));
   return list;
 });
 const allPass = computed(() => checks.value.length > 0 && checks.value.every((c) => c.ok));
@@ -186,18 +188,48 @@ async function startNew() {
   }
 }
 
-async function act(kind: 'start' | 'cancel') {
+type RunAction = 'start' | 'pause' | 'resume' | 'stop';
+const RUN_ACTIONS: Record<RunAction, (id: string) => Promise<unknown>> = {
+  start: (id) => api.startExperiment(id),
+  pause: (id) => api.pauseExperiment(id),
+  resume: (id) => api.resumeExperiment(id),
+  stop: (id) => api.stopExperiment(id),
+};
+
+/** Stop cancels every waiting trial for good, so it asks first. */
+const confirmStop = ref(false);
+
+async function act(kind: RunAction) {
   const id = props.experimentId;
   if (!id) return;
   busy.value = true;
   actionError.value = null;
   try {
-    await (kind === 'start' ? api.startExperiment(id) : api.cancelExperiment(id));
+    await RUN_ACTIONS[kind](id);
+    confirmStop.value = false;
     await reload();
   } catch (err) {
-    actionError.value = errorText(err);
+    actionError.value = errorWithFix(err);
   } finally {
     busy.value = false;
+  }
+}
+
+/** Per-arm pause and resume (D37), by the arm's letter. */
+const armBusy = ref<string | null>(null);
+const armError = ref<{ arm: string; text: string } | null>(null);
+async function armAct(letter: string, pause: boolean) {
+  const id = props.experimentId;
+  if (!id) return;
+  armBusy.value = letter;
+  armError.value = null;
+  try {
+    await (pause ? api.pauseArm(id, letter) : api.resumeArm(id, letter));
+    await reload();
+  } catch (err) {
+    armError.value = { arm: letter, text: errorWithFix(err) };
+  } finally {
+    armBusy.value = null;
   }
 }
 
@@ -214,11 +246,11 @@ const CELL_WORDS: Record<Exclude<CellState, 'abandoned'>, string> = {
   cancelled: 'cancelled',
 };
 
-const isInfraStop = (t: ExperimentTrial) => t.status === 'infra_failed' || t.status === 'abandoned';
+const isInfraStop = (t: TrialRowSummary) => t.status === 'infra_failed' || t.status === 'abandoned';
 
 /** A slot's state is its latest attempt's; `hadInfra` keeps the history, so a slot that was
  *  stopped by an infra failure and then re-run still says so once it has passed or failed. */
-function slotState(attempts: ExperimentTrial[]): { state: CellState; hadInfra: boolean } {
+function slotState(attempts: TrialRowSummary[]): { state: CellState; hadInfra: boolean } {
   if (!attempts.length) return { state: 'waiting', hadInfra: false };
   const hadInfra = attempts.some(isInfraStop);
   const latest = attempts.reduce((x, y) => (y.attempt > x.attempt ? y : x));
@@ -249,17 +281,17 @@ const grid = computed(() => {
   const twice = sameConfig.value;
   return e.tasks.map((t) => ({
     task: t,
-    arms: e.config_hashes.slice(0, 2).map((h, arm) =>
+    arms: e.config_hashes.map((_h, arm) =>
       Array.from({ length: e.n }, (_, r) => {
         const repeat = twice ? r + arm * e.n : r;
         const attempts = trials
-          .filter((x) => (x.task === t.sha256 || x.task === t.id) && x.config === h && x.repeat_index === repeat)
+          .filter((x) => x.task_sha256 === t.sha256 && armIndexOf(x, e) === arm && x.repeat_index === repeat)
           .sort((x, y) => x.attempt - y.attempt);
         const { state, hadInfra } = slotState(attempts);
         const tries = attempts.length ? Math.max(...attempts.map((x) => x.attempt)) : 0;
         const words = state === 'abandoned' ? `infra failure, gave up after ${tries} ${tries === 1 ? 'attempt' : 'attempts'}` : CELL_WORDS[state];
         const retried = hadInfra && (state === 'pass' || state === 'fail');
-        return { state, retried, attempts, label: `${t.id}, arm ${arm === 0 ? 'A' : 'B'}, trial ${r + 1}: ${words}${retried ? ', after an infra failure' : ''}` };
+        return { state, retried, attempts, label: `${t.id}, arm ${String.fromCharCode(65 + arm)}, trial ${r + 1}: ${words}${retried ? ', after an infra failure' : ''}` };
       }),
     ),
   }));
@@ -271,14 +303,15 @@ const tally = computed(() => {
   const all = grid.value.flatMap((row) => row.arms.flat());
   const of = (...s: CellState[]) => all.filter((c) => s.includes(c.state)).length;
   const stops = { total: 0, rerun: 0, requeued: 0, gaveUp: 0 };
-  const byArm = { a: 0, b: 0 };
+  const byArm: Record<string, number> = {};
   for (const row of grid.value) {
     row.arms.forEach((cells, arm) => {
       for (const c of cells) {
         c.attempts.forEach((a, k) => {
           if (!isInfraStop(a)) return;
           stops.total += 1;
-          byArm[arm === 0 ? 'a' : 'b'] += 1;
+          const letter = String.fromCharCode(65 + arm);
+          byArm[letter] = (byArm[letter] ?? 0) + 1;
           const next = c.attempts[k + 1];
           if (a.status === 'abandoned') stops.gaveUp += 1;
           else if (!next || next.status === 'queued') stops.requeued += 1;
@@ -292,9 +325,10 @@ const tally = computed(() => {
 
 /** "both in arm B", "all in arm A", "in arm B" when every infra failure fell in one arm; "A 1, B 2"
  *  otherwise. */
-function armsWords(byArm: { a: number; b: number }, total: number): string {
-  const only = byArm.a === 0 ? 'B' : byArm.b === 0 ? 'A' : null;
-  if (!only) return `A ${byArm.a}, B ${byArm.b}`;
+function armsWords(byArm: Record<string, number>, total: number): string {
+  const hit = Object.entries(byArm).filter(([, n]) => n > 0);
+  const only = hit.length === 1 ? hit[0][0] : null;
+  if (!only) return hit.map(([letter, n]) => `${letter} ${n}`).join(', ');
   if (total === 1) return `in arm ${only}`;
   return `${total === 2 ? 'both' : 'all'} in arm ${only}`;
 }
@@ -334,20 +368,61 @@ const infraInGrid = computed(() => {
 });
 const showInfraLegend = computed(() => infraInGrid.value.requeued || infraInGrid.value.retried || infraInGrid.value.gaveUp);
 
-/** The run's log, oldest first, so it reads in the order things happened. */
-const events = computed(() => [...(data.value?.experiment?.events ?? [])].sort((x, y) => Date.parse(x.at) - Date.parse(y.at)));
+/** The run's log, oldest first, so it reads in the order things happened. Claims are many and
+ *  routine, so they are counted, and listed only on request. */
+const allEvents = computed(() => [...(data.value?.experiment?.events ?? [])].sort((x, y) => Date.parse(x.at) - Date.parse(y.at)).map(eventView));
+const showClaims = ref(false);
+const claimCount = computed(() => (data.value?.experiment?.events ?? []).filter((e) => e.kind === 'claim').length);
+const events = computed(() => (showClaims.value ? allEvents.value : allEvents.value.filter((e) => e.title !== 'Trial claimed')));
+
+/** What paused the whole run (D32), and the arms that are paused on their own (D37). */
+const pause = computed(() => {
+  const e = data.value?.experiment;
+  if (!e || e.status !== 'paused') return null;
+  const reason = e.paused_reason ?? 'No new trials start until it is resumed; trials already running finish.';
+  return { cause: capitalise(pauseCause(reason)), reason, at: e.paused_at };
+});
+const ARM_STATUS: Record<string, string> = { not_started: 'Not started', active: 'Running', paused: 'Paused', stopped: 'Stopped', complete: 'Complete' };
+const armCards = computed(() =>
+  (data.value?.experiment?.arms ?? []).map((a) => {
+    const c = a.counts;
+    const total = c.queued + c.running + c.done + c.infra_failed + c.abandoned + c.cancelled;
+    const parts = [`${c.done} done`, c.running ? `${c.running} running` : '', c.queued ? `${c.queued} waiting` : '', c.infra_failed + c.abandoned ? `${c.infra_failed + c.abandoned} infra` : '', c.cancelled ? `${c.cancelled} cancelled` : ''];
+    return {
+      view: a,
+      key: a.arm.toLowerCase(),
+      status: ARM_STATUS[a.status] ?? a.status,
+      counts: `${parts.filter(Boolean).join(', ')} of ${plural(total, 'trial row')}`,
+      reused: a.reused_from ? `Reuses ${plural(a.reused_trials, 'finished trial')} of ${a.reused_from}` : '',
+      canPause: a.status === 'active' || a.status === 'not_started',
+      canResume: a.status === 'paused',
+    };
+  }),
+);
+const pausedArms = computed(() => armCards.value.filter((a) => a.view.status === 'paused'));
 
 /** The simulated client's model, which every conversation in both arms runs against. */
 const simClient = computed(() => (data.value?.experiment?.sim_model ? modelName(data.value.experiment.sim_model) : null));
 
-/** "10 points" with the number kept on its unit's line. */
-const pointsText = (points: number) => `${points}${NBSP}${points === 1 ? 'point' : 'points'}`;
-/** The power tile's note, over the experiment's or the draft's tasks. */
-const powerNote = computed(() => {
-  const mde = estimate.value?.min_detectable_effect;
-  if (!mde) return 'Not estimated yet: the power estimate comes with the statistics step';
-  const t = tasks.value.length;
-  return `Pass rate over all ${t} ${t === 1 ? 'task' : 'tasks'}, ${Math.round(mde.power * 10)} times in 10, from the pilot's spread`;
+/** The power tile's note. The API has no power estimate yet (SP6 adds `min_detectable_effect`). */
+const powerNote = 'Not estimated yet: the power estimate comes with the statistics step';
+
+/** "2 workers per harness", from the workers the estimate's time assumes. */
+const workersNote = computed(() => {
+  const w = estimate.value?.basis_detail.workers;
+  if (!w) return '';
+  const used = Object.entries(w).map(([h, x]) => `${x.used} ${h}`);
+  const n = Object.values(w).reduce((sum, x) => sum + x.used, 0);
+  return used.length ? `${plural(n, 'worker')} at a time (${used.join(', ')})` : '';
+});
+
+/** Item 8: what the run has cost and taken so far, next to the estimate. */
+const actualNote = computed(() => {
+  const a = data.value?.experiment?.actual;
+  if (!a) return '';
+  const per = a.cost_per_trial_usd !== null ? `${money(a.cost_per_trial_usd)} a trial` : '';
+  const wall = a.wall_s_per_trial !== null ? `${Math.round(a.wall_s_per_trial)} s a trial` : '';
+  return [`${plural(a.finished_trials, 'trial')} finished`, per, wall, `projected ${money(a.projected_spend_usd)}`].filter(Boolean).join(', ');
 });
 
 const spend = computed(() => {
@@ -366,7 +441,7 @@ watch(
   (status) => {
     if (timer) clearInterval(timer);
     timer = null;
-    if (status === 'running' && !fixtures) timer = setInterval(() => void reload(), 5000);
+    if ((status === 'running' || status === 'paused') && !fixtures) timer = setInterval(() => void reload(), 5000);
   },
 );
 onBeforeUnmount(() => {
@@ -392,8 +467,9 @@ const heading = computed(() => {
   const total = slotCount.value || totalTrials(e);
   const done = tally.value.done;
   if (e.status === 'running') return `Running: ${done} of ${total} trials done`;
-  if (e.status === 'done' || e.status === 'finished') return `Run finished: ${done} of ${total}`;
-  if (e.status === 'cancelled') return `Run cancelled: ${done} of ${total} done`;
+  if (e.status === 'done') return `Run finished: ${done} of ${total}`;
+  if (e.status === 'cancelled') return `Run stopped: ${done} of ${total} done`;
+  if (e.status === 'paused') return `Paused: ${done} of ${total} trials done`;
   return `Run ${e.status}: ${done} of ${total} done`;
 });
 
@@ -451,18 +527,65 @@ const planNote = computed(() => {
       class="head-actions"
       data-test="run-actions"
     >
-      <template v-if="data.experiment.status === 'running'">
-        <button
-          type="button"
-          class="btn btn--quiet"
-          :disabled="busy"
-          data-test="cancel"
-          @click="act('cancel')"
+      <template v-if="data.experiment.status === 'running' || data.experiment.status === 'paused'">
+        <div
+          class="control-buttons"
+          role="group"
+          aria-label="Run controls"
         >
-          Cancel the waiting trials
-        </button>
+          <button
+            v-if="data.experiment.status === 'running'"
+            type="button"
+            class="btn btn--quiet"
+            :disabled="busy"
+            data-test="pause"
+            @click="act('pause')"
+          >
+            Pause
+          </button>
+          <button
+            v-else
+            type="button"
+            class="btn"
+            :disabled="busy"
+            data-test="resume"
+            @click="act('resume')"
+          >
+            Resume
+          </button>
+          <button
+            v-if="!confirmStop"
+            type="button"
+            class="btn btn--quiet"
+            :disabled="busy"
+            data-test="stop"
+            @click="confirmStop = true"
+          >
+            Stop
+          </button>
+          <template v-else>
+            <button
+              type="button"
+              class="btn"
+              :disabled="busy"
+              data-test="stop-confirm"
+              @click="act('stop')"
+            >
+              Stop and cancel {{ plural(data.experiment.counts.queued, 'waiting trial') }}
+            </button>
+            <button
+              type="button"
+              class="btn btn--quiet"
+              :disabled="busy"
+              data-test="stop-keep"
+              @click="confirmStop = false"
+            >
+              Keep running
+            </button>
+          </template>
+        </div>
         <p class="secondary smaller">
-          Running trials finish; waiting ones are marked cancelled and kept.
+          {{ data.experiment.status === 'running' ? 'Pause stops new claims; running trials finish. ' : '' }}Stop cancels the waiting trials for good; running ones finish and are kept.
         </p>
       </template>
       <a
@@ -504,11 +627,11 @@ const planNote = computed(() => {
         <div>
           <span class="stat-label">Estimated time</span>
           <span class="stat-value">{{ estimate ? minutes(estimate.minutes) : '–' }}</span>
-          <span class="stat-note">{{ estimate?.concurrency ? `${estimate.concurrency} trials at a time` : '' }}</span>
+          <span class="stat-note">{{ workersNote }}</span>
         </div>
         <div>
           <span class="stat-label">Smallest overall difference it can see</span>
-          <span class="stat-value">{{ estimate?.min_detectable_effect ? pointsText(estimate.min_detectable_effect.points) : '–' }}</span>
+          <span class="stat-value">–</span>
           <span
             class="stat-note"
             data-test="power-note"
@@ -747,6 +870,120 @@ const planNote = computed(() => {
 
     <template v-else-if="data && data.experiment">
       <section
+        v-if="pause"
+        class="pause-banner"
+        role="status"
+        data-test="pause-banner"
+      >
+        <AppIcon
+          name="alert"
+          :size="18"
+        />
+        <div>
+          <h2 class="pause-title">
+            {{ pause.cause }}
+          </h2>
+          <p class="small">
+            {{ pause.reason }}
+          </p>
+          <p class="secondary smaller">
+            <template v-if="pause.at">
+              Since {{ clock(pause.at) }}.
+            </template> Trials already running finish; nothing new starts until you resume. Resume, or stop it, above.
+          </p>
+        </div>
+      </section>
+
+      <section
+        v-if="armCards.length"
+        aria-labelledby="arms-title"
+        class="arms-panel"
+        data-test="arms"
+      >
+        <h2
+          id="arms-title"
+          class="section-title"
+        >
+          Arms
+        </h2>
+        <div class="arm-cards">
+          <div
+            v-for="card in armCards"
+            :key="card.view.arm"
+            class="panel panel--pad arm-card"
+            :class="{ 'arm-card--paused': card.view.status === 'paused' }"
+            :data-test="`arm-${card.view.arm}`"
+          >
+            <div class="arm-card-head">
+              <span class="arm"><span :class="`dot dot--${card.key}`" /><span><strong>Arm {{ card.view.arm }}</strong>: {{ card.view.config_name }}</span></span>
+              <span
+                class="pill pill--small pill--outline arm-status"
+                :data-status="card.view.status"
+              >{{ card.status }}</span>
+            </div>
+            <p class="secondary small num">
+              {{ card.counts }}<template v-if="card.reused">
+                . {{ card.reused }}
+              </template>
+            </p>
+            <template v-if="card.view.status === 'paused'">
+              <p
+                class="small arm-reason"
+                data-test="arm-reason"
+              >
+                <strong>Why:</strong> {{ card.view.paused_reason ?? 'paused' }}
+              </p>
+              <p
+                v-if="card.view.fix"
+                class="small arm-fix"
+                data-test="arm-fix"
+              >
+                <strong>How to fix it:</strong> {{ card.view.fix }}
+              </p>
+            </template>
+            <div
+              v-if="data.experiment.status !== 'done' && data.experiment.status !== 'cancelled' && (card.canPause || card.canResume)"
+              class="arm-actions"
+            >
+              <button
+                v-if="card.canResume"
+                type="button"
+                class="btn btn--quiet"
+                :disabled="armBusy !== null"
+                :data-test="`resume-arm-${card.view.arm}`"
+                @click="armAct(card.view.arm, false)"
+              >
+                Resume arm {{ card.view.arm }}
+              </button>
+              <button
+                v-else
+                type="button"
+                class="btn btn--quiet"
+                :disabled="armBusy !== null"
+                :data-test="`pause-arm-${card.view.arm}`"
+                @click="armAct(card.view.arm, true)"
+              >
+                Pause arm {{ card.view.arm }}
+              </button>
+            </div>
+            <p
+              v-if="armError && armError.arm === card.view.arm"
+              class="error small"
+              role="alert"
+            >
+              {{ armError.text }}
+            </p>
+          </div>
+        </div>
+        <p
+          v-if="pausedArms.length"
+          class="secondary small"
+        >
+          A paused arm claims nothing more; the other arm keeps running. There is no comparison until every arm is complete (D37).
+        </p>
+      </section>
+
+      <section
         aria-labelledby="progress"
         class="progress"
       >
@@ -950,6 +1187,13 @@ const planNote = computed(() => {
                 >Simulated client: {{ simClient }}</span>
               </div>
               <p
+                v-if="actualNote"
+                class="secondary small budget-note"
+                data-test="actual"
+              >
+                So far: {{ actualNote }}.
+              </p>
+              <p
                 v-if="budgetNote"
                 class="secondary small budget-note"
               >
@@ -967,11 +1211,30 @@ const planNote = computed(() => {
                 <li
                   v-for="(e, i) in events"
                   :key="i"
+                  :class="`event event--${e.tone}`"
+                  :data-tone="e.tone"
                 >
                   <span class="secondary num">{{ clock(e.at) }}</span>
-                  <span>{{ e.message }}</span>
+                  <span>
+                    <span class="event-title"><AppIcon
+                      v-if="e.tone === 'pause'"
+                      name="alert"
+                      :size="14"
+                    />{{ e.title }}<template v-if="e.arm && !e.title.includes(`Arm ${e.arm}`)">, arm {{ e.arm }}</template></span>
+                    <span class="secondary block event-detail">{{ e.detail }}</span>
+                  </span>
                 </li>
               </ol>
+              <button
+                v-if="claimCount"
+                type="button"
+                class="link-button smaller"
+                :aria-expanded="showClaims"
+                data-test="toggle-claims"
+                @click="showClaims = !showClaims"
+              >
+                {{ showClaims ? 'Hide' : 'Show' }} the {{ plural(claimCount, 'claim') }}
+              </button>
             </div>
           </div>
         </div>
@@ -987,6 +1250,14 @@ const planNote = computed(() => {
         >
           Planned
         </h2>
+        <p
+          class="secondary small plan-facts"
+          data-test="plan-facts"
+        >
+          <span v-if="data.experiment.order_seed !== null && data.experiment.order_seed !== undefined">Claim order shuffled from seed <span class="mono">{{ data.experiment.order_seed }}</span>, arms interleaved (D32). </span>
+          <span v-if="data.experiment.futility">{{ data.experiment.futility.enabled ? `Futility check on: pauses for review if an arm passes fewer than ${data.experiment.futility.min_passed} of its first ${data.experiment.futility.after} finished trials; it never stops on an apparent win.` : 'Futility check off.' }} </span>
+          <span v-if="data.experiment.parent_experiment_id">Follows from <a :href="href.compare(data.experiment.parent_experiment_id)">{{ data.experiment.parent_experiment_id }}</a><template v-if="data.experiment.baseline">: {{ data.experiment.baseline.reason }}</template>.</span>
+        </p>
         <div
           class="stat-strip plan plan--past"
           data-test="plan"
@@ -1004,11 +1275,11 @@ const planNote = computed(() => {
           <div>
             <span class="stat-label">Estimated time</span>
             <span class="stat-value">{{ estimate ? minutes(estimate.minutes) : '–' }}</span>
-            <span class="stat-note">{{ estimate?.concurrency ? `${estimate.concurrency} trials at a time` : '' }}</span>
+            <span class="stat-note">{{ workersNote }}</span>
           </div>
           <div>
             <span class="stat-label">Smallest overall difference it can see</span>
-            <span class="stat-value">{{ estimate?.min_detectable_effect ? pointsText(estimate.min_detectable_effect.points) : '–' }}</span>
+            <span class="stat-value">–</span>
             <span
               class="stat-note"
               data-test="power-note"
@@ -1070,6 +1341,105 @@ const planNote = computed(() => {
 </template>
 
 <style scoped>
+.control-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* A paused run: an alert icon and words, in ink, so colour keeps meaning A, B, pass and fail. */
+.pause-banner {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-left: 4px solid var(--ink);
+  border-radius: 12px;
+}
+
+.pause-title {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.pause-banner p {
+  margin: 0 0 4px;
+}
+
+.arms-panel {
+  margin-bottom: 24px;
+}
+
+.arm-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.arm-card p {
+  margin: 6px 0 0;
+}
+
+.arm-card--paused {
+  border-color: var(--rule-strong);
+  border-left: 4px solid var(--ink);
+}
+
+.arm-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.arm-status[data-status='paused'] {
+  border-color: var(--ink);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.arm-actions {
+  margin-top: 10px;
+}
+
+.plan-facts {
+  margin: 0;
+}
+
+.event-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+}
+
+.event--pause .event-title {
+  font-weight: 600;
+}
+
+.event-detail {
+  overflow-wrap: anywhere;
+}
+
+.link-button {
+  margin-top: 6px;
+  padding: 4px 0;
+  min-height: 32px;
+  background: none;
+  border: 0;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+  font: inherit;
+}
+
 .plan {
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
 }

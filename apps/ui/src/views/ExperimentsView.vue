@@ -1,32 +1,36 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { api } from '../api/client';
-import type { Compare, Config, Experiment, ExperimentDetail, ExperimentTrial, Harness } from '../api/types';
+import type { Compare, ConfigView, ExperimentSummary, ExperimentDetail, TrialRowSummary, Harness } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
 import { armsOf, axisWords, checksToGo, doneCount, excludesZero, headline, intervalText, judgeCaveat, NBSP, pointsWithInterval, setupOf, timeLeft, totalTrials, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
-import { identParts, minutes, money, percent, plural, relative, signed } from '../lib/format';
+import { capitalise, identParts, minutes, money, percent, plural, relative, signed } from '../lib/format';
+import { pauseCause } from '../lib/runs';
 import { alsoGradedBy, harnessShort, isJudged, modelName, settingLabel, splitName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
 import { href } from '../router';
 
 interface Loaded {
-  experiments: Experiment[];
-  configs: Config[];
+  experiments: ExperimentSummary[];
+  configs: ConfigView[];
   harnesses: Harness[];
   heldoutToGo: number | null;
   /** The same outputs counted in checks (one output, one question). */
   heldoutChecksToGo: number;
   compares: Map<string, Compare | null>;
   latest: ExperimentDetail | null;
-  latestFailed: ExperimentTrial | null;
+  latestFailed: TrialRowSummary | null;
+  /** Running and paused experiments in full, for what paused them and which arm (D32, D37). */
+  live: Map<string, ExperimentDetail>;
 }
 
-const updatedAt = (e: Experiment) => e.finished_at ?? e.started_at ?? e.created_at;
-const twoArms = (e: Experiment) => e.config_hashes.length === 2;
+/** The list carries only when an experiment was made; its detail has when it finished. */
+const updatedAt = (e: ExperimentSummary, detail?: ExperimentDetail | null) => detail?.finished_at ?? detail?.started_at ?? e.created_at;
+const twoArms = (e: ExperimentSummary) => e.config_hashes.length === 2;
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
   const [experiments, configs, harnesses, queue] = await Promise.all([
@@ -37,16 +41,19 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
   ]);
   const finished = experiments.filter((e) => e.status === 'done' && twoArms(e));
   const compares = new Map(await Promise.all(finished.map(async (e) => [e.id, await optional(api.compare(e.id), null)] as const)));
-  const latestId = [...finished]
-    .filter((e) => e.config_hashes[0] !== e.config_hashes[1] && compares.get(e.id)?.stats)
-    .sort((x, y) => Date.parse(updatedAt(y)) - Date.parse(updatedAt(x)))[0]?.id;
+  // The list is newest first (by when each was made).
+  const latestId = finished.find((e) => e.config_hashes[0] !== e.config_hashes[1] && compares.get(e.id)?.stats)?.id;
   const latest = latestId ? await optional(api.experiment(latestId), null) : null;
-  const trials = latestId ? await optional(api.experimentTrials(latestId, { status: 'done' }), [] as ExperimentTrial[]) : [];
+  const trials = latestId ? await optional(api.experimentTrials(latestId, { status: 'done' }), [] as TrialRowSummary[]) : [];
   // Step 4 opens a failure of arm B on the task where B did worst: the most telling one to read.
   const worst = latestId ? [...(compares.get(latestId)?.stats?.tasks ?? [])].sort((x, y) => x.diff.estimate - y.diff.estimate)[0]?.task : undefined;
-  const failedB = trials.filter((t) => t.passed === false && t.config === latest?.config_hashes[1]);
-  const latestFailed = failedB.find((t) => t.task === worst) ?? failedB[0] ?? trials.find((t) => t.passed === false) ?? null;
-  return { experiments, configs, harnesses, heldoutToGo: queue ? queue.length : null, heldoutChecksToGo: checksToGo(queue ?? []), compares, latest, latestFailed };
+  const failedB = trials.filter((t) => t.passed === false && t.config_hash === latest?.config_hashes[1]);
+  const latestFailed = failedB.find((t) => t.task_sha256 === worst) ?? failedB[0] ?? trials.find((t) => t.passed === false) ?? null;
+  const liveIds = experiments.filter((e) => e.status === 'running' || e.status === 'paused').map((e) => e.id);
+  const live = new Map(
+    (await Promise.all(liveIds.map(async (id) => [id, await optional(api.experiment(id), null)] as const))).filter((x): x is readonly [string, ExperimentDetail] => x[1] !== null),
+  );
+  return { experiments, configs, harnesses, heldoutToGo: queue ? queue.length : null, heldoutChecksToGo: checksToGo(queue ?? []), compares, latest, latestFailed, live };
 });
 
 const show = ref<'all' | 'running' | 'done'>('all');
@@ -110,13 +117,38 @@ const attention = computed<Attention[]>(() => {
   if (!d) return [];
   const out: Attention[] = [];
   for (const e of d.experiments) {
-    if (e.status === 'running' && e.counts.infra_failed > 0) {
+    const detail = d.live.get(e.id);
+    if (e.status === 'paused') {
+      const reason = detail?.paused_reason ?? 'no new trials start until it is resumed';
+      out.push({
+        key: `paused-${e.id}`,
+        to: href.run(e.id),
+        icon: 'alert',
+        infra: false,
+        title: `${e.name} is paused`,
+        detail: `${capitalise(pauseCause(reason))}. Review it, then resume or stop.`,
+      });
+    }
+    for (const a of detail?.arms ?? []) {
+      if (a.status !== 'paused') continue;
+      out.push({
+        key: `arm-${e.id}-${a.arm}`,
+        to: href.run(e.id),
+        icon: 'alert',
+        infra: false,
+        title: `Arm ${a.arm} of ${e.name} is paused`,
+        detail: `${capitalise(pauseCause(a.paused_reason ?? 'paused'))}. ${a.fix ? 'The run page says how to fix it.' : 'Resume it on the run page.'}`,
+      });
+    }
+    // A config error pauses its arm (listed above) and is never re-queued, so it is not counted here.
+    const retried = e.counts.infra_failed - (e.counts.by_label['infra:config_error'] ?? 0) - (e.counts.by_label['infra:budget_net'] ?? 0);
+    if (e.status === 'running' && retried > 0) {
       out.push({
         key: `infra-${e.id}`,
         to: href.run(e.id),
         icon: 'plug',
         infra: true,
-        title: plural(e.counts.infra_failed, 'infra failure'),
+        title: plural(retried, 'infra failure'),
         detail: `${e.name}. Each is re-queued once. Not counted as agent failures.`,
       });
     }
@@ -151,15 +183,18 @@ const attention = computed<Attention[]>(() => {
 });
 
 interface Row {
-  e: Experiment;
+  e: ExperimentSummary;
   to: string;
   axis: string;
   a: string;
   b: string;
+  /** Arms past B, in experiments made before D35. */
+  more: { key: string; label: string }[];
   setup: string;
   trials: string;
   share: number;
   live: boolean;
+  updated: string;
   status: string;
   verdict: Verdict | null;
   detail: string;
@@ -170,7 +205,7 @@ const rows = computed<Row[]>(() => {
   const d = data.value;
   if (!d) return [];
   return d.experiments
-    .filter((e) => show.value === 'all' || (show.value === 'running' ? e.status === 'running' || e.status === 'created' : e.status === 'done'))
+    .filter((e) => show.value === 'all' || (show.value === 'running' ? e.status === 'running' || e.status === 'created' || e.status === 'paused' : e.status === 'done'))
     .map((e) => {
       const arms = armsOf(e, d.configs);
       const total = totalTrials(e);
@@ -184,29 +219,37 @@ const rows = computed<Row[]>(() => {
         status = 'Running';
         const left = timeLeft(e.estimate, done, total);
         detail = left !== null ? `About ${minutes(left)} left` : `${done} of ${total} done`;
+      } else if (e.status === 'paused') {
+        status = 'Paused';
+        detail = `${done} of ${total} done. ${capitalise(pauseCause(d.live.get(e.id)?.paused_reason ?? 'paused'))}`;
       } else if (e.status === 'created') {
         status = 'Not started';
         detail = 'Waiting for you to start it';
       } else if (e.status === 'cancelled') {
         status = 'Cancelled';
         detail = `${done} of ${total} ran`;
-      } else if (!twoArms(e)) {
+      } else if (e.config_hashes.length === 1) {
         status = 'One arm';
         detail = 'Nothing to compare';
+      } else if (e.config_hashes.length > 2) {
+        status = 'Finished';
+        detail = `${e.config_hashes.length} configs, made before experiments had two arms (D35)`;
       } else if (stats) {
         verdict = stats.verdict === 'better' ? 'better' : stats.verdict === 'worse' ? 'worse' : 'none';
         detail = `${pointsWithInterval(stats.diff)}${sameTwice && !excludesZero(stats.diff) ? ', as expected' : ''}`;
       }
       return {
         e,
-        to: e.status === 'running' || e.status === 'created' ? href.run(e.id) : href.compare(e.id),
+        to: e.status === 'running' || e.status === 'created' || e.status === 'paused' ? href.run(e.id) : href.compare(e.id),
         axis: axisWords(e),
         a: arms[0]?.label ?? '–',
         b: arms[1]?.label ?? '–',
+        more: arms.slice(2).map((x) => ({ key: x.key, label: x.label })),
         setup: setupOf(e, arms),
         trials: `${done} of ${total}`,
         share: total ? (done / total) * 100 : 0,
         live: e.status === 'running',
+        updated: updatedAt(e, d.live.get(e.id) ?? (d.latest?.id === e.id ? d.latest : null)),
         status,
         verdict,
         detail,
@@ -252,7 +295,7 @@ const rows = computed<Row[]>(() => {
       >
         <div class="latest-top">
           <p class="secondary small">
-            Latest result, finished {{ relative(latestResult.experiment.finished_at ?? latestResult.experiment.created_at).toLowerCase() }}
+            Latest result, finished {{ relative(updatedAt(latestResult.experiment, latestResult.experiment)).toLowerCase() }}
           </p>
           <a
             :href="href.compare(latestResult.experiment.id)"
@@ -470,6 +513,11 @@ const rows = computed<Row[]>(() => {
                   v-if="r.e.config_hashes.length > 1"
                   class="arm block-flex"
                 ><span class="dot dot--b" />{{ r.b }}</span>
+                <span
+                  v-for="m in r.more"
+                  :key="m.key"
+                  class="arm block-flex"
+                ><span :class="`dot dot--${m.key}`" />{{ m.label }}</span>
                 <span class="secondary block setup">{{ r.setup }}</span>
               </td>
               <td class="num c-trials">
@@ -499,7 +547,7 @@ const rows = computed<Row[]>(() => {
                 {{ money(r.e.spend_usd) }}<span class="secondary block estimate">{{ r.estimate }}</span>
               </td>
               <td class="right secondary c-updated">
-                {{ relative(updatedAt(r.e)) }}
+                {{ relative(r.updated) }}
               </td>
             </tr>
             <tr v-if="!rows.length">

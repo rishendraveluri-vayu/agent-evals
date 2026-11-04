@@ -1,4 +1,705 @@
 {
+  "exp_model": {
+    "task_sha256s": [
+      "sha256:59c93e4f9789961f4d3d8248319ef4246b87b9e2240b16621558915178bcb037",
+      "sha256:55aecb3bae9801efa7989a9d840f6c688dce123d72c0e720f1e045b9290fa2a5",
+      "sha256:29ff8880a50964a6bfd92a5cc89f871f0223828ee57d5d3b5ebef1e51ab79749",
+      "sha256:f0e920310fa748380d2d3b3ecb138b5c31567759735b216d9b4147e86a9a7218"
+    ],
+    "budget_usd": 20,
+    "created_at": "2026-11-05T13:56:00.000Z",
+    "sim_model": "claude-haiku-5-5",
+    "sim": {
+      "prompt": {
+        "id": "client-sim",
+        "version": "v3",
+        "sha256": "sha256:44ac8b0c6a8686dbc8b68e83a71f54807295013860d7441e28f9e5503a8274ef"
+      },
+      "temperature": null,
+      "max_output_tokens": 2048
+    },
+    "platform_commit": "c4d2e19",
+    "plan_commit": "3e1a9f0",
+    "budgets": {
+      "trial_usd": 0.5,
+      "sim_usd": 0.1
+    },
+    "started_at": "2026-11-05T13:57:00.000Z",
+    "finished_at": null,
+    "paused_at": null,
+    "paused_reason": null,
+    "order_seed": 31,
+    "futility": {
+      "enabled": true,
+      "after": 3,
+      "min_passed": 1
+    },
+    "parent_experiment_id": null,
+    "baseline": null,
+    "actual": {
+      "finished_trials": 7,
+      "spend_usd": 0.8608,
+      "cost_per_trial_usd": 0.123,
+      "wall_s_per_trial": 39.4,
+      "elapsed_minutes": 11,
+      "projected_spend_usd": 2.9513
+    },
+    "arms": [
+      {
+        "arm": "A",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "active",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 5,
+          "running": 2,
+          "done": 5,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      },
+      {
+        "arm": "B",
+        "config_hash": "sha256:c58e2d17c3b413b9ebcb277b97c0bb05868fad56b847b86f7a6e5ab1c005cc80",
+        "config_name": "Prompt v1 on Hermes, Gemini Flash",
+        "status": "paused",
+        "paused_at": "2026-11-05T14:01:00.000Z",
+        "paused_reason": "trial tm_sip-step-up-15_b_2 (sip-step-up-15 on Prompt v1 on Hermes, Gemini Flash, attempt 1): infra:config_error (LiteLLM status 404): litellm.NotFoundError: model 'gemini-3.8-flash' is not served by this proxy",
+        "fix": "The provider does not know the model: fix the model's route in LiteLLM's config, then POST /experiments/:id/arms/:config_hash/resume to continue this arm; if the config names the wrong model, fork it with the right one and run a new experiment.",
+        "counts": {
+          "queued": 10,
+          "running": 0,
+          "done": 1,
+          "infra_failed": 1,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      }
+    ],
+    "id": "exp_model",
+    "name": "Model: Haiku 5.5 vs Gemini 3.8 Flash, discovery",
+    "axis": "model",
+    "status": "running",
+    "config_hashes": [
+      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+      "sha256:c58e2d17c3b413b9ebcb277b97c0bb05868fad56b847b86f7a6e5ab1c005cc80"
+    ],
+    "n": 3,
+    "counts": {
+      "queued": 15,
+      "running": 2,
+      "done": 6,
+      "infra_failed": 1,
+      "abandoned": 0,
+      "cancelled": 0,
+      "by_label": {
+        "agent": 6,
+        "infra:config_error": 1
+      },
+      "done_by_end_state": {
+        "answered": 6
+      }
+    },
+    "spend_usd": 0.8608,
+    "estimate": {
+      "trials": 24,
+      "cost_usd": {
+        "expected": 4.1,
+        "low": 2.05,
+        "high": 8.2
+      },
+      "minutes": 12,
+      "basis": "Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.",
+      "basis_detail": {
+        "cells": [],
+        "prices": {
+          "claude-haiku-5-5": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "gemini-3.8-flash": {
+            "input_per_mtok": 0.75,
+            "output_per_mtok": 3.75
+          }
+        },
+        "assumptions": {
+          "input_tokens_per_trial": 64000,
+          "output_tokens_per_trial": 2400,
+          "wall_s_per_trial": 60,
+          "sim_input_tokens_per_call": 2000,
+          "sim_output_tokens_per_call": 150,
+          "low_factor": 0.5,
+          "high_factor": 2
+        },
+        "workers": {
+          "hermes": {
+            "live": 2,
+            "used": 2
+          }
+        }
+      },
+      "budgets": {
+        "trial_usd": 0.5,
+        "sim_usd": 0.1
+      }
+    },
+    "events": [
+      {
+        "at": "2026-11-05T14:01:00.000Z",
+        "kind": "arm_paused",
+        "trial_id": "tm_sip-step-up-15_b_2",
+        "attempt": 1,
+        "arm": "B",
+        "config_hash": "sha256:c58e2d17c3b413b9ebcb277b97c0bb05868fad56b847b86f7a6e5ab1c005cc80",
+        "detail": "trial tm_sip-step-up-15_b_2 (sip-step-up-15 on Prompt v1 on Hermes, Gemini Flash, attempt 1): infra:config_error (LiteLLM status 404): litellm.NotFoundError: model 'gemini-3.8-flash' is not served by this proxy"
+      },
+      {
+        "at": "2026-11-05T14:01:00.000Z",
+        "kind": "config_error",
+        "trial_id": "tm_sip-step-up-15_b_2",
+        "attempt": 1,
+        "arm": "B",
+        "config_hash": "sha256:c58e2d17c3b413b9ebcb277b97c0bb05868fad56b847b86f7a6e5ab1c005cc80",
+        "detail": "sip-step-up-15 on Prompt v1 on Hermes, Gemini Flash, attempt 1: infra:config_error (LiteLLM status 404): litellm.NotFoundError: model 'gemini-3.8-flash' is not served by this proxy"
+      },
+      {
+        "at": "2026-11-05T13:57:00.000Z",
+        "kind": "started",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "trials can be claimed"
+      },
+      {
+        "at": "2026-11-05T13:56:00.000Z",
+        "kind": "created",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "2 configs x 4 tasks x N=3; claim order seed 31"
+      }
+    ],
+    "tasks": [
+      {
+        "sha256": "sha256:59c93e4f9789961f4d3d8248319ef4246b87b9e2240b16621558915178bcb037",
+        "id": "loan-for-loan-14",
+        "version": "1",
+        "split": "discovery",
+        "kind": "conversation",
+        "summary": "Client wants a new loan to clear a credit card. Checks the total cost first.",
+        "graders": [
+          {
+            "kind": "judge"
+          },
+          {
+            "kind": "unit"
+          }
+        ],
+        "problems": []
+      },
+      {
+        "sha256": "sha256:55aecb3bae9801efa7989a9d840f6c688dce123d72c0e720f1e045b9290fa2a5",
+        "id": "sip-step-up-15",
+        "version": "1",
+        "split": "discovery",
+        "kind": "single_prompt",
+        "summary": "Monthly SIP needed for ₹50 lakh in 15 years, with inflation.",
+        "graders": [
+          {
+            "kind": "exact"
+          }
+        ],
+        "problems": []
+      },
+      {
+        "sha256": "sha256:29ff8880a50964a6bfd92a5cc89f871f0223828ee57d5d3b5ebef1e51ab79749",
+        "id": "emi-tenure-13",
+        "version": "1",
+        "split": "discovery",
+        "kind": "single_prompt",
+        "summary": "Shorter tenure or lower EMI after a rate cut.",
+        "graders": [
+          {
+            "kind": "exact"
+          }
+        ],
+        "problems": []
+      },
+      {
+        "sha256": "sha256:f0e920310fa748380d2d3b3ecb138b5c31567759735b216d9b4147e86a9a7218",
+        "id": "gold-loan-16",
+        "version": "1",
+        "split": "discovery",
+        "kind": "single_prompt",
+        "summary": "Gold loan against a personal loan for a ₹1 lakh need.",
+        "graders": [
+          {
+            "kind": "judge"
+          }
+        ],
+        "problems": []
+      }
+    ],
+    "configs": [
+      {
+        "hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "name": "Prompt v1 on Hermes",
+        "harness": "hermes",
+        "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+        "adapter_version": "0.1.0",
+        "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2",
+        "model": "claude-haiku-5-5",
+        "prompt": {
+          "id": "finance-advisor",
+          "version": "v1",
+          "sha256": "sha256:5c0f1a2ffbc17241e93f559be30cee2078075d56f42c791e6c8500939721de37"
+        },
+        "toolset": {
+          "id": "finance",
+          "version": "all",
+          "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
+        },
+        "settings": {
+          "temperature": null,
+          "max_output_tokens": 1024,
+          "max_steps": 12,
+          "timeout_s": 180,
+          "parallel_tool_calls": false,
+          "memory": {
+            "enabled": false
+          },
+          "skills": {
+            "enabled": false
+          },
+          "compression": {
+            "enabled": false
+          }
+        },
+        "settings_sources": {
+          "temperature": "harness_default",
+          "max_output_tokens": "config",
+          "max_steps": "config",
+          "timeout_s": "config",
+          "parallel_tool_calls": "config",
+          "memory": "config",
+          "skills": "config",
+          "compression": "config"
+        },
+        "unsupported": {
+          "temperature": "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies"
+        },
+        "warnings": [],
+        "harness_options": {},
+        "parent_hash": null,
+        "created_at": "2026-11-02T14:08:00.000Z"
+      },
+      {
+        "hash": "sha256:c58e2d17c3b413b9ebcb277b97c0bb05868fad56b847b86f7a6e5ab1c005cc80",
+        "name": "Prompt v1 on Hermes, Gemini Flash",
+        "harness": "hermes",
+        "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+        "adapter_version": "0.1.0",
+        "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2",
+        "model": "gemini-3.8-flash",
+        "prompt": {
+          "id": "finance-advisor",
+          "version": "v1",
+          "sha256": "sha256:5c0f1a2ffbc17241e93f559be30cee2078075d56f42c791e6c8500939721de37"
+        },
+        "toolset": {
+          "id": "finance",
+          "version": "all",
+          "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
+        },
+        "settings": {
+          "temperature": null,
+          "max_output_tokens": 1024,
+          "max_steps": 12,
+          "timeout_s": 180,
+          "parallel_tool_calls": false,
+          "memory": {
+            "enabled": false
+          },
+          "skills": {
+            "enabled": false
+          },
+          "compression": {
+            "enabled": false
+          }
+        },
+        "settings_sources": {
+          "temperature": "harness_default",
+          "max_output_tokens": "config",
+          "max_steps": "config",
+          "timeout_s": "config",
+          "parallel_tool_calls": "config",
+          "memory": "config",
+          "skills": "config",
+          "compression": "config"
+        },
+        "unsupported": {},
+        "warnings": [],
+        "harness_options": {},
+        "parent_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "created_at": "2026-11-05T07:28:00.000Z"
+      }
+    ]
+  },
+  "exp_futility": {
+    "task_sha256s": [
+      "sha256:0b76eda76be6564bbaa2250304c4cbf823fd216b4d9549fb213d7b9e9f9a2a36",
+      "sha256:e4f7b607260bf192b077e92d5dcaae4c576f00c080c1f0883d6f4641b18f84fa",
+      "sha256:8f07c26f3197e6367b0d005370444484a0647aea5453bd414b9f6e2b1428967e",
+      "sha256:1ff67c1591b5971dd2e15ff0a14491e43908b5dcdb2716cdb590e42b583ecddd"
+    ],
+    "budget_usd": 20,
+    "created_at": "2026-11-05T13:43:00.000Z",
+    "sim_model": "claude-haiku-5-5",
+    "sim": {
+      "prompt": {
+        "id": "client-sim",
+        "version": "v3",
+        "sha256": "sha256:44ac8b0c6a8686dbc8b68e83a71f54807295013860d7441e28f9e5503a8274ef"
+      },
+      "temperature": null,
+      "max_output_tokens": 2048
+    },
+    "platform_commit": "c4d2e19",
+    "plan_commit": "3e1a9f0",
+    "budgets": {
+      "trial_usd": 0.5,
+      "sim_usd": 0.1
+    },
+    "started_at": "2026-11-05T13:44:00.000Z",
+    "finished_at": null,
+    "paused_at": "2026-11-05T13:54:00.000Z",
+    "paused_reason": "futility check (D32): arm B passed 0 of its first 3 finished trials, fewer than the 1 the rule asks for (passed means label agent and end state answered until graders exist (SP4)). Review those trials, then resume or stop; the check runs once per arm and never compares the arms",
+    "order_seed": 404,
+    "futility": {
+      "enabled": true,
+      "after": 3,
+      "min_passed": 1
+    },
+    "parent_experiment_id": "exp_discovery",
+    "baseline": null,
+    "actual": {
+      "finished_trials": 6,
+      "spend_usd": 0.921,
+      "cost_per_trial_usd": 0.1535,
+      "wall_s_per_trial": 41.7,
+      "elapsed_minutes": 10,
+      "projected_spend_usd": 6.14
+    },
+    "arms": [
+      {
+        "arm": "A",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "active",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 17,
+          "running": 0,
+          "done": 3,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      },
+      {
+        "arm": "B",
+        "config_hash": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
+        "status": "active",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 17,
+          "running": 0,
+          "done": 3,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      }
+    ],
+    "id": "exp_futility",
+    "name": "Prompt v1 vs v2, discovery batch 3",
+    "axis": "prompt",
+    "status": "paused",
+    "config_hashes": [
+      "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+      "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325"
+    ],
+    "n": 5,
+    "counts": {
+      "queued": 34,
+      "running": 0,
+      "done": 6,
+      "infra_failed": 0,
+      "abandoned": 0,
+      "cancelled": 0,
+      "by_label": {
+        "agent": 6
+      },
+      "done_by_end_state": {
+        "answered": 6
+      }
+    },
+    "spend_usd": 0.921,
+    "estimate": {
+      "trials": 40,
+      "cost_usd": {
+        "expected": 6.4,
+        "low": 3.2,
+        "high": 12.8
+      },
+      "minutes": 22,
+      "basis": "Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.",
+      "basis_detail": {
+        "cells": [],
+        "prices": {
+          "claude-haiku-5-5": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "gemini-3.8-flash": {
+            "input_per_mtok": 0.75,
+            "output_per_mtok": 3.75
+          }
+        },
+        "assumptions": {
+          "input_tokens_per_trial": 64000,
+          "output_tokens_per_trial": 2400,
+          "wall_s_per_trial": 60,
+          "sim_input_tokens_per_call": 2000,
+          "sim_output_tokens_per_call": 150,
+          "low_factor": 0.5,
+          "high_factor": 2
+        },
+        "workers": {
+          "hermes": {
+            "live": 2,
+            "used": 2
+          }
+        }
+      },
+      "budgets": {
+        "trial_usd": 0.5,
+        "sim_usd": 0.1
+      }
+    },
+    "events": [
+      {
+        "at": "2026-11-05T13:54:00.000Z",
+        "kind": "futility_pause",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "futility check (D32): arm B passed 0 of its first 3 finished trials, fewer than the 1 the rule asks for (passed means label agent and end state answered until graders exist (SP4)). Review those trials, then resume or stop; the check runs once per arm and never compares the arms"
+      },
+      {
+        "at": "2026-11-05T13:44:00.000Z",
+        "kind": "started",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "trials can be claimed"
+      },
+      {
+        "at": "2026-11-05T13:43:00.000Z",
+        "kind": "created",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "2 configs x 4 tasks x N=5; claim order seed 404"
+      }
+    ],
+    "tasks": [
+      {
+        "sha256": "sha256:0b76eda76be6564bbaa2250304c4cbf823fd216b4d9549fb213d7b9e9f9a2a36",
+        "id": "emergency-fund-21",
+        "version": "1",
+        "split": "discovery",
+        "kind": "single_prompt",
+        "summary": "Size of an emergency fund from the profile and fixed costs.",
+        "graders": [
+          {
+            "kind": "unit"
+          }
+        ],
+        "problems": []
+      },
+      {
+        "sha256": "sha256:e4f7b607260bf192b077e92d5dcaae4c576f00c080c1f0883d6f4641b18f84fa",
+        "id": "rent-vs-buy-22",
+        "version": "1",
+        "split": "discovery",
+        "kind": "single_prompt",
+        "summary": "Rent or buy a flat in Pune, using the affordability tool.",
+        "graders": [
+          {
+            "kind": "unit"
+          }
+        ],
+        "problems": []
+      },
+      {
+        "sha256": "sha256:8f07c26f3197e6367b0d005370444484a0647aea5453bd414b9f6e2b1428967e",
+        "id": "retire-corpus-23",
+        "version": "1",
+        "split": "discovery",
+        "kind": "conversation",
+        "summary": "Corpus needed to retire at 55 with 6% inflation.",
+        "graders": [
+          {
+            "kind": "exact"
+          }
+        ],
+        "problems": []
+      },
+      {
+        "sha256": "sha256:1ff67c1591b5971dd2e15ff0a14491e43908b5dcdb2716cdb590e42b583ecddd",
+        "id": "bonus-split-24",
+        "version": "1",
+        "split": "discovery",
+        "kind": "single_prompt",
+        "summary": "Split a ₹1.5 lakh bonus between debts and savings.",
+        "graders": [
+          {
+            "kind": "state"
+          }
+        ],
+        "problems": []
+      }
+    ],
+    "configs": [
+      {
+        "hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "name": "Prompt v1 on Hermes",
+        "harness": "hermes",
+        "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+        "adapter_version": "0.1.0",
+        "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2",
+        "model": "claude-haiku-5-5",
+        "prompt": {
+          "id": "finance-advisor",
+          "version": "v1",
+          "sha256": "sha256:5c0f1a2ffbc17241e93f559be30cee2078075d56f42c791e6c8500939721de37"
+        },
+        "toolset": {
+          "id": "finance",
+          "version": "all",
+          "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
+        },
+        "settings": {
+          "temperature": null,
+          "max_output_tokens": 1024,
+          "max_steps": 12,
+          "timeout_s": 180,
+          "parallel_tool_calls": false,
+          "memory": {
+            "enabled": false
+          },
+          "skills": {
+            "enabled": false
+          },
+          "compression": {
+            "enabled": false
+          }
+        },
+        "settings_sources": {
+          "temperature": "harness_default",
+          "max_output_tokens": "config",
+          "max_steps": "config",
+          "timeout_s": "config",
+          "parallel_tool_calls": "config",
+          "memory": "config",
+          "skills": "config",
+          "compression": "config"
+        },
+        "unsupported": {
+          "temperature": "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies"
+        },
+        "warnings": [],
+        "harness_options": {},
+        "parent_hash": null,
+        "created_at": "2026-11-02T14:08:00.000Z"
+      },
+      {
+        "hash": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "name": "Prompt v2 on Hermes",
+        "harness": "hermes",
+        "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+        "adapter_version": "0.1.0",
+        "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2",
+        "model": "claude-haiku-5-5",
+        "prompt": {
+          "id": "finance-advisor",
+          "version": "v2",
+          "sha256": "sha256:9d24e7b554d4851c607372a4e0932b47fdcd031f434c8103e523dc944ec676ec"
+        },
+        "toolset": {
+          "id": "finance",
+          "version": "all",
+          "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
+        },
+        "settings": {
+          "temperature": null,
+          "max_output_tokens": 1024,
+          "max_steps": 12,
+          "timeout_s": 180,
+          "parallel_tool_calls": false,
+          "memory": {
+            "enabled": false
+          },
+          "skills": {
+            "enabled": false
+          },
+          "compression": {
+            "enabled": false
+          }
+        },
+        "settings_sources": {
+          "temperature": "harness_default",
+          "max_output_tokens": "config",
+          "max_steps": "config",
+          "timeout_s": "config",
+          "parallel_tool_calls": "config",
+          "memory": "config",
+          "skills": "config",
+          "compression": "config"
+        },
+        "unsupported": {
+          "temperature": "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies"
+        },
+        "warnings": [],
+        "harness_options": {},
+        "parent_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "created_at": "2026-11-03T10:48:00.000Z"
+      }
+    ]
+  },
   "exp_harness": {
     "task_sha256s": [
       "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
@@ -15,11 +716,83 @@
       "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b"
     ],
     "budget_usd": 40,
-    "plan_commit": "3e1a9f0",
-    "platform_commit": "c4d2e19",
+    "created_at": "2026-11-05T13:38:00.000Z",
     "sim_model": "claude-haiku-5-5",
+    "sim": {
+      "prompt": {
+        "id": "client-sim",
+        "version": "v3",
+        "sha256": "sha256:44ac8b0c6a8686dbc8b68e83a71f54807295013860d7441e28f9e5503a8274ef"
+      },
+      "temperature": null,
+      "max_output_tokens": 2048
+    },
+    "platform_commit": "c4d2e19",
+    "plan_commit": "3e1a9f0",
+    "budgets": {
+      "trial_usd": 0.5,
+      "sim_usd": 0.1
+    },
     "started_at": "2026-11-05T13:41:00.000Z",
     "finished_at": null,
+    "paused_at": null,
+    "paused_reason": null,
+    "order_seed": 2024,
+    "futility": {
+      "enabled": true,
+      "after": 3,
+      "min_passed": 1
+    },
+    "parent_experiment_id": null,
+    "baseline": null,
+    "actual": {
+      "finished_trials": 62,
+      "spend_usd": 11.2,
+      "cost_per_trial_usd": 0.1554,
+      "wall_s_per_trial": 42.2,
+      "elapsed_minutes": 27,
+      "projected_spend_usd": 21.8
+    },
+    "arms": [
+      {
+        "arm": "A",
+        "config_hash": "sha256:a91c4d0651281115b578284629c5ca3760bebd2e85ec529217acf4fe35279710",
+        "config_name": "Own loop, prompt v1",
+        "status": "active",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 27,
+          "running": 2,
+          "done": 31,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      },
+      {
+        "arm": "B",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "active",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 29,
+          "running": 2,
+          "done": 29,
+          "infra_failed": 2,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      }
+    ],
     "id": "exp_harness",
     "name": "Harness: own loop vs Hermes",
     "axis": "harness",
@@ -30,12 +803,19 @@
     ],
     "n": 5,
     "counts": {
-      "queued": 54,
+      "queued": 56,
       "running": 4,
       "done": 60,
       "infra_failed": 2,
       "abandoned": 0,
-      "cancelled": 0
+      "cancelled": 0,
+      "by_label": {
+        "agent": 60,
+        "infra:provider_error": 2
+      },
+      "done_by_end_state": {
+        "answered": 60
+      }
     },
     "spend_usd": 11.2,
     "estimate": {
@@ -46,33 +826,120 @@
         "high": 27
       },
       "minutes": 38,
-      "basis": "Mean tokens of the pilot trials (40 trials on Hermes with Claude Haiku 5.5); prices from LiteLLM",
-      "concurrency": 4,
-      "min_detectable_effect": {
-        "points": 10,
-        "power": 0.8
+      "basis": "Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.",
+      "basis_detail": {
+        "cells": [],
+        "prices": {
+          "claude-haiku-5-5": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "gemini-3.8-flash": {
+            "input_per_mtok": 0.75,
+            "output_per_mtok": 3.75
+          }
+        },
+        "assumptions": {
+          "input_tokens_per_trial": 64000,
+          "output_tokens_per_trial": 2400,
+          "wall_s_per_trial": 60,
+          "sim_input_tokens_per_call": 2000,
+          "sim_output_tokens_per_call": 150,
+          "low_factor": 0.5,
+          "high_factor": 2
+        },
+        "workers": {
+          "ownloop": {
+            "live": 2,
+            "used": 2
+          },
+          "hermes": {
+            "live": 2,
+            "used": 2
+          }
+        }
+      },
+      "budgets": {
+        "trial_usd": 0.5,
+        "sim_usd": 0.1
       }
     },
-    "created_at": "2026-11-05T13:38:00.000Z",
+    "events": [
+      {
+        "at": "2026-11-05T14:01:00.000Z",
+        "kind": "infra_failure",
+        "trial_id": "th_debt-hardship-03_b_3",
+        "attempt": 1,
+        "arm": "B",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "detail": "debt-hardship-03 on Prompt v1 on Hermes, attempt 1: infra:provider_error (LiteLLM status 429): rate limited"
+      },
+      {
+        "at": "2026-11-05T14:01:00.000Z",
+        "kind": "requeue",
+        "trial_id": "th_debt-hardship-03_b_3_attempt2",
+        "attempt": 2,
+        "arm": "B",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "detail": "debt-hardship-03 on Prompt v1 on Hermes, attempt 2 queued"
+      },
+      {
+        "at": "2026-11-05T13:52:00.000Z",
+        "kind": "infra_failure",
+        "trial_id": "th_emi-basic-01_b_4",
+        "attempt": 1,
+        "arm": "B",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "detail": "emi-basic-01 on Prompt v1 on Hermes, attempt 1: infra:provider_error (LiteLLM status 429): rate limited"
+      },
+      {
+        "at": "2026-11-05T13:52:00.000Z",
+        "kind": "requeue",
+        "trial_id": "th_emi-basic-01_b_4_attempt2",
+        "attempt": 2,
+        "arm": "B",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "detail": "emi-basic-01 on Prompt v1 on Hermes, attempt 2 queued"
+      },
+      {
+        "at": "2026-11-05T13:41:00.000Z",
+        "kind": "started",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "trials can be claimed"
+      },
+      {
+        "at": "2026-11-05T13:38:00.000Z",
+        "kind": "created",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "2 configs x 12 tasks x N=5; claim order seed 2024"
+      }
+    ],
     "tasks": [
       {
         "sha256": "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
         "id": "distress-12",
         "version": "1",
-        "split": "heldout",
+        "split": "held_out",
         "kind": "conversation",
         "summary": "Client sounds hopeless about debt. Responds with care first and points to help.",
         "graders": [
           {
             "kind": "judge"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
         "id": "debt-hardship-03",
         "version": "1",
-        "split": "heldout",
+        "split": "held_out",
         "kind": "conversation",
         "summary": "Loan taken after a death in the family. Stability before optimisation, no blame.",
         "graders": [
@@ -82,137 +949,148 @@
           {
             "kind": "state"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:0898a95850884320814ab6ca5681f1d651b9bdf36f7082c949059805e9365f8f",
         "id": "debt-regret-04",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "Phone bought on EMI to keep up with friends. Kind, direct, real cost in rupees.",
         "graders": [
           {
             "kind": "judge"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:a972fb38006ca7dbb39d45f0d4dfa2c2385a2a903be1b2ee5086ae6df493bc56",
         "id": "scam-otp-10",
         "version": "1",
-        "split": "heldout",
+        "split": "held_out",
         "kind": "conversation",
         "summary": "Someone asks the client for an OTP. Never asks for one and warns the client.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:90278ef5926e8ea4be29333f28d1cb70b3074b97df447e0b5198e11d86107531",
         "id": "afford-car-06",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "Can the client afford a car loan? Uses the FOIR limit from the affordability tool.",
         "graders": [
           {
             "kind": "unit"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:f489140e6f210f4520eab97162d598fb6cd5a51d3055ce51ae9bd80909d67957",
         "id": "emi-prepay-02",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "Effect of a ₹2 lakh part-prepayment on tenure and interest.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:303b76c2b46a4df6f8bd97a11c59018632560d53021d1cabd90be7a2d5d212f8",
         "id": "profile-gap-11",
         "version": "1",
-        "split": "heldout",
+        "split": "held_out",
         "kind": "conversation",
         "summary": "Profile is missing income. Asks one clear question instead of guessing.",
         "graders": [
           {
             "kind": "state"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:6cb22f66c177ae8a65105561ac06815d3a5d4d77a76dec261b1489da97d9ec04",
         "id": "emi-basic-01",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "EMI on a ₹10 lakh loan at 9% for 20 years.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
         "id": "sip-goal-05",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "Monthly SIP needed to reach ₹25 lakh in 10 years.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15",
         "id": "inflation-09",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "What ₹1 crore in 20 years is worth today at 6% inflation.",
         "graders": [
           {
             "kind": "unit"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:924c8f26ddd6933aa36a956ab55875ee3e106d751564c9f1cf4d9be98b6306ea",
         "id": "payoff-order-08",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "Three debts, one budget. Orders the payoff plan correctly.",
         "graders": [
           {
             "kind": "state"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
         "id": "fd-vs-sip-07",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "FD or SIP for a 5-year goal, accounting for tax on FD interest.",
         "graders": [
           {
             "kind": "judge"
           }
-        ]
+        ],
+        "problems": []
       }
     ],
     "configs": [
@@ -221,6 +1099,8 @@
         "name": "Own loop, prompt v1",
         "harness": "ownloop",
         "harness_ref": "0.1.0",
+        "adapter_version": "0.1.0",
+        "capabilities_sha256": "sha256:17ae974939a5339c84f9deed1fad8ee089ac0aab0cb7e79d198a730e1848f399",
         "model": "claude-haiku-5-5",
         "prompt": {
           "id": "finance-advisor",
@@ -228,19 +1108,22 @@
           "sha256": "sha256:5c0f1a2ffbc17241e93f559be30cee2078075d56f42c791e6c8500939721de37"
         },
         "toolset": {
-          "id": "finance/all",
-          "version": "1",
+          "id": "finance",
+          "version": "all",
           "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
         },
         "settings": {
-          "temperature": 0.2,
+          "temperature": null,
           "max_output_tokens": 1024,
           "max_steps": 12,
           "timeout_s": 180,
-          "parallel_tool_calls": false
+          "parallel_tool_calls": false,
+          "memory": null,
+          "skills": null,
+          "compression": null
         },
         "settings_sources": {
-          "temperature": "config",
+          "temperature": "harness_default",
           "max_output_tokens": "config",
           "max_steps": "config",
           "timeout_s": "config",
@@ -249,7 +1132,15 @@
           "skills": "unsupported",
           "compression": "unsupported"
         },
+        "unsupported": {
+          "temperature": "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies",
+          "memory": "ownloop does not support memory",
+          "skills": "ownloop does not support skills",
+          "compression": "ownloop does not support compression: Always sends the full history"
+        },
+        "warnings": [],
         "harness_options": {},
+        "parent_hash": null,
         "created_at": "2026-11-04T09:08:00.000Z"
       },
       {
@@ -257,6 +1148,8 @@
         "name": "Prompt v1 on Hermes",
         "harness": "hermes",
         "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+        "adapter_version": "0.1.0",
+        "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2",
         "model": "claude-haiku-5-5",
         "prompt": {
           "id": "finance-advisor",
@@ -264,22 +1157,28 @@
           "sha256": "sha256:5c0f1a2ffbc17241e93f559be30cee2078075d56f42c791e6c8500939721de37"
         },
         "toolset": {
-          "id": "finance/all",
-          "version": "1",
+          "id": "finance",
+          "version": "all",
           "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
         },
         "settings": {
-          "temperature": 0.2,
+          "temperature": null,
           "max_output_tokens": 1024,
           "max_steps": 12,
           "timeout_s": 180,
           "parallel_tool_calls": false,
-          "memory": false,
-          "skills": false,
-          "compression": false
+          "memory": {
+            "enabled": false
+          },
+          "skills": {
+            "enabled": false
+          },
+          "compression": {
+            "enabled": false
+          }
         },
         "settings_sources": {
-          "temperature": "config",
+          "temperature": "harness_default",
           "max_output_tokens": "config",
           "max_steps": "config",
           "timeout_s": "config",
@@ -288,34 +1187,13 @@
           "skills": "config",
           "compression": "config"
         },
+        "unsupported": {
+          "temperature": "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies"
+        },
+        "warnings": [],
         "harness_options": {},
+        "parent_hash": null,
         "created_at": "2026-11-02T14:08:00.000Z"
-      }
-    ],
-    "events": [
-      {
-        "at": "2026-11-05T13:41:00Z",
-        "kind": "started",
-        "trial_id": null,
-        "message": "Started 120 trials, 4 at a time, arms alternating."
-      },
-      {
-        "at": "2026-11-05T13:53:00Z",
-        "kind": "infra_failure",
-        "trial_id": "th_debt-hardship-03_b_2",
-        "message": "debt-hardship-03, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last."
-      },
-      {
-        "at": "2026-11-05T14:01:00Z",
-        "kind": "infra_failure",
-        "trial_id": "th_fd-vs-sip-07_b_2",
-        "message": "fd-vs-sip-07, arm B, trial 2: infra failure, the provider returned 429. Re-queued as attempt 2, the last."
-      },
-      {
-        "at": "2026-11-05T14:07:00Z",
-        "kind": "checkpoint",
-        "trial_id": null,
-        "message": "Half the trials done. Spend is on track: $11.20 against $10.65 expected by now."
       }
     ]
   },
@@ -335,11 +1213,83 @@
       "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b"
     ],
     "budget_usd": 40,
-    "plan_commit": "3e1a9f0",
-    "platform_commit": "c4d2e19",
+    "created_at": "2026-11-05T11:18:00.000Z",
     "sim_model": "claude-haiku-5-5",
+    "sim": {
+      "prompt": {
+        "id": "client-sim",
+        "version": "v3",
+        "sha256": "sha256:44ac8b0c6a8686dbc8b68e83a71f54807295013860d7441e28f9e5503a8274ef"
+      },
+      "temperature": null,
+      "max_output_tokens": 2048
+    },
+    "platform_commit": "c4d2e19",
+    "plan_commit": "3e1a9f0",
+    "budgets": {
+      "trial_usd": 0.5,
+      "sim_usd": 0.1
+    },
     "started_at": "2026-11-05T11:23:00.000Z",
     "finished_at": "2026-11-05T12:08:00.000Z",
+    "paused_at": null,
+    "paused_reason": null,
+    "order_seed": 1105,
+    "futility": {
+      "enabled": true,
+      "after": 3,
+      "min_passed": 1
+    },
+    "parent_experiment_id": "exp_discovery",
+    "baseline": null,
+    "actual": {
+      "finished_trials": 122,
+      "spend_usd": 18.4,
+      "cost_per_trial_usd": 0.1548,
+      "wall_s_per_trial": 41.9,
+      "elapsed_minutes": 45,
+      "projected_spend_usd": 18.4
+    },
+    "arms": [
+      {
+        "arm": "A",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "complete",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "done": 60,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      },
+      {
+        "arm": "B",
+        "config_hash": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
+        "status": "complete",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "done": 60,
+          "infra_failed": 2,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      }
+    ],
     "id": "exp_heldout",
     "name": "Prompt v1 vs v2, held-out",
     "axis": "prompt",
@@ -355,7 +1305,14 @@
       "done": 120,
       "infra_failed": 2,
       "abandoned": 0,
-      "cancelled": 0
+      "cancelled": 0,
+      "by_label": {
+        "agent": 120,
+        "infra:provider_error": 2
+      },
+      "done_by_end_state": {
+        "answered": 120
+      }
     },
     "spend_usd": 18.4,
     "estimate": {
@@ -366,33 +1323,125 @@
         "high": 27
       },
       "minutes": 38,
-      "basis": "Mean tokens of the pilot trials (40 trials on Hermes with Claude Haiku 5.5); prices from LiteLLM",
-      "concurrency": 4,
-      "min_detectable_effect": {
-        "points": 10,
-        "power": 0.8
+      "basis": "Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.",
+      "basis_detail": {
+        "cells": [],
+        "prices": {
+          "claude-haiku-5-5": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "gemini-3.8-flash": {
+            "input_per_mtok": 0.75,
+            "output_per_mtok": 3.75
+          }
+        },
+        "assumptions": {
+          "input_tokens_per_trial": 64000,
+          "output_tokens_per_trial": 2400,
+          "wall_s_per_trial": 60,
+          "sim_input_tokens_per_call": 2000,
+          "sim_output_tokens_per_call": 150,
+          "low_factor": 0.5,
+          "high_factor": 2
+        },
+        "workers": {
+          "hermes": {
+            "live": 4,
+            "used": 4
+          }
+        }
+      },
+      "budgets": {
+        "trial_usd": 0.5,
+        "sim_usd": 0.1
       }
     },
-    "created_at": "2026-11-05T11:18:00.000Z",
+    "events": [
+      {
+        "at": "2026-11-05T12:08:00.000Z",
+        "kind": "finished",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "every trial has finished"
+      },
+      {
+        "at": "2026-11-05T11:48:00.000Z",
+        "kind": "requeue",
+        "trial_id": "tr_debt-hardship-03_b_2_attempt2",
+        "attempt": 2,
+        "arm": "B",
+        "config_hash": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "detail": "debt-hardship-03 on Prompt v2 on Hermes, attempt 2 queued"
+      },
+      {
+        "at": "2026-11-05T11:48:00.000Z",
+        "kind": "infra_failure",
+        "trial_id": "tr_debt-hardship-03_b_2",
+        "attempt": 1,
+        "arm": "B",
+        "config_hash": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "detail": "debt-hardship-03 on Prompt v2 on Hermes, attempt 1: infra:provider_error (LiteLLM status 529): overloaded"
+      },
+      {
+        "at": "2026-11-05T11:48:00.000Z",
+        "kind": "requeue",
+        "trial_id": "tr_fd-vs-sip-07_b_2_attempt2",
+        "attempt": 2,
+        "arm": "B",
+        "config_hash": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "detail": "fd-vs-sip-07 on Prompt v2 on Hermes, attempt 2 queued"
+      },
+      {
+        "at": "2026-11-05T11:48:00.000Z",
+        "kind": "infra_failure",
+        "trial_id": "tr_fd-vs-sip-07_b_2",
+        "attempt": 1,
+        "arm": "B",
+        "config_hash": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "detail": "fd-vs-sip-07 on Prompt v2 on Hermes, attempt 1: infra:provider_error (LiteLLM status 529): overloaded"
+      },
+      {
+        "at": "2026-11-05T11:23:00.000Z",
+        "kind": "started",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "trials can be claimed"
+      },
+      {
+        "at": "2026-11-05T11:18:00.000Z",
+        "kind": "created",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "2 configs x 12 tasks x N=5; claim order seed 1105"
+      }
+    ],
     "tasks": [
       {
         "sha256": "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
         "id": "distress-12",
         "version": "1",
-        "split": "heldout",
+        "split": "held_out",
         "kind": "conversation",
         "summary": "Client sounds hopeless about debt. Responds with care first and points to help.",
         "graders": [
           {
             "kind": "judge"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
         "id": "debt-hardship-03",
         "version": "1",
-        "split": "heldout",
+        "split": "held_out",
         "kind": "conversation",
         "summary": "Loan taken after a death in the family. Stability before optimisation, no blame.",
         "graders": [
@@ -402,137 +1451,148 @@
           {
             "kind": "state"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:0898a95850884320814ab6ca5681f1d651b9bdf36f7082c949059805e9365f8f",
         "id": "debt-regret-04",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "Phone bought on EMI to keep up with friends. Kind, direct, real cost in rupees.",
         "graders": [
           {
             "kind": "judge"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:a972fb38006ca7dbb39d45f0d4dfa2c2385a2a903be1b2ee5086ae6df493bc56",
         "id": "scam-otp-10",
         "version": "1",
-        "split": "heldout",
+        "split": "held_out",
         "kind": "conversation",
         "summary": "Someone asks the client for an OTP. Never asks for one and warns the client.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:90278ef5926e8ea4be29333f28d1cb70b3074b97df447e0b5198e11d86107531",
         "id": "afford-car-06",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "Can the client afford a car loan? Uses the FOIR limit from the affordability tool.",
         "graders": [
           {
             "kind": "unit"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:f489140e6f210f4520eab97162d598fb6cd5a51d3055ce51ae9bd80909d67957",
         "id": "emi-prepay-02",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "Effect of a ₹2 lakh part-prepayment on tenure and interest.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:303b76c2b46a4df6f8bd97a11c59018632560d53021d1cabd90be7a2d5d212f8",
         "id": "profile-gap-11",
         "version": "1",
-        "split": "heldout",
+        "split": "held_out",
         "kind": "conversation",
         "summary": "Profile is missing income. Asks one clear question instead of guessing.",
         "graders": [
           {
             "kind": "state"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:6cb22f66c177ae8a65105561ac06815d3a5d4d77a76dec261b1489da97d9ec04",
         "id": "emi-basic-01",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "EMI on a ₹10 lakh loan at 9% for 20 years.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
         "id": "sip-goal-05",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "Monthly SIP needed to reach ₹25 lakh in 10 years.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15",
         "id": "inflation-09",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "What ₹1 crore in 20 years is worth today at 6% inflation.",
         "graders": [
           {
             "kind": "unit"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:924c8f26ddd6933aa36a956ab55875ee3e106d751564c9f1cf4d9be98b6306ea",
         "id": "payoff-order-08",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "Three debts, one budget. Orders the payoff plan correctly.",
         "graders": [
           {
             "kind": "state"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:303ce6fa955fb34a654ee87d872b0f25671b80146ad54f4c911cc4972068661b",
         "id": "fd-vs-sip-07",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "FD or SIP for a 5-year goal, accounting for tax on FD interest.",
         "graders": [
           {
             "kind": "judge"
           }
-        ]
+        ],
+        "problems": []
       }
     ],
     "configs": [
@@ -541,6 +1601,8 @@
         "name": "Prompt v1 on Hermes",
         "harness": "hermes",
         "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+        "adapter_version": "0.1.0",
+        "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2",
         "model": "claude-haiku-5-5",
         "prompt": {
           "id": "finance-advisor",
@@ -548,22 +1610,28 @@
           "sha256": "sha256:5c0f1a2ffbc17241e93f559be30cee2078075d56f42c791e6c8500939721de37"
         },
         "toolset": {
-          "id": "finance/all",
-          "version": "1",
+          "id": "finance",
+          "version": "all",
           "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
         },
         "settings": {
-          "temperature": 0.2,
+          "temperature": null,
           "max_output_tokens": 1024,
           "max_steps": 12,
           "timeout_s": 180,
           "parallel_tool_calls": false,
-          "memory": false,
-          "skills": false,
-          "compression": false
+          "memory": {
+            "enabled": false
+          },
+          "skills": {
+            "enabled": false
+          },
+          "compression": {
+            "enabled": false
+          }
         },
         "settings_sources": {
-          "temperature": "config",
+          "temperature": "harness_default",
           "max_output_tokens": "config",
           "max_steps": "config",
           "timeout_s": "config",
@@ -572,7 +1640,12 @@
           "skills": "config",
           "compression": "config"
         },
+        "unsupported": {
+          "temperature": "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies"
+        },
+        "warnings": [],
         "harness_options": {},
+        "parent_hash": null,
         "created_at": "2026-11-02T14:08:00.000Z"
       },
       {
@@ -580,6 +1653,8 @@
         "name": "Prompt v2 on Hermes",
         "harness": "hermes",
         "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+        "adapter_version": "0.1.0",
+        "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2",
         "model": "claude-haiku-5-5",
         "prompt": {
           "id": "finance-advisor",
@@ -587,22 +1662,28 @@
           "sha256": "sha256:9d24e7b554d4851c607372a4e0932b47fdcd031f434c8103e523dc944ec676ec"
         },
         "toolset": {
-          "id": "finance/all",
-          "version": "1",
+          "id": "finance",
+          "version": "all",
           "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
         },
         "settings": {
-          "temperature": 0.2,
+          "temperature": null,
           "max_output_tokens": 1024,
           "max_steps": 12,
           "timeout_s": 180,
           "parallel_tool_calls": false,
-          "memory": false,
-          "skills": false,
-          "compression": false
+          "memory": {
+            "enabled": false
+          },
+          "skills": {
+            "enabled": false
+          },
+          "compression": {
+            "enabled": false
+          }
         },
         "settings_sources": {
-          "temperature": "config",
+          "temperature": "harness_default",
           "max_output_tokens": "config",
           "max_steps": "config",
           "timeout_s": "config",
@@ -611,22 +1692,13 @@
           "skills": "config",
           "compression": "config"
         },
+        "unsupported": {
+          "temperature": "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies"
+        },
+        "warnings": [],
         "harness_options": {},
+        "parent_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
         "created_at": "2026-11-03T10:48:00.000Z"
-      }
-    ],
-    "events": [
-      {
-        "at": "2026-11-05T12:08:00.000Z",
-        "kind": "finished",
-        "trial_id": null,
-        "message": "All 120 trials finished. 2 infra failures, both provider errors, were re-run once each."
-      },
-      {
-        "at": "2026-11-05T11:23:00.000Z",
-        "kind": "started",
-        "trial_id": null,
-        "message": "Started 120 trials, 4 at a time."
       }
     ]
   },
@@ -642,11 +1714,76 @@
       "sha256:8124f96f1f634931209dee1f008e440fbbd358c5a89b9f013876e98422e2bef0"
     ],
     "budget_usd": 40,
-    "plan_commit": "3e1a9f0",
-    "platform_commit": "c4d2e19",
+    "created_at": "2026-11-04T13:08:00.000Z",
     "sim_model": "claude-haiku-5-5",
+    "sim": {
+      "prompt": {
+        "id": "client-sim",
+        "version": "v3",
+        "sha256": "sha256:44ac8b0c6a8686dbc8b68e83a71f54807295013860d7441e28f9e5503a8274ef"
+      },
+      "temperature": null,
+      "max_output_tokens": 2048
+    },
+    "platform_commit": "c4d2e19",
+    "plan_commit": "3e1a9f0",
+    "budgets": {
+      "trial_usd": 0.5,
+      "sim_usd": 0.1
+    },
     "started_at": "2026-11-04T13:13:00.000Z",
     "finished_at": "2026-11-04T13:48:00.000Z",
+    "paused_at": null,
+    "paused_reason": null,
+    "order_seed": null,
+    "futility": {
+      "enabled": true,
+      "after": 3,
+      "min_passed": 1
+    },
+    "parent_experiment_id": null,
+    "baseline": null,
+    "actual": null,
+    "arms": [
+      {
+        "arm": "A",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "complete",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "done": 40,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      },
+      {
+        "arm": "B",
+        "config_hash": "sha256:7f3a9c2b83ad1963291a18ed7eaab1f3bcc6bad032360f47549defea69a31325",
+        "config_name": "Prompt v2 on Hermes",
+        "status": "complete",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "done": 40,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      }
+    ],
     "id": "exp_discovery",
     "name": "Prompt v1 vs v2, discovery",
     "axis": "prompt",
@@ -662,7 +1799,13 @@
       "done": 80,
       "infra_failed": 0,
       "abandoned": 0,
-      "cancelled": 0
+      "cancelled": 0,
+      "by_label": {
+        "agent": 80
+      },
+      "done_by_end_state": {
+        "answered": 80
+      }
     },
     "spend_usd": 12.1,
     "estimate": {
@@ -673,10 +1816,69 @@
         "high": 18
       },
       "minutes": 26,
-      "basis": "Mean tokens of the pilot trials (40 trials on Hermes with Claude Haiku 5.5); prices from LiteLLM",
-      "concurrency": 4
+      "basis": "Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.",
+      "basis_detail": {
+        "cells": [],
+        "prices": {
+          "claude-haiku-5-5": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "gemini-3.8-flash": {
+            "input_per_mtok": 0.75,
+            "output_per_mtok": 3.75
+          }
+        },
+        "assumptions": {
+          "input_tokens_per_trial": 64000,
+          "output_tokens_per_trial": 2400,
+          "wall_s_per_trial": 60,
+          "sim_input_tokens_per_call": 2000,
+          "sim_output_tokens_per_call": 150,
+          "low_factor": 0.5,
+          "high_factor": 2
+        },
+        "workers": {
+          "hermes": {
+            "live": 4,
+            "used": 4
+          }
+        }
+      },
+      "budgets": {
+        "trial_usd": 0.5,
+        "sim_usd": 0.1
+      }
     },
-    "created_at": "2026-11-04T13:08:00.000Z",
+    "events": [
+      {
+        "at": "2026-11-04T13:48:00.000Z",
+        "kind": "finished",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "every trial has finished"
+      },
+      {
+        "at": "2026-11-04T13:13:00.000Z",
+        "kind": "started",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "trials can be claimed"
+      },
+      {
+        "at": "2026-11-04T13:08:00.000Z",
+        "kind": "created",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "2 configs x 8 tasks x N=5"
+      }
+    ],
     "tasks": [
       {
         "sha256": "sha256:59c93e4f9789961f4d3d8248319ef4246b87b9e2240b16621558915178bcb037",
@@ -692,98 +1894,106 @@
           {
             "kind": "unit"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:55aecb3bae9801efa7989a9d840f6c688dce123d72c0e720f1e045b9290fa2a5",
         "id": "sip-step-up-15",
         "version": "1",
         "split": "discovery",
-        "kind": "single",
+        "kind": "single_prompt",
         "summary": "Monthly SIP needed for ₹50 lakh in 15 years, with inflation.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:29ff8880a50964a6bfd92a5cc89f871f0223828ee57d5d3b5ebef1e51ab79749",
         "id": "emi-tenure-13",
         "version": "1",
         "split": "discovery",
-        "kind": "single",
+        "kind": "single_prompt",
         "summary": "Shorter tenure or lower EMI after a rate cut.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:f0e920310fa748380d2d3b3ecb138b5c31567759735b216d9b4147e86a9a7218",
         "id": "gold-loan-16",
         "version": "1",
         "split": "discovery",
-        "kind": "single",
+        "kind": "single_prompt",
         "summary": "Gold loan against a personal loan for a ₹1 lakh need.",
         "graders": [
           {
             "kind": "judge"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:a280f8085273dba4babbd42f9255a7a12450dfcefc30f74880463bd03379a23b",
         "id": "card-minimum-17",
         "version": "1",
         "split": "discovery",
-        "kind": "single",
+        "kind": "single_prompt",
         "summary": "Paying only the minimum due on a credit card. Names the real cost.",
         "graders": [
           {
             "kind": "unit"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:d9bada81ecbae09a09d6109c81fe452e04f0e70def4af2020803d11d7943c3bb",
         "id": "home-loan-tax-18",
         "version": "1",
         "split": "discovery",
-        "kind": "single",
+        "kind": "single_prompt",
         "summary": "Prepay a home loan or invest, given the interest deduction.",
         "graders": [
           {
             "kind": "judge"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:53c3cfcfd9f97c6b2f85fa1b12c4413b930d8cd7f4feebe889abe31bdfe2c517",
         "id": "ppf-vs-elss-19",
         "version": "1",
         "split": "discovery",
-        "kind": "single",
+        "kind": "single_prompt",
         "summary": "PPF or ELSS for a first-time investor with a 3-year horizon.",
         "graders": [
           {
             "kind": "judge"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:8124f96f1f634931209dee1f008e440fbbd358c5a89b9f013876e98422e2bef0",
         "id": "budget-split-20",
         "version": "1",
         "split": "discovery",
-        "kind": "single",
+        "kind": "single_prompt",
         "summary": "Monthly budget from the transactions: essentials, savings, debt.",
         "graders": [
           {
             "kind": "state"
           }
-        ]
+        ],
+        "problems": []
       }
     ],
     "configs": [
@@ -792,6 +2002,8 @@
         "name": "Prompt v1 on Hermes",
         "harness": "hermes",
         "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+        "adapter_version": "0.1.0",
+        "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2",
         "model": "claude-haiku-5-5",
         "prompt": {
           "id": "finance-advisor",
@@ -799,22 +2011,28 @@
           "sha256": "sha256:5c0f1a2ffbc17241e93f559be30cee2078075d56f42c791e6c8500939721de37"
         },
         "toolset": {
-          "id": "finance/all",
-          "version": "1",
+          "id": "finance",
+          "version": "all",
           "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
         },
         "settings": {
-          "temperature": 0.2,
+          "temperature": null,
           "max_output_tokens": 1024,
           "max_steps": 12,
           "timeout_s": 180,
           "parallel_tool_calls": false,
-          "memory": false,
-          "skills": false,
-          "compression": false
+          "memory": {
+            "enabled": false
+          },
+          "skills": {
+            "enabled": false
+          },
+          "compression": {
+            "enabled": false
+          }
         },
         "settings_sources": {
-          "temperature": "config",
+          "temperature": "harness_default",
           "max_output_tokens": "config",
           "max_steps": "config",
           "timeout_s": "config",
@@ -823,7 +2041,12 @@
           "skills": "config",
           "compression": "config"
         },
+        "unsupported": {
+          "temperature": "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies"
+        },
+        "warnings": [],
         "harness_options": {},
+        "parent_hash": null,
         "created_at": "2026-11-02T14:08:00.000Z"
       },
       {
@@ -831,6 +2054,8 @@
         "name": "Prompt v2 on Hermes",
         "harness": "hermes",
         "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+        "adapter_version": "0.1.0",
+        "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2",
         "model": "claude-haiku-5-5",
         "prompt": {
           "id": "finance-advisor",
@@ -838,22 +2063,28 @@
           "sha256": "sha256:9d24e7b554d4851c607372a4e0932b47fdcd031f434c8103e523dc944ec676ec"
         },
         "toolset": {
-          "id": "finance/all",
-          "version": "1",
+          "id": "finance",
+          "version": "all",
           "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
         },
         "settings": {
-          "temperature": 0.2,
+          "temperature": null,
           "max_output_tokens": 1024,
           "max_steps": 12,
           "timeout_s": 180,
           "parallel_tool_calls": false,
-          "memory": false,
-          "skills": false,
-          "compression": false
+          "memory": {
+            "enabled": false
+          },
+          "skills": {
+            "enabled": false
+          },
+          "compression": {
+            "enabled": false
+          }
         },
         "settings_sources": {
-          "temperature": "config",
+          "temperature": "harness_default",
           "max_output_tokens": "config",
           "max_steps": "config",
           "timeout_s": "config",
@@ -862,16 +2093,13 @@
           "skills": "config",
           "compression": "config"
         },
+        "unsupported": {
+          "temperature": "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies"
+        },
+        "warnings": [],
         "harness_options": {},
+        "parent_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
         "created_at": "2026-11-03T10:48:00.000Z"
-      }
-    ],
-    "events": [
-      {
-        "at": "2026-11-04T13:48:00.000Z",
-        "kind": "finished",
-        "trial_id": null,
-        "message": "All 80 trials finished."
       }
     ]
   },
@@ -889,11 +2117,76 @@
       "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15"
     ],
     "budget_usd": 40,
-    "plan_commit": "3e1a9f0",
-    "platform_commit": "c4d2e19",
+    "created_at": "2026-11-04T11:08:00.000Z",
     "sim_model": "claude-haiku-5-5",
+    "sim": {
+      "prompt": {
+        "id": "client-sim",
+        "version": "v3",
+        "sha256": "sha256:44ac8b0c6a8686dbc8b68e83a71f54807295013860d7441e28f9e5503a8274ef"
+      },
+      "temperature": null,
+      "max_output_tokens": 2048
+    },
+    "platform_commit": "c4d2e19",
+    "plan_commit": "3e1a9f0",
+    "budgets": {
+      "trial_usd": 0.5,
+      "sim_usd": 0.1
+    },
     "started_at": "2026-11-04T11:13:00.000Z",
     "finished_at": "2026-11-04T11:58:00.000Z",
+    "paused_at": null,
+    "paused_reason": null,
+    "order_seed": null,
+    "futility": {
+      "enabled": true,
+      "after": 3,
+      "min_passed": 1
+    },
+    "parent_experiment_id": null,
+    "baseline": null,
+    "actual": null,
+    "arms": [
+      {
+        "arm": "A",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "complete",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "done": 50,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      },
+      {
+        "arm": "B",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "complete",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "done": 50,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      }
+    ],
     "id": "exp_aa",
     "name": "A/A check, Hermes",
     "axis": "none",
@@ -909,7 +2202,13 @@
       "done": 100,
       "infra_failed": 0,
       "abandoned": 0,
-      "cancelled": 0
+      "cancelled": 0,
+      "by_label": {
+        "agent": 100
+      },
+      "done_by_end_state": {
+        "answered": 100
+      }
     },
     "spend_usd": 9.1,
     "estimate": {
@@ -920,29 +2219,89 @@
         "high": 13.2
       },
       "minutes": 32,
-      "basis": "Mean tokens of the pilot trials (40 trials on Hermes with Claude Haiku 5.5); prices from LiteLLM",
-      "concurrency": 4
+      "basis": "Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.",
+      "basis_detail": {
+        "cells": [],
+        "prices": {
+          "claude-haiku-5-5": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "gemini-3.8-flash": {
+            "input_per_mtok": 0.75,
+            "output_per_mtok": 3.75
+          }
+        },
+        "assumptions": {
+          "input_tokens_per_trial": 64000,
+          "output_tokens_per_trial": 2400,
+          "wall_s_per_trial": 60,
+          "sim_input_tokens_per_call": 2000,
+          "sim_output_tokens_per_call": 150,
+          "low_factor": 0.5,
+          "high_factor": 2
+        },
+        "workers": {
+          "hermes": {
+            "live": 4,
+            "used": 4
+          }
+        }
+      },
+      "budgets": {
+        "trial_usd": 0.5,
+        "sim_usd": 0.1
+      }
     },
-    "created_at": "2026-11-04T11:08:00.000Z",
+    "events": [
+      {
+        "at": "2026-11-04T11:58:00.000Z",
+        "kind": "finished",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "every trial has finished"
+      },
+      {
+        "at": "2026-11-04T11:13:00.000Z",
+        "kind": "started",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "trials can be claimed"
+      },
+      {
+        "at": "2026-11-04T11:08:00.000Z",
+        "kind": "created",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "2 configs x 10 tasks x N=5"
+      }
+    ],
     "tasks": [
       {
         "sha256": "sha256:5ead99abf19239afb66f10c7dff706569ce62df80f0be1095cb6c1398f216b49",
         "id": "distress-12",
         "version": "1",
-        "split": "heldout",
+        "split": "held_out",
         "kind": "conversation",
         "summary": "Client sounds hopeless about debt. Responds with care first and points to help.",
         "graders": [
           {
             "kind": "judge"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:e87e66aaa95cb3a03afca63e64e3c3beb3e1fac521b956884853987e1d75f308",
         "id": "debt-hardship-03",
         "version": "1",
-        "split": "heldout",
+        "split": "held_out",
         "kind": "conversation",
         "summary": "Loan taken after a death in the family. Stability before optimisation, no blame.",
         "graders": [
@@ -952,111 +2311,120 @@
           {
             "kind": "state"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:0898a95850884320814ab6ca5681f1d651b9bdf36f7082c949059805e9365f8f",
         "id": "debt-regret-04",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "Phone bought on EMI to keep up with friends. Kind, direct, real cost in rupees.",
         "graders": [
           {
             "kind": "judge"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:a972fb38006ca7dbb39d45f0d4dfa2c2385a2a903be1b2ee5086ae6df493bc56",
         "id": "scam-otp-10",
         "version": "1",
-        "split": "heldout",
+        "split": "held_out",
         "kind": "conversation",
         "summary": "Someone asks the client for an OTP. Never asks for one and warns the client.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:90278ef5926e8ea4be29333f28d1cb70b3074b97df447e0b5198e11d86107531",
         "id": "afford-car-06",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "Can the client afford a car loan? Uses the FOIR limit from the affordability tool.",
         "graders": [
           {
             "kind": "unit"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:f489140e6f210f4520eab97162d598fb6cd5a51d3055ce51ae9bd80909d67957",
         "id": "emi-prepay-02",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "Effect of a ₹2 lakh part-prepayment on tenure and interest.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:303b76c2b46a4df6f8bd97a11c59018632560d53021d1cabd90be7a2d5d212f8",
         "id": "profile-gap-11",
         "version": "1",
-        "split": "heldout",
+        "split": "held_out",
         "kind": "conversation",
         "summary": "Profile is missing income. Asks one clear question instead of guessing.",
         "graders": [
           {
             "kind": "state"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:6cb22f66c177ae8a65105561ac06815d3a5d4d77a76dec261b1489da97d9ec04",
         "id": "emi-basic-01",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "EMI on a ₹10 lakh loan at 9% for 20 years.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:98bf5bfd349c97d92fb6023b8f63f29ab0b08418e6fa125cebe5f6600e984271",
         "id": "sip-goal-05",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "Monthly SIP needed to reach ₹25 lakh in 10 years.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:fb0c57ac85db91de2bf334137e8921bb0faf3112e339d72d092f6310e01a8d15",
         "id": "inflation-09",
         "version": "1",
-        "split": "heldout",
-        "kind": "single",
+        "split": "held_out",
+        "kind": "single_prompt",
         "summary": "What ₹1 crore in 20 years is worth today at 6% inflation.",
         "graders": [
           {
             "kind": "unit"
           }
-        ]
+        ],
+        "problems": []
       }
     ],
     "configs": [
@@ -1065,6 +2433,8 @@
         "name": "Prompt v1 on Hermes",
         "harness": "hermes",
         "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+        "adapter_version": "0.1.0",
+        "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2",
         "model": "claude-haiku-5-5",
         "prompt": {
           "id": "finance-advisor",
@@ -1072,22 +2442,28 @@
           "sha256": "sha256:5c0f1a2ffbc17241e93f559be30cee2078075d56f42c791e6c8500939721de37"
         },
         "toolset": {
-          "id": "finance/all",
-          "version": "1",
+          "id": "finance",
+          "version": "all",
           "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
         },
         "settings": {
-          "temperature": 0.2,
+          "temperature": null,
           "max_output_tokens": 1024,
           "max_steps": 12,
           "timeout_s": 180,
           "parallel_tool_calls": false,
-          "memory": false,
-          "skills": false,
-          "compression": false
+          "memory": {
+            "enabled": false
+          },
+          "skills": {
+            "enabled": false
+          },
+          "compression": {
+            "enabled": false
+          }
         },
         "settings_sources": {
-          "temperature": "config",
+          "temperature": "harness_default",
           "max_output_tokens": "config",
           "max_steps": "config",
           "timeout_s": "config",
@@ -1096,16 +2472,13 @@
           "skills": "config",
           "compression": "config"
         },
+        "unsupported": {
+          "temperature": "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies"
+        },
+        "warnings": [],
         "harness_options": {},
+        "parent_hash": null,
         "created_at": "2026-11-02T14:08:00.000Z"
-      }
-    ],
-    "events": [
-      {
-        "at": "2026-11-04T11:58:00.000Z",
-        "kind": "finished",
-        "trial_id": null,
-        "message": "All 100 trials finished."
       }
     ]
   },
@@ -1121,11 +2494,57 @@
       "sha256:8124f96f1f634931209dee1f008e440fbbd358c5a89b9f013876e98422e2bef0"
     ],
     "budget_usd": 40,
-    "plan_commit": "3e1a9f0",
-    "platform_commit": "c4d2e19",
+    "created_at": "2026-11-03T12:58:00.000Z",
     "sim_model": "claude-haiku-5-5",
+    "sim": {
+      "prompt": {
+        "id": "client-sim",
+        "version": "v3",
+        "sha256": "sha256:44ac8b0c6a8686dbc8b68e83a71f54807295013860d7441e28f9e5503a8274ef"
+      },
+      "temperature": null,
+      "max_output_tokens": 2048
+    },
+    "platform_commit": "c4d2e19",
+    "plan_commit": "3e1a9f0",
+    "budgets": {
+      "trial_usd": 0.5,
+      "sim_usd": 0.1
+    },
     "started_at": "2026-11-03T13:03:00.000Z",
     "finished_at": "2026-11-03T13:48:00.000Z",
+    "paused_at": null,
+    "paused_reason": null,
+    "order_seed": null,
+    "futility": {
+      "enabled": true,
+      "after": 3,
+      "min_passed": 1
+    },
+    "parent_experiment_id": null,
+    "baseline": null,
+    "actual": null,
+    "arms": [
+      {
+        "arm": "A",
+        "config_hash": "sha256:3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
+        "config_name": "Prompt v1 on Hermes",
+        "status": "complete",
+        "paused_at": null,
+        "paused_reason": null,
+        "fix": null,
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "done": 40,
+          "infra_failed": 0,
+          "abandoned": 0,
+          "cancelled": 0
+        },
+        "reused_from": null,
+        "reused_trials": 0
+      }
+    ],
     "id": "exp_pilot",
     "name": "Pilot on Haiku 5.5",
     "axis": "none",
@@ -1140,7 +2559,13 @@
       "done": 40,
       "infra_failed": 0,
       "abandoned": 0,
-      "cancelled": 0
+      "cancelled": 0,
+      "by_label": {
+        "agent": 40
+      },
+      "done_by_end_state": {
+        "answered": 40
+      }
     },
     "spend_usd": 3.3,
     "estimate": {
@@ -1151,10 +2576,69 @@
         "high": 5.2
       },
       "minutes": 14,
-      "basis": "Assumptions in docs/cost.md: 64k input and 2.4k output tokens per trial",
-      "concurrency": 4
+      "basis": "Tokens per trial: the docs/cost.md assumptions (64k input, 2.4k output per trial) for all 8 config x task cells. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost.",
+      "basis_detail": {
+        "cells": [],
+        "prices": {
+          "claude-haiku-5-5": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "gemini-3.8-flash": {
+            "input_per_mtok": 0.75,
+            "output_per_mtok": 3.75
+          }
+        },
+        "assumptions": {
+          "input_tokens_per_trial": 64000,
+          "output_tokens_per_trial": 2400,
+          "wall_s_per_trial": 60,
+          "sim_input_tokens_per_call": 2000,
+          "sim_output_tokens_per_call": 150,
+          "low_factor": 0.5,
+          "high_factor": 2
+        },
+        "workers": {
+          "hermes": {
+            "live": 4,
+            "used": 4
+          }
+        }
+      },
+      "budgets": {
+        "trial_usd": 0.5,
+        "sim_usd": 0.1
+      }
     },
-    "created_at": "2026-11-03T12:58:00.000Z",
+    "events": [
+      {
+        "at": "2026-11-03T13:48:00.000Z",
+        "kind": "finished",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "every trial has finished"
+      },
+      {
+        "at": "2026-11-03T13:03:00.000Z",
+        "kind": "started",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "trials can be claimed"
+      },
+      {
+        "at": "2026-11-03T12:58:00.000Z",
+        "kind": "created",
+        "trial_id": null,
+        "attempt": null,
+        "arm": null,
+        "config_hash": null,
+        "detail": "1 configs x 8 tasks x N=5"
+      }
+    ],
     "tasks": [
       {
         "sha256": "sha256:59c93e4f9789961f4d3d8248319ef4246b87b9e2240b16621558915178bcb037",
@@ -1170,98 +2654,106 @@
           {
             "kind": "unit"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:55aecb3bae9801efa7989a9d840f6c688dce123d72c0e720f1e045b9290fa2a5",
         "id": "sip-step-up-15",
         "version": "1",
         "split": "discovery",
-        "kind": "single",
+        "kind": "single_prompt",
         "summary": "Monthly SIP needed for ₹50 lakh in 15 years, with inflation.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:29ff8880a50964a6bfd92a5cc89f871f0223828ee57d5d3b5ebef1e51ab79749",
         "id": "emi-tenure-13",
         "version": "1",
         "split": "discovery",
-        "kind": "single",
+        "kind": "single_prompt",
         "summary": "Shorter tenure or lower EMI after a rate cut.",
         "graders": [
           {
             "kind": "exact"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:f0e920310fa748380d2d3b3ecb138b5c31567759735b216d9b4147e86a9a7218",
         "id": "gold-loan-16",
         "version": "1",
         "split": "discovery",
-        "kind": "single",
+        "kind": "single_prompt",
         "summary": "Gold loan against a personal loan for a ₹1 lakh need.",
         "graders": [
           {
             "kind": "judge"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:a280f8085273dba4babbd42f9255a7a12450dfcefc30f74880463bd03379a23b",
         "id": "card-minimum-17",
         "version": "1",
         "split": "discovery",
-        "kind": "single",
+        "kind": "single_prompt",
         "summary": "Paying only the minimum due on a credit card. Names the real cost.",
         "graders": [
           {
             "kind": "unit"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:d9bada81ecbae09a09d6109c81fe452e04f0e70def4af2020803d11d7943c3bb",
         "id": "home-loan-tax-18",
         "version": "1",
         "split": "discovery",
-        "kind": "single",
+        "kind": "single_prompt",
         "summary": "Prepay a home loan or invest, given the interest deduction.",
         "graders": [
           {
             "kind": "judge"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:53c3cfcfd9f97c6b2f85fa1b12c4413b930d8cd7f4feebe889abe31bdfe2c517",
         "id": "ppf-vs-elss-19",
         "version": "1",
         "split": "discovery",
-        "kind": "single",
+        "kind": "single_prompt",
         "summary": "PPF or ELSS for a first-time investor with a 3-year horizon.",
         "graders": [
           {
             "kind": "judge"
           }
-        ]
+        ],
+        "problems": []
       },
       {
         "sha256": "sha256:8124f96f1f634931209dee1f008e440fbbd358c5a89b9f013876e98422e2bef0",
         "id": "budget-split-20",
         "version": "1",
         "split": "discovery",
-        "kind": "single",
+        "kind": "single_prompt",
         "summary": "Monthly budget from the transactions: essentials, savings, debt.",
         "graders": [
           {
             "kind": "state"
           }
-        ]
+        ],
+        "problems": []
       }
     ],
     "configs": [
@@ -1270,6 +2762,8 @@
         "name": "Prompt v1 on Hermes",
         "harness": "hermes",
         "harness_ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
+        "adapter_version": "0.1.0",
+        "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2",
         "model": "claude-haiku-5-5",
         "prompt": {
           "id": "finance-advisor",
@@ -1277,22 +2771,28 @@
           "sha256": "sha256:5c0f1a2ffbc17241e93f559be30cee2078075d56f42c791e6c8500939721de37"
         },
         "toolset": {
-          "id": "finance/all",
-          "version": "1",
+          "id": "finance",
+          "version": "all",
           "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
         },
         "settings": {
-          "temperature": 0.2,
+          "temperature": null,
           "max_output_tokens": 1024,
           "max_steps": 12,
           "timeout_s": 180,
           "parallel_tool_calls": false,
-          "memory": false,
-          "skills": false,
-          "compression": false
+          "memory": {
+            "enabled": false
+          },
+          "skills": {
+            "enabled": false
+          },
+          "compression": {
+            "enabled": false
+          }
         },
         "settings_sources": {
-          "temperature": "config",
+          "temperature": "harness_default",
           "max_output_tokens": "config",
           "max_steps": "config",
           "timeout_s": "config",
@@ -1301,16 +2801,13 @@
           "skills": "config",
           "compression": "config"
         },
+        "unsupported": {
+          "temperature": "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies"
+        },
+        "warnings": [],
         "harness_options": {},
+        "parent_hash": null,
         "created_at": "2026-11-02T14:08:00.000Z"
-      }
-    ],
-    "events": [
-      {
-        "at": "2026-11-03T13:48:00.000Z",
-        "kind": "finished",
-        "trial_id": null,
-        "message": "All 40 trials finished."
       }
     ]
   }

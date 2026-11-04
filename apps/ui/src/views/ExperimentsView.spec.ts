@@ -49,38 +49,47 @@ describe('ExperimentsView in fixture mode', () => {
     expect(ticks).toEqual(['−20', '−10', '0, no change', '+10', '+20', '+30']);
   });
 
-  it('lists what needs attention: infra failures, labels to go, an inert setting', async () => {
+  it('lists what needs attention: a paused arm, a paused run, infra failures, labels to go, an inert setting', async () => {
     const w = mount(ExperimentsView);
     await settle();
-    expect(w.findAll('[data-test="attention"]').map((a) => a.find('.attention-head').text())).toEqual([
+    const items = w.findAll('[data-test="attention"]');
+    expect(items.map((a) => a.find('.attention-head').text())).toEqual([
+      'Arm B of Model: Haiku 5.5 vs Gemini 3.8 Flash, discovery is paused',
+      'Prompt v1 vs v2, discovery batch 3 is paused',
       '2 infra failures',
       '3 held-out outputs to label (7 checks)',
       'Temperature looks inert on ADK',
     ]);
+    // What paused each, in a phrase; the run page has the full reason and the fix.
+    expect(items[0].text()).toContain('A config error (LiteLLM status 404). The run page says how to fix it.');
+    expect(items[1].text()).toContain('The futility check: arm B passed 0 of its first 3 finished trials. Review it, then resume or stop.');
+    expect(items[0].attributes('href')).toBe('#/experiments/exp_model/run');
   });
 
   it('shows every experiment with its arms, progress and result, and filters them', async () => {
     const w = mount(ExperimentsView);
     await settle();
     const rows = () => w.findAll('[data-test="experiments-table"] tbody tr');
-    expect(rows()).toHaveLength(5);
-    expect(rows()[1].get('[data-verdict]').attributes('data-verdict')).toBe('better');
-    expect(rows()[1].text()).toContain('Better');
-    expect(rows()[1].text()).toContain(`+15${nb}points (+7 to +23)`);
-    expect(rows()[3].get('[data-verdict]').text()).toBe('No clear difference');
-    expect(rows()[3].text()).toContain(`+1${nb}point (−7 to +9), as expected`);
+    expect(rows()).toHaveLength(7);
+    expect(rows()[3].get('[data-verdict]').attributes('data-verdict')).toBe('better');
+    expect(rows()[3].text()).toContain('Better');
+    expect(rows()[3].text()).toContain(`+15${nb}points (+7 to +23)`);
+    expect(rows()[5].get('[data-verdict]').text()).toBe('No clear difference');
+    expect(rows()[5].text()).toContain(`+1${nb}point (−7 to +9), as expected`);
+    expect(rows()[1].get('[data-test="status"]').text()).toBe('Paused');
+    expect(rows()[1].get('[data-test="result"]').text()).toContain('The futility check: arm B passed 0 of its first 3 finished trials');
     await w.get('[data-test="show-filter"]').setValue('running');
-    expect(rows()).toHaveLength(1);
-    expect(rows()[0].text()).toContain('Running');
-    expect(rows()[0].text()).toContain('60 of 120');
-    expect(rows()[0].get('[data-test="result"]').text()).toContain('About 19 min left');
+    expect(rows()).toHaveLength(3);
+    expect(rows()[2].text()).toContain('Running');
+    expect(rows()[2].text()).toContain('60 of 120');
+    expect(rows()[2].get('[data-test="result"]').text()).toContain('About 19 min left');
   });
 
   it('shows a pill in the Result column only for Better or Worse; status words are plain', async () => {
     const w = mount(ExperimentsView);
     await settle();
     const results = w.findAll('[data-test="result"]');
-    expect(results).toHaveLength(5);
+    expect(results).toHaveLength(7);
     for (const r of results) {
       expect(r.find('.pill').exists()).toBe(false);
       const tag = r.find('.verdict-tag');
@@ -88,7 +97,7 @@ describe('ExperimentsView in fixture mode', () => {
       expect(r.find('.result-detail').exists()).toBe(true);
     }
     const plain = results.flatMap((r) => r.findAll('.result-plain').map((p) => p.text()));
-    expect(plain).toEqual(expect.arrayContaining(['Running', 'No clear difference', 'One arm']));
+    expect(plain).toEqual(expect.arrayContaining(['Running', 'Paused', 'No clear difference', 'One arm']));
     expect(results.filter((r) => r.find('.verdict-tag').exists())).toHaveLength(1);
   });
 

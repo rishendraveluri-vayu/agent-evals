@@ -1,9 +1,26 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { HarnessView, JsonObject, ModelView, PromptView, TaskSplit, TaskView, ToolsetView } from '../contract';
+import { promises as fs } from 'node:fs';
+import * as path from 'node:path';
+import type { CreatePromptRequest, CreatedPrompt, HarnessView, JsonObject, ModelView, PromptView, TaskSplit, TaskView, ToolsetView } from '../contract';
+import { badRequest, conflict } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
+import { sha256Ref } from '../common/hashing';
 import { Db } from '../database/db.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
-import { type HarnessFile, type TaskFile, builtInToolsets, loadFinanceServer, readHarnesses, readPrompts, readTasks } from './catalogue-files';
+import {
+  type HarnessFile,
+  PROMPT_MAX_BYTES,
+  PROMPT_NAME_PART,
+  type TaskFile,
+  builtInToolsets,
+  loadFinanceServer,
+  nextPromptVersion,
+  promptFile,
+  promptText,
+  readHarnesses,
+  readPrompts,
+  readTasks,
+} from './catalogue-files';
 
 /** A task as stored: the row the engine builds specs from. */
 export interface StoredTask {
@@ -49,6 +66,9 @@ export function taskView(t: StoredTask, problems: string[] = []): TaskView {
  */
 @Injectable()
 export class CatalogueService {
+  /** POST /prompts runs one at a time, so two posts of one text cannot make two versions. */
+  private promptWrites: Promise<unknown> = Promise.resolve();
+
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly db: Db,
@@ -86,6 +106,67 @@ export class CatalogueService {
       }
     }
     return prompts;
+  }
+
+  /**
+   * Writes the next version of an existing prompt (configs/prompts/<id>.v<n>.md), never over a
+   * file that exists. The same text as a version of that id returns that version instead.
+   */
+  createPrompt(body: CreatePromptRequest, now: Date = new Date()): Promise<{ prompt: CreatedPrompt; created: boolean }> {
+    const run = this.promptWrites.then(() => this.writePrompt(body, now));
+    this.promptWrites = run.catch(() => undefined);
+    return run;
+  }
+
+  private async writePrompt(body: CreatePromptRequest, now: Date): Promise<{ prompt: CreatedPrompt; created: boolean }> {
+    if (typeof body !== 'object' || body === null) throw badRequest('invalid_prompt', 'the body must be a JSON object', 'Send {"id", "base_version", "text"}.');
+    const { id, base_version: baseVersion, text } = body;
+    const pick = 'Use the id and a version of a prompt in GET /prompts.';
+    if (typeof id !== 'string' || !PROMPT_NAME_PART.test(id)) throw badRequest('invalid_prompt', 'id must be a prompt id: letters, digits, _ and -', pick);
+    if (typeof baseVersion !== 'string' || !PROMPT_NAME_PART.test(baseVersion)) {
+      throw badRequest('invalid_prompt', 'base_version must be a prompt version such as v1', pick);
+    }
+    if (typeof text !== 'string' || !text.trim()) throw badRequest('invalid_prompt', 'text must be a non-empty string', 'Send the prompt text, without a review header.');
+    const bytes = Buffer.byteLength(text, 'utf8');
+    if (bytes > PROMPT_MAX_BYTES) {
+      throw badRequest('prompt_too_large', `text is ${bytes} bytes; a prompt may be at most ${PROMPT_MAX_BYTES} bytes (50 KB)`, 'Shorten the prompt to 50 KB or less.');
+    }
+
+    const all = await readPrompts(this.config.configsDir);
+    const versions = all.filter((p) => p.id === id);
+    if (!versions.length) {
+      const ids = [...new Set(all.map((p) => p.id))];
+      throw badRequest('unknown_prompt_id', `no prompt named ${id} under configs/prompts`, `A new version needs an existing prompt: pick one of ${ids.join(', ')}.`);
+    }
+    if (!versions.some((p) => p.version === baseVersion)) {
+      throw badRequest('unknown_base_version', `${id} has no version ${baseVersion}`, `Pick a version of ${id}: ${versions.map((p) => p.version).join(', ')}.`);
+    }
+
+    const version = nextPromptVersion(versions.map((p) => p.version));
+    const content = promptFile(id, version, baseVersion, text, now);
+    const sha256 = sha256Ref(promptText(content));
+    const same = versions.find((p) => p.sha256 === sha256) ?? all.find((p) => p.sha256 === sha256);
+    if (same && same.id === id) return { prompt: { id, version: same.version, sha256, path: same.path }, created: false };
+    if (same) {
+      // The prompts table is keyed by text hash, so one text cannot belong to two ids.
+      throw conflict('prompt_text_exists', `this text is already prompt ${same.id} ${same.version}`, `Use ${same.id} ${same.version}, or change the text.`);
+    }
+
+    const dir = path.resolve(this.config.configsDir, 'prompts');
+    const name = `${id}.${version}.md`;
+    const file = path.resolve(dir, name);
+    if (path.dirname(file) !== dir) throw badRequest('invalid_prompt', `${name} is not a file name in configs/prompts`, pick);
+    try {
+      // `wx`: fail rather than replace a file that exists.
+      await fs.writeFile(file, content, { flag: 'wx' });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+        throw conflict('prompt_version_exists', `configs/prompts/${name} already exists`, 'Post again: the next version number will be used.');
+      }
+      throw err;
+    }
+    await this.prompts(); // store the new version, so a config can point at it straight away
+    return { prompt: { id, version, sha256, path: `configs/prompts/${name}` }, created: true };
   }
 
   async toolsets(): Promise<ToolsetView[]> {

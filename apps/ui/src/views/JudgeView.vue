@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { api } from '../api/client';
-import type { BlindItem, Config, Experiment, JudgeAgreement } from '../api/types';
+import type { BlindItem, ConfigView, ExperimentSummary, JudgeAgreement } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
@@ -13,8 +13,8 @@ import { href } from '../router';
 const { data, error, loading } = useLoad(async () => {
   const [agreement, configs, experiments, queue] = await Promise.all([
     api.judgeAgreement('heldout'),
-    optional(api.configs(), [] as Config[]),
-    optional(api.experiments(), [] as Experiment[]),
+    optional(api.configs(), [] as ConfigView[]),
+    optional(api.experiments(), [] as ExperimentSummary[]),
     optional(api.labelQueue('heldout'), [] as BlindItem[]),
   ]);
   return { agreement, configs, experiments, queue };

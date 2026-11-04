@@ -69,6 +69,8 @@ export interface TestEnv {
   pool: Pool;
   worker: WorkerService;
   tasksDir: string;
+  /** A copy of the repo's configs/, so POST /prompts never writes into the repo. */
+  configsDir: string;
   labelsDir: string;
   runsDir: string;
   close(): Promise<void>;
@@ -91,7 +93,9 @@ export async function bootEnv(): Promise<TestEnv> {
   const tasksDir = path.join(tmp, 'tasks');
   const labelsDir = path.join(tmp, 'labels');
   const runsDir = path.join(tmp, 'runs');
+  const configsDir = path.join(tmp, 'configs');
   await writeTasks(tasksDir);
+  await fs.cp(path.join(REPO, 'configs'), configsDir, { recursive: true });
   await fs.mkdir(runsDir, { recursive: true });
   Object.assign(process.env, {
     DATABASE_URL: db.url,
@@ -100,7 +104,7 @@ export async function bootEnv(): Promise<TestEnv> {
     EVALS_WORKER_TOKEN: WORKER_TOKEN,
     EVALS_PLATFORM_COMMIT: 'abc1234',
     WORKERS_DIR: path.join(REPO, 'workers'),
-    CONFIGS_DIR: path.join(REPO, 'configs'),
+    CONFIGS_DIR: configsDir,
     TASKS_DIR: tasksDir,
     LABELS_DIR: labelsDir,
     RUNS_DIR: runsDir,
@@ -118,6 +122,7 @@ export async function bootEnv(): Promise<TestEnv> {
     pool: app.get<Pool>(PG_POOL),
     worker: app.get(WorkerService),
     tasksDir,
+    configsDir,
     labelsDir,
     runsDir,
     close: async () => {

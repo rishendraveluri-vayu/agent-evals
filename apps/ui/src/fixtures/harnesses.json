@@ -3,7 +3,7 @@
     "name": "hermes",
     "package": "hermes-agent",
     "ref": "6112c2adb9e11f69734a29be9d2696f345ffa06a",
-    "python": "3.11",
+    "python": ">=3.11",
     "capabilities": {
       "contract_version": "2",
       "harness": "hermes",
@@ -22,7 +22,7 @@
           "default": null,
           "observed": "Not sent unless set",
           "effect": {
-            "claude-haiku-5-5": {
+            "gemini-3.8-flash": {
               "status": "effective",
               "evidence": "effect check 2026-11-04"
             }
@@ -127,13 +127,15 @@
         "Tool names reach the model as mcp__finance__<name>, and tool results are wrapped as untrusted content.",
         "Adds its own identity text and the date to the system prompt."
       ]
-    }
+    },
+    "adapter_version": "0.1.0",
+    "capabilities_sha256": "sha256:5bd204b30369a1a9dbcdac6d39b4b3e6efad9f587e48f1cc4d38fe57a7b174b2"
   },
   {
     "name": "ownloop",
     "package": "ownloop",
     "ref": "0.1.0",
-    "python": "3.11",
+    "python": ">=3.11",
     "capabilities": {
       "contract_version": "2",
       "harness": "ownloop",
@@ -152,7 +154,7 @@
           "default": null,
           "observed": "Not sent unless set",
           "effect": {
-            "claude-haiku-5-5": {
+            "gemini-3.8-flash": {
               "status": "effective",
               "evidence": "effect check 2026-11-04"
             }
@@ -220,13 +222,15 @@
       "known_differences": [
         "Sends the task system prompt as it is, with nothing added."
       ]
-    }
+    },
+    "adapter_version": "0.1.0",
+    "capabilities_sha256": "sha256:17ae974939a5339c84f9deed1fad8ee089ac0aab0cb7e79d198a730e1848f399"
   },
   {
     "name": "langgraph",
     "package": "langgraph",
     "ref": "1.2.16",
-    "python": "3.12",
+    "python": ">=3.12",
     "capabilities": {
       "contract_version": "2",
       "harness": "langgraph",
@@ -288,13 +292,15 @@
       "known_differences": [
         "Switches to the Responses API for some model names; the adapter pins Chat Completions."
       ]
-    }
+    },
+    "adapter_version": "0.1.0",
+    "capabilities_sha256": "sha256:5a33c4494c0a4c6187b190b287d5cd3afd9ca7d0d2cdc273632117bc43c311b2"
   },
   {
     "name": "adk",
     "package": "google-adk",
     "ref": "2.12.0",
-    "python": "3.12",
+    "python": ">=3.12",
     "capabilities": {
       "contract_version": "2",
       "harness": "adk",
@@ -313,7 +319,7 @@
           "default": null,
           "observed": "Not sent unless set",
           "effect": {
-            "claude-haiku-5-5": {
+            "gemini-3.8-flash": {
               "status": "inert",
               "evidence": "effect check 2026-11-04: no change between 0 and 1"
             }
@@ -364,13 +370,15 @@
       "known_differences": [
         "Wraps every tool description in untrusted-content markers and adds an identity line."
       ]
-    }
+    },
+    "adapter_version": "0.1.0",
+    "capabilities_sha256": "sha256:9e2c8bc831f7d387b5227a469a5eff059c79b32707176f38bacc27ea76473fc1"
   },
   {
     "name": "openai-agents",
     "package": "openai-agents",
     "ref": "0.24.0",
-    "python": "3.12",
+    "python": ">=3.12",
     "capabilities": {
       "contract_version": "2",
       "harness": "openai-agents",
@@ -432,6 +440,8 @@
       "known_differences": [
         "Replaces malformed-argument errors with a fixed \"please try again\" message."
       ]
-    }
+    },
+    "adapter_version": "0.1.0",
+    "capabilities_sha256": "sha256:15a0699764c6a1cd87e9ab106b920a77e2acfcabf9d5430ea542f156ad0cc142"
   }
 ]

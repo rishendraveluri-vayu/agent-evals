@@ -62,11 +62,16 @@ describe('App header against the API', () => {
 describe('App in fixture mode', () => {
   useFixtures();
 
-  it('marks sample data in the header and adds up the spend against the budget', async () => {
+  it('marks sample data in the header and shows trial spend and platform spend apart, with the allowance', async () => {
     const wrapper = mount(App);
     await settle();
     expect(wrapper.get('[data-test="sample-data"]').text()).toBe('Sample data');
-    expect(wrapper.get('[data-test="spend"]').text()).toContain('$54.10 of $150');
+    expect(wrapper.get('[data-test="spend-trials"]').text()).toBe('$55.88');
+    expect(wrapper.get('[data-test="spend-platform"]').text()).toBe('$0.02');
+    expect(wrapper.get('[data-test="spend"]').text()).toContain('of $150');
+    expect(wrapper.get('[data-test="spend-compact"]').text()).toBe('$55.88 + $0.02');
+    const meter = wrapper.get('[data-test="allowance"] [role="img"]');
+    expect(meter.attributes('aria-label')).toBe('Conflict checks: $0.02 of $2 used, $1.98 left, 1 call');
   });
 
   it('routes by hash and marks the current section', async () => {

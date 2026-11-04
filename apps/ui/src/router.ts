@@ -1,16 +1,18 @@
 /** Hash routes. Every link is a plain <a href="#/...">, so it works with the keyboard, opens in
  *  a new tab and needs no router library. */
 import { ref } from 'vue';
+import { LABEL_SETS, type LabelSet } from './api/types';
 
 export type Route =
   | { name: 'experiments' }
-  | { name: 'config' }
+  | { name: 'config'; fork: string | null }
+  | { name: 'config-page'; hash: string }
   | { name: 'run-new'; a: string | null; b: string | null }
   | { name: 'run'; id: string }
   | { name: 'compare'; id: string }
   | { name: 'trial'; id: string }
   | { name: 'recorded' }
-  | { name: 'labels' }
+  | { name: 'labels'; set: LabelSet | null; experiment: string | null }
   | { name: 'judge' }
   | { name: 'harnesses' }
   | { name: 'tasks' }
@@ -28,13 +30,17 @@ export function parseHash(hash: string): Route {
   const parts = path.split('/').filter(Boolean);
   const [first, second, third] = parts;
   if (parts.length === 0 || (first === 'experiments' && parts.length === 1)) return { name: 'experiments' };
-  if (first === 'configs' && parts.length <= 2) return { name: 'config' };
+  if (first === 'configs' && parts.length === 1) return { name: 'config', fork: params.get('fork') };
+  if (first === 'configs' && second && parts.length === 2) return { name: 'config-page', hash: dec(second) };
   if (first === 'run' && parts.length === 1) return { name: 'run-new', a: params.get('a'), b: params.get('b') };
   if (first === 'experiments' && second && third === 'run' && parts.length === 3) return { name: 'run', id: dec(second) };
   if (first === 'experiments' && second && parts.length === 2) return { name: 'compare', id: dec(second) };
   if (first === 'trials' && parts.length === 1) return { name: 'recorded' };
   if (first === 'trials' && second && parts.length === 2) return { name: 'trial', id: dec(second) };
-  if (first === 'labels' && parts.length === 1) return { name: 'labels' };
+  if (first === 'labels' && parts.length === 1) {
+    const set = params.get('set');
+    return { name: 'labels', set: (LABEL_SETS as readonly string[]).includes(set ?? '') ? (set as LabelSet) : null, experiment: params.get('experiment') };
+  }
   if (first === 'labels' && second === 'judge') return { name: 'judge' };
   if (first === 'harnesses' && parts.length === 1) return { name: 'harnesses' };
   if (first === 'tasks' && parts.length === 1) return { name: 'tasks' };
@@ -44,6 +50,7 @@ export function parseHash(hash: string): Route {
 export function sectionOf(route: Route): Section | null {
   switch (route.name) {
     case 'config':
+    case 'config-page':
       return 'configs';
     case 'tasks':
       return 'tasks';
@@ -62,6 +69,9 @@ export function sectionOf(route: Route): Section | null {
 export const href = {
   experiments: () => '#/',
   config: () => '#/configs',
+  /** A new config that starts as a copy of `hash` and names it as its parent (D34). */
+  fork: (hash: string) => `#/configs?fork=${enc(hash)}`,
+  configPage: (hash: string) => `#/configs/${enc(hash)}`,
   runNew: (a?: string, b?: string) => {
     const q = new URLSearchParams();
     if (a) q.set('a', a);

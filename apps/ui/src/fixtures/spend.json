@@ -1,0 +1,21 @@
+{
+  "trials_usd": 55.8818,
+  "system_usd": 0.018282,
+  "total_usd": 55.900082,
+  "system_by_kind": {
+    "conflict_check": {
+      "usd": 0.018282,
+      "calls": 1
+    }
+  },
+  "allowances": [
+    {
+      "kind": "conflict_check",
+      "limit_usd": 2,
+      "used_usd": 0.018282,
+      "remaining_usd": 1.981718,
+      "calls": 1,
+      "half_reached": false
+    }
+  ]
+}

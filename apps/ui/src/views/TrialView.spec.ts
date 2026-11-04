@@ -134,7 +134,8 @@ describe('TrialView in fixture mode', () => {
     const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
     await settle();
     const source = w.get('[data-test="applied-source-prompt_cache_markers"]');
-    expect(source.text()).toBe('Hermes default Affects cost and time, not the reply.');
+    // D31: cache markers are off in every Hermes config, so the config sets it.
+    expect(source.text()).toBe('Config Affects cost and time, not the reply.');
     expect(source.get('.setting-note').text()).toBe('Affects cost and time, not the reply.');
     expect(w.findAll('.setting-note')).toHaveLength(1);
   });
@@ -168,11 +169,12 @@ describe('TrialView in fixture mode', () => {
 describe('TrialView against the API: blind labelling', () => {
   type Detail = { tasks: { id: string; sha256: string }[] };
   const heldout = (details as unknown as Record<string, Detail>).exp_heldout;
-  const sha = (id: string) => heldout.tasks.find((t) => t.id === id)?.sha256;
-  function routes(over: { trialId?: string; task?: string; queue?: unknown }) {
+  /** The trial's task, as GET /trials/:id carries it: the task's id and sha256. */
+  const sha = (id: string) => ({ id, sha256: heldout.tasks.find((t) => t.id === id)?.sha256 ?? '' });
+  function routes(over: { trialId?: string; task?: { id: string; sha256: string }; queue?: unknown }) {
     const id = over.trialId ?? 'tr_fd-vs-sip-07_b_3';
     return routeFetch({
-      [`/api/trials/${id}`]: { ...trial, id, task: over.task ?? trial.task },
+      [`/api/trials/${id}`]: { ...trial, id, task: over.task ? { ...trial.task, ...over.task } : trial.task },
       [`/api/trials/${id}/spans`]: trialSpans,
       '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': over.queue ?? queue.heldout,

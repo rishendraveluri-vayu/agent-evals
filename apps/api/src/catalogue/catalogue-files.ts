@@ -122,6 +122,39 @@ export async function readPrompts(configsDir: string): Promise<PromptView[]> {
   return out.sort((a, b) => a.id.localeCompare(b.id) || compareVersions(a.version, b.version));
 }
 
+/** A prompt id or version safe to put in a file name: no dots, slashes or other separators. */
+export const PROMPT_NAME_PART = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+/** POST /prompts' limit on the text, in UTF-8 bytes. */
+export const PROMPT_MAX_BYTES = 50 * 1024;
+
+/** `v<highest numbered version + 1>`; versions that are not `v<n>` are not counted. */
+export function nextPromptVersion(versions: string[]): string {
+  const numbers = versions.map((v) => /^v(\d+)$/.exec(v)).filter((m): m is RegExpExecArray => m !== null).map((m) => Number(m[1]));
+  return `v${Math.max(0, ...numbers) + 1}`;
+}
+
+/** `4 Nov 2026`, the date style of the prompt files' review headers, in UTC. */
+export function headerDate(when: Date): string {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${when.getUTCDate()} ${months[when.getUTCMonth()]} ${when.getUTCFullYear()}`;
+}
+
+/**
+ * A new prompt version's file: a review header in the style of the existing files, then the text.
+ * `promptText` of the result is the text trimmed, with one final newline.
+ */
+export function promptFile(id: string, version: string, baseVersion: string, text: string, when: Date): string {
+  return (
+    '<!--\n' +
+    `${id} ${version}, created from ${baseVersion} in the UI on ${headerDate(when)}.\n` +
+    'This header comment is stripped before use. Once a run has used this version, changes go in\n' +
+    'a new version file.\n' +
+    '-->\n\n' +
+    `${text.trim()}\n`
+  );
+}
+
 /** Natural order, so v2 < v10. */
 export function compareVersions(a: string, b: string): number {
   return a.localeCompare(b, 'en', { numeric: true });

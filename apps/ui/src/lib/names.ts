@@ -1,5 +1,5 @@
 /** Words for the identifiers the API uses: harnesses, models, settings, splits and graders. */
-import type { Config, GraderSpec, SettingName, TaskInfo } from '../api/types';
+import type { ConfigView, Json, SettingName, TaskView } from '../api/types';
 import { shortHash } from './format';
 
 const HARNESS_NAMES: Record<string, string> = {
@@ -72,18 +72,24 @@ export function graderName(kind: string | undefined): string {
   }
 }
 
-export function graderKinds(graders: GraderSpec[]): string[] {
-  return [...new Set(graders.map((g) => (typeof g.kind === 'string' ? g.kind : typeof g.type === 'string' ? g.type : 'unknown')))];
+/** A task's grader kinds. The grader format is SP4's, so `graders` is loose JSON in the contract:
+ *  each entry's `kind` (or `type`) is read, and anything else counts as unknown. */
+export function graderKinds(graders: Json[]): string[] {
+  const kind = (g: Json) => {
+    if (typeof g !== 'object' || g === null || Array.isArray(g)) return 'unknown';
+    return typeof g.kind === 'string' ? g.kind : typeof g.type === 'string' ? g.type : 'unknown';
+  };
+  return [...new Set(graders.map(kind))];
 }
 
 /** "Judge and state check" */
-export function gradedBy(task: TaskInfo | undefined): string {
+export function gradedBy(task: TaskView | undefined): string {
   if (!task || !task.graders.length) return 'Not set';
   const names = graderKinds(task.graders).map(graderName);
   return names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1].toLowerCase()}`;
 }
 
-export function isJudged(task: TaskInfo | undefined): boolean {
+export function isJudged(task: TaskView | undefined): boolean {
   return !!task && graderKinds(task.graders).includes('judge');
 }
 
@@ -95,7 +101,7 @@ export function graderPhrase(kind: string): string {
 
 /** A task's id and its code graders, for "debt-hardship-03 also has a state check": every grader
  *  but the judge. Null for an unknown task. */
-export function alsoGradedBy(task: TaskInfo | undefined): { name: string; graders: string[] } | null {
+export function alsoGradedBy(task: TaskView | undefined): { name: string; graders: string[] } | null {
   if (!task) return null;
   return { name: task.id, graders: graderKinds(task.graders).filter((k) => k !== 'judge').map(graderPhrase) };
 }
@@ -106,7 +112,7 @@ export function clientKind(kind: string): string {
   return kind;
 }
 
-export function promptName(config: Pick<Config, 'prompt'>): string {
+export function promptName(config: Pick<ConfigView, 'prompt'>): string {
   return `${config.prompt.id} ${config.prompt.version}`;
 }
 
@@ -122,6 +128,8 @@ export function infraReason(label: string | null | undefined): string {
     'infra:budget_net': 'budget safety net',
     'infra:adapter_crash': 'adapter crash',
     'infra:timeout_kill': 'killed at the timeout',
+    'infra:config_error': 'config error, the setup was refused',
+    'infra:sim_error': 'the simulated client failed',
   };
   return reasons[label] ?? label.slice(6).replace(/_/g, ' ');
 }

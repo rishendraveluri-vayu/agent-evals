@@ -1,4 +1,4 @@
-import type { JsonObject, Settings, SettingsSources } from '../contract';
+import type { JsonObject, Seed, Settings, SettingsSources } from '../contract';
 import { bareHex } from '../common/hashing';
 import { modelRejects } from '../configs/settings';
 
@@ -52,6 +52,8 @@ export interface SpecInputs {
     settings: Settings;
     settingsSources: SettingsSources;
     harnessOptions: JsonObject;
+    /** The config's seeded memory and skills (D39); empty lists when it seeds nothing. */
+    seed: Seed;
   };
   task: {
     id: string;
@@ -142,7 +144,10 @@ export function buildSpec(i: SpecInputs): JsonObject {
       })),
       enabled_builtins: [],
     },
-    // POST /configs takes no seed yet, so every trial starts with none (R10.8).
-    seed: { memory: [], skills: [] },
+    // Config-given state only, never anything a trial learned (R10.8).
+    seed: {
+      memory: [...i.config.seed.memory],
+      skills: i.config.seed.skills.map((s) => ({ name: s.name, description: s.description, body: s.body })),
+    },
   };
 }

@@ -29,6 +29,7 @@ const base: SpecInputs = {
       compression: 'unsupported',
     },
     harnessOptions: {},
+    seed: { memory: [], skills: [] },
   },
   task: {
     id: 'emi-basic-01',
@@ -135,6 +136,19 @@ describe('buildSpec', () => {
       task: { client_sim: { model: { max_output_tokens: number } } };
     };
     expect(example.task.client_sim.model.max_output_tokens).toBe(SIM_MAX_OUTPUT_TOKENS);
+  });
+
+  it("starts every trial with no seed when the config seeds nothing, and with the config's seeds when it does (D39)", () => {
+    expect(buildSpec(base).seed).toEqual({ memory: [], skills: [] });
+    const seed = {
+      memory: ['The client prefers EMIs under Rs 20,000 (synthetic).', 'Amounts are in rupees.'],
+      skills: [{ name: 'emi-check', description: 'Check an EMI with the calculator', body: 'Always call the EMI tool.' }],
+    };
+    const spec = buildSpec({ ...base, config: { ...base.config, seed } });
+    expect(errors(spec)).toBe('');
+    expect(spec.seed).toEqual(seed);
+    // A copy: the spec never shares arrays with the config row.
+    expect((spec.seed as { memory: string[] }).memory).not.toBe(seed.memory);
   });
 
   it('refuses a simulated-client task when the experiment has no simulator', () => {

@@ -5,21 +5,31 @@
  * timing, cost or grade, and the client strips any such field before it gets here
  * (toBlindItem). Labels are Rishi's own judgments; nothing here fills one in for him.
  */
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { api } from '../api/client';
 import { errorText } from '../api/errors';
 import { isFixtureMode } from '../api/mode';
-import type { BlindItem, Criterion, LabelSet, LabelValue } from '../api/types';
+import type { BlindItem, LabelSet, LabelValue } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import { optional, useLoad } from '../lib/async';
+import { mdBlocks } from '../lib/markdown';
 import { href } from '../router';
 
+/** `set` and `experiment` come from the address (#/labels?set=tuning&experiment=e_...): the set to
+ *  open on, and one batch to label (GET /labels/queue takes `experiment`). */
+const props = defineProps<{ initialSet?: LabelSet | null; experiment?: string | null }>();
+
 const fixtures = isFixtureMode();
-const SETS: { set: LabelSet; name: string; file: string }[] = [
-  { set: 'tuning', name: 'Tuning', file: 'labels/tuning.jsonl' },
-  { set: 'heldout', name: 'Held-out', file: 'labels/heldout.jsonl' },
-  { set: 'final', name: 'Final run', file: 'labels/final.jsonl' },
+const SETS: { set: LabelSet; name: string; file: string; purpose: string }[] = [
+  {
+    set: 'tuning',
+    name: 'Tuning',
+    file: 'labels/tuning.jsonl',
+    purpose: 'Open coding before any rubric: your pass or fail and a line on why. These shape the rubric and never count towards the judge’s reported agreement.',
+  },
+  { set: 'heldout', name: 'Held-out', file: 'labels/heldout.jsonl', purpose: 'Your judgments are the ground truth the judge is measured against.' },
+  { set: 'final', name: 'Final run', file: 'labels/final.jsonl', purpose: 'Labels from the real experiment, to check the judge on the final model’s outputs.' },
 ];
 const VALUES: { value: LabelValue; text: string; key: string }[] = [
   { value: 'yes', text: 'Yes', key: '1' },
@@ -27,10 +37,16 @@ const VALUES: { value: LabelValue; text: string; key: string }[] = [
   { value: 'unsure', text: 'Not sure', key: '3' },
 ];
 
-const set = ref<LabelSet>('heldout');
-const { data, error, loading } = useLoad(async () => {
-  const entries = await Promise.all(SETS.map(async (s) => [s.set, await optional(api.labelQueue(s.set), null)] as const));
+const set = ref<LabelSet>(props.initialSet ?? 'tuning');
+const { data, error, loading, reload } = useLoad(async () => {
+  const entries = await Promise.all(SETS.map(async (s) => [s.set, await optional(api.labelQueue(s.set, props.experiment ?? undefined), null)] as const));
   return Object.fromEntries(entries) as Record<LabelSet, BlindItem[] | null>;
+});
+/** Opens on the first set with something to label, unless the address names one. */
+watch(data, (d, before) => {
+  if (!d || before || props.initialSet) return;
+  const first = SETS.find((s) => (d[s.set]?.length ?? 0) > 0);
+  if (first) set.value = first.set;
 });
 
 const queue = computed(() => data.value?.[set.value] ?? null);
@@ -42,8 +58,11 @@ const active = ref(0);
 const saving = ref(false);
 const saveError = ref<string | null>(null);
 const savedCount = ref(0);
+const skippedCount = ref(0);
+const noteBox = ref<HTMLTextAreaElement | null>(null);
+const topOfItem = ref<HTMLElement | null>(null);
 
-const criteria = computed(() => (item.value?.criteria ?? []).map((c: Criterion) => (typeof c === 'string' ? { id: c, question: c } : c)));
+const criteria = computed(() => item.value?.criteria ?? []);
 const allAnswered = computed(() => criteria.value.length > 0 && criteria.value.every((c) => answers[c.id]));
 const left = computed(() => (queue.value ? Math.max(0, queue.value.length - index.value) : 0));
 const setFile = computed(() => SETS.find((s) => s.set === set.value)?.file ?? '');
@@ -56,8 +75,30 @@ function reset() {
 }
 watch(set, () => {
   index.value = 0;
+  savedCount.value = 0;
+  skippedCount.value = 0;
   reset();
 });
+
+/** "7 of 30": this item's place in the queue as it loaded. */
+const total = computed(() => queue.value?.length ?? 0);
+const position = computed(() => Math.min(index.value + 1, total.value));
+
+/** The next item starts at its top, with focus on its heading for screen readers. */
+async function toNext() {
+  index.value += 1;
+  reset();
+  await nextTick();
+  topOfItem.value?.scrollIntoView?.({ block: 'start' });
+  topOfItem.value?.focus({ preventScroll: true });
+}
+
+/** New trials may have finished since the queue loaded: fetch it again. */
+async function loadMore() {
+  await reload();
+  index.value = 0;
+  reset();
+}
 
 function choose(criterionIndex: number, value: LabelValue) {
   const c = criteria.value[criterionIndex];
@@ -76,8 +117,7 @@ async function saveAndNext() {
       await api.saveLabel({ item_id: current.item_id, set: set.value, criterion: c.id, value: answers[c.id] as LabelValue, note: note.value.trim() });
     }
     savedCount.value += 1;
-    index.value += 1;
-    reset();
+    await toNext();
   } catch (err) {
     saveError.value = errorText(err);
   } finally {
@@ -86,20 +126,34 @@ async function saveAndNext() {
 }
 
 function skip() {
-  index.value += 1;
-  reset();
+  skippedCount.value += 1;
+  void toNext();
 }
 
-/** 1, 2 and 3 answer the selected question, unless the focus is in the note. */
+/**
+ * 1, 2 and 3 answer the selected question and move to the next one; after the last, the focus
+ * goes to the note. Enter saves and opens the next item, from anywhere but a button that does
+ * something else; in the note, Shift+Enter starts a new line.
+ */
 function onKey(e: KeyboardEvent) {
+  // Only the screen on the page answers: not one left over in memory, nor one not shown yet.
+  if (!item.value || !noteBox.value?.isConnected || e.altKey || e.ctrlKey || e.metaKey) return;
   const target = e.target as HTMLElement | null;
-  if (target && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.tagName === 'SELECT')) return;
-  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  const tag = target?.tagName;
+  if (e.key === 'Enter') {
+    if (tag === 'SELECT' || (tag === 'TEXTAREA' && e.shiftKey)) return;
+    if (tag === 'BUTTON' && !target?.closest('[data-test="criterion"]')) return;
+    e.preventDefault();
+    if (allAnswered.value && !saving.value) void saveAndNext();
+    return;
+  }
+  if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return;
   const v = VALUES.find((x) => x.key === e.key);
-  if (!v || !item.value) return;
+  if (!v) return;
   e.preventDefault();
   choose(active.value, v.value);
   if (active.value < criteria.value.length - 1) active.value += 1;
+  else void nextTick(() => noteBox.value?.focus());
 }
 onMounted(() => window.addEventListener('keydown', onKey));
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
@@ -108,8 +162,20 @@ const setLabel = (s: LabelSet, name: string) => {
   const q = data.value?.[s];
   return q ? `${name}, ${q.length} to go` : name;
 };
-const pretty = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v, null, 2));
+const purpose = computed(() => SETS.find((s) => s.set === set.value)?.purpose ?? '');
+
+/** Tool arguments and results arrive as JSON text (the contract) or, from older data, as values. */
+function pretty(v: unknown): string {
+  if (typeof v !== 'string') return JSON.stringify(v, null, 2);
+  try {
+    return JSON.stringify(JSON.parse(v), null, 2);
+  } catch {
+    return v;
+  }
+}
 const paragraphs = (text: string) => text.split(/\n{2,}/);
+/** The agent's reply as it reads: bold, bullets and numbered steps, as text (no HTML). */
+const blocks = (text: string) => mdBlocks(text);
 </script>
 
 <template>
@@ -118,8 +184,11 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
       <h1 tabindex="-1">
         Label outputs
       </h1>
-      <p class="lede">
-        Your judgments are the ground truth the judge is measured against.
+      <p
+        class="lede"
+        data-test="set-purpose"
+      >
+        {{ purpose }}
         <!-- While this set has items to go, the judge's verdicts stay out of sight, so labelling stays blind. -->
         <span
           v-if="queue && left > 0"
@@ -162,7 +231,8 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
     <span
       v-if="queue"
       class="progress num"
-    >{{ left }} to go<template v-if="savedCount">, {{ savedCount }} saved this session</template></span>
+      data-test="progress"
+    ><template v-if="item">{{ position }} of {{ total }}</template><template v-else>{{ total }} of {{ total }}</template><template v-if="savedCount || skippedCount"> · {{ savedCount }} saved<template v-if="skippedCount">, {{ skippedCount }} skipped</template></template></span>
   </div>
 
   <LoadState
@@ -177,14 +247,25 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
     >
       The {{ SETS.find((s) => s.set === set)?.name.toLowerCase() }} queue could not be loaded.
     </p>
-    <p
+    <div
       v-else-if="!item"
       class="panel empty"
       role="status"
       data-test="queue-empty"
     >
-      Nothing left to label in this set.
-    </p>
+      <p>
+        {{ total ? `All ${total} in this queue done${savedCount ? `: ${savedCount} saved` : ''}${skippedCount ? `, ${skippedCount} skipped` : ''}.` : 'Nothing to label in this set yet.' }}
+        Trials that finish later join the queue.
+      </p>
+      <button
+        type="button"
+        class="btn btn--quiet"
+        data-test="load-more"
+        @click="loadMore"
+      >
+        Check for more
+      </button>
+    </div>
     <div
       v-else
       class="split"
@@ -196,8 +277,10 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
       >
         <h2
           id="output"
+          ref="topOfItem"
           class="section-title"
           :class="{ mono: item.task_id }"
+          tabindex="-1"
         >
           {{ item.task_id ?? 'The output to label' }}
         </h2>
@@ -241,13 +324,33 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
             :class="m.role === 'assistant' ? 'bubble--agent' : 'bubble--client'"
           >
             <span class="bubble-who">{{ m.role === 'assistant' ? 'Agent' : 'Client' }}</span>
-            <p
-              v-for="(p, pi) in paragraphs(m.content)"
-              :key="pi"
-              class="bubble-text"
-            >
-              {{ p }}
-            </p>
+            <template v-if="m.role === 'assistant'">
+              <p
+                v-for="(b, bi) in blocks(m.content)"
+                :key="bi"
+                :class="['bubble-text', `md md--${b.kind}`]"
+                :style="b.depth ? { paddingLeft: `${b.depth * 18 + 18}px` } : undefined"
+              >
+                <template
+                  v-for="(part, pi) in b.parts"
+                  :key="pi"
+                >
+                  <strong v-if="part.bold">{{ part.text }}</strong>
+                  <template v-else>
+                    {{ part.text }}
+                  </template>
+                </template>
+              </p>
+            </template>
+            <template v-else>
+              <p
+                v-for="(p, pi) in paragraphs(m.content)"
+                :key="pi"
+                class="bubble-text"
+              >
+                {{ p }}
+              </p>
+            </template>
           </article>
         </template>
       </section>
@@ -263,8 +366,14 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
           >
             Your judgment
           </h2>
+          <p
+            class="judgment-progress num"
+            data-test="item-progress"
+          >
+            {{ position }} of {{ total }}
+          </p>
           <p class="secondary small hint">
-            Press 1, 2 or 3 to answer the selected question.
+            Press 1, 2 or 3 to answer, type a note, then Enter to save and open the next.
           </p>
         </div>
         <div class="criteria">
@@ -276,7 +385,7 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
             data-test="criterion"
           >
             <legend class="strong">
-              {{ c.question }}
+              {{ c.text }}
             </legend>
             <div class="answers">
               <button
@@ -289,18 +398,21 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
                 @click="choose(ci, v.value)"
                 @focus="active = ci"
               >
-                {{ v.text }}
+                <kbd aria-hidden="true">{{ v.key }}</kbd>{{ v.text }}
               </button>
             </div>
           </fieldset>
         </div>
         <label class="field small">
-          <span class="strong">Note, optional</span>
+          <span class="strong">Note, one line on why</span>
           <textarea
+            ref="noteBox"
             v-model="note"
-            rows="3"
+            rows="2"
             placeholder="What made you decide, in a sentence"
+            data-test="label-note"
           />
+          <span class="secondary smaller">Enter saves; Shift+Enter for a new line.</span>
         </label>
         <p
           v-if="saveError"
@@ -317,7 +429,7 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
             data-test="save-label"
             @click="saveAndNext"
           >
-            Save and next
+            Save and next <kbd aria-hidden="true">Enter</kbd>
           </button>
           <button
             type="button"
@@ -428,19 +540,79 @@ const paragraphs = (text: string) => text.split(/\n{2,}/);
   background: var(--surface-muted);
 }
 
+/* One full-width button per answer, stacked: big targets that never wrap their words. */
 .answers {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
 }
 
+/* Big targets: one press per item. The key that answers is printed on each. */
 .answer {
-  min-height: 44px;
-  border: 1px solid var(--rule);
-  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 14px;
+  white-space: nowrap;
+  border: 1px solid var(--rule-strong);
+  border-radius: 8px;
   background: var(--surface);
   color: var(--ink);
+  font: inherit;
+  font-size: 17px;
   cursor: pointer;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 4px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  background: var(--surface-muted);
+}
+
+.btn kbd {
+  margin-left: 6px;
+  color: inherit;
+  background: transparent;
+  border-color: currentColor;
+}
+
+.judgment-progress {
+  margin: 2px 0 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.md--heading {
+  font-weight: 600;
+}
+
+.md--item {
+  position: relative;
+  padding-left: 18px;
+}
+
+.md--item::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 0.65em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ink-2);
+}
+
+.empty p {
+  margin: 0 0 10px;
 }
 
 .answer--yes[aria-pressed='true'] {
