@@ -20,6 +20,9 @@ const RESERVE_LOCK = 74_201_107;
 
 const round = (n: number): number => Math.round(n * 1e8) / 1e8;
 
+/** SQL that is true when the model in `column` is a fake one (`fake/*`, LiteLLM's route to the fake server). */
+const FAKE = (column: string): string => `coalesce(${column}, '') LIKE 'fake/%'`;
+
 /** What counts against an allowance: a settled cost, or the reservation while unsettled or unknown. */
 const USED_SQL = `coalesce(sum(CASE WHEN status = 'pending' OR cost_usd IS NULL THEN reserved_usd ELSE cost_usd END), 0)::float8`;
 
@@ -114,9 +117,16 @@ export class SpendService {
 
   /** GET /spend: experiment trials, platform calls and the LLM judge, separately. */
   async totals(): Promise<SpendView> {
-    const [t] = await this.db.query<{ usd: number }>(
-      // A shipped example's trials (SP7) were paid for on another machine, not by this one.
-      `SELECT coalesce(sum(coalesce(t.cost_usd, 0) + coalesce(t.sim_cost_usd, 0)), 0)::float8 AS usd FROM trials t WHERE NOT t.probe AND ${NOT_EXAMPLE_TRIAL('t')}`,
+    const [t] = await this.db.query<{ usd: number; fake: number }>(
+      // A shipped example's trials (SP7) were paid for on another machine, not by this one. A fake
+      // model's cost (`fake/*`) is a made-up price, never money: kept apart, by role, since a
+      // trial's agent and simulated client can be on different models.
+      `SELECT coalesce(sum(CASE WHEN ${FAKE('c.model')} THEN 0 ELSE coalesce(t.cost_usd, 0) END
+                          + CASE WHEN ${FAKE('e.sim_model')} THEN 0 ELSE coalesce(t.sim_cost_usd, 0) END), 0)::float8 AS usd,
+              coalesce(sum(CASE WHEN ${FAKE('c.model')} THEN coalesce(t.cost_usd, 0) ELSE 0 END
+                          + CASE WHEN ${FAKE('e.sim_model')} THEN coalesce(t.sim_cost_usd, 0) ELSE 0 END), 0)::float8 AS fake
+       FROM trials t JOIN configs c ON c.hash = t.config_hash LEFT JOIN experiments e ON e.id = t.experiment_id
+       WHERE NOT t.probe AND ${NOT_EXAMPLE_TRIAL('t')}`,
     );
     const kinds = await this.db.query<{ kind: string; usd: number; calls: number }>(
       `SELECT kind, coalesce(sum(cost_usd), 0)::float8 AS usd, count(*)::int AS calls FROM system_spend GROUP BY kind ORDER BY kind`,
@@ -130,6 +140,7 @@ export class SpendService {
     const judge = await this.judge.totals();
     return {
       trials_usd: trials,
+      fake_trials_usd: round(t?.fake ?? 0),
       system_usd: system,
       judge_usd: judge.usd,
       judge_approvals: judge.approvals,

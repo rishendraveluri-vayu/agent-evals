@@ -260,7 +260,9 @@ describeWithDb('LLM judge approval and its key (e2e, real Postgres)', () => {
     const after = await spend();
     expect(after.judge_approvals).toBe(before.judge_approvals + 2);
     expect(after.judge_usd! - before.judge_usd!).toBeCloseTo(0.875, 8);
-    expect(after.trials_usd).toBeCloseTo(before.trials_usd + 2 * 0.00136, 8); // the two trials' own cost, judge apart
+    // The two trials' own cost, judge apart: on a fake model, so a made-up price, kept apart from real spend.
+    expect(after.fake_trials_usd).toBeCloseTo(before.fake_trials_usd + 2 * 0.00136, 8);
+    expect(after.trials_usd).toBe(before.trials_usd);
     expect(after.system_usd).toBe(before.system_usd);
     expect(after.total_usd).toBeCloseTo(after.trials_usd + after.system_usd + after.judge_usd!, 8);
 

@@ -1158,15 +1158,23 @@ export interface ConflictCheckView {
 
 /** GET /spend: trial spend, the platform's own calls and the LLM judge, separately (D38). */
 export interface SpendView {
-  /** Experiment trials, agent and simulator calls. Probe trials (fake model) are not counted. */
+  /**
+   * Experiment trials' real spend: agent calls on a real model, and simulator calls on a real
+   * model. Calls to fake models (`fake/*`), probe trials and shipped examples are not counted.
+   */
   trials_usd: number;
+  /**
+   * The made-up prices LiteLLM counted for experiment trials' calls to fake models (`fake/*`).
+   * Not money: kept apart, and not in `total_usd`.
+   */
+  fake_trials_usd: number;
   /** Platform-made calls with a known cost. */
   system_usd: number;
   /** The LLM judge's calls across every approval, revoked ones included, from LiteLLM's spend log; null when it could not be read. */
   judge_usd: number | null;
   /** Judge approvals ever made, revoked ones included. */
   judge_approvals: number;
-  /** Trials, system and judge spend (the judge only when known). */
+  /** Real trial spend, system and judge spend (the judge only when known); never fake prices. */
   total_usd: number;
   system_by_kind: Record<string, { usd: number; calls: number }>;
   allowances: AllowanceView[];

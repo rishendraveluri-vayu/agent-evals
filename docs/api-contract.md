@@ -293,16 +293,20 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 
 ## Spend
 
-- `GET /spend` returns `{trials_usd, system_usd, judge_usd, judge_approvals, total_usd,
+- `GET /spend` returns `{trials_usd, fake_trials_usd, system_usd, judge_usd, judge_approvals, total_usd,
   system_by_kind: {<kind>: {usd, calls}}, allowances: [{kind, limit_usd, used_usd,
   remaining_usd, calls, half_reached}]}`. `judge_usd` is the LLM judge's spend across every
   approval, revoked ones included: for each key, the sum of `spend` over its LiteLLM spend-log
   rows (for a revoked key, at least what the log showed at revoke, and that figure when LiteLLM
   cannot be read). It is null when an active key's log cannot be read. `judge_approvals` counts
-  approvals ever made. `total_usd` is trials, system and judge spend (the judge only when known).
-  `trials_usd` is every experiment trial's agent and simulator cost (fake-model experiment
-  trials included, at the made-up fake prices, as in each experiment's `spend_usd`); probe trials
-  are left out. `system_usd` is the platform's own calls with a known cost, shown as its own line
+  approvals ever made. `total_usd` is real trial, system and judge spend (the judge only when
+  known), never fake prices. `trials_usd` is experiment trials' real spend: each trial's agent
+  cost when its config's model is real, and its simulator cost when the experiment's simulator
+  model is real. `fake_trials_usd` is the rest, the made-up prices LiteLLM counted for calls to
+  `fake/*` models: not money, so kept apart and out of `total_usd` (since 5 Nov; before, it was
+  in `trials_usd`). Probe trials and shipped examples are left out of both. Each experiment's own
+  `spend_usd` still counts every call at its price, fake ones included, as LiteLLM's budget for
+  it does. `system_usd` is the platform's own calls with a known cost, shown as its own line
   (D38).
 - `GET /spend/system?kind=conflict_check` returns one row per platform-made call, newest first:
   `{id, kind, model, status: pending|done|failed, reserved_usd, cost_usd, cost_source, input_tokens,

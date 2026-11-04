@@ -300,26 +300,44 @@ describeWithDb('pre-run rendered prompt, conflict check and spend (e2e, real Pos
     expect(((await check(hermes).expect(200)).body as ConflictCheckView).cached).toBe(true);
   });
 
-  it('splits spend into experiment trials and system calls, leaving probes out', async () => {
-    const exp = (
-      await request(env.http)
-        .post('/api/experiments')
-        .send({ name: 'paid', axis: 'none', config_hashes: [ownloop], task_sha256s: [cat.tasks['emi-basic']], n: 1, budget_usd: 5 })
-        .expect(201)
-    ).body as { id: string };
-    await request(env.http).post(`/api/experiments/${exp.id}/start`).expect(200);
-    const c = (await claim('w-paid', 'ownloop'))!;
-    expect(c.experiment_id).toBe(exp.id);
-    await finish(c, 'w-paid', 'agent', { 'artifacts/proxy/0001.request.json': firstRequest(ourPrompt) });
+  it('splits spend into experiment trials and system calls, leaving probes out, and fake models’ made-up prices apart', async () => {
+    const runOne = async (config: string, name: string): Promise<string> => {
+      const exp = (
+        await request(env.http)
+          .post('/api/experiments')
+          .send({ name, axis: 'none', config_hashes: [config], task_sha256s: [cat.tasks['emi-basic']], n: 1, budget_usd: 5 })
+          .expect(201)
+      ).body as { id: string };
+      await request(env.http).post(`/api/experiments/${exp.id}/start`).expect(200);
+      const c = (await claim(`w-${name}`, 'ownloop'))!;
+      expect(c.experiment_id).toBe(exp.id);
+      await finish(c, `w-${name}`, 'agent', { 'artifacts/proxy/0001.request.json': firstRequest(ourPrompt) });
+      return c.trial_id;
+    };
+    // The own-loop config runs on fake/finance-emi: its cost is a made-up price, not money.
+    const fakeTrial = await runOne(ownloop, 'fake');
+    const haiku = await makeConfig(env.http, cat, { name: 'own loop on haiku', harness: 'ownloop', model: 'claude-haiku-5-5' });
+    const realTrial = await runOne(haiku, 'real');
 
     const probes = (await env.pool.query<{ n: number; usd: number }>('SELECT count(*)::int AS n, sum(cost_usd)::float8 AS usd FROM trials WHERE probe AND cost_usd IS NOT NULL')).rows[0];
     expect(probes.n).toBeGreaterThan(0); // probes reported a (fake) cost, and it must not count
     const system = (await spendRows()).reduce((s, r) => s + (r.cost_usd ?? 0), 0);
 
     const spend = (await request(env.http).get('/api/spend').expect(200)).body as SpendView;
-    expect(spend.trials_usd).toBeCloseTo(0.00136, 8); // the one experiment trial (runnerReport's proxy cost)
+    expect(spend.trials_usd).toBeCloseTo(0.00136, 8); // the real-model trial only (runnerReport's proxy cost)
+    expect(spend.fake_trials_usd).toBeCloseTo(0.00136, 8); // the fake one, kept apart
     expect(spend.system_usd).toBeCloseTo(system, 8);
     expect(spend.total_usd).toBeCloseTo(0.00136 + system, 8);
+
+    // The simulated client is counted by its own model: a fake client on a real agent is made up, and the other way round.
+    await env.pool.query(`UPDATE trials SET sim_cost_usd = 0.5 WHERE id = ANY($1)`, [[fakeTrial, realTrial]]);
+    await env.pool.query(`UPDATE experiments SET sim_model = 'fake/sim-client' WHERE id = (SELECT experiment_id FROM trials WHERE id = $1)`, [realTrial]);
+    await env.pool.query(`UPDATE experiments SET sim_model = 'claude-haiku-5-5' WHERE id = (SELECT experiment_id FROM trials WHERE id = $1)`, [fakeTrial]);
+    const mixed = (await request(env.http).get('/api/spend').expect(200)).body as SpendView;
+    expect(mixed.trials_usd).toBeCloseTo(0.00136 + 0.5, 8);
+    expect(mixed.fake_trials_usd).toBeCloseTo(0.00136 + 0.5, 8);
+    expect(mixed.total_usd).toBeCloseTo(0.00136 + 0.5 + system, 8);
+    await env.pool.query(`UPDATE trials SET sim_cost_usd = NULL WHERE id = ANY($1)`, [[fakeTrial, realTrial]]);
     expect(spend.system_by_kind.conflict_check.calls).toBe((await spendRows()).length);
     expect(spend.system_by_kind.conflict_check.usd).toBeCloseTo(system, 8);
     expect(spend.allowances).toEqual([expect.objectContaining({ kind: 'conflict_check', limit_usd: 2, half_reached: true })]);
