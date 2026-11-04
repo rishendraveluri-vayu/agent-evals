@@ -104,4 +104,5 @@ Any change after seeing results is recorded there as a deviation (CLAUDE.md).
    at N = 5 to 10 trials per task it cannot flag a task, and a flag here means "look here".
 4. **Settled 5 Nov (D42):** an equivalence margin of +/- 10 points of pass rate, fixed in the
    analysis plan before the run.
-5. Alpha 0.05 and 95% intervals (proposed).
+5. **Settled 5 Nov (D43):** alpha 0.05 and 95% intervals, for the verdict, the critical guardrail,
+   the equivalence check and the BH flags (q = 0.05).

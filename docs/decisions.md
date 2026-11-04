@@ -50,6 +50,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D10 Unit of analysis and the verdict | The task is the unit: per-task pass-rate difference B minus A, two-level bootstrap interval (tasks, then trials), sign-flip permutation test; the headline is the task pass rate (decision 2 of the stats proposal); a critical-failure guardrail and a regression list with severity and cause sit beside it | Rishi | 5 Nov |
 | D41 Per-task flags: multiple-comparison correction | Benjamini-Hochberg at 5% false discovery rate marks a task's difference as beyond noise; every task where B dropped is listed either way | Rishi | 5 Nov |
 | D42 Equivalence margin | +/- 10 points of pass rate: "practically equivalent" when the whole 95% interval of B minus A lies inside it | Rishi | 5 Nov |
+| D43 Significance level | Alpha 0.05 and 95% intervals throughout (verdict, critical guardrail, equivalence, BH q = 0.05) | Rishi | 5 Nov |
 
 ## Open
 
@@ -218,7 +219,7 @@ Options: the task as the unit (two-level bootstrap and a sign-flip test, propose
 Choice: the task as the unit, as proposed. The headline is the task pass rate (every required grader passes; a trial with no outcome is counted apart, never as a pass or a fail). Each grader gets a severity (critical, major or minor) in its task file, set by Rishi; B can only be called better when its critical failures did not rise beyond noise, with their paired interval shown beside the verdict. Where B regressed, a list shows which checks flipped from pass to fail, critical ones first, and each failed trial's cause (the brief's stretch item 7: wrong tool, made-up tool arguments, gave up early, ran out of steps, grader disagrees with the human label).
 Why: Rishi: "While the logic is sound, we may need to have more details, some failures are more catastrophic than others so an overall pass rate works, but also where b regressed needs a further look as to what kind of regression that is." He chose the critical guardrail over a weighted score or report-only.
 What would change it: severities that cannot be agreed per grader; too few critical checks for their interval to say anything (then report them without the gate, and say so).
-Still open from the stats proposal: the per-task correction (Holm or BH), an equivalence margin, alpha.
+Settled after it: the per-task correction (D41), the equivalence margin (D42) and alpha (D43).
 
 ### D41: Which correction flags a task as beyond noise (5 Nov)
 Options: Holm (family-wise error: at most a 5% chance that any flag is false); Benjamini-Hochberg (false discovery rate: about 5% of flagged tasks may be noise); both as two levels ("worth a look" and "confirmed"); no correction (about one false flag in 20 tasks even when nothing changed).
