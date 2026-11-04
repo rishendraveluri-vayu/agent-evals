@@ -249,6 +249,12 @@ kbd,
   font-size: 13px;
 }
 
+/* A span on a line of its own: a reason under a setting's source, a label over a quote. Several
+   pages use it without defining it, so it lives here once. */
+.block {
+  display: block;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
