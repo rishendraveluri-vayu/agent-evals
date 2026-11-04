@@ -1,0 +1,52 @@
+{
+  "contract_version": "2",
+  "harness": "openai-agents",
+  "version": {
+    "package": "TODO",
+    "ref": "TODO"
+  },
+  "model_api_formats": [
+    "openai_chat"
+  ],
+  "settings": {
+    "temperature": {
+      "supported": false,
+      "evidence": "none"
+    },
+    "max_output_tokens": {
+      "supported": false,
+      "evidence": "none"
+    },
+    "max_steps": {
+      "supported": false,
+      "evidence": "none"
+    },
+    "timeout_s": {
+      "supported": true,
+      "native": "wrapper",
+      "evidence": "declared:the adapter library's watchdog"
+    },
+    "parallel_tool_calls": {
+      "supported": false,
+      "evidence": "none"
+    },
+    "memory": {
+      "supported": false,
+      "evidence": "none"
+    },
+    "skills": {
+      "supported": false,
+      "evidence": "none"
+    },
+    "compression": {
+      "supported": false,
+      "evidence": "none"
+    }
+  },
+  "harness_options_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "known_differences": []
+}

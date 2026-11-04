@@ -1,0 +1,34 @@
+[project]
+name = "openai-agents-worker"
+version = "0.1.0"
+description = "The openai-agents harness adapter on the shared adapter library (contract v2)."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "evals-adapter",
+    # TODO: the harness package, pinned to an exact version, and an MCP client if it needs one.
+]
+
+[project.scripts]
+openai-agents-adapter = "openai_agents_adapter.adapter:entry"
+
+[tool.uv.sources]
+evals-adapter = { path = "../adapterlib", editable = true }
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "openai_agents_adapter"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[dependency-groups]
+dev = [
+    "jsonschema>=4.25.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+]
