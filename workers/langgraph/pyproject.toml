@@ -1,0 +1,48 @@
+[project]
+name = "langgraph-worker"
+version = "0.1.0"
+description = "The langgraph harness adapter on the shared adapter library (contract v2)."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "evals-adapter",
+    # The pins from docs/research/harnesses/langgraph.md: the newest stable releases from on or
+    # before 20 Oct 2026. langchain-mcp-adapters caps mcp below 2, so the client is mcp 1.30.0
+    # while the finance server runs mcp 2.3.0 (the gate tests cover that pairing).
+    "langgraph==1.2.16",
+    "langchain==1.4.6",
+    "langchain-core==1.6.12",
+    "langchain-openai==1.7.2",
+    "langchain-mcp-adapters==0.3.2",
+    "mcp==1.30.0",
+]
+
+[project.scripts]
+langgraph-adapter = "langgraph_adapter.adapter:entry"
+
+[tool.uv]
+# Nothing released in the two weeks before pinning (4 Nov 2026), transitive packages included.
+exclude-newer = "2026-10-21T00:00:00Z"
+# The dev tools only run the tests, never a trial; keep them at the versions the other workers use.
+exclude-newer-package = { pytest = "2026-11-04T00:00:00Z", ruff = "2026-11-04T00:00:00Z" }
+
+[tool.uv.sources]
+evals-adapter = { path = "../adapterlib", editable = true }
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "langgraph_adapter"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[dependency-groups]
+dev = [
+    "jsonschema>=4.25.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+]
