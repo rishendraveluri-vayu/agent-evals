@@ -1,5 +1,6 @@
 import type { JsonObject, Settings, SettingsSources } from '../contract';
 import { bareHex } from '../common/hashing';
+import { modelRejects } from '../configs/settings';
 
 /** Environment variable names for the trial's keys (D23); never OPENAI_API_KEY. */
 export const MODEL_KEY_ENV = 'EVALS_MODEL_API_KEY';
@@ -15,6 +16,15 @@ export const TOOL_TIMEOUT_S = 30;
 /** D22: the simulated client runs at temperature 0. The token cap is the contract example's. */
 export const SIM_TEMPERATURE = 0;
 export const SIM_MAX_OUTPUT_TOKENS = 300;
+
+/**
+ * The simulator's temperature on `model`: D22's 0, or null (not sent, so the model's default
+ * applies) on a model that refuses temperature, which D27 settles for Haiku 5.5. The reply cache
+ * keeps the client repeatable either way.
+ */
+export function simTemperature(model: string): number | null {
+  return modelRejects(model, 'temperature') ? null : SIM_TEMPERATURE;
+}
 
 /** The file the finance MCP server reads from its state folder. */
 export const CLIENT_STATE_FILE = 'client.json';
@@ -35,12 +45,20 @@ export interface SpecInputs {
     settingsSources: SettingsSources;
     harnessOptions: JsonObject;
   };
-  task: { id: string; sha256: string; split: 'discovery' | 'held_out'; body: JsonObject };
+  task: {
+    id: string;
+    sha256: string;
+    split: 'discovery' | 'held_out';
+    body: JsonObject;
+    /** D27: the client file's summary for the simulator (client-summary.ts); null without one. */
+    clientSummary?: string | null;
+  };
   prompt: { id: string; version: string; sha256: string; text: string };
   toolset: { id: string; version: string; sha256: string; servers: { name: string; allowed_tools: string[] }[] };
   sim: {
     model: string;
-    temperature: number;
+    /** Null: not sent (D27). */
+    temperature: number | null;
     maxOutputTokens: number;
     prompt: { id: string; version: string; sha256: string; text: string };
   } | null;
@@ -53,7 +71,7 @@ const SIM_FIELDS = ['persona', 'hidden_facts', 'concerns', 'goal', 'opening_mess
 /**
  * A complete contract v2 spec (contract/v2/spec.schema.json) for one trial attempt.
  * The task's client_sim gets the experiment's simulator model, held identical across every
- * config in the experiment (D22).
+ * config in the experiment (D22), and the summary of the task's client file (D27).
  */
 export function buildSpec(i: SpecInputs): JsonObject {
   const taskSim = i.task.body.client_sim;
@@ -62,6 +80,7 @@ export function buildSpec(i: SpecInputs): JsonObject {
     if (!i.sim) throw new Error(`task ${i.task.id} has a simulated client but the experiment has no simulator model`);
     const picked: JsonObject = {};
     for (const f of SIM_FIELDS) picked[f] = taskSim[f];
+    if (i.task.clientSummary) picked.client_summary = i.task.clientSummary;
     clientSim = {
       ...picked,
       model: {

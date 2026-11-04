@@ -15,7 +15,8 @@ import { FINISHED, HELD, LEASE_S, PAUSES_EXPERIMENT, SWEEP_INTERVAL_MS, shouldRe
 import { MAX_FILE_BYTES, checkFiles, locate, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
 import { configErrorReason, parseReport, spanRows, usageOf } from './report';
 import { SIM_REPLIES_FILE, type SimReplyRow, type SimScope, parseSimReplies, simScope } from './sim-cache';
-import { CLIENT_STATE_FILE, SIM_MAX_OUTPUT_TOKENS, SIM_TEMPERATURE, buildSpec } from './spec-builder';
+import { clientSummary } from './client-summary';
+import { CLIENT_STATE_FILE, SIM_MAX_OUTPUT_TOKENS, buildSpec } from './spec-builder';
 
 interface TrialRow {
   id: string;
@@ -41,7 +42,8 @@ const one = async <T>(q: Queryable, sql: string, params: unknown[]): Promise<T |
 async function simCache(q: Queryable, scope: SimScope): Promise<Record<string, string>> {
   const { rows } = await q.query<{ key: string; reply: string }>(
     `SELECT key, reply FROM sim_replies
-     WHERE task_sha256 = $1 AND sim_model = $2 AND temperature = $3 AND max_output_tokens = $4 AND prompt_sha256 = $5
+     WHERE task_sha256 = $1 AND sim_model = $2 AND temperature IS NOT DISTINCT FROM $3::double precision
+       AND max_output_tokens = $4 AND prompt_sha256 = $5
      ORDER BY created_at, key`,
     [scope.task_sha256, scope.sim_model, scope.temperature, scope.max_output_tokens, scope.prompt_sha256],
   );
@@ -160,7 +162,8 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
         if (!exp.sim_model || !simPrompt) throw new ApiError(500, 'experiment_without_simulator', `experiment ${exp.id} has a simulated-client task but no simulator`);
         sim = {
           model: exp.sim_model,
-          temperature: exp.sim_temperature ?? SIM_TEMPERATURE,
+          // Null is "not sent" (D27), so there is no fallback: the experiment stored its choice.
+          temperature: exp.sim_temperature,
           maxOutputTokens: exp.sim_max_output_tokens ?? SIM_MAX_OUTPUT_TOKENS,
           prompt: simPrompt,
         };
@@ -176,7 +179,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
           settingsSources: cfg.settings_sources,
           harnessOptions: cfg.harness_options,
         },
-        task: { id: task.id, sha256: task.sha256, split: task.split, body: task.body },
+        task: { id: task.id, sha256: task.sha256, split: task.split, body: task.body, clientSummary: withSim ? clientSummary(task.client_state) : null },
         prompt,
         toolset,
         sim,

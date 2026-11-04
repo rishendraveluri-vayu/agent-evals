@@ -25,7 +25,7 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
 
   it('lists prompts without their review header, the built-in toolset, and tasks', async () => {
     const prompts = (await request(env.http).get('/api/prompts').expect(200)).body as { id: string; version: string; text: string; path: string }[];
-    expect(prompts.map((p) => `${p.id}.${p.version}`)).toEqual(expect.arrayContaining(['finance-advisor.v1', 'client-sim.v1']));
+    expect(prompts.map((p) => `${p.id}.${p.version}`)).toEqual(expect.arrayContaining(['finance-advisor.v1', 'client-sim.v1', 'client-sim.v2']));
     expect(prompts.every((p) => !p.text.startsWith('<!--'))).toBe(true);
     const toolsets = (await request(env.http).get('/api/toolsets').expect(200)).body as { id: string; version: string; servers: { allowed_tools: string[] }[] }[];
     expect(toolsets).toHaveLength(1);

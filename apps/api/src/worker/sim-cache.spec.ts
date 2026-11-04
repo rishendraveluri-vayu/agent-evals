@@ -22,6 +22,15 @@ describe('simScope', () => {
     });
   });
 
+  it('takes a null or absent temperature (not sent, D27) as its own scope', () => {
+    const withModel = (model: Record<string, unknown>) => ({ task: { client_sim: { model: { ...spec.task.client_sim.model, ...model } } } });
+    expect(simScope('sha256:task', withModel({ temperature: null }))?.temperature).toBeNull();
+    const noTemperature: Record<string, unknown> = { ...spec.task.client_sim.model };
+    delete noTemperature.temperature;
+    expect(simScope('sha256:task', { task: { client_sim: { model: noTemperature } } })?.temperature).toBeNull();
+    expect(simScope('sha256:task', withModel({ temperature: '0' }))).toBeNull();
+  });
+
   it('is null for a task without a simulated client, or a spec it cannot read', () => {
     expect(simScope('sha256:task', { task: { client_sim: null } })).toBeNull();
     expect(simScope('sha256:task', null)).toBeNull();

@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { builtInToolsets } from '../catalogue/catalogue-files';
 import { sha256Ref } from '../common/hashing';
 import { PLATFORM_DEFAULTS } from '../configs/settings';
-import { MODEL_KEY_ENV, SIM_KEY_ENV, type SpecInputs, buildSpec } from './spec-builder';
+import { MODEL_KEY_ENV, SIM_KEY_ENV, type SpecInputs, buildSpec, simTemperature } from './spec-builder';
 
 const SCHEMA = JSON.parse(readFileSync(path.resolve(__dirname, '../../../../contract/v2/spec.schema.json'), 'utf8')) as object;
 const validate = new Ajv2020({ allErrors: true, strict: false }).compile(SCHEMA);
@@ -87,6 +87,38 @@ describe('buildSpec', () => {
     expect(sim.model.api_key_env).toBe(SIM_KEY_ENV);
     expect(sim.model.temperature).toBe(0);
     expect(sim.notes).toBeUndefined();
+  });
+
+  it('adds the client file summary and a null temperature for a simulator on Haiku 5.5 (D27)', () => {
+    const simPrompt = { id: 'client-sim', version: 'v2', sha256: sha256Ref('{{client_summary}}\n'), text: '{{client_summary}}\n' };
+    const taskSim = {
+      persona: 'Meera, 41 (invented test persona)',
+      hidden_facts: [],
+      concerns: ['Can I keep the house?'],
+      goal: 'Know whether she can keep the house',
+      opening_message: 'Where do I start?',
+      max_client_turns: 3,
+    };
+    const input = (clientSummary: string | null): SpecInputs => ({
+      ...base,
+      task: { ...base.task, body: { messages: [{ role: 'user', content: 'Where do I start?' }], client_sim: taskSim }, clientSummary },
+      sim: { model: 'claude-haiku-5-5', temperature: simTemperature('claude-haiku-5-5'), maxOutputTokens: 300, prompt: simPrompt },
+    });
+    const spec = buildSpec(input('Profile:\n- name: Meera (synthetic)\nDebts: none recorded'));
+    expect(errors(spec)).toBe('');
+    const sim = (spec.task as { client_sim: { client_summary?: string; model: { temperature: number | null } } }).client_sim;
+    expect(sim.client_summary).toBe('Profile:\n- name: Meera (synthetic)\nDebts: none recorded');
+    expect(sim.model.temperature).toBeNull();
+    // Without a client file the field is left out, not empty.
+    const plain = buildSpec(input(null));
+    expect(errors(plain)).toBe('');
+    expect((plain.task as { client_sim: object }).client_sim).not.toHaveProperty('client_summary');
+  });
+
+  it("keeps D22's temperature 0 for a simulator model that takes it", () => {
+    expect(simTemperature('claude-haiku-5-5')).toBeNull();
+    expect(simTemperature('gemini-3.8-flash')).toBe(0);
+    expect(simTemperature('fake/sim-client')).toBe(0);
   });
 
   it('refuses a simulated-client task when the experiment has no simulator', () => {

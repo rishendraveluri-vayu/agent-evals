@@ -15,7 +15,8 @@ export const SIM_REPLIES_FILE = 'sim_replies.jsonl';
 export interface SimScope {
   task_sha256: string;
   sim_model: string;
-  temperature: number;
+  /** Null when the simulator's temperature is not sent (D27). */
+  temperature: number | null;
   max_output_tokens: number;
   prompt_sha256: string;
 }
@@ -36,8 +37,10 @@ export function simScope(taskSha256: string, spec: unknown): SimScope | null {
   const model = isObj(sim) ? sim.model : null;
   if (!isObj(model) || !isObj(model.prompt)) return null;
   const prompt = normalizeSha(model.prompt.sha256);
-  const { name, temperature, max_output_tokens: maxTokens } = model;
-  if (typeof name !== 'string' || typeof temperature !== 'number' || !Number.isInteger(maxTokens) || !prompt) return null;
+  const { name, temperature: raw, max_output_tokens: maxTokens } = model;
+  // D27: a null or absent temperature is not sent, and is its own scope.
+  const temperature = raw === undefined ? null : raw;
+  if (typeof name !== 'string' || (temperature !== null && typeof temperature !== 'number') || !Number.isInteger(maxTokens) || !prompt) return null;
   return { task_sha256: taskSha256, sim_model: name, temperature, max_output_tokens: maxTokens as number, prompt_sha256: prompt };
 }
 

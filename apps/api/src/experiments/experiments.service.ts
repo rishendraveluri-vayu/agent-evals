@@ -22,7 +22,7 @@ import { CatalogueService, type StoredPrompt, type StoredTask, taskView } from '
 import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.service';
 import { Db, type Queryable } from '../database/db.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
-import { SIM_MAX_OUTPUT_TOKENS, SIM_TEMPERATURE } from '../worker/spec-builder';
+import { SIM_MAX_OUTPUT_TOKENS, simTemperature } from '../worker/spec-builder';
 import { type CellInput, type Price, estimate } from './estimate';
 
 export interface ExperimentRow {
@@ -220,7 +220,7 @@ export class ExperimentsService {
           plan.n,
           plan.simModel,
           simPrompt?.sha256 ?? null,
-          plan.simModel ? SIM_TEMPERATURE : null,
+          plan.simModel ? simTemperature(plan.simModel) : null, // null with a simulator: not sent (D27)
           plan.simModel ? SIM_MAX_OUTPUT_TOKENS : null,
           body.budget_usd,
           plan.estimate.budgets.trial_usd,
@@ -342,7 +342,7 @@ export class ExperimentsService {
     let sim: ExperimentDetail['sim'] = null;
     if (r.sim_model && r.sim_prompt_sha256) {
       const [p] = await this.db.query<{ id: string; version: string; sha256: string }>('SELECT id, version, sha256 FROM prompts WHERE sha256 = $1', [r.sim_prompt_sha256]);
-      if (p) sim = { prompt: { id: p.id, version: p.version, sha256: p.sha256 }, temperature: r.sim_temperature ?? SIM_TEMPERATURE, max_output_tokens: r.sim_max_output_tokens ?? SIM_MAX_OUTPUT_TOKENS };
+      if (p) sim = { prompt: { id: p.id, version: p.version, sha256: p.sha256 }, temperature: r.sim_temperature, max_output_tokens: r.sim_max_output_tokens ?? SIM_MAX_OUTPUT_TOKENS };
     }
     return {
       ...this.summary(r, extra),

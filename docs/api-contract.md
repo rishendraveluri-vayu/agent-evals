@@ -45,8 +45,10 @@ and passed through unread:
 ```
 
 `client_sim` is contract v2's object without `model` (the experiment supplies the simulator
-model). `client_state` names a file next to `task.json` that the runner places in the trial's
-state folder for the finance MCP server.
+model) and without `client_summary` (the API builds it). `client_state` names a file next to
+`task.json` that the runner places in the trial's state folder for the finance MCP server. For a
+simulated-client task the API also summarises that file (profile and debts) into the spec's
+`client_sim.client_summary`, so the simulator never contradicts what the tools return (D27).
 
 ## Configs
 
@@ -85,9 +87,13 @@ state folder for the finance MCP server.
   there are any, otherwise the assumptions in `docs/cost.md` (64k input, 2.4k output per
   trial). Prices come from LiteLLM. No power estimate yet; SP6 adds `min_detectable_effect`.
 - `POST /experiments` with `{name, axis, config_hashes, task_sha256s, n, sim_model,
-  budget_usd, plan_commit}` creates the experiment and all its trial rows (`queued`), records
-  the platform commit (`EVALS_PLATFORM_COMMIT`), and sets a LiteLLM budget for the whole
-  experiment. It returns the experiment. Nothing runs until it is started.
+  budget_usd, plan_commit, sim_prompt_sha256}` creates the experiment and all its trial rows
+  (`queued`), records the platform commit (`EVALS_PLATFORM_COMMIT`), and sets a LiteLLM budget
+  for the whole experiment. It returns the experiment. Nothing runs until it is started. The
+  simulator prompt defaults to the highest version of `client-sim` (v2 since D27). The simulator
+  runs at D22's temperature 0, except on a model that refuses temperature (Haiku 5.5), where its
+  temperature is `null` and not sent (D27); the token cap is 300. `sim` in the experiment shows
+  all three.
 - `POST /experiments/:id/start` starts a `created` experiment or resumes a `paused` one (and
   marks it `done` if nothing is left to claim); `POST /experiments/:id/cancel` (queued trials
   become `cancelled`; running ones finish), from `created`, `running` or `paused`.
@@ -135,9 +141,10 @@ trial cannot read or change another trial's stored files (D3).
    LOCKED)`, so two workers never get the same trial.
 
    `sim_cache` (D22) is `{<cache key>: <reply>}`: every simulator reply stored so far for the
-   same task (sha256), simulator model, temperature, token cap and simulator prompt, from any
-   earlier trial, experiment or harness. Keys are `evals_adapter.sim.cache_key`, which hashes
-   those same values plus the visible transcript, so one key is one conversation state. It is
+   same task (sha256), simulator model, temperature (a `null` one, not sent, is its own scope),
+   token cap and simulator prompt, from any earlier trial, experiment or harness. Keys are
+   `evals_adapter.sim.cache_key`, which hashes those same values, the client summary when there
+   is one, and the visible transcript, so one key is one conversation state. It is
    `{}` before any reply is stored, and `null` for a task without a simulated client. The
    worker's runner writes it to `/trial/sim_cache.json`; a turn whose state is in it gets the
    stored reply and makes no simulator call. The agent's own calls are never cached.

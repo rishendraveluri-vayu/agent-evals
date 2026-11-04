@@ -48,10 +48,16 @@ export const TASKS = {
         opening_message: 'I do not know where to start.',
         max_client_turns: 3,
       },
-      client_state: null,
+      client_state: 'client.json',
       graders: [],
     },
-    state: null,
+    // Synthetic: an invented client file, so the simulator gets a client summary (D27).
+    state: JSON.stringify({
+      schema_version: 1,
+      synthetic: true,
+      profile: { name: 'Test Widow (synthetic)', city: 'Pune', monthly_net_income: 92000 },
+      debts: [{ name: 'Home loan', kind: 'home_loan', balance: 1800000, annual_rate_pct: 8.5, minimum_payment: 16200, remaining_months: 180 }],
+    }),
   },
 } as const;
 

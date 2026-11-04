@@ -224,7 +224,7 @@ export interface CreateExperimentRequest {
   sim_model?: string | null;
   budget_usd: number;
   plan_commit?: string | null;
-  /** Optional; defaults to the highest version of the `client-sim` prompt. */
+  /** Optional; defaults to the highest version of the `client-sim` prompt (v2 since D27). */
   sim_prompt_sha256?: Sha256 | null;
 }
 
@@ -298,7 +298,8 @@ export interface ExperimentEvent {
 /** GET /experiments/:id (and the POST /experiments response). */
 export interface ExperimentDetail extends ExperimentSummary {
   sim_model: string | null;
-  sim: { prompt: VersionRef; temperature: number; max_output_tokens: number } | null;
+  /** `temperature` null: not sent, the model's default applies (D27; Haiku 5.5 refuses any). */
+  sim: { prompt: VersionRef; temperature: number | null; max_output_tokens: number } | null;
   platform_commit: string | null;
   plan_commit: string | null;
   budgets: { trial_usd: number; sim_usd: number };

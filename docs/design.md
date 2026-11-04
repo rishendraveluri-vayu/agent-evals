@@ -79,6 +79,8 @@ Added with D22's reply cache (migration `002_sim_replies.sql`): a `sim_replies` 
 
 Added with D26 (migration `003_experiment_pause.sql`): an experiment status `paused`, with `paused_at`, `paused_reason` and `resumed_at`. A report labelled `infra:config_error` pauses a running experiment, so no more trials are claimed; `POST /experiments/:id/start` resumes it. `infra:config_error` and `infra:budget_net` attempts are never re-queued; the other infra labels are re-queued once (D16).
 
+Added with D27 (migration `004_sim_temperature_optional.sql`): `sim_replies.temperature` may be null, for a simulator that sends no temperature (Haiku 5.5); claims select replies with `IS NOT DISTINCT FROM`, so a null temperature is its own cache scope. The spec's `client_sim` gains an optional `client_summary`, built by the API from the task's client file at claim time and not stored separately.
+
 Interim, not a design decision: until SP2, the API reads finished trial folders from `RUNS_DIR` through a `TrialStore` interface (`apps/api/src/trials/trial-store.ts`), so the trace view and spend chart work now. SP2's database store replaces the file store behind the same interface.
 
 Planned in the spec, not yet designed:

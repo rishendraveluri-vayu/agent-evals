@@ -209,15 +209,31 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
 
   it('gives a simulated-client task the experiment simulator and its own key', async () => {
     const exp = await experiment({ tasks: [cat.tasks['widow-loan']], sim: 'claude-haiku-5-5' });
-    expect(exp.sim).toMatchObject({ prompt: { id: 'client-sim', version: 'v1' }, temperature: 0 });
+    // D27: the default simulator prompt is the highest version, v2, and Haiku 5.5 gets no temperature.
+    expect(exp.sim).toMatchObject({ prompt: { id: 'client-sim', version: 'v2' }, temperature: null });
     const c = (await claim('w-sim'))!;
     expect(validateSpec(c.spec)).toBe(true);
-    const sim = (c.spec as { task: { client_sim: { model: { name: string; api_key_env: string; prompt: { text: string } } } } }).task.client_sim;
-    expect(sim.model).toMatchObject({ name: 'claude-haiku-5-5', api_key_env: 'EVALS_SIM_API_KEY' });
+    const sim = (c.spec as { task: { client_sim: { client_summary?: string; model: { name: string; api_key_env: string; temperature: number | null; prompt: { text: string; version: string } } } } }).task
+      .client_sim;
+    expect(sim.model).toMatchObject({ name: 'claude-haiku-5-5', api_key_env: 'EVALS_SIM_API_KEY', temperature: null });
+    expect(sim.model.prompt.version).toBe('v2');
     expect(sim.model.prompt.text.startsWith('<!--')).toBe(false);
+    expect(sim.model.prompt.text).toContain('{{client_summary}}');
+    // The summary of the task's client file, which the API built from the stored client.json.
+    expect(sim.client_summary).toBe(
+      'Profile:\n- name: Test Widow (synthetic)\n- city: Pune\n- monthly net income: 92000\n' +
+        'Debts (1, total balance ₹18,00,000.00, total minimum payments ₹16,200.00 a month):\n' +
+        '- Home loan (home loan): balance ₹18,00,000.00 at 8.5% a year, minimum payment ₹16,200.00 a month, 180 months left',
+    );
     expect(c.keys.sim).toEqual(expect.stringMatching(/^sk-trial-/));
     expect(env.stub.liveKeys().find((k) => k.key === c.keys.sim)?.models).toEqual(['claude-haiku-5-5']);
-    expect(c.state_files).toEqual({});
+    expect(Object.keys(c.state_files)).toEqual(['client.json']);
+    await cancel(exp.id);
+  });
+
+  it("keeps D22's temperature 0 for a simulator model that takes it", async () => {
+    const exp = await experiment({ tasks: [cat.tasks['widow-loan']], sim: 'gemini-3.8-flash', start: false });
+    expect(exp.sim).toMatchObject({ prompt: { version: 'v2' }, temperature: 0 });
     await cancel(exp.id);
   });
 
@@ -527,6 +543,8 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
       [key('2'), 'Thank you. [[END_CONVERSATION]]', first.trial_id],
       [key('3'), 'What about my EMI?', second.trial_id],
     ]);
+    // D27: Haiku 5.5's simulator sends no temperature, so its replies are stored and found under a null one.
+    expect((await env.pool.query('SELECT DISTINCT temperature FROM sim_replies WHERE task_sha256 = $1', [widow])).rows).toEqual([{ temperature: null }]);
     expect((await request(env.http).get(`/api/experiments/${exp.id}`).expect(200)).body).toMatchObject({ status: 'done' });
 
     // Another simulator model shares nothing, and a file the API does not hold intact is not read.
