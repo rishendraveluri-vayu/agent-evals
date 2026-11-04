@@ -89,6 +89,15 @@ The pilot, the experiment and the judge go here too (SP8), with their tokens per
 
 Per trial on Haiku 5.5: a single question cost $0.0024 to $0.0035 (3 model calls); a 3-turn simulated-client conversation cost $0.012 to $0.014 (8 to 10 agent calls plus the simulator's).
 
+## Clean-machine test (planned, 5 Nov)
+
+One GCP VM for the final fresh-clone test, approved by Rishi ("Yes, today"; "dont give me a bill
+shock"): e2-standard-4 in asia-south1 with an 80 GB balanced disk, about $0.17 an hour, created with
+`--max-run-duration=4h --instance-termination-action=DELETE`, so Google deletes the VM and its disk
+after 4 hours at most: about $0.70 at worst. No static IP, no GPU, no keys on the machine. Created
+only when the code to test is merged; deleted by hand as soon as the test ends. Actual cost goes in
+the table above.
+
 ## System calls
 
 Model calls the platform makes itself, outside any trial (D38). Today there is one kind: the pre-run prompt conflict check (`POST /api/configs/:hash/conflict-check`) on Claude Sonnet 5.5, paid from a standing **$2 allowance** (`EVALS_CONFLICT_CHECK_ALLOWANCE_USD`). Anything beyond it still needs a sign-off (R8).
