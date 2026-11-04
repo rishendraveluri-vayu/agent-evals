@@ -28,7 +28,7 @@ import { Db, type Queryable } from '../database/db.service';
 import { JudgeService } from '../judge/judge.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
 import { SIM_MAX_OUTPUT_TOKENS, simTemperature } from '../worker/spec-builder';
-import { type CellInput, type History, LIVE_WORKER_S, type Price, estimate } from './estimate';
+import { type CellInput, type History, LIVE_WORKER_S, type Price, estimate, isFakeModel } from './estimate';
 import { claimOrder, isSeed, newSeed } from './order';
 import { type BaselineOutcome, decideBaseline } from './baseline';
 import { estimatePerTrial, projectedSpend, resolveFutility } from './rules';
@@ -91,6 +91,8 @@ interface Plan {
   n: number;
   simModel: string | null;
   estimate: Estimate;
+  /** Every model the run calls (the arms' and, when a task needs one, the simulator's) is `fake/*`. */
+  fakeOnly: boolean;
 }
 
 @Injectable()
@@ -206,7 +208,13 @@ export class ExperimentsService {
         });
       }
     }
-    return { ...ordered, n, simModel: needsSim ? simModel : null, estimate: estimate({ cells, n, prices, simModel: needsSim ? simModel : null, workers }) };
+    return {
+      ...ordered,
+      n,
+      simModel: needsSim ? simModel : null,
+      estimate: estimate({ cells, n, prices, simModel: needsSim ? simModel : null, workers }),
+      fakeOnly: [...prices.keys()].every(isFakeModel),
+    };
   }
 
   /** The simulator prompt: the one named, else the highest version of client-sim (D27). */
@@ -303,8 +311,11 @@ export class ExperimentsService {
     const { plan, simPrompt, parentId, baseline, run } = await this.resolveRun(body);
     // R10.6: start only runs that can finish. The budget is a safety net, so it must cover
     // the top of the estimate's range, not just the expected cost. With arm A reused (D34),
-    // the estimate is of arm B alone.
-    if (body.budget_usd < run.estimate.cost_usd.high) {
+    // the estimate is of arm B alone. A run on fake models only spends nothing real (their prices
+    // are made up for testing), so it is never refused; its budget is raised to the estimate's
+    // high end instead, so neither LiteLLM's cap nor the spend guard stops it part-way.
+    const budgetUsd = run.fakeOnly ? Math.max(body.budget_usd, run.estimate.cost_usd.high) : body.budget_usd;
+    if (!run.fakeOnly && body.budget_usd < run.estimate.cost_usd.high) {
       throw badRequest(
         'budget_below_estimate',
         `budget_usd ${body.budget_usd} is below the estimate's high end ${run.estimate.cost_usd.high} ` +
@@ -353,7 +364,7 @@ export class ExperimentsService {
           simPrompt?.sha256 ?? null,
           plan.simModel ? simTemperature(plan.simModel) : null, // null with a simulator: not sent (D27)
           plan.simModel ? SIM_MAX_OUTPUT_TOKENS : null,
-          body.budget_usd,
+          budgetUsd,
           run.estimate.budgets.trial_usd,
           run.estimate.budgets.sim_usd,
           this.config.platformCommit,
@@ -400,7 +411,7 @@ export class ExperimentsService {
       }
       // The whole experiment's budget, enforced by LiteLLM across every trial key (a team).
       // Inside the transaction: if LiteLLM refuses, nothing is stored.
-      const teamId = await this.litellm.newTeam({ alias: `experiment:${id}`, maxBudgetUsd: body.budget_usd, experimentId: id });
+      const teamId = await this.litellm.newTeam({ alias: `experiment:${id}`, maxBudgetUsd: budgetUsd, experimentId: id });
       await client.query('UPDATE experiments SET litellm_team_id = $2 WHERE id = $1', [id, teamId]);
     });
     return this.get(id);

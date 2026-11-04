@@ -327,7 +327,13 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   budget_usd, plan_commit, sim_prompt_sha256, order_seed, futility, parent_experiment_id,
   reuse_baseline}` creates the experiment and all its trial rows
   (`queued`), records the platform commit (`EVALS_PLATFORM_COMMIT`), and sets a LiteLLM budget
-  for the whole experiment. It returns the experiment. Nothing runs until it is started. The
+  for the whole experiment. It returns the experiment. Nothing runs until it is started.
+  `budget_usd` must cover the estimate's high end (400 `budget_below_estimate`, R10.6), **except
+  for a run on fake models only**: when every model it calls (each arm's, and the simulator's when
+  a task needs one) is `fake/*`, nothing real is spent and the prices are made up for testing, so
+  it is never refused. Its budget is raised to the estimate's high end when below it, so neither
+  LiteLLM's cap nor the spend guard can stop a free run part-way; the stored and returned
+  `budget_usd` is the raised one. A fake agent with a real simulator model is checked as usual. The
   simulator prompt defaults to the highest version of `client-sim` (v2 since D27). The simulator
   runs at D22's temperature 0, except on a model that refuses temperature (Haiku 5.5), where its
   temperature is `null` and not sent (D27); the token cap is 2048, because Haiku 5.5's reasoning

@@ -154,11 +154,40 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
   });
 
   it('creates an experiment with queued trials, a LiteLLM team budget and the platform commit; nothing runs until started', async () => {
+    // A real model: a budget below the estimate's high end is refused (R10.6).
+    const haiku = await makeConfig(env.http, cat, { name: 'real haiku', model: 'claude-haiku-5-5' });
     const tooSmall = await request(env.http)
       .post('/api/experiments')
-      .send({ name: 'x', axis: 'temperature', config_hashes: [configA], task_sha256s: [cat.tasks['emi-basic']], n: 10, budget_usd: 0.5 })
+      .send({ name: 'x', axis: 'temperature', config_hashes: [haiku], task_sha256s: [cat.tasks['emi-basic']], n: 10, budget_usd: 0.01 })
       .expect(400);
     expect((tooSmall.body as { error: string }).error).toBe('budget_below_estimate');
+    // Fake models only: the prices are made up, so it is not refused; the budget is raised to the
+    // estimate's high end so LiteLLM's cap and the spend guard cannot stop it part-way.
+    const fake = (
+      await request(env.http)
+        .post('/api/experiments')
+        .send({ name: 'free', axis: 'temperature', config_hashes: [configA], task_sha256s: [cat.tasks['emi-basic']], n: 10, budget_usd: 0.5 })
+        .expect(201)
+    ).body as ExperimentDetail;
+    expect(fake.budget_usd).toBeCloseTo(fake.estimate.cost_usd.high, 6);
+    expect(fake.budget_usd).toBeGreaterThan(0.5);
+    expect(env.stub.teams.find((t) => t.team_alias === `experiment:${fake.id}`)?.max_budget).toBeCloseTo(fake.estimate.cost_usd.high, 6);
+    // Above the high end, the budget is kept as given.
+    const roomy = (
+      await request(env.http)
+        .post('/api/experiments')
+        .send({ name: 'free', axis: 'temperature', config_hashes: [configA], task_sha256s: [cat.tasks['emi-basic']], n: 1, budget_usd: 9 })
+        .expect(201)
+    ).body as ExperimentDetail;
+    expect(roomy.budget_usd).toBe(9);
+    // A fake agent with a real simulated client spends real money, so it is checked as usual.
+    const realSim = await request(env.http)
+      .post('/api/experiments')
+      .send({ name: 'x', axis: 'temperature', config_hashes: [configA], task_sha256s: [cat.tasks['widow-loan']], n: 10, sim_model: 'claude-sonnet-5-5', budget_usd: 0.01 })
+      .expect(400);
+    expect((realSim.body as { error: string }).error).toBe('budget_below_estimate');
+    await cancel(fake.id);
+    await cancel(roomy.id);
 
     const exp = await experiment({ configs: [configA, configB], n: 2, budget: 7, start: false });
     expect(exp).toMatchObject({ status: 'created', n: 2, platform_commit: 'abc1234', plan_commit: 'plan123', budget_usd: 7 });
