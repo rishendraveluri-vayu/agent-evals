@@ -217,7 +217,7 @@ const makeConfig = ({ hash, name, harness, model, prompt, settings, parent = nul
   const h = harnessByName[harness];
   return {
     hash, name, harness, harness_ref: h.ref, adapter_version: h.adapter_version, capabilities_sha256: h.capabilities_sha256, model,
-    prompt: promptRef(prompt), toolset: toolsetRef, ...resolveSettings(settings, harness, model), warnings: [], harness_options: {},
+    prompt: promptRef(prompt), toolset: toolsetRef, ...resolveSettings(settings, harness, model), warnings: [], harness_options: {}, seed: { memory: [], skills: [] },
     parent_hash: parent, created_at: at(minutesAgo),
   };
 };

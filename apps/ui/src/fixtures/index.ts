@@ -164,7 +164,7 @@ function createConfig(body: CreateConfigRequest): ConfigView {
   if (!prompt) throw new ApiError(400, 'unknown_prompt', `no prompt with ${body.prompt_sha256}; see GET /prompts`, 'Pick a prompt sha256 from GET /prompts.');
   const toolset = (toolsetsJson as { id: string; version: string; sha256: string }[]).find((t) => t.sha256 === body.toolset_sha256);
   if (!toolset) throw new ApiError(400, 'unknown_toolset', `no toolset with ${body.toolset_sha256}; see GET /toolsets`, 'Pick a toolset sha256 from GET /toolsets.');
-  const content = canonical({ ref: harness.ref, model: body.model, prompt: prompt.sha256, toolset: toolset.sha256, settings, harness_options: body.harness_options ?? {} });
+  const content = canonical({ ref: harness.ref, model: body.model, prompt: prompt.sha256, toolset: toolset.sha256, settings, harness_options: body.harness_options ?? {}, seed: body.seed ?? null });
   const hash = sampleHash(content);
   const parent = body.parent_hash ? allConfigs().find((c) => c.hash === body.parent_hash) : null;
   if (body.parent_hash && !parent) throw new ApiError(400, 'unknown_parent', `no config ${body.parent_hash} to be the parent`, 'Fork from a config in GET /configs, or leave parent_hash out.');
@@ -186,6 +186,7 @@ function createConfig(body: CreateConfigRequest): ConfigView {
     unsupported,
     warnings: [],
     harness_options: body.harness_options ?? {},
+    seed: { memory: body.seed?.memory ?? [], skills: body.seed?.skills ?? [] },
     parent_hash: parent?.hash ?? null,
     created_at: meta.now,
   };

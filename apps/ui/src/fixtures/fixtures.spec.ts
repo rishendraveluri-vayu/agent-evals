@@ -15,7 +15,7 @@ const FIELDS = {
   model: ['name', 'provider', 'input_per_mtok', 'output_per_mtok'],
   config: [
     'hash', 'name', 'harness', 'harness_ref', 'adapter_version', 'capabilities_sha256', 'model', 'prompt', 'toolset', 'settings', 'settings_sources',
-    'unsupported', 'warnings', 'harness_options', 'parent_hash', 'created_at',
+    'unsupported', 'warnings', 'harness_options', 'seed', 'parent_hash', 'created_at',
   ],
   summary: ['id', 'name', 'axis', 'status', 'config_hashes', 'task_sha256s', 'n', 'counts', 'spend_usd', 'estimate', 'budget_usd', 'created_at'],
   detailExtra: [
