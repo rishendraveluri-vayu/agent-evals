@@ -58,7 +58,51 @@ const STEPS = [
             <span><span class="pending">Not probed yet</span>: no request sent to check it</span>
           </div>
         </div>
-        <div class="table-wrap">
+        <!-- Narrower than the table's five harness columns: one card per harness, every setting
+             in it, so no harness sits off to the side. -->
+        <div
+          class="matrix-cards"
+          data-test="capability-cards"
+        >
+          <section
+            v-for="h in data"
+            :key="h.name"
+            class="panel harness-card"
+            :aria-labelledby="`harness-card-${h.name}`"
+            data-test="harness-card"
+          >
+            <h3
+              :id="`harness-card-${h.name}`"
+              class="card-title"
+            >
+              {{ harnessName(h.name) }} <span class="secondary smaller mono">{{ shortRef(h.ref) }}</span>
+            </h3>
+            <p class="result-detail card-coverage">
+              {{ coverageText(h) }}
+            </p>
+            <dl class="card-settings">
+              <div
+                v-for="name in SETTING_NAMES"
+                :key="name"
+                :data-test="`card-${h.name}-${name}`"
+              >
+                <dt>{{ settingLabel(name) }}</dt>
+                <dd>
+                  <span :class="matrixCell(h.capabilities.settings[name]).kind"><AppIcon
+                    v-if="matrixCell(h.capabilities.settings[name]).kind === 'probed'"
+                    name="check"
+                    :size="12"
+                  />{{ matrixCell(h.capabilities.settings[name]).text }}</span>
+                  <span
+                    v-if="matrixCell(h.capabilities.settings[name]).note"
+                    class="block secondary smaller"
+                  >{{ matrixCell(h.capabilities.settings[name]).note }}</span>
+                </dd>
+              </div>
+            </dl>
+          </section>
+        </div>
+        <div class="table-wrap matrix-wrap">
           <table
             class="table matrix"
             data-test="capability-matrix"
@@ -195,6 +239,58 @@ const STEPS = [
    one is wider than an equal share of the table. */
 .matrix {
   min-width: 1040px;
+}
+
+/* The cards stand in for the table where it would not fit the page (1040 px of table inside the
+   page's padding): a phone or a tablet. */
+.matrix-cards {
+  display: none;
+}
+
+@media (max-width: 1099px) {
+  .matrix-wrap {
+    display: none;
+  }
+
+  .matrix-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+    gap: 16px;
+    align-items: start;
+  }
+}
+
+.harness-card {
+  padding: 18px 20px 6px;
+  min-width: 0;
+}
+
+.card-title {
+  font-size: 16px;
+}
+
+.card-coverage {
+  margin-top: 4px;
+}
+
+.card-settings {
+  margin: 10px 0 0;
+}
+
+.card-settings > div {
+  padding: 10px 0;
+  border-top: 1px solid var(--rule-soft);
+  overflow-wrap: anywhere;
+}
+
+/* The setting is the label; how it is known is the value, as in the table's cells. */
+.card-settings dt {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.card-settings dd {
+  margin: 2px 0 0;
 }
 
 .setting-col {
