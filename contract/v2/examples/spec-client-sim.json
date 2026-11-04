@@ -20,6 +20,7 @@
     ],
     "client_sim": {
       "persona": "Meera, 41, Pune. Widowed in March; her husband's Rs 18 lakh home loan is now in her name. (Invented illustration, not a task.)",
+      "client_summary": "Profile:\n- name: Meera (invented illustration, not a task)\n- city: Pune\nDebts (1, total balance ₹18,00,000.00, total minimum payments ₹16,200.00 a month):\n- Home loan: balance ₹18,00,000.00 at 8.5% a year, minimum payment ₹16,200.00 a month, 180 months left",
       "hidden_facts": [
         "Monthly take-home Rs 92,000",
         "Rs 6 lakh in an FD she has not touched"
@@ -35,7 +36,7 @@
         "name": "claude-haiku-5-5",
         "base_url": "http://litellm:4000/v1",
         "api_key_env": "EVALS_SIM_API_KEY",
-        "temperature": 0,
+        "temperature": null,
         "max_output_tokens": 300,
         "prompt": {
           "id": "client-sim",

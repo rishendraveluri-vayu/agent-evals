@@ -526,6 +526,11 @@
           "type": "string",
           "minLength": 1
         },
+        "client_summary": {
+          "description": "D27. A short summary of the task's client file (profile and debts), filled by the API, so the simulator never contradicts the records the tools return. Absent when the task has no client file.",
+          "type": "string",
+          "minLength": 1
+        },
         "hidden_facts": {
           "type": "array",
           "items": {
@@ -562,7 +567,6 @@
             "name",
             "base_url",
             "api_key_env",
-            "temperature",
             "max_output_tokens",
             "prompt"
           ],
@@ -579,7 +583,11 @@
               "$ref": "#/$defs/env_name"
             },
             "temperature": {
-              "type": "number",
+              "description": "D27: optional. Null or absent means not sent, so the model's default applies (Haiku 5.5 refuses any temperature); the reply cache gives repeatability.",
+              "type": [
+                "number",
+                "null"
+              ],
               "minimum": 0,
               "maximum": 2
             },

@@ -271,29 +271,35 @@ A task with no `client_sim` block is a single prompt. With one, a second model p
 ```json
 "client_sim": {
   "persona": "Meera, 41, Pune. Widowed in March; her husband's ₹18 lakh home loan is now in her name ...",
+  "client_summary": "Profile:\n- name: Meera ...\nDebts (1, total balance ₹18,00,000.00, ...):\n- Home loan: balance ₹18,00,000.00 at 8.5% a year, ...",
   "hidden_facts": ["Monthly take-home ₹92,000", "₹6 lakh in an FD she has not touched"],
   "concerns": ["Can I keep the house?", "Should I use the FD to prepay?"],
   "goal": "Understand whether she can keep the house and what to do first",
   "opening_message": "I don't really know where to start. My husband handled all of this.",
   "max_client_turns": 3,
-  "model": {"name": "claude-haiku-5-5", "base_url": "http://litellm:4000/v1", "api_key_env": "EVALS_SIM_API_KEY", "temperature": 0, "max_output_tokens": 300,
-            "prompt": {"id": "client-sim", "version": "sim-v1", "sha256": "...", "text": "..."}}
+  "model": {"name": "claude-haiku-5-5", "base_url": "http://litellm:4000/v1", "api_key_env": "EVALS_SIM_API_KEY", "temperature": null, "max_output_tokens": 300,
+            "prompt": {"id": "client-sim", "version": "v2", "sha256": "...", "text": "..."}}
 }
 ```
 
 (The persona is an invented illustration, not a task.)
 
+- **The prompt (D27)** is `configs/prompts/client-sim.v2.md`, the API's default as the highest version; `client-sim.v1.md` is kept unchanged. The library fills `{{persona}}`, `{{client_summary}}`, `{{hidden_facts}}`, `{{concerns}}`, `{{goal}}` and `{{end_marker}}` (`evals_adapter.sim.render_prompt`; a template without a placeholder ignores that value).
+- **`client_summary` (D27, optional)** is a short summary of the task's client file, built by the API from the task's `client_state` (`apps/api/src/worker/client-summary.ts`): the profile as recorded, and the debts with their balances, rates, minimum payments and totals as the finance tools write them. Transactions are left out. The field is absent when the task has no client file. It is part of the reply-cache key when present.
+- **`model.temperature` (D27) is optional.** Null or absent means it is not sent, so the model's default applies. The API sends none for a simulator model that refuses temperature (Haiku 5.5, from the `MODEL_REJECTS` table) and D22's 0 otherwise; the reply cache gives repeatability.
+
 - **The conversation loop lives once, in the shared adapter library.** Each harness only implements `run_turn(history)` within one process, using its native session: Hermes passes the history back in, ADK keeps one session id, the Agents SDK carries the input list, LangGraph appends messages, and the Claude SDK uses a multi-turn client. **Not yet run** (R11: "not sure this works"), so it is proven first on Hermes and the own loop in the conversation test. The fallback for any harness that fails is to re-send the full transcript each turn as fresh input.
-- **What the client sees:** only the agent's visible replies, not tool calls or results. It reveals a hidden fact only when the agent asks for it. Graders know every fact.
+- **What the client sees:** only the agent's visible replies, not tool calls or results, plus its own client summary, so it never contradicts the records the tools return (D27). It reveals a hidden fact only when the agent asks for it. Graders know every fact.
+- **How the client writes (D27):** only the words it would type in a chat, as the client. No narration, no stage directions, no actions between asterisks or brackets.
 - **Guarding against a yes-man client** (R11: "the problem is yes man"):
-  - The simulator prompt sets behaviour rules: stay in the emotional state, never volunteer facts, push back on generic or irrelevant advice, ask again if confused, never praise advice that misses the concerns.
-  - The client may end only when every listed `concern` has been addressed, or at the turn cap.
+  - The simulator prompt sets behaviour rules: stay in the emotional state, never volunteer facts, push back on generic or irrelevant advice, ask again if confused, never praise advice that misses the concerns. v2 keeps v1's wording for each.
+  - The client ends once its concerns have been answered in a way it can act on, or it has what it came for (D27), and otherwise asks about what is still open; the turn cap is the backstop.
   - If Haiku proves too agreeable, the simulator model can be changed in config.
   - **Rishi reviews about 10 simulator transcripts** before the experiment, like a small judge validation, and the simulator prompt is versioned.
   - Simulated tasks stay a small share of the set, about 5 to 8, because each needs a persona and this review.
 - **Simulator settings** (model, temperature, token cap, prompt version) are configurable, recorded in every trial, and identical across all configs in an experiment, which the invariance check enforces.
 - **One set of responses where the conversation is the same.** Client replies are cached by task, simulator settings and exact visible transcript. The agent's calls are never cached.
-- **Ending.** The client ends by writing `[[END_CONVERSATION]]`; `max_client_turns` counts simulated messages after the opening one. The conversation ends when the client's concerns are covered or at `max_client_turns`. The agent's last reply is graded, and `max_steps` and `timeout_s` cover the whole conversation.
+- **Ending.** The client ends by writing `[[END_CONVERSATION]]`; `max_client_turns` counts simulated messages after the opening one. The conversation ends when the client sends the marker (its concerns answered, or it has what it came for) or at `max_client_turns`. The agent's last reply is graded, and `max_steps` and `timeout_s` cover the whole conversation.
 
 ## 10. Storage and traceability (R11)
 
