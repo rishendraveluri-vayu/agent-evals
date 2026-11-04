@@ -178,7 +178,7 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 
 ## Cost comparisons (4 Nov night)
 
-- **A cost difference between harnesses includes how each uses the provider's prompt cache.** Hermes marks its prompt for Anthropic's cache and paid 17% less than list on 4 Nov; the own loop and LangGraph send no cache markers (`docs/hermes-notes.md`, `docs/cost.md`). A harness A/B's cost result is therefore a real difference in what each harness costs to run, not a difference in tokens used; read tokens per trial for the latter. The platform stores input and output tokens per trial, not the cache split, which is only in LiteLLM's spend log.
+- **Prompt caching tilts the cost of trials from before D31, the shipped example among them.** Since D31 (4 Nov) no harness sends Anthropic cache markers, so cost comparisons from then on are like for like. Trials before it had Hermes cached (86% of its prompt tokens in label batch 1 were cache reads, about a quarter of list price for input), and label batch 1 is the shipped example: its own loop vs Hermes cost difference favours Hermes for a reason that is not the harness's efficiency. Compare tokens per trial there instead. The platform stores input and output tokens per trial, not the cache split, which is only in LiteLLM's spend log.
 
 ## To check before submission
 

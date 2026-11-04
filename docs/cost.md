@@ -22,12 +22,15 @@ Two things make this non-linear in the number of calls:
   D39's memory-off run): the own loop averaged 5.0k input tokens at 1 call and 85.6k at 11 calls (5.0k to 7.8k per
   call); Hermes 6.4k at 1 call and 141.8k at 13 calls (6.4k to 10.9k per call). Doubling
   `max_steps` can more than double a long trial's cost.
-- **Provider prompt caching prices part of the input at a tenth.** Hermes marks its prompt for
-  Anthropic's cache; the own loop and LangGraph do not. Of Hermes's 2.69M agent prompt tokens in
-  every Haiku 5.5 call on 4 Nov (LiteLLM's spend log, 280 calls), 683k (25%) were cache reads at $0.01/MTok and 59k cache writes at $0.125/MTok, so it paid
-  $0.294 where list price would be $0.354 (17% less). LiteLLM's recorded spend matches the formula
-  above exactly when the four token kinds are priced separately. This is LiteLLM pricing the
-  provider's cache, not LiteLLM's response cache, which stays off for trials.
+- **Provider prompt caching prices part of the input at a tenth.** Hermes, as it comes, marks its
+  prompt for Anthropic's cache; D31 (4 Nov) turned those markers off in every config (the adapter
+  writes `prompt_caching.cache_ttl: "off"`), so no harness uses the cache from then on and costs
+  compare like for like. Trials before the change were cached: in label batch 1, 86% of Hermes's
+  prompt tokens were cache reads (581,765 of 678,844, read at $0.01 instead of $0.10 per MTok),
+  so its input cost about a quarter of list price; in the two client-sim checks, 79% and 65%. From
+  the D39 runs on: none, in 1.87M prompt tokens. LiteLLM's recorded spend matches the formula
+  above when the four token kinds are priced separately. This is the provider's prompt cache,
+  which only prices the prompt; LiteLLM's response cache stays off for trials.
 
 The platform's estimate does not use this formula directly: it takes LiteLLM's recorded cost per
 trial from earlier trials of the same config and task, so both effects are in it once there is
@@ -61,7 +64,7 @@ Sources:
 
 Fill in with what we actually tried and measured.
 
-- Provider prompt caching. Fine for independence, because the model still generates a new answer. Hermes already does it (17% less than list price on 4 Nov, above); the own loop could mark its system prompt and tool schemas the same way.
+- Provider prompt caching. Fine for independence, because the model still generates a new answer. It is off in every config since D31 so that harnesses compare like for like; before that, Hermes's cached trials paid about a quarter of list price for input (above). Turning it on for every harness at once would cut cost without tilting a comparison.
 - Fewer tools per config, since default toolsets cost about 3x the minimal set per call.
 - Early stopping when the outcome is already clear, with the stopping rule set in advance.
 - Sampling tasks or trials, with the effect on confidence stated.
