@@ -139,3 +139,15 @@ Tests: `workers/hermes/tests/test_prompt_switches.py`, against the fake model se
 - **Hermes never called the `memory` tool** in the 20 memory-on trials. Every trial is one session, and nothing in these tasks asks it to remember anything. So within one trial, "memory on, empty" differs from "memory off" only by the tool's schema and the memory section of the prompt, and "seeded" differs by the seeded text. See `docs/known-limits.md`.
 - Cost per trial: $0.0082 off, $0.0106 on and empty, $0.0087 seeded (one run each, not a comparison).
 
+## Hermes uses provider prompt caching; the other harnesses do not (4 Nov night, from LiteLLM's spend log)
+
+- In every Claude Haiku 5.5 call on 4 Nov, 25% of Hermes's agent prompt tokens (683k of 2.69M,
+  280 calls) were Anthropic cache reads and 59k were cache writes; the reads are about 6,350
+  tokens a call, the size of its system prompt. The own loop (95 calls) and LangGraph (15) had
+  none, and neither did the simulated client.
+- Priced at Haiku's list, that made Hermes 17% cheaper than the same tokens uncached ($0.294
+  against $0.354). LiteLLM's recorded spend matches the four token kinds priced separately.
+- We did not turn this on: it is Hermes's own request format (unmodified source). It is the
+  provider's prompt cache, which only prices the prompt; it is not LiteLLM's response cache, which
+  stays off for trials.
+

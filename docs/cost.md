@@ -5,10 +5,33 @@ Required by the brief: cost per experiment as a formula, actual spend from the e
 ## Formula
 
 ```text
-cost = tasks × trials × configs × avg LLM calls per trial
-       × (avg input tokens × input price + avg output tokens × output price)
-       + judged trials × judge cost per call
+experiment cost = Σ over tasks × configs × N trials of  trial cost   (+ judged trials × judge cost per call)
+
+trial cost = Σ over the trial's model calls (agent and simulated client) of
+               uncached input × input price
+             + cache reads    × cache-read price
+             + cache writes   × cache-write price
+             + output         × output price
 ```
+
+Two things make this non-linear in the number of calls:
+
+- **Every call resends the conversation so far.** Call k carries the system prompt and tool
+  schemas plus everything said and every tool result before it, so input per trial grows faster
+  than the number of calls. Measured on Haiku 5.5 (4 Nov, 40 real trials: the label batch and
+  D39's memory-off run): the own loop averaged 5.0k input tokens at 1 call and 85.6k at 11 calls (5.0k to 7.8k per
+  call); Hermes 6.4k at 1 call and 141.8k at 13 calls (6.4k to 10.9k per call). Doubling
+  `max_steps` can more than double a long trial's cost.
+- **Provider prompt caching prices part of the input at a tenth.** Hermes marks its prompt for
+  Anthropic's cache; the own loop and LangGraph do not. Of Hermes's 2.69M agent prompt tokens in
+  every Haiku 5.5 call on 4 Nov (LiteLLM's spend log, 280 calls), 683k (25%) were cache reads at $0.01/MTok and 59k cache writes at $0.125/MTok, so it paid
+  $0.294 where list price would be $0.354 (17% less). LiteLLM's recorded spend matches the formula
+  above exactly when the four token kinds are priced separately. This is LiteLLM pricing the
+  provider's cache, not LiteLLM's response cache, which stays off for trials.
+
+The platform's estimate does not use this formula directly: it takes LiteLLM's recorded cost per
+trial from earlier trials of the same config and task, so both effects are in it once there is
+history, and tokens at list price (no cache) before that.
 
 ## Planning estimate
 
@@ -34,21 +57,11 @@ Sources:
 - [Costbench: Gemini vs OpenAI](https://www.costbench.com/compare/google-gemini-api-vs-openai-api/)
 - [BenchLM: OpenRouter](https://benchlm.ai/hosts/openrouter)
 
-## Actual spend
-
-Fill in during SP8.
-
-| Run | Model | Trials | Avg input tok/trial | Avg output tok/trial | Spend |
-| --- | --- | --- | --- | --- | --- |
-| Pilot | | | | | |
-| Experiment | | | | | |
-| Judge | | | | | |
-
 ## Ways to reduce cost
 
 Fill in with what we actually tried and measured.
 
-- Provider prompt caching. Fine for independence, because the model still generates a new answer.
+- Provider prompt caching. Fine for independence, because the model still generates a new answer. Hermes already does it (17% less than list price on 4 Nov, above); the own loop could mark its system prompt and tool schemas the same way.
 - Fewer tools per config, since default toolsets cost about 3x the minimal set per call.
 - Early stopping when the outcome is already clear, with the stopping rule set in advance.
 - Sampling tasks or trials, with the effect on confidence stated.
@@ -56,6 +69,8 @@ Fill in with what we actually tried and measured.
 - Not LiteLLM response caching for trials, because repeats would stop being independent.
 
 ## Actual spend
+
+The pilot, the experiment and the judge go here too (SP8), with their tokens per trial.
 
 | Date | Run | Trials | Spend | Signed off |
 | --- | --- | --- | --- | --- |

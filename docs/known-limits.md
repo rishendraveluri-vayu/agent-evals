@@ -159,6 +159,10 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 - **The futility check fires only while the run is running.** Grading lags the trials, so a fast run (fake models, many workers) can finish before its first `after` trials per arm are graded, and then the check never fires. That can only miss a pause, never add one.
 - **A config error's own trial is not re-run when its arm resumes** (D26, above). The run page now says so in the arm's "How to fix it": after the key or route is fixed, the arm's waiting trials run, and the slot that failed stays an infra failure. A run whose arm has no waiting trials left needs to be set up again.
 
+## Cost comparisons (4 Nov night)
+
+- **A cost difference between harnesses includes how each uses the provider's prompt cache.** Hermes marks its prompt for Anthropic's cache and paid 17% less than list on 4 Nov; the own loop and LangGraph send no cache markers (`docs/hermes-notes.md`, `docs/cost.md`). A harness A/B's cost result is therefore a real difference in what each harness costs to run, not a difference in tokens used; read tokens per trial for the latter. The platform stores input and output tokens per trial, not the cache split, which is only in LiteLLM's spend log.
+
 ## To check before submission
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted
