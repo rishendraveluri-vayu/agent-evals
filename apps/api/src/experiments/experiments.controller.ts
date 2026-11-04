@@ -7,6 +7,7 @@ import type {
   EstimateRequest,
   ExperimentDetail,
   ExperimentSummary,
+  StartExperimentRequest,
   TrialRowSummary,
 } from '../contract';
 import { badRequest } from '../common/api-error';
@@ -43,10 +44,18 @@ export class ExperimentsController {
     return this.experiments.get(id);
   }
 
+  /** Starts (or resumes) it. An unstarted one may be given its plan commit in the body. */
   @Post(':id/start')
   @HttpCode(200)
-  start(@Param('id') id: string): Promise<ExperimentDetail> {
-    return this.experiments.start(id);
+  start(@Param('id') id: string, @Body() body?: StartExperimentRequest): Promise<ExperimentDetail> {
+    return this.experiments.start(id, body);
+  }
+
+  /** Marks an experiment that never started as cancelled; nothing is deleted. 409 once it has started. */
+  @Post(':id/discard')
+  @HttpCode(200)
+  discard(@Param('id') id: string): Promise<ExperimentDetail> {
+    return this.experiments.discard(id);
   }
 
   /** D32: no new claims; running trials finish. */

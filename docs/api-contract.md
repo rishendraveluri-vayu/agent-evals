@@ -370,7 +370,8 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 
   | Call | From | Does |
   | --- | --- | --- |
-  | `POST /experiments/:id/start` | `created`, `paused` | starts it, or resumes it (as `/resume`); marks it `done` if nothing is left to claim |
+  | `POST /experiments/:id/start` | `created`, `paused` | starts it, or resumes it (as `/resume`); marks it `done` if nothing is left to claim. Optional body `{plan_commit}` (`StartExperimentRequest`): on a `created` one it sets the analysis plan's commit first (trimmed), so an experiment left unstarted without one can be started from its run page; once it has started the commit is fixed, and a different one is a 409 `plan_commit_locked` (the same one again is fine) |
+  | `POST /experiments/:id/discard` | `created`, no trial claimed | marks an experiment that never started `cancelled` and its queued trials `cancelled`, as a stop does; nothing is deleted. Event `discarded` (no `cancelled` event). Anything started is a 409 `experiment_started` (fix: stop it instead); a `done` or `cancelled` one a 409 `experiment_finished` |
   | `POST /experiments/:id/pause` | `running` (a `paused` one: no-op) | no new claims; trials already running finish and report; event `paused` |
   | `POST /experiments/:id/resume` | `paused` (a `running` one: no-op) | claims resume; event `resumed` |
   | `POST /experiments/:id/stop` (also `/cancel`) | `created`, `running`, `paused` | queued trials become `cancelled`; running ones finish and are kept; status `cancelled` |
@@ -429,8 +430,8 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   `parent_experiment_id`, `baseline`, `paused_at`, `paused_reason` and `events`, newest first: `[{at, kind, trial_id, attempt, arm, config_hash,
   detail}]`. Claims, infra failures, config errors, re-queues, budget trips, abandons and file
   problems come from the trial rows; pauses and resumes (`paused`, `resumed`, `arm_paused`,
-  `arm_resumed`, `futility_pause`, `infra_guard_pause`, `spend_guard_pause`) and the `baseline`
-  decision are stored as they happen.
+  `arm_resumed`, `futility_pause`, `infra_guard_pause`, `spend_guard_pause`), the `baseline`
+  decision and a `discarded` experiment are stored as they happen.
 - `GET /experiments/:id` also adds `judge`: the experiment's active judge approval, `{model,
   budget_usd, spend_usd, approved_at}`, or null when judging is not approved. `spend_usd` is the
   sum of `spend` over LiteLLM's spend-log rows for the judge's key, read on each request, and

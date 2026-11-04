@@ -16,6 +16,7 @@ import type {
   FutilityRule,
   GradingJobStatus,
   GradingOutcome,
+  StartExperimentRequest,
   TrialGradingState,
   TrialRowSummary,
   TrialStatus,
@@ -422,16 +423,62 @@ export class ExperimentsService {
 
   // ---- lifecycle ----
 
-  /** Starts a created experiment, or resumes a paused one; a running one is left as it is. */
-  async start(id: string): Promise<ExperimentDetail> {
+  /**
+   * Starts a created experiment, or resumes a paused one; a running one is left as it is. An
+   * unstarted experiment can be given its analysis plan commit here (`plan_commit`), so one left
+   * without it can still be started; once it has started the plan commit is fixed.
+   */
+  async start(id: string, body?: StartExperimentRequest | null): Promise<ExperimentDetail> {
+    if (body !== undefined && body !== null && (typeof body !== 'object' || Array.isArray(body))) {
+      throw badRequest('invalid_experiment', 'the body must be a JSON object or empty');
+    }
+    const raw = body?.plan_commit;
+    if (raw !== undefined && raw !== null && typeof raw !== 'string') throw badRequest('invalid_experiment', 'plan_commit must be a string or null');
+    const planCommit = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
     const exp = await this.row(id);
     if (exp.status === 'done' || exp.status === 'cancelled') {
       throw conflict('experiment_finished', `experiment ${id} is ${exp.status} and cannot start again`, 'Create a new experiment, with this one as its parent.');
     }
+    if (planCommit !== null && exp.status !== 'created' && planCommit !== exp.plan_commit) {
+      throw conflict(
+        'plan_commit_locked',
+        `experiment ${id} has started, so its plan commit is fixed${exp.plan_commit ? ` at ${exp.plan_commit}` : ' (none was given)'}`,
+        'Leave plan_commit out to resume it, or create a new experiment with the plan commit.',
+      );
+    }
     if (exp.status === 'paused') return this.resume(id);
     await this.db.tx(async (client) => {
+      if (planCommit !== null) await client.query(`UPDATE experiments SET plan_commit = $2 WHERE id = $1 AND status = 'created'`, [id, planCommit]);
       await client.query(`UPDATE experiments SET status = 'running', started_at = coalesce(started_at, now()) WHERE id = $1 AND status = 'created'`, [id]);
       await finishIfDone(client, id);
+    });
+    return this.get(id);
+  }
+
+  /**
+   * Discards an experiment that never started: it is marked `cancelled` and its queued trials
+   * `cancelled`, as a stop does, and nothing is deleted. Only while it is `created` and none of its
+   * trials has been claimed; anything else is a 409, so a started run is never discarded.
+   */
+  async discard(id: string): Promise<ExperimentDetail> {
+    await this.row(id);
+    await this.db.tx(async (client) => {
+      const { rows } = await client.query<{ status: ExperimentStatus; started_at: Date | null }>('SELECT status, started_at FROM experiments WHERE id = $1 FOR UPDATE', [id]);
+      const exp = rows[0];
+      const { rows: ran } = await client.query<{ n: number }>(`SELECT count(*)::int AS n FROM trials WHERE experiment_id = $1 AND status <> 'queued'`, [id]);
+      if (exp.status === 'done' || exp.status === 'cancelled') {
+        throw conflict('experiment_finished', `experiment ${id} is ${exp.status}, so there is nothing to discard`, 'Leave it as it is; its trials are kept either way.');
+      }
+      if (exp.status !== 'created' || exp.started_at !== null || ran[0].n > 0) {
+        throw conflict(
+          'experiment_started',
+          `experiment ${id} has started (${exp.status}${ran[0].n ? `, ${ran[0].n} trial${ran[0].n === 1 ? '' : 's'} claimed or finished` : ''}), so it cannot be discarded`,
+          'Stop it instead: its queued trials are cancelled and the finished ones kept.',
+        );
+      }
+      await client.query(`UPDATE experiments SET status = 'cancelled', cancelled_at = now() WHERE id = $1`, [id]);
+      await client.query(`UPDATE trials SET status = 'cancelled', finished_at = now() WHERE experiment_id = $1 AND status = 'queued'`, [id]);
+      await addEvent(client, { experimentId: id, kind: 'discarded', detail: 'discarded before it started: nothing ran, and nothing was deleted' });
     });
     return this.get(id);
   }
@@ -702,7 +749,8 @@ export class ExperimentsService {
     }
     add(r.created_at, 'created', `${r.config_hashes.length} configs x ${r.task_sha256s.length} tasks x N=${r.n}`);
     add(r.started_at, 'started', 'trials can be claimed');
-    add(r.cancelled_at, 'cancelled', 'stopped: queued trials cancelled; claimed ones finish');
+    // A discarded experiment (never started) has its own stored event; it was not stopped mid-run.
+    if (!stored.some((s) => s.kind === 'discarded')) add(r.cancelled_at, 'cancelled', 'stopped: queued trials cancelled; claimed ones finish');
     add(r.finished_at, 'finished', 'every trial has finished');
     // Before migration 005 only the latest pause and resume were kept, on the experiment row.
     const pauses: ExperimentEventKind[] = ['paused', 'futility_pause', 'infra_guard_pause', 'spend_guard_pause'];

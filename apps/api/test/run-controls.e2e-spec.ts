@@ -177,6 +177,40 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
     expect((await request(env.http).post(`/api/experiments/${exp.id}/arms/C/pause`).expect(404)).body).toMatchObject({ error: 'unknown_arm', fix: expect.any(String) as string });
   });
 
+  // ---- an unstarted experiment: started later with its plan commit, or discarded ----
+
+  it('starts an unstarted experiment with its plan commit, which is fixed once it has started', async () => {
+    const exp = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 1 }, { start: false });
+    expect(exp).toMatchObject({ status: 'created', plan_commit: null });
+    const started = (await request(env.http).post(`/api/experiments/${exp.id}/start`).send({ plan_commit: ' 3e1a9f0 ' }).expect(200)).body as ExperimentDetail;
+    expect(started).toMatchObject({ status: 'running', plan_commit: '3e1a9f0' });
+    // The same commit again (a retried click) is fine; another one is refused.
+    await request(env.http).post(`/api/experiments/${exp.id}/start`).send({ plan_commit: '3e1a9f0' }).expect(200);
+    const locked = (await request(env.http).post(`/api/experiments/${exp.id}/start`).send({ plan_commit: 'b4d00d1' }).expect(409)).body as { error: string; message: string; fix: string };
+    expect(locked).toMatchObject({ error: 'plan_commit_locked', fix: expect.any(String) as string });
+    expect(locked.message).toContain('fixed at 3e1a9f0');
+    expect((await request(env.http).post(`/api/experiments/${exp.id}/start`).send({ plan_commit: 5 }).expect(400)).body).toMatchObject({ error: 'invalid_experiment' });
+    await request(env.http).post(`/api/experiments/${exp.id}/stop`).expect(200);
+  });
+
+  it('discards an experiment that never started, keeping its rows, and refuses one that has', async () => {
+    const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 2 }, { start: false });
+    const d = (await request(env.http).post(`/api/experiments/${exp.id}/discard`).expect(200)).body as ExperimentDetail;
+    expect(d).toMatchObject({ status: 'cancelled', counts: { queued: 0, cancelled: 4 } });
+    expect(d.events.find((x) => x.kind === 'discarded')?.detail).toBe('discarded before it started: nothing ran, and nothing was deleted');
+    expect(d.events.some((x) => x.kind === 'cancelled')).toBe(false);
+    expect(await trials(exp.id)).toHaveLength(4); // marked, never deleted
+    expect((await request(env.http).post(`/api/experiments/${exp.id}/discard`).expect(409)).body).toMatchObject({ error: 'experiment_finished' });
+    expect((await request(env.http).post(`/api/experiments/${exp.id}/start`).expect(409)).body).toMatchObject({ error: 'experiment_finished' });
+
+    const running = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 2 });
+    const refused = (await request(env.http).post(`/api/experiments/${running.id}/discard`).expect(409)).body as { error: string; fix: string };
+    expect(refused).toMatchObject({ error: 'experiment_started', fix: expect.stringContaining('Stop it instead') as string });
+    expect((await e.detail(running.id)).status).toBe('running');
+    await request(env.http).post(`/api/experiments/${running.id}/stop`).expect(200);
+    await request(env.http).post('/api/experiments/e_nope/discard').expect(404);
+  });
+
   // ---- D32: futility and guards ----
 
   /** Claims and reports until nothing is claimable; `outcome` picks each report's label and end state. */

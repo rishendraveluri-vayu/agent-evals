@@ -342,6 +342,15 @@ export interface CreateExperimentRequest {
   reuse_baseline?: boolean | null;
 }
 
+/**
+ * POST /experiments/:id/start, optional body. `plan_commit` sets the analysis plan's commit on an
+ * experiment that has not started yet (an unstarted one left without it can still be started from
+ * its run page); once it has started the plan commit is fixed (409 `plan_commit_locked`).
+ */
+export interface StartExperimentRequest {
+  plan_commit?: string | null;
+}
+
 /** POST /experiments/estimate: the estimate of what would run, and the baseline decision (D34). */
 export interface EstimateResponse extends Estimate {
   baseline: BaselineDecision | null;
@@ -413,7 +422,9 @@ export type ExperimentEventKind =
   | 'infra_guard_pause'
   | 'spend_guard_pause'
   // D34: whether arm A reuses the parent's trials, and why.
-  | 'baseline';
+  | 'baseline'
+  // POST /experiments/:id/discard: an experiment that never started, marked cancelled.
+  | 'discarded';
 
 export interface ExperimentEvent {
   at: string;
