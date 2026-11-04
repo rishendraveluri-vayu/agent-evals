@@ -28,6 +28,14 @@ GATE = Gate(
         "<<<BEGIN_UNTRUSTED_TOOL_DESCRIPTION>>>\n",
         "\n<<<END_UNTRUSTED_TOOL_DESCRIPTION>>>",
     ),
+    # ADK's imports take 7.5 to 8.5 s before the adapter library's clock starts. Measured
+    # 4 Nov, 4 runs each on main and on the checks.json branch: gate wall 22.65 to 23.59 s for
+    # a 15 s timeout, the library's own wall exactly 15.00 s every time, so the shared margin
+    # (timeout_s + 10 = 25 s) left 1.4 to 2.3 s. In two full-suite runs the start-up grew to
+    # about 10.5 s and the test failed at 25.48 and 26.04 s; one full run of main passed. The
+    # timeout was never late: this allowance covers ADK's start-up only, and the shared test
+    # also checks that the library's clock fired within 2 s of timeout_s.
+    startup_s=5.0,
 )
 
 
