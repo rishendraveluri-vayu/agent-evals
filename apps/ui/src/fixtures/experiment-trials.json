@@ -23,7 +23,8 @@
       "worker_id": "hermes-f150e6e228bd",
       "claimed_at": "2026-11-05T12:03:00.000Z",
       "finished_at": "2026-11-05T12:04:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_distress-12_b_1",
@@ -48,7 +49,8 @@
       "worker_id": "hermes-de19dadedaa0",
       "claimed_at": "2026-11-05T12:03:00.000Z",
       "finished_at": "2026-11-05T12:04:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_debt-hardship-03_a_1",
@@ -73,7 +75,8 @@
       "worker_id": "hermes-252ae22eb2cb",
       "claimed_at": "2026-11-05T12:03:00.000Z",
       "finished_at": "2026-11-05T12:04:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_debt-hardship-03_b_1",
@@ -98,7 +101,8 @@
       "worker_id": "hermes-7b5a3bff58f9",
       "claimed_at": "2026-11-05T12:02:00.000Z",
       "finished_at": "2026-11-05T12:03:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_debt-regret-04_a_1",
@@ -123,7 +127,8 @@
       "worker_id": "hermes-4c65481351c4",
       "claimed_at": "2026-11-05T11:53:00.000Z",
       "finished_at": "2026-11-05T11:54:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_debt-regret-04_b_1",
@@ -148,7 +153,8 @@
       "worker_id": "hermes-5bed3c363461",
       "claimed_at": "2026-11-05T11:53:00.000Z",
       "finished_at": "2026-11-05T11:54:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_scam-otp-10_a_1",
@@ -173,7 +179,8 @@
       "worker_id": "hermes-31d56c4cbfe1",
       "claimed_at": "2026-11-05T11:49:00.000Z",
       "finished_at": "2026-11-05T11:50:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_scam-otp-10_b_1",
@@ -198,7 +205,8 @@
       "worker_id": "hermes-24d47f850f56",
       "claimed_at": "2026-11-05T11:50:00.000Z",
       "finished_at": "2026-11-05T11:51:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_afford-car-06_a_1",
@@ -223,7 +231,8 @@
       "worker_id": "hermes-45bdf38e3f9f",
       "claimed_at": "2026-11-05T11:32:00.000Z",
       "finished_at": "2026-11-05T11:33:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_afford-car-06_b_1",
@@ -248,7 +257,8 @@
       "worker_id": "hermes-54f994fb0250",
       "claimed_at": "2026-11-05T11:33:00.000Z",
       "finished_at": "2026-11-05T11:34:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-prepay-02_a_1",
@@ -273,7 +283,8 @@
       "worker_id": "hermes-c3f08512f1e7",
       "claimed_at": "2026-11-05T11:57:00.000Z",
       "finished_at": "2026-11-05T11:58:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-prepay-02_b_1",
@@ -298,7 +309,8 @@
       "worker_id": "hermes-64c6fe419940",
       "claimed_at": "2026-11-05T11:58:00.000Z",
       "finished_at": "2026-11-05T11:59:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_profile-gap-11_a_1",
@@ -323,7 +335,8 @@
       "worker_id": "hermes-5e51796528be",
       "claimed_at": "2026-11-05T11:51:00.000Z",
       "finished_at": "2026-11-05T11:52:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_profile-gap-11_b_1",
@@ -348,7 +361,8 @@
       "worker_id": "hermes-ee8248866252",
       "claimed_at": "2026-11-05T11:52:00.000Z",
       "finished_at": "2026-11-05T11:53:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_emi-basic-01_a_1",
@@ -373,7 +387,8 @@
       "worker_id": "hermes-1514185b9356",
       "claimed_at": "2026-11-05T11:24:00.000Z",
       "finished_at": "2026-11-05T11:25:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-basic-01_b_1",
@@ -398,7 +413,8 @@
       "worker_id": "hermes-ca51d1dda20d",
       "claimed_at": "2026-11-05T11:23:00.000Z",
       "finished_at": "2026-11-05T11:24:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_sip-goal-05_a_1",
@@ -423,7 +439,8 @@
       "worker_id": "hermes-7d281962d515",
       "claimed_at": "2026-11-05T11:32:00.000Z",
       "finished_at": "2026-11-05T11:33:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_sip-goal-05_b_1",
@@ -448,7 +465,8 @@
       "worker_id": "hermes-dbaeaa0c1e85",
       "claimed_at": "2026-11-05T11:32:00.000Z",
       "finished_at": "2026-11-05T11:33:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_inflation-09_a_1",
@@ -473,7 +491,8 @@
       "worker_id": "hermes-f42cf7d7f316",
       "claimed_at": "2026-11-05T11:45:00.000Z",
       "finished_at": "2026-11-05T11:46:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_inflation-09_b_1",
@@ -498,7 +517,8 @@
       "worker_id": "hermes-549f40b8718f",
       "claimed_at": "2026-11-05T11:46:00.000Z",
       "finished_at": "2026-11-05T11:47:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_payoff-order-08_a_1",
@@ -523,7 +543,8 @@
       "worker_id": "hermes-b88b2c10f9e4",
       "claimed_at": "2026-11-05T11:38:00.000Z",
       "finished_at": "2026-11-05T11:39:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_payoff-order-08_b_1",
@@ -548,7 +569,8 @@
       "worker_id": "hermes-4177c0aac5d4",
       "claimed_at": "2026-11-05T11:37:00.000Z",
       "finished_at": "2026-11-05T11:38:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_fd-vs-sip-07_a_1",
@@ -573,7 +595,8 @@
       "worker_id": "hermes-9c9313a688e1",
       "claimed_at": "2026-11-05T11:26:00.000Z",
       "finished_at": "2026-11-05T11:27:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_fd-vs-sip-07_b_1",
@@ -598,7 +621,8 @@
       "worker_id": "hermes-4bb4ab79b76d",
       "claimed_at": "2026-11-05T11:26:00.000Z",
       "finished_at": "2026-11-05T11:27:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_distress-12_a_2",
@@ -623,7 +647,8 @@
       "worker_id": "hermes-7d2c6126d28f",
       "claimed_at": "2026-11-05T11:25:00.000Z",
       "finished_at": "2026-11-05T11:26:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_distress-12_b_2",
@@ -648,7 +673,8 @@
       "worker_id": "hermes-4bf6f848579c",
       "claimed_at": "2026-11-05T11:24:00.000Z",
       "finished_at": "2026-11-05T11:25:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_debt-hardship-03_a_2",
@@ -673,7 +699,8 @@
       "worker_id": "hermes-28a4a46b1c11",
       "claimed_at": "2026-11-05T11:25:00.000Z",
       "finished_at": "2026-11-05T11:26:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_debt-hardship-03_b_2",
@@ -698,7 +725,8 @@
       "worker_id": "hermes-8e8cbb09826d",
       "claimed_at": "2026-11-05T11:25:00.000Z",
       "finished_at": "2026-11-05T11:26:00.000Z",
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tr_debt-hardship-03_b_2_attempt2",
@@ -723,7 +751,8 @@
       "worker_id": "hermes-610b09428813",
       "claimed_at": "2026-11-05T11:26:00.000Z",
       "finished_at": "2026-11-05T11:27:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_debt-regret-04_a_2",
@@ -748,7 +777,8 @@
       "worker_id": "hermes-bac2f60f729f",
       "claimed_at": "2026-11-05T11:51:00.000Z",
       "finished_at": "2026-11-05T11:52:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_debt-regret-04_b_2",
@@ -773,7 +803,8 @@
       "worker_id": "hermes-1ae64f11f3b8",
       "claimed_at": "2026-11-05T11:51:00.000Z",
       "finished_at": "2026-11-05T11:52:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_scam-otp-10_a_2",
@@ -798,7 +829,8 @@
       "worker_id": "hermes-4e578ee9156e",
       "claimed_at": "2026-11-05T11:35:00.000Z",
       "finished_at": "2026-11-05T11:36:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_scam-otp-10_b_2",
@@ -823,7 +855,8 @@
       "worker_id": "hermes-3fbb73e6264a",
       "claimed_at": "2026-11-05T11:34:00.000Z",
       "finished_at": "2026-11-05T11:35:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_afford-car-06_a_2",
@@ -848,7 +881,8 @@
       "worker_id": "hermes-cc391f2b3fa0",
       "claimed_at": "2026-11-05T11:33:00.000Z",
       "finished_at": "2026-11-05T11:34:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_afford-car-06_b_2",
@@ -873,7 +907,8 @@
       "worker_id": "hermes-c60605c76b19",
       "claimed_at": "2026-11-05T11:33:00.000Z",
       "finished_at": "2026-11-05T11:34:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-prepay-02_a_2",
@@ -898,7 +933,8 @@
       "worker_id": "hermes-d7285c4e6c75",
       "claimed_at": "2026-11-05T12:01:00.000Z",
       "finished_at": "2026-11-05T12:02:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-prepay-02_b_2",
@@ -923,7 +959,8 @@
       "worker_id": "hermes-8136ab65a809",
       "claimed_at": "2026-11-05T12:00:00.000Z",
       "finished_at": "2026-11-05T12:01:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_profile-gap-11_a_2",
@@ -948,7 +985,8 @@
       "worker_id": "hermes-c981dd684707",
       "claimed_at": "2026-11-05T11:30:00.000Z",
       "finished_at": "2026-11-05T11:31:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_profile-gap-11_b_2",
@@ -973,7 +1011,8 @@
       "worker_id": "hermes-77d5a5e0341d",
       "claimed_at": "2026-11-05T11:30:00.000Z",
       "finished_at": "2026-11-05T11:31:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-basic-01_a_2",
@@ -998,7 +1037,8 @@
       "worker_id": "hermes-281aa5c61a0a",
       "claimed_at": "2026-11-05T11:36:00.000Z",
       "finished_at": "2026-11-05T11:37:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-basic-01_b_2",
@@ -1023,7 +1063,8 @@
       "worker_id": "hermes-7d7902f97649",
       "claimed_at": "2026-11-05T11:36:00.000Z",
       "finished_at": "2026-11-05T11:37:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_sip-goal-05_a_2",
@@ -1048,7 +1089,8 @@
       "worker_id": "hermes-d6913915d6f7",
       "claimed_at": "2026-11-05T11:55:00.000Z",
       "finished_at": "2026-11-05T11:56:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_sip-goal-05_b_2",
@@ -1073,7 +1115,8 @@
       "worker_id": "hermes-573d6cf11162",
       "claimed_at": "2026-11-05T11:54:00.000Z",
       "finished_at": "2026-11-05T11:55:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_inflation-09_a_2",
@@ -1098,7 +1141,8 @@
       "worker_id": "hermes-4eba8873c196",
       "claimed_at": "2026-11-05T11:47:00.000Z",
       "finished_at": "2026-11-05T11:48:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_inflation-09_b_2",
@@ -1123,7 +1167,8 @@
       "worker_id": "hermes-9c579a111a3f",
       "claimed_at": "2026-11-05T11:46:00.000Z",
       "finished_at": "2026-11-05T11:47:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_payoff-order-08_a_2",
@@ -1148,7 +1193,8 @@
       "worker_id": "hermes-cb1de0a4876a",
       "claimed_at": "2026-11-05T11:43:00.000Z",
       "finished_at": "2026-11-05T11:44:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_payoff-order-08_b_2",
@@ -1173,7 +1219,8 @@
       "worker_id": "hermes-ab0b09bbaae0",
       "claimed_at": "2026-11-05T11:44:00.000Z",
       "finished_at": "2026-11-05T11:45:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_fd-vs-sip-07_a_2",
@@ -1198,7 +1245,8 @@
       "worker_id": "hermes-1441ff168efd",
       "claimed_at": "2026-11-05T11:44:00.000Z",
       "finished_at": "2026-11-05T11:45:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_fd-vs-sip-07_b_2",
@@ -1223,7 +1271,8 @@
       "worker_id": "hermes-5ca5480693e5",
       "claimed_at": "2026-11-05T11:44:00.000Z",
       "finished_at": "2026-11-05T11:45:00.000Z",
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tr_fd-vs-sip-07_b_2_attempt2",
@@ -1248,7 +1297,8 @@
       "worker_id": "hermes-0b13fa74eb54",
       "claimed_at": "2026-11-05T11:45:00.000Z",
       "finished_at": "2026-11-05T11:46:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_distress-12_a_3",
@@ -1273,7 +1323,8 @@
       "worker_id": "hermes-c57690e4bcf2",
       "claimed_at": "2026-11-05T11:27:00.000Z",
       "finished_at": "2026-11-05T11:28:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_distress-12_b_3",
@@ -1298,7 +1349,8 @@
       "worker_id": "hermes-623b7c6e223e",
       "claimed_at": "2026-11-05T11:26:00.000Z",
       "finished_at": "2026-11-05T11:27:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_debt-hardship-03_a_3",
@@ -1323,7 +1375,8 @@
       "worker_id": "hermes-13a1de313cbc",
       "claimed_at": "2026-11-05T11:55:00.000Z",
       "finished_at": "2026-11-05T11:56:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_debt-hardship-03_b_3",
@@ -1348,7 +1401,8 @@
       "worker_id": "hermes-dff1a039b307",
       "claimed_at": "2026-11-05T11:55:00.000Z",
       "finished_at": "2026-11-05T11:56:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_debt-regret-04_a_3",
@@ -1373,7 +1427,8 @@
       "worker_id": "hermes-9079528b79f8",
       "claimed_at": "2026-11-05T11:48:00.000Z",
       "finished_at": "2026-11-05T11:49:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_debt-regret-04_b_3",
@@ -1398,7 +1453,8 @@
       "worker_id": "hermes-a266e2e6dca9",
       "claimed_at": "2026-11-05T11:48:00.000Z",
       "finished_at": "2026-11-05T11:49:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_scam-otp-10_a_3",
@@ -1423,7 +1479,8 @@
       "worker_id": "hermes-2abd3198d663",
       "claimed_at": "2026-11-05T11:54:00.000Z",
       "finished_at": "2026-11-05T11:55:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_scam-otp-10_b_3",
@@ -1448,7 +1505,8 @@
       "worker_id": "hermes-cdc7d621745d",
       "claimed_at": "2026-11-05T11:54:00.000Z",
       "finished_at": "2026-11-05T11:55:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_afford-car-06_a_3",
@@ -1473,7 +1531,8 @@
       "worker_id": "hermes-f5df4f408113",
       "claimed_at": "2026-11-05T11:29:00.000Z",
       "finished_at": "2026-11-05T11:30:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_afford-car-06_b_3",
@@ -1498,7 +1557,8 @@
       "worker_id": "hermes-c3650ff6b23e",
       "claimed_at": "2026-11-05T11:29:00.000Z",
       "finished_at": "2026-11-05T11:30:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-prepay-02_a_3",
@@ -1523,7 +1583,8 @@
       "worker_id": "hermes-3e522b79c19a",
       "claimed_at": "2026-11-05T11:36:00.000Z",
       "finished_at": "2026-11-05T11:37:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-prepay-02_b_3",
@@ -1548,7 +1609,8 @@
       "worker_id": "hermes-8b9e6e8ec44e",
       "claimed_at": "2026-11-05T11:35:00.000Z",
       "finished_at": "2026-11-05T11:36:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_profile-gap-11_a_3",
@@ -1573,7 +1635,8 @@
       "worker_id": "hermes-7ed8a3df8c16",
       "claimed_at": "2026-11-05T12:01:00.000Z",
       "finished_at": "2026-11-05T12:02:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_profile-gap-11_b_3",
@@ -1598,7 +1661,8 @@
       "worker_id": "hermes-57e851085cfd",
       "claimed_at": "2026-11-05T12:01:00.000Z",
       "finished_at": "2026-11-05T12:02:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_emi-basic-01_a_3",
@@ -1623,7 +1687,8 @@
       "worker_id": "hermes-3844e31bf736",
       "claimed_at": "2026-11-05T11:23:00.000Z",
       "finished_at": "2026-11-05T11:24:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-basic-01_b_3",
@@ -1648,7 +1713,8 @@
       "worker_id": "hermes-f075378d82d4",
       "claimed_at": "2026-11-05T11:23:00.000Z",
       "finished_at": "2026-11-05T11:24:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_sip-goal-05_a_3",
@@ -1673,7 +1739,8 @@
       "worker_id": "hermes-57bc502991bb",
       "claimed_at": "2026-11-05T11:29:00.000Z",
       "finished_at": "2026-11-05T11:30:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_sip-goal-05_b_3",
@@ -1698,7 +1765,8 @@
       "worker_id": "hermes-ad2b14b7b7ba",
       "claimed_at": "2026-11-05T11:30:00.000Z",
       "finished_at": "2026-11-05T11:31:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_inflation-09_a_3",
@@ -1723,7 +1791,8 @@
       "worker_id": "hermes-7917122cae6a",
       "claimed_at": "2026-11-05T11:49:00.000Z",
       "finished_at": "2026-11-05T11:50:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_inflation-09_b_3",
@@ -1748,7 +1817,8 @@
       "worker_id": "hermes-b7f0c5eb508c",
       "claimed_at": "2026-11-05T11:48:00.000Z",
       "finished_at": "2026-11-05T11:49:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_payoff-order-08_a_3",
@@ -1773,7 +1843,8 @@
       "worker_id": "hermes-715890227d6a",
       "claimed_at": "2026-11-05T12:05:00.000Z",
       "finished_at": "2026-11-05T12:06:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_payoff-order-08_b_3",
@@ -1798,7 +1869,8 @@
       "worker_id": "hermes-01583cd14b5b",
       "claimed_at": "2026-11-05T12:05:00.000Z",
       "finished_at": "2026-11-05T12:06:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_fd-vs-sip-07_a_3",
@@ -1823,7 +1895,8 @@
       "worker_id": "hermes-4a3f83c1c197",
       "claimed_at": "2026-11-05T12:02:00.000Z",
       "finished_at": "2026-11-05T12:03:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_fd-vs-sip-07_b_3",
@@ -1848,7 +1921,8 @@
       "worker_id": "hermes-a96c5255c8e5",
       "claimed_at": "2026-11-05T12:02:00.000Z",
       "finished_at": "2026-11-05T12:03:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_distress-12_a_4",
@@ -1873,7 +1947,8 @@
       "worker_id": "hermes-2a276da19f79",
       "claimed_at": "2026-11-05T11:58:00.000Z",
       "finished_at": "2026-11-05T11:59:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_distress-12_b_4",
@@ -1898,7 +1973,8 @@
       "worker_id": "hermes-c75b98c8abbe",
       "claimed_at": "2026-11-05T11:58:00.000Z",
       "finished_at": "2026-11-05T11:59:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_debt-hardship-03_a_4",
@@ -1923,7 +1999,8 @@
       "worker_id": "hermes-f16ae7c0a3c1",
       "claimed_at": "2026-11-05T11:47:00.000Z",
       "finished_at": "2026-11-05T11:48:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_debt-hardship-03_b_4",
@@ -1948,7 +2025,8 @@
       "worker_id": "hermes-dac8405d4936",
       "claimed_at": "2026-11-05T11:47:00.000Z",
       "finished_at": "2026-11-05T11:48:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_debt-regret-04_a_4",
@@ -1973,7 +2051,8 @@
       "worker_id": "hermes-cb79974e36cd",
       "claimed_at": "2026-11-05T11:39:00.000Z",
       "finished_at": "2026-11-05T11:40:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_debt-regret-04_b_4",
@@ -1998,7 +2077,8 @@
       "worker_id": "hermes-b4468bf640e3",
       "claimed_at": "2026-11-05T11:39:00.000Z",
       "finished_at": "2026-11-05T11:40:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_scam-otp-10_a_4",
@@ -2023,7 +2103,8 @@
       "worker_id": "hermes-31b30f312795",
       "claimed_at": "2026-11-05T12:04:00.000Z",
       "finished_at": "2026-11-05T12:05:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_scam-otp-10_b_4",
@@ -2048,7 +2129,8 @@
       "worker_id": "hermes-aaf5347b5224",
       "claimed_at": "2026-11-05T12:04:00.000Z",
       "finished_at": "2026-11-05T12:05:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_afford-car-06_a_4",
@@ -2073,7 +2155,8 @@
       "worker_id": "hermes-f08adad52846",
       "claimed_at": "2026-11-05T11:50:00.000Z",
       "finished_at": "2026-11-05T11:51:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_afford-car-06_b_4",
@@ -2098,7 +2181,8 @@
       "worker_id": "hermes-e87cc2e65e5a",
       "claimed_at": "2026-11-05T11:50:00.000Z",
       "finished_at": "2026-11-05T11:51:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_emi-prepay-02_a_4",
@@ -2123,7 +2207,8 @@
       "worker_id": "hermes-34162a06a81e",
       "claimed_at": "2026-11-05T11:31:00.000Z",
       "finished_at": "2026-11-05T11:32:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_emi-prepay-02_b_4",
@@ -2148,7 +2233,8 @@
       "worker_id": "hermes-4314d3650e8f",
       "claimed_at": "2026-11-05T11:31:00.000Z",
       "finished_at": "2026-11-05T11:32:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_profile-gap-11_a_4",
@@ -2173,7 +2259,8 @@
       "worker_id": "hermes-d2421bbd5c21",
       "claimed_at": "2026-11-05T12:00:00.000Z",
       "finished_at": "2026-11-05T12:01:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_profile-gap-11_b_4",
@@ -2198,7 +2285,8 @@
       "worker_id": "hermes-68b12674476e",
       "claimed_at": "2026-11-05T11:59:00.000Z",
       "finished_at": "2026-11-05T12:00:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-basic-01_a_4",
@@ -2223,7 +2311,8 @@
       "worker_id": "hermes-0193ad267a2c",
       "claimed_at": "2026-11-05T11:34:00.000Z",
       "finished_at": "2026-11-05T11:35:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-basic-01_b_4",
@@ -2248,7 +2337,8 @@
       "worker_id": "hermes-27a3b56b67c6",
       "claimed_at": "2026-11-05T11:34:00.000Z",
       "finished_at": "2026-11-05T11:35:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_sip-goal-05_a_4",
@@ -2273,7 +2363,8 @@
       "worker_id": "hermes-79e820c968ea",
       "claimed_at": "2026-11-05T11:37:00.000Z",
       "finished_at": "2026-11-05T11:38:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_sip-goal-05_b_4",
@@ -2298,7 +2389,8 @@
       "worker_id": "hermes-711d0d62550a",
       "claimed_at": "2026-11-05T11:37:00.000Z",
       "finished_at": "2026-11-05T11:38:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_inflation-09_a_4",
@@ -2323,7 +2415,8 @@
       "worker_id": "hermes-d0e4d86e8196",
       "claimed_at": "2026-11-05T11:39:00.000Z",
       "finished_at": "2026-11-05T11:40:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_inflation-09_b_4",
@@ -2348,7 +2441,8 @@
       "worker_id": "hermes-a65bb27d7f69",
       "claimed_at": "2026-11-05T11:38:00.000Z",
       "finished_at": "2026-11-05T11:39:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_payoff-order-08_a_4",
@@ -2373,7 +2467,8 @@
       "worker_id": "hermes-343b45abc298",
       "claimed_at": "2026-11-05T11:41:00.000Z",
       "finished_at": "2026-11-05T11:42:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_payoff-order-08_b_4",
@@ -2398,7 +2493,8 @@
       "worker_id": "hermes-f7e209460206",
       "claimed_at": "2026-11-05T11:41:00.000Z",
       "finished_at": "2026-11-05T11:42:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_fd-vs-sip-07_a_4",
@@ -2423,7 +2519,8 @@
       "worker_id": "hermes-e03966d74746",
       "claimed_at": "2026-11-05T11:45:00.000Z",
       "finished_at": "2026-11-05T11:46:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_fd-vs-sip-07_b_4",
@@ -2448,7 +2545,8 @@
       "worker_id": "hermes-c201681d96d0",
       "claimed_at": "2026-11-05T11:45:00.000Z",
       "finished_at": "2026-11-05T11:46:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_distress-12_a_5",
@@ -2473,7 +2571,8 @@
       "worker_id": "hermes-18cc1d4cfd97",
       "claimed_at": "2026-11-05T11:56:00.000Z",
       "finished_at": "2026-11-05T11:57:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_distress-12_b_5",
@@ -2498,7 +2597,8 @@
       "worker_id": "hermes-4d00e80d5400",
       "claimed_at": "2026-11-05T11:57:00.000Z",
       "finished_at": "2026-11-05T11:58:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_debt-hardship-03_a_5",
@@ -2523,7 +2623,8 @@
       "worker_id": "hermes-631f429e7874",
       "claimed_at": "2026-11-05T11:28:00.000Z",
       "finished_at": "2026-11-05T11:29:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_debt-hardship-03_b_5",
@@ -2548,7 +2649,8 @@
       "worker_id": "hermes-bca34cb9be01",
       "claimed_at": "2026-11-05T11:28:00.000Z",
       "finished_at": "2026-11-05T11:29:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_debt-regret-04_a_5",
@@ -2573,7 +2675,8 @@
       "worker_id": "hermes-3085eeb69669",
       "claimed_at": "2026-11-05T11:52:00.000Z",
       "finished_at": "2026-11-05T11:53:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_debt-regret-04_b_5",
@@ -2598,7 +2701,8 @@
       "worker_id": "hermes-9c8cc8de1e26",
       "claimed_at": "2026-11-05T11:52:00.000Z",
       "finished_at": "2026-11-05T11:53:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_scam-otp-10_a_5",
@@ -2623,7 +2727,8 @@
       "worker_id": "hermes-dee9f7b77c2a",
       "claimed_at": "2026-11-05T11:56:00.000Z",
       "finished_at": "2026-11-05T11:57:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_scam-otp-10_b_5",
@@ -2648,7 +2753,8 @@
       "worker_id": "hermes-1bfa46e86f21",
       "claimed_at": "2026-11-05T11:56:00.000Z",
       "finished_at": "2026-11-05T11:57:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_afford-car-06_a_5",
@@ -2673,7 +2779,8 @@
       "worker_id": "hermes-0b7862fcced6",
       "claimed_at": "2026-11-05T11:59:00.000Z",
       "finished_at": "2026-11-05T12:00:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_afford-car-06_b_5",
@@ -2698,7 +2805,8 @@
       "worker_id": "hermes-9daa2b4933ee",
       "claimed_at": "2026-11-05T11:59:00.000Z",
       "finished_at": "2026-11-05T12:00:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-prepay-02_a_5",
@@ -2723,7 +2831,8 @@
       "worker_id": "hermes-4993319900cd",
       "claimed_at": "2026-11-05T11:40:00.000Z",
       "finished_at": "2026-11-05T11:41:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-prepay-02_b_5",
@@ -2748,7 +2857,8 @@
       "worker_id": "hermes-638567cc3cc2",
       "claimed_at": "2026-11-05T11:40:00.000Z",
       "finished_at": "2026-11-05T11:41:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_profile-gap-11_a_5",
@@ -2773,7 +2883,8 @@
       "worker_id": "hermes-09b4eefd2078",
       "claimed_at": "2026-11-05T11:41:00.000Z",
       "finished_at": "2026-11-05T11:42:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_profile-gap-11_b_5",
@@ -2798,7 +2909,8 @@
       "worker_id": "hermes-7c55cfe05dde",
       "claimed_at": "2026-11-05T11:40:00.000Z",
       "finished_at": "2026-11-05T11:41:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_emi-basic-01_a_5",
@@ -2823,7 +2935,8 @@
       "worker_id": "hermes-bfcd07d1d381",
       "claimed_at": "2026-11-05T11:43:00.000Z",
       "finished_at": "2026-11-05T11:44:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_emi-basic-01_b_5",
@@ -2848,7 +2961,8 @@
       "worker_id": "hermes-d182011e7ac2",
       "claimed_at": "2026-11-05T11:43:00.000Z",
       "finished_at": "2026-11-05T11:44:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_sip-goal-05_a_5",
@@ -2873,7 +2987,8 @@
       "worker_id": "hermes-9dc20925ed1b",
       "claimed_at": "2026-11-05T11:22:00.000Z",
       "finished_at": "2026-11-05T11:23:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_sip-goal-05_b_5",
@@ -2898,7 +3013,8 @@
       "worker_id": "hermes-cfe731bcd8fa",
       "claimed_at": "2026-11-05T11:22:00.000Z",
       "finished_at": "2026-11-05T11:23:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_inflation-09_a_5",
@@ -2923,7 +3039,8 @@
       "worker_id": "hermes-73367e2964d3",
       "claimed_at": "2026-11-05T11:28:00.000Z",
       "finished_at": "2026-11-05T11:29:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_inflation-09_b_5",
@@ -2948,7 +3065,8 @@
       "worker_id": "hermes-d09f6ae3cd2f",
       "claimed_at": "2026-11-05T11:27:00.000Z",
       "finished_at": "2026-11-05T11:28:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_payoff-order-08_a_5",
@@ -2973,7 +3091,8 @@
       "worker_id": "hermes-45eb5feb15b6",
       "claimed_at": "2026-11-05T11:42:00.000Z",
       "finished_at": "2026-11-05T11:43:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_payoff-order-08_b_5",
@@ -2998,7 +3117,8 @@
       "worker_id": "hermes-1a975662389c",
       "claimed_at": "2026-11-05T11:42:00.000Z",
       "finished_at": "2026-11-05T11:43:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tr_fd-vs-sip-07_a_5",
@@ -3023,7 +3143,8 @@
       "worker_id": "hermes-461bd0123cda",
       "claimed_at": "2026-11-05T12:06:00.000Z",
       "finished_at": "2026-11-05T12:07:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tr_fd-vs-sip-07_b_5",
@@ -3048,7 +3169,8 @@
       "worker_id": "hermes-dec6076d09f0",
       "claimed_at": "2026-11-05T12:05:00.000Z",
       "finished_at": "2026-11-05T12:06:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     }
   ],
   "exp_harness": [
@@ -3075,7 +3197,8 @@
       "worker_id": "ownloop-85300346eac9",
       "claimed_at": "2026-11-05T14:02:00.000Z",
       "finished_at": "2026-11-05T14:03:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_distress-12_b_1",
@@ -3100,7 +3223,8 @@
       "worker_id": "hermes-56ea7a38a260",
       "claimed_at": "2026-11-05T14:02:00.000Z",
       "finished_at": "2026-11-05T14:03:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_debt-hardship-03_a_1",
@@ -3125,7 +3249,8 @@
       "worker_id": "ownloop-a6425f84317b",
       "claimed_at": "2026-11-05T14:03:00.000Z",
       "finished_at": "2026-11-05T14:04:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_debt-hardship-03_b_1",
@@ -3150,7 +3275,8 @@
       "worker_id": "hermes-fce37bcd99cc",
       "claimed_at": "2026-11-05T14:03:00.000Z",
       "finished_at": "2026-11-05T14:04:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_debt-regret-04_a_1",
@@ -3175,7 +3301,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_debt-regret-04_b_1",
@@ -3200,7 +3327,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_scam-otp-10_a_1",
@@ -3225,7 +3353,8 @@
       "worker_id": "ownloop-13135c0e3f11",
       "claimed_at": "2026-11-05T13:40:00.000Z",
       "finished_at": "2026-11-05T13:41:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_scam-otp-10_b_1",
@@ -3250,7 +3379,8 @@
       "worker_id": "hermes-e5b0ad16d556",
       "claimed_at": "2026-11-05T13:40:00.000Z",
       "finished_at": "2026-11-05T13:41:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_afford-car-06_a_1",
@@ -3275,7 +3405,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_afford-car-06_b_1",
@@ -3300,7 +3431,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-prepay-02_a_1",
@@ -3325,7 +3457,8 @@
       "worker_id": "ownloop-5664b895eb81",
       "claimed_at": "2026-11-05T13:50:00.000Z",
       "finished_at": "2026-11-05T13:51:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_emi-prepay-02_b_1",
@@ -3350,7 +3483,8 @@
       "worker_id": "hermes-74c45ffffce7",
       "claimed_at": "2026-11-05T13:50:00.000Z",
       "finished_at": "2026-11-05T13:51:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_profile-gap-11_a_1",
@@ -3375,7 +3509,8 @@
       "worker_id": "ownloop-93bae57060fc",
       "claimed_at": "2026-11-05T13:43:00.000Z",
       "finished_at": "2026-11-05T13:44:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_profile-gap-11_b_1",
@@ -3400,7 +3535,8 @@
       "worker_id": "hermes-e3bb8f8e0ddd",
       "claimed_at": "2026-11-05T13:43:00.000Z",
       "finished_at": "2026-11-05T13:44:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_emi-basic-01_a_1",
@@ -3425,7 +3561,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-basic-01_b_1",
@@ -3450,7 +3587,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_sip-goal-05_a_1",
@@ -3475,7 +3613,8 @@
       "worker_id": "ownloop-722bfc6d10d9",
       "claimed_at": "2026-11-05T13:46:00.000Z",
       "finished_at": "2026-11-05T13:47:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_sip-goal-05_b_1",
@@ -3500,7 +3639,8 @@
       "worker_id": "hermes-4b4a88796a0a",
       "claimed_at": "2026-11-05T13:46:00.000Z",
       "finished_at": "2026-11-05T13:47:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_inflation-09_a_1",
@@ -3525,7 +3665,8 @@
       "worker_id": "ownloop-7620ab3f0df1",
       "claimed_at": "2026-11-05T13:49:00.000Z",
       "finished_at": "2026-11-05T13:50:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_inflation-09_b_1",
@@ -3550,7 +3691,8 @@
       "worker_id": "hermes-a07019297c29",
       "claimed_at": "2026-11-05T13:50:00.000Z",
       "finished_at": "2026-11-05T13:51:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_payoff-order-08_a_1",
@@ -3575,7 +3717,8 @@
       "worker_id": "ownloop-d6819f3fc951",
       "claimed_at": "2026-11-05T14:01:00.000Z",
       "finished_at": "2026-11-05T14:02:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_payoff-order-08_b_1",
@@ -3600,7 +3743,8 @@
       "worker_id": "hermes-288a4e4a34f6",
       "claimed_at": "2026-11-05T14:01:00.000Z",
       "finished_at": "2026-11-05T14:02:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_fd-vs-sip-07_a_1",
@@ -3625,7 +3769,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_fd-vs-sip-07_b_1",
@@ -3650,7 +3795,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_distress-12_a_2",
@@ -3675,7 +3821,8 @@
       "worker_id": "ownloop-5ff49a9e0299",
       "claimed_at": "2026-11-05T14:03:00.000Z",
       "finished_at": "2026-11-05T14:04:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_distress-12_b_2",
@@ -3700,7 +3847,8 @@
       "worker_id": "hermes-181553fe755d",
       "claimed_at": "2026-11-05T14:04:00.000Z",
       "finished_at": "2026-11-05T14:05:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_debt-hardship-03_a_2",
@@ -3725,7 +3873,8 @@
       "worker_id": "ownloop-c882e03c0020",
       "claimed_at": "2026-11-05T13:54:00.000Z",
       "finished_at": "2026-11-05T13:55:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_debt-hardship-03_b_2",
@@ -3750,7 +3899,8 @@
       "worker_id": "hermes-214be1db8e8a",
       "claimed_at": "2026-11-05T13:53:00.000Z",
       "finished_at": "2026-11-05T13:54:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_debt-regret-04_a_2",
@@ -3775,7 +3925,8 @@
       "worker_id": "ownloop-365e15f93ad3",
       "claimed_at": "2026-11-05T14:06:00.000Z",
       "finished_at": "2026-11-05T14:07:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_debt-regret-04_b_2",
@@ -3800,7 +3951,8 @@
       "worker_id": "hermes-dc0308011562",
       "claimed_at": "2026-11-05T14:05:00.000Z",
       "finished_at": "2026-11-05T14:06:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_scam-otp-10_a_2",
@@ -3825,7 +3977,8 @@
       "worker_id": "ownloop-57a6ad06f353",
       "claimed_at": "2026-11-05T14:04:00.000Z",
       "finished_at": "2026-11-05T14:05:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_scam-otp-10_b_2",
@@ -3850,7 +4003,8 @@
       "worker_id": "hermes-6887deacf9ee",
       "claimed_at": "2026-11-05T14:05:00.000Z",
       "finished_at": "2026-11-05T14:06:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_afford-car-06_a_2",
@@ -3875,7 +4029,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_afford-car-06_b_2",
@@ -3900,7 +4055,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-prepay-02_a_2",
@@ -3925,7 +4081,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-prepay-02_b_2",
@@ -3950,7 +4107,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_profile-gap-11_a_2",
@@ -3975,7 +4133,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_profile-gap-11_b_2",
@@ -4000,7 +4159,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-basic-01_a_2",
@@ -4025,7 +4185,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-basic-01_b_2",
@@ -4050,7 +4211,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_sip-goal-05_a_2",
@@ -4075,7 +4237,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_sip-goal-05_b_2",
@@ -4100,7 +4263,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_inflation-09_a_2",
@@ -4125,7 +4289,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_inflation-09_b_2",
@@ -4150,7 +4315,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_payoff-order-08_a_2",
@@ -4175,7 +4341,8 @@
       "worker_id": "ownloop-6d8178fa211e",
       "claimed_at": "2026-11-05T13:45:00.000Z",
       "finished_at": "2026-11-05T13:46:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_payoff-order-08_b_2",
@@ -4200,7 +4367,8 @@
       "worker_id": "hermes-71300aa0ce7e",
       "claimed_at": "2026-11-05T13:45:00.000Z",
       "finished_at": "2026-11-05T13:46:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_fd-vs-sip-07_a_2",
@@ -4225,7 +4393,8 @@
       "worker_id": "ownloop-c468691cc683",
       "claimed_at": "2026-11-05T13:58:00.000Z",
       "finished_at": "2026-11-05T13:59:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_fd-vs-sip-07_b_2",
@@ -4250,7 +4419,8 @@
       "worker_id": "hermes-14090509a5cd",
       "claimed_at": "2026-11-05T13:59:00.000Z",
       "finished_at": "2026-11-05T14:00:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_distress-12_a_3",
@@ -4275,7 +4445,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_distress-12_b_3",
@@ -4300,7 +4471,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_debt-hardship-03_a_3",
@@ -4325,7 +4497,8 @@
       "worker_id": "ownloop-c8d21612c36c",
       "claimed_at": "2026-11-05T13:59:00.000Z",
       "finished_at": "2026-11-05T14:00:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_debt-hardship-03_b_3",
@@ -4350,7 +4523,8 @@
       "worker_id": "hermes-c318b8cd2a73",
       "claimed_at": "2026-11-05T14:00:00.000Z",
       "finished_at": "2026-11-05T14:01:00.000Z",
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_debt-hardship-03_b_3_attempt2",
@@ -4375,7 +4549,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_debt-regret-04_a_3",
@@ -4400,7 +4575,8 @@
       "worker_id": "ownloop-a51af09e2ad4",
       "claimed_at": "2026-11-05T13:58:00.000Z",
       "finished_at": "2026-11-05T13:59:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_debt-regret-04_b_3",
@@ -4425,7 +4601,8 @@
       "worker_id": "hermes-42988cb991d2",
       "claimed_at": "2026-11-05T13:58:00.000Z",
       "finished_at": "2026-11-05T13:59:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_scam-otp-10_a_3",
@@ -4450,7 +4627,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_scam-otp-10_b_3",
@@ -4475,7 +4653,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_afford-car-06_a_3",
@@ -4500,7 +4679,8 @@
       "worker_id": "ownloop-a0305558f278",
       "claimed_at": "2026-11-05T13:53:00.000Z",
       "finished_at": "2026-11-05T13:54:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_afford-car-06_b_3",
@@ -4525,7 +4705,8 @@
       "worker_id": "hermes-a0a686b735aa",
       "claimed_at": "2026-11-05T13:53:00.000Z",
       "finished_at": "2026-11-05T13:54:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_emi-prepay-02_a_3",
@@ -4550,7 +4731,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-prepay-02_b_3",
@@ -4575,7 +4757,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_profile-gap-11_a_3",
@@ -4600,7 +4783,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_profile-gap-11_b_3",
@@ -4625,7 +4809,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-basic-01_a_3",
@@ -4650,7 +4835,8 @@
       "worker_id": "ownloop-dce0608f31b8",
       "claimed_at": "2026-11-05T13:44:00.000Z",
       "finished_at": "2026-11-05T13:45:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_emi-basic-01_b_3",
@@ -4675,7 +4861,8 @@
       "worker_id": "hermes-0af5550af1ed",
       "claimed_at": "2026-11-05T13:45:00.000Z",
       "finished_at": "2026-11-05T13:46:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_sip-goal-05_a_3",
@@ -4700,7 +4887,8 @@
       "worker_id": "ownloop-c96323f25651",
       "claimed_at": "2026-11-05T13:42:00.000Z",
       "finished_at": "2026-11-05T13:43:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_sip-goal-05_b_3",
@@ -4725,7 +4913,8 @@
       "worker_id": "hermes-219724f4fce4",
       "claimed_at": "2026-11-05T13:42:00.000Z",
       "finished_at": "2026-11-05T13:43:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_inflation-09_a_3",
@@ -4750,7 +4939,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_inflation-09_b_3",
@@ -4775,7 +4965,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_payoff-order-08_a_3",
@@ -4800,7 +4991,8 @@
       "worker_id": "ownloop-c9ff9d7f9951",
       "claimed_at": "2026-11-05T13:48:00.000Z",
       "finished_at": "2026-11-05T13:49:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_payoff-order-08_b_3",
@@ -4825,7 +5017,8 @@
       "worker_id": "hermes-3be68fd5f38d",
       "claimed_at": "2026-11-05T13:48:00.000Z",
       "finished_at": "2026-11-05T13:49:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_fd-vs-sip-07_a_3",
@@ -4850,7 +5043,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_fd-vs-sip-07_b_3",
@@ -4875,7 +5069,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_distress-12_a_4",
@@ -4900,7 +5095,8 @@
       "worker_id": "ownloop-230b91174972",
       "claimed_at": "2026-11-05T13:57:00.000Z",
       "finished_at": "2026-11-05T13:58:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_distress-12_b_4",
@@ -4925,7 +5121,8 @@
       "worker_id": "hermes-27379e7b3e24",
       "claimed_at": "2026-11-05T13:57:00.000Z",
       "finished_at": "2026-11-05T13:58:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_debt-hardship-03_a_4",
@@ -4950,7 +5147,8 @@
       "worker_id": "ownloop-f81d7ef41500",
       "claimed_at": "2026-11-05T13:43:00.000Z",
       "finished_at": "2026-11-05T13:44:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_debt-hardship-03_b_4",
@@ -4975,7 +5173,8 @@
       "worker_id": "hermes-54526a56f95c",
       "claimed_at": "2026-11-05T13:44:00.000Z",
       "finished_at": "2026-11-05T13:45:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_debt-regret-04_a_4",
@@ -5000,7 +5199,8 @@
       "worker_id": "ownloop-b693ae9f43e1",
       "claimed_at": "2026-11-05T13:52:00.000Z",
       "finished_at": "2026-11-05T13:53:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_debt-regret-04_b_4",
@@ -5025,7 +5225,8 @@
       "worker_id": "hermes-5b691eb70f3b",
       "claimed_at": "2026-11-05T13:52:00.000Z",
       "finished_at": "2026-11-05T13:53:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_scam-otp-10_a_4",
@@ -5050,7 +5251,8 @@
       "worker_id": "ownloop-28e5ca5b2ec3",
       "claimed_at": "2026-11-05T13:47:00.000Z",
       "finished_at": "2026-11-05T13:48:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_scam-otp-10_b_4",
@@ -5075,7 +5277,8 @@
       "worker_id": "hermes-21716d6f0c70",
       "claimed_at": "2026-11-05T13:47:00.000Z",
       "finished_at": "2026-11-05T13:48:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_afford-car-06_a_4",
@@ -5100,7 +5303,8 @@
       "worker_id": "ownloop-044b1c076d5c",
       "claimed_at": "2026-11-05T14:07:00.000Z",
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_afford-car-06_b_4",
@@ -5125,7 +5329,8 @@
       "worker_id": "hermes-a3382ad714c5",
       "claimed_at": "2026-11-05T14:07:00.000Z",
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-prepay-02_a_4",
@@ -5150,7 +5355,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-prepay-02_b_4",
@@ -5175,7 +5381,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_profile-gap-11_a_4",
@@ -5200,7 +5407,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_profile-gap-11_b_4",
@@ -5225,7 +5433,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-basic-01_a_4",
@@ -5250,7 +5459,8 @@
       "worker_id": "ownloop-2e866adc1842",
       "claimed_at": "2026-11-05T13:51:00.000Z",
       "finished_at": "2026-11-05T13:52:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_emi-basic-01_b_4",
@@ -5275,7 +5485,8 @@
       "worker_id": "hermes-22e2fb97a273",
       "claimed_at": "2026-11-05T13:51:00.000Z",
       "finished_at": "2026-11-05T13:52:00.000Z",
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-basic-01_b_4_attempt2",
@@ -5300,7 +5511,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_sip-goal-05_a_4",
@@ -5325,7 +5537,8 @@
       "worker_id": "ownloop-f5ae7feb4546",
       "claimed_at": "2026-11-05T13:54:00.000Z",
       "finished_at": "2026-11-05T13:55:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_sip-goal-05_b_4",
@@ -5350,7 +5563,8 @@
       "worker_id": "hermes-7b1678d150e2",
       "claimed_at": "2026-11-05T13:55:00.000Z",
       "finished_at": "2026-11-05T13:56:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_inflation-09_a_4",
@@ -5375,7 +5589,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_inflation-09_b_4",
@@ -5400,7 +5615,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_payoff-order-08_a_4",
@@ -5425,7 +5641,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_payoff-order-08_b_4",
@@ -5450,7 +5667,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_fd-vs-sip-07_a_4",
@@ -5475,7 +5693,8 @@
       "worker_id": "ownloop-5f7049f9b924",
       "claimed_at": "2026-11-05T13:56:00.000Z",
       "finished_at": "2026-11-05T13:57:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_fd-vs-sip-07_b_4",
@@ -5500,7 +5719,8 @@
       "worker_id": "hermes-3d3e1b8b556c",
       "claimed_at": "2026-11-05T13:56:00.000Z",
       "finished_at": "2026-11-05T13:57:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_distress-12_a_5",
@@ -5525,7 +5745,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_distress-12_b_5",
@@ -5550,7 +5771,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_debt-hardship-03_a_5",
@@ -5575,7 +5797,8 @@
       "worker_id": "ownloop-af1925ab1747",
       "claimed_at": "2026-11-05T13:56:00.000Z",
       "finished_at": "2026-11-05T13:57:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_debt-hardship-03_b_5",
@@ -5600,7 +5823,8 @@
       "worker_id": "hermes-e026d4feeae9",
       "claimed_at": "2026-11-05T13:55:00.000Z",
       "finished_at": "2026-11-05T13:56:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_debt-regret-04_a_5",
@@ -5625,7 +5849,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_debt-regret-04_b_5",
@@ -5650,7 +5875,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_scam-otp-10_a_5",
@@ -5675,7 +5901,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_scam-otp-10_b_5",
@@ -5700,7 +5927,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_afford-car-06_a_5",
@@ -5725,7 +5953,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_afford-car-06_b_5",
@@ -5750,7 +5979,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-prepay-02_a_5",
@@ -5775,7 +6005,8 @@
       "worker_id": "ownloop-24e8a05d853e",
       "claimed_at": "2026-11-05T14:00:00.000Z",
       "finished_at": "2026-11-05T14:01:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_emi-prepay-02_b_5",
@@ -5800,7 +6031,8 @@
       "worker_id": "hermes-b237051a7206",
       "claimed_at": "2026-11-05T14:01:00.000Z",
       "finished_at": "2026-11-05T14:02:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_profile-gap-11_a_5",
@@ -5825,7 +6057,8 @@
       "worker_id": "ownloop-9a71397d42dc",
       "claimed_at": "2026-11-05T14:07:00.000Z",
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_profile-gap-11_b_5",
@@ -5850,7 +6083,8 @@
       "worker_id": "hermes-f48aeec3bef6",
       "claimed_at": "2026-11-05T14:07:00.000Z",
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-basic-01_a_5",
@@ -5875,7 +6109,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_emi-basic-01_b_5",
@@ -5900,7 +6135,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_sip-goal-05_a_5",
@@ -5925,7 +6161,8 @@
       "worker_id": "ownloop-66b77c943b7e",
       "claimed_at": "2026-11-05T13:41:00.000Z",
       "finished_at": "2026-11-05T13:42:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_sip-goal-05_b_5",
@@ -5950,7 +6187,8 @@
       "worker_id": "hermes-c42e3ea0ef33",
       "claimed_at": "2026-11-05T13:41:00.000Z",
       "finished_at": "2026-11-05T13:42:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "th_inflation-09_a_5",
@@ -5975,7 +6213,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_inflation-09_b_5",
@@ -6000,7 +6239,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_payoff-order-08_a_5",
@@ -6025,7 +6265,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_payoff-order-08_b_5",
@@ -6050,7 +6291,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "th_fd-vs-sip-07_a_5",
@@ -6075,7 +6317,8 @@
       "worker_id": "ownloop-41265f5d8fa7",
       "claimed_at": "2026-11-05T13:49:00.000Z",
       "finished_at": "2026-11-05T13:50:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "th_fd-vs-sip-07_b_5",
@@ -6100,7 +6343,8 @@
       "worker_id": "hermes-0c0a4f1567a7",
       "claimed_at": "2026-11-05T13:48:00.000Z",
       "finished_at": "2026-11-05T13:49:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     }
   ],
   "exp_model": [
@@ -6127,7 +6371,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_loan-for-loan-14_b_1",
@@ -6152,7 +6397,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_sip-step-up-15_a_1",
@@ -6177,7 +6423,8 @@
       "worker_id": "hermes-3f75932357a8",
       "claimed_at": "2026-11-05T14:04:00.000Z",
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_sip-step-up-15_b_1",
@@ -6202,7 +6449,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_emi-tenure-13_a_1",
@@ -6227,7 +6475,8 @@
       "worker_id": "hermes-767d7e2a0477",
       "claimed_at": "2026-11-05T14:01:00.000Z",
       "finished_at": "2026-11-05T14:02:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tm_emi-tenure-13_b_1",
@@ -6252,7 +6501,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_gold-loan-16_a_1",
@@ -6277,7 +6527,8 @@
       "worker_id": "hermes-22ed2254bedb",
       "claimed_at": "2026-11-05T14:02:00.000Z",
       "finished_at": "2026-11-05T14:03:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tm_gold-loan-16_b_1",
@@ -6302,7 +6553,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_loan-for-loan-14_a_2",
@@ -6327,7 +6579,8 @@
       "worker_id": "hermes-f5d3c67907cb",
       "claimed_at": "2026-11-05T14:03:00.000Z",
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_loan-for-loan-14_b_2",
@@ -6352,7 +6605,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_sip-step-up-15_a_2",
@@ -6377,7 +6631,8 @@
       "worker_id": "hermes-9391e1468c11",
       "claimed_at": "2026-11-05T13:59:00.000Z",
       "finished_at": "2026-11-05T14:00:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tm_sip-step-up-15_b_2",
@@ -6402,7 +6657,8 @@
       "worker_id": "hermes-1ebfa0e9e20b",
       "claimed_at": "2026-11-05T14:00:00.000Z",
       "finished_at": "2026-11-05T14:01:00.000Z",
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_emi-tenure-13_a_2",
@@ -6427,7 +6683,8 @@
       "worker_id": "hermes-8149a50fc49c",
       "claimed_at": "2026-11-05T13:58:00.000Z",
       "finished_at": "2026-11-05T13:59:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tm_emi-tenure-13_b_2",
@@ -6452,7 +6709,8 @@
       "worker_id": "hermes-037d6367011b",
       "claimed_at": "2026-11-05T13:58:00.000Z",
       "finished_at": "2026-11-05T13:59:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tm_gold-loan-16_a_2",
@@ -6477,7 +6735,8 @@
       "worker_id": "hermes-821169f36a60",
       "claimed_at": "2026-11-05T14:00:00.000Z",
       "finished_at": "2026-11-05T14:01:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tm_gold-loan-16_b_2",
@@ -6502,7 +6761,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_loan-for-loan-14_a_3",
@@ -6527,7 +6787,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_loan-for-loan-14_b_3",
@@ -6552,7 +6813,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_sip-step-up-15_a_3",
@@ -6577,7 +6839,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_sip-step-up-15_b_3",
@@ -6602,7 +6865,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_emi-tenure-13_a_3",
@@ -6627,7 +6891,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_emi-tenure-13_b_3",
@@ -6652,7 +6917,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_gold-loan-16_a_3",
@@ -6677,7 +6943,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tm_gold-loan-16_b_3",
@@ -6702,7 +6969,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     }
   ],
   "exp_futility": [
@@ -6729,7 +6997,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_emergency-fund-21_b_1",
@@ -6754,7 +7023,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_rent-vs-buy-22_a_1",
@@ -6779,7 +7049,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_rent-vs-buy-22_b_1",
@@ -6804,7 +7075,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_retire-corpus-23_a_1",
@@ -6829,7 +7101,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_retire-corpus-23_b_1",
@@ -6854,7 +7127,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_bonus-split-24_a_1",
@@ -6879,7 +7153,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_bonus-split-24_b_1",
@@ -6904,7 +7179,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_emergency-fund-21_a_2",
@@ -6929,7 +7205,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_emergency-fund-21_b_2",
@@ -6954,7 +7231,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_rent-vs-buy-22_a_2",
@@ -6979,7 +7257,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_rent-vs-buy-22_b_2",
@@ -7004,7 +7283,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_retire-corpus-23_a_2",
@@ -7029,7 +7309,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_retire-corpus-23_b_2",
@@ -7054,7 +7335,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_bonus-split-24_a_2",
@@ -7079,7 +7361,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_bonus-split-24_b_2",
@@ -7104,7 +7387,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_emergency-fund-21_a_3",
@@ -7129,7 +7413,8 @@
       "worker_id": "hermes-bd4eb6eea09d",
       "claimed_at": "2026-11-05T13:47:00.000Z",
       "finished_at": "2026-11-05T13:48:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tf_emergency-fund-21_b_3",
@@ -7154,7 +7439,8 @@
       "worker_id": "hermes-cb9950d14254",
       "claimed_at": "2026-11-05T13:48:00.000Z",
       "finished_at": "2026-11-05T13:49:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tf_rent-vs-buy-22_a_3",
@@ -7179,7 +7465,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_rent-vs-buy-22_b_3",
@@ -7204,7 +7491,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_retire-corpus-23_a_3",
@@ -7229,7 +7517,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_retire-corpus-23_b_3",
@@ -7254,7 +7543,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_bonus-split-24_a_3",
@@ -7279,7 +7569,8 @@
       "worker_id": "hermes-2f62a27e4ff9",
       "claimed_at": "2026-11-05T13:51:00.000Z",
       "finished_at": "2026-11-05T13:52:00.000Z",
-      "passed": true
+      "passed": true,
+      "grading": "pass"
     },
     {
       "id": "tf_bonus-split-24_b_3",
@@ -7304,7 +7595,8 @@
       "worker_id": "hermes-8ca606723f30",
       "claimed_at": "2026-11-05T13:52:00.000Z",
       "finished_at": "2026-11-05T13:53:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tf_emergency-fund-21_a_4",
@@ -7329,7 +7621,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_emergency-fund-21_b_4",
@@ -7354,7 +7647,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_rent-vs-buy-22_a_4",
@@ -7379,7 +7673,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_rent-vs-buy-22_b_4",
@@ -7404,7 +7699,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_retire-corpus-23_a_4",
@@ -7429,7 +7725,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_retire-corpus-23_b_4",
@@ -7454,7 +7751,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_bonus-split-24_a_4",
@@ -7479,7 +7777,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_bonus-split-24_b_4",
@@ -7504,7 +7803,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_emergency-fund-21_a_5",
@@ -7529,7 +7829,8 @@
       "worker_id": "hermes-d61a39b7e6ef",
       "claimed_at": "2026-11-05T13:49:00.000Z",
       "finished_at": "2026-11-05T13:50:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tf_emergency-fund-21_b_5",
@@ -7554,7 +7855,8 @@
       "worker_id": "hermes-eb345f192403",
       "claimed_at": "2026-11-05T13:50:00.000Z",
       "finished_at": "2026-11-05T13:51:00.000Z",
-      "passed": false
+      "passed": false,
+      "grading": "fail"
     },
     {
       "id": "tf_rent-vs-buy-22_a_5",
@@ -7579,7 +7881,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_rent-vs-buy-22_b_5",
@@ -7604,7 +7907,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_retire-corpus-23_a_5",
@@ -7629,7 +7933,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_retire-corpus-23_b_5",
@@ -7654,7 +7959,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_bonus-split-24_a_5",
@@ -7679,7 +7985,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     },
     {
       "id": "tf_bonus-split-24_b_5",
@@ -7704,7 +8011,8 @@
       "worker_id": null,
       "claimed_at": null,
       "finished_at": null,
-      "passed": null
+      "passed": null,
+      "grading": null
     }
   ]
 }

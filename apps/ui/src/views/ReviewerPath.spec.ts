@@ -58,7 +58,7 @@ describe('the Run screen runs fake configs for free', () => {
       'No analysis plan needed: every arm runs on a fake modelCheck passed.A fake run tries the platform out; it measures nothing about a real agent.',
     );
     expect((w.get('[data-test="sim-model"]').element as HTMLSelectElement).value).toBe('fake/sim-client');
-    expect(w.get('[data-test="spend-kind"]').text()).toBe('Every model here is fake: the run is free, and nothing it finds is about a real agent.');
+    expect(w.get('[data-test="spend-kind"]').text()).toBe('Every model here is fake, so the run is free: its prices are made up for testing, and nothing it finds is about a real model.');
     expect(w.get('[data-test="start"]').attributes('disabled')).toBeUndefined();
   });
 
@@ -66,7 +66,9 @@ describe('the Run screen runs fake configs for free', () => {
     vi.spyOn(api, 'configs').mockResolvedValue([...configs, fakeA, fakeB]);
     const w = mount(RunView, { props: { a: fakeA.hash, b: configs[0].hash } });
     await settle();
-    expect(w.get('[data-test="spend-kind"]').text()).toContain('Real models: Claude Haiku 5.5. This run costs real money');
+    expect(w.get('[data-test="spend-kind"]').text()).toBe('Real models: Claude Haiku 5.5. This run costs real money; you confirm the cost before it starts.');
+    expect(w.text()).not.toContain('Rishi');
+    expect(w.text()).not.toContain('R8');
     // Not all fake, so the plan commit is asked for again.
     expect(w.get('[data-test="start-helper"]').text()).toContain('No analysis plan commit yet');
   });

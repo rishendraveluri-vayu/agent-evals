@@ -9,15 +9,25 @@ import type { Estimate, EstimateCell } from '../contract';
  * (any config or task). Only with no history at all does it fall back to the docs/cost.md planning
  * assumptions, with LiteLLM's prices. The simulator's cost per trial comes from earlier trials of
  * the same task and simulator model, else from the assumptions. Time divides each harness's work
- * by its live workers (seen in the last minute), harnesses in parallel.
+ * by its live workers (seen in the last minute), harnesses in parallel. A trial's time is its
+ * worker's whole slot, claim to report (starting the trial process and the tool server, running
+ * it, uploading its files), not only the agent's own run (`wall_s`): on the 4 Nov fresh-clone QA
+ * the slot was 8.0 s against 3.5 s of agent time, so `wall_s` alone undercounted by half.
  * The numbers below that docs/cost.md does not give are marked; they are not Rishi's yet.
  */
 export const ASSUMPTIONS = {
   /** docs/cost.md: 8 calls x 8k input and 300 output per trial. */
   input_tokens_per_trial: 64_000,
   output_tokens_per_trial: 2_400,
-  /** Not in docs/cost.md: wall time per trial with no history. */
+  /** Not in docs/cost.md: time per trial, claim to report, on a real model with no history. */
   wall_s_per_trial: 60,
+  /**
+   * Not in docs/cost.md: the same on a fake model (`fake/*`), which answers at once. Measured on
+   * the 4 Nov fresh-clone QA: 30 own-loop trials on fake/finance-emi and fake/finance-malformed
+   * took 8.0 s each, claim to report, one worker. 60 s made a 30-trial fake run's estimate 30 min
+   * against 4 min 13 s.
+   */
+  fake_wall_s_per_trial: 10,
   /** Not in docs/cost.md: one simulated-client call, used max_client_turns times per trial. */
   sim_input_tokens_per_call: 2_000,
   sim_output_tokens_per_call: 150,
@@ -46,9 +56,15 @@ export interface History {
   trials: number;
   inputTokens: number;
   outputTokens: number;
+  /** The agent's own run (the result's wall time): used only when the slot time is unknown. */
   wallS: number | null;
+  /** Claim to report: the worker's whole slot for one trial, which is what the run waits on. */
+  slotS?: number | null;
   costUsd: number | null;
 }
+
+/** A model on LiteLLM's `fake/*` route to the fake LLM server: made-up prices, nothing real spent. */
+export const isFakeModel = (model: string): boolean => model.startsWith('fake/');
 
 export interface CellInput {
   config: string;
@@ -95,7 +111,8 @@ export function estimate(input: EstimateInput): Estimate {
     sources[source] += 1;
     const inTok = h ? h.inputTokens : ASSUMPTIONS.input_tokens_per_trial;
     const outTok = h ? h.outputTokens : ASSUMPTIONS.output_tokens_per_trial;
-    const wall = h?.wallS ?? ASSUMPTIONS.wall_s_per_trial;
+    const assumedWall = isFakeModel(c.model) ? ASSUMPTIONS.fake_wall_s_per_trial : ASSUMPTIONS.wall_s_per_trial;
+    const wall = h?.slotS ?? h?.wallS ?? assumedWall;
     const p = price(c.model);
     // LiteLLM's recorded cost when the history has it; tokens at today's price otherwise.
     const agent = h && h.costUsd !== null ? h.costUsd : inTok * p.inputPerToken + outTok * p.outputPerToken;
@@ -155,7 +172,8 @@ export function estimate(input: EstimateInput): Estimate {
     basis:
       `Tokens, cost and time per trial: ${tokensFrom}. Cost: LiteLLM's recorded cost where there is history, else tokens at LiteLLM's prices. ` +
       `Range: ${ASSUMPTIONS.low_factor}x to ${ASSUMPTIONS.high_factor}x the expected cost. ` +
-      `Time: each harness's trials over its live workers (${workerWords || 'none'}), harnesses in parallel.`,
+      `Time: each harness's trials over its live workers (${workerWords || 'none'}), harnesses in parallel; ` +
+      `a trial's time is claim to report, and with no history ${ASSUMPTIONS.wall_s_per_trial} s on a real model, ${ASSUMPTIONS.fake_wall_s_per_trial} s on a fake one.`,
     basis_detail: {
       cells,
       prices: Object.fromEntries(

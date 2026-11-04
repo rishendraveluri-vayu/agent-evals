@@ -272,6 +272,7 @@ export interface EstimateCell {
   trials_seen: number;
   input_tokens: number;
   output_tokens: number;
+  /** Seconds per trial, claim to report (the worker's whole slot, not only the agent's run). */
   wall_s: number;
   agent_usd_per_trial: number;
   sim_usd_per_trial: number;
@@ -290,6 +291,8 @@ export interface Estimate {
       input_tokens_per_trial: number;
       output_tokens_per_trial: number;
       wall_s_per_trial: number;
+      /** The same with no history on a fake model (`fake/*`), which answers at once. */
+      fake_wall_s_per_trial: number;
       sim_input_tokens_per_call: number;
       sim_output_tokens_per_call: number;
       low_factor: number;
@@ -303,9 +306,10 @@ export interface Estimate {
 }
 
 /**
- * D32's futility check, once per arm: when an arm has `after` finished trials (status `done`), it
- * pauses the experiment if fewer than `min_passed` of them passed. Until graders exist (SP4),
- * "passed" means label `agent` and end state `answered`.
+ * D32's futility check, once per arm: when an arm has `after` graded trials, it pauses the
+ * experiment if fewer than `min_passed` of them passed. Graded means the trial's current grading
+ * outcome (SP4) is `pass` or `fail`; a trial whose grading is `incomplete` or not done yet is not
+ * counted. The check runs after each trial report and each grades report.
  */
 export interface FutilityRule {
   enabled: boolean;
@@ -336,6 +340,15 @@ export interface CreateExperimentRequest {
   parent_experiment_id?: string | null;
   /** D34: reuse the parent's arm-A trials as arm A when nothing that matters differs. */
   reuse_baseline?: boolean | null;
+}
+
+/**
+ * POST /experiments/:id/start, optional body. `plan_commit` sets the analysis plan's commit on an
+ * experiment that has not started yet (an unstarted one left without it can still be started from
+ * its run page); once it has started the plan commit is fixed (409 `plan_commit_locked`).
+ */
+export interface StartExperimentRequest {
+  plan_commit?: string | null;
 }
 
 /** POST /experiments/estimate: the estimate of what would run, and the baseline decision (D34). */
@@ -424,7 +437,9 @@ export type ExperimentEventKind =
   | 'infra_guard_pause'
   | 'spend_guard_pause'
   // D34: whether arm A reuses the parent's trials, and why.
-  | 'baseline';
+  | 'baseline'
+  // POST /experiments/:id/discard: an experiment that never started, marked cancelled.
+  | 'discarded';
 
 export interface ExperimentEvent {
   at: string;
@@ -577,7 +592,23 @@ export interface TrialRowSummary {
   worker_id: string | null;
   claimed_at: string | null;
   finished_at: string | null;
+  /** The trial's current grading (SP4): true when every required grader passed, false when one failed, else null. */
+  passed: boolean | null;
+  /** Where grading stands for the run grid and D32's futility check (see TrialGradingState). */
+  grading: TrialGradingState;
 }
+
+/**
+ * A trial row's grading, from its grading jobs (SP4):
+ * - `pass`, `fail`, `incomplete`: the outcome of its latest finished grading job (incomplete: a
+ *   required grader gave no verdict);
+ * - `waiting`: done, and its grading is queued or running, or not queued yet;
+ * - `no_graders`: done, and its task has no graders;
+ * - `grading_failed`: done, and its last grading job gave up (its lease lapsed 3 times) with no
+ *   finished job before it; a regrade queues it again;
+ * - `null`: not done (queued, running, an infra failure, cancelled), so there is nothing to grade.
+ */
+export type TrialGradingState = GradingOutcome | 'waiting' | 'no_graders' | 'grading_failed' | null;
 
 /** GET /experiments/:id/compare */
 export interface CompareRow {

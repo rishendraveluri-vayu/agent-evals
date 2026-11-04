@@ -137,8 +137,10 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     // fake/* prices: 64k x $1e-6 + 2.4k x $2e-6 = $0.0688 a trial
     expect(e.cost_usd.expected).toBeCloseTo(0.688, 6);
     expect(e.cost_usd.high).toBeCloseTo(1.376, 6);
-    expect(e.minutes).toBe(10); // one ownloop worker, 10 x 60 s
+    // One ownloop worker, 10 trials x 10 s: a fake model answers at once (60 s is for real models).
+    expect(e.minutes).toBe(1.7);
     expect(e.basis).toContain('docs/cost.md assumptions');
+    expect(e.basis).toContain('with no history 60 s on a real model, 10 s on a fake one');
   });
 
   it('refuses a plan it cannot cost or run', async () => {
@@ -152,11 +154,40 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
   });
 
   it('creates an experiment with queued trials, a LiteLLM team budget and the platform commit; nothing runs until started', async () => {
+    // A real model: a budget below the estimate's high end is refused (R10.6).
+    const haiku = await makeConfig(env.http, cat, { name: 'real haiku', model: 'claude-haiku-5-5' });
     const tooSmall = await request(env.http)
       .post('/api/experiments')
-      .send({ name: 'x', axis: 'temperature', config_hashes: [configA], task_sha256s: [cat.tasks['emi-basic']], n: 10, budget_usd: 0.5 })
+      .send({ name: 'x', axis: 'temperature', config_hashes: [haiku], task_sha256s: [cat.tasks['emi-basic']], n: 10, budget_usd: 0.01 })
       .expect(400);
     expect((tooSmall.body as { error: string }).error).toBe('budget_below_estimate');
+    // Fake models only: the prices are made up, so it is not refused; the budget is raised to the
+    // estimate's high end so LiteLLM's cap and the spend guard cannot stop it part-way.
+    const fake = (
+      await request(env.http)
+        .post('/api/experiments')
+        .send({ name: 'free', axis: 'temperature', config_hashes: [configA], task_sha256s: [cat.tasks['emi-basic']], n: 10, budget_usd: 0.5 })
+        .expect(201)
+    ).body as ExperimentDetail;
+    expect(fake.budget_usd).toBeCloseTo(fake.estimate.cost_usd.high, 6);
+    expect(fake.budget_usd).toBeGreaterThan(0.5);
+    expect(env.stub.teams.find((t) => t.team_alias === `experiment:${fake.id}`)?.max_budget).toBeCloseTo(fake.estimate.cost_usd.high, 6);
+    // Above the high end, the budget is kept as given.
+    const roomy = (
+      await request(env.http)
+        .post('/api/experiments')
+        .send({ name: 'free', axis: 'temperature', config_hashes: [configA], task_sha256s: [cat.tasks['emi-basic']], n: 1, budget_usd: 9 })
+        .expect(201)
+    ).body as ExperimentDetail;
+    expect(roomy.budget_usd).toBe(9);
+    // A fake agent with a real simulated client spends real money, so it is checked as usual.
+    const realSim = await request(env.http)
+      .post('/api/experiments')
+      .send({ name: 'x', axis: 'temperature', config_hashes: [configA], task_sha256s: [cat.tasks['widow-loan']], n: 10, sim_model: 'claude-sonnet-5-5', budget_usd: 0.01 })
+      .expect(400);
+    expect((realSim.body as { error: string }).error).toBe('budget_below_estimate');
+    await cancel(fake.id);
+    await cancel(roomy.id);
 
     const exp = await experiment({ configs: [configA, configB], n: 2, budget: 7, start: false });
     expect(exp).toMatchObject({ status: 'created', n: 2, platform_commit: 'abc1234', plan_commit: 'plan123', budget_usd: 7 });
@@ -812,13 +843,20 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
   });
 
   it('estimates from earlier finished trials once there are some', async () => {
+    // A trial's time is its worker's slot, claim to report (here 20 s), not the agent's own 12.5 s:
+    // the slot also covers starting the trial and uploading its files.
+    await env.pool.query(
+      `UPDATE trials SET claimed_at = finished_at - interval '20 seconds'
+       WHERE config_hash = $1 AND task_sha256 = $2 AND status = 'done' AND NOT probe`,
+      [configA, cat.tasks['emi-basic']],
+    );
     const res = await request(env.http)
       .post('/api/experiments/estimate')
       .send({ config_hashes: [configA], task_sha256s: [cat.tasks['emi-basic']], n: 1 })
       .expect(200);
     const e = res.body as { basis: string; basis_detail: { cells: { source: string; input_tokens: number; wall_s: number; agent_usd_per_trial: number }[] } };
     // LiteLLM's recorded cost of those trials, not tokens at today's price (item 8).
-    expect(e.basis_detail.cells[0]).toMatchObject({ source: 'config_task', input_tokens: 1200, wall_s: 12.5, agent_usd_per_trial: 0.00136 });
+    expect(e.basis_detail.cells[0]).toMatchObject({ source: 'config_task', input_tokens: 1200, wall_s: 20, agent_usd_per_trial: 0.00136 });
     expect(e.basis).toContain('earlier finished trials of the same config and task');
   });
 

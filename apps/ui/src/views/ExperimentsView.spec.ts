@@ -64,7 +64,7 @@ describe('ExperimentsView in fixture mode', () => {
     ]);
     // What paused each, in a phrase; the run page has the full reason and the fix.
     expect(items[0].text()).toContain('A config error (LiteLLM status 404). The run page says how to fix it.');
-    expect(items[1].text()).toContain('The futility check: arm B passed 0 of its first 3 finished trials. Review it, then resume or stop.');
+    expect(items[1].text()).toContain('The futility check: arm B passed 0 of its first 3 graded trials. Review it, then resume or stop.');
     expect(items[0].attributes('href')).toBe('#/experiments/exp_model/run');
   });
 
@@ -79,7 +79,7 @@ describe('ExperimentsView in fixture mode', () => {
     expect(rows()[5].get('[data-verdict]').text()).toBe('No clear difference');
     expect(rows()[5].text()).toContain(`+1${nb}point (−7 to +9), as expected`);
     expect(rows()[1].get('[data-test="status"]').text()).toBe('Paused');
-    expect(rows()[1].get('[data-test="result"]').text()).toContain('The futility check: arm B passed 0 of its first 3 finished trials');
+    expect(rows()[1].get('[data-test="result"]').text()).toContain('The futility check: arm B passed 0 of its first 3 graded trials');
     await w.get('[data-test="show-filter"]').setValue('running');
     expect(rows()).toHaveLength(3);
     expect(rows()[2].text()).toContain('Running');

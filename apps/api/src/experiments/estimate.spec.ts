@@ -78,6 +78,27 @@ describe('estimate', () => {
     expect(e.basis_detail.cells[1].wall_s).toBe(ASSUMPTIONS.wall_s_per_trial);
   });
 
+  it('takes a trial’s time as its worker slot, claim to report, over the agent’s own wall time', () => {
+    // The 4 Nov fresh-clone QA: 8.0 s claim to report, 3.5 s of it the agent's run.
+    const history = { trials: 30, inputTokens: 6_500, outputTokens: 50, wallS: 3.5, slotS: 8, costUsd: 0.0066 };
+    const e = estimate({ cells: [cell({ model: 'fake/finance-emi', history })], n: 30, prices: new Map([['fake/finance-emi', HAIKU]]), simModel: null });
+    expect(e.basis_detail.cells[0].wall_s).toBe(8);
+    expect(e.minutes).toBe(4); // 30 x 8 s on one worker; it ran in 4 min 13 s
+    // Without a slot time (trials recorded before claims were timed), the agent's wall time.
+    const old = estimate({ cells: [cell({ history: { ...history, slotS: null } })], n: 1, prices, simModel: null });
+    expect(old.basis_detail.cells[0].wall_s).toBe(3.5);
+  });
+
+  it('assumes 10 s a trial on a fake model with no history, 60 s on a real one', () => {
+    const fakePrices = new Map([...prices, ['fake/finance-emi', HAIKU]]);
+    const fake = estimate({ cells: [cell({ model: 'fake/finance-emi' })], n: 30, prices: fakePrices, simModel: null });
+    expect(fake.basis_detail.cells[0].wall_s).toBe(ASSUMPTIONS.fake_wall_s_per_trial);
+    expect(fake.minutes).toBe(5); // 30 x 10 s; 60 s a trial said 30 min for a run that took 4 min 13 s
+    const real = estimate({ cells: [cell()], n: 30, prices, simModel: null });
+    expect(real.minutes).toBe(30);
+    expect(fake.basis).toContain('with no history 60 s on a real model, 10 s on a fake one');
+  });
+
   it('divides each harness’s time by its live workers, at least one', () => {
     const cells = [cell({ harness: 'hermes' }), cell({ harness: 'ownloop', config: 'b' })];
     const e = estimate({ cells, n: 4, prices, simModel: null, workers: new Map([['hermes', 4]]) });

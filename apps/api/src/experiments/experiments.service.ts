@@ -14,6 +14,10 @@ import type {
   ExperimentStatus,
   ExperimentSummary,
   FutilityRule,
+  GradingJobStatus,
+  GradingOutcome,
+  StartExperimentRequest,
+  TrialGradingState,
   TrialRowSummary,
   TrialStatus,
 } from '../contract';
@@ -29,7 +33,7 @@ import { NOT_EXAMPLE_TRIAL, assertNotExample } from '../examples/example-guard';
 import { JudgeService } from '../judge/judge.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
 import { SIM_MAX_OUTPUT_TOKENS, simTemperature } from '../worker/spec-builder';
-import { type CellInput, type History, LIVE_WORKER_S, type Price, estimate } from './estimate';
+import { type CellInput, type History, LIVE_WORKER_S, type Price, estimate, isFakeModel } from './estimate';
 import { claimOrder, isSeed, newSeed } from './order';
 import { type BaselineOutcome, decideBaseline } from './baseline';
 import { estimatePerTrial, projectedSpend, resolveFutility } from './rules';
@@ -96,6 +100,8 @@ interface Plan {
   n: number;
   simModel: string | null;
   estimate: Estimate;
+  /** Every model the run calls (the arms' and, when a task needs one, the simulator's) is `fake/*`. */
+  fakeOnly: boolean;
 }
 
 @Injectable()
@@ -154,12 +160,15 @@ export class ExperimentsService {
     }
 
     // Item 8: the closest history there is. Finished trials only, with LiteLLM's full record.
-    type Row = { trials: number; input_tokens: number; output_tokens: number; wall_s: number | null; cost_usd: number | null };
+    type Row = { trials: number; input_tokens: number; output_tokens: number; wall_s: number | null; slot_s: number | null; cost_usd: number | null };
     // Probes (D33) render a prompt on the fake model; they are never history.
     // Nor are a shipped example's trials (SP7): they are not this database's own runs.
     const finished = `t.status = 'done' AND NOT t.probe AND t.input_tokens IS NOT NULL AND t.output_tokens IS NOT NULL AND t.proxy_complete IS NOT FALSE AND ${NOT_EXAMPLE_TRIAL('t')}`;
+    // A trial's time is its worker's slot, claim to report; wall_s (the agent's own run) leaves out
+    // starting the trial and uploading its files, about half of a fake trial's slot.
     const means = `count(*)::int AS trials, avg(t.input_tokens)::float8 AS input_tokens, avg(t.output_tokens)::float8 AS output_tokens,
-                   avg(t.wall_s)::float8 AS wall_s, avg(t.cost_usd)::float8 AS cost_usd`;
+                   avg(t.wall_s)::float8 AS wall_s, avg(extract(epoch FROM (t.finished_at - t.claimed_at)))::float8 AS slot_s,
+                   avg(t.cost_usd)::float8 AS cost_usd`;
     const byCell = await this.db.query<Row & { config_hash: string; task_sha256: string; sim_cost_usd: number | null }>(
       `SELECT t.config_hash, t.task_sha256, ${means}, avg(t.sim_cost_usd)::float8 AS sim_cost_usd
        FROM trials t WHERE ${finished} AND t.config_hash = ANY($1) AND t.task_sha256 = ANY($2)
@@ -191,7 +200,7 @@ export class ExperimentsService {
       ).map((w) => [w.harness, w.live]),
     );
     const hist = (r: Row | undefined): History | null =>
-      r ? { trials: r.trials, inputTokens: r.input_tokens, outputTokens: r.output_tokens, wallS: r.wall_s, costUsd: r.cost_usd } : null;
+      r ? { trials: r.trials, inputTokens: r.input_tokens, outputTokens: r.output_tokens, wallS: r.wall_s, slotS: r.slot_s, costUsd: r.cost_usd } : null;
     const cells: CellInput[] = [];
     for (const c of ordered.configs) {
       for (const t of ordered.tasks) {
@@ -209,7 +218,13 @@ export class ExperimentsService {
         });
       }
     }
-    return { ...ordered, n, simModel: needsSim ? simModel : null, estimate: estimate({ cells, n, prices, simModel: needsSim ? simModel : null, workers }) };
+    return {
+      ...ordered,
+      n,
+      simModel: needsSim ? simModel : null,
+      estimate: estimate({ cells, n, prices, simModel: needsSim ? simModel : null, workers }),
+      fakeOnly: [...prices.keys()].every(isFakeModel),
+    };
   }
 
   /** The simulator prompt: the one named, else the highest version of client-sim (D27). */
@@ -314,8 +329,11 @@ export class ExperimentsService {
     const { plan, simPrompt, parentId, baseline, run } = await this.resolveRun(body);
     // R10.6: start only runs that can finish. The budget is a safety net, so it must cover
     // the top of the estimate's range, not just the expected cost. With arm A reused (D34),
-    // the estimate is of arm B alone.
-    if (body.budget_usd < run.estimate.cost_usd.high) {
+    // the estimate is of arm B alone. A run on fake models only spends nothing real (their prices
+    // are made up for testing), so it is never refused; its budget is raised to the estimate's
+    // high end instead, so neither LiteLLM's cap nor the spend guard stops it part-way.
+    const budgetUsd = run.fakeOnly ? Math.max(body.budget_usd, run.estimate.cost_usd.high) : body.budget_usd;
+    if (!run.fakeOnly && body.budget_usd < run.estimate.cost_usd.high) {
       throw badRequest(
         'budget_below_estimate',
         `budget_usd ${body.budget_usd} is below the estimate's high end ${run.estimate.cost_usd.high} ` +
@@ -364,7 +382,7 @@ export class ExperimentsService {
           simPrompt?.sha256 ?? null,
           plan.simModel ? simTemperature(plan.simModel) : null, // null with a simulator: not sent (D27)
           plan.simModel ? SIM_MAX_OUTPUT_TOKENS : null,
-          body.budget_usd,
+          budgetUsd,
           run.estimate.budgets.trial_usd,
           run.estimate.budgets.sim_usd,
           this.config.platformCommit,
@@ -411,7 +429,7 @@ export class ExperimentsService {
       }
       // The whole experiment's budget, enforced by LiteLLM across every trial key (a team).
       // Inside the transaction: if LiteLLM refuses, nothing is stored.
-      const teamId = await this.litellm.newTeam({ alias: `experiment:${id}`, maxBudgetUsd: body.budget_usd, experimentId: id });
+      const teamId = await this.litellm.newTeam({ alias: `experiment:${id}`, maxBudgetUsd: budgetUsd, experimentId: id });
       await client.query('UPDATE experiments SET litellm_team_id = $2 WHERE id = $1', [id, teamId]);
     });
     return this.get(id);
@@ -419,17 +437,63 @@ export class ExperimentsService {
 
   // ---- lifecycle ----
 
-  /** Starts a created experiment, or resumes a paused one; a running one is left as it is. */
-  async start(id: string): Promise<ExperimentDetail> {
+  /**
+   * Starts a created experiment, or resumes a paused one; a running one is left as it is. An
+   * unstarted experiment can be given its analysis plan commit here (`plan_commit`), so one left
+   * without it can still be started; once it has started the plan commit is fixed.
+   */
+  async start(id: string, body?: StartExperimentRequest | null): Promise<ExperimentDetail> {
+    if (body !== undefined && body !== null && (typeof body !== 'object' || Array.isArray(body))) {
+      throw badRequest('invalid_experiment', 'the body must be a JSON object or empty');
+    }
+    const raw = body?.plan_commit;
+    if (raw !== undefined && raw !== null && typeof raw !== 'string') throw badRequest('invalid_experiment', 'plan_commit must be a string or null');
+    const planCommit = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
     const exp = await this.row(id);
     assertNotExample(exp, 'be started');
     if (exp.status === 'done' || exp.status === 'cancelled') {
       throw conflict('experiment_finished', `experiment ${id} is ${exp.status} and cannot start again`, 'Create a new experiment, with this one as its parent.');
     }
+    if (planCommit !== null && exp.status !== 'created' && planCommit !== exp.plan_commit) {
+      throw conflict(
+        'plan_commit_locked',
+        `experiment ${id} has started, so its plan commit is fixed${exp.plan_commit ? ` at ${exp.plan_commit}` : ' (none was given)'}`,
+        'Leave plan_commit out to resume it, or create a new experiment with the plan commit.',
+      );
+    }
     if (exp.status === 'paused') return this.resume(id);
     await this.db.tx(async (client) => {
+      if (planCommit !== null) await client.query(`UPDATE experiments SET plan_commit = $2 WHERE id = $1 AND status = 'created'`, [id, planCommit]);
       await client.query(`UPDATE experiments SET status = 'running', started_at = coalesce(started_at, now()) WHERE id = $1 AND status = 'created'`, [id]);
       await finishIfDone(client, id);
+    });
+    return this.get(id);
+  }
+
+  /**
+   * Discards an experiment that never started: it is marked `cancelled` and its queued trials
+   * `cancelled`, as a stop does, and nothing is deleted. Only while it is `created` and none of its
+   * trials has been claimed; anything else is a 409, so a started run is never discarded.
+   */
+  async discard(id: string): Promise<ExperimentDetail> {
+    assertNotExample(await this.row(id), 'be discarded');
+    await this.db.tx(async (client) => {
+      const { rows } = await client.query<{ status: ExperimentStatus; started_at: Date | null }>('SELECT status, started_at FROM experiments WHERE id = $1 FOR UPDATE', [id]);
+      const exp = rows[0];
+      const { rows: ran } = await client.query<{ n: number }>(`SELECT count(*)::int AS n FROM trials WHERE experiment_id = $1 AND status <> 'queued'`, [id]);
+      if (exp.status === 'done' || exp.status === 'cancelled') {
+        throw conflict('experiment_finished', `experiment ${id} is ${exp.status}, so there is nothing to discard`, 'Leave it as it is; its trials are kept either way.');
+      }
+      if (exp.status !== 'created' || exp.started_at !== null || ran[0].n > 0) {
+        throw conflict(
+          'experiment_started',
+          `experiment ${id} has started (${exp.status}${ran[0].n ? `, ${ran[0].n} trial${ran[0].n === 1 ? '' : 's'} claimed or finished` : ''}), so it cannot be discarded`,
+          'Stop it instead: its queued trials are cancelled and the finished ones kept.',
+        );
+      }
+      await client.query(`UPDATE experiments SET status = 'cancelled', cancelled_at = now() WHERE id = $1`, [id]);
+      await client.query(`UPDATE trials SET status = 'cancelled', finished_at = now() WHERE experiment_id = $1 AND status = 'queued'`, [id]);
+      await addEvent(client, { experimentId: id, kind: 'discarded', detail: 'discarded before it started: nothing ran, and nothing was deleted' });
     });
     return this.get(id);
   }
@@ -709,7 +773,8 @@ export class ExperimentsService {
     }
     add(r.created_at, 'created', `${r.config_hashes.length} configs x ${r.task_sha256s.length} tasks x N=${r.n}`);
     add(r.started_at, 'started', 'trials can be claimed');
-    add(r.cancelled_at, 'cancelled', 'stopped: queued trials cancelled; claimed ones finish');
+    // A discarded experiment (never started) has its own stored event; it was not stopped mid-run.
+    if (!stored.some((s) => s.kind === 'discarded')) add(r.cancelled_at, 'cancelled', 'stopped: queued trials cancelled; claimed ones finish');
     add(r.finished_at, 'finished', 'every trial has finished');
     // Before migration 005 only the latest pause and resume were kept, on the experiment row.
     const pauses: ExperimentEventKind[] = ['paused', 'futility_pause', 'infra_guard_pause', 'spend_guard_pause'];
@@ -861,16 +926,65 @@ export interface TrialSummaryRow {
   worker_id: string | null;
   claimed_at: Date | null;
   finished_at: Date | null;
+  /** The latest finished grading job (done or no_graders), as GET /trials/:id's `grading.current`. */
+  graded_status: GradingJobStatus | null;
+  graded_passed: boolean | null;
+  graded_outcome: GradingOutcome | null;
+  /** The latest grading job that was not superseded, finished or not. */
+  latest_job_status: GradingJobStatus | null;
 }
 
 export const TRIAL_SUMMARY_SELECT = `
   SELECT t.id, t.experiment_id, t.task_sha256, k.id AS task_id, t.config_hash, c.name AS config_name, c.harness, c.model,
          t.repeat_index, t.order_index, t.attempt, t.status, t.label, t.end_state, t.cost_usd, t.input_tokens, t.output_tokens,
-         t.model_calls, t.wall_s, t.worker_id, t.claimed_at, t.finished_at
-  FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 JOIN configs c ON c.hash = t.config_hash`;
+         t.model_calls, t.wall_s, t.worker_id, t.claimed_at, t.finished_at,
+         gd.status AS graded_status, gd.passed AS graded_passed, gd.outcome AS graded_outcome, gl.status AS latest_job_status
+  FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 JOIN configs c ON c.hash = t.config_hash
+  LEFT JOIN LATERAL (
+    SELECT j.status, j.passed, j.outcome FROM grading_jobs j
+    WHERE j.trial_id = t.id AND j.status IN ('done', 'no_graders') ORDER BY j.created_at DESC, j.id DESC LIMIT 1
+  ) gd ON true
+  LEFT JOIN LATERAL (
+    SELECT j.status FROM grading_jobs j WHERE j.trial_id = t.id AND j.status <> 'superseded' ORDER BY j.created_at DESC, j.id DESC LIMIT 1
+  ) gl ON true`;
+
+/** Where a trial's grading stands (contract TrialGradingState): its current outcome, or why there is none. */
+export function gradingState(r: Pick<TrialSummaryRow, 'status' | 'graded_status' | 'graded_outcome' | 'latest_job_status'>): TrialGradingState {
+  if (r.status !== 'done') return null;
+  if (r.graded_status === 'done') return r.graded_outcome ?? 'incomplete';
+  if (r.graded_status === 'no_graders') return 'no_graders';
+  if (r.latest_job_status === 'failed') return 'grading_failed';
+  return 'waiting';
+}
 
 export function trialRowSummary(r: TrialSummaryRow): TrialRowSummary {
-  return { ...r, claimed_at: iso(r.claimed_at), finished_at: iso(r.finished_at) };
+  const grading = gradingState(r);
+  return {
+    id: r.id,
+    experiment_id: r.experiment_id,
+    task_sha256: r.task_sha256,
+    task_id: r.task_id,
+    config_hash: r.config_hash,
+    config_name: r.config_name,
+    harness: r.harness,
+    model: r.model,
+    repeat_index: r.repeat_index,
+    order_index: r.order_index,
+    attempt: r.attempt,
+    status: r.status,
+    label: r.label,
+    end_state: r.end_state,
+    cost_usd: r.cost_usd,
+    input_tokens: r.input_tokens,
+    output_tokens: r.output_tokens,
+    model_calls: r.model_calls,
+    wall_s: r.wall_s,
+    worker_id: r.worker_id,
+    claimed_at: iso(r.claimed_at),
+    finished_at: iso(r.finished_at),
+    passed: grading === 'pass' || grading === 'fail' ? r.graded_passed : null,
+    grading,
+  };
 }
 
 function shaList(value: unknown, field: string): string[] {

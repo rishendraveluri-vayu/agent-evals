@@ -261,8 +261,8 @@ const claimOrder = (taskList_, cfgs, n, seed) => {
 
 const LETTERS = ['A', 'B', 'C'];
 const jitter = (i, spread) => ((i * 7919) % 100) / 100 * spread - spread / 2;
-/** One GET /experiments/:id/trials row. `passed` is the UI's (not in the contract): pass or fail
- *  once graded, so the sample run grid can show both. */
+/** One GET /experiments/:id/trials row: `passed` and `grading` say pass or fail once graded, so
+ *  the sample run grid can show both. */
 const trialRow = (expId, id, slot, orderIndex, attempt, status, label, passed, i, minutesAgo) => {
   const finished = ['done', 'infra_failed', 'abandoned'].includes(status);
   const claimed = finished || status === 'running' || status === 'claimed';
@@ -280,6 +280,7 @@ const trialRow = (expId, id, slot, orderIndex, attempt, status, label, passed, i
     claimed_at: claimed ? at(minutesAgo + 1) : null,
     finished_at: finished ? at(minutesAgo) : null,
     passed: status === 'done' ? passed : null,
+    grading: status === 'done' ? (passed === true ? 'pass' : passed === false ? 'fail' : 'waiting') : null,
   };
 };
 /** The API lists trial rows in plan order: repeat, task, config, then attempt. */
@@ -309,7 +310,7 @@ const armOf = (letter, cfg, trials, status, extra = {}) => {
 const doneArm = (letter, cfg, done) => ({ ...armOf(letter, cfg, [], 'complete'), counts: { ...zero(), done } });
 
 const PRICES = { [HAIKU]: { input_per_mtok: 0.1, output_per_mtok: 0.5 }, 'gemini-3.8-flash': { input_per_mtok: 0.75, output_per_mtok: 3.75 } };
-const ASSUMPTIONS = { input_tokens_per_trial: 64000, output_tokens_per_trial: 2400, wall_s_per_trial: 60, sim_input_tokens_per_call: 2000, sim_output_tokens_per_call: 150, low_factor: 0.5, high_factor: 2 };
+const ASSUMPTIONS = { input_tokens_per_trial: 64000, output_tokens_per_trial: 2400, wall_s_per_trial: 60, fake_wall_s_per_trial: 10, sim_input_tokens_per_call: 2000, sim_output_tokens_per_call: 150, low_factor: 0.5, high_factor: 2 };
 const estimate = (trials, expected, low, high, minutes, workers, basis = 'Tokens per trial: the mean of earlier finished trials of the same config and task for every cell. Prices: LiteLLM /model/info. Range: 0.5x to 2x the expected cost. Time: each harness divides its trials by its live workers, harnesses in parallel.') => ({
   trials, cost_usd: { expected, low, high }, minutes, basis,
   basis_detail: { cells: [], prices: PRICES, assumptions: ASSUMPTIONS, workers },
@@ -448,7 +449,7 @@ const futilityTrials = [];
   futilityTrials.sort(planOrder(futilityTasks, [cfgV1, cfgV2]));
 }
 const futilityReason =
-  'futility check (D32): arm B passed 0 of its first 3 finished trials, fewer than the 1 the rule asks for (passed means label agent and end state answered until graders exist (SP4)). Review those trials, then resume or stop; the check runs once per arm and never compares the arms';
+  'futility check (D32): arm B passed 0 of its first 3 graded trials, fewer than the 1 the rule asks for (passed means the grading outcome is pass; a trial whose grading is incomplete or not finished yet is not counted). Review those trials, then resume or stop; the check runs once per arm and never compares the arms';
 
 const spendOf = (trials) => Number(trials.reduce((sum, t) => sum + (t.cost_usd ?? 0), 0).toFixed(4));
 const actualOf = (trials, elapsed) => {

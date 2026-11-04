@@ -33,6 +33,7 @@ import type {
   RegradeResponse,
   RenderedPromptView,
   SettingName,
+  StartExperimentRequest,
   TaskView,
   TrialRowSummary,
 } from '../api/types';
@@ -347,6 +348,8 @@ function trialsFor(id: string): TrialRowSummary[] {
         worker_id: null,
         claimed_at: null,
         finished_at: null,
+        passed: null,
+        grading: null,
       })),
     ),
   );
@@ -369,6 +372,28 @@ function control(id: string, from: ExperimentStatus[], to: ExperimentStatus, kin
   d.arms = d.arms.map((a) => ({ ...a, status: to === 'cancelled' ? 'stopped' : a.status === 'not_started' ? 'active' : a.status }));
   d.events.unshift({ at: meta.now, kind, trial_id: null, attempt: null, arm: null, config_hash: null, detail });
   return d;
+}
+
+/** POST .../start with a plan commit, as the API does: set on an unstarted experiment only. */
+function startExperiment(id: string, body: StartExperimentRequest | undefined): ExperimentDetail {
+  const d = created.experiments.get(id);
+  const commit = typeof body?.plan_commit === 'string' ? body.plan_commit.trim() : '';
+  if (d && commit) {
+    if (d.status !== 'created' && commit !== d.plan_commit) {
+      throw new ApiError(409, 'plan_commit_locked', `experiment ${id} has started, so its plan commit is fixed`, 'Leave plan_commit out to resume it.');
+    }
+    if (d.status === 'created') d.plan_commit = commit;
+  }
+  return control(id, ['created', 'paused'], 'running', 'started', 'trials can be claimed. In sample mode nothing actually runs.');
+}
+
+/** POST .../discard: an experiment that never started is marked cancelled; nothing is deleted. */
+function discardExperiment(id: string): ExperimentDetail {
+  const d = created.experiments.get(id);
+  if (d && d.status !== 'created') {
+    throw new ApiError(409, d.status === 'done' || d.status === 'cancelled' ? 'experiment_finished' : 'experiment_started', `experiment ${id} is ${d.status}`, 'Stop it instead.');
+  }
+  return control(id, ['created'], 'cancelled', 'discarded', 'discarded before it started: nothing ran, and nothing was deleted');
 }
 
 function armControl(id: string, armKey: string, pause: boolean): ExperimentDetail {
@@ -492,7 +517,8 @@ const routes: [string, RegExp, Handler][] = [
   ['POST', /^\/experiments\/estimate$/, (_m, _p, body) => estimate(body as EstimateRequest)],
   ['POST', /^\/experiments$/, (_m, _p, body) => createExperiment(body as CreateExperimentRequest)],
   ['GET', /^\/experiments$/, () => [...created.experiments.values(), ...experiments]],
-  ['POST', /^\/experiments\/([^/]+)\/start$/, (m) => control(id1(m), ['created', 'paused'], 'running', 'started', 'trials can be claimed. In sample mode nothing actually runs.')],
+  ['POST', /^\/experiments\/([^/]+)\/start$/, (m, _p, body) => startExperiment(id1(m), body as StartExperimentRequest | undefined)],
+  ['POST', /^\/experiments\/([^/]+)\/discard$/, (m) => discardExperiment(id1(m))],
   ['POST', /^\/experiments\/([^/]+)\/pause$/, (m) => control(id1(m), ['running', 'paused'], 'paused', 'paused', 'paused by hand: new claims stop; trials already running finish')],
   ['POST', /^\/experiments\/([^/]+)\/resume$/, (m) => control(id1(m), ['paused', 'running'], 'running', 'resumed', 'claims resume')],
   ['POST', /^\/experiments\/([^/]+)\/(?:stop|cancel)$/, (m) => control(id1(m), ['created', 'running', 'paused'], 'cancelled', 'cancelled', 'stopped: queued trials are cancelled; running ones finish and are kept')],

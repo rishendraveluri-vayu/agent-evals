@@ -314,13 +314,26 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   else from earlier trials of the same task with the same simulator model, else the
   assumptions. **Time** divides each harness's trial time by its live workers (a worker is live
   if it asked for a trial, 204 included, or heartbeat in the last 60 s; none seen counts as one),
-  harnesses in parallel; `basis_detail.workers` is `{<harness>: {live, used}}`. `basis` says all
-  of this in words. No power estimate yet; SP6 adds `min_detectable_effect`.
+  harnesses in parallel; `basis_detail.workers` is `{<harness>: {live, used}}`. **A trial's time
+  is its worker's whole slot, claim to report** (the mean of `finished_at - claimed_at`, since 4
+  Nov): starting the trial process and the tool server, running it and uploading its files, not
+  only the agent's own `wall_s`, which is used only for a trial with no claim time. On the 4 Nov
+  fresh-clone QA the slot was 8.0 s against 3.5 s of agent time. With no history a trial takes
+  60 s on a real model and `fake_wall_s_per_trial` (10 s) on a `fake/*` one, which answers at once
+  (60 s made a 30-trial fake run's estimate 30 min against 4 min 13 s). Each cell's `wall_s` is
+  that slot time. `basis` says all of this in words. No power estimate yet; SP6 adds
+  `min_detectable_effect`.
 - `POST /experiments` with `{name, axis, config_hashes, task_sha256s, n, sim_model,
   budget_usd, plan_commit, sim_prompt_sha256, order_seed, futility, parent_experiment_id,
   reuse_baseline}` creates the experiment and all its trial rows
   (`queued`), records the platform commit (`EVALS_PLATFORM_COMMIT`), and sets a LiteLLM budget
-  for the whole experiment. It returns the experiment. Nothing runs until it is started. The
+  for the whole experiment. It returns the experiment. Nothing runs until it is started.
+  `budget_usd` must cover the estimate's high end (400 `budget_below_estimate`, R10.6), **except
+  for a run on fake models only**: when every model it calls (each arm's, and the simulator's when
+  a task needs one) is `fake/*`, nothing real is spent and the prices are made up for testing, so
+  it is never refused. Its budget is raised to the estimate's high end when below it, so neither
+  LiteLLM's cap nor the spend guard can stop a free run part-way; the stored and returned
+  `budget_usd` is the raised one. A fake agent with a real simulator model is checked as usual. The
   simulator prompt defaults to the highest version of `client-sim` (v2 since D27). The simulator
   runs at D22's temperature 0, except on a model that refuses temperature (Haiku 5.5), where its
   temperature is `null` and not sent (D27); the token cap is 2048, because Haiku 5.5's reasoning
@@ -357,7 +370,8 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 
   | Call | From | Does |
   | --- | --- | --- |
-  | `POST /experiments/:id/start` | `created`, `paused` | starts it, or resumes it (as `/resume`); marks it `done` if nothing is left to claim |
+  | `POST /experiments/:id/start` | `created`, `paused` | starts it, or resumes it (as `/resume`); marks it `done` if nothing is left to claim. Optional body `{plan_commit}` (`StartExperimentRequest`): on a `created` one it sets the analysis plan's commit first (trimmed), so an experiment left unstarted without one can be started from its run page; once it has started the commit is fixed, and a different one is a 409 `plan_commit_locked` (the same one again is fine) |
+  | `POST /experiments/:id/discard` | `created`, no trial claimed | marks an experiment that never started `cancelled` and its queued trials `cancelled`, as a stop does; nothing is deleted. Event `discarded` (no `cancelled` event). Anything started is a 409 `experiment_started` (fix: stop it instead); a `done` or `cancelled` one a 409 `experiment_finished` |
   | `POST /experiments/:id/pause` | `running` (a `paused` one: no-op) | no new claims; trials already running finish and report; event `paused` |
   | `POST /experiments/:id/resume` | `paused` (a `running` one: no-op) | claims resume; event `resumed` |
   | `POST /experiments/:id/stop` (also `/cancel`) | `created`, `running`, `paused` | queued trials become `cancelled`; running ones finish and are kept; status `cancelled` |
@@ -370,19 +384,22 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 - An experiment's `status` is `created`, `running`, `paused`, `done` or `cancelled`. `paused` is
   the whole experiment, by hand or by D32's futility check and guards (below); `paused_at` and
   `paused_reason` are the latest. A re-queued attempt made while paused waits, queued.
-- **Automatic pauses (D32).** Checked after every report and every lapsed lease, only while the
-  experiment is `running`. Each pauses the whole experiment with an event whose `detail` is the
+- **Automatic pauses (D32).** Checked after every report and every lapsed lease (the futility
+  check also after every grades report), only while the experiment is `running`. Each pauses the whole experiment with an event whose `detail` is the
   `paused_reason`; resume or stop after review. None of them looks at the difference between the
   arms: the verdict uses the full planned N, so nothing stops or decides on an apparent win.
   - **Futility**, `futility: {enabled, after, min_passed}` on `POST /experiments` (left out:
     `{enabled: true, after: 3, min_passed: 1}`; `{"enabled": false}` turns it off; shown resolved
-    as `futility` in the detail). Once per arm: when the arm has `after` finished (`done`) trials,
-    it pauses the run if fewer than `min_passed` of them passed. Event `futility_pause`, for
-    example "futility check (D32): arm B passed 0 of its first 3 finished trials, fewer than the 1
-    the rule asks for (passed means label agent and end state answered until graders exist
-    (SP4)) ...". Until graders exist (SP4), **passed means label `agent` and end state
-    `answered`**. The first batch is a random sample because of the claim order. An arm whose
-    trials are reused from the parent is not checked.
+    as `futility` in the detail). Once per arm: when the arm has `after` graded trials, it pauses
+    the run if fewer than `min_passed` of them passed. **Passed is the grading outcome** (SP4,
+    since 4 Nov): a trial whose current grading outcome is `pass` counts as a pass and `fail` as a
+    fail; one whose grading is `incomplete`, has not finished, or has no graders is not counted at
+    all. Grading runs after the trial, so the check runs on the grades report too
+    (`applyFutility` in `apps/api/src/experiments/rules.ts`). Event `futility_pause`, for example
+    "futility check (D32): arm B passed 0 of its first 3 graded trials, fewer than the 1 the rule
+    asks for (passed means the grading outcome is pass; a trial whose grading is incomplete or not
+    finished yet is not counted) ...". The first batch is a random sample because of the claim
+    order. An arm whose trials are reused from the parent is not checked.
   - **Infra guard**: more than 30% infra failures (`infra_failed` or `abandoned`) among at least 5
     trials finished since the run started or was last resumed. Event `infra_guard_pause`, naming
     the failure labels. The count starts again at each resume.
@@ -415,8 +432,8 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   `parent_experiment_id`, `baseline`, `paused_at`, `paused_reason` and `events`, newest first: `[{at, kind, trial_id, attempt, arm, config_hash,
   detail}]`. Claims, infra failures, config errors, re-queues, budget trips, abandons and file
   problems come from the trial rows; pauses and resumes (`paused`, `resumed`, `arm_paused`,
-  `arm_resumed`, `futility_pause`, `infra_guard_pause`, `spend_guard_pause`) and the `baseline`
-  decision are stored as they happen.
+  `arm_resumed`, `futility_pause`, `infra_guard_pause`, `spend_guard_pause`), the `baseline`
+  decision and a `discarded` experiment are stored as they happen.
 - `GET /experiments/:id` also adds `judge`: the experiment's active judge approval, `{model,
   budget_usd, spend_usd, approved_at}`, or null when judging is not approved. `spend_usd` is the
   sum of `spend` over LiteLLM's spend-log rows for the judge's key, read on each request, and
@@ -447,7 +464,14 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
     | `unknown_model` (400) | LiteLLM serves no such model, or serves it without a price (its spend could not be capped or counted) |
     | `judge_already_approved` (409) | the experiment has an active approval: revoke it first. Two approvals at once: one wins, the other's key is deleted and it gets this 409 |
     | `no_judge_approval` (404) | revoke with no active approval |
-- `GET /experiments/:id/trials?status=&config=&task=` returns trial summaries.
+- `GET /experiments/:id/trials?status=&config=&task=` returns trial summaries
+  (`TrialRowSummary`). Each has `grading` (`TrialGradingState`) and `passed`, so the run grid
+  agrees with the trial page: `pass`, `fail` or `incomplete` is the outcome of the trial's latest
+  finished grading job (as `grading.current` in `GET /trials/:id`); `waiting` is a done trial
+  whose grading is queued, running or not queued yet; `no_graders` a done trial of a task with no
+  graders; `grading_failed` a done trial whose last grading job gave up (3 lapsed leases) with no
+  finished job before it; `null` a trial that is not done (nothing to grade). `passed` is true or
+  false with a `pass` or `fail`, else null.
 - `GET /experiments/:id/compare` returns `{experiment_id, status, reason, arms, rows, stats}`.
   **No comparison until every arm is complete** (D37, D32): while `status` is `incomplete`,
   `reason` says why ("arm B is paused: ...", "the experiment was stopped before every trial ran
@@ -712,7 +736,7 @@ field is left (a key inside a binary file cannot be scrubbed, so it fails the ex
   | `example_conflict` (409) | the experiment id is already here as an experiment of its own (the machine it was exported from) or as another example; a trial or grading job id is already here; a shared row is here with other content; or a different file is already where a trial file goes. Nothing is changed |
 
 - **An example is read-only and apart from your own work.** These answer 409 `example_read_only`
-  (with a `fix`) for a loaded example: `start`, `pause`, `resume`, `stop`, `cancel`, both arm
+  (with a `fix`) for a loaded example: `start`, `pause`, `resume`, `stop`, `cancel`, `discard`, both arm
   routes, `regrade` and `POST /experiments/:id/judge`, and `POST /experiments` with
   `reuse_baseline` and the example as parent. Nothing claims its trials or grading jobs, and no
   grading job is queued for its trials. Its trials are left out of `GET /spend`'s `trials_usd`,
