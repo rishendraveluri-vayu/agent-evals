@@ -51,6 +51,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D41 Per-task flags: multiple-comparison correction | Benjamini-Hochberg at 5% false discovery rate marks a task's difference as beyond noise; every task where B dropped is listed either way | Rishi | 5 Nov |
 | D42 Equivalence margin | +/- 10 points of pass rate: "practically equivalent" when the whole 95% interval of B minus A lies inside it | Rishi | 5 Nov |
 | D43 Significance level | Alpha 0.05 and 95% intervals throughout (verdict, critical guardrail, equivalence, BH q = 0.05) | Rishi | 5 Nov |
+| D44 A/A calibration | An explicit calibration run: the same config on both arms only when the run is marked "A/A calibration"; the comparison of an A/B shows the latest A/A interval for its configs; each one is a paid run signed off like any other | Rishi | 5 Nov |
 
 ## Open
 
@@ -241,6 +242,12 @@ Choice: +/- 10 points of task pass rate. The verdict has four outcomes: better, 
 Why: Rishi picked it from the three. Without a margin the platform cannot tell "the same" from "too few trials to tell"; +/- 5 would rarely be reachable at our sizes (an unmeasured estimate of +/- 10 to 15 points interval width at about 20 tasks and 10 trials each).
 What would change it: the pilot's measured interval width; a domain reason to call a smaller change material (a money-advice task where 5 points matters).
 To explain it: equivalence is a claim about the whole interval, not the point estimate: B at -2 points with an interval of -14 to +10 is "no detectable difference", not "equivalent", because a 14-point drop is still possible.
+
+### D44: A/A calibration as an explicit run (5 Nov)
+Options: an explicit calibration run (the same config on both arms, allowed only when marked); split-half of arm A's own trials (free, but measures noise at N/2 and misses side-by-side effects such as claim order); simulated A/A only (the stats tests).
+Choice: the explicit calibration run. Without the mark, the same config on both arms stays refused (A30), so an accidental A/A cannot happen. The comparison of an A/B shows the latest A/A interval for its configs beside its own. The simulated A/A tests stay as well.
+Why: Rishi picked it. The stats design (proposal section 5) calls for an A/A run every time, and the grading guide asks to interrogate the math: only a real A/A shows the noise of this setup, harness and model.
+What would change it: cost (each A/A is a full run, about $1 to $2 on Haiku at 20 tasks x 10 trials, a rough estimate, needing a sign-off under R8).
 
 ## Entry template
 
