@@ -59,6 +59,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D48 Label budget | 20 tuning, 40 held-out, 20 from the final run, as planned in SPEC (about an hour of Rishi's labelling) | Rishi | 5 Nov |
 | D49 Judge-error correction | Pooled sensitivity and specificity from the held-out labels (Rogan-Gladen), since D8 already drops criteria with a false-pass gap between arms; the comparison shows both "as judged" and "corrected" | Rishi | 5 Nov |
 | D15 Hermes settings for the headline experiment | Compression, memory and skills off in both arms; prompt-cache markers off (D31); Tool Search off (R10.7) | Rishi | 5 Nov |
+| D50 Minimum tasks for a verdict | 6 tasks in the aggregate; below it the verdict is "no detectable difference" with "too few tasks for any verdict" | Rishi | 5 Nov |
 
 ## Open
 
@@ -293,6 +294,12 @@ Choice: tasks only. Each task's observed pass rate already carries the noise of 
 Evidence (SP6's simulation, 1,000 simulated experiments per row, task pass rates uniform 10 to 75%, verdict = interval clear of 0 and sign-flip p < 0.05): at 20 tasks x 10 trials, two levels gave 1.5% false "better" or "worse" when nothing changed, 98.5 to 99% coverage, 69% power for a real +15 points and a 24.3-point mean width; tasks only gave 4.7%, 91.6 to 93.7% coverage, 85% power and 17.2 points. At 40 tasks, tasks only covers 95.1%. Reference: Davison and Hinkley (1997), Bootstrap Methods and their Application, section 3.8.
 Why: Rishi picked it: false alarms near the promised 5% and much more power; the slight under-coverage of the percentile interval at about 20 tasks is a known small-sample effect, recorded in `docs/known-limits.md`, and the verdict also needs the permutation test.
 What would change it: very few held-out tasks (the headline compares on held-out tasks only), where a small-sample interval correction would be worth its extra explanation.
+
+### D50: At least 6 tasks for any verdict (5 Nov)
+Options: a floor of 6 tasks; a floor of 8; no floor.
+Choice: 6. Below 6 tasks in the aggregate the verdict is "no detectable difference", with a sentence that there are too few tasks for any verdict. Better or worse cannot happen below 6 anyway: the sign-flip test's smallest two-sided p-value is 2 / 2^K, which is above 0.05 at K = 5.
+Why: Rishi picked it. "Practically equivalent" (D42) has no permutation test behind it, and the percentile interval under-covers with few tasks. SP6's simulation (tasks-only bootstrap, N = 10, 1,000 runs per row) called a real +15-point effect "equivalent" in 3.9% of runs at K = 4, 1.4% at K = 6, 1.1% at K = 8, 0.6% at K = 10 and 12, 0% at K = 20; a 95% interval should allow at most 2.5%.
+Also measured, power to call a real +15 "better": 0% at K = 4, 10.5% at 6, 30.4% at 8, 49.9% at 10, 54.7% at 12, 85.4% at 20. The headline compares on held-out tasks only, so the split decides this.
 
 ## Entry template
 
