@@ -34,7 +34,7 @@ describe('TasksView in fixture mode', () => {
     expect(rows()).toHaveLength(12);
     expect(w.find('[data-test="group-row"]').exists()).toBe(false);
     expect(rows()[0].text()).toContain('distress-12');
-    expect(rows()[0].get('[data-test="last-run"]').text()).toBe('A 1/5 · B 5/5');
+    expect(rows()[0].get('[data-test="last-run"]').text()).toBe('A 1 of 5 · B 5 of 5');
     expect(rows()[0].get('[data-verdict]').attributes('data-verdict')).toBe('better');
     expect(rows()[0].get('[data-verdict]').text()).toBe('Better');
     expect(rows()[1].text()).toContain('Judge and state check');
@@ -49,7 +49,7 @@ describe('TasksView in fixture mode', () => {
     const plain = rows().filter((r) => r.find('[data-verdict="none"]').exists());
     expect(plain.length).toBeGreaterThan(0);
     expect(plain[0].get('[data-verdict="none"]').text()).toBe('No clear difference');
-    expect(rows()[0].get('.result-detail').text()).toBe('A 1/5 · B 5/5');
+    expect(rows()[0].get('.result-detail').text()).toBe('A 1 of 5 · B 5 of 5');
     await w.findAll('.seg button').find((b) => b.text() === 'Discovery')?.trigger('click');
     expect(rows()).toHaveLength(12);
     expect(rows()[0].text()).toContain('Not in this run');
@@ -73,5 +73,36 @@ describe('TasksView against the API: a shipped example, no statistics', () => {
     expect(caption).toBe(`Last run: ${example.title}, 5 trials per arm. Pass counts only: this version does not compute a verdict per task.`);
     expect(w.text()).not.toContain('Label batch 1');
     expect(w.get('[data-test="task-glance"]').text()).toContain('needs the statistics step, not built in this version');
+  });
+
+  it('shows undecided tasks as the comparison does, never as 0/0', async () => {
+    const summary = (experiments as { id: string }[]).find((e) => e.id === 'exp_heldout');
+    const detail = (details as Record<string, { tasks: { sha256: string }[] }>).exp_heldout;
+    const [first, second] = detail.tasks.map((t) => t.sha256);
+    // The first task: no trial in either arm has an outcome. The second: arm B has none.
+    const rows = (compares.exp_heldout as { rows: { task: string; arm: string }[] }).rows.map((r) =>
+      r.task === first || (r.task === second && r.arm === 'B') ? { ...r, passed: 0, graded: 0, incomplete: 1, trials: 1 } : r,
+    );
+    routeFetch({
+      '/api/tasks': tasks,
+      '/api/experiments': [summary],
+      '/api/experiments/exp_heldout': detail,
+      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), rows, stats: null },
+    });
+    const w = mount(TasksView);
+    await settle();
+    const row = (sha: string) => w.findAll('[data-test="task-row"]').find((r) => r.text().includes((tasks as { id: string; sha256: string }[]).find((t) => t.sha256 === sha)?.id ?? '?'));
+    expect(row(first)?.get('[data-test="last-run"]').text()).toBe('A 1 undecided · B 1 undecided');
+    expect(row(first)?.get('[data-verdict]').text()).toBe('Undecided');
+    expect(row(second)?.get('[data-verdict]').text()).toBe('B undecided');
+    expect(w.text()).not.toContain('0/0');
+  });
+
+  it('counts the engine tests apart from the personal-finance tasks', async () => {
+    const engine = { ...(tasks as Record<string, unknown>[])[0], id: 'engine-smoke-emi', sha256: 'sha256:engine', summary: 'ENGINE TEST ONLY: one EMI call' };
+    routeFetch({ '/api/tasks': [...tasks, engine], '/api/experiments': [] });
+    const w = mount(TasksView);
+    await settle();
+    expect(w.get('.lede').text()).toMatch(/^24 personal-finance tasks and 1 engine test \(checks of the platform, not of an agent\), each needing/);
   });
 });
