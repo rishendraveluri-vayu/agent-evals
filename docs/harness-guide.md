@@ -4,6 +4,13 @@ For Rishi, 4 Nov 2026 (R13). **Version 2**, written from the repo at commit `3a4
 
 This guide explains each of the five harnesses, how our adapter drives it, and what that means for designing tasks, graders, the judge rubric and the prompt v1 vs v2 experiment (D9). It focuses on what the model actually sees, what each setting really does, where a harness hides or adds things, what a grader can read, and what could confound a comparison.
 
+### Changes in v3 (4 Nov evening, from Rishi's review of v1; `docs/reviews/harness-guide-v1-rishi.md`)
+
+- §3.12: the prompt's effect on Hermes is measured inside Hermes's own text and can interact with it; it does not cancel.
+- §4.8: the own loop is the vanilla, most configurable baseline; the contradiction with §3.12 is gone.
+- §8.1: memory on-and-empty against on-and-seeded is comparable only with caveats (identical starting memory, writes during a trial).
+- Open questions answered: Hermes's parallel guidance (D33) and prompt-cache markers (D31). New decisions D32 to D39 (early stopping, lineage, two arms, the own loop's retry, per-arm pause, conflict checks, the Hermes verification run) are in `docs/decisions.md`; chapters change again when they are built.
+
 ### Changes in v2 (4 Nov)
 
 - Chapters 5 to 7 now describe the built adapters: their code, `capabilities.json`, gate and probe results, and the real run.
@@ -147,8 +154,9 @@ Workers mount nothing from the host, so a trial cannot read another trial's stor
 | `infra:budget_net` | `harness_error` and the key's budget was exceeded. Never re-queued (D26) |
 | `infra:adapter_crash` | Non-zero exit, or a missing or invalid result |
 | `infra:timeout_kill` | The safety net killed the process group |
+| `infra:sim_error` | `conversation.ended_by` is `sim_error`: the simulated client's call failed or its reply had no text (D26). Re-queued once |
 
-A simulator failure ends as `harness_error` with label `agent`, because only the agent key is checked [src]. `conversation.ended_by` is `null` (single prompt), `client` (end marker), `turn_cap` or `agent_end_state` (an agent turn ended in anything but `answered`).
+A simulator failure ends as `harness_error` with `ended_by: sim_error` and label `infra:sim_error`, whatever the agent key's status [src, ran: fake `sim-empty`]. Until 4 Nov an empty simulator reply counted as the client ending and was labelled `agent`; that is how the 4 Nov Haiku run lost its conversations after one agent turn (section 2.9). `conversation.ended_by` is `null` (single prompt), `client` (end marker), `turn_cap`, `agent_end_state` (an agent turn ended in anything but `answered`) or `sim_error`.
 
 ### 2.3 What is recorded per trial, and where
 
@@ -187,7 +195,7 @@ Span events carry `evals.error` (kinds `malformed_tool_call`, `unknown_tool`, `t
 - Its prompt is now `configs/prompts/client-sim.v2.md` (D27, a draft for your review; the API's default as the highest version), with persona, client summary, hidden facts, concerns, goal and end marker filled in. v2 adds the client file, chat text only (no narration or stage directions) and ending once the concerns are answered; it keeps v1's guards. It is a plain non-streaming call to LiteLLM with its own key, budget, model, token cap and, unless it is null, temperature, and no tools. The 4 Nov run used `client-sim.v1.md` and Haiku 5.5 at temperature 1, because Haiku rejects 0, with a 1,500-token cap that its own thinking also uses [unverified: Claude docs]. Engine runs on Haiku now send no simulator temperature (D27).
 - **End marker.** The client ends by writing `[[END_CONVERSATION]]`. Any text left with it (the goodbye) is added as a client turn and the conversation ends. **The agent never answers the goodbye.**
 - **Turn cap.** `max_client_turns` counts client messages after the opening one, so a cap of 3 allows up to 4 agent turns.
-- **Failures.** A simulator error ends the trial as `harness_error`, stop reason `simulator_error`.
+- **Failures.** A failed simulator call, or a reply with no text (with or without the marker), ends the trial as `harness_error`, stop reason `simulator_error`, `ended_by: sim_error`, label `infra:sim_error`; the API re-queues it once. The marker alone after the client's own earlier message is still a normal ending. The empty reply stays in `sim_replies.jsonl` with its usage and an `error` field, and is never cached [src, ran: fake `sim-empty`].
 
 **Reply cache** [src]. Keyed by task, simulator model, temperature, token cap, prompt hash and the exact visible transcript. The cross-trial store now exists: the API adds the replies each trial reports (`sim_replies.jsonl`) to the cache for that task and simulator setup, and every later claim of the same scope carries them as `sim_cache`; the first reply stored for a key wins. A hit needs every agent reply before it to be byte-identical, so with the agent above temperature 0 most calls will miss. All 15 simulator calls on 4 Nov missed [ran, 4 Nov], as expected: each harness ran once and the agents' replies differed. Two trials reaching the same new state at the same time can store different replies, and a trial could forge a reply under a future key (`docs/known-limits.md`).
 
@@ -501,7 +509,7 @@ One more: **prompt-cache markers.** Hermes adds them for model names containing 
 
 **Axes you can test on Hermes:**
 
-- **System prompt (D9).** Clean: v1 vs v2 differ only in the prompt lines [ran], and Hermes's own text cancels in the paired difference.
+- **System prompt (D9).** The first requests differ only in the prompt lines [ran], but the effect measured is the prompt's effect *inside Hermes*, not the prompt's effect in general. Hermes's own text does not cancel: v2 can interact with it, for example a warmth line pulling against Hermes's "be direct, a one-line question gets a one-line answer", and the same change can have a different effect on another harness (corrected after Rishi's review, 4 Nov). The pre-run conflict check (D33) lists such contradictions for each version before any spend.
 - **Toolset version** ("missing tool"), through `tools.include` [src].
 - **Temperature, parallel tool calls, step budget.** They reach the wire [ran]; their effect is unchecked (D24). Temperature cannot vary on Haiku 5.5 [ran, 4 Nov].
 - **Memory on and empty vs on and seeded**, the cleanest memory axis [src]. **Skills seeded vs none**, remembering the "MUST load" instruction. **Compression** only matters past about 64k tokens.
@@ -583,7 +591,7 @@ At the limit the loop stops right after running the last tool calls. It makes no
 
 ### 4.8 Implications for eval design
 
-- **The cleanest arm for D9.** Our prompt is the whole system prompt, so a v1 vs v2 difference is the prompt's alone. On Hermes it measures the prompt inside 4,500 characters of Hermes guidance. LangGraph and the Agents SDK were byte-identical to the own loop on the real single trial, apart from tool results as lists of parts [ran, 4 Nov], so they are near-clean arms too. Which harness the headline uses is still open (D9).
+- **The vanilla baseline, and in some ways the most configurable harness.** Our prompt is the whole system prompt, so a v1 vs v2 difference here is the prompt's alone, with nothing of the harness's to interact with. On Hermes the same change is measured inside 4,500 characters of Hermes guidance, and can interact with it (section 3.12). LangGraph and the Agents SDK were byte-identical to the own loop on the real single trial, apart from tool results as lists of parts [ran, 4 Nov], so they are near-clean arms too. Which harness the headline uses is still open (D9).
 - **The baseline for harness overhead:** the gap to the own loop on the same task and model is "what the harness does".
 - **No memory or skills axes.**
 - **`step_limit` trials have no answer** in a single-prompt task, unlike Hermes.
@@ -905,7 +913,7 @@ At `max_turns` 3 the SDK makes exactly 3 calls and raises `MaxTurnsExceeded`: 0 
 | Comparison | Comparable? | Condition |
 | --- | --- | --- |
 | One axis within one harness (prompt v1 vs v2 on Hermes, or on the own loop) | **Yes** | The invariance diff shows only the axis changed; arms interleaved in time on Hermes. Not the temperature axis on Haiku 5.5 |
-| Memory on and empty vs on and seeded (Hermes) | **Yes** | Both arms have the same tool and guidance |
+| Memory on and empty vs on and seeded (Hermes) | **With caveats** | Both arms have the same tool and guidance, but the memory a trial starts with must be identical across its runs, and writes during a trial change it: check the seed hashes and `integrity` before and after every trial (Rishi, 4 Nov) |
 | Memory off vs on, skills off vs on (Hermes) | Partly | The tools and prompt also change; report it as a bundle |
 | Quality across harnesses, same model and task | With caveats | Differences include prompt text, tool presentation, error handling and limit behaviour (8.2). Rankings are more trustworthy than absolute gaps. On the one real single trial each, all five made the same calls and gave the same numbers [ran, 4 Nov, n = 1] |
 | Cost and tokens across harnesses | Only from the proxy | First-call input +32% on Hermes and +74% on ADK over the own loop on Haiku 5.5 [ran, 4 Nov]; Hermes's prompt caching on Claude in containers lowers its cost |
@@ -958,8 +966,8 @@ Raised by the sources and not settled in `docs/decisions.md`. Listed, not answer
 **Hermes**
 
 1. **D15, Hermes design calls.** Compression on or off where configs use it? Tool Search must be off for MCP tools (R10.7) and is: is that part of D15 closed? In skills-on configs, allow `skill_manage` writes or stage them (`skills.write_approval`)? The adapter allows writes today.
-2. **Hermes's switchable guidance.** "Finishing the job" and "Parallel tool calls" are config switches, on by default. Keep them as shipped (the spirit of D20) or turn them off as harness options? The parallel section contradicts `parallel_tool_calls: false`.
-3. **Hermes prompt-cache markers.** Keep the default or turn them off? In engine containers they will be on for Claude (host `litellm`); the 4 Nov run had them off. It affects cost and latency only.
+2. ~~Hermes's switchable guidance.~~ Answered by D33: the "Parallel tool calls" section follows our `parallel_tool_calls` setting; the rest stays as shipped, and the pre-run conflict check shows it.
+3. ~~Hermes prompt-cache markers.~~ Answered by D31: off in every Hermes config, like every other harness.
 4. **Hermes and `max_output_tokens`.** Hermes retries a truncated reply with a bigger cap. Is the setting still "supported", and what should D24's token check expect?
 5. **Memory seed format.** Seeds go to `MEMORY.md` ("your personal notes"), never `USER.md` ("who the user is"). Which header should client facts appear under?
 6. **Background review.** R3 asks for a configurable setting, off by default. The adapter turns Hermes's background review off in every config, with no way to turn it on. Is "always off" enough?

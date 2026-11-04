@@ -13,9 +13,16 @@ export const SIM_KEY_ENV = 'EVALS_SIM_API_KEY';
 export const FINANCE_MCP_COMMAND = ['/opt/finance-mcp/bin/finance-mcp', '--transport', 'stdio', '--state-dir', '/trial/state'];
 export const TOOL_TIMEOUT_S = 30;
 
-/** D22: the simulated client runs at temperature 0. The token cap is the contract example's. */
+/** D22: the simulated client runs at temperature 0. */
 export const SIM_TEMPERATURE = 0;
-export const SIM_MAX_OUTPUT_TOKENS = 300;
+/**
+ * The simulator's output token cap, also the contract example's. Haiku 5.5 thinks by default and
+ * its reasoning counts towards the cap: on 4 Nov a cap of 300 went entirely to reasoning
+ * (`reasoning_tokens: 300, text_tokens: 0`) and the reply was empty. 2048 leaves room for the
+ * reasoning; the prompt asks for two or three sentences, so the visible text stays short. The cap
+ * is part of the reply-cache key, so replies cached under 300 are not reused.
+ */
+export const SIM_MAX_OUTPUT_TOKENS = 2048;
 
 /**
  * The simulator's temperature on `model`: D22's 0, or null (not sent, so the model's default
@@ -32,7 +39,8 @@ export const CLIENT_STATE_FILE = 'client.json';
 export interface SpecInputs {
   trial: {
     id: string;
-    experimentId: string;
+    /** Null for a probe trial (D33); contract v2 allows it outside an experiment. */
+    experimentId: string | null;
     repeatIndex: number;
     attempt: number;
   };
@@ -48,7 +56,8 @@ export interface SpecInputs {
   task: {
     id: string;
     sha256: string;
-    split: 'discovery' | 'held_out';
+    /** Null outside an experiment (a probe), as contract v2's task_split allows. */
+    split: 'discovery' | 'held_out' | null;
     body: JsonObject;
     /** D27: the client file's summary for the simulator (client-summary.ts); null without one. */
     clientSummary?: string | null;

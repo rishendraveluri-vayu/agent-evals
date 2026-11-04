@@ -37,7 +37,7 @@
         "base_url": "http://litellm:4000/v1",
         "api_key_env": "EVALS_SIM_API_KEY",
         "temperature": null,
-        "max_output_tokens": 300,
+        "max_output_tokens": 2048,
         "prompt": {
           "id": "client-sim",
           "version": "sim-v1",

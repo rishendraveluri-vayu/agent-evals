@@ -75,7 +75,7 @@ Tasks, configs, experiments, trials and traces. **[Rishi designs]** in SP2.
 
 Approved on 4 Nov (R14): `docs/proposals/data-model.md`. Content-addressed prompts, toolsets, tasks and configs; experiments freeze task hashes × config hashes × N; one trial row per (experiment, task, config, repeat, attempt) with a claim, heartbeat and idempotent report; spans and grades in their own tables; labels stay files; raw trial files stay under `runs/`.
 
-Added with D22's reply cache (migration `002_sim_replies.sql`): a `sim_replies` table keyed by the simulator cache key, with the task sha256, simulator model, temperature, token cap and prompt sha256 it is scoped by and the trial that first produced each reply. A claim hands out every reply in its trial's scope; a report adds the trial's new ones, first reply per key kept.
+Added with D22's reply cache (migration `002_sim_replies.sql`): a `sim_replies` table keyed by the simulator cache key, with the task sha256, simulator model, temperature, token cap and prompt sha256 it is scoped by and the trial that first produced each reply. A claim hands out every reply in its trial's scope; a report adds the trial's new ones, first reply per key kept. An empty reply is never cached (D26, 4 Nov): the adapter marks it with `error` in `sim_replies.jsonl`, the report skips it, and a claim leaves out any empty reply stored before that rule, so a trial re-queued after `infra:sim_error` asks the simulator again.
 
 Added with D26 (migration `003_experiment_pause.sql`): an experiment status `paused`, with `paused_at`, `paused_reason` and `resumed_at`. A report labelled `infra:config_error` pauses a running experiment, so no more trials are claimed; `POST /experiments/:id/start` resumes it. `infra:config_error` and `infra:budget_net` attempts are never re-queued; the other infra labels are re-queued once (D16). Since D37 (migration 005), a config error pauses only its arm; the experiment status `paused` is for pauses by hand and D32's futility check and guards.
 
@@ -88,6 +88,13 @@ Added with D32, D34, D35, D37 and the guide review's platform item 8 (migration 
 - `experiments.futility` (the resolved rule) and `spend_guard_at` (the spend guard pauses once).
 - `experiment_events`: pauses, resumes, stops and the baseline decision, which the trial rows cannot show. Claim, failure and re-queue events are still derived from the trial rows.
 - `workers`: each worker's harness and when it was last seen (a claim, empty or not, or a heartbeat), so the estimate's time divides by the live workers per harness.
+
+Added with D33 and D38 (migration `006_probes_and_system_spend.sql`; 005 is the run-controls work):
+
+- **Probe trials.** `trials.experiment_id` may be null, and a `probe` flag marks a trial run outside any experiment to render a config's system prompt on the fake model (a check constraint ties the two). At most one live probe per config (a partial unique index). Probes are claimed through the normal worker protocol, ahead of experiment trials, and left out of estimates, the label queue and trial spend. They run a built-in task row, `prompt-probe`, that is not in the task catalogue.
+- **`rendered_prompts`**, one row per config hash: the normalised system text, its sha256, the tool names, our prompt's offsets and the harness's own text, from the config's first usable probe.
+- **`system_spend`**, one row per model call the platform makes itself: kind, model, status (`pending` with a worst-case reservation before the call, then `done` or `failed`), cost and tokens from LiteLLM's spend log, and a `ref` to what it was for. Allowances are computed from it.
+- **`conflict_checks`**: findings cached by (input sha256, checker prompt sha256, model), where the input hashes the rendered prompt, our prompt and the settings, with the spend row that paid for them.
 
 Interim, not a design decision: until SP2, the API reads finished trial folders from `RUNS_DIR` through a `TrialStore` interface (`apps/api/src/trials/trial-store.ts`), so the trace view and spend chart work now. SP2's database store replaces the file store behind the same interface.
 

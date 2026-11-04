@@ -7,7 +7,8 @@ import { locate } from './trial-files';
 
 interface Row {
   id: string;
-  experiment_id: string;
+  experiment_id: string | null;
+  probe: boolean;
   repeat_index: number;
   attempt: number;
   status: TrialStatus;
@@ -101,6 +102,7 @@ export class DbTrialsService {
     return {
       id: r.id,
       experiment_id: r.experiment_id,
+      probe: r.probe,
       task: { sha256: r.task_sha256, id: r.task_id, version: r.task_version, split: r.task_split, kind: r.task_kind, summary: r.task_summary },
       config: {
         hash: r.config_hash,

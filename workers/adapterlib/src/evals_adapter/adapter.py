@@ -534,10 +534,20 @@ class _Trial:
                 },
             )
             try:
-                reply = sim.next(visible)
+                reply = sim.next(visible, client_has_spoken=self.client_turns > 0)
             except SimulatorError as exc:
-                sim_span.end(ok=False, message=str(exc))
-                self.ended_by = "agent_end_state"
+                # D26: the simulator failed (its call, or a reply with no text), not the agent
+                # and not the client: the runner labels the trial infra:sim_error.
+                message = str(exc)
+                sim_span.set_attrs(
+                    {"evals.sim.cache_hit": exc.cache_hit, "evals.sim.cache_key": exc.key}
+                )
+                sim_span.event(
+                    "evals.error",
+                    {"evals.error.kind": exc.kind, "evals.error.message": message[:2000]},
+                )
+                sim_span.end(ok=False, message=message[:500])
+                self.ended_by = "sim_error"
                 return "harness_error", "simulator_error", exc
             sim_span.set_attrs(
                 {
@@ -553,7 +563,9 @@ class _Trial:
                 self.transcript.append(
                     {"role": "user", "content": reply.message, "source": "client_sim"}
                 )
-            if reply.done or reply.message is None:
+            # A reply with no message is the end marker alone after the client's own goodbye;
+            # any other empty reply raised SimulatorError above.
+            if reply.done:
                 self.ended_by = "client"
                 return "answered", turn.harness_stop_reason, None
             history.append({"role": "user", "content": reply.message})

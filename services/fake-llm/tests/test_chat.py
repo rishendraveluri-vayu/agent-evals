@@ -215,3 +215,29 @@ def test_scripted_tool_name_matches_a_prefixed_tool(client):
         body = post(client, chat_body("one-tool", tools=tools) if tools else chat_body("one-tool"))
         call = body["choices"][0]["message"]["tool_calls"][0]
         assert call["function"]["name"] == expected[case], case
+
+
+def test_sim_empty_replies_with_no_text(client):
+    """The simulated client that says nothing, for the adapter library's sim_error tests."""
+    messages = [
+        {"role": "system", "content": "You are the client."},
+        {"role": "assistant", "content": "I don't know where to start."},  # the opening message
+        {"role": "user", "content": "Tell me about your loans."},  # the agent's reply
+    ]
+    choice = post(client, chat_body("fake/sim-empty", messages=messages))["choices"][0]
+    assert choice["message"]["content"] == ""
+    assert choice["finish_reason"] == "stop"
+    assert "tool_calls" not in choice["message"]
+    # Every later turn is empty too.
+    later = [
+        *messages,
+        {"role": "assistant", "content": "OK."},
+        {"role": "user", "content": "Anything else?"},
+    ]
+    again = post(client, chat_body("fake/sim-empty", messages=later))["choices"][0]
+    assert again["message"]["content"] == ""
+    chunks, done = stream(client, chat_body("fake/sim-empty", messages=messages))
+    assert done
+    assert not reassemble(chunks)["content"]
+    steps = [r["step"] for r in client.get("/_fake/requests").json()["requests"]]
+    assert steps == [1, 1, 1]

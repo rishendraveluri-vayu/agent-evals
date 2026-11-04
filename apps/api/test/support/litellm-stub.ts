@@ -4,8 +4,9 @@ import type { AddressInfo } from 'node:net';
 
 /**
  * A stand-in for LiteLLM's management API, on a local port, so the tests never call the real
- * proxy with the master key. It answers the five calls the API makes, in the shapes LiteLLM
- * v1.99.4 uses, and records every call.
+ * proxy with the master key. It answers the management calls the API makes, in the shapes LiteLLM
+ * v1.99.4 uses, and chat completions for keys the API minted (the conflict check, D38) without
+ * calling any model. It records every call.
  */
 
 export const STUB_MASTER_KEY = 'sk-test-master-not-real';
@@ -63,7 +64,21 @@ export class LiteLlmStub {
     { model_group: 'unpriced-model', providers: ['openai'], input_cost_per_token: null, output_cost_per_token: null },
     // A name LangGraph rewrites requests for, for the config warning tests. Routed only: no real call.
     { model_group: 'gpt-5-mini', providers: ['openai'], input_cost_per_token: 0.00000025, output_cost_per_token: 0.000002 },
+    { model_group: 'claude-sonnet-5-5', providers: ['anthropic'], input_cost_per_token: 0.000002, output_cost_per_token: 0.00001 },
   ];
+
+  /**
+   * `/v1/chat/completions` for keys the API minted (never the master key), standing in for the
+   * provider: no real model is ever called. Each call logs one spend row for its key, as LiteLLM's
+   * spend log does, unless `chatLogsSpend` is false.
+   */
+  chatReply = '{"conflicts": [], "notes": ""}';
+  chatFinishReason = 'stop';
+  chatStatus = 200;
+  chatCostUsd = 0.0123;
+  chatUsage = { prompt_tokens: 3000, completion_tokens: 400 };
+  chatLogsSpend = true;
+  readonly chatCalls: { key: string; body: Record<string, unknown> }[] = [];
 
   async start(): Promise<void> {
     this.server = http.createServer((req, res) => void this.handle(req, res));
@@ -89,8 +104,33 @@ export class LiteLlmStub {
       res.writeHead(status, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(data));
     };
-    if (req.headers.authorization !== `Bearer ${STUB_MASTER_KEY}`) return send(401, { error: 'bad master key' });
     const b = (body ?? {}) as Record<string, unknown>;
+    if (req.method === 'POST' && url.pathname === '/v1/chat/completions') {
+      const bearer = (req.headers.authorization ?? '').replace(/^Bearer /, '');
+      const key = [...this.keys.values()].find((k) => k.key === bearer && !this.deleted.includes(k.token));
+      if (!key) return send(401, { error: 'unknown or revoked key' });
+      if (!key.models.includes(String(b.model))) return send(401, { error: `key may not call ${String(b.model)}` });
+      this.chatCalls.push({ key: bearer, body: b });
+      const requestId = `chatcmpl-${randomBytes(6).toString('hex')}`;
+      const ok = this.chatStatus === 200;
+      if (this.chatLogsSpend) {
+        const row = { request_id: requestId, status: ok ? 'success' : 'failure', spend: ok ? this.chatCostUsd : 0, model_group: b.model, ...this.chatUsage };
+        this.spendLogs.set(key.token, [...(this.spendLogs.get(key.token) ?? []), row]);
+      }
+      if (!ok) return send(this.chatStatus, { error: { message: 'stub provider error' } });
+      res.writeHead(200, { 'Content-Type': 'application/json', 'x-litellm-response-cost': String(this.chatCostUsd) });
+      res.end(
+        JSON.stringify({
+          id: requestId,
+          object: 'chat.completion',
+          model: b.model,
+          choices: [{ index: 0, message: { role: 'assistant', content: this.chatReply }, finish_reason: this.chatFinishReason }],
+          usage: { ...this.chatUsage, total_tokens: this.chatUsage.prompt_tokens + this.chatUsage.completion_tokens },
+        }),
+      );
+      return;
+    }
+    if (req.headers.authorization !== `Bearer ${STUB_MASTER_KEY}`) return send(401, { error: 'bad master key' });
     if (req.method === 'POST' && url.pathname === '/key/generate') {
       if (this.keyDelayMs) await new Promise((r) => setTimeout(r, this.keyDelayMs));
       if (this.failKeyGenerate) return send(this.failKeyGenerate, { error: 'stub refuses' });

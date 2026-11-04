@@ -104,7 +104,7 @@ steps:
 - **Fields that change on every response.** The completion `id` and `created` are different
   each time, so anything keyed on the response id never collides.
 
-Example scripts: `echo`, `two-tools`, `rate-limited` and `flaky-stream`. For the harness gate tests: `finance-emi` (one finance tool call, then an answer) and `finance-loop` (a tool call on every step, never an answer).
+Example scripts: `echo`, `two-tools`, `rate-limited` and `flaky-stream`. For the harness gate tests: `finance-emi` (one finance tool call, then an answer) and `finance-loop` (a tool call on every step, never an answer). For the simulated client: `sim-client` (two client replies, then the end marker) and `sim-empty` (a reply with no text, as Haiku 5.5 gave when its whole token cap went to reasoning; the adapter library must call it a simulator failure).
 
 ## Faults
 

@@ -329,12 +329,16 @@ def provider_label(last_status: str | None, result: dict[str, Any]) -> str | Non
 
 
 def label(launch_info: dict[str, Any], checked: dict[str, Any], proxy_usage: dict | None) -> str:
-    """Contract section 7, with D26's provider-error labels."""
+    """Contract section 7, with D26's provider-error labels. A conversation the simulated
+    client's failure ended (ended_by sim_error: its call failed or its reply had no text) is
+    infra:sim_error whatever the agent key's status, because the agent did not cause it (D26)."""
     if launch_info["signal"] is not None:
         return "infra:timeout_kill"
     result = checked["result"]
     if launch_info["exit_code"] != 0 or result is None:
         return "infra:adapter_crash"
+    if (result.get("conversation") or {}).get("ended_by") == "sim_error":
+        return "infra:sim_error"
     if result["end_state"] == "harness_error":
         infra = provider_label((proxy_usage or {}).get("last_status"), result)
         if infra is not None:
