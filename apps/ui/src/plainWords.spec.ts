@@ -207,3 +207,55 @@ describe('plain words with the example loaded and no keys set', () => {
     it(`the ${name} screen names no decision-log entry and no raw API path`, () => expectPlain(hash));
   }
 });
+
+/** A config's own field paths and raw keys (`settings.max_steps`, `settings_sources.…`,
+ *  `capabilities_sha256`): fine inside a Details disclosure, never in the main text. */
+const FIELD_PATH = /\b(?:settings|settings_sources|harness_options)\.[a-z_]+|\b(?:prompt|toolset)\.(?:id|version|sha256)\b|\bcapabilities_sha256\b|\bharness_ref\b|\badapter_version\b/;
+
+/** What a person reads with every Details disclosure left closed: each one's summary only. */
+async function mainText(hash: string): Promise<string> {
+  open(hash);
+  const w = mount(App, { attachTo: document.body });
+  await settle();
+  expect(w.find('main h1').exists()).toBe(true);
+  const root = document.body.cloneNode(true) as HTMLElement;
+  for (const d of root.querySelectorAll('details')) for (const child of [...d.children]) if (child.tagName !== 'SUMMARY') child.remove();
+  w.unmount();
+  return root.textContent ?? '';
+}
+
+/**
+ * The states the third fresh-clone QA reached (5 Nov): a run link whose ids are not saved agents,
+ * two agents one setting apart with the same name, and only the shipped example's configs saved.
+ */
+describe('plain words in the third QA’s states', () => {
+  const sample = configs as unknown as ConfigView[];
+  const fake = (steps: number, prefix: string): ConfigView => ({
+    ...sample[2],
+    hash: `sha256:${prefix}${'0'.repeat(64 - prefix.length)}`,
+    name: 'Prompt v1 on Own loop, Fake model finance-emi',
+    model: 'fake/finance-emi',
+    settings: { ...sample[2].settings, max_steps: steps },
+    parent_hash: null,
+  });
+  const ten = fake(10, '2cc0564');
+  const twelve = fake(12, 'fb19a82');
+  const example: ConfigView = { ...sample[2], hash: `sha256:90a6761${'0'.repeat(57)}`, name: 'v2 sim check, ownloop, haiku', toolset: { id: 'finance', version: 'all', sha256: `sha256:e8a33031${'0'.repeat(56)}` }, example_only: true };
+
+  const STATES: Record<string, { hash: string; configs?: ConfigView[] }> = {
+    'run setup, ids that are not saved agents': { hash: '#/run?a=sha256%3Anope&b=sha256%3Anope2' },
+    'run setup, two agents one setting apart': { hash: `#/run?a=${encodeURIComponent(ten.hash)}&b=${encodeURIComponent(twelve.hash)}`, configs: [...sample, ten, twelve] },
+    'run setup, the example against your own': { hash: `#/run?a=${encodeURIComponent(example.hash)}&b=${encodeURIComponent(sample[2].hash)}`, configs: [...sample, example] },
+    'config, only the example saved': { hash: '#/configs', configs: [example] },
+    'config, forking the example': { hash: `#/configs?fork=${encodeURIComponent(example.hash)}`, configs: [...sample, example] },
+    'running run': { hash: '#/experiments/exp_harness/run' },
+  };
+  for (const [name, state] of Object.entries(STATES)) {
+    it(`the ${name} screen names no decision-log entry, and no field path outside Details`, async () => {
+      if (state.configs) vi.spyOn(api, 'configs').mockResolvedValue(state.configs);
+      await expectPlain(state.hash);
+      const text = await mainText(state.hash);
+      expect(text.match(FIELD_PATH)?.[0] ?? null).toBeNull();
+    });
+  }
+});
