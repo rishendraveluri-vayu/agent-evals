@@ -21,6 +21,8 @@ const budget = ref<number | null>(null);
 const allowance = computed(() => spendView.value?.allowances.find((a) => a.kind === 'conflict_check') ?? null);
 
 const links: { section: Section; label: string; to: string }[] = [
+  { section: 'start', label: 'Start', to: href.start() },
+  { section: 'build', label: 'Build an agent', to: href.build() },
   { section: 'experiments', label: 'Experiments', to: href.experiments() },
   { section: 'configs', label: 'Configs', to: href.config() },
   { section: 'tasks', label: 'Tasks', to: href.tasks() },
@@ -107,7 +109,7 @@ onMounted(async () => {
 <template>
   <header class="top">
     <a
-      :href="href.experiments()"
+      :href="href.start()"
       class="brand"
     >
       <svg

@@ -6,6 +6,7 @@ export type IconName =
   | 'cross'
   | 'plug'
   | 'alert'
+  | 'info'
   | 'eye-off'
   | 'tool'
   | 'sun'
@@ -59,6 +60,14 @@ withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 20 });
         r="7"
       />
       <path d="M10 6v5M10 13.5v.5" />
+    </g>
+    <g v-else-if="name === 'info'">
+      <circle
+        cx="10"
+        cy="10"
+        r="7"
+      />
+      <path d="M10 9v4.5M10 6.5v.5" />
     </g>
     <g v-else-if="name === 'eye-off'">
       <path d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z" />

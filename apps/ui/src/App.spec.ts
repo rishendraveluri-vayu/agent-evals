@@ -114,6 +114,31 @@ describe('App in fixture mode', () => {
     expect(wrapper.get('main h1').text()).toBe('Page not found');
   });
 
+  it('opens on the front door, with the guided builder and the full platform each in the nav', async () => {
+    open('');
+    const wrapper = mount(App);
+    await settle();
+    expect(wrapper.get('main h1').text()).toBe('Evaluate an agent');
+    const current = () => wrapper.get('nav[aria-label="Main"] [aria-current="page"]').text();
+    expect(current()).toBe('Start');
+    expect(wrapper.get('.brand').attributes('href')).toBe('#/');
+    const nav = wrapper.findAll('nav[aria-label="Main"] a').map((a) => [a.text(), a.attributes('href')]);
+    expect(nav.slice(0, 3)).toEqual([
+      ['Start', '#/'],
+      ['Build an agent', '#/build'],
+      ['Experiments', '#/experiments'],
+    ]);
+    open('#/build');
+    await settle();
+    expect(wrapper.get('main h1').text()).toBe('Build an agent');
+    expect(current()).toBe('Build an agent');
+    open('#/experiments');
+    await settle();
+    expect(wrapper.get('main h1').text()).toBe('Experiments');
+    expect(current()).toBe('Experiments');
+    expect(wrapper.get('[data-test="build-agent"]').attributes('href')).toBe('#/build');
+  });
+
   it('switches to the dark theme when chosen, and back', async () => {
     const wrapper = mount(App);
     await settle();
