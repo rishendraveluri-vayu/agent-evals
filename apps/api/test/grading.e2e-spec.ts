@@ -316,7 +316,8 @@ describeWithDb('grading (e2e, real Postgres)', () => {
     const old = (await claimGrading())!;
     expect(old.task).toMatchObject({ grader_source: 'trial_task', sha256: tasks['emi-graded'] });
     expect(old.graders.map((g) => g.spec)).toEqual(GRADED_TASK.graders);
-    expect(old.grader_files).toEqual({ 'grader.py': null }); // the old grader.py is not known
+    // the old grader.py is not known; the rubric is not part of the task, so it is read as it is now (here: no such file)
+    expect(old.grader_files).toEqual({ 'grader.py': null, 'configs/rubrics/advice.v1.md': null });
     await report(old).expect(200);
     await writeTask(GRADED_TASK, GRADER_PY);
   });

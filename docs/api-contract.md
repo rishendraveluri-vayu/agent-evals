@@ -536,8 +536,18 @@ and `grades` (migration `007_grading.sql`).
 
 - **A grading job** is one grading of one trial with a frozen grader set: the task's grader specs,
   each with the API's `spec_sha256` (canonical JSON of `{spec, files}`, where `files` holds the
-  sha256 of a unit_test's grader file, or null when it is missing), and the grader files
-  themselves. Jobs are queued, at claim time, for every `done` trial (never a probe, never an infra
+  sha256 of each file the grader reads, or null when it is missing), and the grader files
+  themselves. A unit_test reads its grader file next to `task.json`, keyed by its name
+  (`grader.py`). A judge reads its rubric, keyed by its repo path: a string `rubric` is the path,
+  `{id, version}` is `configs/rubrics/<id>.<version>.md`, and the path must match
+  `^configs/rubrics/[A-Za-z0-9._-]+\.md$`, otherwise the judge has no file (no entry in `files`,
+  as for an invalid unit_test file name). The API reads it from its configs folder
+  (`CONFIGS_DIR`, the repo's `configs/` by default), only a regular file directly in
+  `rubrics/` (no `..`, no symlink), at most 256 KB, as raw bytes (a review header included).
+  So editing a rubric, like editing a grader.py, gives the judge a new `spec_sha256` and new
+  grade versions. A judge spec's hash input is, for example, `{"files":
+  {"configs/rubrics/open-coding.v0.md": "sha256:<hex of the file>"}, "spec": {...}}`. The rubric
+  is not part of the task, so it is read as it is now whichever task the graders come from. Jobs are queued, at claim time, for every `done` trial (never a probe, never an infra
   failure) that has none; a task with no graders gets a `no_graders` job with nothing to claim.
 - **Which graders.** The current `tasks/<id>/task.json` when it differs from the trial's task only
   in `graders`, `version` or `summary` (`grader_source: catalogue`), so a grader fix applies.

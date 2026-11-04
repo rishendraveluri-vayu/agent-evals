@@ -1,11 +1,12 @@
-import { readFileSync } from 'node:fs';
+import { promises as fs, readFileSync } from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type { Json, JsonObject } from '../contract';
 import type { AppConfig } from '../common/app-config';
 import type { TaskFile } from '../catalogue/catalogue-files';
 import type { Db } from '../database/db.service';
-import { type GraderEntry, graderSet, graderVersion, kindOf, outcomeOf, parseGradesReport, specSha256, taskCoreSha } from './grading-core';
-import { GradingService } from './grading.service';
+import { type GraderEntry, MAX_GRADER_FILE_BYTES, graderSet, graderVersion, kindOf, outcomeOf, parseGradesReport, rubricPathOf, specSha256, taskCoreSha } from './grading-core';
+import { GradingService, readRubricFile } from './grading.service';
 
 const REPO = path.resolve(__dirname, '../../../..');
 
@@ -37,6 +38,57 @@ describe('grader versions', () => {
     expect(missing.graders[0].spec_sha256).toBe(specSha256({ id: 'u', type: 'unit_test', file: 'checks.py' }, { 'checks.py': null }));
   });
 
+  it('resolves a judge rubric to one file under configs/rubrics, and nothing else', () => {
+    const judge = (rubric: Json): Json => ({ id: 'j', type: 'judge', rubric, criteria: ['c'] });
+    expect(rubricPathOf(judge('configs/rubrics/open-coding.v0.md'))).toBe('configs/rubrics/open-coding.v0.md');
+    expect(rubricPathOf(judge({ id: 'advice', version: 'v1' }))).toBe('configs/rubrics/advice.v1.md');
+    for (const bad of [
+      'configs/rubrics/../prompts/finance-advisor.v1.md',
+      '../configs/rubrics/a.md',
+      '/etc/passwd',
+      'configs/rubrics/a/b.md',
+      'configs/prompts/finance-advisor.v1.md',
+      'configs/rubrics/a.txt',
+      'configs/rubrics/a.md\n',
+      { id: '../../.env', version: 'v1' },
+      { id: 'a/b', version: 'v1' },
+      { id: 'a', version: 1 },
+      { id: 'a' },
+      null,
+    ] as Json[]) {
+      expect(rubricPathOf(judge(bad))).toBeNull();
+    }
+    expect(rubricPathOf({ id: 'u', type: 'unit_test', rubric: 'configs/rubrics/a.md' })).toBeNull();
+  });
+
+  it('puts a judge rubric in the grader set and its spec hash, keyed by its repo path', async () => {
+    const spec: Json = { id: 'overall', type: 'judge', required: false, rubric: 'configs/rubrics/open-coding.v0.md', criteria: [{ id: 'overall', text: 'Would a real client be well served?' }] };
+    const asked: string[] = [];
+    const repo = (text: string) => (p: string) => {
+      asked.push(p);
+      return Promise.resolve(p === 'configs/rubrics/open-coding.v0.md' ? Buffer.from(text) : null);
+    };
+    const set = await graderSet([spec], null, repo('test'));
+    expect(asked).toEqual(['configs/rubrics/open-coding.v0.md']);
+    expect(set.files).toEqual({ 'configs/rubrics/open-coding.v0.md': { sha256: 'sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08', base64: Buffer.from('test').toString('base64') } });
+    // The vector the Python framework must match (computed there with evals_graders.canonical).
+    expect(set.graders[0].spec_sha256).toBe('sha256:3fb79d03ffc238a0d18f86f5fe4e9afc885ca1b85097715919628d8964c7f225');
+    expect(graderVersion(set.graders[0].spec_sha256, '0.1.0')).toBe('sha256:5d37ab08a82f9dcadddc037f1908948fc017d2fec037813e0e2de6cba3e221b8');
+    // Editing the rubric is a new grader version; a missing rubric is null, as a missing grader.py.
+    const edited = await graderSet([spec], null, repo('test, edited'));
+    expect(edited.graders[0].spec_sha256).not.toBe(set.graders[0].spec_sha256);
+    const missing = await graderSet([spec], null, () => Promise.resolve(null));
+    expect(missing.files).toEqual({ 'configs/rubrics/open-coding.v0.md': null });
+    expect(missing.graders[0].spec_sha256).toBe(specSha256(spec, { 'configs/rubrics/open-coding.v0.md': null }));
+    // A rubric outside configs/rubrics is never asked for and adds no file, like a bad unit_test name.
+    asked.length = 0;
+    const outside: Json = { id: 'j', type: 'judge', rubric: 'configs/rubrics/../prompts/finance-advisor.v1.md', criteria: ['c'] };
+    const refused = await graderSet([outside], null, repo('test'));
+    expect(asked).toEqual([]);
+    expect(refused.files).toEqual({});
+    expect(refused.graders[0].spec_sha256).toBe(specSha256(outside, {}));
+  });
+
   it('maps types to the data model kinds', () => {
     expect(['number', 'regex_absent', 'tool_called', 'end_state', 'provenance', 'required_tools', 'unit_test', 'judge', 'nonsense', undefined].map(kindOf)).toEqual([
       'exact',
@@ -50,6 +102,43 @@ describe('grader versions', () => {
       'invalid',
       'invalid',
     ]);
+  });
+});
+
+describe('reading a rubric file', () => {
+  let tmp: string;
+  let configs: string;
+
+  beforeAll(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'evals-rubrics-'));
+    configs = path.join(tmp, 'configs');
+    await fs.mkdir(path.join(configs, 'rubrics'), { recursive: true });
+    await fs.mkdir(path.join(configs, 'prompts'), { recursive: true });
+    await fs.writeFile(path.join(configs, 'rubrics', 'tone.v1.md'), 'Be kind.');
+    await fs.writeFile(path.join(configs, 'prompts', 'secret.v1.md'), 'not a rubric');
+    await fs.writeFile(path.join(tmp, 'outside.md'), 'outside configs');
+    await fs.symlink(path.join(tmp, 'outside.md'), path.join(configs, 'rubrics', 'link.v1.md'));
+    await fs.writeFile(path.join(configs, 'rubrics', 'huge.v1.md'), Buffer.alloc(MAX_GRADER_FILE_BYTES + 1, 'a'));
+  });
+
+  afterAll(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  it('reads a file directly in configs/rubrics', async () => {
+    expect((await readRubricFile(configs, 'configs/rubrics/tone.v1.md'))?.toString()).toBe('Be kind.');
+    expect(await readRubricFile(configs, 'configs/rubrics/missing.v1.md')).toBeNull();
+  });
+
+  it.each([
+    ['a path out of the folder', 'configs/rubrics/../prompts/secret.v1.md'],
+    ['another configs folder', 'configs/prompts/secret.v1.md'],
+    ['a path above configs', 'configs/../outside.md'],
+    ['an absolute path', '/etc/passwd'],
+    ['a symlink out of the folder', 'configs/rubrics/link.v1.md'],
+    ['a file over the size cap', 'configs/rubrics/huge.v1.md'],
+  ])('refuses %s', async (_what, p) => {
+    expect(await readRubricFile(configs, p)).toBeNull();
   });
 });
 

@@ -23,6 +23,7 @@ import {
   type GraderFile,
   MAX_GRADER_FILE_BYTES,
   MAX_GRADING_CLAIMS,
+  RUBRIC_PATH,
   graderSet,
   outcomeOf,
   parseGradesReport,
@@ -70,6 +71,30 @@ const one = async <T>(q: Queryable, sql: string, params: unknown[]): Promise<T |
 
 const specsOf = (body: JsonObject): Json[] => (Array.isArray(body.graders) ? body.graders : []);
 
+/** A regular file of at most the grader file cap, never through a symlink; else null. */
+async function readCapped(file: string): Promise<Buffer | null> {
+  try {
+    const st = await fs.lstat(file);
+    if (!st.isFile() || st.size > MAX_GRADER_FILE_BYTES) return null;
+    return await fs.readFile(file);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A judge's rubric by its repo path (`configs/rubrics/<name>.md`), read from the API's configs
+ * folder (CONFIGS_DIR, the repo's configs/ by default), or null. Anything that is not one file
+ * directly in configs/rubrics/ is never read, whatever the path says.
+ */
+export async function readRubricFile(configsDir: string, repoPath: string): Promise<Buffer | null> {
+  if (!RUBRIC_PATH.test(repoPath)) return null;
+  const folder = path.resolve(configsDir, 'rubrics');
+  const file = path.resolve(configsDir, repoPath.slice('configs/'.length));
+  if (path.dirname(file) !== folder) return null;
+  return readCapped(file);
+}
+
 /**
  * Grading as its own step after the trial (R14). A grading job freezes which graders grade one
  * trial; the grader worker claims it over HTTP (D2), downloads the trial's stored files, grades
@@ -110,22 +135,20 @@ export class GradingService {
     return { source: 'trial_task', taskSha256: task.task_sha256, specs: specsOf(task.body), folder: null, note: why };
   }
 
-  private async readGraderFile(folder: string, name: string): Promise<Buffer | null> {
-    const file = path.join(folder, name);
-    try {
-      const st = await fs.lstat(file);
-      if (!st.isFile() || st.size > MAX_GRADER_FILE_BYTES) return null;
-      return await fs.readFile(file);
-    } catch {
-      return null;
-    }
+  private readGraderFile(folder: string, name: string): Promise<Buffer | null> {
+    return readCapped(path.join(folder, name));
   }
 
   /** Inserts one job for the trial; returns its status and where its graders came from. */
   private async queueJob(q: Queryable, task: TrialTaskRow, catalogue: TaskFile[], reason: 'trial_done' | 'regrade'): Promise<{ status: GradingJobStatus; source: Choice['source'] }> {
     const choice = this.choose(task, catalogue);
     const folder = choice.folder;
-    const set = await graderSet(choice.specs, folder ? (name) => this.readGraderFile(folder, name) : null);
+    // A rubric is not part of the task, so it is read as it is now whichever task the graders come from.
+    const set = await graderSet(
+      choice.specs,
+      folder ? (name) => this.readGraderFile(folder, name) : null,
+      (repoPath) => readRubricFile(this.config.configsDir, repoPath),
+    );
     const status: GradingJobStatus = set.graders.length ? 'queued' : 'no_graders';
     await q.query(
       `INSERT INTO grading_jobs (id, trial_id, reason, status, task_id, task_sha256, grader_source, source_note, graders, grader_files)
