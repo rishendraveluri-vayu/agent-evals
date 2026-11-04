@@ -13,7 +13,9 @@ from evals_adapter.gate import FakeServer, Gate
 
 from openai_agents_adapter.adapter import IMPLEMENTED
 
-CAPS_FILE = Path(__file__).resolve().parents[1] / "src" / "openai_agents_adapter" / "capabilities.json"
+CAPS_FILE = (
+    Path(__file__).resolve().parents[1] / "src" / "openai_agents_adapter" / "capabilities.json"
+)
 CAPS = json.loads(CAPS_FILE.read_text())
 GATE = Gate(
     harness="openai-agents",

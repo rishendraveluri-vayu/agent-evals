@@ -2,24 +2,33 @@
   "contract_version": "2",
   "harness": "openai-agents",
   "version": {
-    "package": "TODO",
-    "ref": "TODO"
+    "package": "openai-agents",
+    "ref": "0.24.0"
   },
   "model_api_formats": [
     "openai_chat"
   ],
   "settings": {
     "temperature": {
-      "supported": false,
-      "evidence": "none"
+      "supported": true,
+      "native": "ModelSettings.temperature",
+      "evidence": "probe:2026-11-04",
+      "default": null,
+      "observed": "unset: not sent; set to 0.37: sent as temperature"
     },
     "max_output_tokens": {
-      "supported": false,
-      "evidence": "none"
+      "supported": true,
+      "native": "ModelSettings.max_tokens",
+      "evidence": "probe:2026-11-04",
+      "default": null,
+      "observed": "unset: not sent; set to 777: sent as max_tokens"
     },
     "max_steps": {
-      "supported": false,
-      "evidence": "none"
+      "supported": true,
+      "native": "Runner.run max_turns, set per turn to the steps left",
+      "evidence": "probe:2026-11-04",
+      "extra_calls_at_limit": 0,
+      "observed": "max_steps 3: 3 model calls, end_state step_limit, harness counted 3"
     },
     "timeout_s": {
       "supported": true,
@@ -27,20 +36,26 @@
       "evidence": "declared:the adapter library's watchdog"
     },
     "parallel_tool_calls": {
-      "supported": false,
-      "evidence": "none"
+      "supported": true,
+      "native": "ModelSettings.parallel_tool_calls",
+      "evidence": "probe:2026-11-04",
+      "default": null,
+      "observed": "unset: not sent; set to False: sent as parallel_tool_calls"
     },
     "memory": {
       "supported": false,
-      "evidence": "none"
+      "observed": "a plain Agent has no memory; SDK sessions are opt-in and not used (earlier turns are carried in process as the input list)",
+      "evidence": "declared:no session, no SandboxAgent"
     },
     "skills": {
       "supported": false,
-      "evidence": "none"
+      "observed": "a plain Agent has no skills; they live in the opt-in SandboxAgent, which is not used",
+      "evidence": "declared:no such feature on Agent"
     },
     "compression": {
       "supported": false,
-      "evidence": "none"
+      "observed": "the SDK never compresses; the full input list is sent on every call",
+      "evidence": "declared:no such feature on Agent"
     }
   },
   "harness_options_schema": {
