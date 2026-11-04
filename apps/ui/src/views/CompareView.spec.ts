@@ -690,6 +690,42 @@ describe('CompareView: what arms A and B differ in, by name and value (QA round 
   });
 });
 
+describe('CompareView: the judge on a model whose key is not set (QA round 3, minor 1)', () => {
+  it('says which key the model needs and keeps Approve off, as the Build and Run screens do', async () => {
+    const { calls } = routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': null,
+      '/api/labels/queue?set=heldout': [],
+      '/api/models': [
+        { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 1, output_per_mtok: 5, key_set: false },
+        { name: 'gemini-3.8-flash', provider: 'gemini', input_per_mtok: 0.75, output_per_mtok: 3.75, key_set: true },
+      ],
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    await w.get('[data-test="judge-approve-open"]').trigger('click');
+    await settle();
+    expect(w.findAll('[data-test="judge-model-select"] option').map((o) => o.text())).toEqual(['Pick a model', 'Claude Haiku 5.5 (needs ANTHROPIC_API_KEY in .env)', 'Gemini 3.8 Flash']);
+    await w.get('[data-test="judge-model-select"]').setValue('claude-haiku-5-5');
+    await w.get('[data-test="judge-budget-input"]').setValue('2');
+    expect(w.get('[data-test="judge-key-problem"]').text()).toBe('Claude Haiku 5.5 needs ANTHROPIC_API_KEY in .env, then docker compose up -d. Until then the judge cannot call it, so judging stays off.');
+    const go = w.get('[data-test="judge-approve-go"]');
+    expect(go.attributes('disabled')).toBeDefined();
+    expect(go.attributes('aria-describedby')).toBe('judge-key-problem');
+    // Said once, under the model, not again under the buttons.
+    expect(w.find('[data-test="judge-approve-blocked"]').exists()).toBe(false);
+    await w.get('[data-test="judge-approve"]').trigger('submit');
+    await settle();
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+    // A model whose key is set can be approved.
+    await w.get('[data-test="judge-model-select"]').setValue('gemini-3.8-flash');
+    expect(w.find('[data-test="judge-key-problem"]').exists()).toBe(false);
+    expect(w.get('[data-test="judge-approve-go"]').attributes('disabled')).toBeUndefined();
+  });
+});
+
 describe('CompareView: a link to an experiment that does not exist (QA round 3, minor 6)', () => {
   useFixtures();
 
