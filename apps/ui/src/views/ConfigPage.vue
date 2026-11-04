@@ -7,14 +7,15 @@
 import { computed, ref, shallowRef } from 'vue';
 import { api } from '../api/client';
 import { ApiError, errorWithFix } from '../api/errors';
-import { SETTING_NAMES, type ConfigDiffEntry, type ConfigView, type Harness, type RenderedPromptStatus, type SettingName, type SpendView } from '../api/types';
+import { SETTING_NAMES, type ConfigDiffEntry, type ConfigView, type Harness, type ModelView, type RenderedPromptStatus, type SettingName, type SpendView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import ConflictCheck from '../components/ConflictCheck.vue';
 import LoadState from '../components/LoadState.vue';
 import RenderedPrompt from '../components/RenderedPrompt.vue';
 import { optional, useLoad } from '../lib/async';
-import { relative, shortHash, shortRef } from '../lib/format';
+import { plainText, relative, shortHash, shortRef } from '../lib/format';
 import { harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
+import { missingKey, needsKeyWords } from '../lib/runSetup';
 import { settingValue, sourceWords } from '../lib/settings';
 import { href } from '../router';
 import { text } from '../trials';
@@ -33,14 +34,22 @@ async function configOrMissing(hash: string) {
 }
 
 const { data, error, loading } = useLoad(async () => {
-  const [config, configs, harnesses, spend] = await Promise.all([
+  const [config, configs, harnesses, spend, models] = await Promise.all([
     configOrMissing(props.configHash),
     optional(api.configs(), [] as ConfigView[]),
     optional(api.harnesses(), [] as Harness[]),
     optional(api.spend(), null as SpendView | null),
+    // Only to say which keys are missing (key_set); the page works without it.
+    optional(api.models(), [] as ModelView[]),
   ]);
-  return { config, configs, harness: harnesses.find((h) => h.name === config.harness) ?? null, spend };
+  return { config, configs, harness: harnesses.find((h) => h.name === config.harness) ?? null, spend, models };
 });
+
+/** The model the conflict check calls (D38). */
+const CHECKER_MODEL = 'claude-sonnet-5-5';
+/** "needs ANTHROPIC_API_KEY in .env" for this config's model, when its key is not set. */
+const modelNeedsKey = computed(() => (data.value ? needsKeyWords(data.value.config.model, data.value.models) : ''));
+const checkerKey = computed(() => (data.value ? missingKey(CHECKER_MODEL, data.value.models) : null));
 
 const parent = computed(() => {
   const c = data.value?.config;
@@ -63,7 +72,8 @@ const rows = computed(() => {
       source: sourceWords(source, harnessShort(c.harness), cap),
       reason,
       ignored: source === 'unsupported' || !!reason,
-      native: cap?.supported ? (cap.native ?? null) : null,
+      // The adapter's own words, without its references to the decision log ("(D36)").
+      native: cap?.supported && cap.native ? plainText(cap.native) : null,
     };
   });
 });
@@ -142,6 +152,20 @@ async function refreshSpend() {
             Config <span class="mono">{{ shortHash(data.config.hash) }}</span> · {{ harnessName(data.config.harness) }} <span class="mono">{{ shortRef(data.config.harness_ref) }}</span> · {{ modelName(data.config.model) }} ·
             prompt {{ data.config.prompt.id }} {{ data.config.prompt.version }} · toolset {{ data.config.toolset.id }} {{ data.config.toolset.version }} · saved {{ relative(data.config.created_at).toLowerCase() }}
           </p>
+          <p
+            v-if="modelNeedsKey"
+            class="small needs-key"
+            data-test="config-needs-key"
+          >
+            {{ modelName(data.config.model) }} {{ modelNeedsKey }} to run: it is not set. Add it, then run <span class="mono">docker compose up -d</span>.
+          </p>
+          <p
+            v-if="data.config.example_only"
+            class="small example-note"
+            data-test="config-example-only"
+          >
+            This config came with the shipped example, made elsewhere with the files of its day, and is kept as it was run. To run it again, fork it: the fork starts with today's prompt and tools where these are gone.
+          </p>
         </div>
         <div class="actions">
           <a
@@ -150,8 +174,10 @@ async function refreshSpend() {
             data-test="fork"
           >Fork this config</a>
           <a
+            v-if="!data.config.example_only"
             :href="href.runNew(parent?.hash, data.config.hash)"
             class="btn btn--quiet"
+            data-test="set-up-run"
           >Set up a run</a>
         </div>
       </div>
@@ -396,6 +422,7 @@ async function refreshSpend() {
           :harness="data.config.harness"
           :rendered-status="renderedStatus"
           :allowance="allowance"
+          :key-missing="checkerKey"
           @spent="refreshSpend"
         />
       </div>
@@ -411,6 +438,16 @@ async function refreshSpend() {
 
 .meta {
   margin-top: 6px;
+}
+
+.needs-key,
+.example-note {
+  margin: 8px 0 0;
+  max-width: 72ch;
+}
+
+.needs-key {
+  font-weight: 600;
 }
 
 .actions {

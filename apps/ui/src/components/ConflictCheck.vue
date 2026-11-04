@@ -18,7 +18,14 @@ import AppIcon from './AppIcon.vue';
  *  it: null while it is loading, `unknown` when it could not be read. The stored check is asked for
  *  only once the rendered prompt is ready, since the check reads it: before that the API can only
  *  answer 409, which would be noise on every visit. */
-const props = defineProps<{ configHash: string; harness: string; renderedStatus: RenderedPromptStatus | 'unknown' | null; allowance: AllowanceView | null }>();
+const props = defineProps<{
+  configHash: string;
+  harness: string;
+  renderedStatus: RenderedPromptStatus | 'unknown' | null;
+  allowance: AllowanceView | null;
+  /** The .env variable the checker model's key is missing from (GET /models' key_set); null when set or not known. */
+  keyMissing?: string | null;
+}>();
 const emit = defineEmits<{ spent: [] }>();
 
 type State = { kind: 'loading' } | { kind: 'none' } | { kind: 'needs-render' } | { kind: 'error'; text: string } | { kind: 'ready'; check: ConflictCheckView };
@@ -160,7 +167,8 @@ const who = computed(() => harnessShort(props.harness));
         <button
           type="button"
           class="btn btn--quiet"
-          :disabled="!renderedReady"
+          :disabled="!renderedReady || !!keyMissing"
+          :aria-describedby="keyMissing ? 'check-needs-key' : undefined"
           data-test="run-check"
           @click="confirming = true"
         >
@@ -212,6 +220,14 @@ const who = computed(() => harnessShort(props.harness));
           </button>
         </div>
       </div>
+      <p
+        v-if="keyMissing && !confirming"
+        id="check-needs-key"
+        class="small needs-key"
+        data-test="check-needs-key"
+      >
+        The check calls {{ modelName('claude-sonnet-5-5') }}, which needs <span class="mono">{{ keyMissing }}</span> in <span class="mono">.env</span>. Add it, then run <span class="mono">docker compose up -d</span> and reload this page.
+      </p>
     </template>
 
     <template v-else-if="state.kind === 'ready'">
@@ -331,6 +347,11 @@ const who = computed(() => harnessShort(props.harness));
   align-items: center;
   gap: 8px 12px;
   margin: 8px 0;
+}
+
+.needs-key {
+  margin: 0 0 8px;
+  max-width: 72ch;
 }
 
 .confirm {

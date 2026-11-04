@@ -182,4 +182,49 @@ describe('ConfigPage: the conflict check (D38)', () => {
     await settle();
     expect(w.get('[data-test="check-error"]').text()).toBe('the conflict-check allowance of $2 is used up. Ask Rishi to raise EVALS_CONFLICT_CHECK_ALLOWANCE_USD.');
   });
+
+  it('reads "no check stored" from a 200 null, so an unchecked config logs no error', async () => {
+    const stored = vi.spyOn(api, 'conflictCheck');
+    const w = mount(ConfigPage, { props: { configHash: gemini.hash } });
+    await settle();
+    expect(await stored.mock.results[0]?.value).toBeNull();
+    expect(w.get('[data-test="check-state"]').text()).toBe('This config has not been checked yet.');
+    expect(w.find('[data-test="run-check"]').attributes('disabled')).toBeUndefined();
+  });
+
+  it('turns the paid check off while the checker’s key is not set, and says what to add', async () => {
+    vi.spyOn(api, 'models').mockResolvedValue([
+      { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false },
+      { name: 'claude-sonnet-5-5', provider: 'anthropic', input_per_mtok: 2, output_per_mtok: 10, key_set: false },
+    ]);
+    const run = vi.spyOn(api, 'runConflictCheck');
+    const w = mount(ConfigPage, { props: { configHash: gemini.hash } });
+    await settle();
+    expect(w.get('[data-test="run-check"]').attributes('disabled')).toBeDefined();
+    expect(w.get('[data-test="check-needs-key"]').text()).toBe(
+      'The check calls Claude Sonnet 5.5, which needs ANTHROPIC_API_KEY in .env. Add it, then run docker compose up -d and reload this page.',
+    );
+    await w.get('[data-test="run-check"]').trigger('click');
+    expect(w.find('[data-test="confirm-check"]').exists()).toBe(false);
+    expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConfigPage: keys and the shipped example', () => {
+  it('says when the config’s own model needs a key that is not set', async () => {
+    vi.spyOn(api, 'models').mockResolvedValue([{ name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false }]);
+    const w = mount(ConfigPage, { props: { configHash: v1.hash } });
+    await settle();
+    expect(w.get('[data-test="config-needs-key"]').text()).toBe('Claude Haiku 5.5 needs ANTHROPIC_API_KEY in .env to run: it is not set. Add it, then run docker compose up -d.');
+  });
+
+  it('offers a shipped example’s config to fork, not to run again, and says why', async () => {
+    const example: Config = { ...own, hash: `sha256:90a6761${'0'.repeat(57)}`, name: 'v2 sim check, ownloop, haiku', example_only: true, parent_hash: null };
+    vi.spyOn(api, 'config').mockResolvedValue({ ...example, children: [] });
+    const w = mount(ConfigPage, { props: { configHash: example.hash } });
+    await settle();
+    expect(w.get('[data-test="config-example-only"]').text()).toContain('This config came with the shipped example');
+    expect(w.get('[data-test="fork"]').attributes('href')).toBe(`#/configs?fork=${encodeURIComponent(example.hash)}`);
+    expect(w.find('[data-test="set-up-run"]').exists()).toBe(false);
+  });
 });
