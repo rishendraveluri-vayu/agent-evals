@@ -19,5 +19,6 @@ export default defineConfig({
     include: ['src/**/*.spec.ts'],
     restoreMocks: true,
     unstubGlobals: true,
+    unstubEnvs: true,
   },
 });

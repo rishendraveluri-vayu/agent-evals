@@ -19,6 +19,20 @@ onMounted(async () => {
 </script>
 
 <template>
+  <div class="page-head">
+    <nav
+      aria-label="Breadcrumb"
+      class="crumbs"
+    >
+      <a href="#/">Experiments</a> / Recorded runs
+    </nav>
+    <h1 tabindex="-1">
+      Recorded runs
+    </h1>
+    <p class="lede">
+      Gate and smoke runs recorded outside any experiment, read from their trial folders. Spend comes from LiteLLM's own records.
+    </p>
+  </div>
   <section
     class="card"
     aria-labelledby="spend-heading"
@@ -172,7 +186,7 @@ onMounted(async () => {
             {{ t.proxyCalls ?? '–' }} / {{ t.harnessCalls ?? '–' }}<span
               v-if="t.proxyComplete === false"
               title="LiteLLM's log never caught up: not trusted"
-            > ⚠</span>
+            > (log incomplete)</span>
           </td>
           <td class="num">
             {{ t.toolCalls ?? '–' }} ({{ t.toolErrors ?? 0 }})

@@ -15,7 +15,7 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 - Memory on vs off also changes tools and prompt. Enabling memory and skills together added about 2k tokens per call, estimated as chars / 4.
 - The Hermes repo changes daily, so results apply only to the pinned SHA.
 - The prompt also carries the kernel release, user home, working directory, scratch path, an environment-probe line and a git snapshot. Byte-identical prompts across concurrent trials need fixed paths per trial, which in practice means a container. The calendar date cannot be fixed, so arms should be interleaved in time.
-- Prompt-cache markers are sent only when the proxy hostname contains `litellm` and the model name contains `claude`. Cost and latency comparisons across model families are therefore affected by caching for Claude only.
+- Prompt-cache markers are sent only when the proxy hostname contains `litellm` and the model name contains `claude`. Cost and latency comparisons across model families are therefore affected by caching for Claude only. Markers change cost and latency, not the reply: Anthropic's prompt-caching documentation says caching "has no effect on output token generation" and the response is identical to an uncached one (platform.claude.com/docs/en/build-with-claude/prompt-caching, read 4 Nov 2026). The trial page's settings table says so on the markers row.
 - The extra summary call Hermes makes at `max_iterations` is missing from its own token and cost totals. Cost must come from the LiteLLM log, or Hermes trials that hit the step cap are undercounted.
 - Compression, if left on, rewrites the transcript. The final message list is then not the full trajectory.
 - With the MCP route, Hermes shows the model prefixed tool names and wraps tool results in an "untrusted" block with no switch to turn it off. A cross-harness comparison includes that difference.
@@ -85,6 +85,10 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 - Loans that cannot be scheduled in whole paise are rejected rather than approximated: an EMI that rounds to ₹0, an EMI below the first month's interest, a loan that would clear early, or a final payment above twice the EMI. Tasks must avoid such inputs.
 - Tool schemas leave the server identical for every client, but harnesses rewrite them before the model sees them (LangGraph strips titles and inlines references; ADK wraps descriptions). The schemas are kept flat to minimise this, and the tool test compares what actually reaches the model.
 - The MCP SDK orders `inputSchema` keys differently under protocol 2026-07-28 than under 2025-11-25. Content is identical; every known harness negotiates 2025-11-25.
+
+## Labelling UI (SP7)
+
+- Labelling is blind only when it is done from the Label page. While held-out outputs remain to label, the Judge page keeps the judge's reasons closed, and a trial page hides the judge's quotes, rationale and highlights for any task with an output still in the queue and never says where your label disputes the judge. Trial pages still show the judge's Pass or Fail on every check, and the hiding matches tasks by the queue item's `task_id`, which is not in the API contract: if the API leaves it out, trial pages show the judge's reasons for every task.
 
 ## To check before submission
 

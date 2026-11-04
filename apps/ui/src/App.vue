@@ -1,148 +1,115 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { fetchHealth, type DbState, type HealthResult } from './health';
-import TrialView from './views/TrialView.vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue';
+import AppHeader from './components/AppHeader.vue';
+import { currentHash, href, parseHash, sectionOf } from './router';
+import CompareView from './views/CompareView.vue';
+import ConfigView from './views/ConfigView.vue';
+import ExperimentsView from './views/ExperimentsView.vue';
+import HarnessesView from './views/HarnessesView.vue';
+import JudgeView from './views/JudgeView.vue';
+import LabelView from './views/LabelView.vue';
+import RunView from './views/RunView.vue';
+import TasksView from './views/TasksView.vue';
 import TrialsView from './views/TrialsView.vue';
+import TrialView from './views/TrialView.vue';
 
-const result = ref<HealthResult | null>(null);
-const hash = ref(typeof window === 'undefined' ? '' : window.location.hash);
-
-const dbLabels: Record<DbState, string> = {
-  up: 'up',
-  down: 'down',
-  not_configured: 'not configured',
-};
-
-/** #/trials/<id> shows one trial; anything else shows the list. */
-const trialId = computed(() => {
-  const m = /^#\/trials\/(.+)$/.exec(hash.value);
-  return m ? decodeURIComponent(m[1]) : null;
-});
+const route = computed(() => parseHash(currentHash.value));
+const section = computed(() => sectionOf(route.value));
 
 const onHash = () => {
-  hash.value = window.location.hash;
+  currentHash.value = window.location.hash;
 };
 
-onMounted(async () => {
-  window.addEventListener('hashchange', onHash);
-  result.value = await fetchHealth();
-});
+/** The skip link cannot use #main: the hash is the route. */
+function skipToContent() {
+  document.getElementById('main')?.focus();
+}
 
+onMounted(() => window.addEventListener('hashchange', onHash));
 onBeforeUnmount(() => window.removeEventListener('hashchange', onHash));
+
+// A new screen starts at the top, and focus moves to its main heading for screen readers.
+watch(
+  () => currentHash.value.split('?')[0],
+  async () => {
+    window.scrollTo?.(0, 0);
+    await nextTick();
+    document.querySelector<HTMLElement>('main h1')?.focus({ preventScroll: true });
+  },
+);
 </script>
 
 <template>
-  <main class="page">
-    <header class="top">
-      <h1>Agent Evals Platform</h1>
-      <section
-        class="health"
-        aria-labelledby="health-heading"
-      >
-        <h2
-          id="health-heading"
-          class="visually-hidden"
-        >
-          API health
-        </h2>
-        <p
-          v-if="result === null"
-          class="state"
-          data-test="health-loading"
-          role="status"
-        >
-          Checking the API…
-        </p>
-        <p
-          v-else-if="result.kind === 'unreachable'"
-          class="state state--error"
-          data-test="health-unreachable"
-          role="alert"
-        >
-          API unreachable ({{ result.reason }})
-        </p>
-        <dl
-          v-else
-          class="facts"
-          data-test="health-ok"
-        >
-          <dt>API</dt>
-          <dd data-test="health-status">
-            {{ result.health.status }}
-          </dd>
-          <dt>Database</dt>
-          <dd
-            data-test="health-db"
-            :class="{ 'state--error': result.health.db === 'down' }"
-          >
-            {{ dbLabels[result.health.db] }}
-          </dd>
-        </dl>
-      </section>
-    </header>
-
-    <TrialView
-      v-if="trialId"
-      :key="trialId"
-      :trial-id="trialId"
+  <a
+    class="skip"
+    :href="currentHash || '#/'"
+    @click.prevent="skipToContent"
+  >Skip to content</a>
+  <AppHeader :section="section" />
+  <main
+    id="main"
+    class="page-main"
+    tabindex="-1"
+  >
+    <ExperimentsView v-if="route.name === 'experiments'" />
+    <ConfigView v-else-if="route.name === 'config'" />
+    <RunView
+      v-else-if="route.name === 'run-new'"
+      :key="`new-${route.a}-${route.b}`"
+      :a="route.a"
+      :b="route.b"
     />
-    <TrialsView v-else />
+    <RunView
+      v-else-if="route.name === 'run'"
+      :key="`run-${route.id}`"
+      :experiment-id="route.id"
+    />
+    <CompareView
+      v-else-if="route.name === 'compare'"
+      :key="`compare-${route.id}`"
+      :experiment-id="route.id"
+    />
+    <TrialView
+      v-else-if="route.name === 'trial'"
+      :key="`trial-${route.id}`"
+      :trial-id="route.id"
+    />
+    <TrialsView v-else-if="route.name === 'recorded'" />
+    <LabelView v-else-if="route.name === 'labels'" />
+    <JudgeView v-else-if="route.name === 'judge'" />
+    <HarnessesView v-else-if="route.name === 'harnesses'" />
+    <TasksView v-else-if="route.name === 'tasks'" />
+    <div
+      v-else
+      class="page-head"
+    >
+      <h1 tabindex="-1">
+        Page not found
+      </h1>
+      <p class="lede">
+        Nothing lives at {{ route.path }}. <a :href="href.experiments()">Go to the experiments</a>
+      </p>
+    </div>
   </main>
 </template>
 
 <style scoped>
-.page {
-  max-width: 72rem;
-  margin: 1.5rem auto;
-  padding: 0 1rem;
-}
-
-.top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
-}
-
-h1 {
-  font-size: 1.4rem;
-  margin: 0;
-}
-
-.health {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-}
-
-.health p {
-  margin: 0;
-}
-
-.facts {
-  display: flex;
-  gap: 0.4rem;
-  margin: 0;
-}
-
-.facts dt {
-  font-weight: 600;
-}
-
-.facts dd {
-  margin: 0 0.75rem 0 0;
-}
-
-.state--error {
-  color: var(--critical);
-}
-
-.visually-hidden {
+.skip {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
+  left: 8px;
+  top: -60px;
+  padding: 10px 14px;
+  background: var(--primary);
+  color: var(--on-primary);
+  border-radius: 8px;
+  z-index: 20;
+}
+
+.skip:focus {
+  top: 8px;
+}
+
+main:focus {
+  outline: none;
 }
 </style>

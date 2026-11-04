@@ -1,0 +1,78 @@
+[
+  {
+    "spanId": "aaaaaaaaaaaaaaa1",
+    "parentSpanId": null,
+    "name": "invoke_agent hermes",
+    "kind": 1,
+    "startNs": "1793878272000000000",
+    "endNs": "1793878279900000000",
+    "statusCode": 1,
+    "statusMessage": null,
+    "attributes": {},
+    "events": []
+  },
+  {
+    "spanId": "aaaaaaaaaaaaaaa2",
+    "parentSpanId": "aaaaaaaaaaaaaaa1",
+    "name": "agent.turn",
+    "kind": 1,
+    "startNs": "1793878277200000000",
+    "endNs": "1793878279600000000",
+    "statusCode": 1,
+    "statusMessage": null,
+    "attributes": {
+      "evals.turn.index": 0
+    },
+    "events": []
+  },
+  {
+    "spanId": "aaaaaaaaaaaaaaa3",
+    "parentSpanId": "aaaaaaaaaaaaaaa2",
+    "name": "chat fake/scripted",
+    "kind": 1,
+    "startNs": "1793878277210000000",
+    "endNs": "1793878277400000000",
+    "statusCode": 1,
+    "statusMessage": null,
+    "attributes": {
+      "evals.role": "agent",
+      "gen_ai.usage.input_tokens": 1180,
+      "gen_ai.usage.output_tokens": 40,
+      "evals.cost_usd": 0.001262
+    },
+    "events": []
+  },
+  {
+    "spanId": "aaaaaaaaaaaaaaa4",
+    "parentSpanId": "aaaaaaaaaaaaaaa2",
+    "name": "execute_tool calculate_emi",
+    "kind": 1,
+    "startNs": "1793878277400000000",
+    "endNs": "1793878277430000000",
+    "statusCode": 1,
+    "statusMessage": null,
+    "attributes": {
+      "gen_ai.tool.name": "calculate_emi",
+      "evals.tool.arguments": "{\"principal\": 1000000, \"annual_rate_percent\": 9, \"years\": 20}",
+      "evals.tool.result": "{\"emi\": \"8997.26\"}"
+    },
+    "events": []
+  },
+  {
+    "spanId": "aaaaaaaaaaaaaaa5",
+    "parentSpanId": "aaaaaaaaaaaaaaa2",
+    "name": "chat fake/scripted",
+    "kind": 1,
+    "startNs": "1793878277440000000",
+    "endNs": "1793878279590000000",
+    "statusCode": 1,
+    "statusMessage": null,
+    "attributes": {
+      "evals.role": "agent",
+      "gen_ai.usage.input_tokens": 1230,
+      "gen_ai.usage.output_tokens": 56,
+      "evals.cost_usd": 0.00134
+    },
+    "events": []
+  }
+]

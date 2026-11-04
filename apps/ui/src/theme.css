@@ -1,92 +1,811 @@
-/* Colour roles for the whole UI. Values from the data-viz reference palette (validated light
-   and dark); charts use the roles, never raw hex. */
+/* Design tokens for the whole UI (SP7 design, approved 4 Nov). Colour always carries meaning:
+   arm A is blue, arm B is orange, pass is green, fail is red, infra is dashed grey with an icon.
+   Pass green and fail red belong to graded outcomes only (theme.spec.ts lists where they may be
+   used); error messages use --error, which takes the fail red but is its own name.
+   Blue is kept for arm A and dashes for infra (and zero lines): links, focus rings and running
+   indicators are ink.
+   The dark theme is chosen by the viewer (header toggle, or ?theme=dark), never flipped
+   automatically, and has its own steps of the same palette. theme.spec.ts checks the contrast
+   of every text pair below in both themes. */
 :root {
   color-scheme: light;
-  --page: #f9f9f7;
-  --surface-1: #fcfcfb;
-  --surface-2: #f0efec;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #898781;
-  --grid: #e1e0d9;
-  --axis: #c3c2b7;
-  --border: #e1e0d9;
-  --link: #256abf;
-  --series-1: #2a78d6;
-  --series-2: #eb6834;
-  --series-3: #1baf7a;
-  --series-4: #eda100;
-  --series-5: #e87ba4;
-  --series-6: #008300;
-  --neutral-mark: #c3c2b7;
-  --neutral-mark-strong: #898781;
-  --good: #0ca30c;
-  --warning: #fab219;
-  --critical: #d03b3b;
-}
+  --ground: #f6f8fa;
+  --surface: #ffffff;
+  --surface-muted: #eef1f4;
+  --track: #e3e8ed;
+  --rule: #d8dee4;
+  --rule-soft: #eef1f4;
+  --rule-strong: #8c959f;
+  --rule-dashed: #afb8c1;
+  --ink: #1f2328;
+  --ink-2: #57606a;
+  --link: var(--ink);
+  --link-hover: var(--ink);
+  --focus: var(--ink);
+  --primary: #1f2328;
+  --on-primary: #ffffff;
+  --arm-a: #2f5bd3;
+  --arm-a-soft: #eaf0fc;
+  --arm-a-ink: #2f5bd3;
+  --arm-b: #c2570c;
+  --arm-b-soft: #fbede3;
+  --arm-b-ink: #a8490a;
+  --pass: #1a7f37;
+  --pass-soft: #e8f5ec;
+  --on-pass: #ffffff;
+  --fail: #b4232b;
+  --fail-soft: #fdeded;
+  --fail-cell: #fbd5d7;
+  --error: var(--fail);
+  --neutral-dot: #57606a;
+  --neutral-line: #8c959f;
+  /* The client is told apart by its muted bubble and its place on the left, not by a hue. */
+  --client: var(--ink-2);
+  --span-agent: #3d444d;
+  --mark: #fdeded;
 
-@media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme='light'])) {
-    color-scheme: dark;
-    --page: #0d0d0d;
-    --surface-1: #1a1a19;
-    --surface-2: #262624;
-    --text-primary: #f0efec;
-    --text-secondary: #c3c2b7;
-    --text-muted: #898781;
-    --grid: #2c2c2a;
-    --axis: #383835;
-    --border: #2c2c2a;
-    --link: #6da7ec;
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --series-3: #199e70;
-    --series-4: #c98500;
-    --series-5: #d55181;
-    --series-6: #008300;
-    --neutral-mark: #4a4a46;
-    --neutral-mark-strong: #898781;
-  }
+  /* Older names, kept so the spend chart and the recorded-runs list keep their colours. */
+  --page: var(--ground);
+  --surface-1: var(--surface);
+  --surface-2: var(--surface-muted);
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-2);
+  --text-muted: var(--ink-2);
+  --grid: var(--rule-soft);
+  --axis: var(--rule);
+  --border: var(--rule);
+  --series-1: #2f5bd3;
+  --series-2: #c2570c;
+  --series-3: #1b7c83;
+  --series-4: #8250df;
+  --series-5: #b35c8a;
+  --series-6: #57606a;
+  --neutral-mark: #c9d1d9;
+  --neutral-mark-strong: #8c959f;
+  --warning: #9a6700;
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --page: #0d0d0d;
-  --surface-1: #1a1a19;
-  --surface-2: #262624;
-  --text-primary: #f0efec;
-  --text-secondary: #c3c2b7;
-  --text-muted: #898781;
-  --grid: #2c2c2a;
-  --axis: #383835;
-  --border: #2c2c2a;
-  --link: #6da7ec;
-  --series-1: #3987e5;
-  --series-2: #d95926;
-  --series-3: #199e70;
-  --series-4: #c98500;
-  --series-5: #d55181;
-  --series-6: #008300;
-  --neutral-mark: #4a4a46;
-  --neutral-mark-strong: #898781;
+  --ground: #0e1116;
+  --surface: #161b22;
+  --surface-muted: #212830;
+  --track: #2a3038;
+  --rule: #30363d;
+  --rule-soft: #232a32;
+  --rule-strong: #6e7781;
+  --rule-dashed: #545d68;
+  --ink: #e6edf3;
+  --ink-2: #9ba6b2;
+  --link: var(--ink);
+  --link-hover: var(--ink);
+  --focus: var(--ink);
+  --primary: #e6edf3;
+  --on-primary: #0e1116;
+  --arm-a: #6f93f2;
+  --arm-a-soft: #1b2540;
+  --arm-a-ink: #8eabf5;
+  --arm-b: #e5814a;
+  --arm-b-soft: #33200f;
+  --arm-b-ink: #ee9563;
+  --pass: #4ac26b;
+  --pass-soft: #12281a;
+  --on-pass: #0e1116;
+  --fail: #f2766e;
+  --fail-soft: #341618;
+  --fail-cell: #4a1c20;
+  --neutral-dot: #9ba6b2;
+  --neutral-line: #6e7781;
+  --client: var(--ink-2);
+  --span-agent: #aab4bf;
+  --mark: #341618;
+
+  --series-1: #6f93f2;
+  --series-2: #e5814a;
+  --series-3: #39a8b0;
+  --series-4: #a887ee;
+  --series-5: #d580ad;
+  --series-6: #9ba6b2;
+  --neutral-mark: #3a424c;
+  --neutral-mark-strong: #6e7781;
+  --warning: #d29922;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
-  background: var(--page);
-  color: var(--text-primary);
-  font-family: system-ui, sans-serif;
-  line-height: 1.45;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 a {
   color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
 }
 
-.card {
-  background: var(--surface-1);
-  border: 1px solid var(--border);
+a:hover {
+  color: var(--link-hover);
+  text-decoration-color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+input[type='text'],
+input[type='number'],
+select,
+textarea {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+textarea {
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--primary);
+  flex: none;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: var(--surface-muted);
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+
+pre,
+code,
+.mono {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+.mono {
+  font-size: 13px;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.secondary {
+  color: var(--ink-2);
+}
+
+.small {
+  font-size: 14px;
+}
+
+.smaller {
+  font-size: 13px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Page frame */
+.page-main {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px 32px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.page-head h1 {
+  font-size: 32px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  margin-top: 8px;
+}
+
+.page-head h1:first-child {
+  margin-top: 0;
+}
+
+.lede {
+  margin-top: 8px;
+  color: var(--ink-2);
+  font-size: 16px;
+  max-width: 72ch;
+}
+
+.crumbs {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.crumbs a {
+  color: var(--ink-2);
+}
+
+/* A literal identifier never breaks inside itself: a crumb wraps between items, not inside
+   fd-vs-sip-07. Table cells do the same (.table .mono below). */
+.crumbs .mono {
+  white-space: nowrap;
+}
+
+.head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  align-items: flex-start;
+}
+
+.split > .grow {
+  flex: 999 1 560px;
+  min-width: 0;
+}
+
+.split > .side {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-title {
+  font-size: 18px;
+}
+
+/* Surfaces. Panels never nest inside panels. */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+}
+
+.panel--pad {
+  padding: 22px 24px;
+}
+
+/* A row of figures with rules between them that survive wrapping. */
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1px;
+  background: var(--rule-soft);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.stat-strip > * {
+  background: var(--surface);
+  padding: 20px 22px;
+  margin: 0;
+}
+
+.stat-label {
+  display: block;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.stat-value {
+  display: block;
+  font-size: 30px;
+  line-height: 1.15;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-note {
+  display: block;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+/* Controls */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn:hover {
+  color: var(--on-primary);
+}
+
+.btn--quiet {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
+
+.btn--quiet:hover {
+  color: var(--ink);
+  background: var(--surface-muted);
+}
+
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-muted);
+  border-radius: 10px;
+}
+
+.seg button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.seg button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.inline-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+/* Pills: always a word, never colour alone. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--surface-muted);
+  color: var(--ink);
+}
+
+.pill--pass {
+  background: var(--pass-soft);
+  color: var(--pass);
+}
+
+.pill--fail {
+  background: var(--fail-soft);
+  color: var(--fail);
+}
+
+.pill--outline {
+  background: transparent;
+  border: 1px solid var(--rule);
+  font-weight: 500;
+}
+
+.pill--dashed {
+  background: transparent;
+  border: 1px dashed var(--rule-dashed);
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.pill--small {
+  font-size: 13px;
+  padding: 1px 9px;
+}
+
+/* A result that is not a finding (no clear difference, no interval yet) or a status (Running,
+   Finished): plain words, darker and larger than the detail line under them. Only Better and
+   Worse are pills. No clear difference is the absence of evidence, so it is set at regular
+   weight: lighter than the pills and the status words, still above its 13 px grey detail. */
+.result-plain {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.result-plain[data-verdict='none'] {
+  font-weight: 400;
+}
+
+/* The line under any result: its numbers, or what happens next. */
+.result-detail {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--neutral-dot);
+}
+
+.dot--a {
+  background: var(--arm-a);
+}
+
+.dot--b {
+  background: var(--arm-b);
+}
+
+.arm {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* The dot stays level with the first line when the label wraps, and directly before it. */
+.arm > .dot {
+  margin-top: 0.45em;
+  margin-top: calc((1lh - 10px) / 2);
+}
+
+/* What a result rests on, or why a number may change: an icon and words, never colour alone. */
+.caveat {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 72ch;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.caveat .icon {
+  margin-top: 4px;
+}
+
+/* A caveat opens with its point ("Rests on the judge:", "Provisional:") in ink at medium weight;
+   the alert icon stays. */
+.caveat-lead {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* A task id in a caveat is a literal identifier: mono, and never split at its hyphens. */
+.caveat .mono {
+  white-space: nowrap;
+}
+
+/* A caveat in a page head sits under the lede at the lede's spacing. */
+.page-head > .caveat {
+  margin-top: 8px;
+}
+
+.meter {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.meter > span {
+  display: block;
+  height: 6px;
+  background: var(--rule-strong);
+}
+
+.meter--live > span {
+  background: var(--ink);
+}
+
+/* Tables */
+.table-wrap {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th,
+.table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+  text-align: left;
+}
+
+.table thead th {
+  color: var(--ink-2);
+  font-weight: 500;
+  border-bottom-color: var(--rule);
+}
+
+.table tbody th {
+  font-weight: 400;
+}
+
+.table tr > :first-child {
+  padding-left: 20px;
+}
+
+.table tr > :last-child {
+  padding-right: 20px;
+}
+
+.table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.table .right {
+  text-align: right;
+}
+
+.table .mono {
+  white-space: nowrap;
+}
+
+.row-link {
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.row-link:hover {
+  text-decoration: underline;
+}
+
+/* Conversation bubbles */
+.bubble {
+  padding: 16px 18px;
+  border-radius: 10px;
+  max-width: 84%;
+}
+
+.bubble p + p,
+.bubble p + ol,
+.bubble ol + p {
+  margin-top: 8px;
+}
+
+.bubble--client {
+  background: var(--surface-muted);
+  max-width: 80%;
+}
+
+.bubble--agent {
+  margin-left: auto;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+}
+
+.bubble-who {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.bubble--client .bubble-who {
+  color: var(--client);
+}
+
+.bubble-text {
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+
+/* Text the judge quoted for a failed check (trial page). In the dark theme a tint alone is too
+   faint to find, so the passage is underlined in the fail red as well. */
+mark {
+  background: var(--mark);
+  color: var(--ink);
+  padding: 0 2px;
+}
+
+:root[data-theme='dark'] mark {
+  background: var(--fail-soft);
+  text-decoration: underline 1px var(--fail);
+  text-underline-offset: 3px;
+}
+
+.disclosure {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 0 18px;
+}
+
+.disclosure > summary {
+  cursor: pointer;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0 -18px;
+  padding: 0 18px;
+  border-radius: 9px;
+}
+
+.disclosure > summary:hover {
+  background: var(--surface-muted);
+}
+
+.disclosure[open] > summary {
+  margin-bottom: 4px;
+  border-radius: 9px 9px 0 0;
+}
+
+/* Every disclosure shows a chevron that flips when it opens: a flex summary loses the browser's
+   own marker. The summary never wraps: its words go in .summary-text, which wraps on its own, so
+   the chevron stays at the right of the first line. */
+.disclosure > summary,
+.options > summary,
+.requests > summary,
+.run-details > summary {
+  list-style: none;
+  flex-wrap: nowrap;
+}
+
+.summary-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 12px 0;
+}
+
+.disclosure > summary::-webkit-details-marker,
+.options > summary::-webkit-details-marker,
+.requests > summary::-webkit-details-marker,
+.run-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Level with the first line of a 48 px summary, however many lines its words wrap to. */
+.disclosure > summary::after,
+.options > summary::after,
+.requests > summary::after,
+.run-details > summary::after {
+  content: '';
+  flex: none;
+  align-self: flex-start;
+  margin-top: 20px;
+  margin-left: auto;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--ink-2);
+  border-bottom: 2px solid var(--ink-2);
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.disclosure[open] > summary::after,
+.options[open] > summary::after,
+.requests[open] > summary::after,
+.run-details[open] > summary::after {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+.code-block {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--ground);
   border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+}
+
+.empty {
+  padding: 18px 20px;
+  color: var(--ink-2);
+}
+
+.check-row {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--track);
+}
+
+.check-row strong {
+  display: block;
+  font-weight: 500;
+}
+
+/* Old card style, used by the recorded-runs list. */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
   padding: 1rem 1.25rem;
   margin-bottom: 1rem;
 }
@@ -122,7 +841,7 @@ table.data th.num {
 }
 
 .muted {
-  color: var(--text-muted);
+  color: var(--ink-2);
 }
 
 .swatch {
@@ -138,24 +857,43 @@ table.data th.num {
   display: inline-block;
   padding: 0 0.4rem;
   border-radius: 3px;
-  background: var(--surface-2);
+  background: var(--surface-muted);
   font-size: 0.8rem;
 }
 
 .tag--infra {
-  outline: 1px solid var(--critical);
+  outline: 1px dashed var(--ink-2);
 }
 
 .tooltip {
   position: fixed;
   pointer-events: none;
-  background: var(--surface-1);
-  color: var(--text-primary);
-  border: 1px solid var(--axis);
-  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
   padding: 0.4rem 0.6rem;
   font-size: 0.8rem;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 15%);
   z-index: 10;
   max-width: 24rem;
+}
+
+@media (max-width: 640px) {
+  .page-main {
+    padding: 24px 16px 48px;
+    gap: 28px;
+  }
+
+  .page-head h1 {
+    font-size: 26px;
+  }
+
+  .stat-value {
+    font-size: 26px;
+  }
+
+  .bubble,
+  .bubble--client {
+    max-width: 100%;
+  }
 }
