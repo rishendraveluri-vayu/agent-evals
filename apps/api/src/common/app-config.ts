@@ -1,0 +1,46 @@
+import * as path from 'node:path';
+
+/**
+ * Settings read from the environment once, at startup. Paths default to the repo layout, so
+ * `pnpm dev` from apps/api works; compose sets them to the read-only mounts.
+ */
+export interface AppConfig {
+  /** LiteLLM's base URL, without /v1. The API and the workers both reach it here. */
+  litellmUrl: string | null;
+  /** Only the API holds this (docs/api-contract.md, "Who holds which secret"). */
+  litellmMasterKey: string | null;
+  /** Workers send it as `Authorization: Bearer`. */
+  workerToken: string | null;
+  /** Recorded on every experiment; null when unset. */
+  platformCommit: string | null;
+  workersDir: string;
+  configsDir: string;
+  tasksDir: string;
+  labelsDir: string;
+  runsDir: string;
+}
+
+export const APP_CONFIG = Symbol('APP_CONFIG');
+
+/** The repo root: apps/api/{src,dist}/common/ is four levels down. */
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+
+function nonEmpty(value: string | undefined): string | null {
+  return value === undefined || value.trim() === '' ? null : value.trim();
+}
+
+export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  const dir = (name: string, fallback: string): string => path.resolve(nonEmpty(env[name]) ?? path.join(REPO_ROOT, fallback));
+  return {
+    litellmUrl: nonEmpty(env.LITELLM_URL)?.replace(/\/+$/, '') ?? null,
+    litellmMasterKey: nonEmpty(env.LITELLM_MASTER_KEY),
+    workerToken: nonEmpty(env.EVALS_WORKER_TOKEN),
+    platformCommit: nonEmpty(env.EVALS_PLATFORM_COMMIT),
+    workersDir: dir('WORKERS_DIR', 'workers'),
+    configsDir: dir('CONFIGS_DIR', 'configs'),
+    tasksDir: dir('TASKS_DIR', 'tasks'),
+    labelsDir: dir('LABELS_DIR', 'labels'),
+    // RUNS_DIR keeps its SP1 meaning: relative to the working directory.
+    runsDir: path.resolve(nonEmpty(env.RUNS_DIR) ?? 'runs'),
+  };
+}

@@ -1,0 +1,109 @@
+import type { JsonObject, Settings, SettingsSources } from '../contract';
+import { bareHex } from '../common/hashing';
+
+/** Environment variable names for the trial's keys (D23); never OPENAI_API_KEY. */
+export const MODEL_KEY_ENV = 'EVALS_MODEL_API_KEY';
+export const SIM_KEY_ENV = 'EVALS_SIM_API_KEY';
+
+/**
+ * How a worker starts the finance MCP server: the contract's own example (docs/adapter-
+ * contract.md section 3), over stdio, with its state in the fixed trial folder (D3, D14).
+ */
+export const FINANCE_MCP_COMMAND = ['/opt/finance-mcp/bin/finance-mcp', '--transport', 'stdio', '--state-dir', '/trial/state'];
+export const TOOL_TIMEOUT_S = 30;
+
+/** D22: the simulated client runs at temperature 0. The token cap is the contract example's. */
+export const SIM_TEMPERATURE = 0;
+export const SIM_MAX_OUTPUT_TOKENS = 300;
+
+/** The file the finance MCP server reads from its state folder. */
+export const CLIENT_STATE_FILE = 'client.json';
+
+export interface SpecInputs {
+  trial: {
+    id: string;
+    experimentId: string;
+    repeatIndex: number;
+    attempt: number;
+  };
+  config: {
+    id: string;
+    hash: string;
+    model: string;
+    apiFormat: string;
+    settings: Settings;
+    settingsSources: SettingsSources;
+    harnessOptions: JsonObject;
+  };
+  task: { id: string; sha256: string; split: 'discovery' | 'held_out'; body: JsonObject };
+  prompt: { id: string; version: string; sha256: string; text: string };
+  toolset: { id: string; version: string; sha256: string; servers: { name: string; allowed_tools: string[] }[] };
+  sim: {
+    model: string;
+    temperature: number;
+    maxOutputTokens: number;
+    prompt: { id: string; version: string; sha256: string; text: string };
+  } | null;
+  /** LiteLLM's OpenAI-compatible URL as the worker sees it. */
+  modelBaseUrl: string;
+}
+
+const SIM_FIELDS = ['persona', 'hidden_facts', 'concerns', 'goal', 'opening_message', 'max_client_turns'] as const;
+
+/**
+ * A complete contract v2 spec (contract/v2/spec.schema.json) for one trial attempt.
+ * The task's client_sim gets the experiment's simulator model, held identical across every
+ * config in the experiment (D22).
+ */
+export function buildSpec(i: SpecInputs): JsonObject {
+  const taskSim = i.task.body.client_sim;
+  let clientSim: JsonObject | null = null;
+  if (taskSim && typeof taskSim === 'object' && !Array.isArray(taskSim)) {
+    if (!i.sim) throw new Error(`task ${i.task.id} has a simulated client but the experiment has no simulator model`);
+    const picked: JsonObject = {};
+    for (const f of SIM_FIELDS) picked[f] = taskSim[f];
+    clientSim = {
+      ...picked,
+      model: {
+        name: i.sim.model,
+        base_url: i.modelBaseUrl,
+        api_key_env: SIM_KEY_ENV,
+        temperature: i.sim.temperature,
+        max_output_tokens: i.sim.maxOutputTokens,
+        prompt: { id: i.sim.prompt.id, version: i.sim.prompt.version, sha256: bareHex(i.sim.prompt.sha256), text: i.sim.prompt.text },
+      },
+    };
+  }
+  return {
+    contract_version: '2',
+    trial: {
+      id: i.trial.id,
+      experiment_id: i.trial.experimentId,
+      config_id: i.config.id,
+      config_hash: i.config.hash,
+      task_id: i.task.id,
+      task_version: i.task.sha256,
+      task_split: i.task.split,
+      repeat_index: i.trial.repeatIndex,
+      attempt: i.trial.attempt,
+    },
+    task: { messages: i.task.body.messages ?? [], client_sim: clientSim },
+    system_prompt: { id: i.prompt.id, version: i.prompt.version, sha256: bareHex(i.prompt.sha256), text: i.prompt.text },
+    model: { name: i.config.model, base_url: i.modelBaseUrl, api_key_env: MODEL_KEY_ENV, api_format: i.config.apiFormat },
+    settings: i.config.settings as unknown as JsonObject,
+    settings_sources: i.config.settingsSources,
+    harness_options: i.config.harnessOptions,
+    tools: {
+      toolset: { id: i.toolset.id, version: i.toolset.version, sha256: bareHex(i.toolset.sha256) },
+      mcp_servers: i.toolset.servers.map((s) => ({
+        name: s.name,
+        command: [...FINANCE_MCP_COMMAND],
+        allowed_tools: [...s.allowed_tools],
+        tool_timeout_s: TOOL_TIMEOUT_S,
+      })),
+      enabled_builtins: [],
+    },
+    // POST /configs takes no seed yet, so every trial starts with none (R10.8).
+    seed: { memory: [], skills: [] },
+  };
+}

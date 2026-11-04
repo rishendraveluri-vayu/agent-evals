@@ -1,0 +1,196 @@
+import { Injectable } from '@nestjs/common';
+import type { ConfigDiffEntry, ConfigView, CreateConfigRequest, Json, JsonObject, Settings, SettingsSources } from '../contract';
+import { badRequest, notFound } from '../common/api-error';
+import { canonicalJson, hashCanonical, normalizeSha } from '../common/hashing';
+import { CatalogueService } from '../catalogue/catalogue.service';
+import { Db } from '../database/db.service';
+import { LiteLlmClient } from '../litellm/litellm.client';
+import { checkHarnessOptions, resolveSettings } from './settings';
+
+/** Everything that can change a trial's behaviour; its canonical JSON is hashed (R14, SP2). */
+export interface ConfigHashInput {
+  harness_ref: string;
+  adapter_version: string;
+  capabilities_sha256: string;
+  model: string;
+  prompt_sha256: string;
+  toolset_sha256: string;
+  settings: Settings;
+  harness_options: JsonObject;
+}
+
+export function configHash(input: ConfigHashInput): string {
+  return hashCanonical({
+    harness_ref: input.harness_ref,
+    adapter_version: input.adapter_version,
+    capabilities_sha256: input.capabilities_sha256,
+    model: input.model,
+    prompt_sha256: input.prompt_sha256,
+    toolset_sha256: input.toolset_sha256,
+    settings: input.settings,
+    harness_options: input.harness_options,
+  });
+}
+
+/** `c_` and the first 12 hex of the hash: the spec's `config_id`. */
+export function configId(hash: string): string {
+  return `c_${hash.replace(/^sha256:/, '').slice(0, 12)}`;
+}
+
+/** A config row joined with its prompt and toolset. */
+export interface ConfigRow {
+  hash: string;
+  name: string;
+  harness: string;
+  harness_package: string;
+  harness_ref: string;
+  adapter_version: string;
+  capabilities_sha256: string;
+  capabilities: JsonObject;
+  model: string;
+  api_format: string;
+  prompt_sha256: string;
+  prompt_id: string;
+  prompt_version: string;
+  toolset_sha256: string;
+  toolset_id: string;
+  toolset_version: string;
+  settings: Settings;
+  settings_sources: SettingsSources;
+  harness_options: JsonObject;
+  created_at: Date;
+}
+
+export const CONFIG_SELECT = `
+  SELECT c.*, p.id AS prompt_id, p.version AS prompt_version, t.id AS toolset_id, t.version AS toolset_version
+  FROM configs c JOIN prompts p ON p.sha256 = c.prompt_sha256 JOIN toolsets t ON t.sha256 = c.toolset_sha256`;
+
+export function configView(r: ConfigRow): ConfigView {
+  return {
+    hash: r.hash,
+    name: r.name,
+    harness: r.harness,
+    harness_ref: r.harness_ref,
+    adapter_version: r.adapter_version,
+    capabilities_sha256: r.capabilities_sha256,
+    model: r.model,
+    prompt: { id: r.prompt_id, version: r.prompt_version, sha256: r.prompt_sha256 },
+    toolset: { id: r.toolset_id, version: r.toolset_version, sha256: r.toolset_sha256 },
+    settings: r.settings,
+    settings_sources: r.settings_sources,
+    harness_options: r.harness_options,
+    created_at: r.created_at.toISOString(),
+  };
+}
+
+/** Every leaf path where two values differ; objects are walked, arrays compared whole. */
+export function diffValues(a: unknown, b: unknown, prefix = ''): ConfigDiffEntry[] {
+  const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+  if (isObj(a) && isObj(b)) {
+    const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
+    return keys.flatMap((k) => diffValues(a[k], b[k], prefix ? `${prefix}.${k}` : k));
+  }
+  const same = a === undefined || b === undefined ? a === b : canonicalJson(a) === canonicalJson(b);
+  return same ? [] : [{ path: prefix, a: a as Json | undefined, b: b as Json | undefined }];
+}
+
+@Injectable()
+export class ConfigsService {
+  constructor(
+    private readonly db: Db,
+    private readonly catalogue: CatalogueService,
+    private readonly litellm: LiteLlmClient,
+  ) {}
+
+  /** Stores the config, or returns the stored one with the same hash (`created: false`). */
+  async create(body: CreateConfigRequest): Promise<{ config: ConfigView; created: boolean }> {
+    if (typeof body !== 'object' || body === null) throw badRequest('invalid_config', 'the body must be a JSON object');
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name) throw badRequest('invalid_config', 'name is required');
+    if (typeof body.harness !== 'string' || !body.harness) throw badRequest('invalid_config', 'harness is required');
+    if (typeof body.model !== 'string' || !body.model) throw badRequest('invalid_config', 'model is required');
+    const promptSha = normalizeSha(body.prompt_sha256);
+    if (!promptSha) throw badRequest('invalid_config', 'prompt_sha256 must be sha256:<64 hex>');
+    const toolsetSha = normalizeSha(body.toolset_sha256);
+    if (!toolsetSha) throw badRequest('invalid_config', 'toolset_sha256 must be sha256:<64 hex>');
+
+    const harness = await this.catalogue.harness(body.harness);
+    if (!harness) throw badRequest('unknown_harness', `no harness named ${body.harness} under workers/`);
+    const caps = harness.capabilities as { settings?: Record<string, { supported?: unknown }>; model_api_formats?: unknown; harness_options_schema?: unknown };
+    const { settings, settings_sources } = resolveSettings(body.settings, caps, harness.name);
+    const harnessOptions = checkHarnessOptions(body.harness_options, caps.harness_options_schema, harness.name);
+
+    const prompt = await this.catalogue.prompt(promptSha);
+    if (!prompt) throw badRequest('unknown_prompt', `no prompt with ${promptSha}; see GET /prompts`);
+    const toolset = await this.catalogue.toolset(toolsetSha);
+    if (!toolset) throw badRequest('unknown_toolset', `no toolset with ${toolsetSha}; see GET /toolsets`);
+    if (!(await this.litellm.findModel(body.model))) {
+      throw badRequest('unknown_model', `LiteLLM serves no model named ${body.model}`);
+    }
+    const formats = Array.isArray(caps.model_api_formats) ? (caps.model_api_formats as string[]) : [];
+    const apiFormat = formats.includes('openai_chat') ? 'openai_chat' : (formats[0] ?? 'openai_chat');
+
+    const hash = configHash({
+      harness_ref: harness.ref,
+      adapter_version: harness.adapter_version,
+      capabilities_sha256: harness.capabilities_sha256,
+      model: body.model,
+      prompt_sha256: promptSha,
+      toolset_sha256: toolsetSha,
+      settings,
+      harness_options: harnessOptions,
+    });
+    const inserted = await this.db.query<{ hash: string }>(
+      `INSERT INTO configs (hash, name, harness, harness_package, harness_ref, adapter_version, capabilities_sha256,
+                            capabilities, model, api_format, prompt_sha256, toolset_sha256, settings, settings_sources,
+                            harness_options)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       ON CONFLICT (hash) DO NOTHING RETURNING hash`,
+      [
+        hash,
+        name,
+        harness.name,
+        harness.package,
+        harness.ref,
+        harness.adapter_version,
+        harness.capabilities_sha256,
+        JSON.stringify(harness.capabilities),
+        body.model,
+        apiFormat,
+        promptSha,
+        toolsetSha,
+        JSON.stringify(settings),
+        JSON.stringify(settings_sources),
+        JSON.stringify(harnessOptions),
+      ],
+    );
+    return { config: await this.get(hash), created: inserted.length === 1 };
+  }
+
+  async list(): Promise<ConfigView[]> {
+    const rows = await this.db.query<ConfigRow>(`${CONFIG_SELECT} ORDER BY c.created_at, c.hash`);
+    return rows.map(configView);
+  }
+
+  async row(hashInput: string): Promise<ConfigRow> {
+    const hash = normalizeSha(hashInput);
+    if (!hash) throw badRequest('invalid_hash', `${hashInput} is not sha256:<64 hex>`);
+    const [row] = await this.db.query<ConfigRow>(`${CONFIG_SELECT} WHERE c.hash = $1`, [hash]);
+    if (!row) throw notFound('unknown_config', `no config ${hash}`);
+    return row;
+  }
+
+  async get(hash: string): Promise<ConfigView> {
+    return configView(await this.row(hash));
+  }
+
+  async diff(a: string, b: string): Promise<ConfigDiffEntry[]> {
+    const strip = (view: ConfigView): Partial<ConfigView> => {
+      const rest: Partial<ConfigView> = { ...view };
+      delete rest.hash;
+      delete rest.created_at;
+      return rest;
+    };
+    return diffValues(strip(await this.get(a)), strip(await this.get(b)));
+  }
+}

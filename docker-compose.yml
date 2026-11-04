@@ -76,16 +76,34 @@ services:
     environment:
       PORT: "3000"
       DATABASE_URL: postgresql://evals:${POSTGRES_PASSWORD:-evals-local}@postgres:5432/evals
-      # Interim (SP1): finished trial folders are read from here for the trace view and the
-      # spend chart, until SP2 stores them in the database.
+      # The API alone holds the master key: it mints, budgets and revokes each trial's keys,
+      # so workers never see it (docs/api-contract.md, "Who holds which secret").
+      LITELLM_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local-dev-only}
+      # Workers send this as Authorization: Bearer on /api/worker/*.
+      EVALS_WORKER_TOKEN: ${EVALS_WORKER_TOKEN:-local-dev-worker-token}
+      # Recorded on every experiment; set it to `git rev-parse HEAD` when starting a real run.
+      EVALS_PLATFORM_COMMIT: ${EVALS_PLATFORM_COMMIT:-}
+      # Trial folders: SP1 gate and smoke runs, and experiment attempts written by workers.
       RUNS_DIR: /runs
+      # The catalogue is read from git: adapters' capabilities, prompts and tasks.
+      WORKERS_DIR: /repo/workers
+      CONFIGS_DIR: /repo/configs
+      TASKS_DIR: /repo/tasks
+      # Rishi's hand labels: the labelling view appends here, nothing else writes them.
+      LABELS_DIR: /repo/labels
     volumes:
       - ./runs:/runs:ro
+      - ./workers:/repo/workers:ro
+      - ./configs:/repo/configs:ro
+      - ./tasks:/repo/tasks:ro
+      - ./labels:/repo/labels
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "127.0.0.1:${API_PORT:-3000}:3000"
+    # control: Postgres, LiteLLM and the UI. trials: workers reach the API here.
     networks: [control, trials]
 
   ui:
