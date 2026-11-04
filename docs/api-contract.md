@@ -29,6 +29,10 @@ status, plus `"fix": "<what to change>"` where the API can say how to put the re
   the grader worker in each grading claim for that experiment's trials. It is kept in
   `judge_approvals`, because every claim hands it out again; no UI-facing route returns it.
   Revoking deletes it in LiteLLM, so it stops working at once.
+- **Provider keys (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) are LiteLLM's alone.** The API gets
+  one flag per key instead (`ANTHROPIC_KEY_SET`, `GEMINI_KEY_SET`: `1` or empty), so `GET
+  /models` can say which models cannot run yet; `scripts/check_compose.py` fails if any other
+  service would receive a key's value.
 - Workers hold only a worker token (`EVALS_WORKER_TOKEN`), sent as `Authorization: Bearer`.
   Provider keys live only in LiteLLM.
 
@@ -41,7 +45,7 @@ status, plus `"fix": "<what to change>"` where the API can say how to put the re
 | `POST /prompts` | `{id, base_version, text}` writes the next version of an existing prompt and returns `{id, version, sha256, path}` (below). |
 | `GET /toolsets` | `[{id, version, sha256, servers: [{name, allowed_tools}], manifest: [{server, server_version, tools: [{name, description, input_schema}]}]}]`. One built-in toolset `finance/all` until more exist. `sha256` is the canonical JSON hash of everything else in the entry, so it covers each tool's description and input schema and the server's version, not just the names (since 4 Nov; configs made before keep their names-only hash). |
 | `GET /tasks` | `[{sha256, id, version, split, kind, summary, graders}]` from `tasks/<id>/task.json`. |
-| `GET /models` | `[{name, provider, input_per_mtok, output_per_mtok}]` from LiteLLM's `/model/info`, real models only. |
+| `GET /models` | `[{name, provider, input_per_mtok, output_per_mtok, key_set}]` from LiteLLM's `/model/info`, real models only. `key_set` says whether the provider's key is in `.env` for LiteLLM: compose passes the API a flag per key (`ANTHROPIC_KEY_SET: ${ANTHROPIC_API_KEY:+1}`, likewise `GEMINI_KEY_SET`), `1` when set and empty when not, never the key. It is `null` when the API was not told (the flag is absent, as outside compose) and for a provider it has no flag for (`gemini` and `vertex_ai` read the Gemini flag). |
 
 **New prompt version** (`POST /prompts`, for the UI's prompt editor). The API writes
 `configs/prompts/<id>.v<n>.md`, where `n` is the highest `v<number>` version of `id` plus one
@@ -173,11 +177,16 @@ simulated-client task the API also summarises that file (profile and debts) into
   default applies").
 - `GET /configs`, `GET /configs/:hash` return `{hash, name, harness, harness_ref, model,
   prompt, toolset, settings, settings_sources, unsupported, warnings, harness_options, seed,
-  parent_hash, created_at}`; `seed` always has both lists, empty when nothing is seeded. `unsupported` and `warnings` are worked out from the stored
+  parent_hash, example_only, created_at}`; `seed` always has both lists, empty when nothing is seeded. `unsupported` and `warnings` are worked out from the stored
   capabilities, so every read has them, not only the POST. `GET /configs/:hash` adds
   `children: [{hash, name, created_at}]`, the configs forked from it, oldest first.
+  `example_only` (since 5 Nov) is true when the config came with a shipped example (an example
+  experiment uses it, or it is the parent, at any depth, of one that does) and no experiment of
+  this database's own uses it, unstarted and discarded ones included. Such a config was made
+  elsewhere with the files of its day: its prompt or toolset may not be in `GET /prompts` or
+  `GET /toolsets`, so the UI does not start a new config or a run from it unless asked to.
 - `GET /configs/:a/diff/:b` returns `[{path, a, b}]`: every field that differs (`unsupported`,
-  `warnings` and `parent_hash` are left out: derived, or not behaviour). Seeds show as
+  `warnings`, `parent_hash` and `example_only` are left out: derived, or not behaviour). Seeds show as
   `seed.memory` and `seed.skills`, each list compared whole.
 
 ## Pre-run checks: rendered prompt and conflict check (D33, D38)
@@ -275,7 +284,8 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
     `x-litellm-response-cost` header (`cost_source` says which). A cost never reported stays
     null and its reservation keeps counting against the allowance.
 - `GET /configs/:hash/conflict-check` returns the stored result for the config as it is now,
-  without a call; 404 `no_conflict_check` before any.
+  without a call; 200 `null` before any (since 5 Nov; it was a 404, which logged an error on
+  every visit to an unchecked config's page). 409 `rendered_prompt_required` as for the POST.
 - Body: `{config_hash, rendered_sha256, input_sha256, checker: {id, version, sha256}, model,
   conflicts, notes, cost_usd, cached, skipped, spend_id, checked_at, allowance}`. `cost_usd` is
   what the check cost when it ran (also on a cached answer; `cached: true` means this request
@@ -284,16 +294,20 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 
 ## Spend
 
-- `GET /spend` returns `{trials_usd, system_usd, judge_usd, judge_approvals, total_usd,
+- `GET /spend` returns `{trials_usd, fake_trials_usd, system_usd, judge_usd, judge_approvals, total_usd,
   system_by_kind: {<kind>: {usd, calls}}, allowances: [{kind, limit_usd, used_usd,
   remaining_usd, calls, half_reached}]}`. `judge_usd` is the LLM judge's spend across every
   approval, revoked ones included: for each key, the sum of `spend` over its LiteLLM spend-log
   rows (for a revoked key, at least what the log showed at revoke, and that figure when LiteLLM
   cannot be read). It is null when an active key's log cannot be read. `judge_approvals` counts
-  approvals ever made. `total_usd` is trials, system and judge spend (the judge only when known).
-  `trials_usd` is every experiment trial's agent and simulator cost (fake-model experiment
-  trials included, at the made-up fake prices, as in each experiment's `spend_usd`); probe trials
-  are left out. `system_usd` is the platform's own calls with a known cost, shown as its own line
+  approvals ever made. `total_usd` is real trial, system and judge spend (the judge only when
+  known), never fake prices. `trials_usd` is experiment trials' real spend: each trial's agent
+  cost when its config's model is real, and its simulator cost when the experiment's simulator
+  model is real. `fake_trials_usd` is the rest, the made-up prices LiteLLM counted for calls to
+  `fake/*` models: not money, so kept apart and out of `total_usd` (since 5 Nov; before, it was
+  in `trials_usd`). Probe trials and shipped examples are left out of both. Each experiment's own
+  `spend_usd` still counts every call at its price, fake ones included, as LiteLLM's budget for
+  it does. `system_usd` is the platform's own calls with a known cost, shown as its own line
   (D38).
 - `GET /spend/system?kind=conflict_check` returns one row per platform-made call, newest first:
   `{id, kind, model, status: pending|done|failed, reserved_usd, cost_usd, cost_source, input_tokens,
@@ -339,6 +353,12 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   temperature is `null` and not sent (D27); the token cap is 2048, because Haiku 5.5's reasoning
   counts towards it (at 300 on 4 Nov it took the whole cap and the reply was empty). An
   experiment keeps the cap it was created with. `sim` in the experiment shows all three.
+- **Plan commit.** `plan_commit` (here and on `start`) is the git commit of the analysis plan in
+  `docs/experiment.md`: blank or null for none, else 7 to 40 hex characters (as `git rev-parse`
+  prints it), trimmed and stored in lower case. Anything else is a 400 `invalid_plan_commit` with
+  a `fix`; a value that is not a string is a 400 `invalid_experiment`. Only the format is checked:
+  the API cannot see git history, so it records the commit as given and does not check that it
+  exists or that it holds the plan.
 - **Lineage and baseline reuse (D34).** `parent_experiment_id` (optional) names the experiment
   this one follows from (400 `unknown_parent_experiment` if there is none). With
   `reuse_baseline: true` (which needs a parent and two arms), arm A takes the parent's finished
@@ -370,7 +390,7 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 
   | Call | From | Does |
   | --- | --- | --- |
-  | `POST /experiments/:id/start` | `created`, `paused` | starts it, or resumes it (as `/resume`); marks it `done` if nothing is left to claim. Optional body `{plan_commit}` (`StartExperimentRequest`): on a `created` one it sets the analysis plan's commit first (trimmed), so an experiment left unstarted without one can be started from its run page; once it has started the commit is fixed, and a different one is a 409 `plan_commit_locked` (the same one again is fine) |
+  | `POST /experiments/:id/start` | `created`, `paused` | starts it, or resumes it (as `/resume`); marks it `done` if nothing is left to claim. Optional body `{plan_commit}` (`StartExperimentRequest`): on a `created` one it sets the analysis plan's commit first (format checked as on `POST /experiments`, 400 `invalid_plan_commit`), so an experiment left unstarted without one can be started from its run page; once it has started the commit is fixed, and a different one is a 409 `plan_commit_locked` (the same one again is fine) |
   | `POST /experiments/:id/discard` | `created`, no trial claimed | marks an experiment that never started `cancelled` and its queued trials `cancelled`, as a stop does; nothing is deleted. Event `discarded` (no `cancelled` event). Anything started is a 409 `experiment_started` (fix: stop it instead); a `done` or `cancelled` one a 409 `experiment_finished` |
   | `POST /experiments/:id/pause` | `running` (a `paused` one: no-op) | no new claims; trials already running finish and report; event `paused` |
   | `POST /experiments/:id/resume` | `paused` (a `running` one: no-op) | claims resume; event `resumed` |
@@ -484,8 +504,18 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   whose outcome is `pass`, `graded` those with `pass` or `fail`, and `incomplete` those whose
   grading finished with no outcome (a required grader errored, was not applicable or is the
   unapproved judge). Older grade versions and optional graders do not count.
-- `GET /experiments/:id/export?format=json|csv` streams trials joined with configs, tasks,
-  grades and spend.
+- `GET /experiments/:id/export?format=json|csv` streams every trial row (infra failures,
+  abandoned and cancelled rows included) joined with its config, task, grades and spend. Each
+  row has `arm` (`A` or `B` by the config's place in the experiment; in a run of one config twice,
+  the second arm's repeats come after the first's) and `outcome`, the trial's current grading
+  exactly as the run grid (`grading` on `GET /experiments/:id/trials`) and the comparison count
+  it: `pass`, `fail` or `incomplete` from the latest finished grading job (`done` or
+  `no_graders`), `no_graders`, `waiting`, `grading_failed`, or empty for a trial that is not
+  done. Since 5 Nov `grades_passed`, `grades_total` and `grades_json` (CSV) and `grades` (JSON)
+  cover only that current grading's grades, so a regraded trial is not counted twice; the JSON
+  adds `grading_job_id` and `grade_history`, every stored grade version. Older versions also stay
+  in the database and in `GET /experiments/:id/bundle`. Each grade is `{grader_id,
+  grader_version, kind, required, verdict, score, evidence, judge_model, run_index, job_id}`.
 - `GET /experiments/:id/bundle` (SP7) returns every row needed to recreate the experiment in
   another database, read in one read-only snapshot: `{format: "agent-evals-bundle",
   format_version: 1, schema_version, exported_at, experiment_id, tables}` (`ExperimentBundle`).
@@ -750,7 +780,9 @@ field is left (a key inside a binary file cannot be scrubbed, so it fails the ex
 ## UI-only endpoints
 
 - `GET /labels/queue?set=tuning|heldout|final` returns blind items `{item_id, task_summary,
-  transcript, tool_calls, criteria}` with no harness, model, arm, timing, cost or grade.
+  transcript, tool_calls, criteria}` with no harness, model, arm, timing, cost or grade. Only
+  trials whose agent ran on a real model are items: a `fake/*` model plays a script, so its
+  output is nothing to label (since 5 Nov). Probe trials and shipped examples are left out too.
 - `POST /labels` with `{item_id, set, criterion, value: "yes"|"no"|"unsure", note}` appends one
   line to `labels/<set>.jsonl` with the date. Labels are Rishi's own judgments, entered by him;
   nothing else writes them.

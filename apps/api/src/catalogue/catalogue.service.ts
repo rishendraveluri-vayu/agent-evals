@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import type { CreatePromptRequest, CreatedPrompt, HarnessView, JsonObject, ModelView, PromptView, TaskSplit, TaskView, ToolsetView } from '../contract';
 import { badRequest, conflict } from '../common/api-error';
-import { APP_CONFIG, type AppConfig } from '../common/app-config';
+import { APP_CONFIG, type AppConfig, type ProviderKeyName } from '../common/app-config';
 import { sha256Ref } from '../common/hashing';
 import { Db } from '../database/db.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
@@ -231,6 +231,7 @@ export class CatalogueService {
         provider: m.provider,
         input_per_mtok: m.inputPerToken === null ? null : round(m.inputPerToken * 1e6),
         output_per_mtok: m.outputPerToken === null ? null : round(m.outputPerToken * 1e6),
+        key_set: keySet(m.name, m.provider, this.config.providerKeys),
       }));
   }
 
@@ -270,4 +271,17 @@ export class CatalogueService {
 
 function round(n: number): number {
   return Math.round(n * 1e6) / 1e6;
+}
+
+/** LiteLLM's provider names for the providers the API is told about (PROVIDER_KEYS). */
+const PROVIDER_OF: Record<string, ProviderKeyName> = { anthropic: 'anthropic', gemini: 'gemini', vertex_ai: 'gemini' };
+
+/**
+ * Whether the key a model needs is set for LiteLLM: the flag compose passes for its provider. null
+ * for a fake model (no key), a provider the API is told nothing about, or when it was not told.
+ */
+export function keySet(model: string, provider: string | null, keys: AppConfig['providerKeys']): boolean | null {
+  if (model.startsWith('fake/')) return null;
+  const name = provider ? PROVIDER_OF[provider] : undefined;
+  return name ? keys[name] : null;
 }

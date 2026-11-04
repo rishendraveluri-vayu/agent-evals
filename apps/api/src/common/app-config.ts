@@ -24,6 +24,25 @@ export interface AppConfig {
   financeMcpDir: string;
   /** D38: the standing allowance for pre-run conflict checks, in USD. */
   conflictCheckAllowanceUsd: number;
+  /**
+   * Whether each provider's key is set for LiteLLM, by provider: compose passes a flag
+   * (`ANTHROPIC_KEY_SET: ${ANTHROPIC_API_KEY:+1}`), never the key, which only LiteLLM holds.
+   * null when the flag is absent: the API was not told (run outside compose).
+   */
+  providerKeys: Record<ProviderKeyName, boolean | null>;
+}
+
+/** The providers whose key the API is told about, each with the variable .env sets for LiteLLM. */
+export const PROVIDER_KEYS = {
+  anthropic: { flag: 'ANTHROPIC_KEY_SET', key: 'ANTHROPIC_API_KEY' },
+  gemini: { flag: 'GEMINI_KEY_SET', key: 'GEMINI_API_KEY' },
+} as const;
+export type ProviderKeyName = keyof typeof PROVIDER_KEYS;
+
+/** A set/unset flag: "1" (or any non-empty value) is set, empty is not, absent is unknown. */
+function flag(raw: string | undefined): boolean | null {
+  if (raw === undefined) return null;
+  return raw.trim() !== '';
 }
 
 /** D38's standing allowance when EVALS_CONFLICT_CHECK_ALLOWANCE_USD is unset. */
@@ -63,5 +82,6 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     // RUNS_DIR keeps its SP1 meaning: relative to the working directory.
     runsDir: path.resolve(nonEmpty(env.RUNS_DIR) ?? 'runs'),
     conflictCheckAllowanceUsd: usd('EVALS_CONFLICT_CHECK_ALLOWANCE_USD', env.EVALS_CONFLICT_CHECK_ALLOWANCE_USD, DEFAULT_CONFLICT_CHECK_ALLOWANCE_USD),
+    providerKeys: { anthropic: flag(env[PROVIDER_KEYS.anthropic.flag]), gemini: flag(env[PROVIDER_KEYS.gemini.flag]) },
   };
 }

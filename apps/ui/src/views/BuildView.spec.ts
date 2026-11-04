@@ -12,7 +12,7 @@ useFixtures();
 
 const V2 = prompts.find((p) => p.version === 'v2')!;
 const V1 = prompts.find((p) => p.version === 'v1')!;
-const HERMES_V1 = configs.find((c) => c.name === 'Prompt v1 on Hermes')!;
+const OWN_LOOP = configs.find((c) => c.name === 'Own loop, prompt v1')!;
 
 let w: VueWrapper | null = null;
 afterEach(() => {
@@ -215,7 +215,8 @@ describe('Build an agent, in fixture mode', () => {
   it('after saving, links to the preview, to a run against the one baseline that differs in one thing, and to all settings', async () => {
     const view = await open();
     expect(view.get('[data-test="all-settings"]').attributes('href')).toBe('#/configs');
-    // LangGraph with prompt v1 and the sample baseline's numbers: only the harness differs from it.
+    // LangGraph with prompt v1 and the sample baseline's numbers: only the harness differs from
+    // "Prompt v1 on Hermes" and from "Own loop, prompt v1"; the newer of the two is the baseline.
     await pickHarness(view, 'langgraph');
     await view.get('[data-test="prompt-select"]').setValue(V1.sha256);
     await setNumber(view, 'max_steps', '12');
@@ -233,9 +234,9 @@ describe('Build an agent, in fixture mode', () => {
     const evaluate = view.get('[data-test="next-evaluate"]').attributes('href') ?? '';
     const q = new URLSearchParams(evaluate.split('?')[1]);
     expect(evaluate.startsWith('#/run?')).toBe(true);
-    expect(q.get('a')).toBe(HERMES_V1.hash);
+    expect(q.get('a')).toBe(OWN_LOOP.hash);
     expect(q.get('b')).toMatch(new RegExp(`^sha256:${hash}`));
-    expect(view.get('[data-test="next-evaluate-words"]').text()).toContain('Against Prompt v1 on Hermes, which differs from it only in the harness');
+    expect(view.get('[data-test="next-evaluate-words"]').text()).toContain('Against Own loop, prompt v1, which differs from it only in the harness');
     expect(view.get('[data-test="all-settings"]').attributes('href')).toBe(`#/configs?fork=${encodeURIComponent(q.get('b') ?? '')}`);
     // A different choice is a different agent: the next steps wait for it to be saved.
     await pickHarness(view, 'adk');
@@ -243,7 +244,7 @@ describe('Build an agent, in fixture mode', () => {
     expect(view.get('[data-test="all-settings"]').attributes('href')).toBe('#/configs');
   });
 
-  it('with no saved agent one change away, leaves the baseline to the Run screen', async () => {
+  it('with no saved agent one change away, says a comparison needs a baseline and links to fork this agent, never a dead-end run', async () => {
     const view = await open();
     // Harness, model and steps all differ from every saved agent.
     await pickHarness(view, 'openai-agents');
@@ -251,11 +252,57 @@ describe('Build an agent, in fixture mode', () => {
     await setNumber(view, 'max_steps', '7');
     await view.get('[data-test="save-agent"]').trigger('click');
     await settle();
+    const fork = view.get('[data-test="next-fork"]');
+    expect(fork.text()).toBe('Make a baseline to compare with');
+    expect(fork.attributes('href')).toMatch(/^#\/configs\?fork=sha256%3A/);
+    const words = view.get('[data-test="next-evaluate-words"]').text();
+    expect(words).toContain('A comparison needs a baseline: a saved agent that differs from this one in just one thing');
+    expect(words).toContain('Fork this agent, change one setting, the prompt or the model, and save');
+    expect(words).not.toMatch(/sha256|capabilities/);
+    // A pilot is still one click away: this agent alone, with no arm A picked for it.
     const evaluate = view.get('[data-test="next-evaluate"]').attributes('href') ?? '';
     const q = new URLSearchParams(evaluate.split('?')[1]);
     expect(q.get('a')).toBeNull();
     expect(q.get('b')).toMatch(/^sha256:/);
-    expect(view.get('[data-test="next-evaluate-words"]').text()).toContain('the Run screen starts arm A, the baseline, on the oldest saved agent');
+  });
+
+  it('never takes a shipped example’s agent as the baseline, the QA’s dead end after loading the example', async () => {
+    const example = { ...OWN_LOOP, hash: `sha256:90a6761${'0'.repeat(57)}`, name: 'v2 sim check, ownloop, haiku', capabilities_sha256: 'sha256:old', example_only: true };
+    vi.spyOn(api, 'configs').mockResolvedValue([example] as never);
+    const view = await open();
+    await pickHarness(view, 'ownloop');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(view.find('[data-test="next-fork"]').exists()).toBe(true);
+    expect(view.get('[data-test="next-evaluate"]').attributes('href')).not.toContain('90a6761');
+  });
+
+  it('says on each model that needs a key it lacks, keeps saving free, and points a keyless reviewer to the free route', async () => {
+    vi.spyOn(api, 'models').mockResolvedValue([
+      { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false },
+      { name: 'gemini-3.8-flash', provider: 'gemini', input_per_mtok: 0.75, output_per_mtok: 3.75, key_set: false },
+    ]);
+    const view = await open();
+    expect(view.get('[data-test="model-claude-haiku-5-5"] [data-test="needs-key"]').text()).toBe('needs ANTHROPIC_API_KEY in .env');
+    expect(view.get('[data-test="model-gemini-3.8-flash"] [data-test="needs-key"]').text()).toBe('needs GEMINI_API_KEY in .env');
+    expect(view.get('[data-test="model-cost-note"]').text()).toContain('ANTHROPIC_API_KEY is not set in .env, so this model cannot run yet. Saving is free and works anyway; before a run, add the key, then run docker compose up -d.');
+    const noKeys = view.get('[data-test="no-keys"]');
+    expect(noKeys.text()).toContain('pick a fake model (scripted replies, no spend) on the full Config screen');
+    expect(noKeys.get('a').attributes('href')).toBe('#/configs');
+    expect(view.get('[data-test="save-agent"]').attributes('disabled')).toBeUndefined();
+  });
+
+  it('has one field per setting: no stray checkbox beside a number, and no id twice', async () => {
+    const view = await open();
+    for (const name of ['max_steps', 'max_output_tokens', 'timeout_s']) {
+      const box = view.get(`[data-test="setting-${name}"]`);
+      expect(box.findAll('input[type="checkbox"]')).toHaveLength(0);
+      expect(box.find('.toggle').exists()).toBe(false);
+    }
+    for (const name of ['parallel_tool_calls', 'memory']) expect(view.get(`[data-test="setting-${name}"]`).findAll('input[type="checkbox"]')).toHaveLength(1);
+    const ids = [...document.querySelectorAll('[data-test="build-form"] [id]')].map((el) => el.id);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('says so when the same agent was saved before, instead of claiming a new one', async () => {

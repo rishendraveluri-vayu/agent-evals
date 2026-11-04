@@ -323,9 +323,7 @@ export class ExperimentsService {
     if (typeof body.budget_usd !== 'number' || !Number.isFinite(body.budget_usd) || body.budget_usd <= 0) {
       throw badRequest('invalid_experiment', 'budget_usd must be a number above 0');
     }
-    if (body.plan_commit !== undefined && body.plan_commit !== null && typeof body.plan_commit !== 'string') {
-      throw badRequest('invalid_experiment', 'plan_commit must be a string or null');
-    }
+    const planCommit = planCommitOf(body.plan_commit);
     const { plan, simPrompt, parentId, baseline, run } = await this.resolveRun(body);
     // R10.6: start only runs that can finish. The budget is a safety net, so it must cover
     // the top of the estimate's range, not just the expected cost. With arm A reused (D34),
@@ -386,7 +384,7 @@ export class ExperimentsService {
           run.estimate.budgets.trial_usd,
           run.estimate.budgets.sim_usd,
           this.config.platformCommit,
-          body.plan_commit ?? null,
+          planCommit,
           JSON.stringify(run.estimate),
           seed,
           JSON.stringify(futility),
@@ -446,9 +444,7 @@ export class ExperimentsService {
     if (body !== undefined && body !== null && (typeof body !== 'object' || Array.isArray(body))) {
       throw badRequest('invalid_experiment', 'the body must be a JSON object or empty');
     }
-    const raw = body?.plan_commit;
-    if (raw !== undefined && raw !== null && typeof raw !== 'string') throw badRequest('invalid_experiment', 'plan_commit must be a string or null');
-    const planCommit = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+    const planCommit = planCommitOf(body?.plan_commit);
     const exp = await this.row(id);
     assertNotExample(exp, 'be started');
     if (exp.status === 'done' || exp.status === 'cancelled') {
@@ -991,6 +987,29 @@ export function trialRowSummary(r: TrialSummaryRow): TrialRowSummary {
     passed: grading === 'pass' || grading === 'fail' ? r.graded_passed : null,
     grading,
   };
+}
+
+/** A git commit hash as `git rev-parse` prints it, short or full. */
+export const PLAN_COMMIT = /^[0-9a-f]{7,40}$/;
+
+/**
+ * The analysis plan's commit from a request: null when left out or blank, else 7 to 40 hex
+ * characters, kept in lower case. Only the format is checked: the API cannot see git history, so
+ * whether the commit exists or holds docs/experiment.md is the person's word.
+ */
+export function planCommitOf(raw: unknown): string | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'string') throw badRequest('invalid_experiment', 'plan_commit must be a string or null');
+  const commit = raw.trim().toLowerCase();
+  if (!commit) return null;
+  if (!PLAN_COMMIT.test(commit)) {
+    throw badRequest(
+      'invalid_plan_commit',
+      `"${raw.trim().slice(0, 60)}" is not a git commit hash: a plan commit is 7 to 40 characters, each 0-9 or a-f`,
+      'Commit docs/experiment.md first, then give the commit as `git rev-parse --short HEAD` prints it, or leave the plan commit empty.',
+    );
+  }
+  return commit;
 }
 
 function shaList(value: unknown, field: string): string[] {

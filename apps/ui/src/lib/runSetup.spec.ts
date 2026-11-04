@@ -2,26 +2,80 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '../api/errors';
 import type { ArmView, ConfigView, TaskView } from '../api/types';
 import configsJson from '../fixtures/configs.json';
-import { armPauseHelp, defaultArms, defaultBudget, partnerFor, plainRunError, providerOf, taskSetWords, validateN } from './runSetup';
+import { armsCheck, diffWords, keysCheck, planCheck } from './checks';
+import { armPauseHelp, baselineFor, defaultArms, defaultBudget, localDiff, missingKey, needsKeyWords, oneThingApart, plainRunError, providerOf, taskSetWords, validateN } from './runSetup';
 
 const configs = configsJson as unknown as ConfigView[];
-// The fixtures, oldest first: v1 on Hermes (2 Nov), v2 on Hermes (3 Nov), the own loop (4 Nov),
-// v1 on Hermes with Gemini Flash (5 Nov).
+// The fixtures, oldest first: v1 on Hermes (2 Nov), v2 on Hermes (3 Nov, forked from v1: the
+// prompt), the own loop (4 Nov: the harness), v1 on Hermes with Gemini Flash (5 Nov, forked from
+// v1: the model).
 const [v1, v2, ownloop, gemini] = configs.map((c) => c.hash);
+const byHash = (h: string) => configs.find((c) => c.hash === h)!;
+
+/** A shipped example's config: made elsewhere, on the toolset of its day and another adapter. */
+const shipped = (over: Partial<ConfigView> = {}): ConfigView => ({
+  ...byHash(ownloop),
+  hash: 'sha256:90a6761' + '0'.repeat(57),
+  name: 'v2 sim check, ownloop, haiku',
+  capabilities_sha256: 'sha256:old-capabilities',
+  toolset: { id: 'finance', version: 'all', sha256: 'sha256:e8a33031' + '0'.repeat(56) },
+  example_only: true,
+  created_at: '2026-11-05T13:00:00.000Z',
+  ...over,
+});
+
+describe('one thing apart', () => {
+  it('reads the same areas as the Run screen: a prompt, a model, a harness with its settings', () => {
+    expect(oneThingApart(byHash(v1), byHash(v2))).toBe('prompt');
+    expect(oneThingApart(byHash(v1), byHash(gemini))).toBe('model');
+    expect(oneThingApart(byHash(v1), byHash(ownloop))).toBe('harness');
+    expect(oneThingApart(byHash(v2), byHash(gemini))).toBeNull();
+    expect(oneThingApart(byHash(v1), byHash(v1))).toBeNull();
+  });
+
+  it('counts the harness’s adapter version and capabilities file, as the API’s diff does', () => {
+    const example = shipped();
+    expect(localDiff(byHash(ownloop), example).map((d) => d.path)).toEqual(['capabilities_sha256', 'toolset']);
+    expect(oneThingApart(byHash(ownloop), example)).toBeNull();
+  });
+});
+
+describe('baselineFor', () => {
+  it('takes the config it was forked from first, when that differs in one thing', () => {
+    expect(baselineFor(configs, v2)).toEqual({ config: byHash(v1), axis: 'prompt' });
+    expect(baselineFor(configs, gemini)).toEqual({ config: byHash(v1), axis: 'model' });
+  });
+
+  it('else the newest config one thing apart, never an example’s and never one apart in two', () => {
+    expect(baselineFor(configs, ownloop)).toEqual({ config: byHash(v1), axis: 'harness' });
+    expect(baselineFor(configs, v1)?.config.hash).toBe(gemini);
+    // An example's config differing in one thing is still never the baseline.
+    const twin = shipped({ ...byHash(v1), hash: 'sha256:' + 'e'.repeat(64), prompt: byHash(v2).prompt, example_only: true });
+    expect(baselineFor([byHash(v1), twin], v1)).toBeNull();
+  });
+});
 
 describe('defaultArms', () => {
-  it('with only arm B given, picks the newest other config on the same harness as arm A, never the oldest or B itself', () => {
-    expect(defaultArms(configs, null, v2)).toEqual({ a: gemini, b: v2, note: null });
-    expect(defaultArms(configs, null, gemini)).toEqual({ a: v2, b: gemini, note: null });
+  it('with arm B given, puts its one-thing-apart baseline in arm A', () => {
+    expect(defaultArms(configs, null, v2)).toEqual({ a: v1, b: v2, note: null });
+    expect(defaultArms(configs, null, gemini)).toEqual({ a: v1, b: gemini, note: null });
+    expect(defaultArms(configs, null, ownloop)).toEqual({ a: v1, b: ownloop, note: null });
   });
 
-  it('falls back to the newest config on another harness when none shares B’s', () => {
-    expect(defaultArms(configs, null, ownloop)).toEqual({ a: gemini, b: ownloop, note: null });
-    expect(partnerFor(configs, ownloop)).toBe(gemini);
+  it('with no baseline for arm B, runs it alone and says why, never against a config apart in several things', () => {
+    const lone = { ...byHash(v2), hash: 'sha256:' + 'f'.repeat(64), model: 'gemini-3.8-flash', harness: 'ownloop', parent_hash: null };
+    expect(defaultArms([...configs, lone], null, lone.hash)).toEqual({ a: lone.hash, b: '', note: 'no_baseline' });
   });
 
-  it('with only arm A given, gives arm B the same way', () => {
-    expect(defaultArms(configs, v1, null)).toEqual({ a: v1, b: gemini, note: null });
+  it('never defaults to a shipped example’s config, the QA’s dead end after loading the example', () => {
+    const mine = { ...byHash(ownloop), example_only: false };
+    // The builder's new agent differs from the example's in its toolset and adapter only.
+    expect(defaultArms([shipped(), shipped({ hash: 'sha256:82e5b0e' + '0'.repeat(57), harness: 'hermes' }), mine], null, mine.hash)).toEqual({ a: mine.hash, b: '', note: 'only_one' });
+    expect(defaultArms([shipped()], null, null)).toEqual({ a: '', b: '', note: 'none' });
+  });
+
+  it('with only arm A given, gives arm B a config one thing apart', () => {
+    expect(defaultArms(configs, v2, null)).toEqual({ a: v2, b: v1, note: null });
   });
 
   it('never builds an A/A run: one config runs alone, with a note', () => {
@@ -32,10 +86,69 @@ describe('defaultArms', () => {
     expect(defaultArms([], null, null).note).toBe('none');
   });
 
-  it('keeps both arms when both are given, a one-arm run when B is empty, and the oldest two with neither', () => {
+  it('keeps both arms when both are given, a one-arm run when B is empty, and with neither the newest config with its baseline', () => {
     expect(defaultArms(configs, v2, v1)).toEqual({ a: v2, b: v1, note: null });
     expect(defaultArms(configs, v2, '')).toEqual({ a: v2, b: '', note: null });
-    expect(defaultArms(configs, null, null)).toEqual({ a: v1, b: v2, note: null });
+    expect(defaultArms(configs, null, null)).toEqual({ a: v1, b: gemini, note: null });
+  });
+});
+
+describe('the Run screen’s checks in words', () => {
+  it('records a plan commit as given, never as a check that passed, and refuses one that is not a commit hash', () => {
+    const given = planCheck('ABC1234');
+    expect(given).toMatchObject({ ok: true, recorded: true, title: 'Analysis plan commit recorded as given: abc1234' });
+    expect(given.detail).toBe('The platform cannot see git history, so it does not check that this commit exists or that it holds the plan in docs/experiment.md.');
+    expect(given.title).not.toMatch(/passed|committed before/);
+    expect(planCheck('plan-v1')).toMatchObject({ ok: false, title: 'The analysis plan commit is not a commit hash' });
+    expect(planCheck('  ')).toMatchObject({ ok: false, title: 'No analysis plan commit yet' });
+  });
+
+  it('says what two arms differ in, in words, with the field paths and short hashes kept for Details', () => {
+    const check = armsCheck(localDiff(byHash(ownloop), shipped({ settings: { ...byHash(ownloop).settings, max_steps: 15, timeout_s: 300 } })), false);
+    expect(check.ok).toBe(false);
+    expect(check.detail).toMatch(/^They differ in the harness version, max steps, timeout and the toolset, so a difference in results could not be pinned on one change\./);
+    expect(check.detail).not.toMatch(/sha256|capabilities_sha256|settings\./);
+    expect(check.raw?.split('\n')).toEqual([
+      'capabilities_sha256: sha256:17ae974939a5 to sha256:old-capabilities',
+      'settings.max_steps: 12 to 15',
+      'settings.timeout_s: 180 to 300',
+      'toolset: sha256:e4c1f08aa4af to sha256:e8a330310000',
+    ]);
+    expect(diffWords(localDiff(byHash(v1), byHash(gemini)))).toBe('the model');
+  });
+
+  it('names every arm whose key is not set, the variable, and the command to run after adding it', () => {
+    expect(keysCheck([])).toBeNull();
+    const check = keysCheck([
+      { role: 'Arm A', model: 'claude-haiku-5-5', key: 'ANTHROPIC_API_KEY' },
+      { role: 'Simulated client', model: 'claude-haiku-5-5', key: 'ANTHROPIC_API_KEY' },
+    ]);
+    expect(check).toEqual({
+      ok: false,
+      title: 'ANTHROPIC_API_KEY is not set',
+      detail: 'Arm A (Claude Haiku 5.5) and Simulated client (Claude Haiku 5.5) need ANTHROPIC_API_KEY in .env, so every call would fail. Add it to .env, then run docker compose up -d and reload this page.',
+    });
+  });
+});
+
+describe('missing provider keys', () => {
+  const models = [
+    { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false },
+    { name: 'gemini-3.8-flash', provider: 'gemini', input_per_mtok: 0.75, output_per_mtok: 3.75, key_set: true },
+    { name: 'my-proxy', provider: 'anthropic', input_per_mtok: 1, output_per_mtok: 1, key_set: null },
+  ];
+
+  it('names the .env variable a model needs when GET /models says its key is not set', () => {
+    expect(missingKey('claude-haiku-5-5', models)).toBe('ANTHROPIC_API_KEY');
+    expect(needsKeyWords('claude-haiku-5-5', models)).toBe('needs ANTHROPIC_API_KEY in .env');
+  });
+
+  it('says nothing for a key that is set, one the API could not tell, a fake model or an unlisted one', () => {
+    expect(missingKey('gemini-3.8-flash', models)).toBeNull();
+    expect(missingKey('my-proxy', models)).toBeNull();
+    expect(missingKey('fake/finance-emi', models)).toBeNull();
+    expect(missingKey('claude-sonnet-5-5', models)).toBeNull();
+    expect(needsKeyWords('gemini-3.8-flash', models)).toBe('');
   });
 });
 
@@ -62,8 +175,10 @@ describe('taskSetWords', () => {
   const task = (id: string, split: TaskView['split'], summary = 'x'): TaskView => ({ sha256: `sha256:${id}`, id, version: '1', split, kind: 'single_prompt', summary, graders: [], problems: [] });
   const all = [task('a', 'held_out'), task('b', 'held_out'), task('c', 'discovery'), task('e', 'discovery', 'ENGINE TEST ONLY: smoke')];
 
-  it('says all tasks only when every task is picked, engine tests aside', () => {
-    expect(taskSetWords(all.slice(0, 3), all, 'all')).toBe('all tasks');
+  it('says all tasks only when every task is picked, so the name agrees with the list’s “3 of 4 tasks in the run”', () => {
+    expect(taskSetWords(all, all, 'all')).toBe('all tasks');
+    // The QA's case: every task but the engine tests (left out by default) is "15 tasks", not "all tasks".
+    expect(taskSetWords(all.slice(0, 3), all, 'all')).toBe('3 tasks');
     expect(taskSetWords(all.slice(0, 2), all, 'all')).toBe('2 tasks');
   });
 
@@ -91,6 +206,9 @@ describe('plainRunError', () => {
     expect(plainRunError(new ApiError(400, 'budget_below_estimate', 'budget_usd 20 is below the estimate’s high end 21.56', 'Set budget_usd to at least 21.56'))).not.toContain('budget_usd');
     expect(plainRunError(new ApiError(400, 'unknown_model', 'LiteLLM serves no model named gpt-9'))).toBe("LiteLLM does not serve one of the models (gpt-9). Add it to LiteLLM's config, or pick an agent on another model.");
     expect(plainRunError(new ApiError(0, 'unreachable', 'The API could not be reached (fetch failed)'))).toBe('The platform could not be reached. Check that it is running, then try again.');
+    const plan = plainRunError(new ApiError(400, 'invalid_plan_commit', '"plan-v1" is not a git commit hash', 'Commit docs/experiment.md first, then give the commit as `git rev-parse --short HEAD` prints it.'));
+    expect(plan).toContain('must be a git commit hash: 7 to 40 characters, each 0-9 or a-f');
+    expect(plan).not.toContain('`');
   });
 
   it('keeps the message of an unknown refusal, and its fix unless the fix is an API path', () => {
@@ -137,7 +255,7 @@ describe('armPauseHelp', () => {
   });
 
   it('knows a provider from GET /models first, then from the model name', () => {
-    expect(providerOf('my-proxy-name', [{ name: 'my-proxy-name', provider: 'anthropic', input_per_mtok: 1, output_per_mtok: 1 }])).toBe('anthropic');
+    expect(providerOf('my-proxy-name', [{ name: 'my-proxy-name', provider: 'anthropic', input_per_mtok: 1, output_per_mtok: 1, key_set: null }])).toBe('anthropic');
     expect(providerOf('claude-sonnet-5-5')).toBe('anthropic');
     expect(providerOf('gemini-3.8-flash')).toBe('gemini');
     expect(providerOf('gpt-5-mini')).toBe('openai');

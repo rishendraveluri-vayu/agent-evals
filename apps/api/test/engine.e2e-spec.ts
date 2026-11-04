@@ -50,7 +50,7 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
         n: opts.n ?? 1,
         sim_model: opts.sim ?? null,
         budget_usd: opts.budget ?? 50,
-        plan_commit: 'plan123',
+        plan_commit: 'a1b2c3d',
       });
     if (res.status !== 201) throw new Error(`experiment: ${res.status} ${JSON.stringify(res.body)}`);
     const exp = res.body as ExperimentDetail;
@@ -190,7 +190,7 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     await cancel(roomy.id);
 
     const exp = await experiment({ configs: [configA, configB], n: 2, budget: 7, start: false });
-    expect(exp).toMatchObject({ status: 'created', n: 2, platform_commit: 'abc1234', plan_commit: 'plan123', budget_usd: 7 });
+    expect(exp).toMatchObject({ status: 'created', n: 2, platform_commit: 'abc1234', plan_commit: 'a1b2c3d', budget_usd: 7 });
     expect(exp.counts.queued).toBe(4);
     expect(exp.configs.map((c) => c.name)).toEqual(['arm A', 'arm B']);
     expect(env.stub.teams.find((t) => t.team_alias === `experiment:${exp.id}`)?.max_budget).toBe(7);
@@ -883,15 +883,28 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     await cancel(exp.id);
   });
 
-  it('serves a blind label queue and appends labels to labels/<set>.jsonl', async () => {
-    const exp = await experiment();
+  it('serves a blind label queue of real-model outputs only, and appends labels to labels/<set>.jsonl', async () => {
+    // A fake model plays a script: its trials are nothing to label, in any set.
+    const fake = await experiment();
+    const f = (await claim('w-label'))!;
+    expect(f.experiment_id).toBe(fake.id);
+    await report(f, 'w-label');
+    for (const set of ['tuning', 'heldout', 'final']) {
+      expect((await request(env.http).get(`/api/labels/queue?set=${set}&experiment=${fake.id}`).expect(200)).body).toEqual([]);
+      const all = (await request(env.http).get(`/api/labels/queue?set=${set}`).expect(200)).body as { item_id: string }[];
+      expect(all.map((i) => i.item_id)).not.toContain(f.trial_id);
+    }
+
+    const haiku = await makeConfig(env.http, cat, { name: 'labelled arm', model: 'claude-haiku-5-5' });
+    const exp = await experiment({ configs: [haiku] });
     const c = (await claim('w-label'))!;
+    expect(c.experiment_id).toBe(exp.id);
     await report(c, 'w-label');
     const queue = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as Record<string, unknown>[];
     expect(queue).toHaveLength(1);
     const item = queue[0];
     expect(Object.keys(item).sort()).toEqual(['criteria', 'item_id', 'task_summary', 'tool_calls', 'transcript']);
-    expect(JSON.stringify(item)).not.toMatch(/ownloop|fake\/finance-emi|arm A|cost|wall_s/);
+    expect(JSON.stringify(item)).not.toMatch(/ownloop|claude-haiku|labelled arm|cost|wall_s/);
     expect(item.criteria).toEqual([
       { id: 'empathy', text: 'Acknowledges the client situation' },
       { id: 'no_jargon', text: 'no_jargon' },

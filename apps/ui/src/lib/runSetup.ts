@@ -4,7 +4,9 @@
  * API's refusals in plain words, and what to do about an arm that a config error paused (D37).
  */
 import { ApiError, errorText, errorWithFix } from '../api/errors';
-import type { ArmView, ConfigView, ModelView, TaskView } from '../api/types';
+import type { ArmView, ConfigDiffEntry, ConfigView, ModelView, TaskView } from '../api/types';
+import { axisFromDiff } from './checks';
+import { isFake } from './models';
 import { modelName, splitName } from './names';
 
 // ---------------------------------------------------------------------------------------- arms
@@ -12,8 +14,12 @@ import { modelName, splitName } from './names';
 export interface ArmDefaults {
   a: string;
   b: string;
-  /** `only_one`: one config exists, so the run is a pilot of it; `none`: there are no configs. */
-  note: 'only_one' | 'none' | null;
+  /**
+   * Why the run is not an A/B comparison: `only_one`, one config of your own, so a pilot of it;
+   * `no_baseline`, no saved config differs from it in exactly one thing, so a pilot of it too;
+   * `none`, no config of your own at all.
+   */
+  note: 'only_one' | 'no_baseline' | 'none' | null;
 }
 
 /** Newest first, by `created_at`; GET /configs lists the oldest first, so a later one breaks a tie. */
@@ -24,35 +30,113 @@ function newestFirst(configs: ConfigView[]): ConfigView[] {
     .map((x) => x.c);
 }
 
-/** The newest config other than `hash`, preferring the same harness; '' when there is none. */
-export function partnerFor(configs: ConfigView[], hash: string): string {
-  const me = configs.find((c) => c.hash === hash);
-  const others = newestFirst(configs).filter((c) => c.hash !== hash);
-  return (others.find((c) => me && c.harness === me.harness) ?? others[0])?.hash ?? '';
+/** Configs of your own: a shipped example's (`example_only`) are never a default. */
+export const ownConfigs = (configs: ConfigView[]): ConfigView[] => configs.filter((c) => !c.example_only);
+
+/**
+ * Two configs as paths and values, in the shape of GET /configs/:a/diff/:b (every field that
+ * changes behaviour, the harness's version and capabilities file included), so the Run screen's
+ * own rule (axisFromDiff) can say what they differ in without a call per pair.
+ */
+export function localDiff(a: ConfigView, b: ConfigView): ConfigDiffEntry[] {
+  const fields = (c: ConfigView) => ({
+    harness: c.harness,
+    harness_ref: c.harness_ref,
+    adapter_version: c.adapter_version,
+    capabilities_sha256: c.capabilities_sha256,
+    model: c.model,
+    prompt: c.prompt.sha256,
+    toolset: c.toolset.sha256,
+    settings: c.settings,
+    harness_options: c.harness_options,
+    seed: c.seed,
+  });
+  const out: ConfigDiffEntry[] = [];
+  const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+  const walk = (path: string, x: unknown, y: unknown) => {
+    if (isObj(x) && isObj(y)) {
+      for (const k of [...new Set([...Object.keys(x), ...Object.keys(y)])].sort()) walk(path ? `${path}.${k}` : k, x[k], y[k]);
+    } else if (JSON.stringify(x ?? null) !== JSON.stringify(y ?? null)) {
+      out.push({ path, a: (x ?? null) as ConfigDiffEntry['a'], b: (y ?? null) as ConfigDiffEntry['b'] });
+    }
+  };
+  walk('', fields(a), fields(b));
+  return out;
+}
+
+/** The one thing two configs differ in (`prompt`, `model`, `max_steps`, ...), or null when it is
+ *  nothing or more than one thing. */
+export function oneThingApart(a: ConfigView, b: ConfigView): string | null {
+  if (a.hash === b.hash) return null;
+  const axis = axisFromDiff(localDiff(a, b), false);
+  return axis && axis !== 'none' ? axis : null;
 }
 
 /**
- * The arms a new run starts on, from the address (`#/run?a=&b=`). When one arm is given (the
- * guided builder's "Evaluate it" and the Config screen's "Save and set up a run" give arm B), the
- * other is the newest other config, the same harness first, never the given one: so a new agent
- * is compared with the one made just before it, not with the oldest. With nothing given, arm A is
- * the oldest config and arm B the next, as before. With one config there is nothing to compare
- * against, so it runs alone (a pilot), never against itself (an A/A run is not offered). `b` given
- * as '' asks for a one-arm run.
+ * The baseline to compare `hash` with: a config of your own that differs from it in exactly one
+ * thing, never an example's. The config it was forked from comes first (a fork changes the one
+ * thing it tests), then the newest. Null when there is none.
+ */
+export function baselineFor(configs: ConfigView[], hash: string): { config: ConfigView; axis: string } | null {
+  const me = configs.find((c) => c.hash === hash);
+  if (!me) return null;
+  const others = newestFirst(ownConfigs(configs)).filter((c) => c.hash !== hash);
+  const parent = others.find((c) => c.hash === me.parent_hash);
+  for (const c of parent ? [parent, ...others.filter((x) => x !== parent)] : others) {
+    const axis = oneThingApart(c, me);
+    if (axis) return { config: c, axis };
+  }
+  return null;
+}
+
+/**
+ * The arms a new run starts on, from the address (`#/run?a=&b=`). Arm A is the baseline and arm
+ * B the agent being tested; the comparison reads B minus A, so the two must differ in exactly one
+ * thing. When arm B is given (the guided builder's "Evaluate it", the Config screen's "Save and
+ * set up a run"), arm A is its baseline (baselineFor). With neither given, arm B is the newest of
+ * your configs that has a baseline. A shipped example's configs are never a default. With no
+ * baseline, the run is a pilot of the config on its own, with a note saying why (never an A/A run).
+ * Both given are kept as given; `b` given as '' asks for a one-arm run.
  */
 export function defaultArms(configs: ConfigView[], a: string | null | undefined, b: string | null | undefined): ArmDefaults {
-  if (!configs.length) return { a: a ?? '', b: b ?? '', note: 'none' };
-  if (b === '') return { a: a || configs[0].hash, b: '', note: null };
+  const own = newestFirst(ownConfigs(configs));
+  const alone = (hash: string): ArmDefaults => ({ a: hash, b: '', note: own.some((c) => c.hash !== hash) ? 'no_baseline' : 'only_one' });
   if (a && b) return { a, b, note: null };
-  if (a || b) {
-    const given = (b || a) as string;
-    const partner = partnerFor(configs, given);
-    if (!partner) return { a: given, b: '', note: 'only_one' };
-    return b ? { a: partner, b, note: null } : { a: given, b: partner, note: null };
+  if (b === '') return { a: a || own[0]?.hash || '', b: '', note: a || own.length ? null : 'none' };
+  if (b) {
+    const base = baselineFor(configs, b);
+    return base ? { a: base.config.hash, b, note: null } : alone(b);
   }
-  // GET /configs lists the oldest first.
-  if (configs.length === 1) return { a: configs[0].hash, b: '', note: 'only_one' };
-  return { a: configs[0].hash, b: configs[1].hash, note: null };
+  if (a) {
+    const me = configs.find((c) => c.hash === a);
+    const partner = me ? own.find((c) => c.hash !== a && oneThingApart(me, c)) : undefined;
+    return partner ? { a, b: partner.hash, note: null } : alone(a);
+  }
+  if (!own.length) return { a: '', b: '', note: 'none' };
+  for (const c of own) {
+    const base = baselineFor(configs, c.hash);
+    if (base) return { a: base.config.hash, b: c.hash, note: null };
+  }
+  return alone(own[0].hash);
+}
+
+// ---------------------------------------------------------------------------------------- keys
+
+/**
+ * The .env variable a model needs and lacks, from GET /models' `key_set`: null for a fake model,
+ * one whose key is set, or one the API could not tell about (the run then finds out, as before).
+ */
+export function missingKey(model: string | null | undefined, models: ModelView[]): string | null {
+  if (!model || isFake(model)) return null;
+  const listed = models.find((m) => m.name === model);
+  if (!listed || listed.key_set !== false) return null;
+  return PROVIDERS[providerOf(model, models) ?? '']?.key ?? "the provider's API key";
+}
+
+/** "needs ANTHROPIC_API_KEY in .env", for a model whose key is not set; '' otherwise. */
+export function needsKeyWords(model: string | null | undefined, models: ModelView[]): string {
+  const key = missingKey(model, models);
+  return key ? `needs ${key} in .env` : '';
 }
 
 // ---------------------------------------------------------------------------------------- N
@@ -76,17 +160,17 @@ export function validateN(raw: number | string | null | undefined): { value: num
 export const isEngineTest = (t: TaskView): boolean => t.summary.startsWith('ENGINE TEST ONLY');
 
 /**
- * The tasks in the run's default name: "all tasks" only when every task is in it (engine tests
- * aside), "held-out" when every task of that split is, else how many: "5 tasks", "3 held-out tasks".
+ * The tasks in the run's default name, as the task list counts them ("15 of 17 tasks in the
+ * run"): "all tasks" only when every task is in it, engine tests included; "held-out" when every
+ * task of that split is; else how many: "15 tasks", "3 held-out tasks".
  */
 export function taskSetWords(picked: TaskView[], all: TaskView[], split: string): string {
-  const real = all.filter((t) => !isEngineTest(t));
   const has = new Set(picked.map((t) => t.sha256));
   const covers = (list: TaskView[]) => list.length > 0 && list.every((t) => has.has(t.sha256));
-  if (covers(real)) return 'all tasks';
+  if (covers(all)) return 'all tasks';
   const n = picked.length;
   if (split === 'all') return `${n} ${n === 1 ? 'task' : 'tasks'}`;
-  if (covers(real.filter((t) => t.split === split)) && picked.every((t) => t.split === split)) return splitName(split);
+  if (covers(all.filter((t) => t.split === split)) && picked.every((t) => t.split === split)) return splitName(split);
   return `${n} ${splitName(split)} ${n === 1 ? 'task' : 'tasks'}`;
 }
 
@@ -132,6 +216,8 @@ export function plainRunError(err: unknown): string {
       return 'This run has already started, so it cannot be discarded. Stop it instead: its waiting trials are cancelled and finished ones kept.';
     case 'plan_commit_locked':
       return 'The analysis plan commit is fixed once a run has started.';
+    case 'invalid_plan_commit':
+      return 'The analysis plan commit must be a git commit hash: 7 to 40 characters, each 0-9 or a-f, as git rev-parse --short HEAD prints it. Commit docs/experiment.md first, then give that commit, or leave the field empty.';
     case 'invalid_experiment':
       if (/same hash twice/.test(m)) return 'Arm A and arm B are the same agent. Pick a different agent for one of them.';
       if (/^n must be/.test(m)) return 'Trials per task and arm must be a whole number from 1 to 1,000.';

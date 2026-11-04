@@ -110,6 +110,11 @@ services:
       EVALS_PLATFORM_COMMIT: ${EVALS_PLATFORM_COMMIT:-}
       # D38: the standing allowance for pre-run conflict checks on Claude Sonnet 5.5, in USD.
       EVALS_CONFLICT_CHECK_ALLOWANCE_USD: ${EVALS_CONFLICT_CHECK_ALLOWANCE_USD:-2}
+      # Whether each provider key is set in .env, so the UI can say which models cannot run before
+      # a run fails. `${VAR:+1}` is 1 when the key is set and not empty, else empty: a flag, never
+      # the key, which only LiteLLM holds. scripts/check_compose.py checks both.
+      ANTHROPIC_KEY_SET: ${ANTHROPIC_API_KEY:+1}
+      GEMINI_KEY_SET: ${GEMINI_API_KEY:+1}
       # Trial folders: SP1 gate and smoke runs, and experiment attempts, which the API writes
       # from the files workers upload (runs/<experiment>/<trial>/attempt-<n>/).
       RUNS_DIR: /runs

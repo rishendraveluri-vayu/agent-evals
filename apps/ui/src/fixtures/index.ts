@@ -80,6 +80,14 @@ const recordedTrial = recordedTrialJson as unknown as { summary: { trialId: stri
 
 /** Session-only writes. A judge approval here mints no key and calls no model. */
 const created = { configs: [] as ConfigView[], experiments: new Map<string, ExperimentDetail>(), prompts: [] as PromptView[], judges: new Map<string, JudgeView>() };
+
+/** Forgets this session's writes, as a reload does; for tests that must not see each other's. */
+export function resetSession(): void {
+  created.configs.length = 0;
+  created.prompts.length = 0;
+  created.experiments.clear();
+  created.judges.clear();
+}
 const allPrompts = () => [...(promptsJson as PromptView[]), ...created.prompts];
 
 /** POST /prompts by the API's rules: the next v<n> of an existing id; the same text returns its
@@ -216,6 +224,7 @@ function createConfig(body: CreateConfigRequest): ConfigView {
     warnings: [],
     harness_options: body.harness_options ?? {},
     parent_hash: parent?.hash ?? null,
+    example_only: false,
     created_at: meta.now,
   };
   created.configs.push(config);
@@ -244,7 +253,7 @@ function diffConfigs(a: ConfigView, b: ConfigView): ConfigDiffEntry[] {
   // derived ones and the lineage, so the name, capabilities_sha256 and settings_sources show too.
   const fields = (c: ConfigView) => {
     const rest: Partial<ConfigView> = { ...c };
-    for (const key of ['hash', 'created_at', 'unsupported', 'warnings', 'parent_hash'] as const) delete rest[key];
+    for (const key of ['hash', 'created_at', 'unsupported', 'warnings', 'parent_hash', 'example_only'] as const) delete rest[key];
     return rest;
   };
   walk('', fields(a), fields(b));
@@ -454,9 +463,9 @@ function renderedPrompt(hash: string): RenderedPromptView {
   return renderedPrompts[hash] ?? { config_hash: hash, status: 'none', probe: null, cached: false, error: null, rendered: null };
 }
 
-/** GET returns the stored check; POST in sample mode never calls a model either, so it answers
- *  with the stored check (cached) or says, as the API would after a call, that there is none. */
-function conflictCheck(hash: string, post: boolean): ConflictCheckView {
+/** GET returns the stored check, or null when there is none (as the API does); POST in sample
+ *  mode never calls a model either, so it answers with the stored check (cached) or refuses. */
+function conflictCheck(hash: string, post: boolean): ConflictCheckView | null {
   const rendered = renderedPrompt(hash);
   if (rendered.status !== 'ready') {
     throw new ApiError(409, 'rendered_prompt_required', `config ${hash} has no rendered prompt yet`, 'Render the prompt first; the check reads it.');
@@ -464,7 +473,7 @@ function conflictCheck(hash: string, post: boolean): ConflictCheckView {
   const stored = conflictChecks[hash];
   if (stored) return { ...stored, cached: true };
   if (post) throw new ApiError(409, 'sample_data', 'Sample mode makes no model calls, so this check cannot run here.', 'Run the UI against the API to check a config; each check is a real, paid call.');
-  throw new ApiError(404, 'no_conflict_check', `no conflict check for config ${hash} yet`);
+  return null;
 }
 
 /** Sample mode's shipped example: one of the sample experiments, already in place, so "See a

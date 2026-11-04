@@ -13,6 +13,7 @@ import { plainText, shortHash, shortRef } from '../lib/format';
 import { BOOLEAN_SETTINGS, harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
 import { agentModels, fakeDoes, isFake } from '../lib/models';
 import { NAME_MAX, settingProblem } from '../lib/limits';
+import { missingKey, needsKeyWords, ownConfigs } from '../lib/runSetup';
 import { ignoredReasons, toggleValue } from '../lib/settings';
 import { href, navigate } from '../router';
 import { text } from '../trials';
@@ -64,22 +65,45 @@ const seedMemory = ref('');
 const seedSkills = reactive<SeedSkill[]>([]);
 
 const versionNumber = (v: string) => Number(v.replace(/^v/, '')) || 0;
-const byAge = (configs: ConfigView[]) => [...configs].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+const newestFirst = (configs: ConfigView[]) => [...configs].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+const isTaskPrompt = (p: PromptView) => p.id !== 'client-sim' && p.id !== 'conflict-check';
 
-/** A new config starts as a copy of the oldest saved one (the baseline) with the newest version
- *  of its prompt, so trying a new prompt is one click and the diff says exactly what moved. A fork
- *  starts as an exact copy of the config it forks. */
+/** A config's prompt and toolset are in this checkout's catalogue (GET /prompts, GET /toolsets):
+ *  a config that came with the shipped example may name older ones, which cannot be saved again. */
+const inCatalogue = (c: ConfigView, d: Loaded) => d.prompts.some((p) => p.sha256 === c.prompt.sha256) && d.toolsets.some((t) => t.sha256 === c.toolset.sha256);
+
+/** What the form had to change from the config it started from, because the catalogue does not
+ *  have it: said at the top and by the field, so a save never fails silently on it. */
+const replaced = reactive<{ prompt: string | null; toolset: string | null }>({ prompt: null, toolset: null });
+/** The config the form started from, when it is a shipped example's. */
+const fromExample = ref<ConfigView | null>(null);
+
+/**
+ * A new config starts as a copy of the newest config of your own whose prompt and toolset are in
+ * the catalogue, with the newest version of its prompt, so trying a new prompt is one click and the
+ * diff says exactly what moved; with none, from the first harness, a model that can run and the
+ * first prompt and toolset. A fork starts as an exact copy of the config it forks, except a prompt
+ * or toolset the catalogue no longer has: the current one is picked instead, and the page says so.
+ */
 watch(data, (d) => {
   if (!d || form.harness) return;
   const forked = props.fork ? d.configs.find((c) => c.hash === props.fork) : undefined;
-  const base = forked ?? byAge(d.configs)[0];
+  const base = forked ?? newestFirst(d.configs).find((c) => !c.example_only && inCatalogue(c, d));
   baseHash.value = base?.hash ?? '';
+  fromExample.value = base?.example_only ? base : null;
   form.harness = base?.harness ?? d.harnesses[0]?.name ?? '';
-  form.model = base?.model ?? d.models[0]?.name ?? agentModels([]).fake[0]?.name ?? '';
-  const promptId = base?.prompt.id ?? d.prompts.find((p) => p.id !== 'client-sim' && p.id !== 'conflict-check')?.id ?? d.prompts[0]?.id;
+  // With no config to start from: a real model whose key is not known to be missing, else the
+  // first fake one, which needs no key and spends nothing.
+  const runnable = d.models.find((m) => !missingKey(m.name, d.models));
+  form.model = base?.model ?? runnable?.name ?? agentModels([]).fake[0]?.name ?? '';
+  const promptId = base?.prompt.id ?? d.prompts.find(isTaskPrompt)?.id ?? d.prompts[0]?.id;
   const newest = d.prompts.filter((p) => p.id === promptId).sort((a, b) => versionNumber(b.version) - versionNumber(a.version))[0];
-  form.prompt = forked ? forked.prompt.sha256 : (newest?.sha256 ?? d.prompts[0]?.sha256 ?? '');
-  form.toolset = base?.toolset.sha256 ?? d.toolsets[0]?.sha256 ?? '';
+  const forkedPrompt = forked && d.prompts.some((p) => p.sha256 === forked.prompt.sha256) ? forked.prompt.sha256 : null;
+  form.prompt = forkedPrompt ?? newest?.sha256 ?? d.prompts.find(isTaskPrompt)?.sha256 ?? '';
+  replaced.prompt = forked && !forkedPrompt ? `${forked.prompt.id} ${forked.prompt.version}` : null;
+  const keptToolset = base && d.toolsets.some((t) => t.sha256 === base.toolset.sha256) ? base.toolset.sha256 : null;
+  form.toolset = keptToolset ?? (d.toolsets.find((t) => t.id === base?.toolset.id) ?? d.toolsets[0])?.sha256 ?? '';
+  replaced.toolset = base && !keptToolset ? `${base.toolset.id} ${base.toolset.version} (${shortHash(base.toolset.sha256)})` : null;
   for (const name of SETTING_NAMES) {
     const value = base?.settings[name];
     // Only what the base config set itself is copied; defaults stay defaults.
@@ -238,8 +262,13 @@ const problems = computed<Partial<Record<SettingName, string>>>(() => {
   return out;
 });
 
-/** Why Save is off, in words; null when it is on. */
+/** Why Save is off, in words; null when it is on. Every reason save() could stop for is here, so
+ *  it never stops without saying why. */
 const invalid = computed(() => {
+  if (!harness.value) return 'Pick a harness to save the config.';
+  if (!form.model) return 'Pick a model to save the config.';
+  if (!prompt.value) return "Pick a prompt: the one this config started from is not in this checkout's prompts.";
+  if (!toolset.value) return "Pick a toolset: the one this config started from is not in this checkout's toolsets.";
   const first = SETTING_NAMES.find((name) => problems.value[name]);
   if (first) return `Not saved yet: ${problems.value[first]}`;
   if (!form.name.trim()) return 'Give the config a name to save it.';
@@ -271,7 +300,12 @@ const changes = computed(() => {
   if (b.harness !== form.harness) out.push(`Harness: ${harnessShort(b.harness)} to ${harnessShort(form.harness)}`);
   if (b.model !== form.model) out.push(`Model: ${modelName(b.model)} to ${modelName(form.model)}`);
   if (b.prompt.sha256 !== form.prompt) out.push(`Prompt: ${b.prompt.id === prompt.value?.id ? '' : `${b.prompt.id} `}${b.prompt.version} to ${prompt.value?.id === b.prompt.id ? '' : `${prompt.value?.id} `}${prompt.value?.version ?? '?'}`);
-  if (b.toolset.sha256 !== form.toolset) out.push(`Toolset: ${b.toolset.id} ${b.toolset.version} to ${toolset.value?.id} ${toolset.value?.version}`);
+  if (b.toolset.sha256 !== form.toolset) {
+    // The same name and version with other content (an example's older toolset): the hashes tell them apart.
+    const same = b.toolset.id === toolset.value?.id && b.toolset.version === toolset.value?.version;
+    const tag = (sha: string) => (same ? ` (${shortHash(sha)})` : '');
+    out.push(`Toolset: ${b.toolset.id} ${b.toolset.version}${tag(b.toolset.sha256)} to ${toolset.value?.id} ${toolset.value?.version}${tag(form.toolset)}`);
+  }
   for (const name of SETTING_NAMES) {
     const was = b.settings[name];
     const now = resolvedNow(name);
@@ -303,6 +337,9 @@ const shownHash = computed(() => saved.value?.hash ?? sameAs.value?.hash ?? null
 
 /** Warnings for this harness and model: from the saved config once saved, else from any saved
  *  config with the same harness and model (the API works them out from those two alone). */
+/** The .env variable the picked model needs and lacks (GET /models' key_set); null when set or not known. */
+const keyMissing = computed(() => missingKey(form.model, data.value?.models ?? []));
+
 const warnings = computed<ConfigWarning[]>(() => {
   if (saved.value) return saved.value.warnings ?? [];
   return data.value?.configs.find((c) => c.harness === form.harness && c.model === form.model && c.warnings?.length)?.warnings ?? [];
@@ -395,7 +432,8 @@ const refusalFor = (field: string) => (refusal.value?.field === field ? refusal.
 
 async function save(thenRun: boolean) {
   const d0 = data.value;
-  if (invalid.value || !d0 || !harness.value || !prompt.value || !toolset.value) return;
+  // Save is off with its reason shown under it (invalid); Enter in a field ends here too.
+  if (invalid.value || !d0) return;
   saving.value = true;
   refusal.value = null;
   try {
@@ -414,6 +452,8 @@ async function save(thenRun: boolean) {
     // first saved with; the name typed here is not used.
     existed.value = d0.configs.some((c) => c.hash === config.hash) || config.name !== form.name.trim();
     saved.value = config;
+    // The saved list (and its count) shows the new config at once.
+    if (!d0.configs.some((c) => c.hash === config.hash) && data.value) data.value = { ...data.value, configs: [...data.value.configs, config] };
     apiDiff.value = base.value && base.value.hash !== config.hash ? await api.configDiff(base.value.hash, config.hash) : [];
     if (thenRun) navigate(href.runNew(base.value && base.value.hash !== config.hash ? base.value.hash : undefined, config.hash));
   } catch (err) {
@@ -432,8 +472,9 @@ async function save(thenRun: boolean) {
   }
 }
 
+// The source is a string, so adding the saved config to the list (the same choices) is no change.
 watch(
-  () => [form.harness, form.model, form.prompt, form.toolset, JSON.stringify(settings.value), JSON.stringify(harnessOptions.value), JSON.stringify(seed.value)],
+  () => JSON.stringify([form.harness, form.model, form.prompt, form.toolset, settings.value, harnessOptions.value, seed.value]),
   () => {
     saved.value = null;
     existed.value = false;
@@ -463,11 +504,28 @@ watch(
     </p>
     <p class="lede">
       <template v-if="forkOf">
-        A copy of <a :href="href.configPage(forkOf.hash)">{{ forkOf.name }}</a>. Change the one thing this fork is meant to test; saving records {{ forkOf.name }} as its parent.
+        A copy of <a :href="href.configPage(forkOf.hash)">{{ forkOf.name }}</a>{{ fromExample ? ', from the shipped example' : '' }}. Change the one thing this fork is meant to test; saving records {{ forkOf.name }} as its parent.
       </template>
       <template v-else>
         A config is one harness, one model, one prompt, one toolset and its settings. Saving it gives it a content hash, so every result points back to exactly what produced it.
       </template>
+    </p>
+    <p
+      v-if="replaced.prompt || replaced.toolset"
+      class="lede replaced-note"
+      role="status"
+      data-test="replaced-note"
+    >
+      <template v-if="fromExample">
+        {{ fromExample.name }} came with the shipped example, made elsewhere with the files of its day.
+      </template>
+      <template v-if="replaced.toolset">
+        Its toolset, {{ replaced.toolset }}, is not in this checkout, so the current one, {{ toolset ? `${toolset.id} ${toolset.version}` : 'the first listed' }}, is picked under Tools.
+      </template>
+      <template v-if="replaced.prompt">
+        Its prompt, {{ replaced.prompt }}, is not in this checkout, so {{ prompt ? `${prompt.id} ${prompt.version}` : 'the first listed' }} is picked under Prompt.
+      </template>
+      Saving makes a config of your own with today's files; the comparison below shows what changed.
     </p>
   </div>
 
@@ -541,7 +599,7 @@ watch(
                   v-for="m in modelGroups.real"
                   :key="m.name"
                   :value="m.name"
-                >{{ modelName(m.name) }}</option>
+                >{{ modelName(m.name) }}{{ needsKeyWords(m.name, data.models) ? ` (${needsKeyWords(m.name, data.models)})` : '' }}</option>
               </optgroup>
               <optgroup label="Fake models: scripted replies, free">
                 <option
@@ -560,6 +618,11 @@ watch(
               v-else-if="model"
               class="secondary smaller"
             >Price per million tokens: {{ perMillion(model.input_per_mtok) }} in, {{ perMillion(model.output_per_mtok) }} out, from the LiteLLM config. A real model: each call costs money.</span>
+            <span
+              v-if="keyMissing"
+              class="smaller needs-key"
+              data-test="model-needs-key"
+            >{{ modelName(form.model) }} {{ needsKeyWords(form.model, data.models) }}, and it is not set, so it cannot run yet. Saving is free and works anyway; before a run, add the key, then run docker compose up -d. A fake model below needs no key.</span>
             <span
               v-if="refusalFor('model')"
               class="refusal small"
@@ -580,6 +643,11 @@ watch(
                 :value="p.sha256"
               >{{ p.id }} {{ p.version }}</option>
             </select>
+            <span
+              v-if="replaced.prompt"
+              class="smaller replaced-field"
+              data-test="prompt-replaced"
+            >Picked because {{ replaced.prompt }}, the prompt it started from, is not in this checkout.</span>
             <span
               v-if="refusalFor('prompt')"
               class="refusal small"
@@ -734,10 +802,13 @@ watch(
             From the finance MCP server. Every harness receives these exact schemas. A narrower set is a new toolset version, so it shows in the hash.
           </p>
           <label
-            v-if="data.toolsets.length > 1"
+            v-if="data.toolsets.length > 1 || replaced.toolset"
             class="inline-field toolset-pick"
           >Toolset
-            <select v-model="form.toolset">
+            <select
+              v-model="form.toolset"
+              data-test="toolset-select"
+            >
               <option
                 v-for="t in data.toolsets"
                 :key="t.sha256"
@@ -745,6 +816,13 @@ watch(
               >{{ t.id }} {{ t.version }}</option>
             </select>
           </label>
+          <p
+            v-if="replaced.toolset"
+            class="smaller replaced-field"
+            data-test="toolset-replaced"
+          >
+            Picked because {{ replaced.toolset }}, the toolset it started from, is not in this checkout: the tools below are today's.
+          </p>
           <ul
             class="tools"
             :aria-label="`Tools in ${toolset?.id ?? 'the toolset'}`"
@@ -877,7 +955,7 @@ watch(
                       <span
                         v-if="supported(name) && !isIgnored(name) && harness?.capabilities.settings[name].native"
                         class="mono"
-                      >{{ harness?.capabilities.settings[name].native }}</span>
+                      >{{ plainText(harness?.capabilities.settings[name].native ?? '') }}</span>
                       <span
                         v-else
                         class="secondary"
@@ -1123,10 +1201,20 @@ watch(
                 data-test="base-select"
               >
                 <option
-                  v-for="c in data.configs"
+                  v-for="c in ownConfigs(data.configs)"
                   :key="c.hash"
                   :value="c.hash"
                 >{{ c.name }} · {{ shortHash(c.hash) }}</option>
+                <optgroup
+                  v-if="data.configs.some((c) => c.example_only)"
+                  label="From the shipped example"
+                >
+                  <option
+                    v-for="c in data.configs.filter((x) => x.example_only)"
+                    :key="c.hash"
+                    :value="c.hash"
+                  >{{ c.name }} · {{ shortHash(c.hash) }}</option>
+                </optgroup>
               </select>
             </label>
             <ul
@@ -1280,7 +1368,7 @@ watch(
               :key="c.hash"
             >
               <a :href="href.configPage(c.hash)">{{ c.name }}</a>
-              <span class="secondary block smaller"><span class="mono">{{ shortHash(c.hash) }}</span> · {{ harnessShort(c.harness) }} · {{ modelName(c.model) }}</span>
+              <span class="secondary block smaller"><span class="mono">{{ shortHash(c.hash) }}</span> · {{ harnessShort(c.harness) }} · {{ modelName(c.model) }}<template v-if="c.example_only"> · from the shipped example</template></span>
             </li>
           </ul>
           <p
@@ -1344,6 +1432,22 @@ watch(
   display: block;
   margin: 6px 0 0;
   color: var(--error);
+}
+
+/* What the form changed from the config it started from, or a key a model lacks: said in words. */
+.replaced-note {
+  max-width: 72ch;
+  padding: 8px 12px;
+  border-left: 4px solid var(--warning);
+  background: var(--surface);
+  font-size: 15px;
+}
+
+.replaced-field,
+.needs-key {
+  display: block;
+  margin: 6px 0 0;
+  color: var(--ink);
 }
 
 .refusal strong {

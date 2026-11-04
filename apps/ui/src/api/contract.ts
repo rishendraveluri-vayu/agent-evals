@@ -162,6 +162,12 @@ export interface ModelView {
   provider: string | null;
   input_per_mtok: number | null;
   output_per_mtok: number | null;
+  /**
+   * Whether the provider's key (ANTHROPIC_API_KEY, GEMINI_API_KEY) is set for LiteLLM, as compose
+   * tells the API (`ANTHROPIC_KEY_SET`, `GEMINI_KEY_SET`: a flag, never the key). `null` when the
+   * API was not told (run outside compose), for a provider it knows no key for, and for `fake/*`.
+   */
+  key_set: boolean | null;
 }
 
 // ---- Configs -------------------------------------------------------------------------
@@ -223,6 +229,12 @@ export interface ConfigView {
   seed: Seed;
   /** D34: the config this one was forked from, or null. */
   parent_hash: Sha256 | null;
+  /**
+   * True when the config came with a shipped example (SP7) and no experiment of this database's
+   * own uses it. Its prompt or toolset may be older than the catalogue's, so pickers do not
+   * default to it. Not part of the hash, and not diffed.
+   */
+  example_only: boolean;
   created_at: string;
 }
 
@@ -326,6 +338,11 @@ export interface CreateExperimentRequest {
   n: number;
   sim_model?: string | null;
   budget_usd: number;
+  /**
+   * The git commit of the analysis plan (docs/experiment.md): 7 to 40 hex characters, stored in
+   * lower case. Only the format is checked: the API cannot see git history, so it does not check
+   * that the commit exists or holds the plan. Blank or null: none.
+   */
   plan_commit?: string | null;
   /** Optional; defaults to the highest version of the `client-sim` prompt (v4 since 4 Nov). */
   sim_prompt_sha256?: Sha256 | null;
@@ -348,6 +365,7 @@ export interface CreateExperimentRequest {
  * its run page); once it has started the plan commit is fixed (409 `plan_commit_locked`).
  */
 export interface StartExperimentRequest {
+  /** As in CreateExperimentRequest: 7 to 40 hex characters, the format checked only. */
   plan_commit?: string | null;
 }
 
@@ -1117,7 +1135,7 @@ export interface AllowanceView {
   half_reached: boolean;
 }
 
-/** POST /configs/:hash/conflict-check, and GET for the stored result without a call. */
+/** POST /configs/:hash/conflict-check, and GET for the stored result without a call (GET answers `null` when none is stored). */
 export interface ConflictCheckView {
   config_hash: Sha256;
   rendered_sha256: Sha256;
@@ -1140,15 +1158,23 @@ export interface ConflictCheckView {
 
 /** GET /spend: trial spend, the platform's own calls and the LLM judge, separately (D38). */
 export interface SpendView {
-  /** Experiment trials, agent and simulator calls. Probe trials (fake model) are not counted. */
+  /**
+   * Experiment trials' real spend: agent calls on a real model, and simulator calls on a real
+   * model. Calls to fake models (`fake/*`), probe trials and shipped examples are not counted.
+   */
   trials_usd: number;
+  /**
+   * The made-up prices LiteLLM counted for experiment trials' calls to fake models (`fake/*`).
+   * Not money: kept apart, and not in `total_usd`.
+   */
+  fake_trials_usd: number;
   /** Platform-made calls with a known cost. */
   system_usd: number;
   /** The LLM judge's calls across every approval, revoked ones included, from LiteLLM's spend log; null when it could not be read. */
   judge_usd: number | null;
   /** Judge approvals ever made, revoked ones included. */
   judge_approvals: number;
-  /** Trials, system and judge spend (the judge only when known). */
+  /** Real trial spend, system and judge spend (the judge only when known); never fake prices. */
   total_usd: number;
   system_by_kind: Record<string, { usd: number; calls: number }>;
   allowances: AllowanceView[];

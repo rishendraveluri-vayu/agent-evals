@@ -95,9 +95,9 @@ export class LabelsService {
   }
 
   /**
-   * Agent-labelled trials whose task has judge criteria, not yet fully labelled in this set,
-   * in a fixed shuffled order (a hash of set and trial id) so arms are mixed. Optionally
-   * limited to one experiment. Nothing that tells the arm apart is included.
+   * Agent-labelled trials of a real model whose task has judge criteria, not yet fully labelled
+   * in this set, in a fixed shuffled order (a hash of set and trial id) so arms are mixed.
+   * Optionally limited to one experiment. Nothing that tells the arm apart is included.
    */
   async queue(setInput: unknown, experimentId?: string): Promise<LabelQueueItem[]> {
     const set = labelSet(setInput);
@@ -107,9 +107,12 @@ export class LabelsService {
     // labels can never leak into the held-out agreement (SP5, CLAUDE.md: never tune on held-out).
     // A shipped example's trials (SP7) are not labelled here: labels/ holds Rishi's judgments of
     // his own runs, and an example's trials keep the ids they had on the machine they came from.
+    // A trial whose agent ran on a fake model (`fake/*`) played a script: there is no agent output
+    // to judge, so it is left out too.
     let where = `t.status = 'done' AND NOT t.probe AND t.label = 'agent' AND t.result IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM labels o WHERE o.trial_id = t.id AND o.label_set <> $1)
-      AND ${NOT_EXAMPLE_TRIAL('t')}`;
+      AND ${NOT_EXAMPLE_TRIAL('t')}
+      AND NOT EXISTS (SELECT 1 FROM configs fc WHERE fc.hash = t.config_hash AND fc.model LIKE 'fake/%')`;
     if (experimentId) {
       params.push(experimentId);
       where += ` AND t.experiment_id = $${params.length}`;

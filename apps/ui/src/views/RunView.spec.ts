@@ -21,8 +21,9 @@ describe('RunView, setting up a run in fixture mode', () => {
     const w = mount(RunView, { props: {} });
     await settle();
     const selected = (sel: string) => (w.get(sel).element as HTMLSelectElement).selectedOptions[0]?.text;
+    // With no arm in the address: the newest agent, and its baseline one thing away (the model).
     expect(selected('[data-test="arm-a"]')).toBe('Prompt v1 on Hermes · 3b81e04');
-    expect(selected('[data-test="arm-b"]')).toBe('Prompt v2 on Hermes · 7f3a9c2');
+    expect(selected('[data-test="arm-b"]')).toBe('Prompt v1 on Hermes, Gemini Flash · c58e2d1');
     for (const o of w.findAll('[data-test="arm-a"] option')) expect(o.text()).toMatch(/^[A-Z].* · [0-9a-f]{7}$/);
   });
 
@@ -61,12 +62,13 @@ describe('RunView, setting up a run in fixture mode', () => {
     const w = mount(RunView, { props: {} });
     await settle();
     const checks = w.findAll('[data-test="check"]').map((c) => c.text());
-    expect(checks[0]).toContain('Only the system prompt differs between the arms');
+    expect(checks[0]).toContain('Only the model differs between the arms');
     expect(checks.some((c) => c.includes('No analysis plan commit yet') && c.includes('Check failed'))).toBe(true);
     expect(w.get('[data-test="start"]').attributes('disabled')).toBeDefined();
     await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
     await settle();
-    expect(w.findAll('[data-test="check"]').every((c) => c.text().includes('Check passed'))).toBe(true);
+    // The plan commit is recorded as given, not checked; every other check passed.
+    expect(w.findAll('[data-test="check"]').every((c) => c.text().includes('Check passed') || c.text().includes('Recorded, not checked'))).toBe(true);
     expect(w.get('[data-test="start"]').attributes('disabled')).toBeUndefined();
     expect(w.get('[data-test="start"]').text()).toBe('Start 120 trials');
   });
@@ -155,7 +157,7 @@ describe('RunView, a running experiment in fixture mode', () => {
     for (const summary of w.findAll('.run-details > summary')) expect(summary.find('.summary-text').exists()).toBe(true);
     const checks = w.get('[data-test="checks-details"]');
     expect(checks.attributes('open')).toBeUndefined();
-    expect(checks.get('summary').text()).toMatch(/^Checked before the start: \d+ of \d+ passed, plan 3e1a9f0$/);
+    expect(checks.get('summary').text()).toMatch(/^Checked before the start: \d+ of \d+ passed; plan commit 3e1a9f0, as given$/);
     expect(checks.findAll('[data-test="check"]').length).toBeGreaterThan(0);
     const diff = w.get('[data-test="diff-details"]');
     expect(diff.attributes('open')).toBeUndefined();
@@ -421,16 +423,17 @@ const fakeB: ConfigView = { ...fakeA, hash: `sha256:fb${'0'.repeat(61)}2`, name:
 describe('RunView arm defaults (QA blocker 3)', () => {
   useFixtures();
 
-  it('with only arm B in the address, starts arm A on the newest other agent of the same harness, never the oldest or B', async () => {
+  it('with only arm B in the address, starts arm A on a baseline one thing away (its parent first), never B itself', async () => {
     const w = mount(RunView, { props: { a: null, b: cfgV2.hash } });
     await settle();
     expect(selectValue(w, '[data-test="arm-b"]')).toBe(cfgV2.hash);
-    expect(selectValue(w, '[data-test="arm-a"]')).toBe(cfgGemini.hash);
-    expect(selectValue(w, '[data-test="arm-a"]')).not.toBe(cfgV1.hash);
+    // v2 was forked from v1 with the prompt changed; Gemini Flash differs in the prompt and the model.
+    expect(selectValue(w, '[data-test="arm-a"]')).toBe(cfgV1.hash);
     expect(w.find('[data-test="arm-note"]').exists()).toBe(false);
+    expect(checkTexts(w)[0]).toContain('Only the system prompt differs between the arms');
   });
 
-  it('with one agent, runs it on its own, says a second one is needed and links to the builder; never an A/A run', async () => {
+  it('with one agent, runs it on its own, says a comparison needs a baseline and links to fork it; never an A/A run', async () => {
     vi.spyOn(api, 'configs').mockResolvedValue([cfgV1]);
     const estimate = vi.spyOn(api, 'estimate');
     const w = mount(RunView, { props: { a: null, b: cfgV1.hash } });
@@ -438,8 +441,8 @@ describe('RunView arm defaults (QA blocker 3)', () => {
     expect(selectValue(w, '[data-test="arm-a"]')).toBe(cfgV1.hash);
     expect(selectValue(w, '[data-test="arm-b"]')).toBe('');
     const note = w.get('[data-test="arm-note"]');
-    expect(note.text()).toContain('A comparison needs a second agent to compare against, and there is only one so far');
-    expect(note.get('a').attributes('href')).toBe('#/build');
+    expect(note.text()).toContain('A comparison needs a baseline: a second agent that differs from this one in one thing. There is only one agent so far, so this run tests it on its own (a pilot).');
+    expect(note.get('[data-test="arm-note-fork"]').attributes('href')).toBe(`#/configs?fork=${encodeURIComponent(cfgV1.hash)}`);
     expect(estimate).toHaveBeenCalled();
     for (const [body] of estimate.mock.calls) expect(body.config_hashes).toEqual([cfgV1.hash]);
     expect(w.get('[data-test="plan"]').text()).toContain('12 tasks × 1 arm × 5 trials');
@@ -792,5 +795,182 @@ describe('RunView explains a missing key on the run side (QA major 5)', () => {
     expect(w.get('[data-test="tally"]').text()).toContain('1 infra failure, not re-run, in arm B');
     expect(w.get('[data-test="run-grid"]').findAll('[data-state="final"]')).toHaveLength(1);
     expect(w.get('[data-test="legend-final"]').text()).toBe('–Infra, not re-run');
+  });
+});
+
+// ------------------------------------------------------------------------------------------
+// The second fresh-clone QA (5 Nov): the example's configs, missing keys, the plan commit.
+
+/** A config that came with the shipped example: made elsewhere, on an older toolset and adapter. */
+const exampleConfig = (over: Partial<ConfigView> = {}): ConfigView => ({
+  ...fixtureConfigs[2],
+  hash: `sha256:90a6761${'0'.repeat(57)}`,
+  name: 'v2 sim check, ownloop, haiku',
+  capabilities_sha256: 'sha256:old-capabilities',
+  toolset: { id: 'finance', version: 'all', sha256: `sha256:e8a33031${'0'.repeat(56)}` },
+  settings: { ...fixtureConfigs[2].settings, max_steps: 15, timeout_s: 300 },
+  example_only: true,
+  created_at: '2026-11-05T13:59:00.000Z',
+  ...over,
+});
+const noKeyModels = [
+  { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false },
+  { name: 'gemini-3.8-flash', provider: 'gemini', input_per_mtok: 0.75, output_per_mtok: 3.75, key_set: true },
+];
+
+describe('RunView never defaults to a shipped example’s config (QA blocker 1, major 2)', () => {
+  useFixtures();
+
+  it('leaves the example’s configs out of the pickers and the defaults, even when they are the newest', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, exampleConfig()]);
+    const w = mount(RunView, { props: {} });
+    await settle();
+    const options = w.findAll('[data-test="arm-a"] option').map((o) => o.text());
+    expect(options.some((o) => o.includes('v2 sim check'))).toBe(false);
+    expect(selectValue(w, '[data-test="arm-b"]')).toBe(cfgGemini.hash);
+    expect(w.find('[data-test="example-arms"]').exists()).toBe(false);
+  });
+
+  it('gives a new agent with no baseline a pilot and a fork link, never the example’s config with raw hashes', async () => {
+    // The builder's new own-loop agent: it differs from the example's in the toolset, the adapter and two settings.
+    const mine: ConfigView = { ...fixtureConfigs[2], hash: `sha256:ab${'0'.repeat(62)}`, name: 'Own loop, Claude Haiku 5.5, finance-advisor v2', prompt: cfgV2.prompt, parent_hash: null, created_at: '2026-11-05T14:00:00.000Z' };
+    vi.spyOn(api, 'configs').mockResolvedValue([exampleConfig(), exampleConfig({ hash: `sha256:82e5b0e${'0'.repeat(57)}`, name: 'v2 sim check, hermes, haiku', harness: 'hermes' }), mine]);
+    const w = mount(RunView, { props: { a: null, b: mine.hash } });
+    await settle();
+    expect(selectValue(w, '[data-test="arm-a"]')).toBe(mine.hash);
+    expect(selectValue(w, '[data-test="arm-b"]')).toBe('');
+    const note = w.get('[data-test="arm-note"]');
+    expect(note.text()).toContain('There is only one agent so far, so this run tests it on its own (a pilot).');
+    expect(note.get('[data-test="arm-note-fork"]').attributes('href')).toBe(`#/configs?fork=${encodeURIComponent(mine.hash)}`);
+    expect(w.text()).not.toMatch(/capabilities_sha256|sha256:/);
+  });
+
+  it('shows an example’s config named in the address apart, says why, and puts the field paths behind Details', async () => {
+    const mine: ConfigView = { ...fixtureConfigs[2], hash: `sha256:ab${'0'.repeat(62)}`, name: 'My own loop', parent_hash: null };
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, exampleConfig(), mine]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([
+      { path: 'capabilities_sha256', a: 'sha256:old-capabilities', b: mine.capabilities_sha256 },
+      { path: 'name', a: 'v2 sim check, ownloop, haiku', b: 'My own loop' },
+      { path: 'settings.max_steps', a: 15, b: 12 },
+      { path: 'settings.timeout_s', a: 300, b: 180 },
+      { path: 'toolset.sha256', a: `sha256:e8a33031${'0'.repeat(56)}`, b: mine.toolset.sha256 },
+    ]);
+    const w = mount(RunView, { props: { a: exampleConfig().hash, b: mine.hash } });
+    await settle();
+    const group = w.get('[data-test="arm-a"] optgroup');
+    expect(group.attributes('label')).toBe('From the shipped example');
+    expect(group.text()).toContain('v2 sim check, ownloop, haiku');
+    expect(w.get('[data-test="example-arms"]').text()).toContain("To run it again, fork it on its page; the fork gets today's files.");
+    const arms = w.findAll('[data-test="check"]')[0];
+    expect(arms.text()).toContain('The arms differ in more than one thing');
+    expect(arms.text()).toContain('They differ in the harness version, max steps, timeout and the toolset');
+    expect(arms.get('[data-test="check-link"]').attributes('href')).toBe(`#/configs?fork=${encodeURIComponent(mine.hash)}`);
+    // Raw paths and hashes only inside a closed Details.
+    const details = arms.get('[data-test="check-details"]');
+    expect(details.attributes('open')).toBeUndefined();
+    expect(details.text()).toContain('capabilities_sha256');
+    expect(arms.text().replace(details.text(), '')).not.toMatch(/sha256|settings\./);
+    expect(w.get('[data-test="arm-diff-summary"]').text()).toBe('4 fields differ: the harness version, max steps, timeout and the toolset.');
+    expect(w.get('[data-test="arm-diff-details"]').attributes('open')).toBeUndefined();
+    expect(w.get('[data-test="start"]').attributes('disabled')).toBeDefined();
+  });
+});
+
+describe('RunView turns Start off while a model’s key is not set (QA major 1)', () => {
+  useFixtures();
+
+  it('names the variable and the command, for every arm and the simulated client, before anything is spent', async () => {
+    vi.spyOn(api, 'models').mockResolvedValue(noKeyModels);
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
+    await settle();
+    const keys = checkTexts(w).find((c) => c.includes('ANTHROPIC_API_KEY is not set'))!;
+    expect(keys).toContain('Check failed');
+    expect(keys).toContain('Arm A (Claude Haiku 5.5) and Arm B (Claude Haiku 5.5) need ANTHROPIC_API_KEY in .env, so every call would fail. Add it to .env, then run docker compose up -d and reload this page.');
+    expect(w.get('[data-test="start"]').attributes('disabled')).toBeDefined();
+    expect(w.get('[data-test="start-helper"]').text()).toBe('1 check is not passing: ANTHROPIC_API_KEY is not set.');
+    // The simulated client is never defaulted to a model it cannot call; its picker says which need a key.
+    expect(selectValue(w, '[data-test="sim-model"]')).toBe('gemini-3.8-flash');
+    expect(w.get('[data-test="sim-model"]').text()).toContain('Claude Haiku 5.5 (needs ANTHROPIC_API_KEY in .env)');
+  });
+
+  it('says nothing about keys on a run of fake models only', async () => {
+    vi.spyOn(api, 'models').mockResolvedValue(noKeyModels);
+    vi.spyOn(api, 'configs').mockResolvedValue([fakeA, fakeB]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'prompt.sha256', a: fakeA.prompt.sha256, b: fakeB.prompt.sha256 }]);
+    const w = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    expect(checkTexts(w).some((c) => c.includes('is not set'))).toBe(false);
+    expect(w.get('[data-test="start"]').attributes('disabled')).toBeUndefined();
+  });
+});
+
+describe('RunView records the plan commit as given (QA major 9)', () => {
+  useFixtures();
+
+  it('refuses a value that is not a commit hash, and never says a commit was checked', async () => {
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    const plan = () => w.findAll('[data-test="check"]').find((c) => /plan commit/i.test(c.text()))!;
+    await w.get('[data-test="plan-commit"]').setValue('plan-v1');
+    await settle();
+    expect(plan().text()).toContain('The analysis plan commit is not a commit hash');
+    expect(plan().text()).toContain('give 7 to 40 characters, each 0-9 or a-f');
+    expect(w.get('[data-test="start"]').attributes('disabled')).toBeDefined();
+    await w.get('[data-test="plan-commit"]').setValue('ABC1234');
+    await settle();
+    expect(plan().attributes('data-state')).toBe('recorded');
+    expect(plan().text()).toContain('Analysis plan commit recorded as given: abc1234');
+    expect(plan().text()).toContain('The platform cannot see git history, so it does not check that this commit exists or that it holds the plan in docs/experiment.md.');
+    expect(plan().text()).toContain('Recorded, not checked.');
+    expect(plan().text()).not.toContain('Check passed');
+    expect(w.get('[data-test="start"]').attributes('disabled')).toBeUndefined();
+  });
+});
+
+describe('RunView, smaller findings on the run screens (5 Nov QA minors)', () => {
+  useFixtures();
+
+  it('never names an arm by its hash twice', async () => {
+    // Prompt and model both differ, so the arms are named by their configs, not by one axis.
+    const w = mount(RunView, { props: { a: cfgV2.hash, b: cfgGemini.hash } });
+    await settle();
+    const arms = w.get('[data-test="start-arms"]').text();
+    expect(arms).toContain('A: Prompt v2 on Hermes, config 7f3a9c2');
+    expect(arms).not.toMatch(/Config [0-9a-f]{7}, config/);
+  });
+
+  it('offers no "Pause arm" while the whole run is paused: the run’s Resume is the one control', async () => {
+    const w = mount(RunView, { props: { experimentId: 'exp_futility' } });
+    await settle();
+    expect(w.find('[data-test="pause-arm-A"]').exists()).toBe(false);
+    expect(w.find('[data-test="pause-arm-B"]').exists()).toBe(false);
+    expect(w.find('[data-test="resume"]').exists()).toBe(true);
+  });
+
+  it('says plainly when the address names no run, and never calls it a new experiment', async () => {
+    const w = mount(RunView, { props: { experimentId: 'e_nope' } });
+    await settle();
+    expect(w.get('[data-test="run-missing"] h1').text()).toBe('No run with that id');
+    expect(w.get('.crumbs').text()).toBe('Experiments / Not found');
+    expect(w.text()).not.toContain('New experiment');
+    expect(w.find('[data-test="load-error"]').exists()).toBe(false);
+  });
+});
+
+describe('RunView against the API, a shipped example', () => {
+  it('shows it by its title, not by the name it was run under', async () => {
+    const base = (details as unknown as Record<string, ExperimentDetail>).exp_heldout;
+    const detail: ExperimentDetail = {
+      ...base,
+      name: 'Label batch 1: open coding (approved: 30 trials, cap $2)',
+      example: { name: 'harness-ownloop-vs-hermes-haiku', title: 'Own loop vs Hermes on Claude Haiku 5.5', loaded_at: base.created_at },
+    };
+    routeFetch({ '/api/experiments/exp_heldout': detail, '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, TrialRowSummary[]>).exp_heldout, '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [], '/api/models': [] });
+    const w = mount(RunView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('.crumbs').text()).toBe('Experiments / Own loop vs Hermes on Claude Haiku 5.5');
+    expect(w.text()).not.toContain('Label batch 1');
   });
 });

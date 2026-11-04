@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { promises as fs } from 'node:fs';
 import type { ConflictCheckView, ConflictFinding, RenderedPrompt, RenderedPromptView, StoredFile, TrialStatus } from '../contract';
-import { ApiError, conflict, notFound } from '../common/api-error';
+import { ApiError, conflict } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { newId } from '../common/ids';
 import { CatalogueService, type StoredPrompt } from '../catalogue/catalogue.service';
@@ -224,11 +224,11 @@ export class PreflightService {
   // ---- conflict check ----
 
   /** The stored conflict check for the config as it is now, without a call; 404 when there is none. */
-  async storedCheck(hashInput: string): Promise<ConflictCheckView> {
+  /** The stored check for the config's current input, or null when none is stored yet. */
+  async storedCheck(hashInput: string): Promise<ConflictCheckView | null> {
     const i = await this.checkInputs(hashInput);
     const hit = await this.cachedCheck(i);
-    if (!hit) throw notFound('no_conflict_check', `no conflict check yet for config ${i.cfg.hash} with checker ${i.checker.id}.${i.checker.version}; POST to run one`);
-    return this.checkView(i, hit, true);
+    return hit ? this.checkView(i, hit, true) : null;
   }
 
   /**

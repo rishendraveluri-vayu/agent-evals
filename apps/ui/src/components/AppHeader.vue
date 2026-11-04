@@ -38,7 +38,9 @@ const spendWords = computed(() => {
   if (!v) return '';
   // total_usd includes the LLM judge's spend (SP4) when it is known; say so when there is any.
   const judge = typeof v.judge_usd === 'number' && v.judge_usd > 0 ? `, the judge ${money(v.judge_usd)}` : '';
-  return `Spent ${money(v.total_usd)}${budget.value ? ` of ${wholeMoney(budget.value)}` : ''}: trials ${money(v.trials_usd)}, the platform's own calls ${money(v.system_usd)}${judge}`;
+  // Fake models' prices are made up for testing: never counted as spend, and said so.
+  const fake = typeof v.fake_trials_usd === 'number' && v.fake_trials_usd > 0 ? `. Fake-model trials are free: their made-up prices (${money(v.fake_trials_usd)}) are not counted` : '';
+  return `Spent ${money(v.total_usd)}${budget.value ? ` of ${wholeMoney(budget.value)}` : ''}: trials on real models ${money(v.trials_usd)}, the platform's own calls ${money(v.system_usd)}${judge}${fake}`;
 });
 /** "$0.44 + $0.02": trials, then the platform's calls, for the phone header. */
 const compactSpend = computed(() => {
@@ -178,6 +180,7 @@ onMounted(async () => {
         <span
           class="wide-only spend-split"
           :aria-label="spendWords"
+          :title="spendWords"
           role="group"
         ><span>Trials <span
           class="num ink"
@@ -192,14 +195,20 @@ onMounted(async () => {
           :aria-label="spendWords"
           data-test="spend-compact"
         >{{ compactSpend }}</span>
-        <AllowanceMeter
+        <!-- The meter's name is visible, not only in its title: "$0 of $2 used" alone says nothing. -->
+        <span
           v-if="allowance"
+          class="wide-only header-allowance"
+          data-test="header-allowance"
+          :title="`Conflict-check allowance: ${money(allowance.used_usd)} of ${wholeMoney(allowance.limit_usd)} used, ${money(allowance.remaining_usd)} left`"
+        ><span
+          class="allowance-label"
+          aria-hidden="true"
+        >Conflict checks</span><AllowanceMeter
           :allowance="allowance"
           label="Conflict checks"
           compact
-          class="wide-only header-allowance"
-          :title="`Conflict-check allowance: ${money(allowance.used_usd)} of ${wholeMoney(allowance.limit_usd)} used, ${money(allowance.remaining_usd)} left`"
-        />
+        /></span>
       </span>
       <span
         v-if="fixtures"
@@ -334,8 +343,15 @@ onMounted(async () => {
 }
 
 .header-allowance {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding-left: 10px;
   border-left: 1px solid var(--rule);
+}
+
+.allowance-label {
+  color: var(--ink-2);
 }
 
 .ink {

@@ -1,13 +1,16 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api/client';
 import { ApiError } from '../api/errors';
 import type { ConfigView as Config } from '../api/types';
+import { resetSession } from '../fixtures';
 import configs from '../fixtures/configs.json';
 import { settle, useFixtures } from '../test/helpers';
 import ConfigView from './ConfigView.vue';
 
 useFixtures();
+// A config saved by one test is the newest, so the next would start from it: each test starts fresh.
+beforeEach(() => resetSession());
 
 const pick = async (w: ReturnType<typeof mount>, value: string) => {
   const radio = w.findAll('[data-test="harness-radio"]').find((r) => (r.element as HTMLInputElement).value === value);
@@ -15,13 +18,23 @@ const pick = async (w: ReturnType<typeof mount>, value: string) => {
   await settle();
 };
 
+/** The newest sample config is on Gemini Flash; these tests read Claude Haiku 5.5's refusals. */
+const haiku = async (w: ReturnType<typeof mount>) => {
+  await w.get('[data-test="model-select"]').setValue('claude-haiku-5-5');
+  await settle();
+};
+
 describe('ConfigView in fixture mode', () => {
-  it('starts from the baseline with the newest prompt and says exactly what changed', async () => {
+  it('starts from the newest config of your own with the newest prompt, and says exactly what changed', async () => {
     const w = mount(ConfigView);
     await settle();
-    expect(w.get('[data-test="config-hash"]').text()).toBe('7f3a9c2');
+    expect((w.get('[data-test="base-select"]').element as HTMLSelectElement).value).toBe(configs[3].hash);
     expect(w.get('[data-test="config-changes"]').text()).toBe('Prompt: v1 to v2');
     expect(w.text()).toContain('2 lines differ from v1');
+    expect(w.find('[data-test="config-hash"]').exists()).toBe(false);
+    // The same harness and prompt on Claude Haiku 5.5 is the saved "Prompt v2 on Hermes".
+    await haiku(w);
+    expect(w.get('[data-test="config-hash"]').text()).toBe('7f3a9c2');
   });
 
   it('compares settings as the API stores them: a value cleared to its default says what the default is', async () => {
@@ -43,7 +56,7 @@ describe('ConfigView in fixture mode', () => {
     expect(coverage[0]).toBe('4 probed, 4 declared');
     expect(coverage).toContain('1 declared, 7 not probed yet');
     const base = w.get('[data-test="base-select"]').element as HTMLSelectElement;
-    expect(base.selectedOptions[0]?.text).toBe('Prompt v1 on Hermes · 3b81e04');
+    expect(base.selectedOptions[0]?.text).toBe('Prompt v1 on Hermes, Gemini Flash · c58e2d1');
     expect(w.find('.tools .pill--pass').exists()).toBe(false);
     expect(w.find('.pill--pass').exists()).toBe(false);
   });
@@ -66,7 +79,9 @@ describe('ConfigView in fixture mode', () => {
     const create = vi.spyOn(api, 'createConfig').mockResolvedValueOnce(v2);
     const w = mount(ConfigView);
     await settle();
-    // The baseline with the newest prompt is exactly the saved "Prompt v2 on Hermes".
+    expect((w.get('[data-test="config-name"]').element as HTMLInputElement).value).toBe('Prompt v2 on Hermes, Gemini 3.8 Flash');
+    // On Claude Haiku 5.5 it is exactly the saved "Prompt v2 on Hermes".
+    await haiku(w);
     expect((w.get('[data-test="config-name"]').element as HTMLInputElement).value).toBe('Prompt v2 on Hermes, Claude Haiku 5.5');
     expect(w.get('[data-test="config-name"]').attributes('maxlength')).toBe('120');
     expect(w.get('[data-test="same-as"]').text()).toContain('Same content as “Prompt v2 on Hermes”: saving returns that config, under its own name.');
@@ -149,6 +164,7 @@ describe('ConfigView in fixture mode', () => {
     const create = vi.spyOn(api, 'createConfig');
     const w = mount(ConfigView);
     await settle();
+    await haiku(w);
     await pick(w, 'ownloop');
     for (const name of ['memory', 'skills', 'compression']) {
       const row = w.get(`[data-test="setting-${name}"]`);
@@ -188,6 +204,7 @@ describe('ConfigView in fixture mode', () => {
   it('shows how each setting reaches the model, what happens when it is unset, and whether it changed behaviour', async () => {
     const w = mount(ConfigView);
     await settle();
+    await haiku(w);
     expect(w.get('[data-test="setting-max_output_tokens"]').text()).toContain('max_tokens');
     expect(w.get('[data-test="setting-max_output_tokens"]').text()).toContain('Platform default, 8,192');
     expect(w.get('[data-test="setting-parallel_tool_calls"]').text()).toContain('Not checked yet');
@@ -202,6 +219,7 @@ describe('ConfigView in fixture mode', () => {
   it('answers "Changes behaviour?" in words with an icon each, never as identical pills', async () => {
     const w = mount(ConfigView);
     await settle();
+    await haiku(w);
     const cells = w.findAll('[data-test^="effect-"]');
     expect(cells).toHaveLength(8);
     for (const c of cells) expect(c.find('.pill').exists()).toBe(false);
@@ -328,5 +346,128 @@ describe('ConfigView, forking a config', () => {
     await w.get('[data-test="save-config"]').trigger('click');
     await settle();
     expect(create.mock.calls[0][0].parent_hash).toBe(parent.hash);
+  });
+});
+
+// The second fresh-clone QA's blocker (5 Nov): after the shipped example is loaded, its configs are
+// the newest, and their toolset is one this checkout no longer has.
+const CURRENT_TOOLSET = (configs as unknown as Config[])[0].toolset;
+const exampleConfig = (over: Partial<Config> = {}): Config => ({
+  ...(configs as unknown as Config[])[2],
+  hash: `sha256:90a6761${'0'.repeat(57)}`,
+  name: 'v2 sim check, ownloop, haiku',
+  toolset: { id: 'finance', version: 'all', sha256: `sha256:e8a33031${'0'.repeat(56)}` },
+  example_only: true,
+  created_at: '2026-11-05T13:59:00.000Z',
+  ...over,
+});
+
+describe('ConfigView after the shipped example is loaded (QA blocker 1)', () => {
+  it('starts a new config from the newest config of your own, never the example’s, and saves it', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...(configs as unknown as Config[]), exampleConfig()]);
+    const create = vi.spyOn(api, 'createConfig');
+    const w = mount(ConfigView);
+    await settle();
+    expect((w.get('[data-test="base-select"]').element as HTMLSelectElement).value).toBe(configs[3].hash);
+    expect(w.get('[data-test="base-select"] optgroup').attributes('label')).toBe('From the shipped example');
+    expect(w.find('[data-test="replaced-note"]').exists()).toBe(false);
+    await w.get('[data-test="save-config"]').trigger('click');
+    await settle();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][0].toolset_sha256).toBe(CURRENT_TOOLSET.sha256);
+    // The list says where each config came from, and counts the new one at once.
+    expect(w.get('[data-test="saved-configs"]').text()).toContain('from the shipped example');
+    expect(w.get('#saved-configs').text()).toBe('Saved configs (6)');
+  });
+
+  it('with only the example’s configs, starts from the catalogue’s own prompt and toolset, and saves', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([exampleConfig()]);
+    const create = vi.spyOn(api, 'createConfig');
+    const w = mount(ConfigView);
+    await settle();
+    expect(w.find('[data-test="save-blocked"]').exists()).toBe(false);
+    await w.get('[data-test="save-config"]').trigger('click');
+    await settle();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][0]).toMatchObject({ harness: 'hermes', toolset_sha256: CURRENT_TOOLSET.sha256 });
+    expect(w.find('[data-test="save-error"]').exists()).toBe(false);
+  });
+
+  it('forks an example’s config with a plain note and today’s toolset picked, and saves it as its child', async () => {
+    const example = exampleConfig();
+    vi.spyOn(api, 'configs').mockResolvedValue([...(configs as unknown as Config[]), example]);
+    const create = vi.spyOn(api, 'createConfig');
+    const w = mount(ConfigView, { props: { fork: example.hash } });
+    await settle();
+    expect(w.get('h1').text()).toBe('Fork a config');
+    expect(w.get('.lede').text()).toContain('A copy of v2 sim check, ownloop, haiku, from the shipped example.');
+    const note = w.get('[data-test="replaced-note"]').text();
+    expect(note).toContain('v2 sim check, ownloop, haiku came with the shipped example, made elsewhere with the files of its day.');
+    expect(note).toContain('Its toolset, finance all (e8a3303), is not in this checkout, so the current one, finance all, is picked under Tools.');
+    expect((w.get('[data-test="toolset-select"]').element as HTMLSelectElement).value).toBe(CURRENT_TOOLSET.sha256);
+    expect(w.get('[data-test="toolset-replaced"]').text()).toContain('the tools below are today');
+    expect(w.get('[data-test="config-changes"]').text()).toContain('Toolset: finance all (e8a3303) to finance all (e4c1f08)');
+    await w.get('[data-test="save-config"]').trigger('click');
+    await settle();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][0]).toMatchObject({ parent_hash: example.hash, toolset_sha256: CURRENT_TOOLSET.sha256 });
+  });
+
+  it('never stops a save without saying why: no toolset in the catalogue is named under Save', async () => {
+    vi.spyOn(api, 'toolsets').mockResolvedValue([]);
+    const create = vi.spyOn(api, 'createConfig');
+    const w = mount(ConfigView);
+    await settle();
+    expect(w.get('[data-test="save-blocked"]').text()).toBe("Pick a toolset: the one this config started from is not in this checkout's toolsets.");
+    expect(w.get('[data-test="save-config"]').attributes('disabled')).toBeDefined();
+    await w.get('form').trigger('submit');
+    await settle();
+    expect(create).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConfigView says which models need a key (QA major 1)', () => {
+  it('marks a model whose key is not set, and still lets the config be saved', async () => {
+    vi.spyOn(api, 'models').mockResolvedValue([
+      { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false },
+      { name: 'gemini-3.8-flash', provider: 'gemini', input_per_mtok: 0.75, output_per_mtok: 3.75, key_set: true },
+    ]);
+    const create = vi.spyOn(api, 'createConfig');
+    const w = mount(ConfigView);
+    await settle();
+    const options = w.findAll('[data-test="model-select"] option').map((o) => o.text());
+    expect(options).toContain('Claude Haiku 5.5 (needs ANTHROPIC_API_KEY in .env)');
+    expect(options).toContain('Gemini 3.8 Flash');
+    expect(w.find('[data-test="model-needs-key"]').exists()).toBe(false);
+    await haiku(w);
+    expect(w.get('[data-test="model-needs-key"]').text()).toBe(
+      'Claude Haiku 5.5 needs ANTHROPIC_API_KEY in .env, and it is not set, so it cannot run yet. Saving is free and works anyway; before a run, add the key, then run docker compose up -d. A fake model below needs no key.',
+    );
+    await w.get('[data-test="config-name"]').setValue('Saved without a key');
+    await w.get('[data-test="save-config"]').trigger('click');
+    await settle();
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts a config with no saved one on a fake model when no real model can run', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([]);
+    vi.spyOn(api, 'models').mockResolvedValue([{ name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false }]);
+    const w = mount(ConfigView);
+    await settle();
+    expect((w.get('[data-test="model-select"]').element as HTMLSelectElement).value).toBe('fake/finance-emi');
+    expect(w.find('[data-test="save-blocked"]').exists()).toBe(false);
+  });
+});
+
+describe('ConfigView keeps decision-log ids off the settings table', () => {
+  it('shows how a setting reaches the model without the adapter’s note numbers', async () => {
+    const harnesses = await api.harnesses();
+    const hermes = harnesses.find((h) => h.name === 'hermes')!;
+    hermes.capabilities.settings.max_output_tokens = { ...hermes.capabilities.settings.max_output_tokens, native: 'max_tokens, raised once on a cut-off reply (D36)' };
+    vi.spyOn(api, 'harnesses').mockResolvedValue(harnesses);
+    const w = mount(ConfigView);
+    await settle();
+    const cell = w.get('[data-test="setting-max_output_tokens"] .c-native').text();
+    expect(cell).toBe('max_tokens, raised once on a cut-off reply');
   });
 });

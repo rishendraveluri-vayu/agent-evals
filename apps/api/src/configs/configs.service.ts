@@ -70,11 +70,27 @@ export interface ConfigRow {
   harness_options: JsonObject;
   seed: Seed;
   parent_hash: string | null;
+  /** EXAMPLE_ONLY_SQL: came with a shipped example, and none of this database's own experiments uses it. */
+  example_only: boolean;
   created_at: Date;
 }
 
+/**
+ * True for config `c` when it came with a shipped example (SP7): an example experiment uses it, or
+ * it is an ancestor (parent_hash) of a config one uses, since the bundle brings those too; and no
+ * experiment of this database's own uses it. Every experiment using it is then an example's.
+ */
+export const EXAMPLE_ONLY_SQL = `(
+    NOT EXISTS (SELECT 1 FROM experiments own WHERE own.example_name IS NULL AND c.hash = ANY (own.config_hashes))
+    AND EXISTS (
+      WITH RECURSIVE shipped (hash) AS (
+        SELECT unnest(ex.config_hashes) FROM experiments ex WHERE ex.example_name IS NOT NULL
+        UNION SELECT up.parent_hash FROM configs up JOIN shipped s ON s.hash = up.hash WHERE up.parent_hash IS NOT NULL)
+      SELECT 1 FROM shipped WHERE shipped.hash = c.hash))`;
+
 export const CONFIG_SELECT = `
-  SELECT c.*, p.id AS prompt_id, p.version AS prompt_version, t.id AS toolset_id, t.version AS toolset_version
+  SELECT c.*, p.id AS prompt_id, p.version AS prompt_version, t.id AS toolset_id, t.version AS toolset_version,
+         ${EXAMPLE_ONLY_SQL} AS example_only
   FROM configs c JOIN prompts p ON p.sha256 = c.prompt_sha256 JOIN toolsets t ON t.sha256 = c.toolset_sha256`;
 
 export function configView(r: ConfigRow): ConfigView {
@@ -96,12 +112,13 @@ export function configView(r: ConfigRow): ConfigView {
     harness_options: r.harness_options,
     seed: r.seed,
     parent_hash: r.parent_hash,
+    example_only: r.example_only === true,
     created_at: r.created_at.toISOString(),
   };
 }
 
-/** Fields that are derived or are not behaviour (lineage included), left out of a diff. */
-const NOT_DIFFED = ['hash', 'created_at', 'unsupported', 'warnings', 'parent_hash'] as const;
+/** Fields that are derived or are not behaviour (lineage and where it came from included), left out of a diff. */
+const NOT_DIFFED = ['hash', 'created_at', 'unsupported', 'warnings', 'parent_hash', 'example_only'] as const;
 
 /** Every leaf path where two values differ; objects are walked, arrays compared whole. */
 export function diffValues(a: unknown, b: unknown, prefix = ''): ConfigDiffEntry[] {

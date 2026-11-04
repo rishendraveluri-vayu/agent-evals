@@ -40,6 +40,7 @@ const config = (over: Partial<ConfigView>): ConfigView => ({
   warnings: [],
   harness_options: {},
   parent_hash: null,
+  example_only: false,
   created_at: '2026-11-01T00:00:00Z',
   ...over,
 });
