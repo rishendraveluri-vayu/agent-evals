@@ -6,11 +6,21 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "evals-adapter",
-    # TODO: the harness package, pinned to an exact version, and an MCP client if it needs one.
+    # The harness, pinned exactly (docs/research/harnesses/openai-agents-sdk.md). Its openai and
+    # mcp pins are exact too: the mcp major version changes the client types.
+    "openai-agents==0.24.0",
+    "openai==3.35.1",
+    "mcp==2.3.0",
 ]
 
 [project.scripts]
 openai-agents-adapter = "openai_agents_adapter.adapter:entry"
+
+[tool.uv]
+# Nothing released in the two weeks before the lock (4 Nov 2026) enters the runtime tree. The
+# dev tools (pytest, ruff) are exempt: they never run in a trial, and the repo shares their floors.
+exclude-newer = "2026-10-21T00:00:00Z"
+exclude-newer-package = { pytest = "2026-11-04T00:00:00Z", ruff = "2026-11-04T00:00:00Z", jsonschema = "2026-11-04T00:00:00Z" }
 
 [tool.uv.sources]
 evals-adapter = { path = "../adapterlib", editable = true }
@@ -32,3 +42,6 @@ dev = [
     "pytest>=9.2.0",
     "ruff>=0.17.3",
 ]
+
+[tool.ruff]
+extend = "../../ruff.toml"
