@@ -3,7 +3,7 @@ import type { BundleTable, ExperimentBundle, GradingJobStatus, GradingOutcome, J
 import { BUNDLE_TABLES } from '../contract';
 import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.service';
 import { Db } from '../database/db.service';
-import { ExperimentsService, gradingState } from './experiments.service';
+import { ExperimentsService, experimentTitle, gradingState } from './experiments.service';
 
 /** A trial's outcome as the run grid and the comparison count it (TrialGradingState); null before it is done. */
 const outcomeOf = (r: ExportRow): TrialGradingState => gradingState({ ...r, status: r.status as TrialStatus });
@@ -75,6 +75,8 @@ export function armOf(configHashes: string[], n: number, configHash: string, rep
 
 export const CSV_COLUMNS = [
   'experiment_id',
+  // The name screens show: a shipped example's title, else the experiment's name (experimentTitle).
+  'experiment_title',
   'trial_id',
   'arm',
   'repeat_index',
@@ -183,7 +185,9 @@ export class ExportService {
     const configs = await this.configsFor(experiment.config_hashes);
     const head: Partial<typeof experiment> = { ...experiment };
     delete head.events;
-    yield `{"exported_at":${JSON.stringify(new Date().toISOString())},"experiment":${JSON.stringify(head)},"trials":[`;
+    // The title beside the experiment: a shipped example's stored name is the working name it was run under.
+    const title = experiment.example?.title ?? experiment.name;
+    yield `{"exported_at":${JSON.stringify(new Date().toISOString())},"experiment_title":${JSON.stringify(title)},"experiment":${JSON.stringify(head)},"trials":[`;
     let first = true;
     for await (const r of this.rows(experimentId)) {
       const c = configs.get(r.config_hash);
@@ -285,12 +289,14 @@ export class ExportService {
   async *csv(experimentId: string): AsyncGenerator<string> {
     const experiment = await this.experiments.row(experimentId);
     const configs = await this.configsFor(experiment.config_hashes);
+    const title = experimentTitle(experiment);
     yield `${CSV_COLUMNS.join(',')}\n`;
     for await (const r of this.rows(experimentId)) {
       const c = configs.get(r.config_hash);
       const grades = Array.isArray(r.grades) ? (r.grades as { verdict?: unknown }[]) : [];
       const values: Record<(typeof CSV_COLUMNS)[number], unknown> = {
         experiment_id: r.experiment_id,
+        experiment_title: title,
         trial_id: r.id,
         arm: armOf(experiment.config_hashes, experiment.n, r.config_hash, r.repeat_index),
         repeat_index: r.repeat_index,

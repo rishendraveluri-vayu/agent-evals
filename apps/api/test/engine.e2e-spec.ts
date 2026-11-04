@@ -715,8 +715,10 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
 
     const json = await request(env.http).get(`/api/experiments/${exp.id}/export?format=json`).expect(200);
     expect(json.headers['content-type']).toContain('application/json');
-    const body = JSON.parse(json.text) as { experiment: { id: string; platform_commit: string }; trials: { status: string; label: string | null; config: { hash: string; settings: unknown }; task: { id: string }; spend: { cost_usd: number | null }; grades: unknown[] }[] };
+    const body = JSON.parse(json.text) as { experiment_title: string; experiment: { id: string; name: string; platform_commit: string }; trials: { status: string; label: string | null; config: { hash: string; settings: unknown }; task: { id: string }; spend: { cost_usd: number | null }; grades: unknown[] }[] };
     expect(body.experiment).toMatchObject({ id: exp.id, platform_commit: 'abc1234' });
+    // Not a shipped example: its title is its own name.
+    expect(body.experiment_title).toBe(body.experiment.name);
     // The export is in plan order (repeat, task, config); claims went in the seeded order (D32).
     const byStatus = (a: (string | null)[], b: (string | null)[]): number => String(a).localeCompare(String(b));
     expect(body.trials.map((t) => [t.status, t.label]).sort(byStatus)).toEqual([
@@ -732,6 +734,7 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     const lines = csv.text.trim().split('\n');
     expect(lines).toHaveLength(5);
     const header = lines[0].split(',');
+    expect(header.slice(0, 3)).toEqual(['experiment_id', 'experiment_title', 'trial_id']);
     const status = header.indexOf('status');
     const label = header.indexOf('label');
     expect(lines.slice(1).map((l) => [l.split(',')[status], l.split(',')[label]]).sort(byStatus)).toEqual([

@@ -84,6 +84,15 @@ export interface ExperimentRow {
 
 const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
 
+/**
+ * The name every screen shows for an experiment: a shipped example's title (its manifest's), else
+ * the experiment's own name. The stored name is never changed: an example keeps the working name
+ * it was run under on the machine it came from.
+ */
+export function experimentTitle(r: Pick<ExperimentRow, 'name' | 'example_name' | 'example_title'>): string {
+  return r.example_name !== null && r.example_title ? r.example_title : r.name;
+}
+
 /** Marks a running experiment done once none of its trials is queued or held. */
 export async function finishIfDone(q: Queryable, experimentId: string): Promise<void> {
   await q.query(

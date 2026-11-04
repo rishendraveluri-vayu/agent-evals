@@ -298,6 +298,16 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
 
     const list = (await request(target.http).get('/api/examples').expect(200)).body as ExampleView[];
     expect(list.find((e) => e.name === 'test-example')?.loaded).toBe(true);
+
+    // The exports carry the title screens show; the stored name stays the one it was run under.
+    const json = JSON.parse((await request(target.http).get(`/api/experiments/${exp.id}/export?format=json`).expect(200)).text) as { experiment_title: string; experiment: ExperimentDetail };
+    expect(json.experiment_title).toBe('Example test-example (test fixture)');
+    expect(json.experiment.name).toBe(exp.name);
+    const ownJson = JSON.parse((await request(source.http).get(`/api/experiments/${exp.id}/export?format=json`).expect(200)).text) as { experiment_title: string };
+    expect(ownJson.experiment_title).toBe(exp.name);
+    const [header, first] = (await request(target.http).get(`/api/experiments/${exp.id}/export?format=csv`).expect(200)).text.split('\n');
+    expect(header.split(',').slice(0, 3)).toEqual(['experiment_id', 'experiment_title', 'trial_id']);
+    expect(first.startsWith(`${exp.id},Example test-example (test fixture),`)).toBe(true);
   });
 
   it("marks the example's configs example-only until an experiment of your own uses one", async () => {

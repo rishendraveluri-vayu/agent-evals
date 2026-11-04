@@ -517,7 +517,11 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   `no_graders`), `no_graders`, `waiting`, `grading_failed`, or empty for a trial that is not
   done. Since 5 Nov `grades_passed`, `grades_total` and `grades_json` (CSV) and `grades` (JSON)
   cover only that current grading's grades, so a regraded trial is not counted twice; the JSON
-  adds `grading_job_id` and `grade_history`, every stored grade version. Older versions also stay
+  adds `grading_job_id` and `grade_history`, every stored grade version. Both carry the name the
+  screens show (since 5 Nov, QA round 3): `experiment_title` is the second CSV column and a
+  top-level key of the JSON, beside `experiment`. It is a shipped example's title (its manifest's,
+  as `example.title` on `GET /experiments`), else the experiment's own `name`; an example's stored
+  `name` stays the working name it was run under. Older versions also stay
   in the database and in `GET /experiments/:id/bundle`. Each grade is `{grader_id,
   grader_version, kind, required, verdict, score, evidence, judge_model, run_index, job_id}`.
 - `GET /experiments/:id/bundle` (SP7) returns every row needed to recreate the experiment in
