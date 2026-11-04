@@ -54,3 +54,12 @@ Fill in with what we actually tried and measured.
 - Sampling tasks or trials, with the effect on confidence stated.
 - Batch APIs for the judge. Claude lists a 50% batch discount.
 - Not LiteLLM response caching for trials, because repeats would stop being independent.
+
+## Actual spend
+
+| Date | Run | Trials | Spend | Signed off |
+| --- | --- | --- | --- | --- |
+| 4 Nov | First real-model smoke on Claude Haiku 5.5, 5 harnesses × 3 trials (`runs/20261104T083111Z-real`) | 15 | $0.077 (LiteLLM's records) | Rishi, R8, estimate $0.20, cap $3 |
+| 4 Nov | Two earlier attempts that never reached a model: a script path bug, then an unscoped API key rejected with a 400 | 6 | $0.00 | same |
+
+Per trial on Haiku 5.5: a single question cost $0.0024 to $0.0035 (3 model calls); a 3-turn simulated-client conversation cost $0.012 to $0.014 (8 to 10 agent calls plus the simulator's).
