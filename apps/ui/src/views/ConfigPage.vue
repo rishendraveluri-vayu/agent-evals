@@ -6,7 +6,7 @@
  */
 import { computed, ref, shallowRef } from 'vue';
 import { api } from '../api/client';
-import { errorWithFix } from '../api/errors';
+import { ApiError, errorWithFix } from '../api/errors';
 import { SETTING_NAMES, type ConfigDiffEntry, type ConfigView, type Harness, type RenderedPromptStatus, type SettingName, type SpendView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import ConflictCheck from '../components/ConflictCheck.vue';
@@ -21,9 +21,20 @@ import { text } from '../trials';
 
 const props = defineProps<{ configHash: string }>();
 
+/** The address holds no saved config: a mistyped or malformed id, or one never saved. */
+const missing = ref(false);
+async function configOrMissing(hash: string) {
+  try {
+    return await api.config(hash);
+  } catch (err) {
+    if (err instanceof ApiError && (err.code === 'invalid_hash' || err.code === 'unknown_config' || err.status === 404)) missing.value = true;
+    throw err;
+  }
+}
+
 const { data, error, loading } = useLoad(async () => {
   const [config, configs, harnesses, spend] = await Promise.all([
-    api.config(props.configHash),
+    configOrMissing(props.configHash),
     optional(api.configs(), [] as ConfigView[]),
     optional(api.harnesses(), [] as Harness[]),
     optional(api.spend(), null as SpendView | null),
@@ -85,7 +96,26 @@ async function refreshSpend() {
 </script>
 
 <template>
+  <div
+    v-if="missing"
+    class="page-head"
+    data-test="config-missing"
+  >
+    <nav
+      aria-label="Breadcrumb"
+      class="crumbs"
+    >
+      <a :href="href.config()">Configs</a> / Not found
+    </nav>
+    <h1 tabindex="-1">
+      No agent with that id
+    </h1>
+    <p class="lede">
+      Nothing is saved as <span class="mono">{{ configHash }}</span>. <a :href="href.config()">Configs</a> lists every saved agent, and <a :href="href.build()">Build an agent</a> makes a new one.
+    </p>
+  </div>
   <LoadState
+    v-else
     :loading="loading"
     :error="error"
     what="this config"
@@ -229,9 +259,7 @@ async function refreshSpend() {
             v-for="(child, ci) in data.config.children"
             :key="child.hash"
           >
-            <a :href="href.configPage(child.hash)">{{ child.name }}</a><template v-if="ci < data.config.children.length - 1">
-              ,
-            </template>
+            <a :href="href.configPage(child.hash)">{{ child.name }}</a>{{ ci < data.config.children.length - 1 ? ', ' : '' }}
           </template>
         </p>
       </section>

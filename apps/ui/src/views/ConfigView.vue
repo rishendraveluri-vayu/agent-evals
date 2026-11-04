@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, shallowRef, watch } from 'vue';
+import { computed, nextTick, reactive, ref, shallowRef, watch } from 'vue';
 import { api } from '../api/client';
 import { ApiError, errorText, errorWithFix } from '../api/errors';
 import { SETTING_NAMES, type ConfigDiffEntry, type ConfigView, type ConfigWarning, type CreatedPrompt, type Harness, type JsonObject, type ModelView, type PromptView, type SeedSkill, type SettingName, type ToolsetView } from '../api/types';
@@ -102,6 +102,8 @@ const prompt = computed(() => data.value?.prompts.find((p) => p.sha256 === form.
 const toolset = computed(() => data.value?.toolsets.find((t) => t.sha256 === form.toolset) ?? null);
 const base = computed(() => data.value?.configs.find((c) => c.hash === baseHash.value) ?? null);
 const forkOf = computed(() => (props.fork ? (data.value?.configs.find((c) => c.hash === props.fork) ?? null) : null));
+/** The address names a config to fork that is not saved: say so, and start a new config instead. */
+const forkMissing = computed(() => !!props.fork && !!data.value && !forkOf.value);
 const tools = computed(() => toolset.value?.servers.flatMap((s) => s.allowed_tools) ?? []);
 const modelGroups = computed(() => agentModels(data.value?.models ?? []));
 /** Task prompts only: the simulator's and the checker's prompts are not a config's to pick. */
@@ -177,6 +179,14 @@ const nextVersion = computed(() => {
   const n = Math.max(0, ...data.value.prompts.filter((x) => x.id === p.id).map((x) => Number(/^v(\d+)$/.exec(x.version)?.[1] ?? 0)));
   return `v${n + 1}`;
 });
+const newPromptButton = ref<HTMLButtonElement | null>(null);
+/** Cancel, the button or Escape: the draft goes, and focus returns to the button that opened it. */
+async function cancelPromptEdit() {
+  if (promptSaving.value) return;
+  editingPrompt.value = false;
+  await nextTick();
+  newPromptButton.value?.focus();
+}
 function startPromptEdit() {
   if (!prompt.value) return;
   draftText.value = prompt.value.text;
@@ -433,11 +443,19 @@ watch(
       aria-label="Breadcrumb"
       class="crumbs"
     >
-      <a :href="href.experiments()">Experiments</a> / {{ fork ? 'Fork a config' : 'New config' }}
+      <a :href="href.experiments()">Experiments</a> / {{ fork && !forkMissing ? 'Fork a config' : 'New config' }}
     </nav>
     <h1 tabindex="-1">
-      {{ fork ? 'Fork a config' : 'Define a config' }}
+      {{ fork && !forkMissing ? 'Fork a config' : 'Define a config' }}
     </h1>
+    <p
+      v-if="forkMissing"
+      class="lede fork-missing"
+      role="alert"
+      data-test="fork-missing"
+    >
+      No saved config has the id <span class="mono">{{ fork }}</span>, so there is nothing to fork. This page starts a new config instead; <a :href="href.config()">Configs</a> lists every saved one.
+    </p>
     <p class="lede">
       <template v-if="forkOf">
         A copy of <a :href="href.configPage(forkOf.hash)">{{ forkOf.name }}</a>. Change the one thing this fork is meant to test; saving records {{ forkOf.name }} as its parent.
@@ -625,6 +643,7 @@ watch(
             class="prompt-actions"
           >
             <button
+              ref="newPromptButton"
               type="button"
               class="btn btn--quiet"
               data-test="new-prompt"
@@ -651,6 +670,7 @@ watch(
             v-if="editingPrompt && prompt"
             class="prompt-editor"
             data-test="prompt-editor"
+            @keydown.esc.stop.prevent="cancelPromptEdit"
           >
             <label class="field">
               <span class="strong">{{ prompt.id }} {{ nextVersion }}, from {{ prompt.version }}</span>
@@ -690,10 +710,12 @@ watch(
                 type="button"
                 class="btn btn--quiet"
                 :disabled="promptSaving"
-                @click="editingPrompt = false"
+                data-test="cancel-prompt"
+                @click="cancelPromptEdit"
               >
                 Cancel
               </button>
+              <span class="secondary smaller">Escape cancels too.</span>
             </div>
           </div>
         </fieldset>

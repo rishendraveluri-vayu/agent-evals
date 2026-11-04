@@ -81,6 +81,13 @@ describe('TrialView grades', () => {
     expect(grade.find('[data-test="grade-reason"]').exists()).toBe(false);
   });
 
+  it('lists every failed check with a comma straight after each, never a space before it', async () => {
+    const [first, second] = trial.grades;
+    const w = mountWith({ grades: [{ ...first, verdict: 'fail' }, { ...second, verdict: 'fail' }] });
+    await settle();
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-maturity, fd-tax (judge)');
+  });
+
   it('leaves a check that is not required out of the outcome, and says so', async () => {
     const [first, second] = trial.grades;
     const w = mountWith({ grades: [{ ...first, verdict: 'pass' }, { ...second, required: false, kind: 'state', type: 'regex_absent', judge_model: null, verdict: 'fail' }] });

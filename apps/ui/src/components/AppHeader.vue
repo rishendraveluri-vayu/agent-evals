@@ -63,6 +63,15 @@ const onSpendChanged = () => void loadSpend();
  *  move the tabs. */
 const nav = ref<HTMLElement | null>(null);
 const EDGE = 8;
+/** Whether the nav has sections out of sight to either side: its edge then fades, so it reads as
+ *  a row that scrolls. Only a phone's nav ever scrolls. */
+const more = ref({ left: false, right: false });
+function measureNav() {
+  const el = nav.value;
+  if (!el) return;
+  const max = el.scrollWidth - el.clientWidth;
+  more.value = { left: max > 1 && el.scrollLeft > 1, right: max > 1 && el.scrollLeft < max - 1 };
+}
 async function showCurrent() {
   await nextTick();
   const el = nav.value;
@@ -74,6 +83,7 @@ async function showCurrent() {
   const before = box.left - (tab.left - EDGE);
   if (past > 0) el.scrollLeft += past;
   else if (before > 0) el.scrollLeft -= before;
+  measureNav();
 }
 watch(
   () => props.section,
@@ -88,9 +98,13 @@ onBeforeUnmount(() => {
 
 onMounted(async () => {
   void showCurrent();
+  measureNav();
   void document.fonts?.ready.then(() => showCurrent());
   if (typeof ResizeObserver !== 'undefined' && nav.value) {
-    resizes = new ResizeObserver(() => void showCurrent());
+    resizes = new ResizeObserver(() => {
+      void showCurrent();
+      measureNav();
+    });
     resizes.observe(nav.value);
   }
   const envBudget = Number(import.meta.env.VITE_TOTAL_BUDGET_USD);
@@ -138,6 +152,9 @@ onMounted(async () => {
       ref="nav"
       aria-label="Main"
       class="nav"
+      :class="{ 'nav--more-left': more.left, 'nav--more-right': more.right }"
+      data-test="main-nav"
+      @scroll.passive="measureNav"
     >
       <a
         v-for="l in links"
@@ -219,6 +236,7 @@ onMounted(async () => {
         type="button"
         class="theme"
         aria-label="Dark theme"
+        title="Dark theme"
         :aria-pressed="dark"
         data-test="theme-toggle"
         @click="setTheme(dark ? 'light' : 'dark')"
@@ -238,7 +256,7 @@ onMounted(async () => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 28px;
+  gap: 4px 20px;
   padding: 6px 32px;
   background: var(--surface);
   border-bottom: 1px solid var(--rule);
@@ -273,7 +291,7 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  padding: 0 14px;
+  padding: 0 12px;
   border-radius: 6px;
   text-decoration: none;
   color: var(--ink-2);
@@ -295,7 +313,7 @@ onMounted(async () => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 14px;
+  gap: 8px 12px;
   color: var(--ink-2);
   font-size: 14px;
 }
@@ -360,6 +378,33 @@ onMounted(async () => {
   background: var(--surface-muted);
 }
 
+/* The header stays one row on a desktop with the live API's words in it (spend, allowance, health):
+   below 1600 px the theme button is its icon, its name kept for screen readers and as a tooltip,
+   and below 1400 px the conflict-check allowance leaves the header (the config page shows it). */
+@media (max-width: 1599px) {
+  .theme {
+    justify-content: center;
+    width: 44px;
+    padding: 0;
+  }
+
+  .theme-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 1399px) {
+  .header-allowance {
+    display: none;
+  }
+}
+
 /* A phone gets two rows: the brand, the spend, the sample flag and the theme button, then the
    sections in one row that scrolls sideways. */
 @media (max-width: 640px) {
@@ -417,6 +462,19 @@ onMounted(async () => {
     flex: none;
     padding: 0 10px;
     white-space: nowrap;
+  }
+
+  /* Sections out of sight fade at that edge, so the row reads as one that scrolls. */
+  .nav--more-right {
+    mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+  }
+
+  .nav--more-left {
+    mask-image: linear-gradient(to left, #000 calc(100% - 48px), transparent);
+  }
+
+  .nav--more-left.nav--more-right {
+    mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
   }
 }
 </style>

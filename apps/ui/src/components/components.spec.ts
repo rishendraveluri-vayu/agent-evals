@@ -5,6 +5,7 @@ import { ticksFor, type StripRow, type Tick } from '../lib/scale';
 import { settle, useFixtures } from '../test/helpers';
 import CompareView from '../views/CompareView.vue';
 import ExperimentsView from '../views/ExperimentsView.vue';
+import AppHeader from './AppHeader.vue';
 import IntervalStrip from './IntervalStrip.vue';
 import SpanTimeline from './SpanTimeline.vue';
 import VerdictTag from './VerdictTag.vue';
@@ -245,5 +246,29 @@ describe('VerdictTag', () => {
     expect(pending.classes()).toEqual(['result-plain']);
     expect(pending.attributes('data-verdict')).toBe('pending');
     expect(mount(VerdictTag, { props: { verdict: 'none', label: 'No clear difference after correction' } }).text()).toBe('No clear difference after correction');
+  });
+});
+
+describe('AppHeader on a phone', () => {
+  useFixtures();
+
+  it('fades the nav at an edge that has sections out of sight, so it reads as a row that scrolls', async () => {
+    const w = mount(AppHeader, { props: { section: 'experiments' } });
+    await settle();
+    const nav = w.get('[data-test="main-nav"]');
+    const el = nav.element as HTMLElement;
+    Object.defineProperty(el, 'scrollWidth', { configurable: true, value: 600 });
+    Object.defineProperty(el, 'clientWidth', { configurable: true, value: 390 });
+    el.scrollLeft = 0;
+    await nav.trigger('scroll');
+    expect(nav.classes()).toContain('nav--more-right');
+    expect(nav.classes()).not.toContain('nav--more-left');
+    el.scrollLeft = 210;
+    await nav.trigger('scroll');
+    expect(nav.classes()).toContain('nav--more-left');
+    expect(nav.classes()).not.toContain('nav--more-right');
+    // The theme button keeps its name when it shows only its icon.
+    expect(w.get('[data-test="theme-toggle"]').attributes('aria-label')).toBe('Dark theme');
+    expect(w.get('[data-test="theme-toggle"]').attributes('title')).toBe('Dark theme');
   });
 });

@@ -54,6 +54,23 @@ describe('TrialView in fixture mode', () => {
     expect(at[0].attributes('title')).toMatch(/^Started \d+\.\d s in, took \d+\.\d s$/);
   });
 
+  it("lists this task's other trials in this arm, each with how it ended, as links", async () => {
+    const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
+    await settle();
+    const strip = w.get('[data-test="same-cell"]');
+    expect(strip.attributes('aria-label')).toBe('Trials of fd-vs-sip-07 in arm B');
+    expect(strip.text()).toMatch(/^Arm B on fd-vs-sip-07:/);
+    const items = strip.findAll('li');
+    expect(items.length).toBeGreaterThan(1);
+    // This trial is named, not linked; the others link to their own pages.
+    const current = strip.get('[aria-current="page"]');
+    expect(current.text()).toBe('Trial 3');
+    const links = strip.findAll('a').map((a) => a.attributes('href'));
+    expect(links.every((h) => h?.startsWith('#/trials/tr_fd-vs-sip-07_b_'))).toBe(true);
+    expect(links).not.toContain('#/trials/tr_fd-vs-sip-07_b_3');
+    for (const li of items) expect(li.text()).toMatch(/(passed|failed|infra failure|not graded|running|not run yet|cancelled)$/);
+  });
+
   it('names the pinned harness and says which check failed and who graded it', async () => {
     const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
     await settle();

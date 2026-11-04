@@ -280,3 +280,10 @@ describe('disclosures', () => {
     expect(flipped?.body).toMatch(/rotate\(-135deg\)/);
   });
 });
+
+describe('focus', () => {
+  it('shows no ring on a heading given focus when a screen opens, and keeps the ring on controls', () => {
+    expect(css).toMatch(/h1\[tabindex='-1'\]:focus,\s*h2\[tabindex='-1'\]:focus \{\s*outline: none;/);
+    expect(css).toMatch(/:focus-visible \{\s*outline: 2px solid var\(--focus\);/);
+  });
+});

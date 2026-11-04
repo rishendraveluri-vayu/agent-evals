@@ -6,10 +6,10 @@ import type { BlindItem, ExperimentDetail, TrialRowSummary, JudgeAgreement, Prom
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import SpanTimeline from '../components/SpanTimeline.vue';
-import { armIndexOf, armsOf } from '../lib/arms';
+import { armIndexOf, armLetter, armsOf, namedByHash } from '../lib/arms';
 import { gradeView, markAmounts, outcomeOf, provenanceOf, type AmountCheck, type GradeView, type ProvenanceView } from '../lib/grading';
 import { optional, useLoad } from '../lib/async';
-import { capitalise, count, money, plainText, seconds, shortVersion } from '../lib/format';
+import { capitalise, count, harnessVersion, money, plainText, seconds, shortVersion } from '../lib/format';
 import { endStateName, graderName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
 import { href } from '../router';
 import { text, timelineRows, type SpanView } from '../trials';
@@ -149,7 +149,8 @@ const harnessRef = computed(() => {
   const ref = typeof version === 'string' ? version : version && typeof version === 'object' && typeof (version as { ref?: unknown }).ref === 'string' ? (version as { ref: string }).ref : null;
   if (!ref) return null;
   const name = v?.harness ?? (typeof h?.name === 'string' ? h.name : null);
-  return { name: name ? harnessShort(name) : 'Harness', ref: ref.slice(0, 7) };
+  // A pinned SHA to 7 characters; a version with its libraries in brackets to the version alone.
+  return { name: name ? harnessShort(name) : 'Harness', ref: harnessVersion(ref), full: ref };
 });
 
 const arm = computed(() => {
@@ -485,6 +486,28 @@ function jumpToGrade(index: number) {
   el?.focus({ preventScroll: true });
 }
 
+/** This task's trials in this trial's arm, in repeat order, each with how it ended: the
+ *  comparison's per-arm counts open here, and this steps through them. */
+const sameCell = computed(() => {
+  const d = data.value;
+  const e = d?.experiment;
+  const me = d?.siblings.find((t) => t.id === props.trialId);
+  if (!d || !e || !me) return null;
+  const arm = armIndexOf(me, e);
+  const words = (t: TrialRowSummary) => {
+    if (t.status === 'infra_failed' || t.status === 'abandoned') return 'infra failure';
+    if (t.status === 'cancelled') return 'cancelled';
+    if (t.status === 'queued' || t.status === 'claimed') return 'not run yet';
+    if (t.status === 'running') return 'running';
+    return t.passed === true ? 'passed' : t.passed === false ? 'failed' : 'not graded';
+  };
+  const trials = d.siblings
+    .filter((t) => t.task_sha256 === me.task_sha256 && armIndexOf(t, e) === arm)
+    .sort((x, y) => x.repeat_index - y.repeat_index || x.attempt - y.attempt)
+    .map((t) => ({ id: t.id, current: t.id === props.trialId, label: `Trial ${t.repeat_index + 1}${t.attempt > 1 ? `, attempt ${t.attempt}` : ''}`, outcome: words(t) }));
+  return trials.length > 1 ? { arm: armLetter(arm), task: me.task_id, trials } : null;
+});
+
 // Previous and next failed trial in the same experiment, in task, arm and repeat order.
 const failures = computed(() => {
   const d = data.value;
@@ -564,8 +587,33 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             <span
               v-if="arm"
               :class="`dot dot--${arm.key}`"
-            /><span><template v-if="arm">{{ arm.label }}, config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span></template><template v-if="arm && harnessRef">, </template><template v-if="harnessRef">{{ harnessRef.name }} <span class="mono">{{ harnessRef.ref }}</span></template></span>
+            /><span><template v-if="arm && namedByHash(arm)">Config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span></template><template v-else-if="arm">{{ arm.label }}, config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span></template><template v-if="arm && harnessRef">, </template><template v-if="harnessRef">{{ harnessRef.name }} <span
+              class="mono"
+              :title="harnessRef.full"
+            >{{ harnessRef.ref }}</span></template></span>
           </p>
+          <nav
+            v-if="sameCell"
+            class="small same-cell"
+            :aria-label="`Trials of ${sameCell.task} in arm ${sameCell.arm}`"
+            data-test="same-cell"
+          >
+            <span class="secondary">Arm {{ sameCell.arm }} on <span class="mono">{{ sameCell.task }}</span>:</span>
+            <ol>
+              <li
+                v-for="t in sameCell.trials"
+                :key="t.id"
+              >
+                <strong
+                  v-if="t.current"
+                  aria-current="page"
+                >{{ t.label }}</strong><a
+                  v-else
+                  :href="href.trial(t.id)"
+                >{{ t.label }}</a> <span class="secondary">{{ t.outcome }}</span>
+              </li>
+            </ol>
+          </nav>
           <p
             v-if="outcome?.kind === 'fail' && failedOn.length"
             class="small failed-on"
@@ -579,9 +627,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               <a
                 :href="`#grade-${f.index}`"
                 @click.prevent="jumpToGrade(f.index)"
-              >{{ f.name }}</a>{{ f.note }}<template v-if="fi < failedOn.length - 1">
-                ,
-              </template>
+              >{{ f.name }}</a>{{ f.note }}{{ fi < failedOn.length - 1 ? ', ' : '' }}
             </template>
           </p>
         </div>
@@ -1189,6 +1235,30 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 
 .failed-on {
   margin-top: 6px;
+}
+
+.same-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin-top: 6px;
+}
+
+.same-cell ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.same-cell a,
+.same-cell strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
 }
 
 .story {

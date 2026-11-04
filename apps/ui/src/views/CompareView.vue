@@ -8,7 +8,7 @@ import IntervalStrip from '../components/IntervalStrip.vue';
 import JudgePanel from '../components/JudgePanel.vue';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { agreementWords, armIndexOf, armLetter, armsOf, differingShort, excludesZero, intervalText, judgeCaveat, methodName, NBSP, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
+import { agreementWords, armIndexOf, armLetter, armsOf, differingShort, namedByHash, excludesZero, intervalText, judgeCaveat, methodName, NBSP, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { identParts, money, percent, plainText, plural, seconds, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
 import { alsoGradedBy, gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
@@ -330,6 +330,18 @@ interface TaskRow {
   significant: boolean;
   link: string | null;
   linkTitle: string;
+  /** Per arm, a link into that arm's trials of this task (a failed one first); the trial page
+   *  lists the arm's other trials of the task. */
+  armLinks: [string | null, string | null];
+}
+
+/** The trial a per-arm cell opens: that arm's first failed trial of the task, else its first
+ *  finished one, else its first at all. */
+function armTrial(task: string, arm: 0 | 1): TrialRowSummary | undefined {
+  const d = data.value;
+  if (!d) return undefined;
+  const mine = d.trials.filter((t) => t.task_sha256 === task && armIndexOf(t, d.detail) === arm).sort((x, y) => x.repeat_index - y.repeat_index || x.attempt - y.attempt);
+  return mine.find((t) => t.passed === false) ?? mine.find((t) => t.status === 'done') ?? mine[0];
 }
 
 function failedTrial(task: string, prefer: 0 | 1): TrialRowSummary | undefined {
@@ -368,6 +380,10 @@ const taskRows = computed<TaskRow[]>(() => {
         significant: r.significant,
         link: look ? href.trial(look.trial.id) : null,
         linkTitle,
+        armLinks: [0, 1].map((arm) => {
+          const t = armTrial(r.key, arm as 0 | 1);
+          return t ? href.trial(t.id) : null;
+        }) as [string | null, string | null],
       };
     })
     .sort((x, y) => (y.diff?.estimate ?? -999) - (x.diff?.estimate ?? -999));
@@ -523,7 +539,7 @@ const worthALook = computed(() => {
             ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ arm.label }}<template v-if="meta.perArm && pinOf(arm)">{{ ' ' }}<span
               class="mono"
               data-test="arm-pin"
-            >{{ pinOf(arm) }}</span></template> (config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span>)</span></span>
+            >{{ pinOf(arm) }}</span></template><template v-if="!namedByHash(arm)"> (config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span>)</template></span></span>
           </div>
           <!-- Line 2: what the arms share, then the run's size and commits. Each group stays whole;
                the line breaks only between groups. -->
@@ -949,10 +965,28 @@ const worthALook = computed(() => {
                   {{ r.grader }}
                 </td>
                 <td class="right num c-a">
-                  <span class="phone-only">A </span>{{ passedText(r.a) }}
+                  <a
+                    v-if="r.armLinks[0]"
+                    :href="r.armLinks[0]"
+                    class="cell-link"
+                    :aria-label="`Arm A on ${r.name}: ${passedText(r.a)} passed. Open its trials of this task`"
+                    data-test="cell-a"
+                  ><span class="phone-only">A </span>{{ passedText(r.a) }}</a>
+                  <template v-else>
+                    <span class="phone-only">A </span>{{ passedText(r.a) }}
+                  </template>
                 </td>
                 <td class="right num c-b">
-                  <span class="phone-only">B </span>{{ passedText(r.b) }}
+                  <a
+                    v-if="r.armLinks[1]"
+                    :href="r.armLinks[1]"
+                    class="cell-link"
+                    :aria-label="`Arm B on ${r.name}: ${passedText(r.b)} passed. Open its trials of this task`"
+                    data-test="cell-b"
+                  ><span class="phone-only">B </span>{{ passedText(r.b) }}</a>
+                  <template v-else>
+                    <span class="phone-only">B </span>{{ passedText(r.b) }}
+                  </template>
                 </td>
                 <td class="plot-cell">
                   <svg
@@ -1488,5 +1522,13 @@ const worthALook = computed(() => {
   .phone-only {
     display: inline;
   }
+}
+
+/* A per-arm count opens that arm's trials of the task: an ordinary link, the numbers in ink. */
+.cell-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--ink);
 }
 </style>

@@ -49,6 +49,12 @@ export function armsOf(experiment: Pick<ExperimentSummary, 'axis' | 'config_hash
   });
 }
 
+/** Whether an arm is named by its config's hash alone ("Config 7f3a9c2"), so a line that also
+ *  gives the hash would say it twice. */
+export function namedByHash(arm: Pick<Arm, 'label' | 'hash'>): boolean {
+  return arm.label === `Config ${shortHash(arm.hash)}`;
+}
+
 /** What the arms share, in words: "Hermes with Claude Haiku 5.5". */
 export function setupOf(experiment: Pick<ExperimentSummary, 'axis'>, arms: Arm[]): string {
   const c = arms[0]?.config;

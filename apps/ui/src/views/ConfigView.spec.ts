@@ -111,6 +111,26 @@ describe('ConfigView in fixture mode', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it('says so when the address forks a config that is not saved, and starts a new one', async () => {
+    const w = mount(ConfigView, { props: { fork: 'sha256:0000000' } });
+    await settle();
+    expect(w.get('[data-test="fork-missing"]').text()).toBe('No saved config has the id sha256:0000000, so there is nothing to fork. This page starts a new config instead; Configs lists every saved one.');
+    expect(w.get('h1').text()).toBe('Define a config');
+    expect(w.get('.crumbs').text()).toBe('Experiments / New config');
+  });
+
+  it('closes the prompt editor with Escape, and gives focus back to the button that opened it', async () => {
+    const w = mount(ConfigView, { attachTo: document.body });
+    await settle();
+    await w.get('[data-test="new-prompt"]').trigger('click');
+    await w.get('[data-test="prompt-draft"]').setValue('A draft that goes.');
+    await w.get('[data-test="prompt-draft"]').trigger('keydown', { key: 'Escape' });
+    await settle();
+    expect(w.find('[data-test="prompt-editor"]').exists()).toBe(false);
+    expect(document.activeElement).toBe(w.get('[data-test="new-prompt"]').element);
+    w.unmount();
+  });
+
   it('greys out what the harness or the model ignores, with the reason, and never sends it', async () => {
     const create = vi.spyOn(api, 'createConfig');
     const w = mount(ConfigView);

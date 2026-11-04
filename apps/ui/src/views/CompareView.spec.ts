@@ -85,6 +85,23 @@ describe('CompareView in fixture mode', () => {
     expect(items[0].get('a').attributes('href')).toBe('#/trials/tr_debt-hardship-03_b_2');
   });
 
+  it('names an arm once when its name is its hash, as in an A/A run', async () => {
+    const w = mount(CompareView, { props: { experimentId: 'exp_aa' } });
+    await settle();
+    expect(w.get('[data-test="arms-line"]').text()).toBe('A: Config 3b81e04B: Config 3b81e04');
+  });
+
+  it("links each arm's count on a task to that arm's trials of the task, a failed one first", async () => {
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const row = w.findAll('[data-test="forest-row"]').find((r) => r.get('th').text() === 'fd-vs-sip-07');
+    const a = row?.get('[data-test="cell-a"]');
+    const b = row?.get('[data-test="cell-b"]');
+    expect(a?.attributes('href')).toMatch(/^#\/trials\/tr_fd-vs-sip-07_a_\d+$/);
+    expect(b?.attributes('href')).toMatch(/^#\/trials\/tr_fd-vs-sip-07_b_\d+$/);
+    expect(b?.attributes('aria-label')).toMatch(/^Arm B on fd-vs-sip-07: \d+ of \d+ passed\. Open its trials of this task$/);
+  });
+
   it('draws the hero in arm B colour because B is better, labelled, with the A/A row in grey', async () => {
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();

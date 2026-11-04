@@ -46,7 +46,8 @@ describe('ConfigPage: what the config is', () => {
     expect(w.get('[data-test="fork"]').attributes('href')).toBe(`#/configs?fork=${encodeURIComponent(v2.hash)}`);
     const parent = mount(ConfigPage, { props: { configHash: v1.hash } });
     await settle();
-    expect(parent.get('[data-test="children"]').text().replace(/\s+,/g, ',')).toBe('Forked into: Prompt v2 on Hermes, Prompt v1 on Hermes, Gemini Flash');
+    // A comma straight after each name: no space before it.
+    expect(parent.get('[data-test="children"]').text()).toBe('Forked into: Prompt v2 on Hermes, Prompt v1 on Hermes, Gemini Flash');
     expect(parent.findAll('[data-test="children"] a').map((a) => a.attributes('href'))).toEqual([v2.hash, gemini.hash].map((h) => `#/configs/${encodeURIComponent(h)}`));
   });
 });
@@ -92,6 +93,19 @@ describe('ConfigPage: the rendered prompt (D33)', () => {
     await settle();
     expect(render).toHaveBeenCalledWith(v2.hash);
     expect(w.get('[data-test="rendered-status"]').text()).toContain('A probe trial is queued for the Hermes worker');
+  });
+});
+
+describe('ConfigPage: an id that is no saved agent', () => {
+  it('says "No agent with that id" in plain words, not the validator\'s text', async () => {
+    const w = mount(ConfigPage, { props: { configHash: 'not-a-hash' } });
+    await settle();
+    const page = w.get('[data-test="config-missing"]');
+    expect(page.get('h1').text()).toBe('No agent with that id');
+    expect(page.get('.crumbs').text()).toBe('Configs / Not found');
+    expect(page.text()).toContain('Nothing is saved as not-a-hash.');
+    expect(w.find('[data-test="load-error"]').exists()).toBe(false);
+    expect(w.text()).not.toContain('sha256:<64 hex>');
   });
 });
 
