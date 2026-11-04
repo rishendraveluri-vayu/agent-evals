@@ -230,10 +230,19 @@ describe('TrialView: the facts around a trial, as the live API gives them', () =
   });
 
   it('names a harness arm once, with its pinned version', async () => {
+    const detail = (details as Record<string, Record<string, unknown> & { configs: Record<string, unknown>[] }>).exp_heldout;
+    // A harness experiment: arm A on the own loop, arm B (this trial's) on Hermes.
+    const configs = detail.configs.map((c, i) => (i ? { ...c, prompt: detail.configs[0].prompt } : { ...c, harness: 'ownloop', harness_ref: '0.1.0' }));
+    const w = mountWith({ experiment: { ...detail, axis: 'harness', configs } });
+    await settle();
+    expect(w.get('[data-test="trial-meta"]').text()).toBe('Hermes Agent 6112c2a, config 7f3a9c2');
+  });
+
+  it('never names two arms alike: with one harness in both, the arm is named by what does differ', async () => {
     const detail = (details as Record<string, Record<string, unknown>>).exp_heldout;
     const w = mountWith({ experiment: { ...detail, axis: 'harness' } });
     await settle();
-    expect(w.get('[data-test="trial-meta"]').text()).toBe('Hermes Agent 6112c2a, config 7f3a9c2');
+    expect(w.get('[data-test="trial-meta"]').text()).toBe('Prompt finance-advisor v2, config 7f3a9c2, Hermes 6112c2a');
   });
 
   it('names a shipped example by its title, and sends no one to a judge panel it does not have', async () => {

@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { computed, nextTick, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { api } from '../api/client';
+import { ApiError } from '../api/errors';
 import { isFixtureMode } from '../api/mode';
 import type { BlindItem, Compare, CompareRow, ExperimentDetail, TrialRowSummary, Interval, JudgeAgreement, TaskView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import JudgePanel from '../components/JudgePanel.vue';
 import LoadState from '../components/LoadState.vue';
+import NotFound from '../components/NotFound.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { agreementWords, armIndexOf, armLetter, armsOf, differingShort, namedByHash, excludesZero, intervalText, judgeCaveat, methodName, NBSP, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
+import { agreementWords, armDifferences, armIndexOf, armLetter, armsOf, armState, differingShort, namedByHash, noDiffWords as noDiffFor, excludesZero, intervalText, judgeCaveat, methodName, NBSP, passedText, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
-import { identParts, money, percent, plainText, plural, seconds, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
+import { identParts, money, percent, plainText, plural, seconds, shortHash, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
 import { isFake } from '../lib/models';
 import { alsoGradedBy, experimentName, gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
@@ -19,6 +21,17 @@ import { href } from '../router';
 /** `panel`: `judge` opens the page at its judge panel (the trial page links there). */
 const props = defineProps<{ experimentId: string; panel?: string | null }>();
 const fixtures = isFixtureMode();
+
+/** The address names an experiment that does not exist (a mistyped or stale link). */
+const missing = ref(false);
+async function experimentOrMissing(id: string): Promise<ExperimentDetail> {
+  try {
+    return await api.experiment(id);
+  } catch (err) {
+    if (err instanceof ApiError && (err.code === 'unknown_experiment' || err.status === 404)) missing.value = true;
+    throw err;
+  }
+}
 
 interface Loaded {
   detail: ExperimentDetail;
@@ -32,7 +45,7 @@ interface Loaded {
 const { data, error, loading } = useLoad<Loaded>(async () => {
   // A shipped example has no judge panel and its trials are never in the label queue, so its page
   // does not fetch the held-out queue (every held-out output, a large reply) or the agreement.
-  const detailP = api.experiment(props.experimentId);
+  const detailP = experimentOrMissing(props.experimentId);
   const blindP = detailP.then(async (d): Promise<{ judge: JudgeAgreement | null; queue: BlindItem[] }> => {
     if (d.example) return { judge: null, queue: [] };
     const [judge, queue] = await Promise.all([optional(api.judgeAgreement('heldout'), null), optional(api.labelQueue('heldout'), [] as BlindItem[])]);
@@ -56,6 +69,17 @@ const fakeArms = computed(() => {
   if (!fake.length) return null;
   if (fake.length === arms.value.length) return arms.value.length === 1 ? 'Its one arm' : arms.value.length === 2 ? 'Both arms' : 'Every arm';
   return fake.length === 1 ? `Arm ${fake[0].key.toUpperCase()}` : `Arms ${fake.map((a) => a.key.toUpperCase()).join(' and ')}`;
+});
+
+/** What arms A and B differ in, each with both values ("Max steps: 10 in A, 12 in B"), read from
+ *  the two saved configs. `same`: one config in both arms; `unnamed`: the configs differ only in
+ *  something this list does not put in words. Null with one arm or a config that did not load. */
+const differences = computed(() => {
+  const [a, b] = arms.value;
+  if (!a?.config || !b?.config) return null;
+  if (a.hash === b.hash) return { list: [], same: true, unnamed: false };
+  const list = armDifferences(a.config, b.config);
+  return { list, same: false, unnamed: !list.length };
 });
 
 /** The judge panel's counts: tasks with a judge check, and the finished trials of those tasks. */
@@ -94,16 +118,28 @@ function cell(task: string, arm: 0 | 1): CompareRow | undefined {
   return data.value?.compare.rows.find((r) => r.task === task && r.arm === letter);
 }
 
-/** D37: no comparison until every arm is complete; the API says why, and how each arm stands. */
-const incomplete = computed(() => (data.value?.compare.status === 'incomplete' ? plainText(data.value.compare.reason ?? 'not every arm is complete yet') : null));
-const armProgress = computed(() =>
-  (data.value?.compare.arms ?? []).map((a) => {
+/** D37: no comparison until every arm is complete; the API says why, and how each arm stands. The
+ *  page adds that a verdict needs the full planned N, so a reason that already says so (a stopped
+ *  run's does) loses its own copy. */
+const incomplete = computed(() => {
+  if (data.value?.compare.status !== 'incomplete') return null;
+  const reason = plainText(data.value.compare.reason ?? 'not every arm is complete yet')
+    .replace(/[;,.]?\s*a verdict needs the full planned N\.?\s*$/i, '')
+    .trim();
+  return `${reason.charAt(0).toUpperCase()}${reason.slice(1)}. A verdict needs the full planned N, so no pass counts are shown off a partial run.`;
+});
+const armProgress = computed(() => {
+  const list = data.value?.compare.arms ?? [];
+  // Two configs with one name are told apart by their arm names, as in the header.
+  const namesClash = new Set(list.map((a) => a.config_name)).size < list.length;
+  return list.map((a, i) => {
     const c = a.counts;
     const total = c.queued + c.running + c.done + c.infra_failed + c.abandoned + c.cancelled;
     const words: Record<string, string> = { not_started: 'not started', active: 'running', paused: 'paused', stopped: 'stopped', complete: 'complete' };
-    return { key: a.arm.toLowerCase(), letter: a.arm, name: a.config_name, status: words[a.status] ?? a.status, done: c.done, total, reason: a.status === 'paused' && a.paused_reason ? plainText(a.paused_reason) : null };
-  }),
-);
+    const name = namesClash && arms.value[i] ? arms.value[i].label : a.config_name;
+    return { key: a.arm.toLowerCase(), letter: a.arm, name, status: words[a.status] ?? a.status, done: c.done, total, reason: a.status === 'paused' && a.paused_reason ? plainText(a.paused_reason) : null };
+  });
+});
 
 const totals = computed(() => {
   const d = data.value;
@@ -133,6 +169,16 @@ const noVerdictText = computed(() => {
     ? ` ${open} more ${open === 1 ? 'trial has' : 'trials have'} no outcome: a required check could not be decided (often the judge, when judging is not approved), so ${open === 1 ? 'it counts' : 'they count'} as neither a pass nor a fail.`
     : '';
   return `A passed ${t.a.passed} of ${t.a.graded} graded trials${b}.${undecided} This version of the platform does not compute the verdict and its interval yet, so read these as counts, not a conclusion; the per-task results below are complete.${more}`;
+});
+
+/** In the verdict box of a run on a fake model: its outputs are a script, not an agent's. */
+const fakeRunNote = computed(() => {
+  const who = fakeArms.value;
+  if (!who) return null;
+  const all = arms.value.every((a) => isFake(a.config?.model));
+  return all
+    ? `${who} ran on a fake model, which makes the same calls whatever the task, so most trials fail. The counts test the platform, not an agent.`
+    : `${who} ran on a fake model, which makes the same calls whatever the task, so most of its trials fail. This comparison tests the platform, not an agent.`;
 });
 
 /** Trials stopped on infra failures: listed, never dropped. When the trial list did not load,
@@ -198,17 +244,25 @@ const commits = computed(() => {
 });
 
 /** The harness pin from the configs: "Hermes 6112c2a" on line 2 when both arms share it, or each
- *  pin in its arm on line 1 when they differ. */
+ *  pin in its arm on line 1 when they differ (unless the arm's name already gives it). */
 const pinOf = (arm: Arm | undefined) => (arm?.config ? shortRef(arm.config.harness_ref) : null);
+const armPin = (arm: Arm) => {
+  const pin = meta.value.perArm ? pinOf(arm) : null;
+  return pin && !arm.label.includes(pin.slice(0, 7)) ? pin : null;
+};
+/** Line 2 names only what both arms share: the harness, then the model or the prompt. */
 const meta = computed(() => {
   const d = data.value;
   const [a, b] = arms.value;
   const ca = a?.config;
   const cb = (b ?? a)?.config;
   if (!d || !ca) return { perArm: false, harness: '', pin: null as string | null, rest: setupOf(d?.detail ?? { axis: 'none' }, arms.value) };
-  const shared = !!cb && ca.harness === cb.harness && ca.harness_ref === cb.harness_ref;
-  if (!shared) return { perArm: true, harness: '', pin: null, rest: setupOf(d.detail, arms.value) };
-  const rest = d.detail.axis === 'model' ? `, prompt ${ca.prompt.version}` : ` with ${modelName(ca.model)}`;
+  if (!cb) return { perArm: false, harness: harnessShort(ca.harness), pin: pinOf(a), rest: ` with ${modelName(ca.model)}` };
+  const sameModel = ca.model === cb.model;
+  const samePrompt = ca.prompt.sha256 === cb.prompt.sha256;
+  const shared = ca.harness === cb.harness && ca.harness_ref === cb.harness_ref;
+  if (!shared) return { perArm: true, harness: '', pin: null, rest: [sameModel ? modelName(ca.model) : '', samePrompt ? `prompt ${ca.prompt.version}` : ''].filter(Boolean).join(', ') };
+  const rest = sameModel ? ` with ${modelName(ca.model)}` : samePrompt ? `, prompt ${ca.prompt.version}` : '';
   return { perArm: false, harness: harnessShort(ca.harness), pin: pinOf(a), rest };
 });
 
@@ -417,33 +471,10 @@ const fx = (v: number) => 200 + Math.max(-100, Math.min(100, v)) * 1.82;
 const AXIS_TICKS = [-100, -50, 0, 50, 100].map((v) => ({ value: v, x: fx(v), label: tick(v) }));
 /** Arm colour only for a task whose difference holds up after correction; every other row is grey. */
 const lean = (r: TaskRow) => (!r.diff || !r.significant ? 'neutral' : r.diff.estimate >= 0 ? 'b' : 'a');
-/** How one arm's trials of a task stand on grading: some graded and decided; all graded but none
- *  decided (every one undecided); grading not finished for some; or no finished trial at all. */
-type ArmState = 'decided' | 'undecided' | 'grading' | 'none';
-function armState(c: CompareRow | undefined): ArmState {
-  if (!c || !c.trials) return 'none';
-  if (c.graded + c.incomplete < c.trials) return 'grading';
-  return c.graded ? 'decided' : 'undecided';
-}
-
 /** A task row with no difference to show, in words: which arm is still grading, which is
  *  undecided, or which has no trial. "Not graded yet" only while grading has not finished. */
 function noDiffWords(r: TaskRow): { tag: string; detail: string } {
-  const states = [armState(r.a), armState(r.b)].slice(0, Math.max(1, Math.min(2, arms.value.length)));
-  const letters = ['A', 'B'];
-  const which = (s: ArmState) => states.map((x, i) => (x === s ? letters[i] : null)).filter((x): x is string => x !== null);
-  const both = (list: string[]) => list.length === states.length && states.length > 1;
-  const grading = which('grading');
-  if (grading.length) return { tag: 'Not graded yet', detail: both(grading) ? 'grading has not finished' : `arm ${grading[0]} is still grading` };
-  const none = which('none');
-  if (none.length) return { tag: 'No trials', detail: both(none) ? 'no finished trial in either arm' : `arm ${none[0]} has no finished trial` };
-  const undecided = which('undecided');
-  if (both(undecided) || (states.length === 1 && undecided.length)) return { tag: 'Undecided', detail: states.length > 1 ? 'no trial in either arm has an outcome' : 'no trial has an outcome' };
-  if (undecided.length) {
-    const other = letters.find((l, i) => i < states.length && l !== undecided[0]) ?? 'A';
-    return { tag: `${undecided[0]} undecided`, detail: `arm ${other} has an outcome, arm ${undecided[0]} none` };
-  }
-  return { tag: 'Not graded yet', detail: '' };
+  return noDiffFor([armState(r.a), armState(r.b)].slice(0, Math.max(1, Math.min(2, arms.value.length))));
 }
 
 function verdictOf(r: TaskRow): { kind: Verdict; label?: string } {
@@ -455,13 +486,6 @@ function verdictOf(r: TaskRow): { kind: Verdict; label?: string } {
   return { kind: 'none' };
 }
 const labelOf = (r: TaskRow) => (!r.diff ? noDiffWords(r).detail : stats.value ? `${signed(r.diff.estimate)} (${intervalText(r.diff)})` : `${signed(r.diff.estimate)}, no interval`);
-/** "2 of 3", "1 of 2, 1 undecided", "1 undecided" (none graded with an outcome), "not graded". */
-const passedText = (c: CompareRow | undefined) => {
-  if (!c) return '–';
-  if (!c.graded && c.incomplete) return `${c.incomplete} undecided`;
-  if (!c.graded && c.trials) return 'not graded';
-  return `${c.passed} of ${c.graded}${c.incomplete ? `, ${c.incomplete} undecided` : ''}`;
-};
 
 const differing = computed(() => taskRows.value.filter((r) => r.significant).length);
 
@@ -568,7 +592,16 @@ const worthALook = computed(() => {
 </script>
 
 <template>
+  <NotFound
+    v-if="missing"
+    :crumbs="[{ href: href.experiments(), text: 'Experiments' }]"
+    title="No experiment with that id"
+    :item-id="experimentId"
+  >
+    <a :href="href.experiments()">Experiments</a> lists every run, and <a :href="href.runNew()">Set up a run</a> starts a new one.
+  </NotFound>
   <LoadState
+    v-else
     :loading="loading"
     :error="error"
     what="this comparison"
@@ -604,10 +637,43 @@ const worthALook = computed(() => {
               v-for="arm in arms"
               :key="arm.key"
               class="arm"
-            ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ arm.label }}<template v-if="meta.perArm && pinOf(arm)">{{ ' ' }}<span
+              data-test="arm-name"
+            ><span :class="`dot dot--${arm.key}`" /><span>{{ arm.key.toUpperCase() }}: {{ arm.label }}<template v-if="armPin(arm)">{{ ' ' }}<span
               class="mono"
               data-test="arm-pin"
-            >{{ pinOf(arm) }}</span></template><template v-if="!namedByHash(arm)"> (config <span class="mono">{{ arm.hash.replace('sha256:', '').slice(0, 7) }}</span>)</template></span></span>
+            >{{ armPin(arm) }}</span></template><template v-if="!namedByHash(arm)"> (config <span class="mono">{{ shortHash(arm.hash) }}</span>)</template></span></span>
+          </div>
+          <!-- What A and B differ in, with both values, from the two saved configs. -->
+          <div
+            v-if="differences"
+            class="differs small"
+            data-test="arm-differences"
+          >
+            <span class="differs-lead">What differs</span>
+            <ul
+              v-if="differences.list.length"
+              class="differs-list"
+            >
+              <li
+                v-for="d in differences.list"
+                :key="d.what"
+                data-test="arm-difference"
+              >
+                {{ d.what }}: <span class="differs-value">{{ d.a }}</span> in A, <span class="differs-value">{{ d.b }}</span> in B
+              </li>
+            </ul>
+            <p
+              v-else-if="differences.same"
+              class="differs-list"
+            >
+              Nothing: both arms run the same config, so any difference between them is the noise of the setup.
+            </p>
+            <p
+              v-else
+              class="differs-list"
+            >
+              Nothing this page can name, though the two configs are not the same. Open <a :href="href.configPage(arms[0].hash)">arm A's config</a> and <a :href="href.configPage(arms[1].hash)">arm B's</a> to compare them.
+            </p>
           </div>
           <!-- Line 2: what the arms share, then the run's size and commits. Each group stays whole;
                the line breaks only between groups. -->
@@ -615,15 +681,17 @@ const worthALook = computed(() => {
             class="meta-line small secondary"
             data-test="meta-line"
           >
-            <span
-              class="nowrap"
-              data-test="setup"
-            >{{ meta.harness }}<template v-if="meta.pin">{{ ' ' }}<span class="mono">{{ meta.pin }}</span></template>{{ meta.rest }}</span><template v-if="simClient">
-              · <span
+            <template v-if="meta.harness || meta.rest">
+              <span
+                class="nowrap"
+                data-test="setup"
+              >{{ meta.harness }}<template v-if="meta.pin">{{ ' ' }}<span class="mono">{{ meta.pin }}</span></template>{{ meta.rest }}</span> ·
+            </template><template v-if="simClient">
+              <span
                 class="nowrap"
                 data-test="sim-client"
-              >simulated client {{ simClient }}</span>
-            </template> · <span class="nowrap">{{ totalTrials(data.detail) }} trials</span><template v-if="commits.plan">
+              >simulated client {{ simClient }}</span> ·
+            </template><span class="nowrap">{{ totalTrials(data.detail) }} trials</span><template v-if="commits.plan">
               · <a
                 :href="href.run(data.detail.id)"
                 class="secondary nowrap"
@@ -731,7 +799,7 @@ const worthALook = computed(() => {
               class="verdict-text"
               data-test="incomplete-reason"
             >
-              {{ incomplete.charAt(0).toUpperCase() + incomplete.slice(1) }}. A verdict needs the full planned N, so no pass counts are shown off a partial run.
+              {{ incomplete }}
             </p>
             <ul
               class="arm-progress small"
@@ -764,6 +832,17 @@ const worthALook = computed(() => {
               {{ noVerdictText }}
             </p>
           </template>
+          <p
+            v-if="fakeRunNote"
+            class="caveat"
+            data-test="fake-run-note"
+          >
+            <AppIcon
+              name="info"
+              :size="14"
+            />
+            <span><strong class="caveat-lead">Scripted test outputs:</strong> {{ fakeRunNote }}</span>
+          </p>
           <template v-if="worthALook">
             <!-- Takes the free height, so the next step sits at the foot of the answer column. -->
             <div
@@ -1042,7 +1121,7 @@ const worthALook = computed(() => {
                   >{{ r.name }}</span>
                 </th>
                 <td class="secondary c-grader">
-                  {{ r.grader }}
+                  <span class="phone-only">Graded by </span>{{ r.grader }}
                 </td>
                 <td class="right num c-a">
                   <a
@@ -1068,7 +1147,10 @@ const worthALook = computed(() => {
                     <span class="phone-only">B{{ NBSP }}</span>{{ passedText(r.b) }}
                   </template>
                 </td>
-                <td class="plot-cell">
+                <td
+                  class="plot-cell"
+                  :class="{ 'plot-cell--empty': !r.diff }"
+                >
                   <svg
                     v-if="r.diff"
                     viewBox="0 0 400 26"
@@ -1132,6 +1214,35 @@ const worthALook = computed(() => {
 
 .meta-line {
   margin-top: 6px;
+}
+
+/* What the arms differ in: a label, then one line per difference, each with both values. */
+.differs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-top: 8px;
+}
+
+.differs-lead {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.differs-list {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+  text-wrap: pretty;
+}
+
+.differs-value {
+  font-weight: 500;
 }
 
 .nowrap {
@@ -1479,7 +1590,14 @@ const worthALook = computed(() => {
   .actions {
     margin-top: 0;
   }
+}
 
+/* Below the width the six columns need (980 px of table inside the page's padding), Task by task
+   becomes one card per task, with no column hidden and nothing to scroll sideways: the shared axis
+   once at the top, then for each task its id (wrapping at its hyphens), its verdict, its interval
+   across the card, the two arms' counts, and its graders. Each card draws its own piece of the
+   zero line, inside the plot only, so it never runs through text. */
+@media (max-width: 1099px) {
   .table.forest .axis-caption {
     display: block;
     margin-bottom: 6px;
@@ -1487,8 +1605,6 @@ const worthALook = computed(() => {
     color: var(--ink-2);
   }
 
-  /* Task by task stacks: the shared axis once at the top, then for each task its name and
-     verdict, its interval across the full width, and the counts with the grader underneath. */
   .table.forest,
   .table.forest thead,
   .table.forest tbody {
@@ -1519,31 +1635,22 @@ const worthALook = computed(() => {
     border-bottom: 1px solid var(--rule);
   }
 
+  /* The plot keeps a readable height on a wide card: at most 640 px across, centred, so its zero
+     stays at the card's centre like the axis's. */
+  .table.forest .axis-cell svg,
+  .table.forest .plot-cell svg {
+    display: block;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
   .table.forest tbody tr {
-    position: relative;
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 2px 0;
-    padding: 12px 16px;
+    gap: 4px 0;
+    padding: 14px 16px;
     border-bottom: 1px solid var(--rule-soft);
-  }
-
-  /* On a phone each task is a block of three lines; its piece of the zero line runs the whole
-     block, so the line stays unbroken from the axis to the last task. The row's padding is the
-     same on both sides, so 50% is still the SVG's x = 200. Text sits on the surface over it. */
-  .table.forest .plot-cell {
-    position: static;
-  }
-
-  .table.forest .c-task > *,
-  .table.forest .c-verdict,
-  .table.forest .c-a,
-  .table.forest .c-b,
-  .table.forest .c-grader {
-    position: relative;
-    z-index: 1;
-    background: var(--surface);
   }
 
   .table.forest tbody tr:last-child {
@@ -1558,20 +1665,43 @@ const worthALook = computed(() => {
 
   .table.forest .c-task {
     order: 1;
-    flex: 1 1 0;
+    flex: 0 0 100%;
     min-width: 0;
-    padding-right: 12px;
+  }
+
+  /* The whole id, broken at its hyphens when the card is narrower than it. */
+  .table.forest .c-task .mono {
+    font-size: 14px;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .table.forest .c-verdict {
     order: 2;
-    flex: none;
-    text-align: right;
+    flex: 0 0 100%;
+  }
+
+  .table.forest .c-verdict .result-detail {
+    display: inline;
+  }
+
+  .table.forest .c-verdict .result-detail::before {
+    content: '·';
+    padding: 0 6px;
   }
 
   .table.forest .plot-cell {
     order: 3;
     flex: 0 0 100%;
+    padding: 4px 0;
+  }
+
+  .table.forest .plot-cell::before {
+    bottom: 0;
+  }
+
+  .table.forest .plot-cell--empty {
+    display: none;
   }
 
   .table.forest .c-a,
@@ -1589,20 +1719,44 @@ const worthALook = computed(() => {
     order: 5;
   }
 
+  .table.forest .c-b::before {
+    content: '·';
+    padding: 0 8px;
+  }
+
   .table.forest .c-grader {
     order: 6;
+    flex: 0 0 100%;
   }
 
-  .table.forest .c-b::before,
-  .table.forest .c-grader::before {
-    content: '·';
-    padding: 0 6px;
-  }
-
-  .phone-only {
+  .table.forest .phone-only {
     display: inline;
   }
 }
+
+/* On a tablet each card has the room for three lines: the id with its verdict, the interval, and
+   the counts with the graders. */
+@media (min-width: 641px) and (max-width: 1099px) {
+  .table.forest .c-task {
+    flex: 1 1 auto;
+    padding-right: 16px;
+  }
+
+  .table.forest .c-verdict {
+    flex: 0 1 auto;
+    text-align: right;
+  }
+
+  .table.forest .c-grader {
+    flex: 1 1 auto;
+  }
+
+  .table.forest .c-grader::before {
+    content: '·';
+    padding: 0 8px;
+  }
+}
+
 
 /* A per-arm count opens that arm's trials of the task: an ordinary link, the numbers in ink. */
 .cell-link {

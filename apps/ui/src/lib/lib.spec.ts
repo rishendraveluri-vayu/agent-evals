@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeSpan, toBlindItem } from '../api/client';
 import type { ConfigView, Estimate, TaskView } from '../api/types';
-import { agreementWords, armsOf, checksToGo, headline, judgeCaveat, methodName, pointsWithInterval, setupOf, timeLeft, verdictTitle } from './arms';
+import { agreementWords, armDifferences, armsOf, armState, axisWords, checksToGo, differenceText, headline, judgeCaveat, methodName, noDiffWords, passedText, pointsWithInterval, setupOf, timeLeft, verdictTitle } from './arms';
 import { coverage, coverageText } from './capabilities';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, splitCheck } from './checks';
 import { sentenceChanges } from './diff';
@@ -222,6 +222,58 @@ describe('arms', () => {
     expect(verdictTitle({ verdict: 'worse' } as Parameters<typeof verdictTitle>[0], arms)).toBe('v2 does worse than v1');
     expect(verdictTitle({ verdict: 'no_clear_difference' } as Parameters<typeof verdictTitle>[0], arms)).toBe('No clear difference');
     expect(armsOf({ axis: 'none', config_hashes: [configs[0].hash, configs[0].hash] }, configs).map((a) => a.label)).toEqual(['Config 3b81e04', 'Config 3b81e04']);
+  });
+
+  it('says what two configs differ in, with both values, and nothing for a name or a source', () => {
+    const a = config({});
+    expect(armDifferences(a, { ...a, hash: 'sha256:b', name: 'other name', created_at: '2026-11-02T00:00:00Z' })).toEqual([]);
+    // Where a value came from is not a difference; the value is.
+    expect(armDifferences(a, { ...a, settings_sources: { ...a.settings_sources, max_steps: 'config' } })).toEqual([]);
+    const b = config({
+      harness_ref: 'y',
+      toolset: { id: 'finance', version: 'v2', sha256: 'sha256:t2' },
+      settings: { ...a.settings, timeout_s: 420, parallel_tool_calls: true },
+      harness_options: { reasoning_effort: 'low' },
+      seed: { memory: ['likes SIPs'], skills: [{ name: 'emi-check', description: 'd', body: 'b' }] },
+    });
+    expect(armDifferences(a, b).map(differenceText)).toEqual([
+      'Hermes Agent version: x in A, y in B',
+      'Tools: all in A, v2 in B',
+      'Timeout: 300 s in A, 420 s in B',
+      'Parallel tool calls: off in A, on in B',
+      'Harness option reasoning effort: not set in A, low in B',
+      'Seeded memory: none in A, 1 entry in B',
+      'Seeded skills: none in A, emi-check in B',
+    ]);
+    expect(armDifferences(b, { ...b, seed: { ...b.seed, memory: ['likes FDs'] } }).map(differenceText)).toEqual(['Seeded memory: 1 entry in A, 1 entry, worded differently in B']);
+    expect(armDifferences(a, { ...a, capabilities_sha256: 'sha256:d00d' }).map(differenceText)).toEqual(['Harness capabilities file: c in A, d00d in B']);
+  });
+
+  it('names arms by a setting or the tools, and never two different configs alike', () => {
+    const a = config({ name: 'same' });
+    const b = config({ hash: 'sha256:7f3a9c2bbbb', name: 'same', settings: { ...a.settings, temperature: 0.7 }, settings_sources: { ...a.settings_sources, temperature: 'config' } });
+    expect(armsOf({ axis: 'temperature', config_hashes: [a.hash, b.hash] }, [a, b]).map((x) => x.label)).toEqual(['Temperature not sent', 'Temperature 0.7']);
+    const t = config({ hash: 'sha256:7f3a9c2bbbb', toolset: { id: 'finance', version: 'v2', sha256: 'sha256:t2' } });
+    expect(armsOf({ axis: 'tools', config_hashes: [a.hash, t.hash] }, [a, t]).map((x) => x.label)).toEqual(['Tools all', 'Tools v2']);
+    // One harness at two versions: both "Hermes Agent" by the axis, so the version tells them apart.
+    const pinned = config({ hash: 'sha256:7f3a9c2bbbb', harness_ref: '6112c2adb9e11f69734a29be9d2696f345ffa06a' });
+    expect(armsOf({ axis: 'harness', config_hashes: [a.hash, pinned.hash] }, [a, pinned]).map((x) => x.label)).toEqual(['Hermes Agent x', 'Hermes Agent 6112c2a']);
+    // Same name, and the axis cannot tell them apart: the hashes do.
+    const quiet = config({ hash: 'sha256:7f3a9c2bbbb', name: 'same', harness_options: { a: 1 } });
+    expect(armsOf({ axis: 'prompt', config_hashes: [a.hash, quiet.hash] }, [a, quiet]).map((x) => x.label)).toEqual(['Config 3b81e04', 'Config 7f3a9c2']);
+    expect(axisWords({ axis: 'mixed', config_hashes: [a.hash, b.hash] })).toBe('more than one thing');
+  });
+
+  it('writes an arm\u2019s passes of a task and, with no difference, how its arms stand', () => {
+    expect(passedText({ trials: 3, graded: 3, incomplete: 0, passed: 2 })).toBe('2 of 3');
+    expect(passedText({ trials: 2, graded: 1, incomplete: 1, passed: 0 })).toBe('0 of 1, 1 undecided');
+    expect(passedText({ trials: 1, graded: 0, incomplete: 1, passed: 0 })).toBe('1 undecided');
+    expect(passedText({ trials: 1, graded: 0, incomplete: 0, passed: 0 })).toBe('not graded');
+    expect(passedText(undefined)).toBe('\u2013');
+    const undecided = { trials: 1, graded: 0, incomplete: 1, passed: 0 };
+    const decided = { trials: 1, graded: 1, incomplete: 0, passed: 0 };
+    expect(noDiffWords([armState(undecided), armState(undecided)])).toEqual({ tag: 'Undecided', detail: 'no trial in either arm has an outcome' });
+    expect(noDiffWords([armState(decided), armState(undecided)])).toEqual({ tag: 'B undecided', detail: 'arm A has an outcome, arm B none' });
   });
 
   it('writes a difference in points, with its interval, one point in the singular, and the number kept with its unit', () => {
