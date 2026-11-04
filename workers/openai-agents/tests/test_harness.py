@@ -13,7 +13,7 @@ from evals_adapter.gate import FakeServer
 from evals_adapter.trace import attr_dict
 from test_gate import GATE
 
-from openai_agents_adapter.adapter import parse_error, tool_text
+from openai_agents_adapter.adapter import OpenAIAgentsAdapter, parse_error, tool_text
 
 
 @pytest.fixture(scope="module")
@@ -139,3 +139,20 @@ def test_tool_text_and_parse_error():
     assert parse_error("") is None
     assert parse_error('{"a": 1') is not None
     assert parse_error("[1]") == "not a JSON object"
+
+
+def test_finish_reason_is_read_from_the_raw_response():
+    """The SDK drops finish_reason, so token_limit relies on this hook. The fake model never
+    sends "length", so this is the only check of it; a real reply cut short is not yet run."""
+    import asyncio
+
+    import httpx2
+
+    adapter = OpenAIAgentsAdapter()
+    adapter.finish_reasons = []
+    chat = httpx2.Request("POST", "http://proxy/v1/chat/completions")
+    for status, body in ((200, {"choices": [{"finish_reason": "length"}]}), (429, {"error": {}})):
+        asyncio.run(adapter._on_response(httpx2.Response(status, request=chat, json=body)))
+    other = httpx2.Request("GET", "http://proxy/v1/models")
+    asyncio.run(adapter._on_response(httpx2.Response(200, request=other, json={})))
+    assert adapter.finish_reasons == ["length", None]
