@@ -61,6 +61,8 @@ export class LiteLlmStub {
     { model_group: 'claude-haiku-5-5', providers: ['anthropic'], input_cost_per_token: 0.0000001, output_cost_per_token: 0.0000005 },
     { model_group: 'gemini-3.8-flash', providers: ['gemini'], input_cost_per_token: 0.00000075, output_cost_per_token: 0.00000375 },
     { model_group: 'unpriced-model', providers: ['openai'], input_cost_per_token: null, output_cost_per_token: null },
+    // A name LangGraph rewrites requests for, for the config warning tests. Routed only: no real call.
+    { model_group: 'gpt-5-mini', providers: ['openai'], input_cost_per_token: 0.00000025, output_cost_per_token: 0.000002 },
   ];
 
   async start(): Promise<void> {

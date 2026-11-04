@@ -9,7 +9,8 @@ Vue UI. Change it only by editing this file in the same commit as the code.
 All bodies are JSON. Times are RFC 3339 UTC. Money is USD as a number. Hashes are
 `sha256:<hex>`; every hash the API takes in, a worker's report included, may also be bare hex
 (any case), and the API stores and returns it as `sha256:<hex>`. Errors are `{"error": "<code>", "message": "<plain words>"}` with a 4xx/5xx
-status. The trial spec, result, span and runner-report shapes are contract v2
+status, plus `"fix": "<what to change>"` where the API can say how to put the request right
+(every refused setting on `POST /configs` has one; so do the experiment refusals below). The trial spec, result, span and runner-report shapes are contract v2
 (`contract/v2/*.schema.json`); this API carries them unchanged.
 
 ## Who holds which secret
@@ -76,9 +77,39 @@ simulated-client task the API also summarises that file (profile and debts) into
   `hash = sha256(canonical JSON of harness ref, adapter version, capabilities sha256, model,
   prompt sha256, toolset sha256, settings, harness_options)`. Posting the same content twice
   returns the same config (200, not a duplicate).
+
+  **Refusals carry a fix** (D25 follow-up, Rishi's guide review item 1). Every 400 for a refused
+  setting has a `fix` the Config screen shows by the field:
+
+  | `error` | When | `fix`, for example |
+  | --- | --- | --- |
+  | `unsupported_setting` | the model refuses it | "Claude Haiku 5.5 rejects temperature: leave it unset, or pick a model that takes it." |
+  | `unsupported_setting` | the harness cannot take it (the message quotes the capabilities file's reason) | "ownloop ignores memory: leave it unset, or pick a harness that takes it (hermes)." |
+  | `invalid_setting` | a bad value | "Set max_steps to an integer of at least 1, or leave it unset for the default." |
+  | `unknown_setting` | a name that is not a setting | "Did you mean temperature? Rename temprature to temperature." |
+  | `invalid_harness_options`, `unknown_harness`, `unknown_model`, `unknown_prompt`, `unknown_toolset` | | where to pick a valid one |
+
+  **Warnings** (valid but risky, stored anyway): `warnings: [{code, message, fix}]`. Today one
+  code: `langgraph_model_name_rewrite`, for a LangGraph config whose model name langchain-openai
+  1.7.2 rewrites the request for (`workers/langgraph/README.md`, finding 6): names starting
+  `gpt-5` (without `chat`) drop any temperature but 1; `o1` names send temperature 1 when unset;
+  `^o\d` names send the system prompt as `developer`; `gpt-6` and `codex` names would move to the
+  Responses API, which the adapter turns off (`use_responses_api=False`), so for those two the
+  warning asks for the captured request to be checked. The message starts "LangGraph changes the
+  request for this model name"; the fix is to serve the model under another LiteLLM name, or to
+  run it on another harness.
+
+  **Ignored settings:** `unsupported: {<setting>: <reason>}` lists every setting this harness or
+  model ignores, for the UI to grey out with the reason: the harness's own words from its
+  capabilities file ("langgraph does not support skills: LangGraph has no skills"), or the
+  model's refusal ("Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's
+  default applies").
 - `GET /configs`, `GET /configs/:hash` return `{hash, name, harness, harness_ref, model,
-  prompt, toolset, settings, settings_sources, harness_options, created_at}`.
-- `GET /configs/:a/diff/:b` returns `[{path, a, b}]`: every field that differs.
+  prompt, toolset, settings, settings_sources, unsupported, warnings, harness_options,
+  created_at}`. `unsupported` and `warnings` are worked out from the stored capabilities, so
+  every read has them, not only the POST.
+- `GET /configs/:a/diff/:b` returns `[{path, a, b}]`: every field that differs (`unsupported`
+  and `warnings` are derived, so they are left out).
 
 ## Experiments
 

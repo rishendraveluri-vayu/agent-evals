@@ -15,10 +15,11 @@ export type JsonObject = { [key: string]: Json };
 /** `sha256:<64 hex>`. Inputs also accept the bare hex. */
 export type Sha256 = string;
 
-/** Every 4xx/5xx body. */
+/** Every 4xx/5xx body. `fix`, when present, says what to change so the request succeeds. */
 export interface ApiErrorBody {
   error: string;
   message: string;
+  fix?: string;
 }
 
 // ---- Settings (contract v2 section 3) ------------------------------------------------
@@ -137,6 +138,14 @@ export interface VersionRef {
   sha256: Sha256;
 }
 
+/** A valid but risky config: the API stores it and says what will happen and how to avoid it. */
+export interface ConfigWarning {
+  /** `langgraph_model_name_rewrite`: langchain-openai changes the request by the model's name. */
+  code: string;
+  message: string;
+  fix: string;
+}
+
 /** GET /configs, GET /configs/:hash, and POST /configs (201 new, 200 already stored). */
 export interface ConfigView {
   hash: Sha256;
@@ -150,6 +159,12 @@ export interface ConfigView {
   toolset: VersionRef;
   settings: Settings;
   settings_sources: SettingsSources;
+  /**
+   * Settings this harness or model ignores, each with a reason to show by the greyed-out field:
+   * the harness's own words (capabilities.json), or the model's refusal (D25).
+   */
+  unsupported: Partial<Record<SettingName, string>>;
+  warnings: ConfigWarning[];
   harness_options: JsonObject;
   created_at: string;
 }

@@ -68,7 +68,11 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
       .post('/api/configs')
       .send({ name: 'x', harness: 'ownloop', model: 'fake/finance-emi', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset, settings: { memory: { enabled: true } } })
       .expect(400);
-    expect(res.body).toEqual({ error: 'unsupported_setting', message: expect.stringContaining('memory') as string });
+    expect(res.body).toEqual({
+      error: 'unsupported_setting',
+      message: 'ownloop does not support memory, so a config cannot set it (the loop has no memory)',
+      fix: 'ownloop ignores memory: leave it unset, or pick a harness that takes it (hermes).',
+    });
   });
 
   it('leaves an unset temperature unsent, shown as the harness default (D25); parallel tool calls stay off (D19)', async () => {
@@ -90,13 +94,58 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
   it('refuses a setting the model rejects with 400 unsupported_setting naming the model (temperature on Haiku 5.5)', async () => {
     const base = { name: 'haiku', harness: 'ownloop', model: 'claude-haiku-5-5', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset };
     const res = await request(env.http).post('/api/configs').send({ ...base, settings: { temperature: 0.37 } }).expect(400);
-    expect(res.body).toEqual({ error: 'unsupported_setting', message: expect.stringContaining('claude-haiku-5-5 refuses temperature') as string });
+    expect(res.body).toEqual({
+      error: 'unsupported_setting',
+      message: expect.stringContaining('Claude Haiku 5.5 (claude-haiku-5-5) refuses temperature') as string,
+      fix: 'Claude Haiku 5.5 rejects temperature: leave it unset, or pick a model that takes it.',
+    });
     const ok = (await request(env.http).post('/api/configs').send({ ...base, settings: { max_steps: 12 } }).expect(201)).body as {
       settings: Record<string, unknown>;
       settings_sources: Record<string, string>;
     };
     expect(ok.settings).toMatchObject({ temperature: null, max_steps: 12 });
     expect(ok.settings_sources.temperature).toBe('harness_default');
+  });
+
+  it('shows what a harness or model ignores, with a reason for the greyed-out field', async () => {
+    const res = await request(env.http)
+      .post('/api/configs')
+      .send({ name: 'lg haiku', harness: 'langgraph', model: 'claude-haiku-5-5', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset })
+      .expect(201);
+    const c = res.body as { hash: string; unsupported: Record<string, string>; warnings: unknown[] };
+    expect(c.unsupported).toEqual({
+      temperature: "Claude Haiku 5.5 rejects temperature, so it is not sent and the provider's default applies",
+      memory: 'langgraph does not support memory: create_agent has no memory unless a store and memory tools are added; the adapter adds neither',
+      skills: 'langgraph does not support skills: LangGraph has no skills',
+      compression: 'langgraph does not support compression: nothing compresses unless SummarizationMiddleware is added; the full history is sent',
+    });
+    expect(c.warnings).toEqual([]);
+    expect(((await request(env.http).get(`/api/configs/${c.hash}`).expect(200)).body as { unsupported: unknown }).unsupported).toEqual(c.unsupported);
+  });
+
+  it('stores a LangGraph config whose model name rewrites the request, with a warning and a fix', async () => {
+    const base = { name: 'lg gpt-5', model: 'gpt-5-mini', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset, settings: { temperature: 0.2 } };
+    const res = await request(env.http).post('/api/configs').send({ ...base, harness: 'langgraph' }).expect(201);
+    const c = res.body as { hash: string; warnings: { code: string; message: string; fix: string }[] };
+    expect(c.warnings).toEqual([
+      {
+        code: 'langgraph_model_name_rewrite',
+        message: 'LangGraph changes the request for this model name (gpt-5-mini): a gpt-5 name drops any temperature other than 1.',
+        fix: 'Serve the model under a LiteLLM name that does not start with gpt-5, gpt-6, o1 or o<digit> and does not contain codex, or run it on another harness.',
+      },
+    ]);
+    expect(((await request(env.http).get(`/api/configs/${c.hash}`).expect(200)).body as { warnings: unknown }).warnings).toEqual(c.warnings);
+    // The same model on the own loop is sent as configured: no warning.
+    expect(((await request(env.http).post('/api/configs').send({ ...base, harness: 'ownloop' }).expect(201)).body as { warnings: unknown[] }).warnings).toEqual([]);
+  });
+
+  it('carries a fix on the other refusals too', async () => {
+    const base = { name: 'x', harness: 'ownloop', model: 'fake/finance-emi', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset };
+    const fixOf = async (change: Record<string, unknown>) => ((await request(env.http).post('/api/configs').send({ ...base, ...change }).expect(400)).body as { fix?: string }).fix;
+    expect(await fixOf({ settings: { temprature: 0.2 } })).toBe('Did you mean temperature? Rename temprature to temperature.');
+    expect(await fixOf({ settings: { max_steps: -1 } })).toBe('Set max_steps to an integer of at least 1, or leave it unset for the default.');
+    expect(await fixOf({ harness: 'nope' })).toContain('Pick a harness from GET /harnesses: ');
+    expect(await fixOf({ model: 'gpt-nope' })).toContain('GET /models');
   });
 
   it('accepts memory for Hermes, which supports it, and checks harness options against its schema', async () => {

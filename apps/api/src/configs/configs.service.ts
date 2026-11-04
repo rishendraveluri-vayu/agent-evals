@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import type { ConfigDiffEntry, ConfigView, CreateConfigRequest, Json, JsonObject, Settings, SettingsSources } from '../contract';
+import type { ConfigDiffEntry, ConfigView, CreateConfigRequest, Json, JsonObject, SettingName, Settings, SettingsSources } from '../contract';
+import { SETTING_NAMES } from '../contract';
 import { badRequest, notFound } from '../common/api-error';
 import { canonicalJson, hashCanonical, normalizeSha } from '../common/hashing';
 import { CatalogueService } from '../catalogue/catalogue.service';
 import { Db } from '../database/db.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
-import { checkHarnessOptions, resolveSettings } from './settings';
+import { checkHarnessOptions, resolveSettings, supports, unsupportedReasons } from './settings';
+import { configWarnings } from './warnings';
 
 /** Everything that can change a trial's behaviour; its canonical JSON is hashed (R14, SP2). */
 export interface ConfigHashInput {
@@ -78,10 +80,16 @@ export function configView(r: ConfigRow): ConfigView {
     toolset: { id: r.toolset_id, version: r.toolset_version, sha256: r.toolset_sha256 },
     settings: r.settings,
     settings_sources: r.settings_sources,
+    // From the capabilities the config was validated against, which the row keeps.
+    unsupported: unsupportedReasons(r.capabilities, r.harness, r.model),
+    warnings: configWarnings(r.harness, r.model),
     harness_options: r.harness_options,
     created_at: r.created_at.toISOString(),
   };
 }
+
+/** Fields that are derived or are not behaviour, left out of a diff. */
+const NOT_DIFFED = ['hash', 'created_at', 'unsupported', 'warnings'] as const;
 
 /** Every leaf path where two values differ; objects are walked, arrays compared whole. */
 export function diffValues(a: unknown, b: unknown, prefix = ''): ConfigDiffEntry[] {
@@ -114,18 +122,26 @@ export class ConfigsService {
     const toolsetSha = normalizeSha(body.toolset_sha256);
     if (!toolsetSha) throw badRequest('invalid_config', 'toolset_sha256 must be sha256:<64 hex>');
 
-    const harness = await this.catalogue.harness(body.harness);
-    if (!harness) throw badRequest('unknown_harness', `no harness named ${body.harness} under workers/`);
+    const harnesses = await this.catalogue.harnesses();
+    const harness = harnesses.find((h) => h.name === body.harness);
+    if (!harness) {
+      throw badRequest('unknown_harness', `no harness named ${body.harness} under workers/`, `Pick a harness from GET /harnesses: ${harnesses.map((h) => h.name).join(', ')}.`);
+    }
     const caps = harness.capabilities as { settings?: Record<string, { supported?: unknown }>; model_api_formats?: unknown; harness_options_schema?: unknown };
-    const { settings, settings_sources } = resolveSettings(body.settings, caps, harness.name, body.model);
+    // Per setting, the harnesses that take it, so a refusal can say where it would work.
+    const elsewhere: Partial<Record<SettingName, string[]>> = {};
+    for (const name of SETTING_NAMES) {
+      elsewhere[name] = harnesses.filter((h) => supports(h.capabilities as Parameters<typeof supports>[0], name)).map((h) => h.name);
+    }
+    const { settings, settings_sources } = resolveSettings(body.settings, caps, harness.name, body.model, elsewhere);
     const harnessOptions = checkHarnessOptions(body.harness_options, caps.harness_options_schema, harness.name);
 
     const prompt = await this.catalogue.prompt(promptSha);
-    if (!prompt) throw badRequest('unknown_prompt', `no prompt with ${promptSha}; see GET /prompts`);
+    if (!prompt) throw badRequest('unknown_prompt', `no prompt with ${promptSha}; see GET /prompts`, 'Pick a prompt sha256 from GET /prompts.');
     const toolset = await this.catalogue.toolset(toolsetSha);
-    if (!toolset) throw badRequest('unknown_toolset', `no toolset with ${toolsetSha}; see GET /toolsets`);
+    if (!toolset) throw badRequest('unknown_toolset', `no toolset with ${toolsetSha}; see GET /toolsets`, 'Pick a toolset sha256 from GET /toolsets.');
     if (!(await this.litellm.findModel(body.model))) {
-      throw badRequest('unknown_model', `LiteLLM serves no model named ${body.model}`);
+      throw badRequest('unknown_model', `LiteLLM serves no model named ${body.model}`, 'Pick a model from GET /models, or add it to the LiteLLM config first.');
     }
     const formats = Array.isArray(caps.model_api_formats) ? (caps.model_api_formats as string[]) : [];
     const apiFormat = formats.includes('openai_chat') ? 'openai_chat' : (formats[0] ?? 'openai_chat');
@@ -187,8 +203,7 @@ export class ConfigsService {
   async diff(a: string, b: string): Promise<ConfigDiffEntry[]> {
     const strip = (view: ConfigView): Partial<ConfigView> => {
       const rest: Partial<ConfigView> = { ...view };
-      delete rest.hash;
-      delete rest.created_at;
+      for (const key of NOT_DIFFED) delete rest[key];
       return rest;
     };
     return diffValues(strip(await this.get(a)), strip(await this.get(b)));
