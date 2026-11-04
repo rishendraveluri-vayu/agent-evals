@@ -361,11 +361,13 @@ def ref_payoff(debts: list[dict], budget, strategy="avalanche") -> dict:
 # --- reference: SIP, FD, inflation, affordability -----------------------------------------------
 
 
-def ref_sip(monthly, rate, years, step=0) -> dict:
+def ref_sip(monthly, rate, years, step=0, lump=0) -> dict:
     """A year at a time in closed form: twelve start-of-month contributions c grow to
     c * g * (g^12 - 1) / (g - 1), or 12c at a zero rate, and the year's opening value to v * g^12.
+    A lump sum invested at the start grows to lump * g^(12 * years); the corpus is the sum of
+    the two rounded parts, and with no lump sum the output has no lump-sum fields.
     """
-    base, pct, up = r2(num(monthly)), num(rate), num(step)
+    base, pct, up, lump_in = r2(num(monthly)), num(rate), num(step), r2(num(lump))
     g = 1 + pct / 1200
     g12 = g**12
     value, invested, c = F(0), F(0), base
@@ -374,13 +376,26 @@ def ref_sip(monthly, rate, years, step=0) -> dict:
         year_of_contributions = 12 * c if pct == 0 else c * g * (g12 - 1) / (g - 1)
         value = value * g12 + year_of_contributions
         invested += 12 * c
-    corpus = r2(value)
+    sip_value = r2(value)
+    if lump_in == 0:
+        return {
+            "months": 12 * years,
+            **money("corpus", sip_value, True),
+            **money("total_invested", invested, True),
+            **money("gains", sip_value - invested, True),
+            **money("final_monthly_investment", c),
+        }
+    lump_value = r2(lump_in * g ** (12 * years))
+    corpus, invested = lump_value + sip_value, invested + lump_in
     return {
         "months": 12 * years,
         **money("corpus", corpus, True),
         **money("total_invested", invested, True),
         **money("gains", corpus - invested, True),
         **money("final_monthly_investment", c),
+        **money("lump_sum", lump_in, True),
+        **money("lump_sum_value", lump_value, True),
+        **money("sip_value", sip_value, True),
     }
 
 
@@ -555,20 +570,41 @@ def test_a_budget_below_the_minimums_is_refused_by_both() -> None:
 
 
 SIPS = [
-    (monthly, rate, years, step)
+    (monthly, rate, years, step, lump)
     for monthly in (500, 1234.56, 10000)
     for rate in (0, 6, 8.5, 12, 15)
     for years in (1, 3, 10, 25)
     for step in (0, 5, 10)
+    for lump in (0, 0.004, 0.01, 100000, 2500000.55)
 ]
 
 
-@pytest.mark.parametrize(("monthly", "rate", "years", "step"), SIPS)
-def test_sip_future_value_matches_the_reference(monthly, rate, years, step) -> None:
+@pytest.mark.parametrize(("monthly", "rate", "years", "step", "lump"), SIPS)
+def test_sip_future_value_matches_the_reference(monthly, rate, years, step, lump) -> None:
     agree(
-        lambda: calc.sip_future_value(monthly, rate, years, step),
-        lambda: ref_sip(monthly, rate, years, step),
+        lambda: calc.sip_future_value(monthly, rate, years, step, lump),
+        lambda: ref_sip(monthly, rate, years, step, lump),
     )
+
+
+def test_sip_without_a_lump_sum_is_unchanged() -> None:
+    """No lump sum, or 0, gives exactly the output from before the lump sum existed."""
+    for lump in (0, 0.0, 0.004):  # 0.004 rounds to ₹0.00 on entry
+        same(calc.sip_future_value(10000, 12, 10, 5, lump), ref_sip(10000, 12, 10, 5))
+    assert list(calc.sip_future_value(10000, 12, 10)) == [
+        "months",
+        "corpus",
+        "corpus_formatted",
+        "corpus_words",
+        "total_invested",
+        "total_invested_formatted",
+        "total_invested_words",
+        "gains",
+        "gains_formatted",
+        "gains_words",
+        "final_monthly_investment",
+        "final_monthly_investment_formatted",
+    ]
 
 
 FDS = [
@@ -682,6 +718,14 @@ def test_golden_payoff_by_hand() -> None:
 def test_golden_investments_and_affordability() -> None:
     assert calc.sip_future_value(10000, 12, 10)["corpus"] == Decimal("2323390.76")
     assert calc.sip_future_value(5000, 12, 20)["corpus"] == Decimal("4995739.60")  # ₹49,95,740
+    # ₹1 lakh up front plus ₹10,000 a month at 12% for 10 years: the lump sum grows to
+    # 1,00,000 x 1.01^120 = 3,30,038.69, the SIP to 23,23,390.76 as above.
+    both = calc.sip_future_value(10000, 12, 10, lump_sum=100000)
+    assert both["lump_sum_value"] == Decimal("330038.69")
+    assert both["sip_value"] == Decimal("2323390.76")
+    assert both["corpus"] == Decimal("2653429.45")
+    assert both["total_invested"] == Decimal("1300000.00")
+    assert both["gains"] == Decimal("1353429.45")
     fd = calc.fd_maturity(100000, 7, 5)
     assert (fd["maturity_amount"], fd["interest_earned"]) == (
         Decimal("141477.82"),

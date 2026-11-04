@@ -478,6 +478,7 @@ def test_affordability_rounds_the_limit_to_paise() -> None:
         ),
         (calc.sip_future_value, (1000, 12, 0), "years must be between 1 and 50"),
         (calc.sip_future_value, (1000, 12, 5, 101), "annual_step_up_pct must be between 0 and 100"),
+        (calc.sip_future_value, (1000, 12, 5, 0, -1), "lump_sum must be at least ₹0.00"),
         (calc.fd_maturity, (100000, 7, 0), "years must be between 0.01 and 50"),
         (calc.fd_maturity, (100000, 7, 1, "daily"), "compounding must be one of"),
         (calc.inflation_adjusted_value, (1000, 6, 10, "past"), "direction must be one of"),

@@ -215,7 +215,7 @@ Span events carry `evals.error` (kinds `malformed_tool_call`, `unknown_tool`, `t
 | `amortization_schedule` | as above; `granularity` = yearly, `start_period` = 1 | EMI, totals, `total_periods`, `next_start_period`, rows of opening balance, principal, interest, closing balance | At most 60 rows per call; page with `start_period` |
 | `prepayment_impact` | `outstanding_principal`, `annual_rate_pct`, `remaining_months`, `prepayment_amount`; `mode` = reduce_tenure | current and new EMI and tenure, `interest_saved`, `months_saved`, `emi_reduction` | Prepayment must be less than the outstanding amount |
 | `debt_payoff_plan` | `debts` (1 to 20: name, balance, rate, minimum), `monthly_budget`; `strategy` = avalanche | priority and payoff order, month each debt clears, months to debt-free, total interest | Budget below the minimums is rejected. Snowball orders by starting balance (A6). Capped at 600 months |
-| `sip_future_value` | `monthly_investment`, `expected_annual_return_pct`, `years`; `annual_step_up_pct` = 0 | `corpus`, `total_invested`, `gains` | Paid at the start of each month, compounded monthly |
+| `sip_future_value` | `monthly_investment`, `expected_annual_return_pct`, `years`; `annual_step_up_pct` = 0, `lump_sum` = 0 | `corpus`, `total_invested`, `gains`; with a lump sum also `lump_sum_value` and `sip_value`, which add up to the corpus | Paid at the start of each month, compounded monthly; a lump sum grows at the same rate from the start. `lump_sum` is new on 4 Nov, so SIP results before and after are not comparable (`docs/known-limits.md`) |
 | `fd_maturity` | `principal`, `annual_rate_pct`, `years` (0.01 to 50); `compounding` = quarterly | `maturity_amount`, `interest_earned` | A part period at the end earns simple interest |
 | `inflation_adjusted_value` | `amount`, `annual_inflation_pct`, `years` (whole); `direction` = future_cost | `adjusted_value`, `cumulative_inflation_pct` | Compounded yearly |
 | `loan_affordability` | `monthly_net_income`, `existing_monthly_emis`, `annual_rate_pct`, `tenure_months`; `max_foir_pct` = 50 | FOIR limit EMI, `current_foir_pct`, `eligible`, `max_new_emi`, `max_loan_amount` | Zero if existing EMIs already reach the limit |
@@ -224,6 +224,8 @@ Span events carry `evals.error` (kinds `malformed_tool_call`, `unknown_tool`, `t
 | `list_transactions` | `category`, `from_date`, `to_date`, `limit` = 50 | Matches, totals of debits and credits, `available_categories` | Category match is exact and case-insensitive; dates inclusive |
 
 With no `client.json`, the three client tools return `{"client_on_file": false, "message": "No client on file."}` [src].
+
+**Tested on their own** (Rishi's note 17): `services/finance-mcp/tests/test_calculators_independent.py` checks all eight calculators against a second, stdlib-only implementation over a grid of about 2,000 inputs, field by field, plus golden values from published figures [ran].
 
 **What this means for task design:**
 

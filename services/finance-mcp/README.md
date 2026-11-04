@@ -18,7 +18,7 @@ outputs and final answers exactly, so every tool is deterministic. The same inpu
 | `amortization_schedule` | Yearly (default) or monthly rows of opening balance, principal paid, interest paid and closing balance, 60 rows per page. |
 | `prepayment_impact` | The effect of a one-time part-prepayment: new EMI or new tenure, months saved and interest saved. |
 | `debt_payoff_plan` | An avalanche or snowball simulation: payoff order, the month each debt clears, months to debt-free and total interest. |
-| `sip_future_value` | SIP corpus, total invested and gains, with an optional yearly step-up. |
+| `sip_future_value` | SIP corpus, total invested and gains, with an optional yearly step-up and an optional lump sum invested at the start. |
 | `fd_maturity` | Maturity amount and interest earned on a cumulative fixed deposit. |
 | `inflation_adjusted_value` | The future cost of an amount today, or the present value of a future amount. |
 | `loan_affordability` | Largest new EMI under a FOIR limit, and the largest loan that EMI supports. |
@@ -113,6 +113,14 @@ All 11 tools are read-only (`readOnlyHint: true`). The full manifest the agents 
 - The corpus is carried unrounded and rounded once at the end. Without a step-up, this is the
   closed form `P·((1+i)^n − 1)/i·(1+i)`. For ₹10,000 a month at 12% for 10 years, that gives
   ₹23,23,390.76.
+- **Lump sum (optional, since 4 Nov).** `lump_sum` is invested once at the start and grows at
+  the same monthly rate: `L·(1+i)^n` with n = 12 × years, rounded once. With a lump sum above
+  ₹0.00 the result adds `lump_sum`, `lump_sum_value` (what it grew to) and `sip_value` (the
+  monthly part, exactly the corpus the same call gives without a lump sum); `corpus` is
+  `lump_sum_value + sip_value`, so the parts add up exactly, and `total_invested` includes the
+  lump sum. Without one, or with 0, the result is byte-identical to before the parameter
+  existed. ₹1,00,000 up front plus ₹10,000 a month at 12% for 10 years: the lump sum grows to
+  ₹3,30,038.69 and the corpus is ₹26,53,429.45.
 
 ### `fd_maturity`
 
