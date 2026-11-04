@@ -34,7 +34,9 @@ const dark = computed(() => theme.value === 'dark');
 const spendWords = computed(() => {
   const v = spendView.value;
   if (!v) return '';
-  return `Spent ${money(v.total_usd)}${budget.value ? ` of ${wholeMoney(budget.value)}` : ''}: trials ${money(v.trials_usd)}, the platform's own calls ${money(v.system_usd)}`;
+  // total_usd includes the LLM judge's spend (SP4) when it is known; say so when there is any.
+  const judge = typeof v.judge_usd === 'number' && v.judge_usd > 0 ? `, the judge ${money(v.judge_usd)}` : '';
+  return `Spent ${money(v.total_usd)}${budget.value ? ` of ${wholeMoney(budget.value)}` : ''}: trials ${money(v.trials_usd)}, the platform's own calls ${money(v.system_usd)}${judge}`;
 });
 /** "$0.44 + $0.02": trials, then the platform's calls, for the phone header. */
 const compactSpend = computed(() => {

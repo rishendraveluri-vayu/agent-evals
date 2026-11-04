@@ -47,6 +47,31 @@ describe('App header against the API', () => {
     expect(wrapper.find('[data-test="health-unreachable"]').exists()).toBe(false);
   });
 
+  it('names the judge in the spoken spend summary only when it has spent something', async () => {
+    const answer = (judgeUsd: number | null) => {
+      const spend = { trials_usd: 1.5, system_usd: 0.02, judge_usd: judgeUsd, judge_approvals: 1, total_usd: 1.52 + (judgeUsd ?? 0), system_by_kind: {}, allowances: [] };
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((input: RequestInfo | URL) => {
+          const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+          if (url === '/api/health') return Promise.resolve(jsonReply(200, { status: 'ok', db: 'up' }));
+          return Promise.resolve(jsonReply(200, url === '/api/spend' ? spend : []));
+        }),
+      );
+    };
+    const label = (w: ReturnType<typeof mount>) => w.get('[data-test="spend"] [role="group"]').attributes('aria-label');
+    answer(0.42);
+    const spent = mount(App);
+    await settle();
+    expect(label(spent)).toContain(", the platform's own calls $0.02, the judge $0.42");
+    for (const none of [0, null]) {
+      answer(none);
+      const w = mount(App);
+      await settle();
+      expect(label(w)).not.toContain('judge');
+    }
+  });
+
   it('renders the unreachable state when fetch fails or a proxy answers', async () => {
     api(() => Promise.reject(new TypeError('Failed to fetch')));
     const first = mount(App);
