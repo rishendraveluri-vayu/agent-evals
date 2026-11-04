@@ -1,7 +1,7 @@
 /** No screen shows the authors' internal references: decision-log numbers (R8, D32, SP5, A14) or
  *  raw API paths (POST /...). They belong in the docs and in code comments, not in front of a
  *  reviewer. Each screen is rendered in fixture mode, with every disclosure opened, and its text,
- *  titles and labels are read. The Run screen is checked by its own spec. */
+ *  titles and labels are read. */
 import { mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it } from 'vitest';
 import App from './App.vue';
@@ -27,6 +27,10 @@ const SCREENS: Record<string, string> = {
   judge: '#/labels/judge',
   tasks: '#/tasks',
   harnesses: '#/harnesses',
+  'run setup': '#/run',
+  'running run': '#/experiments/exp_model/run',
+  'paused run': '#/experiments/exp_futility/run',
+  'finished run': '#/experiments/exp_heldout/run',
 };
 
 function open(hash: string) {

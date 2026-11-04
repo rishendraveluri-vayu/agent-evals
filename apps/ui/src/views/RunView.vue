@@ -9,7 +9,7 @@ import { armIndexOf, armsOf, timeLeft, totalTrials } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, contentDiff, planCheck, splitCheck, type Check } from '../lib/checks';
 import { changedLineCount, lineChanges, sentenceChanges, type LineChange } from '../lib/diff';
-import { capitalise, clock, minutes, money, plural, shortHash, wholeMoney } from '../lib/format';
+import { capitalise, clock, minutes, money, plainText, plural, shortHash, wholeMoney } from '../lib/format';
 import { infraReason, modelName, splitName } from '../lib/names';
 import { href, navigate } from '../router';
 import { eventView, pauseCause } from '../lib/runs';
@@ -576,7 +576,7 @@ const pause = computed(() => {
   const e = data.value?.experiment;
   if (!e || e.status !== 'paused') return null;
   const reason = e.paused_reason ?? 'No new trials start until it is resumed; trials already running finish.';
-  return { cause: capitalise(pauseCause(reason)), reason, at: e.paused_at };
+  return { cause: capitalise(pauseCause(reason)), reason: plainText(reason), at: e.paused_at };
 });
 const ARM_STATUS: Record<string, string> = { not_started: 'Not started', active: 'Running', paused: 'Paused', stopped: 'Stopped', complete: 'Complete' };
 const armCards = computed(() =>
@@ -1058,7 +1058,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                   placeholder="Random, and recorded"
                   data-test="order-seed"
                 >
-                <span class="secondary smaller">The trials run in an order shuffled from it, arms interleaved (D32).</span>
+                <span class="secondary smaller">The trials run in an order shuffled from it, arms interleaved.</span>
               </label>
               <div class="task-pick-wrap">
                 <div class="task-pick-frame">
@@ -1500,7 +1500,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
           v-if="pausedArms.length"
           class="secondary small"
         >
-          A paused arm claims nothing more; the other arm keeps running. There is no comparison until every arm is complete (D37).
+          A paused arm claims nothing more; the other arm keeps running. There is no comparison until every arm is complete.
         </p>
       </section>
 
@@ -1800,7 +1800,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
           class="secondary small plan-facts"
           data-test="plan-facts"
         >
-          <span v-if="data.experiment.order_seed !== null && data.experiment.order_seed !== undefined">Claim order shuffled from seed <span class="mono">{{ data.experiment.order_seed }}</span>, arms interleaved (D32). </span>
+          <span v-if="data.experiment.order_seed !== null && data.experiment.order_seed !== undefined">Claim order shuffled from seed <span class="mono">{{ data.experiment.order_seed }}</span>, arms interleaved. </span>
           <span v-if="data.experiment.futility">{{ data.experiment.futility.enabled ? `Futility check on: pauses for review if an arm passes fewer than ${data.experiment.futility.min_passed} of its first ${data.experiment.futility.after} graded trials (a trial counts once its grades are in; an incomplete grading does not count); it never stops on an apparent win.` : 'Futility check off.' }} </span>
           <span v-if="data.experiment.parent_experiment_id">Follows from <a :href="href.compare(data.experiment.parent_experiment_id)">{{ data.experiment.parent_experiment_id }}</a><template v-if="data.experiment.baseline">: {{ data.experiment.baseline.reason }}</template>.</span>
         </p>

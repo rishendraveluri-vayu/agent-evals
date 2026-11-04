@@ -1,5 +1,6 @@
 /** A run's pauses and events in words (D26, D32, D37): what stopped it, which arm, and what to do. */
 import type { ExperimentEvent, ExperimentEventKind } from '../api/types';
+import { plainText } from './format';
 
 /** The kinds that pause the whole experiment. */
 export const EXPERIMENT_PAUSES: ExperimentEventKind[] = ['paused', 'futility_pause', 'infra_guard_pause', 'spend_guard_pause'];
@@ -66,5 +67,6 @@ export function eventView(e: ExperimentEvent): EventView {
       : kind === 'infra_failure' || kind === 'config_error' || kind === 'abandoned' || kind === 'file_problem'
         ? 'infra'
         : 'plain';
-  return { at: e.at, title, detail: e.detail, tone, arm: e.arm ?? null, trialId: e.trial_id };
+  // The API's detail names its decision-log entries; the screen leaves them out.
+  return { at: e.at, title, detail: plainText(e.detail), tone, arm: e.arm ?? null, trialId: e.trial_id };
 }
