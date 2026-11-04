@@ -281,6 +281,7 @@ Only if the frozen plan has slack.
 
 - [ ] Failure analysis: rule-based categories over traces (wrong tool, hallucinated tool args, gave up early, loop or step exhaustion, grader disagreement)
 - [ ] A third harness on an existing framework
+- [ ] Accounts and a hosted demo (D40: not asked for by the brief): logins, per-account provider keys, a shared demo login on our keys behind a hard LiteLLM budget, hosting with HTTPS.
 - [ ] Tools beyond MCP, to show the tools axis is more than "which MCP server" (Rishi, 3 Nov): e.g. a harness built-in such as Hermes code execution as a config setting, one tool delivered natively per adapter, or a plain HTTP API tool. Revisit after the first end-to-end run.
 - [ ] Conflict check: mark each finding whose `harness_says` or `we_say` quote is not in the text verbatim, so an invented quote is visible (no extra call).
 - [ ] Probe on `fake/<real model name>` instead of `fake/finance-emi`, so Hermes's model-name-gated guidance (gpt, gemini, ...) appears in the rendered prompt. The fake server falls back to its default script for an unknown name. Needs Rishi's call (known-limits, "Pre-run checks").
