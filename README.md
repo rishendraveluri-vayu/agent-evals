@@ -130,6 +130,11 @@ uv run --no-project --with pyyaml==6.0.3 python scripts/check_litellm_config.py 
 docker compose restart litellm
 ```
 
+An open-weight model runs locally the same way: `qwen2.5-7b-local` is already registered, served by
+an optional Ollama service. Start it with `docker compose --profile local-model up -d ollama`, pull
+the model once with `docker compose exec ollama ollama pull qwen2.5:7b` (about 4.7 GB), and pick it
+in a config. It costs nothing, but on a CPU-only machine each model call takes minutes.
+
 ## Add a task
 
 One folder `tasks/<id>/` with a `task.json`: the messages (or a simulated client), the client's

@@ -337,6 +337,12 @@ cannot tell apart:
 
 - **`draft-mba-loan-missing-info`'s `asks-for-missing-facts` false-fails a request followed by a list.** Trial `t_0mw33tqo5fceac29d7d70ac10` asks "Could you share three things?" and then lists the rate and tenure, take-home income and EMIs, and expected salary; the check reads only the question sentence and reports "names none of the missing facts". It is a discovery task, so the headline (held-out only) is not affected; it is a grader disagreement the trial page and the cause record show. Not fixed under the freeze (D65).
 
+## Open-weight model (local Qwen, 5 Nov)
+
+- **Two trials show the route works, nothing about Qwen's quality.** `e_0mw3gbt9d38648a872d3c4b8b`: own loop, Qwen2.5 7B on Ollama, prompt v1, finance/v3, 1 pass (draft-emi-home-loan) and 1 fail (draft-distress-helpline: no helpline, no tool call), no judge. Comparing it with Claude or Gemini would need N and tasks like the headline's.
+- **On a CPU-only machine it is slow.** 210 s for one model call and 324 s for two (3,471 and 7,183 input tokens), on 6 CPUs with no GPU. These configs set `timeout_s` to 1,800; the platform default of 300 s would have stopped the 324-second trial. A conversation with ten or more calls would take most of an hour, so its timeout must be raised further.
+- **One setting differs from every other model's configs.** Qwen refuses `parallel_tool_calls` through LiteLLM's Ollama route, so its configs leave it out (D25 table) and nothing forces one tool call per turn, while the Claude and Gemini configs send `false` (D19).
+
 ## To check before submission
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted
