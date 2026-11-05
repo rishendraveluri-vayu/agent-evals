@@ -147,6 +147,9 @@ export interface AmountCheck {
   /** UTF-16 offsets in the final answer, when the check gives them. */
   start: number | null;
   end: number | null;
+  /** Why an amount with no source does not count, when the check says: since D56 an arithmetic
+   *  tool's result counts only when the numbers it was given are supported (`rejected`). */
+  note: string | null;
 }
 
 export interface ProvenanceView {
@@ -169,8 +172,19 @@ function sourceOf(by: string, match: Json): string {
   return by;
 }
 
+/** A contract v2 amount's `rejected` (D56) in words: "it matches round's result, but round's
+ *  input 23,120 is not supported". */
+function rejectedNote(rejected: Json): string | null {
+  if (!isObj(rejected)) return null;
+  const reason = str(rejected.reason);
+  if (!reason) return null;
+  const where = str(rejected.where);
+  const tool = where?.startsWith('tool:') ? `${where.slice(5)}'s result` : 'an arithmetic result';
+  return `it matches ${tool}, but ${reason}`;
+}
+
 function amount(x: Json, supported: boolean | null): AmountCheck[] {
-  if (typeof x === 'string') return x.trim() ? [{ text: x, supported: supported ?? false, source: null, start: null, end: null }] : [];
+  if (typeof x === 'string') return x.trim() ? [{ text: x, supported: supported ?? false, source: null, start: null, end: null, note: null }] : [];
   if (!isObj(x)) return [];
   // Contract v2 (contract/v2/checks.schema.json): `supported_by` is tool, client, user or null.
   const v2 = 'supported_by' in x;
@@ -182,7 +196,8 @@ function amount(x: Json, supported: boolean | null): AmountCheck[] {
       ? sourceOf(x.supported_by, x.match ?? null)
       : null
     : (firstString(x, ['source', 'tool', 'from']) ?? (Array.isArray(x.sources) ? x.sources.filter((s): s is string => typeof s === 'string').join(', ') || null : null));
-  return [{ text, supported: ok, source, start: typeof x.start === 'number' ? x.start : null, end: typeof x.end === 'number' ? x.end : null }];
+  const note = v2 && !ok ? rejectedNote(x.rejected ?? null) : null;
+  return [{ text, supported: ok, source, start: typeof x.start === 'number' ? x.start : null, end: typeof x.end === 'number' ? x.end : null, note }];
 }
 
 /** The provenance entry of a checks.json: the file itself in contract v2, which the runner
