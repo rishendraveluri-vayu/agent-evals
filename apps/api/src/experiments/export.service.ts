@@ -40,6 +40,9 @@ interface ExportRow {
   sim_cost_usd: number | null;
   /** G3: an abandoned attempt whose spend LiteLLM could not give; its costs are null, unknown not zero. */
   spend_unknown: boolean;
+  /** The model id(s) the provider said it served for the agent's calls (`gen_ai.response.model` on
+   *  LiteLLM's spans), space-separated; a config names a model by alias, so this is what ran. */
+  served_model: string | null;
   input_tokens: number | null;
   output_tokens: number | null;
   model_calls: number | null;
@@ -104,6 +107,8 @@ export const CSV_COLUMNS = [
   'harness_ref',
   'adapter_version',
   'model',
+  // What the provider served for the agent's calls: the config's model is an alias.
+  'served_model',
   'prompt_id',
   'prompt_version',
   'prompt_sha256',
@@ -163,6 +168,11 @@ export class ExportService {
       const page = await this.db.query<ExportRow>(
         `SELECT t.id, t.experiment_id, t.repeat_index, t.attempt, t.seq, t.status, t.label, t.end_state, t.worker_id,
                 t.claimed_at, t.finished_at, t.cost_usd, t.sim_cost_usd, t.spend_unknown, t.input_tokens, t.output_tokens, t.model_calls,
+                (SELECT string_agg(DISTINCT s.attributes ->> 'gen_ai.response.model', ' ')
+                   FROM spans s
+                  WHERE s.trial_id = t.id AND s.name LIKE 'chat %'
+                    AND coalesce(s.attributes ->> 'evals.role', 'agent') = 'agent'
+                    AND s.attributes ->> 'gen_ai.response.model' IS NOT NULL) AS served_model,
                 t.proxy_complete, t.wall_s, t.folder, t.problems, t.result, t.runner_report, t.config_hash, t.task_sha256,
                 k.id AS task_id, k.version AS task_version, k.split AS task_split, k.kind AS task_kind,
                 gd.id AS grading_job_id, gd.status AS graded_status, gd.outcome AS graded_outcome, gl.status AS latest_job_status,
@@ -221,6 +231,7 @@ export class ExportService {
         end_state: r.end_state,
         task: { sha256: r.task_sha256, id: r.task_id, version: r.task_version, split: r.task_split, kind: r.task_kind },
         config: c ? configView(c) : { hash: r.config_hash },
+        served_model: r.served_model,
         spend: {
           cost_usd: r.cost_usd,
           sim_cost_usd: r.sim_cost_usd,
@@ -338,6 +349,7 @@ export class ExportService {
         harness_ref: c?.harness_ref,
         adapter_version: c?.adapter_version,
         model: c?.model,
+        served_model: r.served_model,
         prompt_id: c?.prompt_id,
         prompt_version: c?.prompt_version,
         prompt_sha256: c?.prompt_sha256,

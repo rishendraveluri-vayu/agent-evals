@@ -320,6 +320,12 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
     const [header, first] = (await request(target.http).get(`/api/experiments/${exp.id}/export?format=csv`).expect(200)).text.split('\n');
     expect(header.split(',').slice(0, 3)).toEqual(['experiment_id', 'experiment_title', 'trial_id']);
     expect(first.startsWith(`${exp.id},Example test-example (test fixture),`)).toBe(true);
+    // The model the provider served, from the agent's chat spans: the config names an alias.
+    const col = header.split(',').indexOf('served_model');
+    expect(col).toBeGreaterThan(header.split(',').indexOf('model'));
+    expect(first.split(',')[col]).toBe('openai/finance-emi');
+    const rows = (JSON.parse((await request(target.http).get(`/api/experiments/${exp.id}/export?format=json`).expect(200)).text) as { trials: { served_model: string | null }[] }).trials;
+    expect(rows.every((t) => t.served_model === 'openai/finance-emi' || t.served_model === null)).toBe(true);
   });
 
   it("an example's comparison shows the A/A calibration shipped beside it, never one of your own", async () => {

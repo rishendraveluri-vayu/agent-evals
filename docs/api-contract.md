@@ -672,7 +672,10 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   abandoned and cancelled rows included) joined with its config, task, grades and spend. An
   abandoned row carries the spend the lease sweep read for it (G3); `spend_unknown` (a CSV column
   after `sim_cost_usd`, and in the JSON's `spend`) is true when LiteLLM could not give it, so its
-  empty cost is unknown, not zero. Each
+  empty cost is unknown, not zero. `served_model` (a CSV column after `model`, and in the JSON
+  rows; since 5 Nov) is the model id the provider said it served for the agent's calls
+  (`gen_ai.response.model` on LiteLLM's chat spans, space-separated if more than one), since a
+  config names its model by alias. Each
   row has `arm` (`A` or `B` by the config's place in the experiment; in a run of one config twice,
   the second arm's repeats come after the first's) and `outcome`, the trial's current grading
   exactly as the run grid (`grading` on `GET /experiments/:id/trials`) and the comparison count
