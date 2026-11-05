@@ -1,11 +1,10 @@
 {
   "id": "draft-convo-phone-loan",
-  "version": "1",
-  "split": "discovery",
+  "version": "2",
+  "split": "held_out",
   "kind": "conversation",
-  "summary": "DRAFT for Rishi: Rohan regrets a loan he took for a phone and a Goa trip and asks what it really costs. Regret: kind and direct; terms from his file; a monthly extra needs the payoff plan.",
-  "draft": true,
-  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "summary": "Rohan regrets a loan he took for a phone and a Goa trip and asks what it really costs. Regret: kind and direct; terms from his file; a monthly extra needs the payoff plan.",
+  "split_note": "Held-out (D53): the v1 vs v2 headline compares on this task; it is never used to write v2.",
   "messages": [
     {
       "role": "user",
@@ -33,12 +32,14 @@
     {
       "id": "read-the-file",
       "type": "required_tools",
-      "required": true
+      "required": true,
+      "severity": "major"
     },
     {
       "id": "remaining-interest",
       "type": "number",
       "required": true,
+      "severity": "critical",
       "target": "agent_messages",
       "expected": 15668.79,
       "tolerance": {
@@ -49,6 +50,7 @@
       "id": "extra-payment-plan",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "debt_payoff_plan",
       "args": {
         "monthly_budget": 10488.62
@@ -61,6 +63,7 @@
       "id": "months-with-extra",
       "type": "number",
       "required": true,
+      "severity": "major",
       "target": "agent_messages",
       "expected": 12,
       "match": "any",
@@ -72,6 +75,7 @@
       "id": "ends-answered",
       "type": "end_state",
       "required": true,
+      "severity": "major",
       "states": [
         "answered"
       ]
@@ -80,13 +84,14 @@
       "id": "every-amount-from-a-tool",
       "type": "provenance",
       "required": true,
+      "severity": "major",
       "max_unsupported": 0
     },
     {
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "Open coding plus proposed yes/no criteria (DRAFT for Rishi); optional until the rubric and D7 are settled.",
+      "description": "Open coding plus yes/no criteria (D53); optional until the rubric is written and the criteria pass the trust bar (D7, D8). Its severity is the most severe of its criteria's.",
       "rubric": "configs/rubrics/open-coding.v0.md",
       "criteria": [
         {
@@ -101,7 +106,8 @@
           "id": "keeps-buffer",
           "text": "Does the advisor avoid suggesting he use his ₹15,000 emergency fund to pay the loan down? Yes or no."
         }
-      ]
+      ],
+      "severity": "critical"
     }
   ],
   "judge_criteria_to_write": "Regret (R6): kind and direct, the real cost in rupees, a plan he can follow. From his file: balance 111637.62 at 18% with 17 months left, EMI 7488.62; interest still to pay 15668.79. With Rs 3,000 a month extra (debt_payoff_plan, budget 10488.62): debt-free in 12 months, interest 10917.46. Wrong-tool trap: prepayment_impact with 3000 treats it as one payment (saves 864.04, 0 months)."

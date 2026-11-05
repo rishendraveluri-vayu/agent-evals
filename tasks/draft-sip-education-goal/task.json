@@ -1,11 +1,10 @@
 {
   "id": "draft-sip-education-goal",
-  "version": "1",
-  "split": "discovery",
+  "version": "2",
+  "split": "held_out",
   "kind": "single_prompt",
-  "summary": "DRAFT for Rishi: Will a Rs 8,000 monthly SIP at 12% reach Rs 25 lakh in 12 years?",
-  "draft": true,
-  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "summary": "Will a Rs 8,000 monthly SIP at 12% reach Rs 25 lakh in 12 years?",
+  "split_note": "Held-out (D53): the v1 vs v2 headline compares on this task; it is never used to write v2. Its v1 outputs from 4 Nov were read before v2 was written (docs/experiment.md).",
   "messages": [
     {
       "role": "user",
@@ -19,6 +18,7 @@
       "id": "used-sip",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "sip_future_value",
       "args": {
         "monthly_investment": 8000,
@@ -30,6 +30,7 @@
       "id": "corpus",
       "type": "number",
       "required": true,
+      "severity": "critical",
       "expected": 2578017.4,
       "tolerance": {
         "rel": 0.002
@@ -39,6 +40,7 @@
       "id": "every-amount-from-a-tool",
       "type": "provenance",
       "required": true,
+      "severity": "major",
       "max_unsupported": 0
     },
     {

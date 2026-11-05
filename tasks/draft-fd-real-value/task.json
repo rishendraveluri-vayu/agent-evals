@@ -1,11 +1,10 @@
 {
   "id": "draft-fd-real-value",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "single_prompt",
-  "summary": "DRAFT for Rishi: Rs 5 lakh FD at 7.25% for 5 years: maturity, and its value in today's money at 6% inflation.",
-  "draft": true,
-  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "summary": "Rs 5 lakh FD at 7.25% for 5 years: maturity, and its value in today's money at 6% inflation.",
+  "split_note": "Discovery (D53): v1's traces on this task are where prompt v2's changes may come from.",
   "messages": [
     {
       "role": "user",
@@ -19,6 +18,7 @@
       "id": "used-fd",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "fd_maturity",
       "args": {
         "principal": 500000,
@@ -30,12 +30,14 @@
       "id": "used-inflation",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "inflation_adjusted_value"
     },
     {
       "id": "maturity",
       "type": "number",
       "required": true,
+      "severity": "critical",
       "expected": 716130.28,
       "tolerance": {
         "rel": 0.002
@@ -45,6 +47,7 @@
       "id": "todays-value",
       "type": "number",
       "required": true,
+      "severity": "critical",
       "expected": 535134.2,
       "tolerance": {
         "rel": 0.01
@@ -54,6 +57,7 @@
       "id": "every-amount-from-a-tool",
       "type": "provenance",
       "required": true,
+      "severity": "major",
       "max_unsupported": 0
     },
     {

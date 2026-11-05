@@ -1,11 +1,10 @@
 {
   "id": "draft-car-loan-afford",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "single_prompt",
-  "summary": "DRAFT for Rishi: Meera asks whether she can take a car loan with a Rs 9,000 EMI. FOIR allows it; her 42% card says wait.",
-  "draft": true,
-  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "summary": "Meera asks whether she can take a car loan with a Rs 9,000 EMI. FOIR allows it; her 42% card says wait.",
+  "split_note": "Discovery (D53): v1's traces on this task are where prompt v2's changes may come from.",
   "messages": [
     {
       "role": "user",
@@ -19,24 +18,28 @@
       "id": "read-profile",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "get_client_profile"
     },
     {
       "id": "read-debts",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "list_debts"
     },
     {
       "id": "used-affordability",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "loan_affordability"
     },
     {
       "id": "mentions-card",
       "type": "regex_present",
       "required": true,
+      "severity": "major",
       "target": "final_answer",
       "pattern": "credit card|42\\s*%"
     },
@@ -44,6 +47,7 @@
       "id": "every-amount-from-a-tool",
       "type": "provenance",
       "required": true,
+      "severity": "major",
       "max_unsupported": 0
     },
     {

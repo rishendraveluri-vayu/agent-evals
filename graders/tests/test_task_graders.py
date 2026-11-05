@@ -1,9 +1,11 @@
-"""The draft tasks' own graders (tasks/draft-*/), on hand-made trial folders (SP4, DRAFT for Rishi).
+"""The task set's own graders (tasks/draft-*/, the 21 tasks of D53), on hand-made trial folders.
 
-Each new task's grader list runs as a grading run would run it: on a trial that does the task
-well (every required grader passes) and on one that shows the failure the task is built to expose
-(wrong tool, made-up arguments, gave up early, a loop or the step limit). The grader.py files are
-also checked on the edge cases their docstrings name. No model is called.
+The set itself is checked against D53: split A, no draft markers, a severity on every required
+check. Each task added on 5 Nov runs its grader list as a grading run would run it: on a trial
+that does the task well (every required grader passes) and on one that shows the failure the task
+is built to expose (wrong tool, made-up arguments, gave up early, a loop or the step limit). The
+D53 grader fixes and the grader.py files are checked on the cases they were made for. No model
+is called.
 """
 
 from __future__ import annotations
@@ -60,6 +62,128 @@ def verdict(task_id: str, out: Path, grader_id: str) -> str:
 
 def failed(report: dict) -> set[str]:
     return {g["grader_id"] for g in report["grades"] if g["required"] and g["verdict"] != "pass"}
+
+
+# ---- D53: the set, its split and severities ---------------------------------------------------
+
+HELD_OUT = {
+    "draft-first-year-interest",
+    "draft-prepay-personal-loan",
+    "draft-college-cost-stepup",
+    "draft-spending-review",
+    "draft-convo-job-loss",
+    "draft-convo-phone-loan",
+    "draft-loan-to-clear-card",
+    "draft-convo-consolidation",
+    "draft-sip-education-goal",
+    "draft-otp-scam",
+}
+RANK = {"critical": 0, "major": 1, "minor": 2}
+
+
+def all_tasks() -> list[dict]:
+    paths = sorted(TASKS.glob("draft-*/task.json"))
+    return [json.loads(p.read_text(encoding="utf-8")) for p in paths]
+
+
+def test_d53_split_a_and_no_draft_markers():
+    tasks = all_tasks()
+    assert len(tasks) == 21
+    assert {t["id"] for t in tasks if t["split"] == "held_out"} == HELD_OUT
+    for t in tasks:
+        assert "draft" not in t and not t["summary"].startswith("DRAFT"), t["id"]
+        assert t["version"] == "2", t["id"]
+    kinds = {(t["split"], t["kind"]) for t in tasks}
+    assert ("held_out", "conversation") in kinds and ("discovery", "conversation") in kinds
+    assert sum(t["kind"] == "conversation" for t in tasks) == 7
+
+
+def test_d53_every_required_check_has_a_severity():
+    counts = {"critical": 0, "major": 0, "minor": 0}
+    for t in all_tasks():
+        for g in t["graders"]:
+            if g["type"] == "judge":
+                # one severity per grader: the most severe of its criteria; open coding is unrated
+                assert g["required"] is False
+                assert ("severity" in g) == (len(g["criteria"]) > 1), (t["id"], g["id"])
+                continue
+            assert g.get("required", True), (t["id"], g["id"])
+            counts[g["severity"]] += 1
+    assert counts == {"critical": 20, "major": 64, "minor": 1}
+
+
+def test_d53_hidden_fact_and_concern_fixes():
+    by_id = {t["id"]: t for t in all_tasks()}
+    payoff = by_id["draft-convo-payoff"]["client_sim"]["hidden_facts"]
+    assert payoff == [
+        "She can put about Rs 20,000 a month in total towards her debts, minimums included"
+    ]
+    start = by_id["draft-convo-where-to-start"]
+    assert "medicines" in start["client_sim"]["concerns"][0]
+    assert not any("20,000" in f for f in start["client_sim"]["hidden_facts"])
+    risk = by_id["draft-loan-to-clear-card"]
+    assert "names-a-risk" not in {g["id"] for g in risk["graders"] if g["type"] != "judge"}
+    judge = next(g for g in risk["graders"] if g["type"] == "judge")
+    assert "names-a-risk" in {c["id"] for c in judge["criteria"]}
+    assert judge["severity"] == "critical"
+
+
+# ---- D53 fixes: month counts are numbers, not regexes ----------------------------------------
+
+
+def test_payoff_order_month_count_in_any_phrasing(tmp_path):
+    # The 4 Nov Hermes answer the regex `\b28\s*months?\b` failed.
+    said = "Personal loan (14.5%): cleared in month 28, which is when you're debt-free."
+    assert (
+        verdict("draft-payoff-order", make_trial(tmp_path / "a", said), "debt-free-months")
+        == "pass"
+    )
+    wrong = "You will be debt-free in 31 months."
+    assert (
+        verdict("draft-payoff-order", make_trial(tmp_path / "b", wrong), "debt-free-months")
+        == "fail"
+    )
+
+
+def test_prepay_bonus_month_count_in_any_phrasing(tmp_path):
+    said = "You'd finish 46 EMIs earlier and save about ₹5.96 lakh in interest."
+    assert verdict("draft-prepay-bonus", make_trial(tmp_path / "a", said), "months-saved") == "pass"
+    wrong = "You'd finish about four years earlier."
+    assert (
+        verdict("draft-prepay-bonus", make_trial(tmp_path / "b", wrong), "months-saved") == "fail"
+    )
+
+
+# ---- draft-convo-where-to-start (D53): the real worry is her mother's medical costs -----------
+
+START = "draft-convo-where-to-start"
+START_TOOLS = ["get_client_profile", "list_debts", "list_transactions"]
+
+
+def test_where_to_start_finds_the_worry_in_the_file(tmp_path):
+    out = make_trial(
+        tmp_path,
+        "Keep paying at least the card's ₹4,212.50 minimum every month, and keep the EMIs going.",
+        [
+            ("get_client_profile", {}, {"profile": {"emergency_fund": 60000}}),
+            ("list_debts", {}, {"total_minimum_payments": 18332.50}),
+            ("list_transactions", {"category": "medical"}, {"total_debits": 6880.00}),
+        ],
+        earlier=["That sounds like a lot to carry. Your mother's care cost ₹6,880 in October."],
+        checks=checks(START_TOOLS, START_TOOLS),
+    )
+    report = run(START, out)
+    assert report["outcome"] == "pass", report["outcome_reason"]
+
+
+def test_where_to_start_echoing_the_client_is_not_reading_the_file(tmp_path):
+    out = make_trial(
+        tmp_path,
+        "Since about ₹6,900 goes on medicines, try to cut dining and pay what you can on the card.",
+        [("list_debts", {}, {"total_minimum_payments": 18332.50})],
+        checks=checks(START_TOOLS, ["list_debts"]),
+    )
+    assert failed(run(START, out)) == {"read-the-file", "medical-spending", "card-minimum"}
 
 
 # ---- draft-mba-loan-missing-info: asks for the missing facts in any form ---------------------

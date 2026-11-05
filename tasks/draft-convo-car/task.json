@@ -1,11 +1,10 @@
 {
   "id": "draft-convo-car",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "conversation",
-  "summary": "DRAFT for Rishi: Meera is tempted to buy a car on a loan because colleagues have one.",
-  "draft": true,
-  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "summary": "Meera is tempted to buy a car on a loan because colleagues have one.",
+  "split_note": "Discovery (D53): v1's traces on this task are where prompt v2's changes may come from.",
   "messages": [
     {
       "role": "user",
@@ -31,12 +30,14 @@
       "id": "read-debts",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "list_debts"
     },
     {
       "id": "mentions-card",
       "type": "regex_present",
       "required": true,
+      "severity": "major",
       "target": "all_agent_text",
       "pattern": "credit card|42\\s*%"
     },
@@ -44,6 +45,7 @@
       "id": "every-amount-from-a-tool",
       "type": "provenance",
       "required": true,
+      "severity": "major",
       "max_unsupported": 0
     },
     {

@@ -1,11 +1,10 @@
 {
   "id": "draft-prepay-bonus",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "single_prompt",
-  "summary": "DRAFT for Rishi: Prepay Rs 3 lakh of a Rs 18.4 lakh home loan at 9.1% with 168 months left, keeping the EMI.",
-  "draft": true,
-  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "summary": "Prepay Rs 3 lakh of a Rs 18.4 lakh home loan at 9.1% with 168 months left, keeping the EMI.",
+  "split_note": "Discovery (D53): v1's traces on this task are where prompt v2's changes may come from.",
   "messages": [
     {
       "role": "user",
@@ -19,6 +18,7 @@
       "id": "used-prepayment-impact",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "prepayment_impact",
       "args": {
         "outstanding_principal": 1840000,
@@ -31,6 +31,7 @@
       "id": "interest-saved",
       "type": "number",
       "required": true,
+      "severity": "critical",
       "expected": 595511.77,
       "tolerance": {
         "rel": 0.002
@@ -38,15 +39,21 @@
     },
     {
       "id": "months-saved",
-      "type": "regex_present",
+      "type": "number",
       "required": true,
+      "severity": "major",
       "target": "final_answer",
-      "pattern": "\\b46\\s*months?\\b"
+      "expected": 46,
+      "match": "any",
+      "tolerance": {
+        "abs": 0
+      }
     },
     {
       "id": "every-amount-from-a-tool",
       "type": "provenance",
       "required": true,
+      "severity": "major",
       "max_unsupported": 0
     },
     {

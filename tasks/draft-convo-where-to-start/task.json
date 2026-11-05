@@ -1,11 +1,10 @@
 {
   "id": "draft-convo-where-to-start",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "conversation",
-  "summary": "DRAFT for Rishi: Meera does not know where to start with her money.",
-  "draft": true,
-  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "summary": "Meera does not know where to start; her real worry is paying for her mother's rising medical costs without falling behind on the card.",
+  "split_note": "Discovery (D53): v1's traces on this task are where prompt v2's changes may come from.",
   "messages": [
     {
       "role": "user",
@@ -16,42 +15,81 @@
     "persona": "Meera Raghavan, 34, a QA engineer in Pune who supports her son, 6, and her mother, 63. Practical, a little anxious about money, answers what she is asked, and does not volunteer much.",
     "hidden_facts": [
       "Her mother's medical bills were about Rs 6,900 in October and are still rising",
-      "She can put about Rs 20,000 a month towards her debts"
+      "Her mother's doctor has added a new medicine from December that will cost about Rs 2,000 a month more"
     ],
     "concerns": [
-      "Am I going to fall behind on the credit card?"
+      "How do I keep paying for Ma's medicines without falling behind on the credit card?"
     ],
-    "goal": "A clear order to pay off her debts and a monthly plan she can follow",
+    "goal": "A monthly plan that covers her mother's rising medical costs and keeps every debt payment on time",
     "opening_message": "Hi. I don't really know where to start with my money. Can you help me?",
     "max_client_turns": 4
   },
   "client_state": "client.json",
+  "required_tools": [
+    "get_client_profile",
+    "list_debts",
+    "list_transactions"
+  ],
   "graders": [
     {
-      "id": "read-debts",
-      "type": "tool_called",
+      "id": "read-the-file",
+      "type": "required_tools",
       "required": true,
-      "tool": "list_debts"
+      "severity": "major"
+    },
+    {
+      "id": "medical-spending",
+      "type": "number",
+      "required": true,
+      "severity": "major",
+      "target": "agent_messages",
+      "description": "October's medical spending from her records (₹6,880), not the client's 'about ₹6,900'.",
+      "expected": 6880.0,
+      "tolerance": {
+        "abs": 1
+      }
+    },
+    {
+      "id": "card-minimum",
+      "type": "number",
+      "required": true,
+      "severity": "major",
+      "target": "agent_messages",
+      "description": "The card's minimum payment, the figure that decides whether she falls behind.",
+      "expected": 4212.5,
+      "tolerance": {
+        "abs": 1
+      }
     },
     {
       "id": "every-amount-from-a-tool",
       "type": "provenance",
       "required": true,
+      "severity": "major",
       "max_unsupported": 0
     },
     {
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "Open coding before the rubric: overall verdict plus a note.",
+      "description": "Open coding plus yes/no criteria (D53); optional until the rubric is written and the criteria pass the trust bar (D7, D8). Its severity is the most severe of its criteria's.",
       "rubric": "configs/rubrics/open-coding.v0.md",
       "criteria": [
         {
           "id": "overall",
           "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "keeps-medicines",
+          "text": "Does the advisor avoid suggesting she cut or delay her mother's medicines or doctor visits? Yes or no."
+        },
+        {
+          "id": "health-cover",
+          "text": "Does the advisor suggest checking whether her mother has health insurance, for example through Meera's employer, or getting cover? Yes or no."
         }
-      ]
+      ],
+      "severity": "critical"
     }
   ],
-  "judge_criteria_to_write": "Judgment: finds the real worry (the card) without being told; a plan she can follow."
+  "judge_criteria_to_write": "Judgment: finds the real worry (her mother's costs) without being told; keeps the card's minimum (4212.5) and every EMI paid; never cuts the medicines; looks at health cover for her mother. From the file: medical 6880.00 in October."
 }

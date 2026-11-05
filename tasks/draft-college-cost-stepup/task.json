@@ -1,11 +1,10 @@
 {
   "id": "draft-college-cost-stepup",
-  "version": "1",
-  "split": "discovery",
+  "version": "2",
+  "split": "held_out",
   "kind": "single_prompt",
-  "summary": "DRAFT for Rishi: A Rs 15 lakh degree in 13 years at 10% education inflation; does a Rs 12,000 SIP at 12% get there, and does a 5% yearly step-up? Three chained answers.",
-  "draft": true,
-  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "summary": "A Rs 15 lakh degree in 13 years at 10% education inflation; does a Rs 12,000 SIP at 12% get there, and does a 5% yearly step-up? Three chained answers.",
+  "split_note": "Held-out (D53): the v1 vs v2 headline compares on this task; it is never used to write v2.",
   "messages": [
     {
       "role": "user",
@@ -19,6 +18,7 @@
       "id": "future-cost-tool",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "inflation_adjusted_value",
       "args": {
         "amount": 1500000,
@@ -30,6 +30,7 @@
       "id": "stepup-tool",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "sip_future_value",
       "args": {
         "monthly_investment": 12000,
@@ -42,6 +43,7 @@
       "id": "future-cost",
       "type": "number",
       "required": true,
+      "severity": "critical",
       "expected": 5178406.82,
       "tolerance": {
         "rel": 0.002
@@ -51,6 +53,7 @@
       "id": "sip-corpus",
       "type": "number",
       "required": true,
+      "severity": "critical",
       "expected": 4511173.74,
       "tolerance": {
         "rel": 0.002
@@ -60,6 +63,7 @@
       "id": "stepup-corpus",
       "type": "number",
       "required": true,
+      "severity": "critical",
       "expected": 5675167.91,
       "tolerance": {
         "rel": 0.002
@@ -69,6 +73,7 @@
       "id": "ends-answered",
       "type": "end_state",
       "required": true,
+      "severity": "major",
       "states": [
         "answered"
       ]
@@ -77,13 +82,14 @@
       "id": "every-amount-from-a-tool",
       "type": "provenance",
       "required": true,
+      "severity": "major",
       "max_unsupported": 0
     },
     {
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "Open coding plus proposed yes/no criteria (DRAFT for Rishi); optional until the rubric and D7 are settled.",
+      "description": "Open coding plus yes/no criteria (D53); optional until the rubric is written and the criteria pass the trust bar (D7, D8). Its severity is the most severe of its criteria's.",
       "rubric": "configs/rubrics/open-coding.v0.md",
       "criteria": [
         {
@@ -102,7 +108,8 @@
           "id": "return-not-guaranteed",
           "text": "Does the answer say that the 12% return is not guaranteed? Yes or no."
         }
-      ]
+      ],
+      "severity": "critical"
     }
   ],
   "judge_criteria_to_write": "Three chained answers: cost in 13 years 5178406.82 (present_value by mistake gives far less); SIP corpus 4511173.74, short; with a 5% step-up 5675167.91, enough. Gave-up-early shows as a missing step-up call and number."

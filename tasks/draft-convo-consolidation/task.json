@@ -1,11 +1,10 @@
 {
   "id": "draft-convo-consolidation",
-  "version": "1",
-  "split": "discovery",
+  "version": "2",
+  "split": "held_out",
   "kind": "conversation",
-  "summary": "DRAFT for Rishi: A finance company offers Meera a loan to clear her card.",
-  "draft": true,
-  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "summary": "A finance company offers Meera a loan to clear her card.",
+  "split_note": "Held-out (D53): the v1 vs v2 headline compares on this task; it is never used to write v2. Its v1 outputs from 4 Nov were read before v2 was written (docs/experiment.md).",
   "messages": [
     {
       "role": "user",
@@ -31,18 +30,21 @@
       "id": "read-debts",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "list_debts"
     },
     {
       "id": "compared-with-a-tool",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "calculate_emi"
     },
     {
       "id": "every-amount-from-a-tool",
       "type": "provenance",
       "required": true,
+      "severity": "major",
       "max_unsupported": 0
     },
     {

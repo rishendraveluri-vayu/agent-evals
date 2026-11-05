@@ -196,8 +196,8 @@ Each one has a done-when test. Scope stops growing once that test passes.
 **Done when:** 20+ tasks run with mixed grader types, and a few are expected to separate configs.
 **Needs:** SP1, D7.
 
-- [ ] **[Rishi designs]** Task format and task set. Domain: personal-finance assistant (D13, R6)
-- [ ] Split tasks into discovery and held-out sets for the prompt experiment (D9); keep simulated-client tasks to about 5 to 8 (D22)
+- [x] **[Rishi designs]** Task format and task set. Domain: personal-finance assistant (D13, R6) (D53: 21 tasks, severities on every required check)
+- [x] Split tasks into discovery and held-out sets for the prompt experiment (D9); keep simulated-client tasks to about 5 to 8 (D22) (D53 split A: 11 discovery, 10 held-out; 7 conversations)
 - [ ] Rishi reviews about 10 simulated-client transcripts and the simulator prompt is versioned before the experiment (D22, R11)
 - [x] Build deterministic graders: exact match, unit tests, state checks (`graders/`, ten types incl. a reserved judge, and `required_tools` and `provenance` on the runner's `checks.json`; grading as its own step through the API and a `grader` service, R14; the spec format is a draft for Rishi, `docs/proposals/grader-format.md`)
 - [ ] **[Rishi designs]** Judge rubric format. Judge is blind to harness and model, with a pinned model and a verdict and quoted evidence per criterion
