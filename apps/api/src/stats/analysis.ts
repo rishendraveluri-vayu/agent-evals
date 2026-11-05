@@ -304,7 +304,10 @@ function verdictText(v: PassRateVerdict | 'held_back', diff: StatsInterval, p: n
   if (v === 'worse') return `B passes less than A: ${numbers}.`;
   if (v === 'equivalent') return `Practically equivalent: ${numbers}. The whole interval lies inside the +/-${MARGIN_POINTS}-point margin set before the run.`;
   const few = k < MIN_TASKS_FOR_VERDICT ? ` With fewer than ${MIN_TASKS_FOR_VERDICT} tasks no other verdict is possible: the paired test cannot reach p < 0.05.` : '';
-  return `No detectable difference: ${numbers}. Differences as large as ${notRuledOut} points are not ruled out.${few}`;
+  // Every task gave the same difference: the task bootstrap has no spread to show, so it cannot say
+  // how large a difference could be hiding (docs/known-limits.md, "Statistics").
+  const hiding = notRuledOut === null ? ' Every task gave the same difference, so the interval has no width and cannot say how large a difference could be hiding.' : ` Differences as large as ${notRuledOut} points are not ruled out.`;
+  return `No detectable difference: ${numbers}.${hiding}${few}`;
 }
 
 /**
@@ -360,7 +363,7 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
   const critical: CriticalGuardrail = { ...g, blocks_better: blocks, text: guardrailText({ ...g, blocks_better: blocks }) };
   const verdict = blocks ? 'held_back' : prVerdict;
 
-  const notRuledOut = prVerdict === 'no_detectable_difference' ? round(Math.max(Math.abs(diff.low), Math.abs(diff.high)), 1) : null;
+  const notRuledOut = prVerdict === 'no_detectable_difference' && diff.high > diff.low ? round(Math.max(Math.abs(diff.low), Math.abs(diff.high)), 1) : null;
   const text = verdictText(verdict, diff, test.p, k, notRuledOut);
 
   const pooled = (arm: 'a' | 'b') =>

@@ -854,7 +854,7 @@ export interface CompareStats {
   pass_rate_verdict: PassRateVerdict;
   /** The verdict in one or two plain sentences. */
   verdict_text: string;
-  /** For no_detectable_difference: the largest difference, in points, the interval does not rule out. */
+  /** For no_detectable_difference: the largest difference, in points, the interval does not rule out; null when the interval has no width (every task gave the same difference). */
   not_ruled_out_points: number | null;
   /** The tasks in the aggregate, in the experiment's order. */
   tasks: StatsTask[];

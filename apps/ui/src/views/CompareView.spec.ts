@@ -537,6 +537,10 @@ describe('CompareView against the API: the check on the method', () => {
     const few = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     expect(few.get('[data-test="verdict-sub"]').text()).toContain(`With 4 tasks in the comparison no other verdict is possible: the paired test needs at least 6 tasks to reach p${nb}<${nb}0.05.`);
+    withStats({ verdict: 'no_detectable_difference', pass_rate_verdict: 'no_detectable_difference', diff: { estimate: 0, low: 0, high: 0 }, not_ruled_out_points: null });
+    const flat = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(flat.get('[data-test="verdict-sub"]').text()).toBe('Every task gave the same difference, so the interval has no width and cannot say how large a difference could be hiding.');
   });
 
   it('names practical equivalence by its margin', async () => {

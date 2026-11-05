@@ -466,7 +466,12 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
       const result = view.files.find((f) => f.path === 'result.json')!;
       const got = await request(target.http).get(`/api/trials/${first.id}/files/result.json`).expect(200);
       expect(`sha256:${sha(Buffer.from(got.text))}`).toBe(result.sha256);
-      expect((await request(target.http).get(`/api/experiments/${manifest.experiment_id}/compare`).expect(200)).body).toMatchObject({ status: 'complete' });
+      const compared = (await request(target.http).get(`/api/experiments/${manifest.experiment_id}/compare`).expect(200)).body as CompareResponse;
+      expect(compared).toMatchObject({ status: 'complete' });
+      // SP6: its statistics are computed from its recorded grades; every task is in or listed as left out.
+      const stats = compared.stats!;
+      expect(stats.tasks.length + stats.excluded_tasks.length).toBe(detail.task_sha256s.length);
+      expect(stats.seed).toBe(manifest.experiment_id);
       // Its tasks have judge criteria, so its trials would be labelling items if they were your own.
       const queue = (await request(target.http).get('/api/labels/queue?set=tuning').expect(200)).body as { item_id: string }[];
       const ids = new Set(await trialIds(target, manifest.experiment_id));

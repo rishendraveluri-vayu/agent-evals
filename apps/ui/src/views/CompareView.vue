@@ -315,8 +315,11 @@ const verdictSub = computed(() => {
   const few = s.tasks.length < 6 ? ` With ${plural(s.tasks.length, 'task')} in the comparison no other verdict is possible: the paired test needs at least 6 tasks to reach p${NBSP}<${NBSP}0.05.` : '';
   if (s.verdict === 'equivalent') return `The whole interval lies inside the ±${s.margin_points}-point margin set before the run, so any difference is too small to matter.`;
   if (s.verdict === 'held_back') return 'The pass rate alone would say better, but critical failures rose beyond noise, so it is not called better.';
-  if (s.verdict === 'no_detectable_difference' && s.not_ruled_out_points !== null) return `Differences as large as ${Math.round(s.not_ruled_out_points)}${NBSP}points are not ruled out.${few}`;
-  return null;
+  if (s.verdict !== 'no_detectable_difference') return null;
+  const hiding = s.not_ruled_out_points !== null
+    ? `Differences as large as ${Math.round(s.not_ruled_out_points)}${NBSP}points are not ruled out.`
+    : 'Every task gave the same difference, so the interval has no width and cannot say how large a difference could be hiding.';
+  return `${hiding}${few}`;
 });
 
 /** D44: the latest A/A calibration of these configs, or a link to set one up for arm A's agent. */

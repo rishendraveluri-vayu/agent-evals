@@ -40,7 +40,11 @@ describe('the verdict rule (D42, D43)', () => {
     const s = analyse({ seed: 'e_one', tasks: [task('t', 2, 4, 2, 4)] }, fast).stats;
     expect(s?.diff).toEqual({ estimate: 0, low: 0, high: 0 });
     expect(s?.verdict).toBe('no_detectable_difference');
-    expect(s?.verdict_text).toContain('With fewer than 6 tasks no other verdict is possible');
+    // A zero-width interval rules nothing out, so it never says "as large as 0 points".
+    expect(s?.not_ruled_out_points).toBeNull();
+    expect(s?.verdict_text).toBe(
+      'No detectable difference: 0.0 points (95% interval 0.0 to 0.0), p = 1 by the paired sign-flip test over 1 task. Every task gave the same difference, so the interval has no width and cannot say how large a difference could be hiding. With fewer than 6 tasks no other verdict is possible: the paired test cannot reach p < 0.05.',
+    );
   });
 });
 

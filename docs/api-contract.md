@@ -536,7 +536,8 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
     exact up to 30 tasks (`test.exact`, `test.flips` = 2^K), else 20,000 seeded flips;
   - `verdict` (D42, D43, D50): `better` (interval above 0 and p < 0.05), `worse` (below 0 and p <
     0.05), `equivalent` (the whole interval inside +/- `margin_points`, 10), else
-    `no_detectable_difference` with `not_ruled_out_points`; with fewer than 6 tasks in the
+    `no_detectable_difference` with `not_ruled_out_points` (null when every task gave the same
+    difference, so the interval has no width); with fewer than 6 tasks in the
     aggregate it is always `no_detectable_difference`. `held_back` when the pass rate alone says
     better (`pass_rate_verdict`) but `critical` says critical failures rose. `verdict_text` says it
     in a sentence;
