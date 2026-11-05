@@ -8,7 +8,6 @@ Each entry is one of three kinds:
 - **Constraint:** a verified fact the design has to respect, with the evidence. Not a choice.
 - **Open:** not decided yet. Options and tradeoffs live in `docs/decisions.md`.
 
-Claude fills in only Decided and Constraint entries.
 
 ## 1. Architecture
 
@@ -70,7 +69,7 @@ Decided (D15, 5 Nov): compression, memory and skills off in both arms of the hea
 
 ## 3. Data model
 
-Tasks, configs, experiments, trials and traces. **[Rishi designs]** in SP2.
+Tasks, configs, experiments, trials and traces.
 
 Approved on 4 Nov (R14): `docs/proposals/data-model.md`. Content-addressed prompts, toolsets (since 4 Nov the toolset hash covers the published tool manifest and the server version, not just the tool names), tasks and configs; experiments freeze task hashes × config hashes × N; one trial row per (experiment, task, config, repeat, attempt) with a claim, heartbeat and idempotent report; spans and grades in their own tables; labels stay files; raw trial files stay under `runs/`.
 
@@ -159,13 +158,11 @@ Built on 4 Nov, where graders live (follows D1, D2, R10.2 and R14; the SPEC left
 
 - **The judge is plumbing around Rishi's rubric** (4 Nov night): it runs in the same grader worker, calls a model only with the per-experiment key the API mints when judging is approved with a model and a budget (R8), sees only what the blind labelling screen shows plus any reference facts, answers yes or no with a quote per criterion, and every quote is looked up in the material. The rubric file is part of the grader version. Details and the open choices: `docs/proposals/grader-format.md`, The judge.
 
-Built as a draft, open for Rishi (SP4 **[Rishi designs]**): the grader spec format, its ten types (number, tool_called, tool_not_called, regex_present, regex_absent, end_state, provenance, required_tools, unit_test, and the judge; provenance and required_tools read the runner's `checks.json`) and the outcome rule are in `docs/proposals/grader-format.md`, with the choices listed there.
+Built in SP4: the grader spec format, its ten types (number, tool_called, tool_not_called, regex_present, regex_absent, end_state, provenance, required_tools, unit_test, and the judge; provenance and required_tools read the runner's `checks.json`) and the outcome rule are in `docs/proposals/grader-format.md`, with the choices listed there.
 
 Decided, the judge's trust bar (D8, 5 Nov): a judge criterion counts in the headline only when, on the held-out labels, kappa >= 0.6 with its 95% interval's lower end >= 0.4, there is no false-pass gap between arms, and test-retest agreement is >= 90%. Below the bar it stays visible in trials and the report. Rubric v1 stayed as committed after the tuning check (D69).
 
-Open:
-
-- D7: which tasks use the judge.
+Every task has a judge grader on the rubric `configs/rubrics/advice.v1.md` (D68), and every judge criterion is optional until it is trusted (D8). Which criteria become required once trusted is still open (D7).
 
 The agreement arithmetic is a Python project at the repo root, `stats/` (package `evals_stats`, standard library only, D1); SP6's comparison runs in the API instead (section 6). It reads labels from `labels/` and grades from the API, and calls no model.
 

@@ -11,7 +11,8 @@ Five harnesses plug in through one adapter contract: Hermes Agent, LangGraph, Go
 OpenAI Agents SDK and a plain tool-calling loop. Every model call goes through a LiteLLM proxy,
 where spend, tokens, latency and settings are recorded. The task set is a personal-finance
 assistant with calculator tools and simulated clients. It holds 21 tasks, 10 of them held out to
-score the experiment and 11 for tuning, plus 2 engine tests that check the platform, not an
+score the experiment and 11 for discovery (where the first prompt's failures were found and the
+judge was tuned), plus 2 engine tests that check the platform, not an
 agent.
 
 > **Status, 5 Nov 2026.** The platform runs end to end with its statistics: configs, runs with N
@@ -23,9 +24,15 @@ agent.
 > which the rule fixed before the run calls "no detectable difference": 5 of the 10 tasks scored
 > the same in both arms (always passed or always failed), and the 5 left are too few for the test
 > to reach p < 0.05. v1 run against itself as a check gave −4 points (−12 to +3), no difference,
-> as it should. **The judge is so far checked only against the human labels used for tuning,**
-> where its overall verdict was too lenient, so no judge verdict counts in the result. The
-> write-up, with inspected trials: `docs/experiment.md`.
+> as it should. Nearly all of the +9 is one check, that every rupee figure comes from a tool
+> (the rule v2 adds); set aside, the arms pass 95 and 97 of 100 (`docs/known-limits.md`).
+> **The platform passes its own test:** with the calculator tools broken on purpose (a positive
+> control set out before the run), it found +44.8 points (+23.8 to +65.7, p = 0.0011), flagged 7
+> tasks, all among those predicted and none of the 7 controls, and named "wrong tool" as the
+> cause in 68 of 83 failures. The same v1 vs v2 on two more harnesses: own loop +8 (−4 to +23),
+> LangGraph +17 (+5 to +29, p = 0.047, "better"). **The judge is so far checked only against the
+> human labels used for tuning,** where its overall verdict was too lenient, so no judge verdict
+> counts in the result. The write-up, with inspected trials: `docs/experiment.md`.
 
 ## Run it
 
@@ -159,7 +166,7 @@ docker compose --profile smoke run --rm netcheck                             # w
 ```
 
 **The API's database tests.** Without `TEST_DATABASE_URL`, `pnpm test` skips the API's
-database suites: Jest's summary for the API reads `Test Suites: 10 skipped, 30 passed, 30 of 40
+database suites: Jest's summary for the API reads `Test Suites: 11 skipped, 32 passed, 32 of 43
 total`, and a warning says they were skipped, not passed. To run them, start a throwaway
 Postgres (never the compose one), then stop it:
 
@@ -181,8 +188,8 @@ otherwise recreates the API on its default port. If you started it with `-p <nam
 
 - `docs/design.md`: architecture, adapter interfaces, data model, isolation and reproducibility,
   graders and their validation, the statistics and the choice of N.
-- `docs/experiment.md`: the real experiment's write-up, its hypothesis, setup, results and
-  conclusion, written after the run; until then a template.
+- `docs/experiment.md`: the real experiment: the hypothesis and analysis plan committed before the
+  runs, then the results, the controls, the trajectories and the conclusion.
 - `docs/known-limits.md`: where the platform's conclusions should not be trusted.
 - `docs/cost.md`: the cost formula and the actual spend.
 - `docs/assumptions.md` and `docs/decisions.md`: every assumption, and every design decision with

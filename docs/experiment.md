@@ -8,7 +8,7 @@ Rishi, 5 Nov (chosen from drafts): "Prompt v2, written only from v1's failures o
 
 ## Setup
 
-Axis (D9, 3 Nov): the system prompt, v1 versus v2. v1 runs first on the discovery tasks; trace analysis finds its failures; v2 and this analysis plan are committed before the re-run; v1 and v2 are then compared on held-out tasks not used to find the problems. Everything else is fixed: harness, model, settings, toolset version, simulator settings. Harness and model (D47, 5 Nov): Hermes Agent at 6112c2a on Claude Haiku 5.5, both arms, with compression, memory and skills off, prompt-cache markers off and Tool Search off (D15, D31); judge Gemini 3.8 Flash (D45). To fill in before the run: config hashes, model pins, N and how N was chosen.
+Axis (D9, 3 Nov): the system prompt, v1 versus v2. v1 runs first on the discovery tasks; trace analysis finds its failures; v2 and this analysis plan are committed before the re-run; v1 and v2 are then compared on held-out tasks not used to find the problems. Everything else is fixed: harness, model, settings, toolset version, simulator settings. Harness and model (D47, 5 Nov): Hermes Agent at 6112c2a on Claude Haiku 5.5, both arms, with compression, memory and skills off, prompt-cache markers off and Tool Search off (D15, D31); judge Gemini 3.8 Flash (D45). To fill in before the run: config hashes, model pins, N and how N was chosen. *(Filled in before the run under "The final runs, as approved", commit d85422b: the two config hashes, Claude Haiku 5.5, N = 10; how N was chosen is in `docs/design.md`, section 6.)*
 
 Task set (D53, 5 Nov): the 21 tasks in `tasks/draft-*`, every `task.json` at version 3 (version 1 was the drafts reviewed in `docs/proposals/tasks-review.md`), or version 4 for draft-otp-scam, draft-car-loan-afford, draft-convo-car, draft-payoff-order, draft-convo-payoff and draft-prepay-personal-loan, whose graders also changed under D63; versions 3 and 4 differ from 2 in graders only (D63, and D68's rubric `configs/rubrics/advice.v1.md` and judge criteria), so the core is version 2's; each experiment row also records every task's sha256. The ids keep their `draft-` prefix so they stay linked to the trials recorded under them. Split A: 11 discovery, 10 held-out, so K = 10 for the headline (smallest two-sided sign-flip p = 2/1024 = 0.002; power for a real +15 points about 50%, D50).
 
@@ -31,7 +31,7 @@ Settled 5 Nov (D10, D41 to D44, D8, D46; details in `docs/proposals/stats.md` an
 - Judge: a criterion counts only if, on the held-out labels, kappa >= 0.6 (lower bound >= 0.4), no false-pass gap between arms, retest >= 90%; "not sure" labels get one second look, then are excluded.
 - Infra failures: labelled, reported, never counted as agent failures and never dropped silently.
 - Held-out task list: the ten under Setup (D53). Each grader's severity is in its task file (D53, D63: 20 critical, 59 major and 1 minor of the 80 required deterministic checks; the five card regexes are optional minor floors, and whether the card comes first is a judge criterion, counted only once trusted); the guardrail reads only required checks marked critical.
-- Still to fill in before the run: N (from the pilot).
+- Still to fill in before the run: N (from the pilot). *(Filled in before the run: N = 10, in the next section.)*
 
 ## The final runs, as approved before they start (5 Nov)
 
@@ -40,7 +40,7 @@ Rishi: "Approve both, N=10". Both on the 10 held-out tasks, Hermes Agent 6112c2a
 - **v1 vs v2** (the headline): configs `sha256:9051fae0…` (prompt v1) and `sha256:d46271c1…` (prompt v2), which differ only in the prompt. 200 trials, expected about $1.95 (estimate $1.54, range $0.77 to $3.09), spending limit $4.
 - **A/A calibration of v1** (D44): the v1 config on both arms, 200 trials, the same expected cost and limit.
 - **Futility check off on both,** set here before the runs: a pause would stall a run whose full N the verdict needs, and the $4 limits protect the spend.
-- **The judge** (Gemini 3.8 Flash, rubric v1, D68) grades both runs afterwards, from the recorded trials, under its own approval.
+- **The judge** (Gemini 3.8 Flash, rubric v1, D68) grades both runs afterwards, from the recorded trials, under its own approval. *(Not done: see Deviations.)*
 
 ## Discovery: v1 on the discovery tasks (5 Nov)
 
@@ -165,5 +165,7 @@ Rishi to write.
 ## Deviations
 
 Anything changed after the plan was committed, and why.
+
+- **The judge did not grade the final runs.** The plan above says it would, under its own approval; that approval was never given, so each trial's judge grade in both runs is a `not_implemented` placeholder and nothing was spent on it. No outcome changes: every judge criterion is optional until it meets the trust bar on held-out labels (D8), and none has been tested there, so a judge grade could not have counted. The headline is decided by the deterministic checks alone.
 
 - **A sensitivity analysis added after the results (5 Nov), not a change to the verdict.** Prompted by the survey of other eval tools (`docs/research/evals-landscape.md`), the per-task differences were also tested the way Miller (2024, "Adding Error Bars to Evals") recommends, with a paired t-test on the task differences (+30, +30, +10, +10, +10 and five zeros): mean +9.0 points, standard error 3.79, t(9) = 2.38, two-sided p = 0.041, 95% t interval +0.4 to +17.6. Under that test the result would read "better"; under the pre-registered exact sign-flip test it is p = 0.0625, "no detectable difference". The pre-registered verdict stands. The two tests disagree because the exact test treats the five tied tasks as carrying no information and cannot go below 2/2^5 with five informative tasks, while the t-test uses the size of the differences and leans on a normal approximation with ten tasks. Both say the same about direction and size; they differ only on whether 1 in 16 or 1 in 24 counts as rare enough.
