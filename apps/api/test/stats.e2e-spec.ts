@@ -135,10 +135,11 @@ describeWithDb('statistics and A/A calibration (e2e, real Postgres)', () => {
     // This time every trial fails.
     await e.grade('g-re2', () => 'fail');
     const after = (await compare(exp.id)).stats!;
-    // Every task now differs by exactly 0, so the task bootstrap has no spread to show: with 7
-    // tasks that reads as practically equivalent (docs/known-limits.md, "Statistics").
+    // Every task now differs by exactly 0, so the task bootstrap has no spread to show; a zero-width
+    // interval never reads as practically equivalent (D55), however many tasks tie.
     expect(after.diff).toEqual({ estimate: 0, low: 0, high: 0 });
-    expect(after.verdict).toBe('equivalent');
+    expect(after.verdict).toBe('no_detectable_difference');
+    expect(after.verdict_text).toContain('Every task gave the same difference');
     const wall = after.costs.find((c) => c.metric === 'wall_s')!;
     // With one trial per task and arm, that task has no time left for B, so it leaves the time comparison.
     expect(wall).toMatchObject({ left_out_retried: { a: 0, b: 1 }, tasks: 6, trials: { a: 6, b: 6 } });
