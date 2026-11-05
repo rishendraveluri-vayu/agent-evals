@@ -358,6 +358,15 @@ Choice of N (decided 5 Nov, Rishi: "Approve both, N=10"; `docs/experiment.md`, "
   95% interval +3 to +16) and the verdict was still "no detectable difference" (`docs/experiment.md`,
   Results). The limit was the number of held-out tasks that are neither at ceiling nor at floor,
   not N; more such tasks would help more than more trials.
+- **What the pilot already said (read after the run, so a lesson, not a change).** The v1
+  discovery run is in effect the pilot: 11 discovery tasks x 3 trials (`e_0mw33tqo41489091e4da80c75`).
+  4 tasks passed every trial and 2 failed every trial; 5 of 11 were in between. If about half the
+  tasks sit at ceiling or floor, K = 10 leaves about 5 that can differ, and over 5 the sign-flip
+  test cannot go below p = 0.0625: the headline's outcome was predictable from the pilot. The
+  held-out tasks themselves had no pilot (the split keeps them unrun, D53), so the rule for next
+  time is about K and difficulty, not about picking tasks: plan for at least 12 tasks that can
+  differ, so K of about 24 at this ceiling rate, or harder tasks. (With 3 trials, a task at 3 of 3
+  might be 9 of 10 at N = 10, so the pilot overstates the ceiling a little.)
 - The pre-run estimate of the smallest difference a planned N and K can detect (proposal section
   6) is not built; the table above stands in for it.
 
