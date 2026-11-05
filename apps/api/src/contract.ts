@@ -137,6 +137,11 @@ export interface ToolsetView {
   servers: ToolsetServer[];
   /** Per server: its version and each allowed tool's name, description and input schema. */
   manifest: { server: string; server_version: string; tools: ToolsetTool[] }[];
+  /** What it is, for people; not in the hash. */
+  description: string;
+  /** Made to test the platform (D70's `finance-no-calculators`), not to compare agents: listed
+   *  after the others, and never a default. Not in the hash. */
+  validation_only: boolean;
 }
 
 export type TaskSplit = 'discovery' | 'held_out';

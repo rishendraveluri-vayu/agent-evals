@@ -5,6 +5,7 @@ import { hashCanonical } from '../common/hashing';
 import type { Json } from '../contract';
 import {
   ARITHMETIC_TOOLS,
+  CALCULATOR_TOOLS,
   FINANCE_TOOLS,
   FINANCE_TOOLSET_VERSION,
   REFERENCE_TOOLS,
@@ -23,6 +24,7 @@ import {
   readHarnesses,
   readPrompts,
   readTasks,
+  toolsetContent,
 } from './catalogue-files';
 
 const REPO = path.resolve(__dirname, '../../../..');
@@ -108,8 +110,33 @@ describe('the built-in toolset', () => {
     expect(t.manifest[0].tools.map((x) => x.name)).toEqual([...FINANCE_TOOLS]);
     const sip = t.manifest[0].tools.find((x) => x.name === 'sip_future_value');
     expect(Object.keys((sip?.input_schema as { properties: object }).properties)).toContain('lump_sum');
-    const { sha256, ...content } = t;
-    expect(sha256).toBe(hashCanonical(content));
+    expect(t.sha256).toBe(hashCanonical(toolsetContent(t)));
+    expect(t.validation_only).toBe(false);
+  });
+
+  it('lists finance-no-calculators after it (D70): the same server and version without the eight calculators, never a default', () => {
+    const [full, broken, ...rest] = builtInToolsets(server);
+    expect(rest).toEqual([]);
+    // First listed is what a new config and the builder take, so the validation toolset is second.
+    expect(full).toMatchObject({ id: 'finance', validation_only: false });
+    expect(broken).toMatchObject({ id: 'finance-no-calculators', version: FINANCE_TOOLSET_VERSION, validation_only: true, servers: [{ name: 'finance' }] });
+    expect(broken.description).toMatch(/^Validation only \(D70/);
+    expect(broken.description).toContain('eight calculators removed');
+    expect([...CALCULATOR_TOOLS].sort()).toEqual(
+      ['amortization_schedule', 'calculate_emi', 'debt_payoff_plan', 'fd_maturity', 'inflation_adjusted_value', 'loan_affordability', 'prepayment_impact', 'sip_future_value'],
+    );
+    const eleven = [
+      'get_client_profile', 'list_debts', 'list_transactions',
+      'add', 'subtract', 'multiply', 'divide', 'percent_of', 'percent_change', 'round',
+      'reference_rates',
+    ];
+    expect(broken.servers[0].allowed_tools).toEqual(eleven);
+    // Each kept tool is exactly what finance/v3 shows the model: only the list is shorter.
+    expect(broken.manifest[0].server_version).toBe(full.manifest[0].server_version);
+    expect(broken.manifest[0].tools).toEqual(full.manifest[0].tools.filter((x) => eleven.includes(x.name)));
+    // Its hash covers its own allowed list and manifest, so it is not finance/v3's.
+    expect(broken.sha256).toBe(hashCanonical(toolsetContent(broken)));
+    expect(broken.sha256).not.toBe(full.sha256);
   });
 
   it("changes its hash when a tool's description, input schema or the server version changes", () => {
@@ -155,20 +182,22 @@ describe('the built-in toolset', () => {
   // recorded configs and trials keep the hash they were made with. If this fails after a
   // deliberate tool change, add the next version to FINANCE_TOOLSET_VERSION (with a line saying
   // what changed) and pin its hash here; do not re-pin this one.
-  it('pins the hash of the toolset version it lists', () => {
+  it('pins the hash of each toolset version it lists', () => {
     // finance/all is not pinned: it kept its label while its hash changed (names only before
     // 4 Nov, sha256:e8a33031..., then the manifest at server 0.2.0, sha256:76def651...), which is
     // what this test now prevents. v2 (server 0.3.0) is no longer listed, and is kept here as the
     // record of the hash its configs and trials carry.
     const pinned: Record<string, string> = {
-      v2: 'sha256:58700d434a81fa022fa63ddccda368d805775d5a6b1e9b7c55af7d09789ccb82',
+      'finance/v2': 'sha256:58700d434a81fa022fa63ddccda368d805775d5a6b1e9b7c55af7d09789ccb82',
       // Re-pinned once, on 5 Nov, before any run used v3: server 0.4.0 (seven proposed rates,
       // sha256:ffb60630...) became 0.4.1 (six approved, debt_fund removed).
-      v3: 'sha256:8e0508d29b7d8b66b32454c2e884092bbe3b41d45bf27667bd91715eeb987148',
+      'finance/v3': 'sha256:8e0508d29b7d8b66b32454c2e884092bbe3b41d45bf27667bd91715eeb987148',
+      // D70's positive control (5 Nov): finance/v3 without the eight calculators.
+      'finance-no-calculators/v3': 'sha256:34e53515c2a9306abf04b3bc76c768ea4cd62338eaad47622589ef195a7232fd',
     };
-    const [t] = builtInToolsets(server);
-    expect(t.version).toBe(FINANCE_TOOLSET_VERSION);
-    expect(t.sha256).toBe(pinned[t.version]);
+    const listed = builtInToolsets(server);
+    expect(listed.map((t) => t.version)).toEqual([FINANCE_TOOLSET_VERSION, FINANCE_TOOLSET_VERSION]);
+    for (const t of listed) expect([`${t.id}/${t.version}`, t.sha256]).toEqual([`${t.id}/${t.version}`, pinned[`${t.id}/${t.version}`]]);
   });
 
   it('refuses a manifest that is missing a tool, or a server folder it cannot read', async () => {

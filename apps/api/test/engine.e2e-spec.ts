@@ -4,7 +4,7 @@ import { promises as fs, readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import * as path from 'node:path';
 import request from 'supertest';
-import type { ClaimResponse, ExperimentDetail, ReportResponse, TrialView } from '../src/contract';
+import type { ClaimResponse, ExperimentDetail, ReportResponse, ToolsetView, TrialView } from '../src/contract';
 import { REPO, TASKS, type TestEnv, auth, bootEnv, catalogue, makeConfig, runnerReport } from './support/app';
 import { describeWithDb } from './support/db';
 
@@ -279,6 +279,21 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
   it("keeps D22's temperature 0 for a simulator model that takes it", async () => {
     const exp = await experiment({ tasks: [cat.tasks['widow-loan']], sim: 'gemini-3.8-flash', start: false });
     expect(exp.sim).toMatchObject({ prompt: { version: 'v4' }, temperature: 0 });
+    await cancel(exp.id);
+  });
+
+  it("hands a worker only the config's toolset: finance-no-calculators gives its 11 tools, not the calculators (D70)", async () => {
+    const toolsets = (await request(env.http).get('/api/toolsets').expect(200)).body as ToolsetView[];
+    const broken = toolsets.find((t) => t.id === 'finance-no-calculators')!;
+    const config = await makeConfig(env.http, cat, { name: 'no calculators', harness: 'langgraph', toolset_sha256: broken.sha256 });
+    const exp = await experiment({ configs: [config] });
+    const c = (await claim('w-d70', 'langgraph'))!;
+    expect(validateSpec(c.spec)).toBe(true);
+    const tools = (c.spec as { tools: { toolset: { id: string; version: string; sha256: string }; mcp_servers: { name: string; allowed_tools: string[] }[] } }).tools;
+    expect(tools.toolset).toEqual({ id: 'finance-no-calculators', version: 'v3', sha256: broken.sha256.slice('sha256:'.length) });
+    expect(tools.mcp_servers.map((s) => [s.name, s.allowed_tools])).toEqual([
+      ['finance', ['get_client_profile', 'list_debts', 'list_transactions', 'add', 'subtract', 'multiply', 'divide', 'percent_of', 'percent_change', 'round', 'reference_rates']],
+    ]);
     await cancel(exp.id);
   });
 

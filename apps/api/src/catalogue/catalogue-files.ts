@@ -196,7 +196,23 @@ export const FINANCE_TOOLS = [
 ] as const;
 
 /**
- * The built-in toolset's version. A change to its tools (a tool added or removed, a description
+ * The eight calculators, each a loan's, a deposit's or an investment's sum in one call, in the
+ * server's order. D70's positive control removes all eight (`finance-no-calculators`).
+ */
+export const CALCULATOR_TOOLS = [
+  'calculate_emi',
+  'amortization_schedule',
+  'prepayment_impact',
+  'debt_payoff_plan',
+  'sip_future_value',
+  'fd_maturity',
+  'inflation_adjusted_value',
+  'loan_affordability',
+] as const;
+
+/**
+ * The built-in toolsets' version (`finance`'s, which `finance-no-calculators` shares, since both
+ * are cut from the same server; see BUILT_IN_TOOLSETS). A change to its tools (a tool added or removed, a description
  * or schema edited, a new server version) is a new version here, never an edit of the old one in
  * place, and a unit test pins the hash of each so an unlabelled change fails it.
  *
@@ -250,23 +266,69 @@ export function loadFinanceServer(dir: string): FinanceServerManifest {
   return { version, tools };
 }
 
+/** A built-in toolset: which of the finance server's tools a config with it gives the model. */
+interface BuiltInToolset {
+  id: string;
+  version: string;
+  description: string;
+  validation_only: boolean;
+  allowed: readonly string[];
+}
+
 /**
- * The one built-in toolset until more exist: every finance tool, as `finance` at
- * FINANCE_TOOLSET_VERSION. It is the default for a new config and the builder's choice, since
- * both take the first toolset listed. Its sha256 covers the full published manifest, not just
- * the names: each allowed tool's name, description and input schema, and the server's version,
- * as canonical JSON. So a schema change (sip_future_value's lump_sum, 4 Nov) or a new server
- * version is a new toolset, and a past result points at the exact tools its model was shown.
- * Before 4 Nov the hash covered the names only.
+ * The built-in toolsets, in the order GET /toolsets lists them. The first is the default for a
+ * new config and the builder's choice, so a toolset made to test the platform goes after it,
+ * says so (`validation_only`), and neither default picks it.
+ *
+ * - `finance` at FINANCE_TOOLSET_VERSION: every finance tool.
+ * - `finance-no-calculators` (5 Nov, D70): the same server and version with the eight
+ *   calculators left out, as if the calculator service were down; the client data, arithmetic
+ *   and reference-rate tools stay (11 tools). It is for the positive control, the run whose
+ *   effect is known in advance, not for comparing agents. Its version follows `finance`'s, since
+ *   both are cut from the same server: a new server version is a new version of both, and a new
+ *   pinned hash for each.
+ */
+const BUILT_IN_TOOLSETS: BuiltInToolset[] = [
+  {
+    id: 'finance',
+    version: FINANCE_TOOLSET_VERSION,
+    description: 'Every finance tool: the eight calculators, the client data, the arithmetic tools and the reference rates.',
+    validation_only: false,
+    allowed: FINANCE_TOOLS,
+  },
+  {
+    id: 'finance-no-calculators',
+    version: FINANCE_TOOLSET_VERSION,
+    description:
+      'Validation only (D70, the positive control): finance with its eight calculators removed, as if the calculator service were down. The client data, arithmetic and reference-rate tools stay.',
+    validation_only: true,
+    allowed: FINANCE_TOOLS.filter((t) => !(CALCULATOR_TOOLS as readonly string[]).includes(t)),
+  },
+];
+
+/**
+ * The built-in toolsets (BUILT_IN_TOOLSETS), each read from the finance server's published
+ * manifest. A toolset's sha256 covers its id, version and allowed list and the full published
+ * manifest of the tools it allows, not just the names: each tool's name, description and input
+ * schema, and the server's version, as canonical JSON. So a schema change (sip_future_value's
+ * lump_sum, 4 Nov) or a new server version is a new toolset, and a past result points at the
+ * exact tools its model was shown. Before 4 Nov the hash covered the names only. `description`
+ * and `validation_only` are words for people, outside the hash: they change nothing a model sees.
  */
 export function builtInToolsets(server: FinanceServerManifest): ToolsetView[] {
-  const allowed = [...FINANCE_TOOLS];
   const byName = new Map(server.tools.map((t) => [t.name, t]));
-  const missing = allowed.filter((n) => !byName.has(n));
+  const missing = FINANCE_TOOLS.filter((n) => !byName.has(n));
   if (missing.length) throw new Error(`the finance server's manifest has no ${missing.join(', ')}`);
-  const manifest = [{ server: 'finance', server_version: server.version, tools: allowed.map((n) => byName.get(n) as PublishedTool) }];
-  const content = { id: 'finance', version: FINANCE_TOOLSET_VERSION, servers: [{ name: 'finance', allowed_tools: allowed }], manifest };
-  return [{ ...content, sha256: hashCanonical(content) }];
+  return BUILT_IN_TOOLSETS.map(({ id, version, description, validation_only, allowed }) => {
+    const manifest = [{ server: 'finance', server_version: server.version, tools: allowed.map((n) => byName.get(n) as PublishedTool) }];
+    const content = { id, version, servers: [{ name: 'finance', allowed_tools: [...allowed] }], manifest };
+    return { ...content, sha256: hashCanonical(content), description, validation_only };
+  });
+}
+
+/** What a toolset's sha256 covers: every field but the hash and the words for people. */
+export function toolsetContent(t: ToolsetView): Pick<ToolsetView, 'id' | 'version' | 'servers' | 'manifest'> {
+  return { id: t.id, version: t.version, servers: t.servers, manifest: t.manifest };
 }
 
 // ---- Tasks -----------------------------------------------------------------------------
