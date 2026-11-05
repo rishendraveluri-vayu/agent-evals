@@ -76,6 +76,8 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D64 A-vs-B behaviour and failure causes | The comparison shows per arm: tool calls by tool, required tools called, tool errors, steps and step-limit hits, end states, figures written without a tool; and every failed trial gets a rule-based cause (wrong tool, made-up arguments, gave up early, ran out of steps, unsupported figure, grader vs human label); the regression list shows which causes grew | Rishi | 5 Nov |
 | D65 Freeze the agent, tasks and graders | The fixes in flight on 5 Nov (provenance D61 with the approved rates D62, the three D63 task fixes) are the last; after them the agent, tasks, graders and toolset are taken as they are into the experiment loop. Work goes to comparing runs: the experiment, the judge's validation, A/A calibration and the comparison itself (including D64) | Rishi | 5 Nov |
 | D66 Standing spend allowance (R8) | For 2 hours from 11:50 to 13:50 IST on 5 Nov: any single spend under $2 may go ahead without asking, as long as the total stays under $50; each is logged in `docs/cost.md`; a single step above $2 (the final run) still needs Rishi's go-ahead, and no step is split to fit under $2 | Rishi | 5 Nov |
+| D67 Prompt v2 | v1 plus the fixes from the discovery traces and Rishi's tuning labels: every rupee figure exactly from a tool (small sums included, no "about" amounts); clarify an ambiguous amount or a missing deciding fact before planning on it (or say which reading was used); explain each key figure in plain words (`configs/prompts/finance-advisor.v2.md`) | Rishi | 5 Nov |
+| D68 Judge rubric v1 and criteria for v2's fixes | The judge reads `configs/rubrics/advice.v1.md` (the client's advocate and a finance planner, a quote for every yes, each criterion on its own); new criteria so the comparison can see v2's fixes: clarifies an ambiguous amount, asks for the deciding fact, explains each key figure plainly; optional until each passes the trust bar on held-out labels (D8) | Rishi | 5 Nov |
 
 ## Open
 
@@ -367,6 +369,10 @@ Why: Rishi: "lets commit that these are last fixes and we take the agent and how
 
 ### D66: A standing spend allowance for two hours (5 Nov)
 Rishi: "given the limited time we have left i would suggest anything less than 2 dollars and less than 50 $ over 2 hours u dont need to ask me". From 11:50 to 13:50 IST on 5 Nov, a single paid step under $2 (a judge pass, an A/A calibration, a re-run) may start without asking, keeping the total under $50, with trials, models and expected cost stated in `docs/cost.md` before it starts and the actual cost after. A step above $2 on its own still needs his go-ahead, and no step is split to stay under $2. After the window, R8 applies as before.
+
+### D67 and D68: Prompt v2 is v1 plus the fixes; the judge measures them (5 Nov)
+Rishi, on reading his 33 tuning labels against the graders (they agreed on 20 of 33: 10 trials he would pass failed on provenance over rounded or prose-summed figures, 3 he would fail passed because no deterministic check sees an assumed ambiguous amount or a confusing explanation): "Actually i think the changes to make this happen should be our v2, so the agent as is is v1 and these fixes are v2, the fail path". v2 takes the tool fix and "Tools + clarify" (his choice), plus explaining figures plainly from his notes. Without judge criteria for them, the comparison could see only the tool fix, so he approved the criteria too ("Yes, add the criteria").
+For the write-up: the deterministic pass rate is mostly a provenance measure on these tasks; v2 targets provenance directly, so a pass-rate gain alone does not show clients served better. The judge criteria (once trusted) and the trajectories are what can show that.
 
 ## Entry template
 
