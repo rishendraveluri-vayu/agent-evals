@@ -302,9 +302,12 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 
 ## Spend
 
-- `GET /spend` returns `{trials_usd, fake_trials_usd, system_usd, judge_usd, judge_approvals, total_usd,
+- `GET /spend` returns `{trials_usd, trials_spend_unknown, fake_trials_usd, system_usd, judge_usd, judge_approvals, total_usd,
   system_by_kind: {<kind>: {usd, calls}}, allowances: [{kind, limit_usd, used_usd,
-  remaining_usd, calls, half_reached}]}`. `judge_usd` is the LLM judge's spend across every
+  remaining_usd, calls, half_reached}]}`. `trials_usd` includes abandoned attempts' spend, read
+  by the lease sweep (worker protocol step 6, since 5 Nov, G3); `trials_spend_unknown` counts the
+  abandoned attempts on a real model whose spend LiteLLM could not give, which `trials_usd` and
+  `total_usd` therefore leave out (the header says so when it is above 0). `judge_usd` is the LLM judge's spend across every
   approval, revoked ones included: for each key, the sum of `spend` over its LiteLLM spend-log
   rows (for a revoked key, at least what the log showed at revoke, and that figure when LiteLLM
   cannot be read). It is null when an active key's log cannot be read. `judge_approvals` counts
@@ -487,7 +490,10 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 - `GET /experiments/:id` adds `actual` next to `estimate` (item 8): null until a trial has
   finished, then `{finished_trials, spend_usd, cost_per_trial_usd, wall_s_per_trial,
   elapsed_minutes, projected_spend_usd}` (elapsed from the start to the finish or now; the
-  projection is the spend guard's). Reused trials are the parent's spend, not this one's.
+  projection is the spend guard's). Reused trials are the parent's spend, not this one's. An
+  abandoned attempt's spend (G3) is in `spend_usd` and the projection, but the attempt is not a
+  reported trial: `cost_per_trial_usd` is the whole spend over the trials that reported, and the
+  spend guard projects the trials left at that mean, crashed attempts' spend included.
 - `GET /experiments/:id` also adds `platform_commit` and `platform_commit_source` (`env`, `git`
   or null; above), `tasks`, `configs`, `arms`, `order_seed`, `futility`,
   `parent_experiment_id`, `baseline`, `paused_at`, `paused_reason` and `events`, newest first: `[{at, kind, trial_id, attempt, arm, config_hash,
@@ -634,7 +640,10 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   `seed` is the experiment id, so the same data always gives the same numbers; results are cached
   by the trials and their current grading jobs, so a regrade recomputes them.
 - `GET /experiments/:id/export?format=json|csv` streams every trial row (infra failures,
-  abandoned and cancelled rows included) joined with its config, task, grades and spend. Each
+  abandoned and cancelled rows included) joined with its config, task, grades and spend. An
+  abandoned row carries the spend the lease sweep read for it (G3); `spend_unknown` (a CSV column
+  after `sim_cost_usd`, and in the JSON's `spend`) is true when LiteLLM could not give it, so its
+  empty cost is unknown, not zero. Each
   row has `arm` (`A` or `B` by the config's place in the experiment; in a run of one config twice,
   the second arm's repeats come after the first's) and `outcome`, the trial's current grading
   exactly as the run grid (`grading` on `GET /experiments/:id/trials`) and the comparison count
@@ -772,7 +781,17 @@ trial cannot read or change another trial's stored files (D3).
    paused arms.
 6. A lease with no heartbeat for 60 s lapses: the API marks the attempt `abandoned`, revokes
    its keys, and queues the next attempt under the same cap (also while the experiment is
-   paused; the attempt waits for the resume).
+   paused; the attempt waits for the resume). **Before revoking (since 5 Nov, G3)** it reads
+   LiteLLM's spend log for the attempt's agent key, and its simulator key when it had one, and
+   stores them on the abandoned row as a report would: `cost_usd` and `input_tokens`,
+   `output_tokens`, `model_calls` from the agent key's rows, `sim_cost_usd` from the simulator
+   key's (null without one). So the attempt's spend counts in `GET /spend`, the experiment's
+   `spend_usd` and `actual.spend_usd`, the spend guard and the export. When LiteLLM cannot be
+   read, the row gets `spend_unknown: true` and its costs stay null, unknown and not zero; while
+   its keys are still live (LiteLLM down, so their revoke failed too) the next sweep reads again
+   and clears the mark. The log of a key already revoked is never read for this (assumption A19
+   is unchecked), so an attempt whose log could not be read but whose keys were revoked keeps the
+   mark. Attempts abandoned before migration 015 are marked unknown.
 
 ## Grading (SP4, R14)
 

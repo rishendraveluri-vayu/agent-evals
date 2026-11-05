@@ -40,7 +40,7 @@ const FIELDS = {
   rendered: ['config_hash', 'status', 'probe', 'cached', 'error', 'rendered'],
   conflict: ['config_hash', 'rendered_sha256', 'input_sha256', 'checker', 'model', 'conflicts', 'notes', 'cost_usd', 'cached', 'skipped', 'spend_id', 'checked_at', 'allowance'],
   allowance: ['kind', 'limit_usd', 'used_usd', 'remaining_usd', 'calls', 'half_reached'],
-  spend: ['trials_usd', 'fake_trials_usd', 'system_usd', 'judge_usd', 'judge_approvals', 'total_usd', 'system_by_kind', 'allowances'],
+  spend: ['trials_usd', 'trials_spend_unknown', 'fake_trials_usd', 'system_usd', 'judge_usd', 'judge_approvals', 'total_usd', 'system_by_kind', 'allowances'],
   blind: ['item_id', 'task_id', 'task_summary', 'transcript', 'tool_calls', 'criteria'],
 };
 

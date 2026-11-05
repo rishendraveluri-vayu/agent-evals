@@ -757,7 +757,8 @@ export class ExperimentsService {
       `SELECT config_hash,
               count(*) FILTER (WHERE status IN ('done', 'infra_failed', 'abandoned'))::int AS finished,
               count(*) FILTER (WHERE status IN ('queued', 'claimed', 'running'))::int AS remaining,
-              count(*) FILTER (WHERE cost_usd IS NOT NULL)::int AS reported,
+              -- G3: as the spend guard counts it (rules.ts): abandoned spend is spent, not a reported trial.
+              count(*) FILTER (WHERE cost_usd IS NOT NULL AND status <> 'abandoned')::int AS reported,
               coalesce(sum(coalesce(cost_usd, 0) + coalesce(sim_cost_usd, 0)), 0)::float8 AS cost,
               sum(wall_s)::float8 AS wall_s, count(wall_s)::int AS walled
        FROM trials WHERE experiment_id = $1 GROUP BY config_hash`,

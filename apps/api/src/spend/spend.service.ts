@@ -117,14 +117,17 @@ export class SpendService {
 
   /** GET /spend: experiment trials, platform calls and the LLM judge, separately. */
   async totals(): Promise<SpendView> {
-    const [t] = await this.db.query<{ usd: number; fake: number }>(
+    const [t] = await this.db.query<{ usd: number; fake: number; unknown: number }>(
       // A shipped example's trials (SP7) were paid for on another machine, not by this one. A fake
       // model's cost (`fake/*`) is a made-up price, never money: kept apart, by role, since a
       // trial's agent and simulated client can be on different models.
+      // G3: an abandoned attempt's spend is in its cost once the sweep read it; one whose spend
+      // LiteLLM could not give is counted apart, when a key it held was for a real model.
       `SELECT coalesce(sum(CASE WHEN ${FAKE('c.model')} THEN 0 ELSE coalesce(t.cost_usd, 0) END
                           + CASE WHEN ${FAKE('e.sim_model')} THEN 0 ELSE coalesce(t.sim_cost_usd, 0) END), 0)::float8 AS usd,
               coalesce(sum(CASE WHEN ${FAKE('c.model')} THEN coalesce(t.cost_usd, 0) ELSE 0 END
-                          + CASE WHEN ${FAKE('e.sim_model')} THEN coalesce(t.sim_cost_usd, 0) ELSE 0 END), 0)::float8 AS fake
+                          + CASE WHEN ${FAKE('e.sim_model')} THEN coalesce(t.sim_cost_usd, 0) ELSE 0 END), 0)::float8 AS fake,
+              count(*) FILTER (WHERE t.spend_unknown AND (NOT ${FAKE('c.model')} OR (t.sim_key_token IS NOT NULL AND NOT ${FAKE('e.sim_model')})))::int AS unknown
        FROM trials t JOIN configs c ON c.hash = t.config_hash LEFT JOIN experiments e ON e.id = t.experiment_id
        WHERE NOT t.probe AND ${NOT_EXAMPLE_TRIAL('t')}`,
     );
@@ -140,6 +143,7 @@ export class SpendService {
     const judge = await this.judge.totals();
     return {
       trials_usd: trials,
+      trials_spend_unknown: t?.unknown ?? 0,
       fake_trials_usd: round(t?.fake ?? 0),
       system_usd: system,
       judge_usd: judge.usd,

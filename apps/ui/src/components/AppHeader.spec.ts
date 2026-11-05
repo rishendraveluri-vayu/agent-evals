@@ -21,7 +21,7 @@ const allowance = { kind: 'conflict_check', limit_usd: 2, used_usd: 0, remaining
 describe('AppHeader spend (5 Nov QA, major 6)', () => {
   it('counts real spend only, and says fake models’ made-up prices are left out', async () => {
     // A free A/B on fake models: LiteLLM counted $1.37 at made-up prices; nothing real was spent.
-    answer({ trials_usd: 0, fake_trials_usd: 1.37, system_usd: 0, judge_usd: 0, judge_approvals: 0, total_usd: 0, system_by_kind: {}, allowances: [allowance] });
+    answer({ trials_usd: 0, trials_spend_unknown: 0, fake_trials_usd: 1.37, system_usd: 0, judge_usd: 0, judge_approvals: 0, total_usd: 0, system_by_kind: {}, allowances: [allowance] });
     const w = mount(AppHeader, { props: { section: null } });
     await settle();
     expect(w.get('[data-test="spend-trials"]').text()).toBe('$0');
@@ -31,8 +31,20 @@ describe('AppHeader spend (5 Nov QA, major 6)', () => {
     expect(w.get('[data-test="spend"]').text()).not.toContain('1.37');
   });
 
+  it('says when an abandoned attempt’s spend is unknown, rather than counting it as nothing (G3)', async () => {
+    answer({ trials_usd: 0.44, trials_spend_unknown: 2, fake_trials_usd: 0, system_usd: 0, judge_usd: 0, judge_approvals: 0, total_usd: 0.44, system_by_kind: {}, allowances: [allowance] });
+    const w = mount(AppHeader, { props: { section: null } });
+    await settle();
+    const words = w.get('[data-test="spend"] [role="group"]').attributes('aria-label');
+    expect(words).toContain('The spend of 2 abandoned attempts is unknown (LiteLLM could not be read), so the real total may be higher');
+    answer({ trials_usd: 0.44, trials_spend_unknown: 0, fake_trials_usd: 0, system_usd: 0, judge_usd: 0, judge_approvals: 0, total_usd: 0.44, system_by_kind: {}, allowances: [allowance] });
+    const known = mount(AppHeader, { props: { section: null } });
+    await settle();
+    expect(known.get('[data-test="spend"] [role="group"]').attributes('aria-label')).not.toContain('unknown');
+  });
+
   it('names the allowance meter on screen, not only in its tooltip', async () => {
-    answer({ trials_usd: 0, fake_trials_usd: 0, system_usd: 0, judge_usd: 0, judge_approvals: 0, total_usd: 0, system_by_kind: {}, allowances: [allowance] });
+    answer({ trials_usd: 0, trials_spend_unknown: 0, fake_trials_usd: 0, system_usd: 0, judge_usd: 0, judge_approvals: 0, total_usd: 0, system_by_kind: {}, allowances: [allowance] });
     const w = mount(AppHeader, { props: { section: null } });
     await settle();
     const meter = w.get('[data-test="header-allowance"]');
@@ -42,7 +54,7 @@ describe('AppHeader spend (5 Nov QA, major 6)', () => {
   });
 
   it('keeps a short allowance where the meter does not fit, and names each phone figure on screen (QA round 3, minor 15)', async () => {
-    answer({ trials_usd: 0.44, fake_trials_usd: 0, system_usd: 0.02, judge_usd: 0, judge_approvals: 0, total_usd: 0.46, system_by_kind: {}, allowances: [{ ...allowance, used_usd: 0.5, remaining_usd: 1.5 }] });
+    answer({ trials_usd: 0.44, trials_spend_unknown: 0, fake_trials_usd: 0, system_usd: 0.02, judge_usd: 0, judge_approvals: 0, total_usd: 0.46, system_by_kind: {}, allowances: [{ ...allowance, used_usd: 0.5, remaining_usd: 1.5 }] });
     const w = mount(AppHeader, { props: { section: null } });
     await settle();
     const short = w.get('[data-test="header-allowance-short"]');

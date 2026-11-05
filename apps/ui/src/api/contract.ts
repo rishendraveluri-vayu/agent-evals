@@ -1541,8 +1541,15 @@ export interface SpendView {
   /**
    * Experiment trials' real spend: agent calls on a real model, and simulator calls on a real
    * model. Calls to fake models (`fake/*`), probe trials and shipped examples are not counted.
+   * An abandoned attempt's calls count once the lease sweep has read them from LiteLLM (G3).
    */
   trials_usd: number;
+  /**
+   * G3: abandoned attempts on a real model whose spend LiteLLM could not give when their lease
+   * lapsed, so `trials_usd` leaves out an amount nobody knows (unknown, not zero). The sweep reads
+   * an abandoned attempt's spend before revoking its keys; 0 when every one was read.
+   */
+  trials_spend_unknown: number;
   /**
    * The made-up prices LiteLLM counted for experiment trials' calls to fake models (`fake/*`).
    * Not money: kept apart, and not in `total_usd`.
