@@ -50,9 +50,17 @@ starts, and asks you to confirm.
 
 Stop it with `docker compose down`. `docker compose down -v` also wipes the local database
 (configs, experiments, grades), but not the files the stack writes into the repo folder: trial
-files stay in `./runs/` (delete what is inside it to remove them; one fake run of 150 trials
-left about 22 MB there in testing), your labels in `./labels/`, and prompt versions you saved in
-`configs/prompts/`.
+files stay in `./runs/`, your labels in `./labels/`, and prompt versions you saved in
+`configs/prompts/`. To remove the trial files, delete what is inside `runs/`, not the folder
+itself: `rm -rf runs/*` (one fake run of 150 trials left about 22 MB there in testing). No sudo is
+needed. The API runs as uid 1000; when you are another user, its start-up step gives those three
+folders (the folders only, never what is in them) to uid 1000, keeps your group and makes them
+group-writable, so everything it writes there is yours to delete. If `rm` is refused anyway (a
+folder Docker created because it was missing belongs to root), delete from inside the API:
+`docker compose exec api sh -c 'rm -rf /runs/*'`.
+
+If `docker compose up --wait` stops with the api container unhealthy, `docker compose logs api`
+says why in plain words: the database is down, or a folder above cannot be written, with the fix.
 
 ## Three ways in
 

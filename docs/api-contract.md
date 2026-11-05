@@ -847,6 +847,12 @@ field is left (a key inside a binary file cannot be scrubbed, so it fails the ex
 
 ## UI-only endpoints
 
+- `GET /health` returns `{status: "ok", db: "up"|"down"|"not_configured", files: "writable"|"not_writable", files_problem?}`:
+  200 when the database is up or not configured and the API can write `runs/`, `labels/` and
+  `configs/prompts/`; 503 with the same body when the database is down or one of those folders is
+  not writable (since 5 Nov), with `files_problem` naming each such folder, where the API sees it
+  and how to fix it, in plain words. The container's health check, and so `docker compose up --wait`,
+  fails on the 503; `scripts/smoke.py` checks `files` too.
 - `GET /labels/queue?set=tuning|heldout|final` returns blind items `{item_id, task_summary,
   transcript, tool_calls, criteria, second_look}` with no harness, model, arm, timing, cost or
   grade. Only trials whose agent ran on a real model are items: a `fake/*` model plays a script,
