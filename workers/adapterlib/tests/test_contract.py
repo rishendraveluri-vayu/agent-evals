@@ -5,7 +5,7 @@ import json
 
 import jsonschema
 import pytest
-from support import CONTRACT, FIXTURES, errors, make_spec, validator
+from support import CONTRACT, FIXTURES, errors, make_spec, schema, validator
 
 from evals_adapter.spec import SpecError, check_spec
 
@@ -139,3 +139,17 @@ def test_our_event_names_are_the_listed_ones():
     for name in ("evals.memory.read", "evals.skill.load", "evals.error", "exception"):
         assert errors("span", {**base, "events": [{"timeUnixNano": "1", "name": name}]}) == [], name
     assert errors("span", {**base, "events": [{"timeUnixNano": "1", "name": "evals.memory_read"}]})
+
+
+def test_the_span_writer_refuses_an_unlisted_evals_event(tmp_path):
+    """O1: the runner checks event names as the adapter emits them, against the schema's list."""
+    from evals_adapter.trace import EVENT_NAMES, Tracer
+
+    enum = schema("span")["properties"]["events"]["items"]["properties"]["name"]["anyOf"][0]["enum"]
+    assert set(enum) == EVENT_NAMES
+    span = Tracer(tmp_path / "trace.jsonl", "t_test").start("agent.turn")
+    for name in sorted(EVENT_NAMES) + ["exception", "custom.thing"]:
+        span.event(name)
+    with pytest.raises(ValueError, match="not a contract v2 event"):
+        span.event("evals.memory_read")
+    assert [e["name"] for e in span.events][-2:] == ["exception", "custom.thing"]

@@ -22,6 +22,28 @@ STATUS_ERROR = 2
 
 MAX_STRING_ATTR = 16_000  # longer strings are cut and flagged, full bodies go to artifacts
 
+# Contract v2 section 7: our own span events. The trial page and the statistics read these names
+# from every harness alike, so a misspelt `evals.*` name is refused here, when the adapter emits
+# it, instead of the event silently not showing. Kept equal to span.schema.json by a test.
+EVENT_NAMES = frozenset(
+    {
+        "evals.memory.read",
+        "evals.memory.write",
+        "evals.skill.load",
+        "evals.skill.write",
+        "evals.compression",
+        "evals.token_cap_raised",
+        "evals.error",
+    }
+)
+
+
+def check_event_name(name: str) -> None:
+    """Refuse an `evals.*` event name the contract does not list; any other name is free."""
+    if name.startswith("evals.") and name not in EVENT_NAMES:
+        listed = ", ".join(sorted(EVENT_NAMES))
+        raise ValueError(f"span event {name!r} is not a contract v2 event; use one of {listed}")
+
 
 def trace_id_for(trial_id: str) -> str:
     """Derived from the trial id, so every source (adapter, runner, proxy merge) agrees."""
@@ -110,6 +132,7 @@ class Span:
         return self
 
     def event(self, name: str, attrs: dict[str, Any] | None = None) -> None:
+        check_event_name(name)
         with self._lock:
             ev: dict[str, Any] = {"timeUnixNano": str(now_ns()), "name": name}
             if attrs:
