@@ -281,7 +281,7 @@ Only if the frozen plan has slack.
 
 - [ ] Pre-run power estimate on the Run screen (stats proposal section 6): from the pilot's spread between and within tasks, the smallest difference the planned N and K detect 8 times in 10. Today the simulated table in `docs/known-limits.md` stands in for it.
 
-- [ ] Failure analysis: rule-based categories over traces (wrong tool, hallucinated tool args, gave up early, loop or step exhaustion, grader disagreement)
+- [x] Failure analysis: rule-based categories over traces (wrong tool, hallucinated tool args, gave up early, loop or step exhaustion, grader disagreement). Built 5 Nov as D64: a cause per failed trial (A45), each arm's behaviour on the comparison, and the causes that grew on the regression list.
 - [ ] A third harness on an existing framework
 - [ ] Accounts and a hosted demo (D40: not asked for by the brief): logins, per-account provider keys, a shared demo login on our keys behind a hard LiteLLM budget, hosting with HTTPS. Ask Rishi Friday evening whether it is needed.
 - [ ] Tools beyond MCP, to show the tools axis is more than "which MCP server" (Rishi, 3 Nov): e.g. a harness built-in such as Hermes code execution as a config setting, one tool delivered natively per adapter, or a plain HTTP API tool. Revisit after the first end-to-end run.
