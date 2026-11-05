@@ -3,7 +3,7 @@
 Pinned commit: `6112c2adb9e11f69734a29be9d2696f345ffa06a` (committed 2 Nov 2026).
 
 Sources: one no-LLM measurement in a scratch install, and four code audits on 3 Nov in `docs/research/hermes/`, which hold every `path:line` citation. The synthesis is `docs/research/reports/Hermes architecture and traces.md`.
-Nothing has been run against a real model. Apart from the measurement below and a partial tool-registry probe, every finding comes from reading the code.
+These notes began on 3 Nov as code audits and one measurement without a model; the sections up to "Isolation and state" are read from the code. From "Measured, no LLM call" on, they record what running Hermes showed: on the fake model server from 3 Nov, and on real models from 4 Nov ("Verified on Claude Haiku 5.5 through the engine"; Gemini 3.8 Flash ran on Hermes in the 5 Nov second-provider check, `docs/experiment.md`).
 
 ## Install and entry point
 
@@ -12,7 +12,7 @@ Nothing has been run against a real model. Apart from the measurement below and 
 - **Import side effects.** Importing `run_agent` loads `HERMES_HOME/.env` and the checkout's `.env` into `os.environ`, exports `TMPDIR` to `HERMES_HOME/cache/scratch`, and for a fresh home starts a detached scratch-cleanup process. Measured 3 Nov: a bare `import run_agent` with `HERMES_HOME` pointed at an empty folder created `audio_cache`, `cache`, `cron`, `hooks`, `image_cache`, `logs`, `memories`, `pairing`, `sessions` and `skills` there. So `HERMES_HOME` must be set before the import, once per trial process; it cannot be switched inside one process.
 - **Custom SQLite in the Dockerfile is not needed.** Hermes already refuses WAL mode on a vulnerable SQLite, and the bug needs several processes sharing one `state.db`. The local Python 3.14 links SQLite 3.53.1, which is not affected.
 - **Hermes's own `evals/` folder** holds regression probes, not an eval platform.
-- **Pinned dependencies conflict with other harnesses.** Hermes pins `mcp==2.3.0` and `openai==2.54.0`. Verified 3 Nov with a resolve-only `uv pip compile`: `langchain-mcp-adapters` 0.3.2 needs `mcp<2`, and `openai-agents` 0.24.0 needs `openai>=3` while `google-adk[extensions]` 2.13.0 needs `openai<3`. Each harness needs its own environment.
+- **Pinned dependencies conflict with other harnesses.** Hermes pins `mcp==2.3.0` and `openai==2.54.0`. Verified 3 Nov with a resolve-only `uv pip compile`: `langchain-mcp-adapters` 0.3.2 needs `mcp<2`, and `openai-agents` 0.24.0 needs `openai>=3` while `google-adk[extensions]` 2.13.0 needs `openai<3` (the 3 Nov resolve check; the ADK worker is pinned at 2.12.0). Each harness needs its own environment.
 
 ## Routing and request parameters
 

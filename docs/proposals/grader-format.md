@@ -1,8 +1,8 @@
-# Proposal: the grader format (SP4) — DRAFT for Rishi
+# The grader format (SP4)
 
-Status: **draft, 4 Nov 2026**. The task format is **[Rishi designs]**. This is what the grader
-framework (`graders/`, package `evals_graders`) reads today, built so the evals can start; every
-choice below is open to change. The machine-readable form is
+Status: **in force since 4 Nov 2026**, with the changes since recorded in `docs/decisions.md`
+(D53, D54, D56, D58, D61, D63). This is what the grader framework (`graders/`, package
+`evals_graders`) reads. The machine-readable form is
 `graders/src/evals_graders/grader-spec.schema.json`. It follows decisions already made: D1
 (graders in Python), D2 (workers claim and report over HTTP), R10.2 (adapters never judge), R14
 (grading is its own step, so a grader fix re-grades without re-running), and review notes 20, 21

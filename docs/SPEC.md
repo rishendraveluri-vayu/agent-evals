@@ -59,20 +59,20 @@ These are the documents we need so nothing gets lost. **Required** means the bri
 
 | Doc | Holds | Why it matters | Update when | Status |
 | --- | --- | --- | --- | --- |
-| `README.md` | Setup, add a task, add a harness, add a model | **Required** | SP0 onward, finished in SP9 | Started |
-| `docs/design.md` | Architecture, adapter interfaces, data model, isolation and reproducibility, grader design and validation, stats and choice of N | **Required** | Any design change | Started |
-| `docs/assumptions.md` | Every assumption made | **Required** | As soon as one is made | Stub |
-| `docs/known-limits.md` | Where conclusions should not be trusted | **Required** | As soon as one is found | Seeded |
-| `docs/cost.md` | Cost formula, actual spend, how to reduce cost | **Required** | Prices, pilot, final run | Seeded |
-| `docs/experiment.md` | Hypothesis, setup, results with CIs, 2 or 3 trajectories, conclusion | **Required** | Plan before the run, results after | Stub |
+| `README.md` | Setup, add a task, add a harness, add a model | **Required** | SP0 onward, finished in SP9 | Done; video link to add |
+| `docs/design.md` | Architecture, adapter interfaces, data model, isolation and reproducibility, grader design and validation, stats and choice of N | **Required** | Any design change | Done |
+| `docs/assumptions.md` | Every assumption made | **Required** | As soon as one is made | Done |
+| `docs/known-limits.md` | Where conclusions should not be trusted | **Required** | As soon as one is found | Done |
+| `docs/cost.md` | Cost formula, actual spend, how to reduce cost | **Required** | Prices, pilot, final run | Done |
+| `docs/experiment.md` | Hypothesis, setup, results with CIs, 2 or 3 trajectories, conclusion | **Required** | Plan before the run, results after | Done but the conclusion |
 | Video link in `README.md` | 10 minutes or less: define a config, run it, compare, drill into a failed trial | **Required** | SP9 | Not started |
-| `docs/judge-validation.md` | Label set, agreement, kappa, per-config checks | Required content, own file by choice | SP5 | Seeded |
-| `tasks/` | The 20+ task set with graders | **Required** | SP4 | Not started |
-| `experiments/<id>/` | Exported raw JSON or CSV, config hashes, spend | Evidence behind `experiment.md` | SP8 | Not started |
-| `labels/` | Rishi's hand labels, with date and split | Evidence behind `judge-validation.md`, and hard to redo | SP5 | Not started |
-| `docs/decisions.md` | Each call: options, choice, why, what would change it | Not required, but it's how Rishi explains the system | Each decision | Seeded |
-| `docs/hermes-notes.md` | Measured and unverified Hermes behaviour | Feeds limits and design | Each finding | Seeded |
-| `docs/worklog.md` | What was built each day, by whom, and what surprised us | Not required, for clarity on what was built | Each SP | Stub |
+| `docs/judge-validation.md` | Label set, agreement, kappa, per-config checks | Required content, own file by choice | SP5 | Done for the tuning set; held-out not run |
+| `tasks/` | The 20+ task set with graders | **Required** | SP4 | Done: 21 tasks, plus a skills demo |
+| `experiments/<id>/` | Exported raw JSON or CSV, config hashes, spend | Evidence behind `experiment.md` | SP8 | Instead: `examples/` ships the headline and its A/A as full bundles |
+| `labels/` | Rishi's hand labels, with date and split | Evidence behind `judge-validation.md`, and hard to redo | SP5 | Done: `labels/tuning.jsonl` |
+| `docs/decisions.md` | Each call: options, choice, why, what would change it | Not required, but it's how Rishi explains the system | Each decision | Done |
+| `docs/hermes-notes.md` | Measured and unverified Hermes behaviour | Feeds limits and design | Each finding | Done |
+| `docs/worklog.md` | What was built each day, by whom, and what surprised us | Not required, for clarity on what was built | Each SP | Done |
 | `.env.example` | Key names, never values | Part of one-command setup | Each new key | Done for SP0 |
 | `CLAUDE.md`, `docs/SPEC.md` | Working rules and this plan | Keeps Claude Code on track | Task or rule changes | Done |
 

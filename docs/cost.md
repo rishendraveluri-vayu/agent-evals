@@ -62,7 +62,7 @@ Sources:
 
 ## Ways to reduce cost
 
-**The formula on the real run** (headline, 5 Nov, Claude Haiku 5.5 at $0.10 / $0.50 per MTok): 10 tasks × 10 trials × 2 configs = 200 trials; v1 averaged 75.5k input and 3.8k output tokens a trial, v2 97.9k and 5.0k (about 86.7k and 4.4k overall), so the agent's cost is 200 × (86,700 × $0.10 + 4,400 × $0.50) / 1,000,000 ≈ $2.17, plus $0.125 for the simulated client = $2.295, which is what LiteLLM recorded. The A/A run on the same tasks cost $1.959; v2's extra tool calls cost about 30% more per trial than v1.
+**The formula on the real run** (headline, 5 Nov, Claude Haiku 5.5 at $0.10 / $0.50 per MTok): 10 tasks × 10 trials × 2 configs = 200 trials; v1 averaged 75.5k input and 3.8k output tokens a trial, v2 97.9k and 5.0k (about 86.7k and 4.4k overall), so the agent's cost is 200 × (86,700 × $0.10 + 4,400 × $0.50) / 1,000,000 = $2.174, plus $0.125 for the simulated client ≈ $2.30; LiteLLM recorded $2.2947 (the token averages above are rounded). The A/A run on the same tasks cost $1.959; v2's extra tool calls cost about 30% more per trial than v1.
 
 What we did, and what each would save:
 

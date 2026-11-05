@@ -40,7 +40,7 @@ Decided:
 
 Constraints:
 
-- **The harnesses cannot share one Python environment.** Hermes pins `mcp==2.3.0` and `openai==2.54.0`. `langchain-mcp-adapters` 0.3.2 needs `mcp<2`. `openai-agents` 0.24.0 needs `openai>=3`, while `google-adk[extensions]` 2.13.0 needs `openai<3`. Checked 3 Nov with a resolve-only `uv pip compile`.
+- **The harnesses cannot share one Python environment.** Hermes pins `mcp==2.3.0` and `openai==2.54.0`. `langchain-mcp-adapters` 0.3.2 needs `mcp<2`. `openai-agents` 0.24.0 needs `openai>=3`, while `google-adk[extensions]` 2.13.0 needs `openai<3` (the 3 Nov resolve check; the ADK worker is pinned at 2.12.0). Checked 3 Nov with a resolve-only `uv pip compile`.
 - **So each harness has its own environment, and the adapter boundary is a process boundary.** The platform hands a trial to a harness process and reads back the answer, the trace and the usage. That contract is `docs/adapter-contract.md` (contract v2): a trial spec in, a result, an OpenTelemetry trace and a runner report out.
 - **Hermes runs only on Python 3.14.** Its lockfile supports `python_version >= '3.14'` only.
 - **Hermes must be configured per process, before it is imported.** A bare `import run_agent` builds a full home folder under `HERMES_HOME`, so the home cannot be switched inside one process. Measured 3 Nov.

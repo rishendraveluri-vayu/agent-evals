@@ -1,6 +1,6 @@
 # Adapter contract v2
 
-**Status: approved as a starting point by Rishi on 3 Nov 2026 (R12), to be iterated on 4 Nov.** v1 was reviewed on paper by Rishi and v2 folds in his notes. `docs/design.md` section 2 points here. The machine-readable form is the JSON Schemas in `contract/v2/`, shared by the API and the workers (SP2). A change to this file changes those schemas in the same commit.
+**Status: in force since 4 Nov 2026** (approved as a starting point by Rishi on 3 Nov, R12, and iterated on 4 Nov). v1 was reviewed on paper by Rishi and v2 folds in his notes. `docs/design.md` section 2 points here. The machine-readable form is the JSON Schemas in `contract/v2/`, shared by the API and the workers (SP2). A change to this file changes those schemas in the same commit.
 
 It turns the agreed rules into fields: R10 (adapter rules), R11 (Rishi's review notes), D3 (isolation), D12 (traces, now OpenTelemetry spans), D14 (MCP per trial over stdio), D16 to D24.
 
