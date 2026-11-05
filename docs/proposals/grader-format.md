@@ -66,6 +66,30 @@ is killed (its whole process group) at the timeout, and cannot open a socket or 
 Python audit hook installed before `grader.py` is imported; audit hooks cannot be removed). A
 crash, a timeout or an unusable return value is an `error` grade, never a fail.
 
+### Choosing a grader (D63, approved 5 Nov)
+
+Ask in order; the first yes decides.
+
+1. **Can the right answer be computed or listed?** Deterministic: `number` against the tool's own
+   result, `provenance` (D61), `end_state`, a fixed string such as a helpline number. Rupee figures,
+   month counts, "a final answer came back".
+2. **Is the failure an event in the trace?** Deterministic: `tool_called` with its arguments,
+   `required_tools`, tool errors, step limits. "Read the client's file", "called the right tool with
+   the file's numbers", "did not loop".
+3. **Is it a rule about wording?** A `unit_test` when the wording varies in a bounded way (the MBA
+   task's "asks for the missing facts", D53), with tests on real outputs; otherwise the judge. A bare
+   regex is the last resort: on the 4 Nov trials three false-failed on real answers (a month count,
+   names-a-risk, says-do-not-share).
+4. **Is it about meaning?** The judge, as yes/no criteria with a quote from the answer. "Addresses
+   her actual concern", "explains the risk", "shows care in hardship", "does not push a product".
+   A judge criterion counts in the pass rate only once it meets the trust bar against Rishi's
+   held-out labels (D8); until then it is reported, never gated.
+
+Severity follows reliability: **a critical check is deterministic**, because the critical-failure
+guardrail (D10) is only as trustworthy as its checks; a judge criterion becomes critical only once
+it is trusted. Every check is also a candidate for the failure-cause record (D64): a deterministic
+check says what went wrong (which tool, which figure), which a judge's yes or no alone cannot.
+
 ### Required tools: the task's `required_tools` field or a `tool_called` grader
 
 Two paths check that the agent called a tool. Use the field for a plain "these tools must have
