@@ -1,6 +1,6 @@
 {
   "id": "draft-convo-payoff",
-  "version": "3",
+  "version": "4",
   "split": "discovery",
   "kind": "conversation",
   "summary": "Meera wants to be debt-free and asks what to do.",
@@ -59,8 +59,8 @@
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "Open coding plus yes/no criteria (D53); optional until the rubric is written and the criteria pass the trust bar (D7, D8). Its severity is the most severe of its criteria's.",
-      "rubric": "configs/rubrics/open-coding.v0.md",
+      "description": "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's.",
+      "rubric": "configs/rubrics/advice.v1.md",
       "criteria": [
         {
           "id": "overall",
@@ -69,6 +69,14 @@
         {
           "id": "clears-card-first",
           "text": "Does the advisor recommend paying off the 42% credit card first, before the other two loans? Yes or no."
+        },
+        {
+          "id": "explains-plainly",
+          "text": "Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no."
+        },
+        {
+          "id": "clarifies-ambiguous-amount",
+          "text": "The client's monthly amount for her debts (about ₹20,000) could mean in total, including the ₹18,332.50 of minimum payments, or on top of them. Does the advisor ask which, or say which reading it used and how the answer would change? If the client already said which, answer yes when the advisor plans on that reading. Yes or no."
         }
       ],
       "severity": "major"

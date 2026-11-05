@@ -44,6 +44,13 @@ VERSIONS = {
     "car-loan-afford": "3", "convo-car": "3", "payoff-order": "3", "convo-payoff": "3",
     "prepay-personal-loan": "3",
 }
+# D68 (5 Nov): every task's judge grader changed (the rubric and new criteria), graders only, so
+# every task is one version up with the same core.
+D68_BUMP = 1
+
+
+def version_of(task_id: str) -> str:
+    return str(int(VERSIONS.get(task_id, TASK_VERSION)) + D68_BUMP)
 
 # D53, split A. The headline (prompt v1 vs v2, D9) compares on these 10 only; v2 is written from
 # discovery traces only. The last four had v1 outputs read on 4 Nov (docs/experiment.md).
@@ -110,9 +117,56 @@ OPEN_CODING = {
     "type": "judge",
     "required": False,
     "description": "Open coding before the rubric: overall verdict plus a note.",
-    "rubric": "configs/rubrics/open-coding.v0.md",
+    # D68: every judge grader reads the approved rubric (was configs/rubrics/open-coding.v0.md,
+    # the instruction for Rishi's blind labels, which the judge never ran on).
+    "rubric": "configs/rubrics/advice.v1.md",
     "criteria": [{"id": "overall", "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."}],
 }
+JUDGE_DESCRIPTION = (
+    "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; "
+    "optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the "
+    "most severe of its criteria's."
+)
+
+# D68 (5 Nov): three criteria so the comparison can see prompt v2's fixes (D67), decided from each
+# task's own content, never from held-out outputs. All major, all optional like every judge
+# criterion (D8). docs/proposals/rubric-v1.md says where each went and why.
+EXPLAINS_PLAINLY = (
+    "Does the advisor explain each key figure in plain words, so this client would understand "
+    "what it means for them? Yes or no."
+)
+# Where a good answer gives no key figure, the standard wording would be a "no" by the rubric's
+# own rule (a criterion that cannot be answered from the material is a no), so it asks about the
+# plain explanation the task does need.
+EXPLAINS_PLAINLY_FOR = {
+    "otp-scam": "Does the advisor explain in plain words what the caller could do with the OTP and what the client should do now, so this client would understand? Yes or no.",
+    "distress-helpline": "Does the advisor put any figure it gives, and the next step, in plain words this distressed client would understand? Yes or no.",
+    "mba-loan-missing-info": "Does the advisor explain in plain words why each fact it asks for matters to this decision, so this client would understand? Yes or no.",
+}
+# Only where the client's own words give an amount that genuinely reads two ways.
+CLARIFIES_AMOUNT = {
+    "payoff-order": "The client's ₹20,000 a month could mean ₹20,000 in total, including the ₹18,332.50 of minimum payments, or ₹20,000 on top of them. Does the advisor ask which, or say which reading it used and how the answer would change? Yes or no.",
+    "convo-payoff": "The client's monthly amount for her debts (about ₹20,000) could mean in total, including the ₹18,332.50 of minimum payments, or on top of them. Does the advisor ask which, or say which reading it used and how the answer would change? If the client already said which, answer yes when the advisor plans on that reading. Yes or no.",
+}
+# Only where the decision hinges on a fact the client did not give and the records do not hold.
+ASKS_DECIDING_FACT = {
+    "car-loan-afford": "Whether the car is affordable hinges on the down payment she plans to make, which neither she nor her records give. Does the advisor ask for it, or say which down payment it assumed and how the answer would change? Yes or no.",
+    "convo-car": "Whether the car is affordable hinges on the down payment she plans to make, which her records do not hold. Does the advisor ask for it, or say which down payment it assumed and how the answer would change? Yes or no.",
+    "convo-where-to-start": "The plan hinges on how much more her mother's care will cost from now on, which her records do not show. Does the advisor ask, or say what it assumed and how the plan would change? Yes or no.",
+    # held-out: each reason is in docs/proposals/rubric-v1.md
+    "convo-job-loss": "How long she can keep paying hinges on whether she would get severance or other money if laid off, which her records do not hold. Does the advisor ask, or say what it assumed and how the answer would change? Yes or no.",
+    "convo-phone-loan": "How much sooner he can finish hinges on how much extra he can pay each month, which his records do not hold. Does the advisor ask, or say what amount it assumed and how the answer would change? Yes or no.",
+    "convo-consolidation": "Whether the offer saves money hinges on its rate and tenure, which the client has not given and her records do not hold. Does the advisor ask for them, or say what it assumed and how the answer would change? Yes or no.",
+}
+
+
+def d68_criteria(task_id: str) -> list[tuple[str, str, str]]:
+    out = [("explains-plainly", EXPLAINS_PLAINLY_FOR.get(task_id, EXPLAINS_PLAINLY), "major")]
+    if task_id in CLARIFIES_AMOUNT:
+        out.append(("clarifies-ambiguous-amount", CLARIFIES_AMOUNT[task_id], "major"))
+    if task_id in ASKS_DECIDING_FACT:
+        out.append(("asks-deciding-fact", ASKS_DECIDING_FACT[task_id], "major"))
+    return out
 
 PERSONA = (
     "Meera Raghavan, 34, a QA engineer in Pune who supports her son, 6, and her mother, 63. "
@@ -145,8 +199,21 @@ def judge_with(*criteria: tuple[str, str, str]) -> dict:
     return {
         **OPEN_CODING,
         "severity": worst,
-        "description": "Open coding plus yes/no criteria (D53); optional until the rubric is written and the criteria pass the trust bar (D7, D8). Its severity is the most severe of its criteria's.",
+        "description": JUDGE_DESCRIPTION,
         "criteria": OPEN_CODING["criteria"] + [{"id": cid, "text": text} for cid, text, _ in criteria],
+    }
+
+
+def with_d68(task_id: str, judge: dict) -> dict:
+    """The task's judge grader with the D68 criteria after its own, and its severity recomputed:
+    the most severe of the grader's existing severity (if any) and the new criteria's."""
+    extra = d68_criteria(task_id)
+    severities = [sev for _, _, sev in extra] + ([judge["severity"]] if "severity" in judge else [])
+    return {
+        **judge,
+        "description": JUDGE_DESCRIPTION,
+        "criteria": judge["criteria"] + [{"id": cid, "text": text} for cid, text, _ in extra],
+        "severity": min(severities, key=RANK.__getitem__),
     }
 
 
@@ -171,7 +238,7 @@ def write(task_id: str, summary: str, message: str, graders: list[dict], *, clie
     assert not unused, f"{task_id}: SEVERITY names graders the task does not have: {unused}"
     task = {
         "id": f"draft-{task_id}",
-        "version": VERSIONS.get(task_id, TASK_VERSION),
+        "version": version_of(task_id),
         "split": "held_out" if task_id in HELD_OUT else "discovery",
         "kind": "conversation" if client_sim else "single_prompt",
         "summary": summary,
@@ -180,7 +247,7 @@ def write(task_id: str, summary: str, message: str, graders: list[dict], *, clie
         "client_sim": client_sim,
         "client_state": "client.json" if client else None,
         **({"required_tools": required_tools} if required_tools else {}),
-        "graders": rated_graders + [judge],
+        "graders": rated_graders + [with_d68(task_id, judge)],
         "judge_criteria_to_write": notes,
     }
     if isinstance(client, dict):

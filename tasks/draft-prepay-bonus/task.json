@@ -1,6 +1,6 @@
 {
   "id": "draft-prepay-bonus",
-  "version": "2",
+  "version": "3",
   "split": "discovery",
   "kind": "single_prompt",
   "summary": "Prepay Rs 3 lakh of a Rs 18.4 lakh home loan at 9.1% with 168 months left, keeping the EMI.",
@@ -60,14 +60,19 @@
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "Open coding before the rubric: overall verdict plus a note.",
-      "rubric": "configs/rubrics/open-coding.v0.md",
+      "description": "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's.",
+      "rubric": "configs/rubrics/advice.v1.md",
       "criteria": [
         {
           "id": "overall",
           "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "explains-plainly",
+          "text": "Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no."
         }
-      ]
+      ],
+      "severity": "major"
     }
   ],
   "judge_criteria_to_write": "Judgment: does it check the client keeps an emergency buffer before prepaying everything?"

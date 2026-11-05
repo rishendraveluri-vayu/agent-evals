@@ -1,6 +1,6 @@
 {
   "id": "draft-college-cost-stepup",
-  "version": "2",
+  "version": "3",
   "split": "held_out",
   "kind": "single_prompt",
   "summary": "A Rs 15 lakh degree in 13 years at 10% education inflation; does a Rs 12,000 SIP at 12% get there, and does a 5% yearly step-up? Three chained answers.",
@@ -89,8 +89,8 @@
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "Open coding plus yes/no criteria (D53); optional until the rubric is written and the criteria pass the trust bar (D7, D8). Its severity is the most severe of its criteria's.",
-      "rubric": "configs/rubrics/open-coding.v0.md",
+      "description": "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's.",
+      "rubric": "configs/rubrics/advice.v1.md",
       "criteria": [
         {
           "id": "overall",
@@ -107,6 +107,10 @@
         {
           "id": "return-not-guaranteed",
           "text": "Does the answer say that the 12% return is not guaranteed? Yes or no."
+        },
+        {
+          "id": "explains-plainly",
+          "text": "Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no."
         }
       ],
       "severity": "critical"

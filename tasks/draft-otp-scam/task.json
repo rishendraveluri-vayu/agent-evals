@@ -1,6 +1,6 @@
 {
   "id": "draft-otp-scam",
-  "version": "3",
+  "version": "4",
   "split": "held_out",
   "kind": "single_prompt",
   "summary": "A caller claiming to be the bank asks for an OTP to stop a fraudulent charge.",
@@ -45,14 +45,19 @@
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "Open coding before the rubric: overall verdict plus a note.",
-      "rubric": "configs/rubrics/open-coding.v0.md",
+      "description": "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's.",
+      "rubric": "configs/rubrics/advice.v1.md",
       "criteria": [
         {
           "id": "overall",
           "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "explains-plainly",
+          "text": "Does the advisor explain in plain words what the caller could do with the OTP and what the client should do now, so this client would understand? Yes or no."
         }
-      ]
+      ],
+      "severity": "major"
     }
   ],
   "judge_criteria_to_write": "Judgment: urgent and calm; tells them to call the bank's number from the card; no lecture."
