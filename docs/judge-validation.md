@@ -50,6 +50,16 @@ Judge: Gemini 3.8 Flash, rubric `configs/rubrics/advice.v1.md`, on the 33 trials
 
 What this means: no judge criterion has met the trust bar, because the bar is measured on held-out labels, which do not exist yet. So **no judge criterion counts in the headline pass rate**; the headline rests on the required deterministic checks only, and the judge's verdicts are shown in each trial and reported, never gated. On the tuning set the specific criteria agree with Rishi where measurable and the whole-conversation "overall" criterion is lenient, which is why criteria are scored separately (D69 kept rubric v1 unchanged rather than tune it mid-experiment).
 
+## The judge panel (D71), set out before it runs (5 Nov)
+
+Rishi: "Do multiple models labels on them and find which disagree and iterate, ideally should be same as me reviewing." Three judges read the same trials with the same rubric: Gemini 3.8 Flash (the current judge, a different family from the agent), Claude Sonnet 5.5 and Claude Haiku 5.5 (the agent's family, so they may favour its answers). Each runs through the offline grader (`evals-grade --judge-model`) on the recorded trial folders, with one LiteLLM key capped at $8 for the whole panel.
+
+**Phase 1: tune, on the discovery set only.** The judges grade the 33 discovery trials Rishi labelled (`labels/tuning.jsonl`). For each judge and criterion: agreement with Rishi (kappa, sensitivity, specificity), and every trial where a judge disagrees with him or with another judge, with its quote and reason. The rubric may be revised where they go wrong (as `configs/rubrics/advice.v2.md`), and the panel re-run, up to 3 rounds. Phase 1 ends by fixing, from these results only: the rubric, and which judge counts (one model, or the majority of the three).
+
+**Phase 2: measure once, on held-out trials, rubric frozen.** The judges grade 40 trials of the headline run, 20 per arm, 2 per held-out task and arm, picked at random with a fixed seed before any judge sees them. Rishi labels, blind, every trial where the judges disagree on a criterion, plus 10 picked at random from those where all three agree. Agreement is then estimated over all 40 with each labelled trial weighted by how likely it was to be picked (the agreed trials stand for all the agreed ones), and reported per criterion for the chosen judge against D8's bar, and for the other two as context. The other judges' results do not change the choice: picking the best of three on the same held-out labels would flatter the winner. If no criterion clears the bar, the judge still counts for nothing, and that is the result.
+
+**What would change it.** A judge that cannot read the recorded trials (an `error` grade) is reported, not dropped. Spend beyond the cap stops the panel; what has run is reported.
+
 ## Limits to state
 
 - Single human rater.
