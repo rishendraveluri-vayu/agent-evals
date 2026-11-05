@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * #/example: the front door's "See a finished example". It asks the API which examples ship with
- * the repo, copies the first one into this database if it is not there yet (insert-only; nothing
- * runs and nothing is spent; a second load changes nothing), then opens its comparison. The
+ * the repo, copies every one this database lacks (insert-only; nothing
+ * runs and nothing is spent; a second load changes nothing), then opens the first one's comparison. The
  * address is replaced, not kept, so Back from the comparison returns to the front door.
  */
 import { onMounted, ref } from 'vue';
@@ -34,14 +34,19 @@ onMounted(async () => {
       status.value = 'none';
       return;
     }
-    if (!first.loaded) {
+    // Every shipped example is loaded, not just the one opened: the headline's comparison shows its
+    // A/A calibration only when the calibration run is in the database too. Loads only insert, so
+    // an example already here is skipped.
+    for (const ex of list) {
+      if (ex.loaded) continue;
       status.value = 'loading';
+      example.value = ex;
       try {
-        await api.loadExample(first.name);
+        await api.loadExample(ex.name);
       } catch (err) {
         // The machine the example was exported from already holds the same run as its own: the
-        // load is refused (409), and that run is the example, so open it.
-        if (!(err instanceof ApiError && err.code === 'example_conflict' && (await hasExperiment(first.experiment_id)))) throw err;
+        // load is refused (409), and that run is the example, so use it.
+        if (!(err instanceof ApiError && err.code === 'example_conflict' && (await hasExperiment(ex.experiment_id)))) throw err;
       }
     }
     replaceRoute(href.compare(first.experiment_id));

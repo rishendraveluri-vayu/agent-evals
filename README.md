@@ -72,11 +72,11 @@ says why in plain words: the database is down, or a folder above cannot be writt
 
 The home page offers:
 
-1. **See a finished example.** A real run on a real model (Claude Haiku 5.5), shipped with the
-   repo: own loop against Hermes, each task's pass counts, every trial's trace (messages, tool
-   calls and results, grader reasoning) and its grades. Nothing runs and nothing is spent. Today it
-   is a small draft: 15 draft tasks, one trial per task and arm, and 20 of its 30 trials undecided
-   because the LLM judge was not approved for it. The full experiment replaces it.
+1. **See a finished example.** The real experiment, shipped with the repo: prompt v1 against v2
+   on Hermes with Claude Haiku 5.5, 10 held-out tasks and 10 trials per task and arm (200 trials),
+   with its A/A calibration (v1 against itself, another 200). You see the verdict, the difference
+   with its interval, each task's pass counts, and every trial's trace (messages, tool calls and
+   results, grader reasoning) and its grades. Nothing runs and nothing is spent.
 2. **Build your own, step by step.** Pick an agent type (each has an "i" that says what it is and
    what it adds to your prompt), a model, the instructions and a few settings. Preview exactly
    what reaches the model, for free. Then evaluate it against a baseline: run it, compare the
@@ -85,10 +85,11 @@ The home page offers:
    model from the full Config screen to see the platform work, not the agent.
 3. **The full platform.** Every experiment, config, task, harness and label, at full detail.
 
-The first door opens `http://127.0.0.1:8080/#/example`. The first time, it copies the example shipped
-in `examples/` into your local database: rows are only inserted, the example is read-only, and
-nothing runs or is spent. `GET /api/examples` lists the shipped examples. Its title says what it is
-("Draft stand-in: ..."), and `docs/known-limits.md` says why its counts prove nothing.
+The first door opens `http://127.0.0.1:8080/#/example`. The first time, it copies the examples shipped
+in `examples/` (the experiment and its A/A calibration) into your local database: rows are only
+inserted, the examples are read-only, and nothing runs or is spent. `GET /api/examples` lists the
+shipped examples; `docs/experiment.md` explains the result and `docs/known-limits.md` what it
+cannot show.
 
 ## What runs where
 

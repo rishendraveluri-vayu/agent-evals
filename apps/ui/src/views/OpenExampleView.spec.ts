@@ -60,6 +60,17 @@ describe('#/example: the finished example', () => {
     expect(currentHash.value).toBe('#/experiments/exp_heldout');
   });
 
+  it('loads every shipped example it lacks, so the headline can show its A/A calibration, then opens the first', async () => {
+    const aa: ExampleView = { ...shipped, name: 'headline-zz-aa', experiment_id: 'e_aa', title: 'A/A calibration' };
+    vi.spyOn(api, 'examples').mockResolvedValue([{ ...shipped, loaded: true }, aa]);
+    const load = vi.spyOn(api, 'loadExample').mockResolvedValue({ name: aa.name, experiment_id: aa.experiment_id, created: true });
+    mount(OpenExampleView);
+    await settle();
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledWith('headline-zz-aa');
+    expect(currentHash.value).toBe('#/experiments/e_shipped');
+  });
+
   it('says so when no example ships, and offers the other ways in', async () => {
     vi.spyOn(api, 'examples').mockResolvedValue([]);
     const w = mount(OpenExampleView);
