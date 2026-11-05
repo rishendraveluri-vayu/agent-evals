@@ -23,7 +23,15 @@
         "required": ["timeUnixNano", "name"],
         "properties": {
           "timeUnixNano": {"$ref": "#/$defs/uint64"},
-          "name": {"type": "string", "minLength": 1},
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Our own events are the listed names (docs/adapter-contract.md, section 7), so the trial page and the statistics read every harness alike. Any other name is fine if it does not start with evals.",
+            "anyOf": [
+              {"enum": ["evals.memory.read", "evals.memory.write", "evals.skill.load", "evals.skill.write", "evals.compression", "evals.token_cap_raised", "evals.error"]},
+              {"not": {"pattern": "^evals\\."}}
+            ]
+          },
           "attributes": {"$ref": "#/$defs/attributes"}
         }
       }

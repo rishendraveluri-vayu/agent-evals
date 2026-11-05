@@ -121,3 +121,21 @@ def test_stdlib_check_matches_the_schema_on_the_basics():
     for change in [{"contract_version": "1"}, {"task.messages": []}, {"settings.timeout_s": 0}]:
         with pytest.raises(SpecError):
             check_spec(make_spec(**change))
+
+
+def test_our_event_names_are_the_listed_ones():
+    """Contract v2 section 7: an `evals.*` span event must be one of the listed names, so a new
+    harness's memory or skill events reach the trial page; other event names stay free."""
+    base = {
+        "traceId": "0" * 32,
+        "spanId": "0" * 16,
+        "name": "agent.turn",
+        "kind": 1,
+        "startTimeUnixNano": "1",
+        "endTimeUnixNano": "2",
+        "attributes": [],
+        "status": {"code": 1},
+    }
+    for name in ("evals.memory.read", "evals.skill.load", "evals.error", "exception"):
+        assert errors("span", {**base, "events": [{"timeUnixNano": "1", "name": name}]}) == [], name
+    assert errors("span", {**base, "events": [{"timeUnixNano": "1", "name": "evals.memory_read"}]})
