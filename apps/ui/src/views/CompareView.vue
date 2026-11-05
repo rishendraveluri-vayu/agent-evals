@@ -10,7 +10,7 @@ import JudgePanel from '../components/JudgePanel.vue';
 import LoadState from '../components/LoadState.vue';
 import NotFound from '../components/NotFound.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { agreementWords, armDifferences, armIndexOf, armLetter, armsOf, armState, differingShort, namedByHash, noDiffWords as noDiffFor, excludesZero, noWidth, intervalText, judgeCaveat, NBSP, passedText, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
+import { agreementWords, armDifferences, armIndexOf, armLetter, armsOf, armState, differingShort, namedByHash, noDiffWords as noDiffFor, excludesZero, noWidth, shownWidth, intervalText, judgeCaveat, NBSP, passedText, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { identParts, money, percent, plainText, plural, seconds, shortHash, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
 import { isFake } from '../lib/models';
@@ -589,7 +589,8 @@ const taskSummary = computed(() => {
   const other = total - n;
   if (!other) return first;
   let line = `${first} The other ${other} ${other === 1 ? 'is' : 'are'} within noise.`;
-  const widths = taskRows.value.filter((r) => !r.significant && r.diff).map((r) => Math.round((r.diff?.high ?? 0) - (r.diff?.low ?? 0)));
+  // The width of the bounds as shown ("−79 to +79" is 158 wide), not of the unrounded ones.
+  const widths = taskRows.value.flatMap((r) => (!r.significant && r.diff ? [shownWidth(r.diff)] : []));
   if (widths.length) {
     const lo = Math.min(...widths);
     const hi = Math.max(...widths);

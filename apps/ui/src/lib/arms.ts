@@ -323,6 +323,11 @@ export function noWidth(i: Interval): boolean {
   return i.high === i.low;
 }
 
+/** How wide an interval reads on the page: its bounds as `signed` rounds them, high minus low, so
+ *  "−79 to +79" is 158 points wide even when the unrounded bounds are 158.7 apart. */
+export function shownWidth(i: Interval): number {
+  return Number(i.high.toFixed(0)) - Number(i.low.toFixed(0));
+}
 
 /** The statistics step's method ids, in words. An id not listed here is shown as it is. */
 export const METHOD_NAMES: Record<string, string> = {

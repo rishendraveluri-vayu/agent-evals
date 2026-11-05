@@ -577,6 +577,16 @@ describe('CompareView against the API: the check on the method', () => {
     );
   });
 
+  it('gives each interval the width its shown bounds have: −79 to +79 is 158 points wide, not 159', async () => {
+    const wide = { estimate: 0, low: -79.35, high: 79.35 };
+    withStats({ tasks: base.stats!.tasks.map((t) => (t.beyond_noise ? t : { ...t, diff: wide })) });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('.forest tbody').text()).toContain('0 (−79 to +79)');
+    expect(w.get('[data-test="task-summary"]').text()).toContain('At 5 trials per arm their intervals are 158 points wide, so a real change on one task can hide here.');
+    expect(w.get('[data-test="task-summary"]').text()).not.toContain('159');
+  });
+
   it('names practical equivalence by its margin', async () => {
     withStats({ verdict: 'equivalent', pass_rate_verdict: 'equivalent', diff: { estimate: 1, low: -6, high: 8 } });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
