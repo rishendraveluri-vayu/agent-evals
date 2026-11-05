@@ -75,6 +75,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D63 Choosing a grader | Computable answer or a trace event: deterministic; wording: a unit_test if bounded, else the judge, a bare regex last; meaning: the judge, yes/no with quotes, counted only once trusted; critical checks deterministic unless a judge criterion is trusted (`docs/proposals/grader-format.md`) | Rishi | 5 Nov |
 | D64 A-vs-B behaviour and failure causes | The comparison shows per arm: tool calls by tool, required tools called, tool errors, steps and step-limit hits, end states, figures written without a tool; and every failed trial gets a rule-based cause (wrong tool, made-up arguments, gave up early, ran out of steps, unsupported figure, grader vs human label); the regression list shows which causes grew | Rishi | 5 Nov |
 | D65 Freeze the agent, tasks and graders | The fixes in flight on 5 Nov (provenance D61 with the approved rates D62, the three D63 task fixes) are the last; after them the agent, tasks, graders and toolset are taken as they are into the experiment loop. Work goes to comparing runs: the experiment, the judge's validation, A/A calibration and the comparison itself (including D64) | Rishi | 5 Nov |
+| D66 Standing spend allowance (R8) | For 2 hours from 11:50 to 13:50 IST on 5 Nov: any single spend under $2 may go ahead without asking, as long as the total stays under $50; each is logged in `docs/cost.md`; a single step above $2 (the final run) still needs Rishi's go-ahead, and no step is split to fit under $2 | Rishi | 5 Nov |
 
 ## Open
 
@@ -363,6 +364,9 @@ Kept from D58: the unit facts, the identity guard and the `reference_rates` tool
 ### D65: Freeze the agent side, and run the evaluation loop (5 Nov)
 Choice: after the fixes already in flight (D61 provenance with the approved reference rates of D62, and the three task fixes under D63), the agent, its prompt v1, the tasks, the graders and the toolset are frozen as they are. No more tuning of the agent or the task set; anything found later is recorded as a finding or a known limit, not fixed. The work from here is the evaluation loop: the v1 run on discovery tasks, Rishi's labels, the judge's validation, the prompt v2 written from discovery traces, A/A calibration, the v1 vs v2 run on held-out tasks, and the comparison (D64's behaviour and causes are part of comparing runs, so they stay in scope).
 Why: Rishi: "lets commit that these are last fixes and we take the agent and however they are into the evals loops next. So whatever it is we start the main thing they judge no one cares how well the agent works what matters is how well it can compare runs."
+
+### D66: A standing spend allowance for two hours (5 Nov)
+Rishi: "given the limited time we have left i would suggest anything less than 2 dollars and less than 50 $ over 2 hours u dont need to ask me". From 11:50 to 13:50 IST on 5 Nov, a single paid step under $2 (a judge pass, an A/A calibration, a re-run) may start without asking, keeping the total under $50, with trials, models and expected cost stated in `docs/cost.md` before it starts and the actual cost after. A step above $2 on its own still needs his go-ahead, and no step is split to stay under $2. After the window, R8 applies as before.
 
 ## Entry template
 
