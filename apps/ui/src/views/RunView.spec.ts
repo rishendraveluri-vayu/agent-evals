@@ -1,5 +1,5 @@
 import { mount, type VueWrapper } from '@vue/test-utils';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api/client';
 import type { ConfigView, EstimateResponse, ExperimentDetail, TrialRowSummary } from '../api/types';
 import configsJson from '../fixtures/configs.json';
@@ -11,6 +11,13 @@ import { setRunFlash, takeRunFlash } from '../lib/runFlash';
 import { currentHash } from '../router';
 import { routeFetch, settle, useFixtures } from '../test/helpers';
 import RunView from './RunView.vue';
+
+// D75: these paid runs start Hermes agents on a real model; their prompt check is already stored,
+// so the start runs no check (the gate's own flow is tested in lib/conflictGate.spec.ts).
+const STORED_CHECK = { config_hash: '', conflicts: [], notes: '', cost_usd: 0.02, cached: true } as unknown as Awaited<ReturnType<typeof api.conflictCheck>>;
+beforeEach(() => {
+  vi.spyOn(api, 'conflictCheck').mockResolvedValue(STORED_CHECK);
+});
 
 /** A no-break space: a number keeps its unit. */
 const nb = '\u00a0';
@@ -638,6 +645,49 @@ describe('RunView asks before a paid run (QA major 6)', () => {
     await settle();
     expect(create).toHaveBeenCalledTimes(1);
     expect(create.mock.calls[0][0]).toMatchObject({ n: 5, budget_usd: 30, plan_commit: '3e1a9f0' });
+  });
+});
+
+describe('RunView checks a Hermes prompt before a paid run starts (D75)', () => {
+  useFixtures();
+
+  async function confirmStart(w: VueWrapper) {
+    await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
+    await settle();
+    await w.get('[data-test="start"]').trigger('click');
+    await settle();
+    return w.get('[data-test="confirm-paid"]');
+  }
+
+  it('says so before the paid run, runs a missing check, then starts', async () => {
+    expect(cfgV1.harness).toBe('hermes');
+    vi.spyOn(api, 'conflictCheck').mockResolvedValue(null);
+    const render = vi.spyOn(api, 'renderPrompt').mockResolvedValue({ status: 'ready' } as Awaited<ReturnType<typeof api.renderPrompt>>);
+    const run = vi.spyOn(api, 'runConflictCheck').mockResolvedValue(STORED_CHECK as Awaited<ReturnType<typeof api.runConflictCheck>>);
+    const create = vi.spyOn(api, 'createExperiment');
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    const confirm = await confirmStart(w);
+    expect(confirm.get('[data-test="confirm-prompt-check"]').text()).toContain("checked against Hermes's own instructions");
+    await w.get('[data-test="confirm-paid-start"]').trigger('click');
+    await settle();
+    expect(render).toHaveBeenCalledTimes(2); // both arms' agents: v1 and v2
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not create the run when a check fails, and says what to do', async () => {
+    vi.spyOn(api, 'conflictCheck').mockResolvedValue(null);
+    vi.spyOn(api, 'renderPrompt').mockResolvedValue({ status: 'ready' } as Awaited<ReturnType<typeof api.renderPrompt>>);
+    vi.spyOn(api, 'runConflictCheck').mockRejectedValue(new ApiError(402, 'allowance_exhausted', 'over the $2 allowance'));
+    const create = vi.spyOn(api, 'createExperiment');
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    await confirmStart(w);
+    await w.get('[data-test="confirm-paid-start"]').trigger('click');
+    await settle();
+    expect(create).not.toHaveBeenCalled();
+    expect(w.get('[data-test="action-error"]').text()).toMatch(/EVALS_CONFLICT_CHECK_ALLOWANCE_USD.*The run did not start/);
   });
 });
 

@@ -2,8 +2,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue';
 import { api } from '../api/client';
 import { isFixtureMode } from '../api/mode';
-import type { ConfigView, ConfigDiffEntry, Estimate, ExperimentDetail, TrialRowSummary, Harness, ModelView, PromptView, TaskView } from '../api/types';
+import type { ConfigView, ConfigDiffEntry, Estimate, ExperimentDetail, TrialRowSummary, Harness, ModelView, PromptView, RenderedPromptStatus, TaskView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
+import ConflictCheck from '../components/ConflictCheck.vue';
 import LoadState from '../components/LoadState.vue';
 import { ApiError } from '../api/errors';
 import { armIndexOf, armsOf, namedByHash, timeLeft, totalTrials } from '../lib/arms';
@@ -18,6 +19,7 @@ import { eventView, pauseCause } from '../lib/runs';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
 import { armPauseHelp, defaultArms, defaultBudget, isEngineTest, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, validateSeed, type ArmDefaults } from '../lib/runSetup';
 import { FAKE_SIM_MODEL, isFake, simModels } from '../lib/models';
+import { CHECKER_MODEL, ensureConflictChecks, needsConflictCheck } from '../lib/conflictGate';
 import { text } from '../trials';
 
 const props = defineProps<{ experimentId?: string; a?: string | null; b?: string | null; calibration?: boolean }>();
@@ -128,7 +130,8 @@ const runModels = computed(() => {
 const realModels = computed(() => [...new Set(runModels.value.map((m) => m.model).filter((m) => !isFake(m)))]);
 /** Every model this run calls whose provider key is not set in .env (GET /models' key_set). */
 const keysMissing = computed(() =>
-  runModels.value.flatMap((m) => {
+  // D75: a Hermes agent on a real model has its prompt checked first, on Claude Sonnet 5.5.
+  [...runModels.value, ...(gatedConfigs.value.length ? [{ role: 'Prompt check', model: CHECKER_MODEL }] : [])].flatMap((m) => {
     const key = missingKey(m.model, data.value?.models ?? []);
     return key ? [{ ...m, key }] : [];
   }),
@@ -149,6 +152,37 @@ const futilityOn = computed({
   },
 });
 const configOf = (h: string) => data.value?.configs.find((c) => c.hash === h);
+/** D75: this run's Hermes agents on a real model, whose prompt is checked against Hermes's own
+ *  instructions before the run starts (the API refuses the start without that check). */
+const gatedConfigs = computed(() => [...new Set(hashes.value)].map(configOf).filter((c): c is ConfigView => !!c && needsConflictCheck(c)));
+/** What the start is doing while it runs those checks. */
+const checkProgress = ref<string | null>(null);
+/** Runs the missing checks; false, with the reason in actionError, when the run must not start. */
+async function runGateChecks(): Promise<boolean> {
+  if (!gatedConfigs.value.length) return true;
+  try {
+    await ensureConflictChecks(gatedConfigs.value, api, { onProgress: (t) => (checkProgress.value = t) });
+    return true;
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : String(err);
+    return false;
+  }
+}
+/** The rendered prompt's state per checked agent, for the findings on the run page. */
+const renderedStatus = ref<Record<string, RenderedPromptStatus | 'unknown'>>({});
+watch(
+  () => (props.experimentId ? gatedConfigs.value.map((c) => c.hash).join(',') : ''),
+  async (joined) => {
+    for (const h of joined ? joined.split(',') : []) {
+      try {
+        renderedStatus.value = { ...renderedStatus.value, [h]: (await api.renderedPrompt(h)).status };
+      } catch {
+        renderedStatus.value = { ...renderedStatus.value, [h]: 'unknown' };
+      }
+    }
+  },
+  { immediate: true },
+);
 const sameConfig = computed(() => hashes.value.length === 2 && hashes.value[0] === hashes.value[1]);
 /** The run is an A/A calibration (D44): the draft's box, or the saved experiment's own flag. */
 const isCalibration = computed(() => (draft ? setup.calibration : !!data.value?.experiment?.calibration));
@@ -385,6 +419,11 @@ async function startNew() {
   if (!canStart.value || n.value === null) return;
   busy.value = true;
   actionError.value = null;
+  // D75: check the Hermes prompts first, so a check that fails leaves nothing half-made.
+  if (!(await runGateChecks())) {
+    busy.value = false;
+    return;
+  }
   let createdId: string | null = null;
   try {
     const created = await api.createExperiment({
@@ -424,6 +463,11 @@ async function startCreated() {
   const id = props.experimentId;
   if (!id) return;
   const commit = needsPlanField.value ? setup.plan.trim() : '';
+  busy.value = true;
+  actionError.value = null;
+  const checked = await runGateChecks();
+  busy.value = false;
+  if (!checked) return;
   await act('start', commit ? { plan_commit: commit } : undefined);
 }
 
@@ -1624,6 +1668,12 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                 <li>
                   The most it can cost: {{ paidFacts.budget }}, the spending limit. LiteLLM stops all spending there.
                 </li>
+                <li
+                  v-if="gatedConfigs.length"
+                  data-test="confirm-prompt-check"
+                >
+                  First, each Hermes agent's prompt is checked against Hermes's own instructions: one call to {{ modelName(CHECKER_MODEL) }} per agent not checked before (typically $0.02 to $0.03, at most about $0.08), from the prompt-check allowance, not this run's limit. The findings show on the run page and do not stop the run.
+                </li>
               </ul>
               <div class="confirm-buttons">
                 <button
@@ -1656,6 +1706,14 @@ onBeforeUnmount(() => taskObserver?.disconnect());
             >
               {{ startLabel }}
             </button>
+            <p
+              v-if="checkProgress"
+              class="secondary small"
+              role="status"
+              data-test="check-progress"
+            >
+              {{ checkProgress }}
+            </p>
             <p
               v-if="!canStart && !busy && !confirmPaid"
               class="secondary smaller"
@@ -1710,6 +1768,30 @@ onBeforeUnmount(() => taskObserver?.disconnect());
     </template>
 
     <template v-else-if="data && data.experiment">
+      <section
+        v-if="gatedConfigs.length && !data.experiment.example"
+        aria-labelledby="prompt-checks-title"
+        class="prompt-checks"
+        data-test="prompt-checks"
+      >
+        <h2 id="prompt-checks-title">
+          Prompt checked against Hermes's own instructions
+        </h2>
+        <p class="secondary small">
+          Hermes wraps your prompt in its own instructions; this check lists where they pull against each other. It ran before the run started, as every Hermes run on a real model must. It is one model's reading, never validated: read the findings as things to look at. They did not stop the run.
+        </p>
+        <details class="prompt-check-details">
+          <summary>Show the findings{{ gatedConfigs.length > 1 ? ` for the ${gatedConfigs.length} Hermes agents` : '' }}</summary>
+          <ConflictCheck
+            v-for="c in gatedConfigs"
+            :key="c.hash"
+            :config-hash="c.hash"
+            :harness="c.harness"
+            :rendered-status="renderedStatus[c.hash] ?? null"
+            :allowance="null"
+          />
+        </details>
+      </section>
       <section
         v-if="pause"
         class="pause-banner"
@@ -2400,6 +2482,20 @@ onBeforeUnmount(() => taskObserver?.disconnect());
 
 .arms-panel {
   margin-bottom: 24px;
+}
+
+.prompt-checks {
+  margin-bottom: 24px;
+}
+
+.prompt-checks > p {
+  margin: 0 0 8px;
+  max-width: 72ch;
+}
+
+.prompt-check-details > summary {
+  cursor: pointer;
+  margin-bottom: 8px;
 }
 
 .arm-cards {
