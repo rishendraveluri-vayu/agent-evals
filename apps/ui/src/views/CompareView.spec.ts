@@ -448,6 +448,43 @@ describe('CompareView against the API: no statistics yet', () => {
     expect(w.find('[data-test="regressions"]').exists()).toBe(false);
   });
 
+  it('says the arms were not graded alike, and how to fix it, when a required check differs between them (D72)', async () => {
+    const note =
+      'The two arms were not graded alike (D72): 1 required check on 1 of 12 tasks has current grades from different grader versions, which would score the arms by different rules: advice on payoff-order (its rubric changed). ' +
+      'Regrade the experiment (POST /api/experiments/exp_heldout/regrade) so every trial is graded with the graders as they are now; the verdict comes back once those grades are in.';
+    const blocking = [{ task: 'sha256:x', task_id: 'payoff-order', grader_id: 'advice', required: true, kind: 'judge', changes: ['files'], versions: [{ grader_version: 'v1', judge_model: 'fake/judge', a: 5, b: 0 }, { grader_version: 'v2', judge_model: 'fake/judge', a: 0, b: 5 }] }];
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null, stats_note: note, grader_versions: { alike: false, blocking, optional: [], note: null } },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="verdict-title"]').text()).toBe('No verdict: the arms were not graded alike');
+    // The pass counts stay, as counts; the API's reason and fix follow them as given.
+    expect(w.get('.verdict-text').text()).toContain(`graded trials, B passed`);
+    expect(w.get('.verdict-text').text()).toContain(`${note} Read these as counts, not a conclusion`);
+    expect(w.find('[data-test="grader-versions-note"]').exists()).toBe(false);
+  });
+
+  it('shows optional checks graded with different versions beside a verdict that stands (D72)', async () => {
+    const note = "1 optional check on 1 task has grades from different versions in the two arms (D72): tone on payoff-order (its rubric changed). Optional checks do not decide a trial's outcome, so the verdict stands; the regression list's pass rates for them compare different versions. A regrade brings them onto one version.";
+    const optional = [{ task: 'sha256:x', task_id: 'payoff-order', grader_id: 'tone', required: false, kind: 'judge', changes: ['files'], versions: [] }];
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), grader_versions: { alike: false, blocking: [], optional, note } },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="verdict-title"]').text()).toBe('v2 beats v1');
+    expect(w.get('[data-test="grader-versions-note"]').text()).toBe(`Optional checks graded differently: ${note}`);
+  });
+
   it('counts trials with no outcome apart, as neither a pass nor a fail', async () => {
     const base = compares.exp_heldout as { rows: Record<string, unknown>[] };
     const rows = base.rows.map((r, i) => (i === 0 ? { ...r, incomplete: 2 } : r));

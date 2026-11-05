@@ -263,6 +263,21 @@ Decided (D10 as revised 5 Nov, D41, D42, D43, D44, D50; the proposal is `docs/pr
   from a sha256), one stream per use, so the same data always gives the same numbers. Results are
   cached by the trials and their current grading jobs, so a regrade recomputes them; while any
   trial's grading is still running there is no verdict, and the screen says why.
+- **Both arms graded alike, or no verdict (D72, 5 Nov).** Rishi's case: arm A reused from a parent
+  (D34) was judged under an older rubric than arm B, so the arms would be scored by different rules
+  and the difference could be the rubric's, not the agent's. On each task, every grader's current
+  grades over both arms' done trials must come from one grader version (the hash of its spec, the
+  files it reads such as a judge's rubric or a unit test's grader.py, and the framework version)
+  and, for a judge, one model (`grades.judge_model`, from the judge's own call record). A mix inside
+  an arm (grading that spanned an edit) is not alike either, and a trial graded without a grader
+  the others have counts as a version of its own. When a **required** grader differs, `stats` is
+  null and `stats_note` names the graders and tasks (three by name, the rest counted) and says to
+  regrade; the pass counts are still shown. An **optional** grader that differs cannot change a
+  trial's outcome, so the verdict is given and the difference is reported (`grader_versions` in the
+  comparison, and a line on the screen). The check runs after "grading still running" and before
+  the analysis (`apps/api/src/stats/graded-alike.ts`, pure, with unit tests). A regrade covers the
+  trials arm A reuses too, judged under the regrading experiment's approval, so one regrade brings
+  both arms onto the current graders. The details and why: `docs/assumptions.md` A47.
 
 Constraints:
 

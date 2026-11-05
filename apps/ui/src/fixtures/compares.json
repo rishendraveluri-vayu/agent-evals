@@ -997,6 +997,12 @@
       ]
     },
     "stats_note": null,
+    "grader_versions": {
+      "alike": true,
+      "blocking": [],
+      "optional": [],
+      "note": null
+    },
     "prose_figures": [
       {
         "arm": "A",
@@ -1981,6 +1987,12 @@
       ]
     },
     "stats_note": null,
+    "grader_versions": {
+      "alike": true,
+      "blocking": [],
+      "optional": [],
+      "note": null
+    },
     "prose_figures": [],
     "behaviour": null
   },
@@ -2570,6 +2582,12 @@
       ]
     },
     "stats_note": null,
+    "grader_versions": {
+      "alike": true,
+      "blocking": [],
+      "optional": [],
+      "note": null
+    },
     "prose_figures": [],
     "behaviour": null
   },
@@ -2706,6 +2724,7 @@
     ],
     "stats": null,
     "stats_note": "A pilot of one config has nothing to compare it with, so there is no verdict.",
+    "grader_versions": null,
     "prose_figures": [],
     "behaviour": null
   },
@@ -2756,6 +2775,7 @@
     "rows": [],
     "stats": null,
     "stats_note": null,
+    "grader_versions": null,
     "prose_figures": [],
     "behaviour": null
   },
@@ -2806,6 +2826,7 @@
     "rows": [],
     "stats": null,
     "stats_note": null,
+    "grader_versions": null,
     "prose_figures": [],
     "behaviour": null
   },
@@ -2856,6 +2877,7 @@
     "rows": [],
     "stats": null,
     "stats_note": null,
+    "grader_versions": null,
     "prose_figures": [],
     "behaviour": null
   }

@@ -531,7 +531,7 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   `rules_version` is `causes-1`. Causes are computed on each read, not stored, so a new label or
   a regrade shows at once.
 - `GET /experiments/:id/compare` returns `{experiment_id, status, reason, arms, rows, stats,
-  stats_note, prose_figures, behaviour}`.
+  stats_note, grader_versions, prose_figures, behaviour}`.
   **No comparison until every arm is complete** (D37, D32): while `status` is `incomplete`,
   `reason` says why ("arm B is paused: ...", "the experiment was stopped before every trial ran
   (...); a verdict needs the full planned N (D32)", "the experiment is paused: ...", "arm A has 3
@@ -565,10 +565,34 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   trials}`): B minus A per task with the same task bootstrap as `costs`, seeded
   `<experiment id>:behaviour:<metric>`, over tasks with a value in both arms, and no verdict; empty
   for a pilot of one config. None of it changes the verdict: it explains the pass rate.
+- **Both arms graded alike, or no verdict (D72, since 5 Nov; `GraderVersionCheck` in
+  `contract.ts`, `apps/api/src/stats/graded-alike.ts`).** Once `complete` and graded (not for a
+  pilot, not while grading runs, when it is null), `grader_versions` is `{alike, blocking,
+  optional, note}`. On each task, every grader's current grades over both arms' done trials must
+  come from one `grader_version` and, for a judge, one `judge_model` (among the grades that called
+  a model; one that called none is incomplete already). A mix inside an arm differs too, and a
+  trial whose current grading has no grade from a grader the task's other trials have (a `no_graders`
+  grading included) counts as a version of its own; a done trial with no finished grading is left
+  out of the check. Each grader that differs is a `GraderVersionDifference`: `{task, task_id,
+  grader_id, required, kind, changes, versions}`, where `required` is true when it is required in
+  any of those gradings, `changes` lists what differs (`spec`; `files`, a file it reads under the
+  same spec, such as a judge's rubric or a unit test's grader.py; `framework`; `judge_model`;
+  `not_graded`) and `versions` is `[{grader_version, judge_model, a, b}]`, the done trials of each
+  arm on that version, most first. Required ones are in `blocking`: then `stats` is null and
+  `stats_note` says why, for example "The two arms were not graded alike (D72): 1 required check
+  on 1 of 10 tasks has current grades from different grader versions, which would score the arms
+  by different rules: advice on payoff-order (its rubric changed). Regrade the
+  experiment (POST /api/experiments/e_x/regrade), which also regrades the 100 trials arm A reuses
+  from e_parent so every trial is graded with the graders as they are now; the verdict comes back
+  once those grades are in." (three graders by name, then "and N more"). Optional ones are in
+  `optional`, named in `note`, and the verdict is still given: an optional grader never decides a
+  trial's outcome, though its own pass rates in `regressions` then compare different versions.
+  `alike` is true when both lists are empty. `rows` keep their pass counts either way.
 - **Statistics (SP6: D10, D41, D42, D43, D44, D50; `CompareStats` in `contract.ts`).** `stats` is
   null, with `stats_note` saying why, for a pilot of one config, while any done trial's grading is
-  queued or running ("Grading is still running for 4 of 4 finished trials; ..."), or when no task
-  has a decided trial in both arms. Otherwise, from each done trial's current grading, B minus A:
+  queued or running ("Grading is still running for 4 of 4 finished trials; ..."), when the arms
+  were not graded alike (D72, above), or when no task has a decided trial in both arms. Otherwise,
+  from each done trial's current grading, B minus A:
   - the task is the unit: per task and arm, pass rate = `passed / graded` (incomplete trials left
     out and counted); a task with no decided trial in an arm is in `excluded_tasks` with `why`;
   - `diff`: the mean over tasks of the per-task difference, in points, with a 95% interval from a
@@ -607,7 +631,9 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
     `left_out_retried` counts them per arm and `retries_unknown` the trials kept whose record does
     not say;
   - `aa` (D44), on an ordinary A/B: the latest finished calibration run (`status: done`) of either
-    arm's config, `{experiment_id, name, config_hash, finished_at, diff, verdict}`, or null. Your own
+    arm's config, `{experiment_id, name, config_hash, finished_at, diff, verdict}`, or null; a
+    calibration with no statistics of its own (one whose arms were not graded alike, D72, included)
+    is passed over. Your own
     experiment reads only your own calibrations, and a shipped example only shipped ones (since
     5 Nov, so the headline example shows the A/A shipped beside it); `calibration`, on a calibration run: `{as_expected, text}`, whether it came
     out with no difference found;
