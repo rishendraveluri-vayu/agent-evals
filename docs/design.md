@@ -279,9 +279,8 @@ Constraints:
 
 Choice of N (open: the headline experiment's N and K are Rishi's, in `docs/experiment.md`):
 
-- **The headline compares held-out tasks only, so K may be about 8 to 12. At K = 10 to 12 and N =
-  10, a real +15 point improvement is called "better" only about 50 to 55% of the time**; at K = 8,
-  30%. A "no detectable difference" at that size is weak evidence of no change. In this simulation
+- **The headline compares the 10 held-out tasks only (D53). At K = 10 to 12 and N = 10, a real +15
+  point improvement is called "better" only about 50 to 55% of the time**; at K = 8, 30%. A "no detectable difference" at that size is weak evidence of no change. In this simulation
   more tasks help more than more trials: K = 20 lifts power to 85% at N = 10, while N = 5 at K =
   20 gives 52%.
 - The pre-run estimate of the smallest difference a planned N and K can detect (proposal section

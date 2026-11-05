@@ -4,7 +4,7 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 
 ## Topics the brief names
 
-- **Task-set size:** with about 20 tasks, results may not generalise to other work. The headline compares held-out tasks only, about 8 to 12, where the comparison finds a real +15 point improvement only about half the time (Statistics, below).
+- **Task-set size:** with 21 tasks, results may not generalise to other work. The headline compares the 10 held-out tasks only (D53), where the comparison finds a real +15 point improvement only about half the time (Statistics, below).
 - **Judge bias:** to fill in from `judge-validation.md`. Single human rater.
 - **Contamination:** to fill in from the isolation tests.
 - **Harness-specific quirks:** see below.
@@ -198,10 +198,10 @@ the method as built (D10 revised: a task bootstrap, the sign-flip test, D42's ve
 | 12, 10 | 3.3% | 92.0%, 90.8% | 54.7% | 21 |
 | 20, 10 | 3.4% (4.7% on other seeds) | 93.0%, 94.2% (91.6%, 93.7%) | 85.4% | 17 |
 
-- **Little power at the headline's size.** The headline compares held-out tasks only, so K may be
-  about 8 to 12. **At K = 10 to 12 and N = 10, a real +15 point improvement is called "better" only
-  about 50 to 55% of the time**, 30% at K = 8. A "no detectable difference" there is weak evidence
-  that nothing changed; read the "not ruled out" figure.
+- **Little power at the headline's size.** The headline compares the 10 held-out tasks only
+  (D53). **At K = 10 to 12 and N = 10, a real +15 point improvement is called "better" only about 50
+  to 55% of the time**, 30% at K = 8. A "no detectable difference" there is weak evidence that
+  nothing changed; read the "not ruled out" figure.
 - **The interval covers a little under 95% with few tasks.** The percentile interval of a task
   bootstrap is too narrow with this few tasks: 91.6% and 93.7% at K = 20, N = 10 on one set of
   seeds, 88 to 92% at K = 8 to 12. "Better" and "worse" also need the exact sign-flip p < 0.05, which
@@ -246,7 +246,7 @@ the method as built (D10 revised: a task bootstrap, the sign-flip test, D42's ve
   a repeated conversation faster than a new one.
 - **Cost is the agent's LiteLLM cost only.** The simulated client's cost is left out of the
   comparison (it is the environment, the same for both arms), though it is in the experiment's
-  spend. A cost difference between harnesses includes prompt caching (Cost comparisons, above).
+  spend. Trials from before D31 carry prompt caching in their cost (Cost comparisons, above).
 
 ## To check before submission
 
