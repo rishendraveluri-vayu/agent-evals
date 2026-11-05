@@ -113,9 +113,11 @@ The home page offers:
 3. **The full platform.** Every experiment, config, task, harness and label, at full detail.
 
 The first door opens `http://127.0.0.1:8080/#/example`. The first time, it copies the headline and
-its A/A calibration from `examples/` into your local database (about 13 seconds), opens the
-comparison, and copies the other three shipped runs behind it: rows are only inserted, the examples
-are read-only, and nothing runs or is spent. `GET /api/examples` lists the
+its A/A calibration from `examples/` into your local database, opens the comparison (about 17
+seconds from the click to the verdict on a fresh clone, 6 Nov), and copies the other three shipped
+runs behind it while the tab stays open (all five were in about 37 seconds): rows are only
+inserted, the examples are read-only, and nothing runs or is spent. If the tab closes first, opening
+the first door again copies the rest. `GET /api/examples` lists the
 shipped examples; `docs/experiment.md` explains the result and `docs/known-limits.md` what it
 cannot show.
 
@@ -210,8 +212,8 @@ python3 scripts/sp3_kill_test.py --n 2       # crash recovery: kills a worker mi
 ```
 
 **The API's database tests.** Without `TEST_DATABASE_URL`, `pnpm test` skips the API's
-database suites: Jest's summary for the API reads `Test Suites: 11 skipped, 32 passed, 32 of 43
-total`; the skipped count is the only sign, since Jest prints its warning only when one suite
+database suites: Jest's summary for the API reads `Test Suites: 14 skipped, 35 passed, 35 of 49
+total` (6 Nov); the skipped count is the only sign, since Jest prints its warning only when one suite
 file runs alone. CI runs them against Postgres. To run them here, start a throwaway
 Postgres (never the compose one), then stop it:
 
