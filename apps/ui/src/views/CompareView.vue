@@ -5,6 +5,7 @@ import { ApiError } from '../api/errors';
 import { isFixtureMode } from '../api/mode';
 import type { BlindItem, Compare, CompareRow, ExperimentDetail, TrialRowSummary, Interval, JudgeAgreement, TaskView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
+import BehaviourPanel from '../components/BehaviourPanel.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import JudgePanel from '../components/JudgePanel.vue';
 import LoadState from '../components/LoadState.vue';
@@ -12,6 +13,7 @@ import NotFound from '../components/NotFound.vue';
 import VerdictTag from '../components/VerdictTag.vue';
 import { agreementWords, armDifferences, armIndexOf, armLetter, armsOf, armState, differingShort, namedByHash, noDiffWords as noDiffFor, excludesZero, noWidth, shownWidth, intervalText, judgeCaveat, NBSP, passedText, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
+import { causeView, causeWord } from '../lib/causes';
 import { identParts, money, percent, plainText, plural, seconds, shortHash, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
 import { isFake } from '../lib/models';
 import { alsoGradedBy, experimentName, gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
@@ -391,6 +393,10 @@ const regressions = computed(() => {
   const rate = (c: { passed: number; graded: number }) => (c.graded ? `${c.passed} of ${c.graded}` : 'none decided');
   return s.regressions.map((r) => {
     const failedB = r.failed_trials.find((t) => t.arm === 'B') ?? r.failed_trials[0];
+    // D64: the causes more common in B than in A on this task; the judge against your label stays
+    // off the page while labelling is blind.
+    const grew = (r.causes_grew ?? []).filter((c) => labelsDone.value || c.cause !== 'judge_vs_label').map((c) => ({ key: c.cause, words: causeWord(c.cause), a: c.a, b: c.b }));
+    const linked = causeView(failedB?.cause, labelsDone.value);
     return {
       key: r.task,
       name: r.task_id,
@@ -401,6 +407,8 @@ const regressions = computed(() => {
       graders: r.graders.map((g) => ({ id: g.grader_id, words: `${rate(g.a)} in A, ${rate(g.b)} in B`, severity: sev(g.severity), critical: g.severity === 'critical', optional: !g.required })),
       link: failedB ? href.trial(failedB.trial_id) : null,
       linkText: failedB ? `Open a failed trial (arm ${failedB.arm})` : '',
+      linkCause: linked ? linked.name.toLowerCase() : null,
+      grew,
     };
   });
 });
@@ -441,26 +449,7 @@ const metrics = computed<Metric[]>(() => {
     const rb = t.b.passed / t.b.graded;
     out.push({ name: 'Pass rate', delta: `${signed((rb - ra) * 100)} points`, interval: `${t.a.passed} of ${t.a.graded} and ${t.b.passed} of ${t.b.graded}; no interval yet`, a: ra, b: rb, aText: percent(ra), bText: percent(rb), max: 1 });
   }
-  // D61: the money figures each arm wrote without a tool, recomputed by the checks. A measure
-  // beside the verdict, never part of it; shown once both arms have measured trials.
-  const prose = d.compare.prose_figures ?? [];
-  const pa = prose.find((x) => x.arm === 'A');
-  const pb = prose.find((x) => x.arm === 'B');
-  if (pa?.per_trial != null && pb?.per_trial != null) {
-    const of = (x: typeof pa) => `${x.derived_in_prose} of ${plural(x.amounts, 'figure')}`;
-    const unmeasured = pa.trials_unmeasured + pb.trials_unmeasured;
-    const left = unmeasured ? `; ${plural(unmeasured, 'trial')} from before D61 not counted` : '';
-    out.push({
-      name: 'Figures written without a tool',
-      delta: `${signed(pb.per_trial - pa.per_trial, 1)} per trial`,
-      interval: `${of(pa)} and ${of(pb)}, checked by recomputing them; a measure, not a gate${left}`,
-      a: pa.per_trial,
-      b: pb.per_trial,
-      aText: pa.per_trial.toFixed(1),
-      bText: pb.per_trial.toFixed(1),
-      max: Math.max(pa.per_trial, pb.per_trial),
-    });
-  }
+  // D61's figures written without a tool are shown with each arm's behaviour (BehaviourPanel).
   const costs = s?.costs ?? [];
   if (costs.length) {
     for (const c of costs) {
@@ -1147,6 +1136,13 @@ const worthALook = computed(() => {
         </div>
       </section>
 
+      <BehaviourPanel
+        v-if="data.compare.behaviour"
+        :behaviour="data.compare.behaviour"
+        :prose="data.compare.prose_figures ?? []"
+        :labels-done="labelsDone"
+      />
+
       <section
         v-if="stats"
         aria-labelledby="regressions"
@@ -1200,11 +1196,28 @@ const worthALook = computed(() => {
                   <span class="mono">{{ g.id }}</span> ({{ g.severity }}{{ g.optional ? ', optional' : '' }}): <span class="num">{{ g.words }}</span>
                 </li>
               </ul>
-              <a
+              <p
+                v-if="r.grew.length"
+                class="small regression-causes"
+                data-test="regression-causes"
+              >
+                <span class="secondary">More common in B:</span>{{ ' ' }}<template
+                  v-for="(c, ci) in r.grew"
+                  :key="c.key"
+                >
+                  <span class="nowrap">{{ c.words }}, <span class="num">{{ c.a }} → {{ c.b }}</span></span>{{ ci < r.grew.length - 1 ? '; ' : '' }}
+                </template>
+              </p>
+              <p
                 v-if="r.link"
-                :href="r.link"
                 class="small"
-              >{{ r.linkText }}</a>
+              >
+                <a :href="r.link">{{ r.linkText }}</a><span
+                  v-if="r.linkCause"
+                  class="secondary"
+                  data-test="regression-link-cause"
+                > · {{ r.linkCause }}</span>
+              </p>
             </li>
           </ul>
         </template>
@@ -1593,6 +1606,10 @@ const worthALook = computed(() => {
 .regression-graders li,
 .excluded-list li {
   overflow-wrap: anywhere;
+}
+
+.regression-causes {
+  text-wrap: pretty;
 }
 
 .verdict-why {

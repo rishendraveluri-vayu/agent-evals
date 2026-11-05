@@ -845,7 +845,8 @@
         "infra:provider_error": 2
       },
       "done_by_end_state": {
-        "answered": 60
+        "answered": 58,
+        "step_limit": 2
       }
     },
     "spend_usd": 11.2,
@@ -1356,7 +1357,8 @@
         "infra:provider_error": 2
       },
       "done_by_end_state": {
-        "answered": 120
+        "answered": 119,
+        "step_limit": 1
       }
     },
     "spend_usd": 18.4,
