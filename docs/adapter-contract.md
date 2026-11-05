@@ -160,12 +160,12 @@ Everything else is read-only. Nothing in `/trial` survives to the next trial; ev
 
 **How a new harness is added (R2):**
 
-1. **Scaffold.** `make new-harness NAME=<name>` creates `workers/<name>/` with a Dockerfile, an adapter stub, a capabilities template and the gate tests.
-2. **Write two functions** on top of the shared adapter library:
-   - `apply_settings(spec)`: map our settings to the harness's native ones.
-   - `run_turn(history)`: run one agent turn and report what happened through the library's span helpers.
+1. **Scaffold.** `make new-harness NAME=<name>` creates `workers/<name>/` with a Dockerfile (the own loop's, with the new name and module), an adapter stub, a capabilities template, the gate tests and a probe script, and prints the `worker-<name>` service to add to `docker-compose.yml`.
+2. **Write two methods** on top of the shared adapter library:
+   - `setup(ctx)`: map our settings to the harness's native ones.
+   - `run_turn(ctx, history, max_steps)`: run one agent turn and report what happened through the library's span helpers.
 
-   The library does everything else: reading the spec, the timeout wrapper, the MCP command, the conversation loop with the simulated client, error and end-state mapping, writing the result atomically and writing spans. The expected size is 100 to 200 lines per harness. Hermes will be larger, because of what it has to have neutralised (`docs/hermes-notes.md`).
+   The library does everything else: reading the spec, the timeout wrapper, the MCP command, the conversation loop with the simulated client, error and end-state mapping, writing the result atomically and writing spans. The five adapters are 304 (own loop) to 414 (LangGraph) lines; the planning estimate was 100 to 200, and most of the difference is each framework's quirks, recorded in `docs/harness-guide.md`.
 
 3. **Probe.** `make probe-harness NAME=<name>` runs each setting against the fake model server and writes the `supported`, `default` and `evidence` fields from what it actually captured. The file is generated from evidence and committed. Only things a request cannot show, such as memory, are declared by hand.
 4. **Gate tests and effect checks** (section 8). Then the harness counts.
@@ -302,7 +302,7 @@ A task with no `client_sim` block is a single prompt. With one, a second model p
 - **`client_summary` (D27, optional)** is a short summary of the task's client file, built by the API from the task's `client_state` (`apps/api/src/worker/client-summary.ts`): the profile as recorded, and the debts with their balances, rates, minimum payments and totals as the finance tools write them. Transactions are left out. The field is absent when the task has no client file. It is part of the reply-cache key when present.
 - **`model.temperature` (D27) is optional.** Null or absent means it is not sent, so the model's default applies. The API sends none for a simulator model that refuses temperature (Haiku 5.5, from the `MODEL_REJECTS` table) and D22's 0 otherwise; the reply cache gives repeatability.
 
-- **The conversation loop lives once, in the shared adapter library.** Each harness only implements `run_turn(history)` within one process, using its native session: Hermes passes the history back in, ADK keeps one session id, the Agents SDK carries the input list, LangGraph appends messages, and the Claude SDK uses a multi-turn client. **Not yet run** (R11: "not sure this works"), so it is proven first on Hermes and the own loop in the conversation test. The fallback for any harness that fails is to re-send the full transcript each turn as fresh input.
+- **The conversation loop lives once, in the shared adapter library.** Each harness only implements `run_turn(ctx, history, max_steps)` within one process, using its native session: Hermes passes the history back in, ADK keeps one session id, the Agents SDK carries the input list, LangGraph appends messages, and the Claude SDK uses a multi-turn client. **Not yet run** (R11: "not sure this works"), so it is proven first on Hermes and the own loop in the conversation test. The fallback for any harness that fails is to re-send the full transcript each turn as fresh input.
 - **What the client sees:** only the agent's visible replies, not tool calls or results, plus its own client summary, so it never contradicts the records the tools return (D27). It reveals a hidden fact only when the agent asks for it. Graders know every fact.
 - **How the client writes (D27):** only the words it would type in a chat, as the client. No narration, no stage directions, no actions between asterisks or brackets.
 - **Guarding against a yes-man client** (R11: "the problem is yes man"):

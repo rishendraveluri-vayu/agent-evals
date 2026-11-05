@@ -115,14 +115,19 @@ with a read-only root filesystem and one writable trial folder (`docs/design.md`
 
 ## Add a harness
 
-One folder under `workers/` with an adapter, a capabilities file, a Dockerfile and two gate
-tests. Nothing in the platform core changes.
+One folder under `workers/` (an adapter, a capabilities file, a Dockerfile and the gate tests) and
+one service block in `docker-compose.yml`. Nothing in the platform core changes.
 
 ```bash
-make new-harness NAME=crewai      # scaffold workers/crewai/ from the template
+make new-harness NAME=crewai      # scaffold workers/crewai/, Dockerfile included, and print its compose service
 make probe-harness NAME=crewai    # measure what actually reaches the model, against the fake server
 make test-harness NAME=crewai     # the contract's gate tests
 ```
+
+You write two methods on the shared adapter library: `setup(ctx)`, which maps our settings to the
+harness's own, and `run_turn(ctx, history, max_steps)`, one agent turn. The library does the rest
+(the spec, the timeout, the tools, the conversation with the simulated client, the result and the
+trace). The five adapters here are 304 to 414 lines each.
 
 The contract is `docs/adapter-contract.md`; how each existing harness was wrapped is in
 `docs/harness-guide.md`.
@@ -130,7 +135,12 @@ The contract is `docs/adapter-contract.md`; how each existing harness was wrappe
 ## Add a model
 
 One entry in `services/litellm/config.yaml` with its provider route, the key's variable name and
-its prices (per input, output and cached token). Then check it:
+its prices (per input, output and cached token). A provider that is new here also needs its key
+passed to LiteLLM: add the variable to the `litellm` service's `environment` in
+`docker-compose.yml` and its name to `.env.example`. If a real run shows the model refusing a
+setting (a 400), list it in `MODEL_REJECTS` (`apps/api/src/configs/settings.ts`) so configs for
+that model leave it out; that table holds Haiku 5.5's `temperature` and the local Qwen's
+`parallel_tool_calls`. Then check it:
 
 ```bash
 uv run --no-project --with pyyaml==6.0.3 python scripts/check_litellm_config.py   # no cache, prices set

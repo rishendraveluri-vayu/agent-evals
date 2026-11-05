@@ -4,7 +4,7 @@
     evals-new-harness langgraph            # or: make new-harness NAME=langgraph
 
 writes workers/<name>/ with an adapter stub on the shared library, a capabilities template, the
-gate tests, a probe script and a README. The author then writes `setup` and `run_turn`, sets
+gate tests, a probe script, a Dockerfile and a README, and prints the docker-compose service to add. The author then writes `setup` and `run_turn`, sets
 IMPLEMENTED = True, runs the probe to fill capabilities.json from evidence, and makes the gate
 tests pass. Nothing else in the platform changes.
 """
@@ -231,7 +231,76 @@ The {name} harness adapter on the shared adapter library (`workers/adapterlib`).
 3. `./probe.sh` writes the probed fields of `src/{pkg}/capabilities.json` from what reaches the
    fake model. Declare memory, skills and compression by hand, and list `known_differences`.
 4. `uv run pytest -q` runs the gate tests and the capabilities drift test.
-5. Effect checks on real models (D24) need Rishi's sign-off with a cost estimate first (R8).
+5. Add the `worker-{name}` service that `evals-new-harness` printed to `docker-compose.yml`, then
+   `docker compose up -d --build worker-{name}`. The `Dockerfile` here builds it from `uv.lock`.
+6. Effect checks on real models (D24) need a sign-off with a cost estimate first (R8).
+"""
+
+
+DOCKERFILE = r"""# {name} worker (SP3, D3): one long-lived container per harness, one trial at a time in
+# /trial. The entrypoint is the worker loop, evals-worker. Build from the repo root:
+#   docker build -f workers/{name}/Dockerfile -t agent-evals/worker-{name}:dev .
+# The runtime stage is workers/base again (same pinned Python, uid 10001, HOME and TMPDIR inside
+# /trial, netcheck), repeated here because compose cannot order a FROM on another service's image.
+# Written by evals-new-harness from workers/ownloop/Dockerfile: every worker uses this pinned
+# Python 3.14 image, so change both FROM python lines if the harness needs another version.
+FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
+
+FROM python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966 AS build
+COPY --from=uv /uv /usr/local/bin/uv
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_NO_CACHE=1
+
+# The finance MCP server from its own lockfile. Every spec starts it as
+# /opt/finance-mcp/bin/finance-mcp over stdio, inside the trial's process group (D14).
+WORKDIR /src/services/finance-mcp
+COPY services/finance-mcp/pyproject.toml services/finance-mcp/uv.lock services/finance-mcp/.python-version ./
+RUN UV_PROJECT_ENVIRONMENT=/opt/finance-mcp uv sync --locked --no-dev --no-install-project
+COPY services/finance-mcp/README.md ./
+COPY services/finance-mcp/src ./src
+RUN UV_PROJECT_ENVIRONMENT=/opt/finance-mcp uv sync --locked --no-dev --no-editable
+
+# The harness from its own lockfile, with the adapter library (and evals-worker) from source.
+# Third-party packages first, so a source edit does not reinstall them.
+COPY workers/adapterlib/pyproject.toml workers/adapterlib/README.md /src/workers/adapterlib/
+WORKDIR /src/workers/{name}
+COPY workers/{name}/pyproject.toml workers/{name}/uv.lock workers/{name}/.python-version ./
+RUN UV_PROJECT_ENVIRONMENT=/opt/harness uv sync --locked --no-dev --no-install-project --no-install-local
+COPY workers/adapterlib/src /src/workers/adapterlib/src
+COPY workers/{name}/README.md ./
+COPY workers/{name}/src ./src
+RUN UV_PROJECT_ENVIRONMENT=/opt/harness uv sync --locked --no-dev --no-editable
+
+FROM python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966
+RUN useradd --uid 10001 --no-create-home --home-dir /trial/home trial \
+    && mkdir -p /trial \
+    && chown 10001:10001 /trial
+COPY workers/base/netcheck.py /opt/worker/netcheck.py
+COPY --from=build /opt/finance-mcp /opt/finance-mcp
+COPY --from=build /opt/harness /opt/harness
+# EVALS_WORKER_ISOLATION=container: between trials the worker kills every other process in the
+# container and wipes /dev/shm as well as /trial (D3).
+ENV HOME=/trial/home \
+    TMPDIR=/trial/tmp \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/opt/harness/bin:$PATH \
+    EVALS_HARNESS={name} \
+    EVALS_ADAPTER_CMD="/opt/harness/bin/python -m {pkg}.adapter" \
+    EVALS_WORKER_ISOLATION=container
+USER 10001
+WORKDIR /trial
+ENTRYPOINT ["/opt/harness/bin/evals-worker"]
+"""
+
+COMPOSE_SERVICE = """  worker-{name}:
+    <<: *harness-worker
+    build:
+      context: .
+      dockerfile: workers/{name}/Dockerfile
+    image: agent-evals/worker-{name}:dev
 """
 
 
@@ -261,7 +330,7 @@ def capabilities(name: str) -> dict:
     }
 
 
-def scaffold(name: str, workers: Path = WORKERS, python: str = "3.12") -> Path:
+def scaffold(name: str, workers: Path = WORKERS, python: str = "3.14") -> Path:
     if not re.fullmatch(r"[a-z][a-z0-9-]*", name):
         raise ValueError(
             "name must be lower case letters, digits and dashes, starting with a letter"
@@ -281,6 +350,7 @@ def scaffold(name: str, workers: Path = WORKERS, python: str = "3.12") -> Path:
         "tests/test_gate.py": TEST_GATE,
         "tests/test_capabilities.py": TEST_CAPS,
         "probe.sh": PROBE_SH,
+        "Dockerfile": DOCKERFILE,
     }
     for rel, template in files.items():
         path = root / rel
@@ -296,11 +366,15 @@ def scaffold(name: str, workers: Path = WORKERS, python: str = "3.12") -> Path:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Create workers/<name>/ for a new harness.")
     parser.add_argument("name")
-    parser.add_argument("--python", default="3.12", help="the harness's Python version")
+    parser.add_argument(
+        "--python", default="3.14", help="the harness's Python version (the worker image has 3.14)"
+    )
     parser.add_argument("--workers-dir", type=Path, default=WORKERS)
     args = parser.parse_args(argv)
     root = scaffold(args.name, args.workers_dir, args.python)
     print(f"created {root}. Next: see {root / 'README.md'}")
+    print("Then add its worker to docker-compose.yml, beside worker-ownloop:\n")
+    print(COMPOSE_SERVICE.format(name=args.name))
     sys.exit(0)
 
 
