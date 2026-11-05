@@ -159,9 +159,9 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [x] Minimal trace view (one trial's span timeline) and a spend chart per trial and config, in the first end-to-end run (R11). Reads trial folders until SP2's database
 - [ ] Effect checks per harness and model on Haiku 5.5 and a Gemini Flash, each run signed off with an estimate (D24)
 - [x] Add the simulated-client helper (D22: reply cache, own key, turn cap) and the conversation loop in Hermes and the own loop, with a simulated gate test (fake simulator; prompt `client-sim.v1` is a draft for Rishi)
-- [ ] Then build LangGraph, Google ADK and the OpenAI Agents SDK in parallel (R7), one agent and one folder each, with tool parity through D14. Each passes the settings test and the tool test by Thursday 12:00 or is cut with the reason recorded. Cut order: the two SDKs first, LangGraph last, never the own loop. Rishi reviews each before merge.. Built 4 Nov on branch `sp1-harnesses`: all three pass the 8 gates, the drift test and their proxy tests against the fake; waiting for Rishi's review before merge
+- [x] Then build LangGraph, Google ADK and the OpenAI Agents SDK in parallel (R7), one agent and one folder each, with tool parity through D14. Each passes the settings test and the tool test by Thursday 12:00 or is cut with the reason recorded. Cut order: the two SDKs first, LangGraph last, never the own loop. Rishi reviews each before merge.. Built 4 Nov on branch `sp1-harnesses`: all three pass the 8 gates, the drift test and their proxy tests against the fake; waiting for Rishi's review before merge
 - [x] Settle how task tools reach every harness (D14)
-- [ ] Register models in LiteLLM and smoke-test tool calling on each, with real dev runs on Haiku 5.5 and Gemini Flash, each scoped and signed off first (R8, R9)
+- [x] Register models in LiteLLM and smoke-test tool calling on each, with real dev runs on Haiku 5.5 and Gemini Flash, each scoped and signed off first (R8, R9)
 - [x] Build the invariance diff: the first request of two configs should differ only on the axis (`evals-invariance A B --axis ...`; checked on Hermes and the own loop through LiteLLM: prompt v1 vs v2 differs only in the prompt lines)
 
 ### SP2 Data model and configs (Tue to Wed)
@@ -185,7 +185,7 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [x] Use a fixed `HERMES_HOME` path per trial, because the path appears in the system prompt (`/trial` in every container)
 - [x] Set LiteLLM per-call retries with backoff and a capped trial re-queue (D16), tested against the fake's forced 429s; update the config check (4 Nov: also 503s, 400s and a hung call, on a throwaway LiteLLM of the pinned image; attempts counted per trial in `proxy_usage`)
 - [ ] Handle timeouts, rate limits and retries: tested with the fake's forced faults, then seen on a signed-off real dev run (R9)
-- [ ] Separate infra failures from agent failures, including budget stops
+- [x] Separate infra failures from agent failures, including budget stops
 - [x] Make trial claiming idempotent and runs resumable (SKIP LOCKED claims, 60 s lease; passed the kill test on 4 Nov)
 - [ ] Show trials, estimated cost, time and whether N is enough before every run, and start only runs that can finish (R10.6)
 - [x] Add a LiteLLM `max_budget` safety net per experiment and per trial, set well above the estimate; a trip is an infra event (R10.6) (the API mints each trial key with a budget and refuses experiments below the estimate's high end)
@@ -200,7 +200,7 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [x] Split tasks into discovery and held-out sets for the prompt experiment (D9); keep simulated-client tasks to about 5 to 8 (D22) (D53 split A: 11 discovery, 10 held-out; 7 conversations)
 - [ ] Rishi reviews about 10 simulated-client transcripts and the simulator prompt is versioned before the experiment (D22, R11)
 - [x] Build deterministic graders: exact match, unit tests, state checks (`graders/`, ten types incl. a reserved judge, and `required_tools` and `provenance` on the runner's `checks.json`; grading as its own step through the API and a `grader` service, R14; the spec format is a draft for Rishi, `docs/proposals/grader-format.md`)
-- [ ] **[Rishi designs]** Judge rubric format. Judge is blind to harness and model, with a pinned model and a verdict and quoted evidence per criterion
+- [x] **[Rishi designs]** Judge rubric format. Judge is blind to harness and model, with a pinned model and a verdict and quoted evidence per criterion
 - [x] Write tasks where skills or memory should help (5 Nov: `demo-skill-card-transfer` with a seeded skill; 0 of 4 without it, 4 of 4 with it, `docs/experiment.md`)
 - [x] Seed skills and memory explicitly per config, since a fresh Hermes home has no skills (API: `POST /configs` takes `seed`, in the hash, copied into `spec.seed` at claim, D39; the Config screen's seed fields and the seeded content for D39's run are separate)
 - [x] Test each grader against known pass and fail outputs (96 tests in `graders/tests`, incl. the real 4 Nov transcripts of all five harnesses; API grading e2e with the real grader worker)
@@ -216,7 +216,7 @@ The order matters because the rubric freezes with the platform:
 2. Friday, after the pilot: about 40 held-out labels from pilot trials.
 3. Friday, after the run: about 20 labels from the real experiment, because pilot outputs on a cheap model may not look like the final model's.
 
-- [ ] Build a blind labelling view that hides the config and the judge's verdict
+- [x] Build a blind labelling view that hides the config and the judge's verdict
 - [ ] Sample labels stratified across configs and likely pass or fail
 - [ ] Rishi labels the three sets above
 - [ ] Rishi relabels about 10 at the end to check his own consistency
@@ -242,10 +242,10 @@ The order matters because the rubric freezes with the platform:
 **Done when:** the four video steps work in the UI: define a config, run it, compare results, drill into a failed trial.
 **Needs:** SP3, SP6.
 
-- [ ] Build the Nest API for configs, experiments, results and export
-- [ ] Build the config and run views
-- [ ] Build the comparison view with per-task deltas
-- [ ] Build the trial view: messages, tool calls and results, memory reads and writes, skills, grader reasoning, score
+- [x] Build the Nest API for configs, experiments, results and export
+- [x] Build the config and run views
+- [x] Build the comparison view with per-task deltas
+- [x] Build the trial view: messages, tool calls and results, memory reads and writes, skills, grader reasoning, score (memory and skill events since 5 Nov)
 
 ### SP8 Real experiment (Fri)
 
@@ -253,13 +253,13 @@ The order matters because the rubric freezes with the platform:
 **Needs:** SP1 to SP7, D9. Rishi approves every real run.
 
 - [ ] Freeze the platform and tag the commit
-- [ ] Rishi commits the hypothesis and analysis plan to `experiment.md` before the run
+- [x] Rishi commits the hypothesis and analysis plan to `experiment.md` before the run (d85422b and f0f6e3b, before the runs)
 - [ ] Run a pilot on a cheap model, then choose N from its variance
-- [ ] Run the invariance diff on the two configs
-- [ ] Run the experiment
+- [x] Run the invariance diff on the two configs (`docs/experiment.md`, Invariance check)
+- [x] Run the experiment (5 Nov; `docs/experiment.md`, Results)
 - [ ] Export raw results to `experiments/<id>/`
 - [x] Inspect 2 or 3 trajectories that explain the difference (`docs/experiment.md`, Trajectories)
-- [ ] Record actual spend in `cost.md`
+- [x] Record actual spend in `cost.md`
 
 ### SP9 Docs and video (Sat)
 
