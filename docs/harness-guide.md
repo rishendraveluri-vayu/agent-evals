@@ -233,7 +233,7 @@ With no `client.json`, the three client tools return `{"client_on_file": false, 
 - **The tools never change state**, so a "state check" grader has no environment state to inspect, only the tool-call trace or the answer (question 14).
 - **Expected values can be computed offline** with the same calculators. Graders should accept the formats a model is likely to use (`₹8,997.26`, `Rs 8,997`, `8997.26`). On 4 Nov, Haiku wrote Indian grouping and lakh words (`₹1,01,341`, `₹4.41 lakh`, `₹1.23 lakh`) and rounded freely (`about ₹33,500` for ₹33,492) [ran, 4 Nov].
 - **Hidden context can live in `client.json`.** Free-form profile fields reach the model only if it calls `get_client_profile`. The simulated client does not know them (section 2.9).
-- **A "missing tool" is a toolset version** whose `allowed_tools` leaves it out (D9). All five adapters honour it; the own loop and the three SDK adapters also fail at start-up if a listed tool is missing [src].
+- **A "missing tool" is a toolset version** whose `allowed_tools` leaves it out (D9). All five adapters honour it: each gate's `test_tools_without_calculators` gives D70's `finance-no-calculators` list and finds only its 11 tools in the model's first request [ran, 5 Nov, fake model]. The own loop and the three SDK adapters also fail at start-up if a listed tool is missing [src].
 - **Avoid unschedulable loans** unless the rejection is the point (A5).
 
 ### 2.6 The invariance diff
@@ -515,7 +515,7 @@ One more: **prompt-cache markers.** Hermes adds them for model names containing 
 **Axes you can test on Hermes:**
 
 - **System prompt (D9).** The first requests differ only in the prompt lines [ran], but the effect measured is the prompt's effect *inside Hermes*, not the prompt's effect in general. Hermes's own text does not cancel: v2 can interact with it, for example a warmth line pulling against Hermes's "be direct, a one-line question gets a one-line answer", and the same change can have a different effect on another harness (corrected after Rishi's review, 4 Nov). The pre-run conflict check (D33) lists such contradictions for each version before any spend.
-- **Toolset version** ("missing tool"), through `tools.include` [src].
+- **Toolset version** ("missing tool"), through `tools.include` [src]; [ran, 5 Nov] for D70's 11-tool `finance-no-calculators`, fake model.
 - **Temperature, parallel tool calls, step budget.** They reach the wire [ran]; their effect is unchecked (D24). Temperature cannot vary on Haiku 5.5 [ran, 4 Nov].
 - **Memory on and empty vs on and seeded**, the cleanest memory axis [src]. **Skills seeded vs none**, remembering the "MUST load" instruction. **Compression** only matters past about 64k tokens.
 

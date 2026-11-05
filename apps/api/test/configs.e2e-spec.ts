@@ -34,13 +34,19 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
     expect(prompts.map((p) => `${p.id}.${p.version}`)).toEqual(expect.arrayContaining(['finance-advisor.v1', 'client-sim.v1', 'client-sim.v2']));
     expect(prompts.every((p) => !p.text.startsWith('<!--'))).toBe(true);
     const toolsets = (await request(env.http).get('/api/toolsets').expect(200)).body as ToolsetView[];
-    expect(toolsets).toHaveLength(1);
-    expect(toolsets[0]).toMatchObject({ id: 'finance', version: 'v3', manifest: [{ server: 'finance', server_version: '0.4.1' }] });
+    // finance/v3 first (the default), then D70's validation toolset.
+    expect(toolsets.map((t) => [t.id, t.version, t.validation_only])).toEqual([
+      ['finance', 'v3', false],
+      ['finance-no-calculators', 'v3', true],
+    ]);
+    expect(toolsets[0]).toMatchObject({ manifest: [{ server: 'finance', server_version: '0.4.1' }] });
+    expect(toolsets[1].servers[0].allowed_tools).toHaveLength(11);
     // The hash covers the manifest, and the manifest is stored with it (migration 009).
-    const { sha256, ...content } = toolsets[0];
-    expect(sha256).toBe(hashCanonical(content));
-    const [row] = (await env.pool.query<{ manifest: unknown }>('SELECT manifest FROM toolsets WHERE sha256 = $1', [sha256])).rows;
-    expect(row.manifest).toEqual(toolsets[0].manifest);
+    for (const t of toolsets) {
+      expect(t.sha256).toBe(hashCanonical({ id: t.id, version: t.version, servers: t.servers, manifest: t.manifest }));
+      const [row] = (await env.pool.query<{ servers: unknown; manifest: unknown }>('SELECT servers, manifest FROM toolsets WHERE sha256 = $1', [t.sha256])).rows;
+      expect(row).toEqual({ servers: t.servers, manifest: t.manifest });
+    }
     const tasks = (await request(env.http).get('/api/tasks').expect(200)).body as { id: string; kind: string; split: string; problems: string[] }[];
     expect(tasks.map((t) => [t.id, t.kind, t.split, t.problems.length])).toEqual([
       ['emi-basic', 'single_prompt', 'discovery', 0],

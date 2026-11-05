@@ -159,6 +159,18 @@ describe('Build an agent, in fixture mode', () => {
     expect(view.get('[data-test="saved-status"]').text()).toMatch(/^Saved as Hermes with memory, [0-9a-f]{7}\.$/);
   });
 
+  it('never gives an agent a validation toolset (D70), wherever it is listed', async () => {
+    const full = { ...toolsets[0], manifest: [], description: 'Every finance tool.', validation_only: false };
+    const broken = { ...full, id: 'finance-no-calculators', version: 'v3', sha256: `sha256:34e53515${'0'.repeat(56)}`, validation_only: true };
+    vi.spyOn(api, 'toolsets').mockResolvedValue([broken, full]);
+    const create = vi.spyOn(api, 'createConfig');
+    const view = await open();
+    await view.get('[data-test="agent-name"]').setValue('Plain agent');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(create.mock.calls[0][0].toolset_sha256).toBe(full.sha256);
+  });
+
   it('refuses a number that is not one, and says which step to fix', async () => {
     const create = vi.spyOn(api, 'createConfig');
     const view = await open();

@@ -434,6 +434,58 @@ describe('ConfigView after the shipped example is loaded (QA blocker 1)', () => 
   });
 });
 
+// D70's positive control: a validation toolset listed after the default one.
+const FULL_TOOLSET = { ...CURRENT_TOOLSET, servers: [{ name: 'finance', allowed_tools: ['calculate_emi', 'get_client_profile'] }], manifest: [], description: 'Every finance tool.', validation_only: false };
+const NO_CALCULATORS = {
+  id: 'finance-no-calculators',
+  version: 'v3',
+  sha256: `sha256:34e53515${'0'.repeat(56)}`,
+  servers: [{ name: 'finance', allowed_tools: ['get_client_profile'] }],
+  manifest: [],
+  description: 'Validation only (D70, the positive control): finance with its eight calculators removed, as if the calculator service were down.',
+  validation_only: true,
+};
+
+describe('ConfigView with a validation toolset (D70)', () => {
+  beforeEach(() => {
+    vi.spyOn(api, 'toolsets').mockResolvedValue([FULL_TOOLSET, NO_CALCULATORS]);
+  });
+
+  it('starts on the default toolset, and offers the validation one, marked, to pick by hand', async () => {
+    const create = vi.spyOn(api, 'createConfig');
+    const w = mount(ConfigView);
+    await settle();
+    const select = w.get('[data-test="toolset-select"]');
+    expect((select.element as HTMLSelectElement).value).toBe(FULL_TOOLSET.sha256);
+    expect(select.findAll('option').map((o) => o.text())).toEqual([`${FULL_TOOLSET.id} ${FULL_TOOLSET.version}`, 'finance-no-calculators v3 (validation only)']);
+    expect(w.find('[data-test="toolset-validation"]').exists()).toBe(false);
+    await select.setValue(NO_CALCULATORS.sha256);
+    await settle();
+    expect(w.get('[data-test="toolset-validation"]').text()).toContain('eight calculators removed');
+    expect(w.get('[data-test="config-changes"]').text()).toContain(`Toolset: ${FULL_TOOLSET.id} ${FULL_TOOLSET.version} to finance-no-calculators v3`);
+    await w.get('[data-test="save-config"]').trigger('click');
+    await settle();
+    expect(create.mock.calls[0][0].toolset_sha256).toBe(NO_CALCULATORS.sha256);
+  });
+
+  it('never starts a new config on it, even copied from your newest config that has it; a fork of that config keeps it', async () => {
+    const broken: Config = { ...(configs as unknown as Config[])[3], hash: `sha256:b70ce${'0'.repeat(59)}`, name: 'no calculators', toolset: { id: NO_CALCULATORS.id, version: NO_CALCULATORS.version, sha256: NO_CALCULATORS.sha256 }, created_at: '2026-11-05T13:00:00.000Z' };
+    vi.spyOn(api, 'configs').mockResolvedValue([...(configs as unknown as Config[]), broken]);
+    const fresh = mount(ConfigView);
+    await settle();
+    expect((fresh.get('[data-test="base-select"]').element as HTMLSelectElement).value).toBe(broken.hash);
+    expect((fresh.get('[data-test="toolset-select"]').element as HTMLSelectElement).value).toBe(FULL_TOOLSET.sha256);
+    expect(fresh.find('[data-test="toolset-replaced"]').exists()).toBe(false);
+    expect(fresh.get('[data-test="config-changes"]').text()).toContain(`Toolset: finance-no-calculators v3 to ${FULL_TOOLSET.id} ${FULL_TOOLSET.version}`);
+    fresh.unmount();
+    const fork = mount(ConfigView, { props: { fork: broken.hash } });
+    await settle();
+    expect((fork.get('[data-test="toolset-select"]').element as HTMLSelectElement).value).toBe(NO_CALCULATORS.sha256);
+    expect(fork.get('[data-test="toolset-validation"]').text()).toContain('eight calculators removed');
+    expect(fork.find('[data-test="toolset-replaced"]').exists()).toBe(false);
+  });
+});
+
 describe('ConfigView says which models need a key (QA major 1)', () => {
   it('marks a model whose key is not set, and still lets the config be saved', async () => {
     vi.spyOn(api, 'models').mockResolvedValue([

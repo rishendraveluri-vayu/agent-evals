@@ -9,7 +9,8 @@ For every finished trial it reads the stored files through the API and checks:
 - memory: no memory tool or block when off; the tool but no seeded text when on and empty; every
   seeded entry in the prompt when seeded;
 - tools: exactly the config's toolset (finance/all: the 11 finance tools; finance/v2 since 5 Nov:
-  those plus the 7 arithmetic tools, D54; finance/v3: those plus reference_rates, D58), plus the
+  those plus the 7 arithmetic tools, D54; finance/v3: those plus reference_rates, D58;
+  finance-no-calculators/v3: finance/v3 without the 8 calculators, D70), plus the
   memory tool only when memory is on. A Hermes image built before a toolset's tools would show
   its configs fewer tools, and this catches it;
 
@@ -37,9 +38,19 @@ FINANCE = {
     "get_client_profile", "list_debts", "list_transactions",
 }
 ARITHMETIC = {"add", "subtract", "multiply", "divide", "percent_of", "percent_change", "round"}
-# The tools each finance toolset version gives the model (apps/api/src/catalogue/catalogue-files.ts).
+CALCULATORS = {
+    "calculate_emi", "amortization_schedule", "prepayment_impact", "debt_payoff_plan",
+    "sip_future_value", "fd_maturity", "inflation_adjusted_value", "loan_affordability",
+}
+# The tools each toolset (id, version) gives the model (apps/api/src/catalogue/catalogue-files.ts).
 REFERENCE = {"reference_rates"}
-TOOLSETS = {"all": FINANCE, "v2": FINANCE | ARITHMETIC, "v3": FINANCE | ARITHMETIC | REFERENCE}
+TOOLSETS = {
+    ("finance", "all"): FINANCE,
+    ("finance", "v2"): FINANCE | ARITHMETIC,
+    ("finance", "v3"): FINANCE | ARITHMETIC | REFERENCE,
+    # D70's positive control: finance/v3 without the calculators, so a calculator here is extra.
+    ("finance-no-calculators", "v3"): (FINANCE | ARITHMETIC | REFERENCE) - CALCULATORS,
+}
 PROMPT_FILE = Path(__file__).resolve().parents[1] / "configs" / "prompts" / "finance-advisor.v1.md"
 
 
@@ -85,10 +96,11 @@ def check(api: str, trial: dict, cfg: dict, ours: str) -> dict:
     out["prompt_kept"] = ours[:200] in system and ours[-200:] in system
     out["no_parallel_section"] = "Parallel tool calls" not in system
     out["no_cache_markers"] = all('"cache_control"' not in (r or "") for r in all_reqs)
-    version = (cfg.get("toolset") or {}).get("version")
-    finance = TOOLSETS.get(version)
+    toolset = cfg.get("toolset") or {}
+    key = (toolset.get("id"), toolset.get("version"))
+    finance = TOOLSETS.get(key)
     if finance is None:
-        out["error"] = f"no tool list for toolset version {version!r}; add it to TOOLSETS"
+        out["error"] = f"no tool list for toolset {key!r}; add it to TOOLSETS"
         return out
     extra = tools - finance
     out["finance_tools"] = finance <= tools
