@@ -4,7 +4,7 @@ import { promises as fs, readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import * as path from 'node:path';
 import request from 'supertest';
-import type { ClaimResponse, ExperimentDetail, ReportResponse, ToolsetView, TrialView } from '../src/contract';
+import type { ClaimResponse, ExperimentDetail, LabelQueueItem, ReportResponse, ToolsetView, TrialView } from '../src/contract';
 import { REPO, TASKS, type TestEnv, auth, bootEnv, catalogue, makeConfig, runnerReport } from './support/app';
 import { describeWithDb } from './support/db';
 
@@ -942,14 +942,14 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     ]);
     expect((item.tool_calls as { name: string }[])[0].name).toBe('calculate_emi');
 
-    await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'nope', value: 'yes' }).expect(400);
-    await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'empathy', value: 'maybe' }).expect(400);
-    await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'nonsense', criterion: 'empathy', value: 'yes' }).expect(400);
-    const created = await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'empathy', value: 'yes', note: 'warm' }).expect(201);
-    expect(created.body).toMatchObject({ trial_id: c.trial_id, set: 'tuning', criterion: 'empathy', value: 'yes', note: 'warm' });
+    await request(env.http).post('/api/labels').send({ item_id: item.item_id, rater: 'rishi', set: 'tuning', criterion: 'nope', value: 'yes' }).expect(400);
+    await request(env.http).post('/api/labels').send({ item_id: item.item_id, rater: 'rishi', set: 'tuning', criterion: 'empathy', value: 'maybe' }).expect(400);
+    await request(env.http).post('/api/labels').send({ item_id: item.item_id, rater: 'rishi', set: 'nonsense', criterion: 'empathy', value: 'yes' }).expect(400);
+    const created = await request(env.http).post('/api/labels').send({ item_id: item.item_id, rater: 'rishi', set: 'tuning', criterion: 'empathy', value: 'yes', note: 'warm' }).expect(201);
+    expect(created.body).toMatchObject({ trial_id: c.trial_id, set: 'tuning', rater: 'rishi', criterion: 'empathy', value: 'yes', note: 'warm' });
     const lines = (await fs.readFile(path.join(env.labelsDir, 'tuning.jsonl'), 'utf8')).trim().split('\n');
     expect(lines).toHaveLength(1);
-    expect(JSON.parse(lines[0])).toMatchObject({ criterion: 'empathy', value: 'yes', labelled_at: expect.any(String) as string });
+    expect(JSON.parse(lines[0])).toMatchObject({ rater: 'rishi', criterion: 'empathy', value: 'yes', labelled_at: expect.any(String) as string });
 
     const left = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as { criteria: { id: string }[] }[];
     expect(left[0].criteria.map((x) => x.id)).toEqual(['no_jargon']);
@@ -964,23 +964,23 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     // material only, never held-out or final, and a held-out label on one is refused.
     expect((await request(env.http).get(`/api/labels/queue?set=heldout&experiment=${exp.id}`).expect(200)).body).toHaveLength(0);
     expect((await request(env.http).get(`/api/labels/queue?set=final&experiment=${exp.id}`).expect(200)).body).toHaveLength(0);
-    const wrong = await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'heldout', criterion: 'empathy', value: 'yes' }).expect(400);
+    const wrong = await request(env.http).post('/api/labels').send({ item_id: item.item_id, rater: 'rishi', set: 'heldout', criterion: 'empathy', value: 'yes' }).expect(400);
     expect(wrong.body).toMatchObject({ error: 'wrong_split' });
     const agreement = await request(env.http).get('/api/judge/agreement?set=heldout').expect(200);
     expect(agreement.text).toBe('null');
 
     // D46: "unsure" comes back once, after the fresh items, for a firm answer.
-    await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'empathy', value: 'yes', second_look: true }).expect(400); // already firm
-    await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'no_jargon', value: 'yes', second_look: true }).expect(400); // never marked unsure
-    await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'no_jargon', value: 'unsure' }).expect(201);
+    await request(env.http).post('/api/labels').send({ item_id: item.item_id, rater: 'rishi', set: 'tuning', criterion: 'empathy', value: 'yes', second_look: true }).expect(400); // already firm
+    await request(env.http).post('/api/labels').send({ item_id: item.item_id, rater: 'rishi', set: 'tuning', criterion: 'no_jargon', value: 'yes', second_look: true }).expect(400); // never marked unsure
+    await request(env.http).post('/api/labels').send({ item_id: item.item_id, rater: 'rishi', set: 'tuning', criterion: 'no_jargon', value: 'unsure' }).expect(201);
     const again = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as { item_id: string; second_look: boolean; criteria: { id: string }[] }[];
     expect(again).toEqual([expect.objectContaining({ item_id: item.item_id, second_look: true, criteria: [{ id: 'no_jargon', text: 'no_jargon' }] })]);
-    const firm = await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'no_jargon', value: 'no', second_look: true }).expect(201);
+    const firm = await request(env.http).post('/api/labels').send({ item_id: item.item_id, rater: 'rishi', set: 'tuning', criterion: 'no_jargon', value: 'no', second_look: true }).expect(201);
     expect(firm.body).toMatchObject({ criterion: 'no_jargon', value: 'no', second_look: true });
     expect(JSON.parse((await fs.readFile(path.join(env.labelsDir, 'tuning.jsonl'), 'utf8')).trim().split('\n').at(-1)!)).toMatchObject({ value: 'no', second_look: true });
     // Only once: no third look, and a second second-look is refused.
     expect((await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body).toEqual([]);
-    await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'no_jargon', value: 'yes', second_look: true }).expect(400);
+    await request(env.http).post('/api/labels').send({ item_id: item.item_id, rater: 'rishi', set: 'tuning', criterion: 'no_jargon', value: 'yes', second_look: true }).expect(400);
   });
 
   it('labels by the task split in tasks/ today, so a trial of a task moved to held-out is never tuning material (D52)', async () => {
@@ -997,12 +997,158 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
       await fs.writeFile(file, JSON.stringify({ ...(JSON.parse(before) as object), version: '2', split: 'held_out' }, null, 2));
       expect(await queue('tuning')).toEqual([]);
       expect((await queue('heldout')).map((i) => i.item_id)).toEqual([c.trial_id]);
-      const refused = await request(env.http).post('/api/labels').send({ item_id: c.trial_id, set: 'tuning', criterion: 'empathy', value: 'yes' }).expect(400);
+      const refused = await request(env.http).post('/api/labels').send({ item_id: c.trial_id, rater: 'rishi', set: 'tuning', criterion: 'empathy', value: 'yes' }).expect(400);
       expect(refused.body).toMatchObject({ error: 'wrong_split' });
     } finally {
       await fs.writeFile(file, before);
     }
     expect((await queue('tuning')).map((i) => i.item_id)).toEqual([c.trial_id]);
+  });
+
+  // ---- D73: more than one human rater. The labels below are synthetic, in the test's own labels dir. ----
+
+  /** A new experiment on a real model, its one emi-basic trial (criteria empathy and no_jargon) reported: one item to label. */
+  async function labelItem(worker: string): Promise<{ expId: string; trial: string }> {
+    for (const { id } of (await env.pool.query("SELECT id FROM experiments WHERE status IN ('running', 'paused')")).rows as { id: string }[]) await cancel(id);
+    const haiku = await makeConfig(env.http, cat, { name: `rater arm ${worker}`, model: 'claude-haiku-5-5' });
+    const exp = await experiment({ configs: [haiku] });
+    const c = (await claim(worker))!;
+    expect(c.experiment_id).toBe(exp.id);
+    await report(c, worker);
+    return { expId: exp.id, trial: c.trial_id };
+  }
+  /** One rater's queue for one experiment as [item, criteria, second look]; no rater gives the queue as before D73. */
+  const raterQueue = async (expId: string, rater: string | null, set = 'tuning'): Promise<[string, string[], boolean][]> =>
+    ((await request(env.http).get(`/api/labels/queue?set=${set}&experiment=${expId}${rater === null ? '' : `&rater=${rater}`}`).expect(200)).body as LabelQueueItem[]).map((i) => [
+      i.item_id,
+      i.criteria.map((x) => x.id),
+      i.second_look,
+    ]);
+  const saveLabel = (body: Record<string, unknown>) => request(env.http).post('/api/labels').send({ set: 'tuning', ...body });
+  const lastLine = async (set = 'tuning'): Promise<Record<string, unknown>> =>
+    JSON.parse((await fs.readFile(path.join(env.labelsDir, `${set}.jsonl`), 'utf8')).trim().split('\n').at(-1)!) as Record<string, unknown>;
+
+  it('refuses a label without a rater id, or with one that is not lower-case letters, digits, dash or underscore, 1 to 40 long (D73)', async () => {
+    const { expId, trial } = await labelItem('w-rater-id');
+    const file = path.join(env.labelsDir, 'tuning.jsonl');
+    const before = await fs.readFile(file, 'utf8');
+    const ok = { item_id: trial, criterion: 'empathy', value: 'yes' };
+    const missing = await saveLabel(ok).expect(400);
+    expect(missing.body).toMatchObject({ error: 'invalid_rater', message: expect.stringContaining('rater is required') as string, fix: expect.stringContaining('1 to 40') as string });
+    for (const rater of ['', 'Rishi', 'a b', 'rater.one', 'é', 'a'.repeat(41), 42, null, ['a']]) {
+      const res = await saveLabel({ ...ok, rater }).expect(400);
+      expect(res.body).toMatchObject({ error: 'invalid_rater', fix: expect.any(String) as string });
+    }
+    // A refused label writes nothing.
+    expect(await fs.readFile(file, 'utf8')).toBe(before);
+    expect(await raterQueue(expId, null)).toEqual([[trial, ['empathy', 'no_jargon'], false]]);
+    // The longest id, and each of the allowed characters.
+    for (const rater of ['a'.repeat(40), 'r-2_x']) {
+      const res = await saveLabel({ ...ok, rater }).expect(201);
+      expect(res.body).toMatchObject({ rater, criterion: 'empathy', value: 'yes' });
+    }
+    // The queue takes the same ids, and refuses a malformed one rather than ignore it.
+    for (const rater of ['', 'Rishi', 'a'.repeat(41), `x${encodeURIComponent("' OR 1=1")}`]) {
+      const res = await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${expId}&rater=${rater}`).expect(400);
+      expect(res.body).toMatchObject({ error: 'invalid_rater' });
+    }
+  });
+
+  it('gives each rater their own queue: a criterion one rater answered stays in every other rater’s until they answer it (D73)', async () => {
+    const { expId, trial } = await labelItem('w-raters');
+    const both: [string, string[], boolean][] = [[trial, ['empathy', 'no_jargon'], false]];
+    expect(await raterQueue(expId, 'rater-a')).toEqual(both);
+    expect(await raterQueue(expId, 'rater_b')).toEqual(both);
+
+    const a = await saveLabel({ item_id: trial, rater: 'rater-a', criterion: 'empathy', value: 'yes', note: 'warm' }).expect(201);
+    expect(a.body).toMatchObject({ trial_id: trial, set: 'tuning', rater: 'rater-a', criterion: 'empathy', value: 'yes', note: 'warm' });
+    // The line in labels/tuning.jsonl carries the rater, and so does the imported row.
+    expect(await lastLine()).toMatchObject({ trial_id: trial, set: 'tuning', rater: 'rater-a', criterion: 'empathy', value: 'yes', labelled_at: expect.any(String) as string });
+    expect((await env.pool.query('SELECT rater, criterion, value FROM labels WHERE trial_id = $1', [trial])).rows).toEqual([{ rater: 'rater-a', criterion: 'empathy', value: 'yes' }]);
+
+    expect(await raterQueue(expId, 'rater-a')).toEqual([[trial, ['no_jargon'], false]]);
+    expect(await raterQueue(expId, 'rater_b')).toEqual(both);
+    // Without a rater, any rater's label counts, as before D73.
+    expect(await raterQueue(expId, null)).toEqual([[trial, ['no_jargon'], false]]);
+
+    // The other rater answers the same criterion their own way; neither answer touches the other's queue.
+    await saveLabel({ item_id: trial, rater: 'rater_b', criterion: 'empathy', value: 'no' }).expect(201);
+    expect(await lastLine()).toMatchObject({ rater: 'rater_b', criterion: 'empathy', value: 'no' });
+    expect(await raterQueue(expId, 'rater_b')).toEqual([[trial, ['no_jargon'], false]]);
+    await saveLabel({ item_id: trial, rater: 'rater-a', criterion: 'no_jargon', value: 'no' }).expect(201);
+    expect(await raterQueue(expId, 'rater-a')).toEqual([]);
+    expect(await raterQueue(expId, 'rater_b')).toEqual([[trial, ['no_jargon'], false]]);
+    expect(await raterQueue(expId, null)).toEqual([]);
+    // A rater with no labels yet sees the whole item.
+    expect(await raterQueue(expId, 'rater-c')).toEqual(both);
+    await saveLabel({ item_id: trial, rater: 'rater_b', criterion: 'no_jargon', value: 'yes' }).expect(201);
+    expect(await raterQueue(expId, 'rater_b')).toEqual([]);
+  });
+
+  it('gives each rater their own second look at what they marked "not sure" (D46, D73)', async () => {
+    const { expId, trial } = await labelItem('w-raters-2nd');
+    // rater-a and rater_b are unsure on empathy; rater-c is firm on it. All three are firm on no_jargon.
+    for (const [rater, empathy] of [['rater-a', 'unsure'], ['rater_b', 'unsure'], ['rater-c', 'yes']]) {
+      await saveLabel({ item_id: trial, rater, criterion: 'empathy', value: empathy }).expect(201);
+      await saveLabel({ item_id: trial, rater, criterion: 'no_jargon', value: 'yes' }).expect(201);
+    }
+    const look: [string, string[], boolean][] = [[trial, ['empathy'], true]];
+    expect(await raterQueue(expId, 'rater-a')).toEqual(look);
+    expect(await raterQueue(expId, 'rater_b')).toEqual(look);
+    expect(await raterQueue(expId, 'rater-c')).toEqual([]);
+    // Another rater's "not sure" is not this rater's: rater-c has nothing to look at again.
+    const refused = await saveLabel({ item_id: trial, rater: 'rater-c', criterion: 'empathy', value: 'no', second_look: true }).expect(400);
+    expect(refused.body).toMatchObject({ error: 'not_a_second_look' });
+    // One rater's second look settles their own "not sure" only.
+    const firm = await saveLabel({ item_id: trial, rater: 'rater-a', criterion: 'empathy', value: 'no', second_look: true }).expect(201);
+    expect(firm.body).toMatchObject({ rater: 'rater-a', criterion: 'empathy', value: 'no', second_look: true });
+    expect(await lastLine()).toMatchObject({ rater: 'rater-a', criterion: 'empathy', value: 'no', second_look: true });
+    expect(await raterQueue(expId, 'rater-a')).toEqual([]);
+    expect(await raterQueue(expId, 'rater_b')).toEqual(look);
+    await saveLabel({ item_id: trial, rater: 'rater-a', criterion: 'empathy', value: 'yes', second_look: true }).expect(400);
+    await saveLabel({ item_id: trial, rater: 'rater_b', criterion: 'empathy', value: 'unsure', second_look: true }).expect(201);
+    expect(await raterQueue(expId, 'rater_b')).toEqual([]);
+  });
+
+  it('reads a label line without a rater as Rishi’s, written before D73, and skips one whose rater is malformed', async () => {
+    const { expId, trial } = await labelItem('w-raters-old');
+    const file = path.join(env.labelsDir, 'tuning.jsonl');
+    // Two synthetic lines in the pre-D73 shape: no rater field.
+    const old = { item_id: trial, trial_id: trial, set: 'tuning', note: null, labelled_at: '2026-11-04T10:00:00.000Z' };
+    await fs.appendFile(file, `${JSON.stringify({ ...old, criterion: 'empathy', value: 'no' })}\n${JSON.stringify({ ...old, criterion: 'no_jargon', value: 'unsure' })}\n`);
+    // A line naming a rater that is not a rater id is not anyone's.
+    await fs.appendFile(file, `${JSON.stringify({ ...old, criterion: 'no_jargon', value: 'yes', rater: 'Not A Rater' })}\n`);
+    // Rishi's queue: empathy is answered and no_jargon, "not sure" before D73, comes back for his second look.
+    expect(await raterQueue(expId, 'rishi')).toEqual([[trial, ['no_jargon'], true]]);
+    expect(await raterQueue(expId, 'rater-a')).toEqual([[trial, ['empathy', 'no_jargon'], false]]);
+    expect((await env.pool.query('SELECT rater, criterion, value FROM labels WHERE trial_id = $1 ORDER BY criterion', [trial])).rows).toEqual([
+      { rater: 'rishi', criterion: 'empathy', value: 'no' },
+      { rater: 'rishi', criterion: 'no_jargon', value: 'unsure' },
+    ]);
+    // Only Rishi can answer that second look; another rater cannot.
+    await saveLabel({ item_id: trial, rater: 'rater-a', criterion: 'no_jargon', value: 'yes', second_look: true }).expect(400);
+    await saveLabel({ item_id: trial, rater: 'rishi', criterion: 'no_jargon', value: 'yes', second_look: true }).expect(201);
+    expect(await lastLine()).toMatchObject({ rater: 'rishi', criterion: 'no_jargon', value: 'yes', second_look: true });
+    expect(await raterQueue(expId, 'rishi')).toEqual([]);
+  });
+
+  it('keeps the sets apart across raters: a trial one rater labelled in held-out is in no rater’s final queue (D52, D73)', async () => {
+    const { expId, trial } = await labelItem('w-raters-sets');
+    const file = path.join(env.tasksDir, 'emi-basic', 'task.json');
+    const before = await fs.readFile(file, 'utf8');
+    try {
+      await fs.writeFile(file, JSON.stringify({ ...(JSON.parse(before) as object), version: '2', split: 'held_out' }, null, 2));
+      const fresh: [string, string[], boolean][] = [[trial, ['empathy', 'no_jargon'], false]];
+      expect(await raterQueue(expId, 'rater_b', 'final')).toEqual(fresh);
+      await saveLabel({ item_id: trial, set: 'heldout', rater: 'rater-a', criterion: 'empathy', value: 'yes' }).expect(201);
+      expect(await lastLine('heldout')).toMatchObject({ set: 'heldout', rater: 'rater-a', criterion: 'empathy' });
+      expect(await raterQueue(expId, 'rater-a', 'final')).toEqual([]);
+      expect(await raterQueue(expId, 'rater_b', 'final')).toEqual([]);
+      expect(await raterQueue(expId, 'rater_b', 'heldout')).toEqual(fresh);
+      expect(await raterQueue(expId, 'rater-a', 'heldout')).toEqual([[trial, ['no_jargon'], false]]);
+    } finally {
+      await fs.writeFile(file, before);
+    }
   });
 
   it('takes a report far over Express’s 100 kB default body limit', async () => {

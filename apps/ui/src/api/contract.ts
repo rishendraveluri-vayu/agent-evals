@@ -1460,13 +1460,21 @@ export interface ReportResponse {
 export const LABEL_SETS = ['tuning', 'heldout', 'final'] as const;
 export type LabelSet = (typeof LABEL_SETS)[number];
 export type LabelValue = 'yes' | 'no' | 'unsure';
+/**
+ * D73: a rater's id, as POST /labels and GET /labels/queue take it: 1 to 40 lower-case letters,
+ * digits, dashes or underscores. Each rater has their own queue and second looks.
+ */
+export const RATER_ID = /^[a-z0-9_-]{1,40}$/;
 
 export interface LabelCriterion {
   id: string;
   text: string;
 }
 
-/** GET /labels/queue?set= : blind, so no harness, model, arm, timing, cost or grade. */
+/**
+ * GET /labels/queue?set=&rater= : blind, so no harness, model, arm, timing, cost or grade, and
+ * nothing from any other rater's labels (D73).
+ */
 export interface LabelQueueItem {
   item_id: string;
   task_summary: string;
@@ -1484,6 +1492,8 @@ export interface LabelQueueItem {
 export interface CreateLabelRequest {
   item_id: string;
   set: LabelSet;
+  /** D73: who gives this label (RATER_ID). Required. */
+  rater: string;
   criterion: string;
   value: LabelValue;
   note?: string | null;
@@ -1496,6 +1506,8 @@ export interface LabelLine {
   item_id: string;
   trial_id: string;
   set: LabelSet;
+  /** D73: who gave this label. A line written before D73 has none and is Rishi's (`rishi`). */
+  rater: string;
   criterion: string;
   value: LabelValue;
   note: string | null;

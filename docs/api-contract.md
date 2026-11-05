@@ -555,7 +555,8 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   Only done trials (agent outcomes) get one; infra failures keep their infra label. The rules
   read what is already recorded (end state and stop reason, execute_tool spans, the current
   grading's grades with their reasons and evidence, the grader specs of that grading, the
-  spec's limits and `required_tools`, Rishi's labels) and call no model; nothing is regraded.
+  spec's limits and `required_tools`, Rishi's labels, rater `rishi` only since D73) and call no
+  model; nothing is regraded.
   `rules_version` is `causes-1`. Causes are computed on each read, not stored, so a new label or
   a regrade shows at once.
 - `GET /experiments/:id/compare` returns `{experiment_id, status, reason, arms, rows, stats,
@@ -999,12 +1000,24 @@ field is left (a key inside a binary file cannot be scrubbed, so it fails the ex
   on; `POST /labels` refuses a label in the wrong set with 400 `wrong_split`. **Second look (D46):** fresh criteria come first; a criterion labelled only "unsure" in the
   set comes back once, after every fresh item, as an item with `second_look: true` holding just
   those criteria. An item with fresh criteria shows those first and its second look on a later
-  load, so no item is in the queue twice.
-- `POST /labels` with `{item_id, set, criterion, value: "yes"|"no"|"unsure", note, second_look?}`
-  appends one line to `labels/<set>.jsonl` with the date (and `"second_look": true` on a second
-  look). Labels are Rishi's own judgments, entered by him; nothing else writes them. A second look
-  is refused (400 `not_a_second_look`) unless the criterion was labelled "unsure" in that set and
-  has no firm or second-look answer yet. Migration `013_label_second_look.sql` adds the column.
+  load, so no item is in the queue twice. **One queue per rater (D73, since 5 Nov):**
+  `rater=<id>` makes "labelled", "unsure" and the second look that rater's own: a criterion
+  another rater answered is still offered to this one until they answer it, and an item never
+  says whether anyone else labelled it. The one rule that crosses raters is D52's: a trial
+  labelled in one set, by anyone, is offered in no other set. A malformed `rater` (including an
+  empty one) is a 400 `invalid_rater`. Without `rater`, any rater's label counts, as before D73;
+  the experiments list and the Judge, trial and comparison pages ask that way.
+- `POST /labels` with `{item_id, set, rater, criterion, value: "yes"|"no"|"unsure", note, second_look?}`
+  appends one line to `labels/<set>.jsonl` with the rater and the date (and `"second_look": true`
+  on a second look). Labels are human judgments, Rishi's and the raters he names (D73), each
+  entered by that person; nothing else writes them. `rater` is required: 1 to 40 lower-case
+  letters, digits, dashes or underscores (`RATER_ID` in the contract), else 400 `invalid_rater`
+  with a `fix`. A second look is refused (400 `not_a_second_look`) unless this rater labelled the
+  criterion "unsure" in that set and has no firm or second-look answer to it yet; another rater's
+  "unsure" does not count. Migration `013_label_second_look.sql` adds the second-look column;
+  `017_label_rater.sql` adds `rater`, with no default, and gives the rows already stored `rishi`.
+  A line without a `rater` field was written before D73 and is imported as `rishi`'s; a line whose
+  `rater` is not a rater id is skipped, with a warning in the API's log.
   The agreement (`evals-agreement`) takes a second-look answer in place of the first "unsure" and
   does not count it as a relabel; an "unsure" given again stays "unsure" and is left out.
 - `GET /judge/agreement?set=heldout` is SP5 and returns `null` until then.

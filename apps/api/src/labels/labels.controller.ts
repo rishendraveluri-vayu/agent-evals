@@ -7,13 +7,13 @@ import { LabelsService } from './labels.service';
 export class LabelsController {
   constructor(private readonly labels: LabelsService) {}
 
-  /** Blind items for Rishi to label: no harness, model, arm, timing, cost or grade. */
+  /** Blind items for a rater to label (D73): no harness, model, arm, timing, cost or grade. */
   @Get('labels/queue')
-  queue(@Query('set') set: string, @Query('experiment') experiment?: string, @Query('items') items?: string): Promise<LabelQueueItem[]> {
-    return this.labels.queue(set, experiment, items);
+  queue(@Query('set') set: string, @Query('experiment') experiment?: string, @Query('items') items?: string, @Query('rater') rater?: string): Promise<LabelQueueItem[]> {
+    return this.labels.queue(set, experiment, items, rater);
   }
 
-  /** Appends Rishi's label to labels/<set>.jsonl. */
+  /** Appends a rater's label to labels/<set>.jsonl, with the rater. */
   @Post('labels')
   create(@Body() body: CreateLabelRequest): Promise<LabelLine> {
     return this.labels.create(body);
