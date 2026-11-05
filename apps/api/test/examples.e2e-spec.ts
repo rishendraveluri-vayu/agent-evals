@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import request from 'supertest';
 import type {
+  AaCalibration,
   ClaimResponse,
   CompareResponse,
   ConfigView,
@@ -72,6 +73,7 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
   let examplesDir: string;
   let exp: ExperimentDetail;
   let second: ExperimentDetail;
+  let calib: ExperimentDetail;
   let configs: { a: string; b: string };
 
   const portOf = (env: TestEnv): number => ((env.app.getHttpServer() as unknown as Server).address() as AddressInfo).port;
@@ -145,14 +147,14 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
     }
   }
 
-  async function finishedExperiment(body: Record<string, unknown>, failFirst: boolean): Promise<ExperimentDetail> {
-    const res = await request(source.http).post('/api/experiments').send({ axis: 'max_steps', n: 1, sim_model: null, budget_usd: 50, ...body });
+  async function finishedExperiment(body: Record<string, unknown>, failFirst: boolean, env: TestEnv = source): Promise<ExperimentDetail> {
+    const res = await request(env.http).post('/api/experiments').send({ axis: 'max_steps', n: 1, sim_model: null, budget_usd: 50, ...body });
     if (res.status !== 201) throw new Error(`experiment: ${res.status} ${JSON.stringify(res.body)}`);
     const created = res.body as ExperimentDetail;
-    await request(source.http).post(`/api/experiments/${created.id}/start`).expect(200);
-    await runTrials(source, failFirst);
-    await drainGrading(source);
-    return (await request(source.http).get(`/api/experiments/${created.id}`).expect(200)).body as ExperimentDetail;
+    await request(env.http).post(`/api/experiments/${created.id}/start`).expect(200);
+    await runTrials(env, failFirst);
+    await drainGrading(env);
+    return (await request(env.http).get(`/api/experiments/${created.id}`).expect(200)).body as ExperimentDetail;
   }
 
   async function exportExample(experimentId: string, name: string): Promise<void> {
@@ -183,6 +185,8 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
   const spanCount = async (env: TestEnv, id: string): Promise<number> =>
     (await env.pool.query<{ n: number }>('SELECT count(*)::int AS n FROM spans s JOIN trials t ON t.id = s.trial_id WHERE t.experiment_id = $1', [id])).rows[0].n;
   const load = (name: string) => request(target.http).post(`/api/examples/${name}/load`);
+  const aaOf = async (env: TestEnv, id: string): Promise<AaCalibration | null> =>
+    ((await request(env.http).get(`/api/experiments/${id}/compare`).expect(200)).body as CompareResponse).stats!.aa;
   const trialIds = async (env: TestEnv, id: string): Promise<string[]> =>
     ((await request(env.http).get(`/api/experiments/${id}/trials`).expect(200)).body as TrialRowSummary[]).map((t) => t.id);
 
@@ -210,8 +214,14 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
     await request(source.http).post(`/api/experiments/${exp.id}/regrade`).send({}).expect(202);
     await drainGrading(source);
     second = await finishedExperiment({ name: 'second source', config_hashes: [a], task_sha256s: [cat.tasks[TASK.id]] }, false);
+    // D44: an A/A calibration of arm A's config, shipped beside the A/B as the real examples are.
+    calib = await finishedExperiment(
+      { name: 'aa source', axis: 'none', calibration: true, config_hashes: [a, a], task_sha256s: [cat.tasks[TASK.id], cat.tasks[TASK_TWO.id]] },
+      false,
+    );
     await exportExample(exp.id, 'test-example');
     await exportExample(second.id, 'second-example');
+    await exportExample(calib.id, 'test-aa');
     target = await bootEnv();
   }, 180_000);
 
@@ -310,6 +320,15 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
     const [header, first] = (await request(target.http).get(`/api/experiments/${exp.id}/export?format=csv`).expect(200)).text.split('\n');
     expect(header.split(',').slice(0, 3)).toEqual(['experiment_id', 'experiment_title', 'trial_id']);
     expect(first.startsWith(`${exp.id},Example test-example (test fixture),`)).toBe(true);
+  });
+
+  it("an example's comparison shows the A/A calibration shipped beside it, never one of your own", async () => {
+    // Where they ran, both are that machine's own, so the A/B shows its A/A.
+    expect((await aaOf(source, exp.id))?.experiment_id).toBe(calib.id);
+    // Here the A/B is an example and its calibration is not loaded yet.
+    expect(await aaOf(target, exp.id)).toBeNull();
+    expect((await load('test-aa').expect(200)).body).toMatchObject({ experiment_id: calib.id, created: true });
+    expect((await aaOf(target, exp.id))?.experiment_id).toBe(calib.id);
   });
 
   it("marks the example's configs example-only until an experiment of your own uses one", async () => {
@@ -447,12 +466,14 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
   it('loads every example shipped in the repo, matching its manifest', async () => {
     const shipped = (await fs.readdir(path.join(REPO, 'examples'), { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name);
     expect(shipped.length).toBeGreaterThan(0);
+    const loaded: ExperimentDetail[] = [];
     for (const name of shipped) {
       const manifest = JSON.parse(await fs.readFile(path.join(REPO, 'examples', name, 'manifest.json'), 'utf8')) as ExampleView & { sample: boolean };
       expect(manifest.sample).toBe(true);
       const res = await load(name).expect(200);
       expect(res.body).toEqual({ name, experiment_id: manifest.experiment_id, created: true });
       const detail = (await request(target.http).get(`/api/experiments/${manifest.experiment_id}`).expect(200)).body as ExperimentDetail;
+      loaded.push(detail);
       expect(detail.example?.name).toBe(name);
       expect(detail.status).toMatch(/^(done|cancelled)$/);
       const q = async (sql: string): Promise<number> => (await target.pool.query<{ n: number }>(sql, [manifest.experiment_id])).rows[0].n;
@@ -489,5 +510,19 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
       const spend = (await request(target.http).get('/api/spend').expect(200)).body as { trials_usd: number };
       expect(spend.trials_usd).toBe(0);
     }
+    // D44: a shipped A/B whose config has a shipped A/A calibration shows it beside its own interval.
+    for (const ab of loaded.filter((d) => !d.calibration)) {
+      const cal = loaded.find((d) => d.calibration && ab.config_hashes.slice(0, 2).includes(d.config_hashes[0]));
+      if (cal) expect((await aaOf(target, ab.id))?.experiment_id).toBe(cal.id);
+    }
+  });
+
+  it('your own comparison never shows a shipped A/A calibration', async () => {
+    // test-aa, loaded above, is a shipped A/A of configs.a; an A/B of your own on configs.a has none of its own.
+    const cat = await catalogue(target.http);
+    const own = await finishedExperiment({ name: 'own A/B', config_hashes: [configs.a, configs.b], task_sha256s: [cat.tasks['emi-basic']] }, false, target);
+    expect(own.status).toBe('done');
+    expect(own.example).toBeNull();
+    expect(await aaOf(target, own.id)).toBeNull();
   });
 });

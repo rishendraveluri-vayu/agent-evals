@@ -603,9 +603,10 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
     waits would make that arm look slower (the grading guide's Retry Latency Skew).
     `left_out_retried` counts them per arm and `retries_unknown` the trials kept whose record does
     not say;
-  - `aa` (D44), on an ordinary A/B: the latest finished calibration run (`status: done`, not a
-    shipped example) of either arm's config, `{experiment_id, name, config_hash, finished_at, diff,
-    verdict}`, or null; `calibration`, on a calibration run: `{as_expected, text}`, whether it came
+  - `aa` (D44), on an ordinary A/B: the latest finished calibration run (`status: done`) of either
+    arm's config, `{experiment_id, name, config_hash, finished_at, diff, verdict}`, or null. Your own
+    experiment reads only your own calibrations, and a shipped example only shipped ones (since
+    5 Nov, so the headline example shows the A/A shipped beside it); `calibration`, on a calibration run: `{as_expected, text}`, whether it came
     out with no difference found;
   - `judge`: SP5's agreement, null until SP5 reports it.
   `seed` is the experiment id, so the same data always gives the same numbers; results are cached

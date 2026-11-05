@@ -1106,13 +1106,17 @@ export class ExperimentsService {
     return { ...result, stats: { ...result.stats, aa: await this.latestCalibration(r) } };
   }
 
-  /** D44: the latest finished A/A calibration run of either arm's config, with its interval; null when there is none. */
+  /**
+   * D44: the latest finished A/A calibration run of either arm's config, with its interval; null when there is none.
+   * SP7 keeps shipped examples apart from your own work: an example reads only a shipped calibration
+   * (the one exported beside it), and your own experiment only one of your own.
+   */
   private async latestCalibration(r: ExperimentRow): Promise<AaCalibration | null> {
     const candidates = await this.db.query<ExperimentRow>(
       `SELECT * FROM experiments
-       WHERE calibration AND status = 'done' AND example_name IS NULL AND id <> $2 AND config_hashes[1] = ANY($1)
+       WHERE calibration AND status = 'done' AND (example_name IS NULL) = $3 AND id <> $2 AND config_hashes[1] = ANY($1)
        ORDER BY finished_at DESC NULLS LAST, created_at DESC, id DESC LIMIT 5`,
-      [r.config_hashes.slice(0, 2), r.id],
+      [r.config_hashes.slice(0, 2), r.id, r.example_name === null],
     );
     for (const c of candidates) {
       const arms = await this.arms(c);
