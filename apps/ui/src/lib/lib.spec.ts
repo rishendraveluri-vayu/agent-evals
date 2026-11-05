@@ -263,6 +263,10 @@ describe('arms', () => {
     expect(armsOf({ axis: 'temperature', config_hashes: [a.hash, b.hash] }, [a, b]).map((x) => x.label)).toEqual(['Temperature not sent', 'Temperature 0.7']);
     const t = config({ hash: 'sha256:7f3a9c2bbbb', toolset: { id: 'finance', version: 'v2', sha256: 'sha256:t2' } });
     expect(armsOf({ axis: 'tools', config_hashes: [a.hash, t.hash] }, [a, t]).map((x) => x.label)).toEqual(['Tools all', 'Tools v2']);
+    // D70's positive control: two toolsets at one version are named by id too, never "Tools v3" twice.
+    const full = config({ toolset: { id: 'finance', version: 'v3', sha256: 'sha256:v3' } });
+    const broken = config({ hash: 'sha256:7f3a9c2bbbb', toolset: { id: 'finance-no-calculators', version: 'v3', sha256: 'sha256:nc' } });
+    expect(armsOf({ axis: 'tools', config_hashes: [broken.hash, full.hash] }, [broken, full]).map((x) => x.label)).toEqual(['Tools finance-no-calculators v3', 'Tools finance v3']);
     // One harness at two versions: both "Hermes Agent" by the axis, so the version tells them apart.
     const pinned = config({ hash: 'sha256:7f3a9c2bbbb', harness_ref: '6112c2adb9e11f69734a29be9d2696f345ffa06a' });
     expect(armsOf({ axis: 'harness', config_hashes: [a.hash, pinned.hash] }, [a, pinned]).map((x) => x.label)).toEqual(['Hermes Agent x', 'Hermes Agent 6112c2a']);

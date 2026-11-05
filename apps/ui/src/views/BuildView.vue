@@ -75,8 +75,9 @@ watch(data, (d) => {
 const harness = computed(() => data.value?.harnesses.find((h) => h.name === form.harness) ?? null);
 const model = computed(() => realModels.value.find((m) => m.name === form.model) ?? null);
 const prompt = computed(() => data.value?.prompts.find((p) => p.sha256 === form.prompt) ?? null);
-/** One built-in toolset until more exist (docs/api-contract.md): every agent gets the same tools. */
-const toolset = computed(() => data.value?.toolsets[0] ?? null);
+/** The first toolset listed that is not for validation (docs/api-contract.md): every agent gets the
+ *  same tools. D70's finance-no-calculators is picked only by hand, on the Config screen. */
+const toolset = computed(() => data.value?.toolsets.find((t) => !t.validation_only) ?? null);
 const promptBlocks = computed(() => (prompt.value ? mdBlocks(prompt.value.text) : []));
 const toolCount = computed(() => toolset.value?.servers.reduce((n, s) => n + s.allowed_tools.length, 0) ?? 0);
 

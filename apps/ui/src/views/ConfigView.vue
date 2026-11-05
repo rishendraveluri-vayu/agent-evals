@@ -112,9 +112,13 @@ watch(data, (d) => {
   const forkedPrompt = forked && d.prompts.some((p) => p.sha256 === forked.prompt.sha256) ? forked.prompt.sha256 : null;
   form.prompt = forkedPrompt ?? newest?.sha256 ?? d.prompts.find(isTaskPrompt)?.sha256 ?? '';
   replaced.prompt = forked && !forkedPrompt ? `${forked.prompt.id} ${forked.prompt.version}` : null;
-  const keptToolset = base && d.toolsets.some((t) => t.sha256 === base.toolset.sha256) ? base.toolset.sha256 : null;
-  form.toolset = keptToolset ?? (d.toolsets.find((t) => t.id === base?.toolset.id) ?? d.toolsets[0])?.sha256 ?? '';
-  replaced.toolset = base && !keptToolset ? `${base.toolset.id} ${base.toolset.version} (${shortHash(base.toolset.sha256)})` : null;
+  // A validation toolset (D70's finance-no-calculators) is picked by hand, or kept by a fork of a
+  // config that has it: a new config never starts on one, even copied from a config that has it.
+  const pickable = forked ? d.toolsets : d.toolsets.filter((t) => !t.validation_only);
+  const keptToolset = base && pickable.some((t) => t.sha256 === base.toolset.sha256) ? base.toolset.sha256 : null;
+  form.toolset = keptToolset ?? (pickable.find((t) => t.id === base?.toolset.id) ?? pickable[0] ?? d.toolsets[0])?.sha256 ?? '';
+  const toolsetGone = !!base && !d.toolsets.some((t) => t.sha256 === base.toolset.sha256);
+  replaced.toolset = base && toolsetGone ? `${base.toolset.id} ${base.toolset.version} (${shortHash(base.toolset.sha256)})` : null;
   for (const name of SETTING_NAMES) {
     const value = base?.settings[name];
     // Only what the base config set itself is copied; defaults stay defaults.
@@ -866,9 +870,16 @@ watch(
                 v-for="t in data.toolsets"
                 :key="t.sha256"
                 :value="t.sha256"
-              >{{ t.id }} {{ t.version }}</option>
+              >{{ t.id }} {{ t.version }}{{ t.validation_only ? ' (validation only)' : '' }}</option>
             </select>
           </label>
+          <p
+            v-if="toolset?.validation_only"
+            class="smaller replaced-field"
+            data-test="toolset-validation"
+          >
+            {{ toolset.description }} Use it to check the platform, not to compare agents.
+          </p>
           <p
             v-if="replaced.toolset"
             class="smaller replaced-field"

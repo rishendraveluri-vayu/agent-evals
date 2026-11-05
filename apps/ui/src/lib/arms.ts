@@ -44,6 +44,10 @@ const isSetting = (name: string): name is SettingName => (SETTING_NAMES as reado
 export function armsOf(experiment: Pick<ExperimentSummary, 'axis' | 'config_hashes'>, configs: ConfigView[]): Arm[] {
   const sameTwice = experiment.config_hashes.length === 2 && experiment.config_hashes[0] === experiment.config_hashes[1];
   const axis = experiment.axis;
+  // Toolsets are named by version when they share an id ("Tools v2"), else by both, so D70's
+  // finance v3 and finance-no-calculators v3 do not both read "Tools v3".
+  const toolsetIds = new Set(experiment.config_hashes.map((h) => configs.find((c) => c.hash === h)?.toolset.id));
+  const toolsetWords = (t: ConfigView['toolset']) => (toolsetIds.size > 1 ? `${t.id} ${t.version}` : t.version);
   const arms = experiment.config_hashes.map((hash, i) => {
     const config = configs.find((c) => c.hash === hash);
     const byHash = { label: `Config ${shortHash(hash)}`, short: shortHash(hash) };
@@ -53,7 +57,7 @@ export function armsOf(experiment: Pick<ExperimentSummary, 'axis' | 'config_hash
       if (experiment.config_hashes.length === 1 || axis === 'prompt') names = byPrompt;
       else if (axis === 'harness') names = { label: harnessName(config.harness), short: harnessShort(config.harness) };
       else if (axis === 'model') names = { label: modelName(config.model), short: modelName(config.model) };
-      else if (axis === 'tools' || axis === 'toolset') names = { label: `Tools ${config.toolset.version}`, short: `tools ${config.toolset.version}` };
+      else if (axis === 'tools' || axis === 'toolset') names = { label: `Tools ${toolsetWords(config.toolset)}`, short: `tools ${toolsetWords(config.toolset)}` };
       else if (isSetting(axis)) {
         const words = `${settingLabel(axis)} ${settingWords(config, axis)}`;
         names = { label: words, short: words };
