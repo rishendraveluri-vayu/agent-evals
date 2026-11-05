@@ -79,7 +79,9 @@ Ask in order; the first yes decides.
 3. **Is it a rule about wording?** A `unit_test` when the wording varies in a bounded way (the MBA
    task's "asks for the missing facts", D53), with tests on real outputs; otherwise the judge. A bare
    regex is the last resort: on the 4 Nov trials three false-failed on real answers (a month count,
-   names-a-risk, says-do-not-share).
+   names-a-risk, and an `\bOTP\b` regex_absent that failed LangGraph's warning never to share an
+   OTP). (Corrected 5 Nov: an earlier version of this line named says-do-not-share, which passed
+   all 5 recorded answers; it was replaced under D63 for being open wording, not for a seen fail.)
 4. **Is it about meaning?** The judge, as yes/no criteria with a quote from the answer. "Addresses
    her actual concern", "explains the risk", "shows care in hardship", "does not push a product".
    A judge criterion counts in the pass rate only once it meets the trust bar against Rishi's
