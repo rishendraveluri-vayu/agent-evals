@@ -6,6 +6,7 @@ import { LABEL_SETS } from '../contract';
 import { badRequest, notFound } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { sha256Hex } from '../common/hashing';
+import { CatalogueService } from '../catalogue/catalogue.service';
 import { Db } from '../database/db.service';
 import { NOT_EXAMPLE_TRIAL } from '../examples/example-guard';
 
@@ -63,7 +64,24 @@ export class LabelsService {
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly db: Db,
+    private readonly catalogue: CatalogueService,
   ) {}
+
+  /**
+   * D52: the split a label set goes by is the task's split in tasks/ today, not the split of the
+   * version a trial ran on, so a task moved to held-out is never tuning material through its older
+   * trials. A task no longer in tasks/ counts as held-out if any version of it ever was.
+   * Returns the SQL condition on `k` (the trial's task row) and its two parameters.
+   */
+  private async splitCondition(params: unknown[], set: LabelSet): Promise<string> {
+    const files = (await this.catalogue.taskFiles()).filter((f) => !f.problems.length);
+    params.push(files.filter((f) => f.split === 'held_out').map((f) => f.id), files.filter((f) => f.split === 'discovery').map((f) => f.id), splitFor(set));
+    const [held, disc, want] = [params.length - 2, params.length - 1, params.length];
+    return `(CASE WHEN k.id = ANY($${held}::text[]) THEN 'held_out'
+                  WHEN k.id = ANY($${disc}::text[]) THEN 'discovery'
+                  WHEN EXISTS (SELECT 1 FROM tasks kv WHERE kv.id = k.id AND kv.split = 'held_out') THEN 'held_out'
+                  ELSE k.split END) = $${want}`;
+  }
 
   private file(set: LabelSet): string {
     return path.join(this.config.labelsDir, `${set}.jsonl`);
@@ -116,8 +134,8 @@ export class LabelsService {
     // to judge, so it is left out too.
     // D52: the sets follow the task split, so no task is both tuned on and scored on: tuning takes
     // trials of discovery tasks only; held-out and final take trials of held-out tasks only.
-    params.push(splitFor(set));
-    let where = `k.split = $${params.length} AND t.status = 'done' AND NOT t.probe AND t.label = 'agent' AND t.result IS NOT NULL
+    const split = await this.splitCondition(params, set);
+    let where = `${split} AND t.status = 'done' AND NOT t.probe AND t.label = 'agent' AND t.result IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM labels o WHERE o.trial_id = t.id AND o.label_set <> $1)
       AND ${NOT_EXAMPLE_TRIAL('t')}
       AND NOT EXISTS (SELECT 1 FROM configs fc WHERE fc.hash = t.config_hash AND fc.model LIKE 'fake/%')`;
@@ -174,15 +192,18 @@ export class LabelsService {
     if (typeof body.criterion !== 'string' || !body.criterion) throw badRequest('invalid_label', 'criterion is required');
     if (body.value !== 'yes' && body.value !== 'no' && body.value !== 'unsure') throw badRequest('invalid_label', 'value must be yes, no or unsure');
     if (body.note !== undefined && body.note !== null && typeof body.note !== 'string') throw badRequest('invalid_label', 'note must be text');
-    const [trial] = await this.db.query<{ id: string; body: JsonObject; split: string; task_id: string }>(
-      `SELECT t.id, k.body, k.split, k.id AS task_id FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 WHERE t.id = $1 AND t.status = 'done'`,
-      [body.item_id],
+    const params: unknown[] = [body.item_id];
+    const split = await this.splitCondition(params, set);
+    const [trial] = await this.db.query<{ id: string; body: JsonObject; task_id: string; in_split: boolean }>(
+      `SELECT t.id, k.body, k.id AS task_id, ${split} AS in_split FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 WHERE t.id = $1 AND t.status = 'done'`,
+      params,
     );
     if (!trial) throw notFound('unknown_item', `no finished trial ${body.item_id} to label`);
-    if (trial.split !== splitFor(set)) {
+    if (!trial.in_split) {
+      const other = splitFor(set) === 'held_out' ? 'discovery' : 'held-out';
       throw badRequest(
         'wrong_split',
-        `${trial.task_id} is a ${trial.split === 'held_out' ? 'held-out' : 'discovery'} task, and the ${set} set takes ${splitFor(set) === 'held_out' ? 'held-out' : 'discovery'} tasks only`,
+        `${trial.task_id} is a ${other} task, and the ${set} set takes ${splitFor(set) === 'held_out' ? 'held-out' : 'discovery'} tasks only`,
         'Label it in the set its task belongs to: tuning for discovery tasks, held-out or final for held-out tasks.',
       );
     }

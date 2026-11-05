@@ -961,6 +961,28 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'no_jargon', value: 'yes', second_look: true }).expect(400);
   });
 
+  it('labels by the task split in tasks/ today, so a trial of a task moved to held-out is never tuning material (D52)', async () => {
+    const haiku = await makeConfig(env.http, cat, { name: 'split arm', model: 'claude-haiku-5-5' });
+    const exp = await experiment({ configs: [haiku] });
+    const c = (await claim('w-split'))!;
+    await report(c, 'w-split');
+    const queue = async (set: string) => (await request(env.http).get(`/api/labels/queue?set=${set}&experiment=${exp.id}`).expect(200)).body as { item_id: string }[];
+    expect((await queue('tuning')).map((i) => i.item_id)).toEqual([c.trial_id]);
+    // The task file moves to held-out as a new version; the trial keeps the version it ran on.
+    const file = path.join(env.tasksDir, 'emi-basic', 'task.json');
+    const before = await fs.readFile(file, 'utf8');
+    try {
+      await fs.writeFile(file, JSON.stringify({ ...(JSON.parse(before) as object), version: '2', split: 'held_out' }, null, 2));
+      expect(await queue('tuning')).toEqual([]);
+      expect((await queue('heldout')).map((i) => i.item_id)).toEqual([c.trial_id]);
+      const refused = await request(env.http).post('/api/labels').send({ item_id: c.trial_id, set: 'tuning', criterion: 'empathy', value: 'yes' }).expect(400);
+      expect(refused.body).toMatchObject({ error: 'wrong_split' });
+    } finally {
+      await fs.writeFile(file, before);
+    }
+    expect((await queue('tuning')).map((i) => i.item_id)).toEqual([c.trial_id]);
+  });
+
   it('takes a report far over Express’s 100 kB default body limit', async () => {
     const exp = await experiment();
     const c = (await claim('w-big'))!;
