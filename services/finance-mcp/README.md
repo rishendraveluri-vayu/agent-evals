@@ -25,9 +25,22 @@ outputs and final answers exactly, so every tool is deterministic. The same inpu
 | `get_client_profile` | The client's profile, exactly as written in `client.json`. |
 | `list_debts` | The client's debts, with total balance and total minimum payments. |
 | `list_transactions` | The client's transactions, filtered by category and date range, with debit and credit totals. |
+| `add` | The sum of 2 to 100 numbers. |
+| `subtract` | `a` minus `b`. |
+| `multiply` | The product of 2 to 100 numbers. |
+| `divide` | `a` divided by `b`; an error when `b` is 0. |
+| `percent_of` | `percent` percent of `value`: `value × percent / 100`. |
+| `percent_change` | The change from `from_value` to `to_value`, as a difference and as a percent of `from_value`. |
+| `round` | A number rounded half-up to `places` decimals (default 2; negative places round to tens, thousands, lakhs). |
 
-All 11 tools are read-only (`readOnlyHint: true`). The full manifest the agents see is in
+All 18 tools are read-only (`readOnlyHint: true`). The full manifest the agents see is in
 `tests/snapshots/tools_manifest.json`, and a test fails on any change to it.
+
+The last seven, the arithmetic tools, were added on 5 Nov (D54, server version 0.3.0), so that
+every figure an agent writes can come from a tool result and the agent never does its own sums.
+The platform's number-provenance check counts a figure as supported only when a tool result, the
+client file or a user message holds it; on 4 Nov most Hermes failures of that check were sums
+written in prose. The first eleven tools are unchanged.
 
 ## Conventions
 
@@ -148,6 +161,31 @@ All 11 tools are read-only (`readOnlyHint: true`). The full manifest the agents 
   `eligible: false`, when existing EMIs already reach or exceed the limit.
 - `max_loan_amount` is the principal whose exact EMI equals `max_new_emi`, rounded half-up. At a
   0% rate it is EMI × n.
+
+### Arithmetic: `add`, `subtract`, `multiply`, `divide`, `percent_of`, `percent_change`, `round`
+
+- **Any unit.** The numbers may be rupees, months, counts or percentages; the tools do not know
+  which. So inputs are used exactly as given (a float through its shortest repr, as everywhere),
+  never rounded to paise on entry, since an input may be a rate.
+- **Bounds.** Every input and every result lies within -10^12 to 10^12, the ceiling every money
+  input has. A result outside it is an error (`the product is outside -10^12 to 10^12`), checked
+  before rounding, so a product of 100 large numbers is refused rather than crashing.
+- **Results** are rounded half-up to 2 decimals (`{"sum":23120.00}`), like money outputs, and
+  computed in exact Decimal first: `0.1 + 0.2` is `0.30`. They are plain numbers: no
+  `_formatted` and no `_words`, because the unit is unknown. Zero is never `-0.00`.
+- **Results never echo the inputs.** A result holds only what the tool worked out, so the
+  provenance check finds the answer there, not a number the agent passed in.
+- **One key each:** `sum`, `difference`, `product`, `quotient`, `amount` (`percent_of`), and
+  `change` plus `change_pct` (`percent_change`), `rounded` (`round`).
+- `add` and `multiply` take 2 to 100 numbers: an empty or one-item list is an error.
+- `divide` with `b` = 0 is an error: `cannot divide by zero: b is 0`.
+- `percent_change`: `change = to_value − from_value` and `change_pct = change / |from_value| ×
+  100`, so a rise is positive even from a negative start. A `from_value` of 0 is an error.
+- `round`: half-up, so halves go away from zero (`2.345` → `2.35`, `-2.345` → `-2.35`).
+  `places` is -7 to 10, default 2; the result has exactly `places` decimals, or none when
+  `places` ≤ 0 (`23120.456` at -3 is `23000`).
+- **Precision is 2 decimals.** A small ratio loses digits (`divide(9, 1200)` is `0.01`). For
+  percentages use `percent_of` and `percent_change`, which work in percent.
 
 ## What a result looks like
 
@@ -286,7 +324,7 @@ Python.
 ## Tests and lint
 
 ```sh
-uv run pytest                  # ~7 s; starts real stdio and HTTP servers as subprocesses
+uv run pytest                  # ~17 s; starts real stdio and HTTP servers as subprocesses
 uv run ruff check .            # uses the repo-root ruff.toml
 uv run ruff format --check .
 FINANCE_MCP_UPDATE_SNAPSHOT=1 uv run pytest tests/test_mcp.py -k snapshot   # after a deliberate tool change
@@ -303,6 +341,12 @@ FINANCE_MCP_UPDATE_SNAPSHOT=1 uv run pytest tests/test_mcp.py -k snapshot   # af
   server goes month by month). Golden literals pin published figures (the ₹10 lakh and ₹50 lakh
   EMIs, ₹10,000 and ₹5,000 SIPs, a ₹1 lakh FD, ₹1 lakh at 6% inflation) and a debt payoff
   worked by hand. Turning the SIP into an annuity-immediate fails 145 of them.
+- **Arithmetic tests** (`tests/test_arithmetic.py`, about 830 cases): every pair from a grid of
+  21 values (zero, negatives, floats such as 0.1 and 0.005, paise boundaries, ±10^12) through
+  each two-number tool, and each value at every `places` through `round`, against an exact
+  `fractions.Fraction` reference that rounds half-up once and refuses out-of-range results; plus
+  the edge cases: empty and one-item lists, division by zero, a zero start for
+  `percent_change`, non-numbers, NaN and infinity, and a product of 100 numbers of 10^12.
 - **Compatibility tests.** `tests/test_compat_mcp1.py` runs an `mcp` 1.30.0 client from its own
   locked environment in `tests/compat/mcp1/`, because 1.x and 2.x cannot share one
   environment. `uv` builds that environment on first use, which needs network access once; the

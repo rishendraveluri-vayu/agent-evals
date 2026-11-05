@@ -20,6 +20,7 @@ from mcp import Client, ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 from support import (
+    ARITHMETIC,
     EXPECTED_TOOLS,
     SAMPLE_CALLS,
     SNAPSHOT,
@@ -67,7 +68,8 @@ def test_client_under_test_is_mcp_2_3_0() -> None:
     assert importlib.metadata.version("mcp") == "2.3.0"
 
 
-async def test_list_tools_returns_exactly_the_eleven_tools(state_dir: Path) -> None:
+async def test_list_tools_returns_exactly_the_expected_tools(state_dir: Path) -> None:
+    """Eleven finance tools, then the seven arithmetic tools added on 5 Nov (D54)."""
     async with Client(create_server(state_dir), mode="legacy") as client:
         tools = (await client.list_tools()).tools
     assert [t.name for t in tools] == EXPECTED_TOOLS
@@ -281,6 +283,56 @@ def test_nested_debt_objects_are_inlined() -> None:
             "Error executing tool sip_future_value: invalid arguments: lump_sum: Input should be "
             "greater than or equal to 0",
         ),
+        # The arithmetic tools (D54): a plain error on division by zero, bounds from the schema.
+        (
+            "divide",
+            {"a": 1000, "b": 0},
+            "Error executing tool divide: cannot divide by zero: b is 0",
+        ),
+        (
+            "percent_change",
+            {"from_value": 0, "to_value": 500},
+            "Error executing tool percent_change: from_value is 0, so there is no percent change",
+        ),
+        (
+            "add",
+            {"values": []},
+            "Error executing tool add: invalid arguments: values: List should have at least 2 "
+            "items after validation, not 0",
+        ),
+        (
+            "multiply",
+            {"values": [5]},
+            "Error executing tool multiply: invalid arguments: values: List should have at least "
+            "2 items after validation, not 1",
+        ),
+        (
+            "add",
+            {"values": [1, 2000000000000]},
+            "Error executing tool add: invalid arguments: values[1]: Input should be less than or "
+            "equal to 1000000000000",
+        ),
+        (
+            "multiply",
+            {"values": [1000000, 1000000, 2]},
+            "Error executing tool multiply: the product is outside -10^12 to 10^12",
+        ),
+        (
+            "subtract",
+            {"a": 100},
+            "Error executing tool subtract: invalid arguments: b: Field required",
+        ),
+        (
+            "round",
+            {"value": 1.5, "places": 11},
+            "Error executing tool round: invalid arguments: places: Input should be less than or "
+            "equal to 10",
+        ),
+        (
+            "round",
+            {"value": 1.5, "digits": 0},
+            "Error executing tool round: unknown argument(s) digits; it takes value, places",
+        ),
         ("no_such_tool", {}, "Unknown tool: no_such_tool"),
     ],
 )
@@ -308,6 +360,28 @@ def test_sip_lump_sum_over_the_wire(state_dir: Path) -> None:
     zero = text_of(call(server, "sip_future_value", {**base, "lump_sum": 0}))
     assert plain == zero
     assert "lump_sum" not in plain
+
+
+def test_arithmetic_over_the_wire(state_dir: Path) -> None:
+    """Each arithmetic tool returns one or two plain numbers in exact decimals, never its inputs,
+    and no ₹ formatting, because the tools do not know the unit."""
+    server = create_server(state_dir)
+    texts = {
+        name: text_of(call(server, name, arguments))
+        for name, arguments in SAMPLE_CALLS
+        if name in ARITHMETIC
+    }
+    assert texts == {
+        "add": '{"sum":23120.00}',
+        "subtract": '{"difference":74167.50}',
+        "multiply": '{"product":107967.12}',
+        "divide": '{"quotient":17142.86}',
+        "percent_of": '{"amount":37000.00}',
+        "percent_change": '{"change":9000.00,"change_pct":63.74}',
+        "round": '{"rounded":23000}',
+    }
+    assert text_of(call(server, "add", {"values": [0.1, 0.2]})) == '{"sum":0.30}'
+    assert text_of(call(server, "round", {"value": 2.345})) == '{"rounded":2.35}'
 
 
 def test_a_tool_error_does_not_break_the_next_call(state_dir: Path) -> None:

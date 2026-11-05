@@ -1,4 +1,5 @@
-"""The MCP server: 11 read-only tools over the calculators and the client file.
+"""The MCP server: 18 read-only tools over the calculators, the client file and the arithmetic
+module (eight calculators, three client tools, and since 5 Nov seven arithmetic tools, D54).
 
 What every harness sees is decided here, so three things are pinned:
 
@@ -28,7 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from finance_mcp import __version__, calculators
+from finance_mcp import __version__, arithmetic, calculators
 from finance_mcp.client_data import (
     MAX_TRANSACTIONS_LIMIT,
     ClientDataError,
@@ -52,6 +53,10 @@ AnnualRatePct = Annotated[
     float, Field(description="Interest rate in percent per year (9 means 9%).", ge=0, le=100)
 ]
 TenureMonths = Annotated[int, Field(description="Loan tenure in months.", ge=1, le=600)]
+
+# The arithmetic tools (D54) take any unit, rupees, months or counts, within the money ceiling
+# both ways.
+Number = Annotated[float, Field(ge=-MAX_RUPEES, le=MAX_RUPEES)]
 
 
 class DebtArg(BaseModel):
@@ -165,11 +170,15 @@ class FinanceServer(MCPServer):
         self._arg_names: dict[str, tuple[str, ...]] = {}
         self._flat: dict[str, dict[str, Any]] = {}
 
-    def register(self, fn: Callable[..., CallToolResult], description: str) -> None:
-        """Add a read-only tool and flatten its schema now, so a bad signature fails at startup."""
-        self.add_tool(fn, description=description, annotations=READ_ONLY)
-        self._arg_names[fn.__name__] = tuple(inspect.signature(fn).parameters)
-        self._flat[fn.__name__] = flatten_schema(Tool.from_function(fn).parameters)
+    def register(
+        self, fn: Callable[..., CallToolResult], description: str, name: str | None = None
+    ) -> None:
+        """Add a read-only tool and flatten its schema now, so a bad signature fails at startup.
+        `name` overrides the function's name (`round`, which would shadow the builtin)."""
+        name = name or fn.__name__
+        self.add_tool(fn, name=name, description=description, annotations=READ_ONLY)
+        self._arg_names[name] = tuple(inspect.signature(fn).parameters)
+        self._flat[name] = flatten_schema(Tool.from_function(fn).parameters)
 
     async def list_tools(self) -> list[MCPTool]:
         tools = await super().list_tools()
@@ -424,6 +433,89 @@ def create_server(state_dir: Path | None) -> FinanceServer:
             lambda: transactions_view(load_client(state_dir), category, from_date, to_date, limit)
         )
 
+    def add(
+        values: Annotated[
+            list[Number],
+            Field(
+                description="The numbers to add, 2 to 100.",
+                min_length=arithmetic.MIN_TERMS,
+                max_length=arithmetic.MAX_TERMS,
+            ),
+        ],
+    ) -> CallToolResult:
+        return _text(arithmetic.add, values)
+
+    def subtract(
+        a: Annotated[
+            float, Field(description="The number to subtract from.", ge=-MAX_RUPEES, le=MAX_RUPEES)
+        ],
+        b: Annotated[
+            float, Field(description="The number to subtract.", ge=-MAX_RUPEES, le=MAX_RUPEES)
+        ],
+    ) -> CallToolResult:
+        return _text(arithmetic.subtract, a, b)
+
+    def multiply(
+        values: Annotated[
+            list[Number],
+            Field(
+                description="The numbers to multiply, 2 to 100.",
+                min_length=arithmetic.MIN_TERMS,
+                max_length=arithmetic.MAX_TERMS,
+            ),
+        ],
+    ) -> CallToolResult:
+        return _text(arithmetic.multiply, values)
+
+    def divide(
+        a: Annotated[
+            float, Field(description="The number to divide.", ge=-MAX_RUPEES, le=MAX_RUPEES)
+        ],
+        b: Annotated[
+            float,
+            Field(description="The number to divide by; not 0.", ge=-MAX_RUPEES, le=MAX_RUPEES),
+        ],
+    ) -> CallToolResult:
+        return _text(arithmetic.divide, a, b)
+
+    def percent_of(
+        value: Annotated[
+            float,
+            Field(description="The number to take a percentage of.", ge=-MAX_RUPEES, le=MAX_RUPEES),
+        ],
+        percent: Annotated[
+            float,
+            Field(description="The percentage (18 means 18%).", ge=-MAX_RUPEES, le=MAX_RUPEES),
+        ],
+    ) -> CallToolResult:
+        return _text(arithmetic.percent_of, value, percent)
+
+    def percent_change(
+        from_value: Annotated[
+            float, Field(description="The starting number; not 0.", ge=-MAX_RUPEES, le=MAX_RUPEES)
+        ],
+        to_value: Annotated[
+            float, Field(description="The new number.", ge=-MAX_RUPEES, le=MAX_RUPEES)
+        ],
+    ) -> CallToolResult:
+        return _text(arithmetic.percent_change, from_value, to_value)
+
+    def round_(
+        value: Annotated[
+            float, Field(description="The number to round.", ge=-MAX_RUPEES, le=MAX_RUPEES)
+        ],
+        places: Annotated[
+            int,
+            Field(
+                description="Decimal places to keep: 2 is paise, 0 whole rupees, -3 the nearest "
+                "thousand, -5 the nearest lakh.",
+                ge=arithmetic.MIN_PLACES,
+                le=arithmetic.MAX_PLACES,
+            ),
+        ] = 2,
+    ) -> CallToolResult:
+        return _text(arithmetic.round_number, value, places)
+
     tools: list[tuple[Callable[..., CallToolResult], str]] = [
         (
             calculate_emi,
@@ -488,9 +580,49 @@ def create_server(state_dir: Path | None) -> FinanceServer:
             "inclusive date range, with debit and credit totals over all matches. Amounts in "
             "rupees; says client_on_file false if there is no client.",
         ),
+        (
+            add,
+            "The sum of two or more numbers, in exact decimal arithmetic: rupees, months, counts "
+            "or any other unit. Returns sum, rounded half-up to 2 decimals.",
+        ),
+        (
+            subtract,
+            "The difference a minus b, in exact decimal arithmetic, for any unit. Returns "
+            "difference, rounded half-up to 2 decimals.",
+        ),
+        (
+            multiply,
+            "The product of two or more numbers, in exact decimal arithmetic: for example a "
+            "monthly amount times a number of months. Returns product, rounded half-up to 2 "
+            "decimals.",
+        ),
+        (
+            divide,
+            "The quotient a divided by b, in exact decimal arithmetic: for example an amount split "
+            "over a number of months. Returns quotient, rounded half-up to 2 decimals; b must not "
+            "be 0.",
+        ),
+        (
+            percent_of,
+            "What a percentage of a number comes to, value × percent / 100: 18 percent of 50,000 "
+            "is 9,000. Returns amount, rounded half-up to 2 decimals.",
+        ),
+        (
+            percent_change,
+            "The change from from_value to to_value, as a difference and as a percent of "
+            "from_value: 50,000 to 60,000 is a change of 10,000 and 20 percent. Returns change "
+            "and change_pct, both rounded half-up to 2 decimals; from_value must not be 0.",
+        ),
     ]
     for fn, description in tools:
         server.register(fn, description)
+    server.register(
+        round_,
+        "A number rounded half-up, halves away from zero, to a given number of decimal places, "
+        "2 by default (paise): 23,120.456 is 23,120.46 at 2 places and 23,000 at -3. Returns "
+        "rounded.",
+        name="round",
+    )
 
     @server.custom_route("/health", methods=["GET"])
     async def health(request: Request) -> Response:
