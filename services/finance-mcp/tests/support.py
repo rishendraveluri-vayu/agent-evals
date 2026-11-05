@@ -67,9 +67,18 @@ SAMPLE_CALLS: list[tuple[str, dict[str, Any]]] = [
         "list_transactions",
         {"category": "medical", "from_date": "2026-10-01", "to_date": "2026-10-31"},
     ),
+    # The arithmetic tools (D54, 5 Nov).
+    ("add", {"values": [14120, 9000]}),
+    ("subtract", {"a": 92500, "b": 18332.5}),
+    ("multiply", {"values": [8997.26, 12]}),
+    ("divide", {"a": 120000, "b": 7}),
+    ("percent_of", {"value": 92500, "percent": 40}),
+    ("percent_change", {"from_value": 14120, "to_value": 23120}),
+    ("round", {"value": 23120.456, "places": -3}),
 ]
 
 EXPECTED_TOOLS = [name for name, _ in SAMPLE_CALLS]
+ARITHMETIC = ["add", "subtract", "multiply", "divide", "percent_of", "percent_change", "round"]
 
 
 def text_of(result: CallToolResult) -> str:

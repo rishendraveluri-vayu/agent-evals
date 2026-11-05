@@ -8,7 +8,10 @@ For every finished trial it reads the stored files through the API and checks:
 - no prompt-cache markers in any request (D31);
 - memory: no memory tool or block when off; the tool but no seeded text when on and empty; every
   seeded entry in the prompt when seeded;
-- tools: exactly the 11 finance tools, plus the memory tool only when memory is on;
+- tools: exactly the config's toolset (finance/all: the 11 finance tools; finance/v2 since 5 Nov:
+  those plus the 7 arithmetic tools, D54), plus the memory tool only when memory is on. A Hermes
+  image built before the arithmetic tools would show v2 configs 11 tools, and this catches it;
+
 - LiteLLM's call count against Hermes's own (R10.9), and that LiteLLM's log was complete;
 - compression never fired;
 - Hermes's config files are unchanged after the trial (integrity hashes);
@@ -32,6 +35,9 @@ FINANCE = {
     "sip_future_value", "fd_maturity", "inflation_adjusted_value", "loan_affordability",
     "get_client_profile", "list_debts", "list_transactions",
 }
+ARITHMETIC = {"add", "subtract", "multiply", "divide", "percent_of", "percent_change", "round"}
+# The tools each finance toolset version gives the model (apps/api/src/catalogue/catalogue-files.ts).
+TOOLSETS = {"all": FINANCE, "v2": FINANCE | ARITHMETIC}
 PROMPT_FILE = Path(__file__).resolve().parents[1] / "configs" / "prompts" / "finance-advisor.v1.md"
 
 
@@ -77,10 +83,16 @@ def check(api: str, trial: dict, cfg: dict, ours: str) -> dict:
     out["prompt_kept"] = ours[:200] in system and ours[-200:] in system
     out["no_parallel_section"] = "Parallel tool calls" not in system
     out["no_cache_markers"] = all('"cache_control"' not in (r or "") for r in all_reqs)
-    extra = tools - FINANCE
-    out["finance_tools"] = FINANCE <= tools
+    version = (cfg.get("toolset") or {}).get("version")
+    finance = TOOLSETS.get(version)
+    if finance is None:
+        out["error"] = f"no tool list for toolset version {version!r}; add it to TOOLSETS"
+        return out
+    extra = tools - finance
+    out["finance_tools"] = finance <= tools
+    out["missing_tools"] = sorted(finance - tools)
     out["extra_tools"] = sorted(extra)
-    out["tools_ok"] = FINANCE <= tools and (extra == ({"memory"} if memory_on else set()))
+    out["tools_ok"] = finance <= tools and (extra == ({"memory"} if memory_on else set()))
     if not memory_on:
         out["memory_ok"] = "memory" not in tools and "MEMORY" not in system
     elif not seeds:

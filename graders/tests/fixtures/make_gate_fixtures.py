@@ -1,12 +1,14 @@
-"""Regenerate tests/fixtures/gate-20261104/: real trial outputs, checks.json included, from gate
+"""Regenerate tests/fixtures/gate-<date>/: real trial outputs, checks.json included, from gate
 runs against the fake model server (no real model is called).
 
 Each case runs one adapter through the runner, exactly as a gate test does, on a task that lists
-required_tools, and keeps the out/ files a grader reads. Run from a harness's environment:
+required_tools, and keeps the out/ files a grader reads. Run from a harness's environment, for
+one fixture folder (so an older folder is never rewritten by accident):
 
-    cd workers/ownloop && uv run python ../../graders/tests/fixtures/make_gate_fixtures.py ownloop
+    cd workers/ownloop && uv run python ../../graders/tests/fixtures/make_gate_fixtures.py \\
+        ownloop gate-20261105
     cd workers/hermes && HERMES_SRC=... uv run python \\
-        ../../graders/tests/fixtures/make_gate_fixtures.py hermes
+        ../../graders/tests/fixtures/make_gate_fixtures.py hermes gate-20261105
 """
 
 from __future__ import annotations
@@ -22,14 +24,20 @@ from evals_adapter.gate import FakeServer, Gate
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
-OUT = HERE / "gate-20261104"
 KEEP = ("result.json", "trace.jsonl", "runner-report.json", "checks.json")
 
-# (fixture name, fake script, the task's required_tools)
-CASES = [
-    ("emi", "finance-emi", ["calculate_emi"]),
-    ("emi-unsupported", "finance-emi-unsupported", ["calculate_emi", "list_debts"]),
-]
+# fixture folder -> [(fixture name, fake script, the task's required_tools)]
+CASES = {
+    "gate-20261104": [
+        ("emi", "finance-emi", ["calculate_emi"]),
+        ("emi-unsupported", "finance-emi-unsupported", ["calculate_emi", "list_debts"]),
+    ],
+    # D54: a sum taken from the arithmetic tool add, and the same answer without the add call.
+    "gate-20261105": [
+        ("sum-tool", "finance-sum-tool", ["calculate_emi", "list_debts"]),
+        ("sum-unsupported", "finance-sum-unsupported", ["calculate_emi", "list_debts"]),
+    ],
+}
 
 
 def gate_for(harness: str) -> Gate:
@@ -54,11 +62,14 @@ def gate_for(harness: str) -> Gate:
     raise SystemExit(f"unknown harness {harness}")
 
 
-def main(harness: str) -> None:
+def main(harness: str, folder: str) -> None:
+    if folder not in CASES:
+        raise SystemExit(f"unknown fixture folder {folder}; one of {', '.join(CASES)}")
+    out = HERE / folder
     gate = gate_for(harness)
     fake = FakeServer()
     try:
-        for name, script, required in CASES:
+        for name, script, required in CASES[folder]:
             with tempfile.TemporaryDirectory(prefix="gate-fixture-") as tmp:
                 tmp_path = Path(tmp)
                 spec = gate.spec(tmp_path / "trial", script, fake)
@@ -66,7 +77,7 @@ def main(harness: str) -> None:
                 spec["task"]["required_tools"] = required
                 run = gate.run(tmp_path, fake, spec)
                 assert run.report["label"] == "agent", run.explain()
-                dest = OUT / f"{harness}-{name}"
+                dest = out / f"{harness}-{name}"
                 dest.mkdir(parents=True, exist_ok=True)
                 for f in KEEP:
                     shutil.copy2(run.trial_dir / "out" / f, dest / f)
@@ -76,4 +87,6 @@ def main(harness: str) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    if len(sys.argv) != 3:
+        raise SystemExit(f"usage: make_gate_fixtures.py <ownloop|hermes> <{'|'.join(CASES)}>")
+    main(sys.argv[1], sys.argv[2])

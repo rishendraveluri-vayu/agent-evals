@@ -1,0 +1,16 @@
+# A sum in the answer that came from the arithmetic tool `add` (D54): the EMI from calculate_emi
+# plus the minimums from list_debts (Meera, the example client), added by `add`. The answer is
+# word for word the one in finance-sum-unsupported, so the number-provenance check (checks.json)
+# and the provenance grader differ between the two only because of the `add` call.
+description: Calls calculate_emi, list_debts and add, then answers with the sum add returned.
+steps:
+  - tool_calls:
+      - name: calculate_emi
+        arguments: {principal: 1000000, annual_rate_pct: 9, tenure_months: 240}
+  - tool_calls:
+      - name: list_debts
+        arguments: {}
+  - tool_calls:
+      - name: add
+        arguments: {values: [8997.26, 18332.5]}
+  - text: "The new EMI would be Rs 8,997.26 a month. With the Rs 18,332.50 you already pay on your three debts, your loan payments would come to Rs 27,329.76 a month."

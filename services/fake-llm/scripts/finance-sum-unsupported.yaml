@@ -1,0 +1,13 @@
+# As finance-sum-tool, without the `add` call: the same answer, but its total (8,997.26 +
+# 18,332.50 = 27,329.76) is worked out in the reply, as Hermes did on 4 Nov ("Rs 23,120 =
+# Rs 14,120 + Rs 9,000"). No tool returned it, so the provenance check flags it and the
+# provenance grader fails the trial.
+description: Calls calculate_emi and list_debts, then answers with a sum no tool returned.
+steps:
+  - tool_calls:
+      - name: calculate_emi
+        arguments: {principal: 1000000, annual_rate_pct: 9, tenure_months: 240}
+  - tool_calls:
+      - name: list_debts
+        arguments: {}
+  - text: "The new EMI would be Rs 8,997.26 a month. With the Rs 18,332.50 you already pay on your three debts, your loan payments would come to Rs 27,329.76 a month."

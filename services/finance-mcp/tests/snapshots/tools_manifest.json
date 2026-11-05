@@ -473,5 +473,211 @@
       "readOnlyHint": true,
       "openWorldHint": false
     }
+  },
+  {
+    "name": "add",
+    "description": "The sum of two or more numbers, in exact decimal arithmetic: rupees, months, counts or any other unit. Returns sum, rounded half-up to 2 decimals.",
+    "inputSchema": {
+      "properties": {
+        "values": {
+          "type": "array",
+          "description": "The numbers to add, 2 to 100.",
+          "minItems": 2,
+          "maxItems": 100,
+          "items": {
+            "type": "number",
+            "minimum": -1000000000000,
+            "maximum": 1000000000000
+          }
+        }
+      },
+      "required": [
+        "values"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "subtract",
+    "description": "The difference a minus b, in exact decimal arithmetic, for any unit. Returns difference, rounded half-up to 2 decimals.",
+    "inputSchema": {
+      "properties": {
+        "a": {
+          "type": "number",
+          "description": "The number to subtract from.",
+          "minimum": -1000000000000,
+          "maximum": 1000000000000
+        },
+        "b": {
+          "type": "number",
+          "description": "The number to subtract.",
+          "minimum": -1000000000000,
+          "maximum": 1000000000000
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "multiply",
+    "description": "The product of two or more numbers, in exact decimal arithmetic: for example a monthly amount times a number of months. Returns product, rounded half-up to 2 decimals.",
+    "inputSchema": {
+      "properties": {
+        "values": {
+          "type": "array",
+          "description": "The numbers to multiply, 2 to 100.",
+          "minItems": 2,
+          "maxItems": 100,
+          "items": {
+            "type": "number",
+            "minimum": -1000000000000,
+            "maximum": 1000000000000
+          }
+        }
+      },
+      "required": [
+        "values"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "divide",
+    "description": "The quotient a divided by b, in exact decimal arithmetic: for example an amount split over a number of months. Returns quotient, rounded half-up to 2 decimals; b must not be 0.",
+    "inputSchema": {
+      "properties": {
+        "a": {
+          "type": "number",
+          "description": "The number to divide.",
+          "minimum": -1000000000000,
+          "maximum": 1000000000000
+        },
+        "b": {
+          "type": "number",
+          "description": "The number to divide by; not 0.",
+          "minimum": -1000000000000,
+          "maximum": 1000000000000
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "percent_of",
+    "description": "What a percentage of a number comes to, value × percent / 100: 18 percent of 50,000 is 9,000. Returns amount, rounded half-up to 2 decimals.",
+    "inputSchema": {
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "The number to take a percentage of.",
+          "minimum": -1000000000000,
+          "maximum": 1000000000000
+        },
+        "percent": {
+          "type": "number",
+          "description": "The percentage (18 means 18%).",
+          "minimum": -1000000000000,
+          "maximum": 1000000000000
+        }
+      },
+      "required": [
+        "value",
+        "percent"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "percent_change",
+    "description": "The change from from_value to to_value, as a difference and as a percent of from_value: 50,000 to 60,000 is a change of 10,000 and 20 percent. Returns change and change_pct, both rounded half-up to 2 decimals; from_value must not be 0.",
+    "inputSchema": {
+      "properties": {
+        "from_value": {
+          "type": "number",
+          "description": "The starting number; not 0.",
+          "minimum": -1000000000000,
+          "maximum": 1000000000000
+        },
+        "to_value": {
+          "type": "number",
+          "description": "The new number.",
+          "minimum": -1000000000000,
+          "maximum": 1000000000000
+        }
+      },
+      "required": [
+        "from_value",
+        "to_value"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "round",
+    "description": "A number rounded half-up, halves away from zero, to a given number of decimal places, 2 by default (paise): 23,120.456 is 23,120.46 at 2 places and 23,000 at -3. Returns rounded.",
+    "inputSchema": {
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "The number to round.",
+          "minimum": -1000000000000,
+          "maximum": 1000000000000
+        },
+        "places": {
+          "type": "integer",
+          "description": "Decimal places to keep: 2 is paise, 0 whole rupees, -3 the nearest thousand, -5 the nearest lakh.",
+          "minimum": -7,
+          "maximum": 10,
+          "default": 2
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
   }
 ]

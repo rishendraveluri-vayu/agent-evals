@@ -1,6 +1,6 @@
 [project]
 name = "finance-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "MCP tool server for Indian personal finance: deterministic calculators and read-only client data, shared by every agent harness."
 readme = "README.md"
 requires-python = ">=3.14"
