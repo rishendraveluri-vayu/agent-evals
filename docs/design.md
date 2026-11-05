@@ -246,7 +246,7 @@ Decided (D10 as revised 5 Nov, D41, D42, D43, D44, D50; the proposal is `docs/pr
   cost is the environment's and left out), tokens (input plus output) and time, as a difference
   and a relative difference with intervals, and no verdict, so "v2 is better and costs 6% more"
   reads in one line. A fake model's prices are made up, and the screen says so.
-- **Latency is not skewed by retry backoff** (the grading guide's "Retry Latency Skew"). LiteLLM
+- **Latency is not skewed by retry backoff.** LiteLLM
   retries a failed call with backoff (D16) and records it: each spend-log row's
   `attempted_retries`, which the runner reports as `proxy_usage.retried_calls` and puts on each
   model call's span as `evals.proxy.attempts`. A trial in which any model call was retried (the
@@ -343,8 +343,8 @@ Decided (D64, Rishi, 5 Nov; the rules' details are A45 in `docs/assumptions.md`)
   9. *Wrong answer*: a required check on the answer (`number`, `regex_present`, `regex_absent`,
      `unit_test`) failed while every wanted tool was called.
   10. *Other*: none of the above; the failed checks are named with the first one's reason.
-- **Harness-specific signals are said, not flattened** (the grading guide's "Opaque Failure
-  Mapping"). The reasons keep what differs by harness: Hermes answers at the step limit with a
+- **Harness-specific signals are said, not flattened**: one set of causes for every harness must
+  not hide how each one fails. The reasons keep what differs by harness: Hermes answers at the step limit with a
   summary, the others stop without one; the own loop sends a cut-off reply again at double the cap
   before it ends `token_limit`; each harness passes a tool error back to the model its own way
   (Hermes as `{"error": ...}`, pausing the tools after three in a row, and runs a call it cannot

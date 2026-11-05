@@ -75,7 +75,7 @@ From an independent review of the brief:
 - rate-limit retry backoff inflating latency for one config;
 - simple cost formulas break with prompt caching and split input and output prices.
 
-Its grading guide rewards judge validation, a valid paired test with CIs and per-task deltas, adapters that add a harness without touching the core, strict isolation, granular traces, robustness to timeouts and partial failures, and honesty about limits. It penalises single-trial results, harness-specific assumptions, brittle pipelines and over-investment in visuals.
+As we read the brief, it rewards judge validation, a valid paired test with CIs and per-task deltas, adapters that add a harness without touching the core, strict isolation, granular traces, robustness to timeouts and partial failures, and honesty about limits. It penalises single-trial results, harness-specific assumptions, brittle pipelines and over-investment in visuals.
 
 ## Environment facts on Rishi's machine
 

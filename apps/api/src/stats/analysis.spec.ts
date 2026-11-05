@@ -279,7 +279,7 @@ describe('analyse: cost, tokens and time (proposal section 8)', () => {
     expect(by.tokens.made_up_prices).toBeUndefined();
   });
 
-  it('leaves a trial whose model call LiteLLM retried out of the time, and counts it (Retry Latency Skew)', () => {
+  it('leaves a trial whose model call LiteLLM retried out of the time, and counts it, since its backoff would skew latency', () => {
     const s = analyse({ seed: 'e_retry', tasks: [costly('r1', true), costly('r2', true)] }, fast).stats;
     const wall = s?.costs.find((c) => c.metric === 'wall_s');
     expect(wall).toMatchObject({ b: 12, diff: { estimate: 2 }, trials: { a: 8, b: 6 }, left_out_retried: { a: 0, b: 2 } });

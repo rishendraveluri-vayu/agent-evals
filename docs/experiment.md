@@ -59,7 +59,7 @@ Gemini 3.8 Flash with rubric advice.v1 on the 33 discovery trials ($0.259), agai
 
 ## The judge's consistency with itself (5 Nov)
 
-The grading guide warns that a judge giving different verdicts on the same output inflates variance. Gemini 3.8 Flash re-judged the same 33 discovery outputs ($0.249): **98 of 99 criterion verdicts repeated (99.0%)**. Per criterion: overall 33/33, explains-plainly 33/33, clears-card-first 12/12, asks-deciding-fact 9/9, health-cover 3/3, keeps-medicines 3/3; clarifies-ambiguous-amount 5/6 (83%, one flip from no to yes on trial ending 45b3ed), below the 90% retest bar of D8 on a sample of six.
+A judge that gives different verdicts on the same output adds variance of its own, on top of the agent's. Gemini 3.8 Flash re-judged the same 33 discovery outputs ($0.249): **98 of 99 criterion verdicts repeated (99.0%)**. Per criterion: overall 33/33, explains-plainly 33/33, clears-card-first 12/12, asks-deciding-fact 9/9, health-cover 3/3, keeps-medicines 3/3; clarifies-ambiguous-amount 5/6 (83%, one flip from no to yes on trial ending 45b3ed), below the 90% retest bar of D8 on a sample of six.
 
 ## Second provider (5 Nov)
 

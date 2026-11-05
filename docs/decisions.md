@@ -272,7 +272,7 @@ To explain it: equivalence is a claim about the whole interval, not the point es
 ### D44: A/A calibration as an explicit run (5 Nov)
 Options: an explicit calibration run (the same config on both arms, allowed only when marked); split-half of arm A's own trials (free, but measures noise at N/2 and misses side-by-side effects such as claim order); simulated A/A only (the stats tests).
 Choice: the explicit calibration run. Without the mark, the same config on both arms stays refused (A30), so an accidental A/A cannot happen. The comparison of an A/B shows the latest A/A interval for its configs beside its own. The simulated A/A tests stay as well.
-Why: Rishi picked it. The stats design (proposal section 5) calls for an A/A run every time, and the grading guide asks to interrogate the math: only a real A/A shows the noise of this setup, harness and model.
+Why: Rishi picked it. The stats design (proposal section 5) calls for an A/A run every time, and the statistics have to be checked on this setup, not assumed: only a real A/A shows the noise of this setup, harness and model.
 What would change it: cost (each A/A is a full run, about $1 to $2 on Haiku at 20 tasks x 10 trials, a rough estimate, needing a sign-off under R8).
 
 ### D8: The judge's trust bar (5 Nov)

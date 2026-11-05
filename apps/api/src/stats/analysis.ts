@@ -257,7 +257,7 @@ function regressionsOf(input: AnalysisInput, perTask: Map<string, StatsTask>): R
 const COST_METRICS: { metric: CostStat['metric']; places: number; value: (t: TrialInput) => number | null }[] = [
   { metric: 'cost_usd', places: 6, value: (t) => t.cost_usd },
   { metric: 'tokens', places: 1, value: (t) => t.tokens },
-  // Retry Latency Skew (grading guide): a trial whose model call LiteLLM retried waited out the
+  // Retry backoff skews latency: a trial whose model call LiteLLM retried waited out the
   // backoff, so its time says more about the provider's rate limits than about the agent.
   { metric: 'wall_s', places: 2, value: (t) => (t.retried === true ? null : t.wall_s) },
 ];

@@ -477,7 +477,7 @@ const metrics = computed<Metric[]>(() => {
     for (const c of costs) {
       if (c.metric === 'cost_usd') out.push({ name: 'Cost per trial', delta: signedMoney(c.diff.estimate), interval: rel(c.relative, `interval ${signedMoney(c.diff.low)} to ${signedMoney(c.diff.high)}`), a: c.a, b: c.b, aText: money(c.a), bText: money(c.b), max: Math.max(c.a, c.b) });
       if (c.metric === 'wall_s') {
-        // Retry Latency Skew: trials whose model call LiteLLM retried waited out its backoff.
+        // Retry backoff skews latency: trials whose model call LiteLLM retried waited out its backoff.
         const left = (c.left_out_retried?.a ?? 0) + (c.left_out_retried?.b ?? 0);
         const note = left ? `; ${plural(left, 'trial')} left out: a model call was retried, and its wait would skew the time` : '';
         out.push({ name: 'Time per trial', delta: `${signed(c.diff.estimate, 1)} s`, interval: `${rel(c.relative, `interval ${signed(c.diff.low, 1)} to ${signed(c.diff.high, 1)} s`)}${note}`, a: c.a, b: c.b, aText: seconds(c.a), bText: seconds(c.b), max: Math.max(c.a, c.b) });

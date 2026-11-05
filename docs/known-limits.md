@@ -280,7 +280,7 @@ the method as built (D10 revised: a task bootstrap, the sign-flip test, D42's ve
   count, and only tasks that have one enter its comparison. A severity is part of the grader spec,
   so adding one gives the grader a new version: a regrade picks it up and also re-runs the grader,
   including the judge (paid, approved separately).
-- **Latency leaves out trials with a retried model call** (the grading guide's Retry Latency Skew;
+- **Latency leaves out trials with a retried model call** (retry backoff would make an arm look slower;
   D16). If one arm hit rate limits far more often, its time is measured on fewer trials, which may
   differ from the rest (for example trials run at busy times); `left_out_retried` gives the counts
   per arm. Trials recorded before 4 Nov carry no retry count and are kept (`retries_unknown`).

@@ -600,7 +600,7 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
     verdict. **`wall_s` leaves out every trial in which LiteLLM retried a model call** (its spend
     log's `attempted_retries`, as `proxy_usage.retried_calls` on the runner report or
     `evals.proxy.attempts > 1` on any chat span, the simulated client's included): its backoff
-    waits would make that arm look slower (the grading guide's Retry Latency Skew).
+    waits would make that arm look slower.
     `left_out_retried` counts them per arm and `retries_unknown` the trials kept whose record does
     not say;
   - `aa` (D44), on an ordinary A/B: the latest finished calibration run (`status: done`) of either
