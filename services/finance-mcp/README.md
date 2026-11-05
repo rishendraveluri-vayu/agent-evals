@@ -39,7 +39,8 @@ All 18 tools are read-only (`readOnlyHint: true`). The full manifest the agents 
 The last seven, the arithmetic tools, were added on 5 Nov (D54, server version 0.3.0), so that
 every figure an agent writes can come from a tool result and the agent never does its own sums.
 The platform's number-provenance check counts a figure as supported only when a tool result, the
-client file or a user message holds it; on 4 Nov most Hermes failures of that check were sums
+client file or a user message holds it, and an arithmetic tool's result only when every number it
+was given is supported in turn (D56); on 4 Nov most Hermes failures of that check were sums
 written in prose. The first eleven tools are unchanged.
 
 ## Conventions
