@@ -1,7 +1,8 @@
 # As finance-sum-tool, without the `add` call: the same answer, but its total (8,997.26 +
 # 18,332.50 = 27,329.76) is worked out in the reply, as Hermes did on 4 Nov ("Rs 23,120 =
-# Rs 14,120 + Rs 9,000"). No tool returned it, so the provenance check flags it and the
-# provenance grader fails the trial.
+# Rs 14,120 + Rs 9,000"). No tool returned it: before D61 the provenance check flagged it and
+# the provenance grader failed the trial; since D61 the checker recomputes it from the two figures
+# the reply wrote and counts it as derived in prose (verified, written without a tool).
 description: Calls calculate_emi and list_debts, then answers with a sum no tool returned.
 steps:
   - tool_calls:

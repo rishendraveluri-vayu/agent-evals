@@ -73,6 +73,29 @@ describeWithDb('statistics and A/A calibration (e2e, real Postgres)', () => {
     return n;
   }
 
+  it("reports per arm the money figures written without a tool (D61), from each trial's runner report", async () => {
+    const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: tasks().slice(0, 2), n: 2, futility: { enabled: false } });
+    const checks = (extra: Record<string, unknown>) => ({ path: 'checks.json', valid: true, errors: [], unsupported_amounts: 0, missing_tools: null, ...extra });
+    let k = 0;
+    for (let c = await e.claim('w-prose'); c; c = await e.claim('w-prose')) {
+      const spec = c.spec as { trial: { config_hash: string } };
+      // Arm A works its sums out in prose (3 of 10 figures each); arm B uses the tools (0 of 8),
+      // except one trial whose checks predate D61 and so have no counts.
+      if (spec.trial.config_hash === A) await e.report(c, 'w-prose', 'agent', { checks: checks({ amounts: 10, derived_in_prose: 3 }) });
+      else if (k++ === 0) await e.report(c, 'w-prose', 'agent', { checks: checks({ unsupported_amounts: 1 }) });
+      else await e.report(c, 'w-prose', 'agent', { checks: checks({ amounts: 8, derived_in_prose: 0 }) });
+    }
+    await e.grade('g-prose', () => 'pass');
+    const cmp = await compare(exp.id);
+    expect(cmp.status).toBe('complete');
+    expect(cmp.prose_figures).toEqual([
+      { arm: 'A', trials_measured: 4, trials_unmeasured: 0, amounts: 40, derived_in_prose: 12, per_trial: 3, share: 0.3 },
+      { arm: 'B', trials_measured: 3, trials_unmeasured: 1, amounts: 24, derived_in_prose: 0, per_trial: 0, share: 0 },
+    ]);
+    // A measure beside the verdict, not part of it: both arms pass every task.
+    expect(cmp.stats?.verdict).not.toBe('better');
+  });
+
   it("fills a complete experiment's comparison with the verdict, per-task flags, the guardrail and costs", async () => {
     const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: tasks(), n: 2, futility: { enabled: false } });
     // Arm A fails every task; arm B passes every one.

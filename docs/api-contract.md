@@ -513,7 +513,7 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   finished job before it; `null` a trial that is not done (nothing to grade). `passed` is true or
   false with a `pass` or `fail`, else null.
 - `GET /experiments/:id/compare` returns `{experiment_id, status, reason, arms, rows, stats,
-  stats_note}`.
+  stats_note, prose_figures}`.
   **No comparison until every arm is complete** (D37, D32): while `status` is `incomplete`,
   `reason` says why ("arm B is paused: ...", "the experiment was stopped before every trial ran
   (...); a verdict needs the full planned N (D32)", "the experiment is paused: ...", "arm A has 3
@@ -525,6 +525,14 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   whose outcome is `pass`, `graded` those with `pass` or `fail`, and `incomplete` those whose
   grading finished with no outcome (a required grader errored, was not applicable or is the
   unapproved judge). Older grade versions and optional graders do not count.
+- **Figures written without a tool (D61).** Once `complete`, `prose_figures` holds per arm
+  `{arm, trials_measured, trials_unmeasured, amounts, derived_in_prose, per_trial, share}`, summed
+  over the arm's done trials from each runner report's `checks.amounts` and
+  `checks.derived_in_prose` (runner 0.4.0 on): the money figures the agent worked out in prose that
+  the checks verified by recomputing them. A trial whose report lacks the counts (checks from
+  before D61) is `trials_unmeasured`. A measure beside the verdict, never part of it or a gate;
+  the comparison page shows it as a tile next to the pass rate and costs. Empty while
+  `incomplete`.
 - **Statistics (SP6: D10, D41, D42, D43, D44, D50; `CompareStats` in `contract.ts`).** `stats` is
   null, with `stats_note` saying why, for a pilot of one config, while any done trial's grading is
   queued or running ("Grading is still running for 4 of 4 finished trials; ..."), or when no task

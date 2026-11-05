@@ -1,0 +1,12 @@
+# As finance-sum-unsupported, with the total worked out wrong in the reply: 8,997.26 + 18,332.50
+# is 27,329.76, not 27,392.76. D61 verifies a sum written in prose only when it is right, so the
+# provenance check flags this one and the provenance grader fails the trial.
+description: Calls calculate_emi and list_debts, then answers with a sum worked out wrong.
+steps:
+  - tool_calls:
+      - name: calculate_emi
+        arguments: {principal: 1000000, annual_rate_pct: 9, tenure_months: 240}
+  - tool_calls:
+      - name: list_debts
+        arguments: {}
+  - text: "The new EMI would be Rs 8,997.26 a month. With the Rs 18,332.50 you already pay on your three debts, your loan payments would come to Rs 27,392.76 a month."

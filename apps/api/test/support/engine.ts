@@ -34,10 +34,11 @@ export function engine(env: TestEnv) {
     c: ClaimResponse,
     worker: string,
     label = 'agent',
-    opts: { end_state?: string; cost_usd?: number; result?: Record<string, unknown> | null; last_status?: string } = {},
+    opts: { end_state?: string; cost_usd?: number; result?: Record<string, unknown> | null; last_status?: string; checks?: Record<string, unknown> } = {},
   ): Promise<ReportResponse> {
     const rr = runnerReport(c.trial_id, c.attempt, label);
     if (opts.end_state) rr.end_state = opts.end_state;
+    if (opts.checks) rr.checks = opts.checks;
     const usage = rr.proxy_usage as Record<string, unknown>;
     if (opts.cost_usd !== undefined) usage.cost_usd = opts.cost_usd;
     if (opts.last_status) usage.last_status = opts.last_status;

@@ -48,6 +48,13 @@ CASES = {
         ("rate-tool", "finance-rate-tool", ["reference_rates"]),
         ("rate-made-up", "finance-rate-made-up", ["reference_rates"]),
     ],
+    # D61 (runner 0.4.0): the same answer with its sum from add, worked out right in prose, and
+    # worked out wrong in prose.
+    "gate-20261105-d61": [
+        ("sum-tool", "finance-sum-tool", ["calculate_emi", "list_debts"]),
+        ("sum-prose", "finance-sum-unsupported", ["calculate_emi", "list_debts"]),
+        ("sum-wrong", "finance-sum-wrong", ["calculate_emi", "list_debts"]),
+    ],
 }
 
 

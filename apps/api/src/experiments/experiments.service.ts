@@ -4,6 +4,7 @@ import type {
   ActualSoFar,
   ArmView,
   CompareResponse,
+  ProseFiguresArm,
   CompareRow,
   CreateExperimentRequest,
   Estimate,
@@ -921,10 +922,57 @@ export class ExperimentsService {
     const r = await this.row(id);
     const arms = await this.arms(r);
     const reason = this.incompleteReason(r, arms);
-    if (reason) return { experiment_id: id, status: 'incomplete', reason, arms, rows: [], stats: null, stats_note: null };
+    if (reason) return { experiment_id: id, status: 'incomplete', reason, arms, rows: [], stats: null, stats_note: null, prose_figures: [] };
     const rows = await this.compareRows(r, arms);
     const { stats, note } = await this.statsOf(r, arms);
-    return { experiment_id: id, status: 'complete', reason: null, arms, rows, stats, stats_note: note };
+    const prose_figures = await this.proseFigures(r, arms);
+    return { experiment_id: id, status: 'complete', reason: null, arms, rows, stats, stats_note: note, prose_figures };
+  }
+
+  /**
+   * D61: per arm, how many money figures the done trials' agents wrote without a tool, from the
+   * counts the runner puts in each runner report (`checks.amounts`, `checks.derived_in_prose`).
+   * A trial whose report lacks them (checks from before D61) is counted as unmeasured.
+   */
+  private async proseFigures(r: ExperimentRow, arms: ArmView[]): Promise<ProseFiguresArm[]> {
+    const armOf = new Map(arms.map((a) => [a.config_hash, a.arm]));
+    const rows = await this.db.query<{ config: string; second: boolean; measured: number; unmeasured: number; amounts: number; derived: number }>(
+      `SELECT t.config_hash AS config, ($2::boolean AND t.repeat_index >= $3) AS second,
+              count(*) FILTER (WHERE m.derived IS NOT NULL)::int AS measured,
+              count(*) FILTER (WHERE m.derived IS NULL)::int AS unmeasured,
+              coalesce(sum(m.amounts) FILTER (WHERE m.derived IS NOT NULL), 0)::int AS amounts,
+              coalesce(sum(m.derived), 0)::int AS derived
+       FROM trials t
+       CROSS JOIN LATERAL (
+         SELECT CASE WHEN jsonb_typeof(t.runner_report -> 'checks' -> 'derived_in_prose') = 'number'
+                     AND jsonb_typeof(t.runner_report -> 'checks' -> 'amounts') = 'number'
+                THEN (t.runner_report -> 'checks' ->> 'derived_in_prose')::int END AS derived,
+                CASE WHEN jsonb_typeof(t.runner_report -> 'checks' -> 'amounts') = 'number'
+                THEN (t.runner_report -> 'checks' ->> 'amounts')::int END AS amounts
+       ) m
+       WHERE t.status = 'done'
+         AND (t.experiment_id = $1 OR t.id IN (SELECT unnest(reused_trial_ids) FROM experiment_arms WHERE experiment_id = $1))
+       GROUP BY t.config_hash, 2`,
+      [r.id, r.calibration, r.n],
+    );
+    const byArm = new Map<string, ProseFiguresArm>();
+    for (const a of arms) {
+      byArm.set(a.arm, { arm: a.arm, trials_measured: 0, trials_unmeasured: 0, amounts: 0, derived_in_prose: 0, per_trial: null, share: null });
+    }
+    for (const row of rows) {
+      const arm = r.calibration ? (row.second ? 'B' : 'A') : armOf.get(row.config);
+      const out = arm === undefined ? undefined : byArm.get(arm);
+      if (!out) continue;
+      out.trials_measured += row.measured;
+      out.trials_unmeasured += row.unmeasured;
+      out.amounts += row.amounts;
+      out.derived_in_prose += row.derived;
+    }
+    return [...byArm.values()].map((a) => ({
+      ...a,
+      per_trial: a.trials_measured ? a.derived_in_prose / a.trials_measured : null,
+      share: a.amounts ? a.derived_in_prose / a.amounts : null,
+    }));
   }
 
   /** Per task and arm: the counts the comparison table shows (and SP6's statistics start from). */

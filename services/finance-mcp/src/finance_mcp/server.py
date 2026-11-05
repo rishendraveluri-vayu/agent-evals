@@ -633,7 +633,7 @@ def create_server(state_dir: Path | None) -> FinanceServer:
         reference_rates,
         "Documented Indian market assumptions: State Bank of India's one-year fixed deposit and "
         "savings account rates, the PPF rate for the current quarter, CPI inflation, the RBI "
-        "repo rate, and long-run equity and debt index returns. Each has a value in percent, "
+        "repo rate, and a long-run equity index return. Each has a value in percent, "
         "its source (organisation and URL) and the date it applies to; they are a dated "
         "snapshot, not live rates.",
     )

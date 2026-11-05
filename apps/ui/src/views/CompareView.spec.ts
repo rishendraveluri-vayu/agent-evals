@@ -250,6 +250,45 @@ describe('CompareView in fixture mode', () => {
   });
 });
 
+describe('CompareView against the API: figures written without a tool (D61)', () => {
+  const route = (prose: unknown) =>
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), prose_figures: prose },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+    });
+
+  it('shows each arm’s figures derived in prose as a measure beside the pass rate, not a gate', async () => {
+    route([
+      { arm: 'A', trials_measured: 4, trials_unmeasured: 0, amounts: 40, derived_in_prose: 12, per_trial: 3, share: 0.3 },
+      { arm: 'B', trials_measured: 3, trials_unmeasured: 1, amounts: 24, derived_in_prose: 0, per_trial: 0, share: 0 },
+    ]);
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const tile = w.findAll('.metrics > div').find((t) => t.text().startsWith('Figures written without a tool'));
+    expect(tile?.text()).toContain('−3.0 per trial');
+    expect(tile?.text()).toContain('12 of 40 figures and 0 of 24 figures, checked by recomputing them; a measure, not a gate; 1 trial from before D61 not counted');
+    expect(tile?.get('[data-test="bar-a"]').attributes('style')).toContain('width: 100%');
+    expect(tile?.get('[data-test="bar-b"]').attributes('style')).toContain('width: 0%');
+  });
+
+  it('shows no such tile when an arm has no measured trial, or the API predates D61', async () => {
+    route([
+      { arm: 'A', trials_measured: 0, trials_unmeasured: 4, amounts: 0, derived_in_prose: 0, per_trial: null, share: null },
+      { arm: 'B', trials_measured: 3, trials_unmeasured: 0, amounts: 24, derived_in_prose: 0, per_trial: 0, share: 0 },
+    ]);
+    let w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.text()).not.toContain('Figures written without a tool');
+    route(undefined);
+    w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.text()).not.toContain('Figures written without a tool');
+  });
+});
+
 describe('CompareView against the API: no statistics yet', () => {
   it('says there is no verdict yet, and why, when every arm is complete but grading is still running', async () => {
     routeFetch({

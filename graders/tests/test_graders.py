@@ -711,3 +711,21 @@ def test_an_unknown_severity_is_refused(tmp_path):
     assert found and found[0].startswith("severity:")
     g = one(make_trial(tmp_path, EMI_ANSWER), spec)
     assert g["verdict"] == "error" and "severity" in g["reason"]
+
+
+def test_a_d61_derivation_in_words():
+    """The provenance evidence names how a figure derived in prose was recomputed (D61)."""
+    from evals_graders.graders import _derivation_words
+
+    def d(op, values, value):
+        return {"op": op, "operands": [{"value": v, "where": "x"} for v in values], "value": value}
+
+    assert _derivation_words(d("subtract", [8000, 6880], 1120)) == "8,000 − 6,880 = 1,120"
+    assert _derivation_words(d("divide", [1200000, 12], 100000)) == "12,00,000 ÷ 12 = 1,00,000"
+    assert _derivation_words(d("percent_of", [84250, 42], 35385)) == "42% of 84,250 = 35,385"
+    assert _derivation_words(d("sum", [9650, 18500, 2605], 30755)) == (
+        "9,650 + 18,500 + 2,605 = 30,755"
+    )
+    assert _derivation_words(d("repeat", [30755], 30755)) == "30,755, derived earlier = 30,755"
+    assert _derivation_words(None) is None
+    assert _derivation_words(d("cube", [2], 8)) is None

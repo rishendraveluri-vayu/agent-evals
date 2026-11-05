@@ -1,0 +1,104 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-hermes-sum-wrong",
+ "attempt": 1,
+ "harness": "hermes",
+ "label": "agent",
+ "end_state": "answered",
+ "adapter": {
+  "exit_code": 0,
+  "signal": null,
+  "result_valid": true,
+  "result_errors": [],
+  "trace_valid": true,
+  "trace_errors": [],
+  "leftover_processes": 2
+ },
+ "proxy_usage": null,
+ "logs": {
+  "stdout": {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "truncated": false
+  },
+  "stderr": {
+   "path": "stderr.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "truncated": false
+  }
+ },
+ "files": [
+  {
+   "path": "artifacts/hermes-config.yaml",
+   "bytes": 2387,
+   "sha256": "3bb80be790b3a6e8ee5ef434ab996872f2647c16d9193d25423dbb1b00b8644c"
+  },
+  {
+   "path": "artifacts/hermes-logs/agent.log",
+   "bytes": 1892,
+   "sha256": "a631e1ba00f3a9ea6daa307093600d8d1691654805c98303abf8250f12d35079"
+  },
+  {
+   "path": "artifacts/hermes-logs/errors.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "path": "artifacts/hermes-logs/mcp-stderr.log",
+   "bytes": 175,
+   "sha256": "fdcec97ef079a86e12d947a9362eb752654a1b660c98a4a93825fb0126641cb0"
+  },
+  {
+   "path": "artifacts/hermes-messages.json",
+   "bytes": 4482,
+   "sha256": "ebe213f192f28e582dde653a6dd87f1378f599717ce899aa859a972fbda94bff"
+  },
+  {
+   "path": "artifacts/hermes-system-prompt.txt",
+   "bytes": 3601,
+   "sha256": "b0301e103c545863de39ba637ed4342af0d5b86ce50b12a805ccbae9fcf5dbc9"
+  },
+  {
+   "path": "checks.json",
+   "bytes": 1160,
+   "sha256": "28e88dbcc500b557ce02bc48d30a7eab3dfb250e85b6f8aaa09392ea55bd6f6d"
+  },
+  {
+   "path": "result.json",
+   "bytes": 4923,
+   "sha256": "1af9931ab89d9de9f90784bf820ed6ff5042d5c1e01b06fd79a0d2549e91e968"
+  },
+  {
+   "path": "stderr.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "path": "trace.jsonl",
+   "bytes": 4903,
+   "sha256": "e82aa90eda52faae18ccf482f55a1301ca7b8ebb9a0f2aaf50447b65de0d1351"
+  }
+ ],
+ "timing": {
+  "started_at": "2026-11-05T05:03:28.548152Z",
+  "ended_at": "2026-11-05T05:03:34.098837Z",
+  "wall_s": 5.551,
+  "safety_net_s": 120.0
+ },
+ "checks": {
+  "path": "checks.json",
+  "valid": true,
+  "errors": [],
+  "unsupported_amounts": 1,
+  "amounts": 3,
+  "derived_in_prose": 0,
+  "missing_tools": []
+ }
+}

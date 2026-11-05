@@ -441,6 +441,26 @@ const metrics = computed<Metric[]>(() => {
     const rb = t.b.passed / t.b.graded;
     out.push({ name: 'Pass rate', delta: `${signed((rb - ra) * 100)} points`, interval: `${t.a.passed} of ${t.a.graded} and ${t.b.passed} of ${t.b.graded}; no interval yet`, a: ra, b: rb, aText: percent(ra), bText: percent(rb), max: 1 });
   }
+  // D61: the money figures each arm wrote without a tool, recomputed by the checks. A measure
+  // beside the verdict, never part of it; shown once both arms have measured trials.
+  const prose = d.compare.prose_figures ?? [];
+  const pa = prose.find((x) => x.arm === 'A');
+  const pb = prose.find((x) => x.arm === 'B');
+  if (pa?.per_trial != null && pb?.per_trial != null) {
+    const of = (x: typeof pa) => `${x.derived_in_prose} of ${plural(x.amounts, 'figure')}`;
+    const unmeasured = pa.trials_unmeasured + pb.trials_unmeasured;
+    const left = unmeasured ? `; ${plural(unmeasured, 'trial')} from before D61 not counted` : '';
+    out.push({
+      name: 'Figures written without a tool',
+      delta: `${signed(pb.per_trial - pa.per_trial, 1)} per trial`,
+      interval: `${of(pa)} and ${of(pb)}, checked by recomputing them; a measure, not a gate${left}`,
+      a: pa.per_trial,
+      b: pb.per_trial,
+      aText: pa.per_trial.toFixed(1),
+      bText: pb.per_trial.toFixed(1),
+      max: Math.max(pa.per_trial, pb.per_trial),
+    });
+  }
   const costs = s?.costs ?? [];
   if (costs.length) {
     for (const c of costs) {

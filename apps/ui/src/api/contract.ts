@@ -682,6 +682,30 @@ export interface CompareResponse {
   stats: CompareStats | null;
   /** Why `stats` is null, in plain words (grading still running, one arm, no task decided in both arms); null when it is set. */
   stats_note: string | null;
+  /** D61: per arm, the money figures written without a tool; empty while the run is incomplete. */
+  prose_figures: ProseFiguresArm[];
+}
+
+/**
+ * D61: an arm's money figures that the runner's checks verified only by recomputing them
+ * (`derived_in_prose` in checks.json): arithmetic the agent wrote in prose rather than through
+ * a tool. From each done trial's runner report, which has the counts since runner 0.4.0. A
+ * measure beside the verdict, never part of it or a gate.
+ */
+export interface ProseFiguresArm {
+  arm: string;
+  /** Done trials whose runner report has the counts. */
+  trials_measured: number;
+  /** Done trials without them: checks from before D61, or checks that could not run. */
+  trials_unmeasured: number;
+  /** Money figures in the measured trials' replies. */
+  amounts: number;
+  /** Of those, the ones derived in prose. */
+  derived_in_prose: number;
+  /** derived_in_prose per measured trial; null when none is measured. */
+  per_trial: number | null;
+  /** derived_in_prose as a share of amounts (0 to 1); null when there are no amounts. */
+  share: number | null;
 }
 
 // ---- Statistics (SP6: D10, D41, D42, D43, D44) ---------------------------------------

@@ -1,6 +1,7 @@
 """reference_rates (D58, 5 Nov): documented Indian market assumptions from reference_rates.json.
 
-The values are proposed for Rishi's approval; these tests pin the shape the agent sees, keep
+The values were approved by Rishi on 5 Nov, with debt_fund removed at review (an index return,
+not what a debt-fund investor earns after costs). These tests pin the shape the agent sees, keep
 every number in the result a rate (so its text adds no stray sources to the provenance check),
 reject a malformed edit at startup, and tie the served bytes to the server version.
 """
@@ -25,13 +26,17 @@ KEYS = [
     "inflation_cpi",
     "rbi_repo",
     "equity_long_run",
-    "debt_fund",
 ]
 # The tool's result at each server version. A change to a value, a source, a date or a word in
 # reference_rates.json changes it: then bump the server version (__init__.py, pyproject.toml),
 # which makes a new toolset hash in the API, and pin the new bytes here. Do not re-pin a version
 # a recorded trial used.
-PINNED = {"0.4.0": "2a96dce25e60059cd170f44bff18a80605feb3f548a5e4dc6d4c99fcee2c09dc"}
+# 0.4.0 (5 Nov, D58): seven rates, proposed. 0.4.1 (5 Nov): approved, debt_fund removed. Nothing
+# ran on 0.4.0.
+PINNED = {
+    "0.4.0": "2a96dce25e60059cd170f44bff18a80605feb3f548a5e4dc6d4c99fcee2c09dc",
+    "0.4.1": "c90c50fca8e8cbd97d749e34b2336f554dbfba706b046759eb5084934fd0e89d",
+}
 
 URL = re.compile(r"https?://[^\s\"'<>]+")
 DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
@@ -83,13 +88,11 @@ def test_the_only_numbers_in_the_result_are_the_rates(state_dir: Path) -> None:
     assert numbers == values
 
 
-def test_the_equity_and_debt_returns_say_they_are_past_returns_not_promises(
-    state_dir: Path,
-) -> None:
+def test_the_equity_return_says_it_is_a_past_return_not_a_promise(state_dir: Path) -> None:
     rates = ok(create_server(state_dir), "reference_rates", {})["rates"]
-    for key in ("equity_long_run", "debt_fund"):
-        assert "not a promise or a forecast" in rates[key]["name"], key
-        assert "before fund costs and tax" in rates[key]["name"], key
+    assert "not a promise or a forecast" in rates["equity_long_run"]["name"]
+    assert "before fund costs and tax" in rates["equity_long_run"]["name"]
+    assert "debt_fund" not in rates  # removed at Rishi's review, 5 Nov
 
 
 def test_the_served_bytes_are_pinned_to_the_server_version(state_dir: Path) -> None:
@@ -127,7 +130,8 @@ def _raw() -> dict:
         ),
         (lambda d: d["rates"]["fd_1y"]["source"].pop("organisation"), "source must have exactly"),
         (lambda d: d.update(rates={}), "rates must be a non-empty object"),
-        (lambda d: d.pop("note"), "exactly compiled_on, note and rates"),
+        (lambda d: d.pop("note"), "exactly compiled_on, approval, note and rates"),
+        (lambda d: d.update(approval=""), "approval must be non-empty text"),
     ],
 )
 def test_a_malformed_edit_is_refused(edit, message: str) -> None:
@@ -138,9 +142,13 @@ def test_a_malformed_edit_is_refused(edit, message: str) -> None:
         reference.validate(data)
 
 
-def test_the_tool_result_is_the_file_without_its_evidence() -> None:
+def test_the_tool_result_is_the_file_without_its_evidence_or_approval() -> None:
     data = _raw()
     out = json.loads(to_json(reference.reference_rates(reference.load())), parse_float=Decimal)
     for rate in data["rates"].values():
         rate.pop("evidence")
+    assert data.pop("approval") == (
+        "approved by Rishi, 5 Nov; debt_fund removed at review (an index return, not what a"
+        " debt-fund investor earns after costs)"
+    )
     assert out == data
