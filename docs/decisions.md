@@ -66,6 +66,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D54 Arithmetic tools; provenance stays required | Add basic arithmetic tools (add, subtract, multiply, divide, percentages, rounding) to the finance toolset for both arms; the agent never does its own arithmetic; provenance stays required at 0 unsupported; prompt v1 unchanged | Rishi | 5 Nov |
 | D55 No "equivalent" from a zero-width interval | When every task gives the same difference, the verdict is never "practically equivalent" | Rishi | 5 Nov |
 | D56 Provenance traces arithmetic inputs | An arithmetic tool's result counts as supported only when its inputs are themselves supported | Rishi | 5 Nov |
+| D57 Arithmetic tool descriptions | Plain: each says what it returns, not "use this instead of calculating yourself", so the prompt stays the only lever (as D54) | Rishi | 5 Nov |
 
 ## Open
 

@@ -4,7 +4,7 @@ Commit the first three sections before the run, so the git history shows they ca
 
 ## Hypothesis
 
-Rishi to write.
+Rishi, 5 Nov (chosen from drafts): "Prompt v2, written only from v1's failures on the 11 discovery tasks, raises the task pass rate on the 10 held-out tasks (Hermes, Claude Haiku 5.5) without raising critical failures; we expect the gain to come from using the tools for every figure and from care in hardship conversations."
 
 ## Setup
 

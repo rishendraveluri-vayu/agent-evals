@@ -86,6 +86,7 @@ The pilot, the experiment and the judge go here too (SP8), with their tokens per
 | 4 Nov | Label batch 1 (open coding): 15 draft tasks x own loop and Hermes on Haiku 5.5, experiment `e_0mw273dpt486807c2722a92dc`; all 30 answered | 30 | $0.135 | Rishi, R8, estimate $0.30, cap $2 |
 | 4 Nov | D39 Hermes verification on Haiku 5.5: 10 trials each with memory off, on and empty, on and seeded; every check passed (`docs/hermes-notes.md`) | 30 | $0.275 ($0.082, $0.106, $0.087) | Rishi, D39, estimate $0.60, cap $2 |
 | 5 Nov | Gemini billing check after Rishi enabled billing: one call to gemini-3.8-flash through LiteLLM ("Reply with the single word OK.", max 200 tokens): HTTP 200 in 2.4 s, "OK", 8 input and 61 output tokens (thinking included) | 1 call | $0.000235 | Rishi, "Enabled billing u can confirm" |
+| 5 Nov | Clean-machine test on GCP: VM evals-qa-5nov (e2-standard-4, asia-south1, 80 GB), created 06:17 IST with a 4-hour auto-delete, deleted by hand at about 07:05; no model calls on it | 48 min | about $0.14 (estimate from list prices; GCP's bill is the record) | Rishi, "Yes, today" |
 
 Per trial on Haiku 5.5: a single question cost $0.0024 to $0.0035 (3 model calls); a 3-turn simulated-client conversation cost $0.012 to $0.014 (8 to 10 agent calls plus the simulator's).
 
