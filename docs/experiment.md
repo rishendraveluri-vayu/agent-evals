@@ -63,7 +63,19 @@ Result of the diff on the first request of each config. Anything beyond the axis
 
 ## Results
 
-Quality with CIs, per-task deltas, cost, latency and tokens. Raw export: `experiments/<id>/`.
+Run 5 Nov, plan commit f0f6e3b; both runs 200 of 200 trials, no infra failure.
+
+**Headline, v1 vs v2** (`e_0mw38a1ym89666c6ccc6bfd13`, $2.295): pass rate v1 64 of 100, v2 73 of 100. **B − A = +9.0 points, 95% interval +3 to +16 (task bootstrap), sign-flip p = 0.0625 over 10 tasks: "No detectable difference"** under the pre-registered rule (interval clear of 0 and p < 0.05, D42, D43). Critical failures did not rise. No task's difference is flagged beyond noise (Benjamini-Hochberg).
+
+Per task (v1 → v2, of 10): convo-consolidation 2 → 5, convo-phone-loan 2 → 5, convo-job-loss 3 → 4, college-cost-stepup 9 → 10, loan-to-clear-card 8 → 9; tied at 10 → 10: first-year-interest, otp-scam, prepay-personal-loan, sip-education-goal; tied at 0 → 0: spending-review. v2 was higher on every task that could differ and lower on none.
+
+Why it is not called: the sign-flip test gets no information from a tied task, so only 5 tasks counted, and with 5 the smallest two-sided p it can give is 2 / 2^5 = 0.0625, even when all five favour B, as they did. The limit is the number of held-out tasks that are neither at ceiling nor at floor, not N; this was foreseen in the split review ("a task at ceiling wastes a held-out place") and in D50's power table (about 50% power for +15 points at K = 10).
+
+**A/A calibration, v1 vs v1** (`e_0mw38a2282836ad0614b7c07f`, $1.959): 62 vs 58 of 100, B − A = −4.0 points, 95% interval −12 to +3, p = 0.5: "No detectable difference", as a calibration should be. Across the three samples of the same v1 config the pass rate was 64%, 62% and 58%.
+
+**Cost, tokens, time (v2 − v1 per trial):** +$0.0028 (interval +$0.0011 to +$0.0049), +23,572 tokens (+9,828 to +39,661), +6.4 s (+2.0 to +12.3 s, trials with retried calls left out): about 30% more cost and tokens, from the extra tool calls v2 asks for.
+
+Raw export: `GET /api/experiments/<id>/export?format=csv|json` for both experiments.
 
 ## Trajectories
 

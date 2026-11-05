@@ -89,6 +89,8 @@ The pilot, the experiment and the judge go here too (SP8), with their tokens per
 | 5 Nov | Clean-machine test on GCP: VM evals-qa-5nov (e2-standard-4, asia-south1, 80 GB), created 06:17 IST with a 4-hour auto-delete, deleted by hand at about 07:05; no model calls on it | 48 min | about $0.14 (estimate from list prices; GCP's bill is the record) | Rishi, "Yes, today" |
 | 5 Nov | v1 discovery run: prompt v1 on Hermes with Claude Haiku 5.5, toolset finance/v3 (19 tools), the 11 discovery tasks x 3, Haiku as the simulated client, experiment `e_0mw33tqo41489091e4da80c75`; 33 of 33 answered, 0 infra failures | 33 | $0.321 | Rishi, "Approve N=3, cap $1" (estimate $0.22, range $0.11 to $0.44) |
 | 5 Nov | Judge on the v1 discovery run (planned, D66, 13:03 IST): Gemini 3.8 Flash, rubric advice.v1, one call per trial on 33 trials of `e_0mw33tqo41489091e4da80c75`, to compare with Rishi's 33 tuning labels; expected about $0.35, approval budget $1 | 33 calls | $0.259 (LiteLLM, the judge key's spend) | Rishi, D66 standing allowance |
+| 5 Nov | Headline v1 vs v2 on the 10 held-out tasks x 10, Hermes with Claude Haiku 5.5, `e_0mw38a1ym89666c6ccc6bfd13`; 200 of 200, 0 infra | 200 | $2.295 | Rishi, "Approve both, N=10" (expected about $1.95, cap $4) |
+| 5 Nov | A/A calibration of v1 on the same tasks x 10, `e_0mw38a2282836ad0614b7c07f`; 200 of 200, 0 infra | 200 | $1.959 | same |
 
 Per trial on Haiku 5.5: a single question cost $0.0024 to $0.0035 (3 model calls); a 3-turn simulated-client conversation cost $0.012 to $0.014 (8 to 10 agent calls plus the simulator's).
 
