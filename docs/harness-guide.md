@@ -206,7 +206,7 @@ Span events carry `evals.error` (kinds `malformed_tool_call`, `unknown_tool`, `t
 
 ### 2.5 The finance MCP tools
 
-`services/finance-mcp/` serves 18 read-only tools over stdio (11 finance tools and, since 5 Nov, 7 arithmetic tools: `add`, `subtract`, `multiply`, `divide`, `percent_of`, `percent_change`, `round`; toolset `finance/v2`, D54), one server per trial, reading `/trial/state/client.json` (D14). The tools are pure Decimal arithmetic with half-up rounding and no clock or network, so the same inputs give byte-identical output [src].
+`services/finance-mcp/` serves 19 read-only tools over stdio (11 finance tools and, since 5 Nov, 7 arithmetic tools: `add`, `subtract`, `multiply`, `divide`, `percent_of`, `percent_change`, `round`, D54, and `reference_rates`, documented market assumptions with sources and dates, D58; toolset `finance/v3`), one server per trial, reading `/trial/state/client.json` (D14). The tools are pure Decimal arithmetic with half-up rounding and no clock or network, so the same inputs give byte-identical output [src].
 
 **Every result** is one text block of compact JSON with money to exactly two decimals; each money value `x` also has `x_formatted` (`₹12,34,567.89`), and headline totals from ₹1,00,000 up get `x_words` (`11.59 lakh`). Bad input returns an MCP error result, `Error executing tool <name>: <reason>`. Schemas are flat, so harnesses that rewrite schemas have nothing to rewrite [src].
 
@@ -274,7 +274,7 @@ Gate tests prove a setting reaches the request. Effect checks prove it changes b
 | Inputs and ground truth | `spec` (the trial row, or `spec.json`) → `task`, `task.client_sim`, `seed`; the task's `client.json` in `tasks/<id>/` | Graders know every hidden fact; the agent and the simulator do not see each other's |
 | Settings in force | `result.json` → `applied_settings` | `harness_default` with value `null` means the harness sent nothing |
 | Self-edits | `result.json` → `integrity.before` and `after` | Hermes only today |
-| Numbers with no tool behind them; required tools | `checks.json` (the runner writes it after every trial, contract section 12): each money amount the agent wrote, `supported_by` `tool`, `client` (the client file), `user` or null (an arithmetic tool's result counts only when the numbers it was given are supported, D56; `arithmetic` and `rejected` say why not), and `required_tools` called and missing; `runner-report.json` → `checks` | A heuristic: an example figure the agent picked shows as unsupported, and a round figure can match an unrelated number. On the 4 Nov run every single-prompt amount was backed by a tool, and 34 of the conversation amounts were not [ran, 4 Nov] |
+| Numbers with no tool behind them; required tools | `checks.json` (the runner writes it after every trial, contract section 12): each money amount the agent wrote, `supported_by` `tool`, `client` (the client file), `user` or null (an arithmetic tool's result counts only when the numbers it was given are supported, D56, or are unit facts such as 12 or 365, D58; `arithmetic` and `rejected` say why not), and `required_tools` called and missing; `runner-report.json` → `checks` | A heuristic: an example figure the agent picked shows as unsupported, and a round figure can match an unrelated number. On the 4 Nov run every single-prompt amount was backed by a tool, and 34 of the conversation amounts were not [ran, 4 Nov] |
 | Simulator turns | `client_sim.turn` spans; `sim-NNNN` bodies; `sim_replies.jsonl` | |
 
 **Harness extras** in `out/artifacts/`: Hermes's `hermes-system-prompt.txt`, `hermes-messages.json`, `hermes-config.yaml`, `hermes-logs/` (`agent.log` for repairs, `errors.log` for blocked seeds) and `hermes-sessions/` request dumps after a provider failure; LangGraph's `langgraph-messages.json` (every message with usage, finish reason and invalid tool calls); ADK's `adk-session.json` (every event ADK recorded) [src].
@@ -990,7 +990,7 @@ Raised by the sources and not settled in `docs/decisions.md`. Listed, not answer
 
 12. **Provider-error labelling.** A provider 400 (unscoped key, rejected temperature) is labelled `agent`, and so is a simulator failure, so setup errors count against a config. Label 4xx from the provider as infra, as a new config-error label, or keep `agent` and filter by end detail?
 13. **Grading non-answered endings.** How are `step_limit` (Hermes may answer, the others don't), `timeout`, `token_limit` and `agent_error` trials scored? In a conversation, `final_answer` can be an earlier turn's reply: grade it or not?
-14. **State checks with read-only tools.** The brief asks for state-check graders, but all the finance tools (11, now 18 with the arithmetic tools) are read-only. What does a state check inspect: a new write tool (say, recording a plan) or the tool-call trace?
+14. **State checks with read-only tools.** The brief asks for state-check graders, but all the finance tools (11, now 19 with the arithmetic tools and `reference_rates`) are read-only. What does a state check inspect: a new write tool (say, recording a plan) or the tool-call trace?
 
 **Models and settings**
 

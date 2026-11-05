@@ -40,6 +40,14 @@ CASES = {
         ("sum-unsupported", "finance-sum-unsupported", ["calculate_emi", "list_debts"]),
         ("sum-laundered", "finance-sum-laundered", ["calculate_emi", "list_debts"]),
     ],
+    # D58 (runner 0.3.0, toolset v3): a yearly figure from multiply by 12, a unit fact; an FD
+    # rate the agent volunteers, taken from reference_rates, and the same answer at a rate it
+    # picked itself.
+    "gate-20261105-d58": [
+        ("yearly-tool", "finance-yearly-tool", ["calculate_emi", "multiply"]),
+        ("rate-tool", "finance-rate-tool", ["reference_rates"]),
+        ("rate-made-up", "finance-rate-made-up", ["reference_rates"]),
+    ],
 }
 
 

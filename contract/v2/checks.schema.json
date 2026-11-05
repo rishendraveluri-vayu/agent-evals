@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-evals.local/contract/v2/checks.schema.json",
   "title": "Platform checks (contract v2)",
-  "description": "Written by the runner to /trial/out/checks.json after every trial (evals_adapter.checks), never by the adapter. Number provenance: every money amount the agent wrote, and whether a tool result, the task's client file or a user message holds it at the precision shown; an arithmetic tool's result counts only when every number it was given is itself supported (D56, 5 Nov). Required tool calls: which of the task's required_tools the agent called. Heuristics for a reader and a grader primitive, not a grade. See docs/adapter-contract.md section 12. The fields marked D56 were added on 5 Nov and are optional here, so a checks.json written before them still validates; the runner always writes them now.",
+  "description": "Written by the runner to /trial/out/checks.json after every trial (evals_adapter.checks), never by the adapter. Number provenance: every money amount the agent wrote, and whether a tool result, the task's client file or a user message holds it at the precision shown; an arithmetic tool's result counts only when every number it was given is itself supported or a unit fact, and its result does not just repeat an input with no source (D56 and D58, 5 Nov). Required tool calls: which of the task's required_tools the agent called. Heuristics for a reader and a grader primitive, not a grade. See docs/adapter-contract.md section 12. The fields marked D56 were added on 5 Nov and are optional here, so a checks.json written before them still validates; the runner always writes them now.",
   "type": "object",
   "additionalProperties": false,
   "required": ["contract_version", "trial_id", "amounts", "unsupported", "tools_called", "required_tools"],
@@ -52,7 +52,7 @@
       ]
     },
     "arithmetic": {
-      "description": "D56: every call of an arithmetic tool (add, subtract, multiply, divide, percent_of, percent_change, round), in start order, and whether its result counts as a source. It counts only when the call returned no error, was given at least one number, and every number it was given (round's places aside) matches, by the same rule as an amount, an earlier non-arithmetic tool result or accepted arithmetic result, the client file, or a user message up to the call's turn. Absent from a checks.json written before D56, which did not trace arithmetic inputs.",
+      "description": "D56: every call of an arithmetic tool (add, subtract, multiply, divide, percent_of, percent_change, round), in start order, and whether its result counts as a source. It counts only when the call returned no error, was given at least one number, and every number it was given (round's places aside) matches, by the same rule as an amount, an earlier non-arithmetic tool result or accepted arithmetic result, the client file, or a user message up to the call's turn, or (D58, 5 Nov) is a unit fact. Even then it does not count when a number in its result only repeats an input that has no source (D58's identity guard: round(365), add([100, 0])). Absent from a checks.json written before D56, which did not trace arithmetic inputs.",
       "type": "array",
       "items": {
         "type": "object",
@@ -73,12 +73,12 @@
               "properties": {
                 "arg": {"description": "The argument it was given in: values[0], a, value.", "type": "string", "minLength": 1},
                 "value": {"description": "The number as given; null for NaN or an infinity.", "type": ["number", "null"]},
-                "supported_by": {"enum": ["tool", "client", "user", null]},
+                "supported_by": {"description": "Where a matching number was, as for an amount; `unit` (D58, 5 Nov) when nothing matched but the input is a unit fact (7, 12, 28 to 31, 52, 100, 365, 366, 1,00,000 or 1,00,00,000, sign ignored), which needs no source; its `match` is then null.", "enum": ["tool", "client", "user", "unit", null]},
                 "match": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/match"}]}
               }
             }
           },
-          "reason": {"description": "Null when the result counts; else why not: \"add's input 12,345 is not supported\", \"round returned an error\", \"divide's arguments could not be read\".", "type": ["string", "null"]}
+          "reason": {"description": "Null when the result counts; else why not: \"add's input 12,345 is not supported\", \"round returned an error\", \"divide's arguments could not be read\", \"round's result 365 only repeats its input 365, which has no source\" (D58).", "type": ["string", "null"]}
         }
       }
     }

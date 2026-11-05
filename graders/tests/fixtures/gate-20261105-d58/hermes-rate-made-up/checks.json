@@ -1,0 +1,79 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-hermes-rate-made-up",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "Rs 92,500",
+   "value": 92500,
+   "supported_by": "tool",
+   "match": {
+    "value": 92500,
+    "where": "tool:get_client_profile",
+    "how": "exact",
+    "precision": 1,
+    "call": 0
+   },
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "Rs 6,845",
+   "value": 6845,
+   "supported_by": null,
+   "match": null,
+   "rejected": {
+    "value": 6845,
+    "where": "tool:percent_of",
+    "how": "exact",
+    "precision": 1,
+    "call": 1,
+    "reason": "percent_of's input 7.4 is not supported"
+   }
+  }
+ ],
+ "unsupported": 1,
+ "tools_called": [
+  "get_client_profile",
+  "percent_of"
+ ],
+ "required_tools": {
+  "required": [
+   "reference_rates"
+  ],
+  "called": [],
+  "missing": [
+   "reference_rates"
+  ],
+  "only_errors": []
+ },
+ "arithmetic": [
+  {
+   "call": 1,
+   "tool": "percent_of",
+   "turn": 0,
+   "supported": false,
+   "inputs": [
+    {
+     "arg": "percent",
+     "value": 7.4,
+     "supported_by": null,
+     "match": null
+    },
+    {
+     "arg": "value",
+     "value": 92500,
+     "supported_by": "tool",
+     "match": {
+      "value": 92500,
+      "where": "tool:get_client_profile",
+      "how": "exact",
+      "precision": 1,
+      "call": 0
+     }
+    }
+   ],
+   "reason": "percent_of's input 7.4 is not supported"
+  }
+ ]
+}

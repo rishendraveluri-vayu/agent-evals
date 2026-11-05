@@ -9,8 +9,9 @@ For every finished trial it reads the stored files through the API and checks:
 - memory: no memory tool or block when off; the tool but no seeded text when on and empty; every
   seeded entry in the prompt when seeded;
 - tools: exactly the config's toolset (finance/all: the 11 finance tools; finance/v2 since 5 Nov:
-  those plus the 7 arithmetic tools, D54), plus the memory tool only when memory is on. A Hermes
-  image built before the arithmetic tools would show v2 configs 11 tools, and this catches it;
+  those plus the 7 arithmetic tools, D54; finance/v3: those plus reference_rates, D58), plus the
+  memory tool only when memory is on. A Hermes image built before a toolset's tools would show
+  its configs fewer tools, and this catches it;
 
 - LiteLLM's call count against Hermes's own (R10.9), and that LiteLLM's log was complete;
 - compression never fired;
@@ -37,7 +38,8 @@ FINANCE = {
 }
 ARITHMETIC = {"add", "subtract", "multiply", "divide", "percent_of", "percent_change", "round"}
 # The tools each finance toolset version gives the model (apps/api/src/catalogue/catalogue-files.ts).
-TOOLSETS = {"all": FINANCE, "v2": FINANCE | ARITHMETIC}
+REFERENCE = {"reference_rates"}
+TOOLSETS = {"all": FINANCE, "v2": FINANCE | ARITHMETIC, "v3": FINANCE | ARITHMETIC | REFERENCE}
 PROMPT_FILE = Path(__file__).resolve().parents[1] / "configs" / "prompts" / "finance-advisor.v1.md"
 
 

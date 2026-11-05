@@ -1,0 +1,173 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-hermes-yearly-tool",
+ "end_state": "answered",
+ "end_detail": {
+  "harness_stop_reason": "text_response(finish_reason=stop)",
+  "exception_type": null,
+  "exception_message": null,
+  "last_message_excerpt": "The EMI would be Rs 8,997.26 a month, which is Rs 1,07,967.12 a year."
+ },
+ "final_answer": "The EMI would be Rs 8,997.26 a month, which is Rs 1,07,967.12 a year.",
+ "conversation": {
+  "agent_turns": 1,
+  "client_turns": 0,
+  "ended_by": null,
+  "transcript": [
+   {
+    "role": "user",
+    "content": "What is my EMI on Rs 10 lakh at 9% for 20 years?",
+    "source": "task"
+   },
+   {
+    "role": "assistant",
+    "content": "The EMI would be Rs 8,997.26 a month, which is Rs 1,07,967.12 a year.",
+    "source": "agent"
+   }
+  ]
+ },
+ "harness": {
+  "name": "hermes",
+  "version": "6112c2adb9e1",
+  "extra": {
+   "mcp_tools_registered": [
+    "mcp__finance__add",
+    "mcp__finance__amortization_schedule",
+    "mcp__finance__calculate_emi",
+    "mcp__finance__debt_payoff_plan",
+    "mcp__finance__divide",
+    "mcp__finance__fd_maturity",
+    "mcp__finance__get_client_profile",
+    "mcp__finance__inflation_adjusted_value",
+    "mcp__finance__list_debts",
+    "mcp__finance__list_transactions",
+    "mcp__finance__loan_affordability",
+    "mcp__finance__multiply",
+    "mcp__finance__percent_change",
+    "mcp__finance__percent_of",
+    "mcp__finance__prepayment_impact",
+    "mcp__finance__reference_rates",
+    "mcp__finance__round",
+    "mcp__finance__sip_future_value",
+    "mcp__finance__subtract"
+   ],
+   "tool_names": [
+    "mcp__finance__add",
+    "mcp__finance__amortization_schedule",
+    "mcp__finance__calculate_emi",
+    "mcp__finance__debt_payoff_plan",
+    "mcp__finance__divide",
+    "mcp__finance__fd_maturity",
+    "mcp__finance__get_client_profile",
+    "mcp__finance__inflation_adjusted_value",
+    "mcp__finance__list_debts",
+    "mcp__finance__list_transactions",
+    "mcp__finance__loan_affordability",
+    "mcp__finance__multiply",
+    "mcp__finance__percent_change",
+    "mcp__finance__percent_of",
+    "mcp__finance__prepayment_impact",
+    "mcp__finance__reference_rates",
+    "mcp__finance__round",
+    "mcp__finance__sip_future_value",
+    "mcp__finance__subtract"
+   ],
+   "prompt_cache_markers": false
+  }
+ },
+ "applied_settings": {
+  "temperature": {
+   "value": 0.2,
+   "source": "platform_default"
+  },
+  "max_output_tokens": {
+   "value": 1024,
+   "source": "platform_default"
+  },
+  "max_steps": {
+   "value": 10,
+   "source": "platform_default"
+  },
+  "timeout_s": {
+   "value": 60,
+   "source": "platform_default"
+  },
+  "parallel_tool_calls": {
+   "value": false,
+   "source": "platform_default"
+  },
+  "memory": {
+   "value": {
+    "enabled": false
+   },
+   "source": "platform_default"
+  },
+  "skills": {
+   "value": {
+    "enabled": false
+   },
+   "source": "platform_default"
+  },
+  "compression": {
+   "value": {
+    "enabled": false
+   },
+   "source": "platform_default"
+  },
+  "prompt_cache_markers": {
+   "value": false,
+   "source": "platform_default",
+   "observed": "D31: off unless the harness option turns it on (prompt_caching.cache_ttl off); when on, Hermes adds cache_control markers for claude models on a host named litellm"
+  },
+  "parallel_tool_call_guidance": {
+   "value": false,
+   "source": "platform_default",
+   "observed": "D33: the 'Parallel tool calls' prompt section off (parallel_tool_calls false); config agent.parallel_tool_call_guidance"
+  },
+  "api_max_retries": {
+   "value": 1,
+   "source": "platform_default",
+   "observed": "R10.11: one attempt"
+  },
+  "reasoning_effort": {
+   "value": null,
+   "source": "platform_default",
+   "observed": "kept off the wire"
+  }
+ },
+ "harness_usage": {
+  "model_calls": 3,
+  "input_tokens": 14486,
+  "output_tokens": 54,
+  "cost_usd": null
+ },
+ "counts": {
+  "model_calls": 3,
+  "tool_calls": 2,
+  "tool_errors": 0,
+  "malformed_tool_calls": 0
+ },
+ "integrity": {
+  "before": {
+   "config.yaml": "sha256:f6686b0beecfe035a6b97c4d5f1461508a2b7816e03bb233a093170e0eea56a1",
+   "SOUL.md": "sha256:36c1f5a2e92cd1d018311eaf4c8f1e8886672eae78212e033c681d0e3d5d506f",
+   "AGENTS.md": null
+  },
+  "after": {
+   "config.yaml": "sha256:f6686b0beecfe035a6b97c4d5f1461508a2b7816e03bb233a093170e0eea56a1",
+   "SOUL.md": "sha256:36c1f5a2e92cd1d018311eaf4c8f1e8886672eae78212e033c681d0e3d5d506f",
+   "AGENTS.md": null
+  }
+ },
+ "timing": {
+  "started_at": "2026-11-05T03:47:08.355960Z",
+  "ended_at": "2026-11-05T03:47:13.443236Z",
+  "wall_s": 5.087
+ },
+ "artifacts": [
+  "artifacts/hermes-config.yaml",
+  "artifacts/hermes-logs",
+  "artifacts/hermes-messages.json",
+  "artifacts/hermes-system-prompt.txt"
+ ]
+}

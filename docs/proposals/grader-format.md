@@ -38,7 +38,7 @@ weaker grader.
 | `tool_not_called` | `tool`; `args` | No call of the tool (with those args, when given). |
 | `regex_present` / `regex_absent` | `pattern` (Python regex); `target`; `case_sensitive` (default false) | The pattern is (or is not) in the target. |
 | `end_state` | `states`: a list of contract v2 end states | The trial ended in one of them. |
-| `provenance` | `max_unsupported` (default 0); `target`: `agent_messages` (default, every reply) or `final_answer` | `checks.json`'s number provenance (contract v2 section 12) found at most that many money amounts with no tool result, client-file number or user message behind them (note 31). An arithmetic tool's result counts only when its inputs are supported (D56, framework 0.4.0); for an amount whose only match is one that does not count, the reason gives checks.json's why ("₹23,120 (round's input 23,120 is not supported)"). The evidence quotes each unsupported amount in the reply it came from, and the arithmetic call it matched. `not_applicable` when there is no `checks.json` (trials from before 4 Nov); `error` when the file is not the contract's shape, or when it predates D56 (no `arithmetic`) and an amount rests on an arithmetic result it did not trace while the rest are within the cap (over the cap it fails anyway). |
+| `provenance` | `max_unsupported` (default 0); `target`: `agent_messages` (default, every reply) or `final_answer` | `checks.json`'s number provenance (contract v2 section 12) found at most that many money amounts with no tool result, client-file number or user message behind them (note 31). An arithmetic tool's result counts only when its inputs are supported (D56, framework 0.4.0) or are unit facts such as 12 or 365, and not when it only repeats an input with no source (D58, framework 0.5.0); for an amount whose only match is one that does not count, the reason gives checks.json's why ("₹23,120 (round's input 23,120 is not supported)"). The evidence quotes each unsupported amount in the reply it came from, and the arithmetic call it matched. `not_applicable` when there is no `checks.json` (trials from before 4 Nov); `error` when the file is not the contract's shape, or when it predates D56 (no `arithmetic`) and an amount rests on an arithmetic result it did not trace while the rest are within the cap (over the cap it fails anyway). |
 | `required_tools` | `successful` (default false: with true, a tool whose every call errored counts as not called) | Every tool in the task's own `required_tools` field was called, as `checks.json` records it. The tools are listed once, in `task.json`; the grader takes no tool list, and is an `error` when the task lists none. |
 | `unit_test` | `file` (default `grader.py`, next to `task.json`); `function` (default `grade`); `timeout_s` (default 10, max 120) | The task's own `grade(trial)` says so. This is the brief's "unit tests". |
 | `judge` | `rubric` (`{id, version}` or a `configs/rubrics/` path); `criteria` (a list of `{id, text?, required?}`); `model`; `reference` | An LLM judge, blind to harness and model, with a verdict and quote per criterion (`evals_graders/judge.py`, below). `not_implemented` until the experiment's judging is approved with a model and a budget. |
@@ -148,7 +148,13 @@ side. The API computes the same hashes (shared test vectors in `graders/tests/ha
    checks.json predates D56 cannot apply it, so an amount resting on an arithmetic result there
    leaves the grade undecided (`error`) unless the trial fails on its other amounts. The
    arithmetic tools exist since 5 Nov, and no trial trace under `runs/` calls one, so those
-   regrade as before (`docs/known-limits.md`, Platform checks).
+   regrade as before (`docs/known-limits.md`, Platform checks). Since framework 0.5.0 (D58)
+   the runner (0.3.0) also lets an arithmetic input be a unit fact (12, 100, 365 and the rest
+   of `UNIT_FACTS`), refuses a result that only repeats an input with no source, and skips
+   URLs in sources; the grader still reads its decision and reasons, so its code is unchanged
+   and the version marks which runner's rule a grade rests on. `gate-20261105-d58/` pins it
+   through both harnesses: a yearly EMI via `multiply` by 12 and an FD rate from
+   `reference_rates` pass, a made-up rate fails.
 8. **The judge's interface:** `rubric` as a versioned file like prompts, a list of `criteria`
    (each `{id, text?, required?}`), an optional pinned `model`, and `reference` facts it grades
    against rather than what the agent saw (note 20).

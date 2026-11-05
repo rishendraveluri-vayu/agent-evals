@@ -16,10 +16,13 @@ import pytest
 from support import REPO, errors, make_spec
 from test_trial import run
 
+from evals_adapter import checks
 from evals_adapter.checks import (
     ARITHMETIC_TOOLS,
     NOT_FIGURES,
+    UNIT_FACTS,
     check_trial,
+    is_unit_fact,
     money_amounts,
     run_checks,
     source_numbers,
@@ -556,6 +559,255 @@ def test_a_finance_tools_result_counts_whatever_it_was_given():
     out = checks_for(["Rs 9,852.70 a month."], [turn_span(T, 0), call])
     assert out["amounts"][0]["supported_by"] == "tool"
     assert out["arithmetic"] == []
+
+
+# ---- D58: unit facts, the identity guard, and reference_rates as a source ----------------------
+
+
+def test_the_unit_facts_are_the_d58_list_and_never_zero_or_one():
+    assert sorted(UNIT_FACTS) == [
+        Decimal(n) for n in (7, 12, 28, 29, 30, 31, 52, 100, 365, 366, 100_000, 10_000_000)
+    ]
+    assert Decimal(0) not in UNIT_FACTS and Decimal(1) not in UNIT_FACTS
+    # By value, sign ignored, as the amounts' rule ignores signs; nothing else is one.
+    assert all(is_unit_fact(Decimal(t)) for t in ("12", "12.0", "12.00", "-12", "1E+5"))
+    assert not any(is_unit_fact(Decimal(t)) for t in ("0", "1", "-1", "12.5", "11", "1000", "NaN"))
+
+
+def test_a_year_of_emis_from_multiply_by_12_is_supported():
+    """D58's first case: 12 months in a year needs no source, so twelve sourced EMIs are a
+    supported figure. Under D56 alone this was unsupported unless 12 appeared somewhere."""
+    spans = [
+        turn_span(T, 0),
+        span("calculate_emi", T, EMI, start=1),
+        span("multiply", T, '{"product":107967.12}', start=2, args={"values": [8997.26, 12]}),
+    ]
+    out = checks_for(["Rs 8,997.26 a month, so Rs 1,07,967.12 a year."], spans)
+    assert out["unsupported"] == 0
+    assert by_text(out)["Rs 1,07,967.12"]["match"]["where"] == "tool:multiply"
+    (record,) = out["arithmetic"]
+    assert record["supported"] is True and record["reason"] is None
+    assert record["inputs"] == [
+        {
+            "arg": "values[0]",
+            "value": 8997.26,
+            "supported_by": "tool",
+            "match": {
+                "value": 8997.26,
+                "where": "tool:calculate_emi",
+                "how": "exact",
+                "precision": 0.01,
+                "call": 0,
+            },
+        },
+        {"arg": "values[1]", "value": 12, "supported_by": "unit", "match": None},
+    ]
+    assert summary(out).startswith("t_checks: 0 unsupported")
+
+
+def test_percentages_through_100_are_supported():
+    """A rate from the client file over 100 is a fraction, and a fraction times 100 a percent;
+    percent_of a sourced value at 100 percent repeats the value, which has a source, so it
+    counts too (the identity guard looks only at inputs with no source)."""
+    files = {"client.json": '{"debts":[{"balance":84250.00,"annual_rate_pct":42}]}'}
+    spans = [
+        turn_span(T, 0),
+        span("divide", T, '{"quotient":0.42}', start=1, args={"a": 42, "b": 100}),
+        span("multiply", T, '{"product":35385.00}', start=2, args={"values": [84250, 0.42]}),
+        span("multiply", T, '{"product":42.00}', start=3, args={"values": [0.42, 100]}),
+        span(
+            "percent_of", T, '{"amount":84250.00}', start=4, args={"value": 84250, "percent": 100}
+        ),
+    ]
+    out = checks_for(
+        ["A year's interest is about Rs 35,385 on the Rs 84,250 balance."], spans, files=files
+    )
+    assert [(c["tool"], c["supported"]) for c in out["arithmetic"]] == [
+        ("divide", True),
+        ("multiply", True),
+        ("multiply", True),
+        ("percent_of", True),
+    ]
+    assert [i["supported_by"] for i in out["arithmetic"][0]["inputs"]] == ["client", "unit"]
+    assert [i["supported_by"] for i in out["arithmetic"][2]["inputs"]] == ["tool", "unit"]
+    assert out["unsupported"] == 0
+
+
+def test_a_days_share_of_a_years_interest_divides_by_365():
+    spans = [
+        turn_span(T, 0),
+        span("fd_maturity", T, '{"maturity_amount":107185.90,"interest_earned":7185.90}', start=1),
+        span("divide", T, '{"quotient":19.69}', start=2, args={"a": 7185.9, "b": 365}),
+    ]
+    out = checks_for(["Rs 7,185.90 of interest, about Rs 19.69 a day."], spans)
+    (record,) = out["arithmetic"]
+    assert [i["supported_by"] for i in record["inputs"]] == ["tool", "unit"]
+    assert record["supported"] is True
+    assert out["unsupported"] == 0
+
+
+def test_a_unit_fact_is_not_a_source_for_an_amount_in_a_reply():
+    """Unit facts are arithmetic inputs only: "Rs 100" or "Rs 1,00,000" written in a reply still
+    needs a source."""
+    out = checks_for(["Put aside Rs 100 a day, Rs 1,00,000 by next year."], [turn_span(T, 0)])
+    assert [r["supported_by"] for r in out["amounts"]] == [None, None]
+
+
+@pytest.mark.parametrize(
+    ("tool", "args", "result"),
+    [
+        ("add", {"values": [12345, 0]}, '{"sum":12345.00}'),
+        ("multiply", {"values": [12345, 1]}, '{"product":12345.00}'),
+        ("divide", {"a": 12345, "b": 1}, '{"quotient":12345.00}'),
+        ("round", {"value": 12345, "places": 0}, '{"rounded":12345}'),
+    ],
+)
+def test_identities_on_a_made_up_figure_stay_unsupported(tool, args, result):
+    """D58 keeps D56's verdict on a made-up x passed through an identity (0 and 1 are in a tool
+    result here, so only x lacks a source)."""
+    spans = [
+        turn_span(T, 0),
+        span("list_debts", T, '{"count":1,"overdue":0}', start=1),
+        span(tool, T, result, start=2, args=args),
+    ]
+    out = checks_for(["You can save Rs 12,345 a month."], spans)
+    assert out["amounts"][0]["supported_by"] is None
+    assert out["amounts"][0]["rejected"]["reason"] == f"{tool}'s input 12,345 is not supported"
+
+
+@pytest.mark.parametrize(
+    ("tool", "args", "result", "reason"),
+    [
+        ("round", {"value": 365}, '{"rounded":365.00}', "365.00 only repeats its input 365"),
+        ("add", {"values": [100, 0]}, '{"sum":100.00}', "100.00 only repeats its input 100"),
+        ("multiply", {"values": [12, 1]}, '{"product":12.00}', "12.00 only repeats its input 12"),
+        (
+            "divide",
+            {"a": 1e5, "b": 1},
+            '{"quotient":100000.00}',
+            "1,00,000.00 only repeats its input 1,00,000.0",
+        ),
+    ],
+)
+def test_the_identity_guard_keeps_a_unit_fact_from_becoming_a_figure(tool, args, result, reason):
+    """A result that only repeats an input with no source never counts: without the guard,
+    round(365) or add([100, 0]) would make "Rs 365" or "Rs 100" supported from nothing (0 and 1
+    are in a tool result here, so every input is supported or a unit fact)."""
+    spans = [
+        turn_span(T, 0),
+        span("list_debts", T, '{"count":1,"overdue":0}', start=1),
+        span(tool, T, result, start=2, args=args),
+    ]
+    out = checks_for(["About Rs 100 a month."], spans)
+    (record,) = out["arithmetic"]
+    assert record["supported"] is False
+    assert record["reason"] == f"{tool}'s result {reason}, which has no source"
+    assert {i["supported_by"] for i in record["inputs"]} <= {"unit", "tool"}
+    rejected = out["amounts"][0]["rejected"]
+    assert rejected is None or rejected["reason"] == record["reason"]
+
+
+def test_rounding_to_a_unit_fact_is_not_a_unit_fact():
+    """round(30.4) is 30, a unit fact, but 30.4 is not one and has no source: D56's missing
+    input decides it, and the result does not count."""
+    call = span("round", T, '{"rounded":30}', args={"value": 30.4, "places": 0})
+    out = checks_for(["About Rs 30 a day."], [turn_span(T, 0), call])
+    assert out["arithmetic"][0]["reason"] == "round's input 30.4 is not supported"
+    assert out["amounts"][0]["supported_by"] is None
+
+
+def test_the_identity_guard_holds_whatever_the_unit_list_says(monkeypatch):
+    """With 0, 1 and even the made-up 12,345 on the list, add([x, 0]), multiply([x, 1]) and
+    round(x) still do not make x a supported figure: their result repeats an input with no
+    source. An honest product of a sourced figure and a listed constant still counts."""
+    monkeypatch.setattr(
+        checks, "UNIT_FACTS", checks.UNIT_FACTS | {Decimal(0), Decimal(1), Decimal(12345)}
+    )
+    for tool, args, result in [
+        ("add", {"values": [12345, 0]}, '{"sum":12345.00}'),
+        ("multiply", {"values": [12345, 1]}, '{"product":12345.00}'),
+        ("round", {"value": 12345.4, "places": 0}, '{"rounded":12345}'),
+        ("round", {"value": 12345}, '{"rounded":12345.00}'),
+    ]:
+        out = checks_for(
+            ["Rs 12,345 a month."], [turn_span(T, 0), span(tool, T, result, args=args)]
+        )
+        (record,) = out["arithmetic"]
+        if args.get("value") == 12345.4:  # 12,345.4 is not on the list: D56's missing input
+            assert record["reason"] == "round's input 12,345.4 is not supported"
+        else:
+            assert "only repeats its input 12,345, which has no source" in record["reason"]
+        assert out["amounts"][0]["supported_by"] is None, tool
+    spans = [
+        turn_span(T, 0),
+        span("calculate_emi", T, EMI, start=1),
+        span("multiply", T, '{"product":107967.12}', start=2, args={"values": [8997.26, 12, 1]}),
+    ]
+    out = checks_for(["Rs 1,07,967.12 a year."], spans)
+    assert out["arithmetic"][0]["supported"] is True
+
+
+RATES = (
+    '{"compiled_on":"2026-11-05","rates":{"fd_1y":{"name":"One-year fixed deposit, State Bank'
+    ' of India","value":6.25,"unit":"percent per year","as_of":"2026-10-15","source":'
+    '{"organisation":"State Bank of India","url":"https://sbi.co.in/web/interest-rates"}}}}'
+)
+
+
+@pytest.mark.parametrize("name", ["reference_rates", "mcp__finance__reference_rates"])
+def test_a_figure_from_a_reference_rate_is_supported_and_a_made_up_rate_is_not(name):
+    """D58: reference_rates is a finance tool, so its values are sources like any tool result. A
+    year's interest at its FD rate on the client's own amount is supported; the same sum at a
+    rate the agent picked (7.4%) is not."""
+    user = ("I have Rs 2,00,000 to put in an FD.",)
+    spans = [
+        turn_span(T, 0),
+        span(name, T, RATES, start=1, args={}),
+        span("percent_of", T, '{"amount":12500.00}', start=2, args={"value": 2e5, "percent": 6.25}),
+    ]
+    out = checks_for(["At 6.25% that is about Rs 12,500 a year."], spans, user=user)
+    assert out["unsupported"] == 0
+    (record,) = out["arithmetic"]
+    assert [(i["supported_by"], (i["match"] or {}).get("where")) for i in record["inputs"]] == [
+        ("user", "task:0"),
+        ("tool", "tool:reference_rates"),
+    ]
+    made_up = span(
+        "percent_of", T, '{"amount":14800.00}', start=2, args={"value": 2e5, "percent": 7.4}
+    )
+    out = checks_for(
+        ["At 7.4% that is about Rs 14,800 a year."], [spans[0], spans[1], made_up], user=user
+    )
+    assert out["amounts"][0]["rejected"]["reason"] == "percent_of's input 7.4 is not supported"
+    assert out["unsupported"] == 1
+
+
+def test_the_dates_in_reference_rates_are_not_sources():
+    """Its as-of dates are skipped like any date, so they support nothing: only the rate is a
+    number in it."""
+    assert source_numbers(RATES) == [Decimal("6.25")]
+
+
+def test_the_digits_of_a_url_are_not_sources():
+    """A source's URL (an RBI press release id, a PDF name with %20 and a year) holds no
+    amounts, in a JSON string or in prose; the text after it still counts."""
+    rbi = '{"url":"https://www.rbi.org.in/scripts/BS_PressReleaseDisplay.aspx?prid=63742","v":5.50}'
+    assert source_numbers(rbi) == [Decimal("5.50")]
+    pdf = "See http://x.gov.in/1791801549227-Press%20Release,%202026.pdf for Rs 4,200."
+    assert source_numbers(pdf) == [Decimal(4200)]
+    assert source_numbers("prid=63742 at 20%") == [Decimal(63742), Decimal(20)]  # not a URL
+
+
+def test_the_finance_servers_reference_rates_support_exactly_their_values():
+    """The real data file (services/finance-mcp, served without `evidence`): every number the
+    check reads from the tool's result is one of the rates, in order, so its names, dates and
+    URLs support nothing else."""
+    path = REPO / "services/finance-mcp/src/finance_mcp/reference_rates.json"
+    data = json.loads(path.read_text(encoding="utf-8"), parse_float=Decimal)
+    for rate in data["rates"].values():
+        rate.pop("evidence")
+    served = json.dumps(data, ensure_ascii=False, default=str)
+    assert source_numbers(served) == [rate["value"] for rate in data["rates"].values()]
 
 
 def test_the_client_file_and_the_user_message_support_amounts():

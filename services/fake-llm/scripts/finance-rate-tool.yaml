@@ -1,0 +1,17 @@
+# A rate the agent volunteers, taken from the finance tool `reference_rates` (D58): a year's
+# interest on Meera's monthly income (the example client) at SBI's one-year FD rate, worked out by
+# `percent_of`. Both inputs have a source (the client profile and reference_rates), so the
+# number-provenance check counts the interest as supported. finance-rate-made-up gives the same
+# kind of answer at a rate no tool returned.
+description: Calls get_client_profile, reference_rates and percent_of, then answers with the interest at the FD rate.
+steps:
+  - tool_calls:
+      - name: get_client_profile
+        arguments: {}
+  - tool_calls:
+      - name: reference_rates
+        arguments: {}
+  - tool_calls:
+      - name: percent_of
+        arguments: {value: 92500, percent: 6.25}
+  - text: "One month's income, Rs 92,500, in a one-year fixed deposit at SBI's 6.25% would earn about Rs 5,781.25 in interest over the year."

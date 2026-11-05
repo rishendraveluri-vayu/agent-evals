@@ -133,7 +133,7 @@ Tests: `workers/hermes/tests/test_prompt_switches.py`, against the fake model se
 - [x] **Our task prompt reaches the model intact**, inside Hermes's system prompt, in 30 of 30 (D20).
 - [x] **No "Parallel tool calls" section** with `parallel_tool_calls: false`, 30 of 30 (D33).
 - [x] **No `cache_control` marker in any request**, 30 of 30 (D31).
-- [x] **Tools are exactly the 11 finance tools**, plus `memory` only when memory is on, 30 of 30. Historical: these trials ran on toolset `finance/all`. Since 5 Nov (D54) the toolset is `finance/v2`, which adds 7 arithmetic tools, so a run on it should show 18; `scripts/verify_hermes.py` now checks each trial against its config's toolset version (`all`: 11, `v2`: 18) instead of a fixed list of 11, and lists any missing tool.
+- [x] **Tools are exactly the 11 finance tools**, plus `memory` only when memory is on, 30 of 30. Historical: these trials ran on toolset `finance/all`. Since 5 Nov (D54) the toolset is `finance/v2`, which adds 7 arithmetic tools, so a run on it should show 18, and then `finance/v3` (D58), which adds `reference_rates`, so 19; `scripts/verify_hermes.py` now checks each trial against its config's toolset version (`all`: 11, `v2`: 18, `v3`: 19) instead of a fixed list of 11, and lists any missing tool.
 - [x] **Memory off has no memory tool and no memory block; on and empty has the tool and none of the seed text; on and seeded has every seeded entry in the prompt**, 30 of 30.
 - [x] **LiteLLM's call count equals Hermes's own in every trial** (0 calls unaccounted for in 30), and LiteLLM's log was complete each time (R10.9).
 - [x] **Compression never fired**, and **Hermes's config files hashed the same after each trial as before**.

@@ -1,0 +1,80 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-hermes-yearly-tool",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "Rs 8,997.26",
+   "value": 8997.26,
+   "supported_by": "tool",
+   "match": {
+    "value": 8997.26,
+    "where": "tool:calculate_emi",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 0
+   },
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "Rs 1,07,967.12",
+   "value": 107967.12,
+   "supported_by": "tool",
+   "match": {
+    "value": 107967.12,
+    "where": "tool:multiply",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 1
+   },
+   "rejected": null
+  }
+ ],
+ "unsupported": 0,
+ "tools_called": [
+  "calculate_emi",
+  "multiply"
+ ],
+ "required_tools": {
+  "required": [
+   "calculate_emi",
+   "multiply"
+  ],
+  "called": [
+   "calculate_emi",
+   "multiply"
+  ],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": [
+  {
+   "call": 1,
+   "tool": "multiply",
+   "turn": 0,
+   "supported": true,
+   "inputs": [
+    {
+     "arg": "values[0]",
+     "value": 8997.26,
+     "supported_by": "tool",
+     "match": {
+      "value": 8997.26,
+      "where": "tool:calculate_emi",
+      "how": "exact",
+      "precision": 0.01,
+      "call": 0
+     }
+    },
+    {
+     "arg": "values[1]",
+     "value": 12,
+     "supported_by": "unit",
+     "match": null
+    }
+   ],
+   "reason": null
+  }
+ ]
+}

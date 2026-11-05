@@ -1,0 +1,72 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-ownloop-rate-tool",
+ "attempt": 1,
+ "harness": "ownloop",
+ "label": "agent",
+ "end_state": "answered",
+ "adapter": {
+  "exit_code": 0,
+  "signal": null,
+  "result_valid": true,
+  "result_errors": [],
+  "trace_valid": true,
+  "trace_errors": [],
+  "leftover_processes": 0
+ },
+ "proxy_usage": null,
+ "logs": {
+  "stdout": {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "truncated": false
+  },
+  "stderr": {
+   "path": "stderr.log",
+   "bytes": 84,
+   "sha256": "6d84f7be0cbbdc5179f53edb300ff74b62252eb61fb619eefce9f4820f4fc3a4",
+   "truncated": false
+  }
+ },
+ "files": [
+  {
+   "path": "checks.json",
+   "bytes": 1429,
+   "sha256": "d6148c2c62bd5c9446f3d3c75ddbe7cb67fc27e2e1569506281b75b6cb6f1c65"
+  },
+  {
+   "path": "result.json",
+   "bytes": 3014,
+   "sha256": "d02f9b3264e6bb2936b60e355a9a02b5618a7a1a0957ee505eaf61e1d28547cd"
+  },
+  {
+   "path": "stderr.log",
+   "bytes": 84,
+   "sha256": "6d84f7be0cbbdc5179f53edb300ff74b62252eb61fb619eefce9f4820f4fc3a4"
+  },
+  {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "path": "trace.jsonl",
+   "bytes": 7940,
+   "sha256": "0c34c3222154f77a528e881f0b25e6cccf52c0b6ecfaa3df36db796738a7acc3"
+  }
+ ],
+ "timing": {
+  "started_at": "2026-11-05T03:46:55.408242Z",
+  "ended_at": "2026-11-05T03:46:57.947302Z",
+  "wall_s": 2.539,
+  "safety_net_s": 120.0
+ },
+ "checks": {
+  "path": "checks.json",
+  "valid": true,
+  "errors": [],
+  "unsupported_amounts": 0,
+  "missing_tools": []
+ }
+}
