@@ -1,11 +1,10 @@
 {
   "id": "draft-emi-home-loan",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "single_prompt",
-  "summary": "DRAFT for Rishi: EMI and total interest on a Rs 45 lakh home loan at 8.6% for 20 years.",
-  "draft": true,
-  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "summary": "EMI and total interest on a Rs 45 lakh home loan at 8.6% for 20 years.",
+  "split_note": "Discovery (D53): v1's traces on this task are where prompt v2's changes may come from.",
   "messages": [
     {
       "role": "user",
@@ -19,6 +18,7 @@
       "id": "used-calculate-emi",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "calculate_emi",
       "args": {
         "principal": 4500000,
@@ -30,6 +30,7 @@
       "id": "emi-value",
       "type": "number",
       "required": true,
+      "severity": "critical",
       "expected": 39337.32,
       "tolerance": {
         "abs": 1
@@ -39,6 +40,7 @@
       "id": "total-interest",
       "type": "number",
       "required": true,
+      "severity": "critical",
       "expected": 4940959.34,
       "tolerance": {
         "rel": 0.002
@@ -48,6 +50,7 @@
       "id": "every-amount-from-a-tool",
       "type": "provenance",
       "required": true,
+      "severity": "major",
       "max_unsupported": 0
     },
     {

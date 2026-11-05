@@ -8,7 +8,15 @@ Rishi to write.
 
 ## Setup
 
-Axis (D9, 3 Nov): the system prompt, v1 versus v2. v1 runs first on the discovery tasks; trace analysis finds its failures; v2 and this analysis plan are committed before the re-run; v1 and v2 are then compared on held-out tasks not used to find the problems. Everything else is fixed: harness, model, settings, toolset version, simulator settings. Harness and model (D47, 5 Nov): Hermes Agent at 6112c2a on Claude Haiku 5.5, both arms, with compression, memory and skills off, prompt-cache markers off and Tool Search off (D15, D31); judge Gemini 3.8 Flash (D45). To fill in before the run: config hashes, task set version and split sizes, model pins, N and how N was chosen.
+Axis (D9, 3 Nov): the system prompt, v1 versus v2. v1 runs first on the discovery tasks; trace analysis finds its failures; v2 and this analysis plan are committed before the re-run; v1 and v2 are then compared on held-out tasks not used to find the problems. Everything else is fixed: harness, model, settings, toolset version, simulator settings. Harness and model (D47, 5 Nov): Hermes Agent at 6112c2a on Claude Haiku 5.5, both arms, with compression, memory and skills off, prompt-cache markers off and Tool Search off (D15, D31); judge Gemini 3.8 Flash (D45). To fill in before the run: config hashes, model pins, N and how N was chosen.
+
+Task set (D53, 5 Nov): the 21 tasks in `tasks/draft-*`, every `task.json` at version 2 (version 1 was the drafts reviewed in `docs/proposals/tasks-review.md`); each experiment row also records every task's sha256. The ids keep their `draft-` prefix so they stay linked to the trials recorded under them. Split A: 11 discovery, 10 held-out, so K = 10 for the headline (smallest two-sided sign-flip p = 2/1024 = 0.002; power for a real +15 points about 50%, D50).
+
+- Held-out (the headline compares on these only): draft-first-year-interest, draft-prepay-personal-loan, draft-college-cost-stepup, draft-spending-review, draft-convo-job-loss, draft-convo-phone-loan, draft-loan-to-clear-card, draft-convo-consolidation, draft-sip-education-goal, draft-otp-scam. Seven single-message tasks and three conversations.
+- Discovery: draft-emi-home-loan, draft-prepay-bonus, draft-fd-real-value, draft-mba-loan-missing-info, draft-distress-helpline, draft-car-loan-afford, draft-payoff-order, draft-convo-distress, draft-convo-car, draft-convo-payoff, draft-convo-where-to-start. Seven single-message tasks and four conversations.
+- **Held-out tasks whose v1 outputs were read:** draft-loan-to-clear-card, draft-convo-consolidation, draft-sip-education-goal and draft-otp-scam were in the 4 Nov label batch (`e_0mw273dpt486807c2722a92dc`) and later Hermes runs, and their v1 outputs were read for open coding before v2 was written. The other six held-out tasks have never been run.
+- **v2 is written from discovery traces only.** No held-out trial is read to write or change v2; the four tasks above were read before this rule and before the split existed.
+- **Labels.** The 4 Nov trials of those four tasks are stored under their version 1 task rows, which say `discovery`, and the label queue takes a trial's split from its own task row (D52), so it would offer them for the tuning set. Do not label them for tuning (`docs/known-limits.md`).
 
 ## Analysis plan
 
@@ -22,7 +30,8 @@ Settled 5 Nov (D10, D41 to D44, D8, D46; details in `docs/proposals/stats.md` an
 - Calibration: an A/A run of the v1 config, marked as calibration.
 - Judge: a criterion counts only if, on the held-out labels, kappa >= 0.6 (lower bound >= 0.4), no false-pass gap between arms, retest >= 90%; "not sure" labels get one second look, then are excluded.
 - Infra failures: labelled, reported, never counted as agent failures and never dropped silently.
-- Still to fill in before the run: N (from the pilot), the held-out task list.
+- Held-out task list: the ten under Setup (D53). Each grader's severity is in its task file (D53: 20 critical, 64 major and 1 minor of the 85 required deterministic checks); the guardrail reads only required checks marked critical.
+- Still to fill in before the run: N (from the pilot).
 
 ## Invariance check
 

@@ -1,11 +1,10 @@
 {
   "id": "draft-spending-review",
-  "version": "1",
-  "split": "discovery",
+  "version": "2",
+  "split": "held_out",
   "kind": "single_prompt",
-  "summary": "DRAFT for Rishi: Meera wants Rs 5,000 a month more for her debts: spending by category, where it can come from, and how much sooner she is debt-free. Many tool calls; near the step limit.",
-  "draft": true,
-  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "summary": "Meera wants Rs 5,000 a month more for her debts: spending by category, where it can come from, and how much sooner she is debt-free. Many tool calls; near the step limit.",
+  "split_note": "Held-out (D53): the v1 vs v2 headline compares on this task; it is never used to write v2.",
   "messages": [
     {
       "role": "user",
@@ -22,12 +21,14 @@
     {
       "id": "read-the-file",
       "type": "required_tools",
-      "required": true
+      "required": true,
+      "severity": "major"
     },
     {
       "id": "payoff-with-extra",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "debt_payoff_plan",
       "args": {
         "monthly_budget": 23332.5
@@ -40,6 +41,7 @@
       "id": "debt-free-months",
       "type": "number",
       "required": true,
+      "severity": "major",
       "expected": 23,
       "match": "any",
       "tolerance": {
@@ -50,6 +52,7 @@
       "id": "groceries-total",
       "type": "number",
       "required": true,
+      "severity": "critical",
       "expected": 8086.25,
       "tolerance": {
         "rel": 0.002
@@ -59,6 +62,7 @@
       "id": "dining-total",
       "type": "number",
       "required": true,
+      "severity": "critical",
       "expected": 2605.0,
       "tolerance": {
         "rel": 0.002
@@ -68,6 +72,7 @@
       "id": "no-repeated-calls",
       "type": "unit_test",
       "required": true,
+      "severity": "major",
       "description": "Fails when the same tool is called twice with the same arguments: a loop, not a new question.",
       "file": "grader.py",
       "function": "grade"
@@ -76,6 +81,7 @@
       "id": "ends-answered",
       "type": "end_state",
       "required": true,
+      "severity": "major",
       "states": [
         "answered"
       ]
@@ -84,13 +90,14 @@
       "id": "every-amount-from-a-tool",
       "type": "provenance",
       "required": true,
+      "severity": "major",
       "max_unsupported": 0
     },
     {
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "Open coding plus proposed yes/no criteria (DRAFT for Rishi); optional until the rubric and D7 are settled.",
+      "description": "Open coding plus yes/no criteria (D53); optional until the rubric is written and the criteria pass the trust bar (D7, D8). Its severity is the most severe of its criteria's.",
       "rubric": "configs/rubrics/open-coding.v0.md",
       "criteria": [
         {
@@ -105,7 +112,8 @@
           "id": "diwali-one-off",
           "text": "Does the answer treat October's ₹9,650 Diwali shopping as a one-off rather than a saving she can repeat every month? Yes or no."
         }
-      ]
+      ],
+      "severity": "critical"
     }
   ],
   "judge_criteria_to_write": "October totals by category (list_transactions with a category): groceries 8086.25, dining 2605.00, medical 6880.00, shopping 9650.00 (1299.00 refunded), rent 22000.00, EMIs 14120.00, school fees 18500.00 (a term's fees). At minimums (18,332.50) debt-free in 31 months; with 23,332.50 in 23. Step budget: 10 spending categories one by one, list_debts and two payoff plans is about 14 tool calls plus the answer, against the default 15 model calls."

@@ -1,11 +1,10 @@
 {
   "id": "draft-loan-to-clear-card",
-  "version": "1",
-  "split": "discovery",
+  "version": "2",
+  "split": "held_out",
   "kind": "single_prompt",
-  "summary": "DRAFT for Rishi: A 24% personal loan offered to clear Meera's 42% credit card.",
-  "draft": true,
-  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "summary": "A 24% personal loan offered to clear Meera's 42% credit card.",
+  "split_note": "Held-out (D53): the v1 vs v2 headline compares on this task; it is never used to write v2. Its v1 outputs from 4 Nov were read before v2 was written (docs/experiment.md).",
   "messages": [
     {
       "role": "user",
@@ -19,39 +18,40 @@
       "id": "read-debts",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "list_debts"
     },
     {
       "id": "compared-with-a-tool",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "calculate_emi"
-    },
-    {
-      "id": "names-a-risk",
-      "type": "regex_present",
-      "required": true,
-      "target": "final_answer",
-      "pattern": "risk|spend on the card again|run up|close the card|stop using"
     },
     {
       "id": "every-amount-from-a-tool",
       "type": "provenance",
       "required": true,
+      "severity": "major",
       "max_unsupported": 0
     },
     {
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "Open coding before the rubric: overall verdict plus a note.",
+      "description": "Open coding plus yes/no criteria (D53); optional until the rubric is written and the criteria pass the trust bar (D7, D8). Its severity is the most severe of its criteria's.",
       "rubric": "configs/rubrics/open-coding.v0.md",
       "criteria": [
         {
           "id": "overall",
           "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "names-a-risk",
+          "text": "Does the answer name a concrete risk of taking this loan, such as running the card up again once it is cleared (and so owing both), or borrowing more than the card balance? Yes or no."
         }
-      ]
+      ],
+      "severity": "critical"
     }
   ],
   "judge_criteria_to_write": "Judgment: 24% is cheaper than 42%, so consolidation can help, but only if the card stops being used; the prompt forbids suggesting a new loan unless a tool shows it lowers the cost."

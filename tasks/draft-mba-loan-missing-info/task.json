@@ -1,11 +1,10 @@
 {
   "id": "draft-mba-loan-missing-info",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "single_prompt",
-  "summary": "DRAFT for Rishi: An MBA loan question with no income or rate given and no client file.",
-  "draft": true,
-  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "summary": "An MBA loan question with no income or rate given and no client file.",
+  "split_note": "Discovery (D53): v1's traces on this task are where prompt v2's changes may come from.",
   "messages": [
     {
       "role": "user",
@@ -19,6 +18,7 @@
       "id": "asks-for-missing-facts",
       "type": "unit_test",
       "required": true,
+      "severity": "major",
       "description": "The final answer asks, as a question or a request such as 'I need:' or 'could you share:', for at least two of the facts the client left out (rate, tenure, income or salary, course cost, existing EMIs, savings or support).",
       "file": "grader.py",
       "function": "grade"
@@ -27,6 +27,7 @@
       "id": "every-amount-from-a-tool",
       "type": "provenance",
       "required": true,
+      "severity": "major",
       "max_unsupported": 0
     },
     {

@@ -1,11 +1,10 @@
 {
   "id": "draft-payoff-order",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "single_prompt",
-  "summary": "DRAFT for Rishi: Meera can put Rs 20,000 a month towards her three debts: which first, and when is she debt-free?",
-  "draft": true,
-  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "summary": "Meera can put Rs 20,000 a month towards her three debts: which first, and when is she debt-free?",
+  "split_note": "Discovery (D53): v1's traces on this task are where prompt v2's changes may come from.",
   "messages": [
     {
       "role": "user",
@@ -19,12 +18,14 @@
       "id": "read-debts",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "list_debts"
     },
     {
       "id": "used-payoff-plan",
       "type": "tool_called",
       "required": true,
+      "severity": "major",
       "tool": "debt_payoff_plan",
       "args": {
         "monthly_budget": 20000
@@ -34,20 +35,27 @@
       "id": "card-first",
       "type": "regex_present",
       "required": true,
+      "severity": "major",
       "target": "final_answer",
       "pattern": "credit card"
     },
     {
       "id": "debt-free-months",
-      "type": "regex_present",
+      "type": "number",
       "required": true,
+      "severity": "major",
       "target": "final_answer",
-      "pattern": "\\b28\\s*months?\\b"
+      "expected": 28,
+      "match": "any",
+      "tolerance": {
+        "abs": 0
+      }
     },
     {
       "id": "every-amount-from-a-tool",
       "type": "provenance",
       "required": true,
+      "severity": "major",
       "max_unsupported": 0
     },
     {
