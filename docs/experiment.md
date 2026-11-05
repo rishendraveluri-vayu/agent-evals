@@ -57,6 +57,15 @@ These traces are what v2 is written from (D9: discovery traces only).
 
 Gemini 3.8 Flash with rubric advice.v1 on the 33 discovery trials ($0.259), against Rishi's 33 tuning labels (`evals-agreement --set tuning --human-unsure exclude`): clears-card-first agreed 12 of 12, keeps-medicines 3 of 3, health-cover 3 of 3 (kappa undefined: his labels were all one value); **overall: kappa 0.30 (0.00 to 0.78), sensitivity 1.00, specificity 0.20**, 4 false passes, 3 of them the payoff-order trials he failed for assuming what ₹20,000 meant. On those same trials the new `clarifies-ambiguous-amount` criterion said no 3 of 3, and `explains-plainly` said no on the FD answer he called confusing: the specific criteria saw what the overall one missed, which is why the criteria are scored and reported separately (judge-validation section 6). Tuning-set agreement says nothing about trust; that is decided on the held-out labels (D8).
 
+## Validation: a positive control (pre-registered 5 Nov, before the run)
+
+The A/A run is the negative control (identical arms: the platform must not call a difference; it did not). This is the positive control (D70): a change whose effect is known in advance, which the platform must detect.
+
+- **Design.** Hermes with Claude Haiku 5.5, prompt v1, Haiku as the simulated client, all 21 tasks x 5 trials x 2 arms (210 trials, expected about $2.30, cap $5, futility off). Arm A ("broken"): the finance toolset with all eight calculators removed, as if the calculator service were down; the data tools (profile, debts, transactions, reference rates) and the arithmetic tools stay. Arm B ("fixed"): the full `finance/v3`. Only the toolset differs.
+- **Predicted affected tasks (14):** car-loan-afford, college-cost-stepup, convo-consolidation, convo-payoff, convo-phone-loan, emi-home-loan, fd-real-value, first-year-interest, loan-to-clear-card, payoff-order, prepay-bonus, prepay-personal-loan, sip-education-goal, spending-review (a required check needs a removed calculator). About ten of them pass often with the full toolset, so have room to fall; spending-review (0 of 10 with the full toolset) cannot.
+- **Predicted unaffected (7), the specificity controls:** convo-car, convo-distress, convo-job-loss, convo-where-to-start, distress-helpline, mba-loan-missing-info, otp-scam.
+- **The platform passes this validation if:** (1) the verdict is "B passes more than A" (interval above 0 and sign-flip p < 0.05); (2) every task flagged beyond noise is among the 14 predicted, and none of the 7 controls is flagged; (3) the broken arm's failure causes name the missing tools (wrong tool, gave up early, unsupported figure). A miss on any of these is reported as a failure of the platform, not explained away.
+
 ## Invariance check
 
 Result of the diff on the first request of each config. Anything beyond the axis is explained here.
