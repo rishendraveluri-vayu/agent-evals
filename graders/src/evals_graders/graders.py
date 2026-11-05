@@ -505,6 +505,32 @@ def _rejected_calls(ctx: Context, rows: list[dict[str, Any]]) -> list[dict[str, 
     return out
 
 
+_SIGNS = {"add": "+", "subtract": "−", "multiply": "×", "divide": "÷"}
+
+
+def _derivation_words(derivation: Any) -> str | None:
+    """checks.json's `derivation` (D61) as a short formula: "8,000 − 6,880 = 1,120"."""
+    if not isinstance(derivation, dict) or not isinstance(derivation.get("operands"), list):
+        return None
+    values = [o.get("value") for o in derivation["operands"] if isinstance(o, dict)]
+    parts = [fmt_inr(v).removeprefix("₹") for v in values if isinstance(v, int | float)]
+    result = derivation.get("value")
+    if len(parts) != len(values) or not parts or not isinstance(result, int | float):
+        return None
+    op = derivation.get("op")
+    if op == "percent_of" and len(parts) == 2:
+        formula = f"{parts[1]}% of {parts[0]}"
+    elif op in _SIGNS and len(parts) == 2:
+        formula = f"{parts[0]} {_SIGNS[op]} {parts[1]}"
+    elif op == "sum":
+        formula = " + ".join(parts)
+    elif op == "repeat":
+        formula = f"{parts[0]}, derived earlier"
+    else:
+        return None
+    return f"{formula} = {fmt_inr(result).removeprefix('₹')}"
+
+
 def grade_provenance(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
     """checks.json's number provenance (note 31): how many money amounts the agent wrote have
     no tool result, client-file number or user message behind them at the precision shown. An
@@ -532,12 +558,36 @@ def grade_provenance(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
         for a in unsupported[:20]
     ]
     ev += _rejected_calls(ctx, unsupported[:20])
+    # D61: the figures written without a tool, verified because the checker recomputed them. A
+    # measure beside the verdict, never part of it.
+    derived = [a for a in amounts if a.get("verified_by") == "derived_in_prose"]
+    ev += [
+        {
+            **_reply_source(ctx, a.get("turn")),
+            "quote": str(a.get("text", "")),
+            "verified_by": "derived_in_prose",
+            "derivation": _derivation_words(a.get("derivation")),
+        }
+        for a in derived[:10]
+    ]
     shown = ", ".join(_why(a) for a in unsupported[:5])
     listed = f": {shown}" + (", ..." if len(unsupported) > 5 else "") if unsupported else ""
     summary = (
         f"{count} of {len(amounts)} amount(s) in {where} have no tool result, client-file"
         f" number or user message behind them{listed}"
     )
+    if "derived_in_prose" in checks:
+        tail = (
+            f"; {len(derived)} written without a tool and verified by recomputing them"
+            " (derived in prose)"
+        )
+    elif unsupported:
+        tail = (
+            "; checks.json predates D61, so a correct sum written in prose counts as"
+            " unsupported here"
+        )
+    else:
+        tail = ""
     untraced = [] if "arithmetic" in checks else [a for a in amounts if _on_arithmetic(a)]
     note = ""
     if untraced:
@@ -559,8 +609,8 @@ def grade_provenance(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
                 ev + untraced_ev,
             )
     if count <= cap:
-        return _grade("pass", f"{summary} (allowed {cap})", ev)
-    return _grade("fail", f"{summary}, more than the {cap} allowed{note}", ev)
+        return _grade("pass", f"{summary} (allowed {cap}){tail}", ev)
+    return _grade("fail", f"{summary}, more than the {cap} allowed{note}{tail}", ev)
 
 
 def grade_required_tools(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:

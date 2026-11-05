@@ -32,6 +32,7 @@ EXAMPLES = {
     "finance-sum-tool",
     "finance-sum-unsupported",
     "finance-sum-laundered",
+    "finance-sum-wrong",
     "finance-yearly-tool",
     "finance-rate-tool",
     "finance-rate-made-up",

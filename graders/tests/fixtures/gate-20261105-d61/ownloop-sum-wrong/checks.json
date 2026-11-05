@@ -1,0 +1,67 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-ownloop-sum-wrong",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "Rs 8,997.26",
+   "value": 8997.26,
+   "supported_by": "tool",
+   "match": {
+    "value": 8997.26,
+    "where": "tool:calculate_emi",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 0
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "Rs 18,332.50",
+   "value": 18332.5,
+   "supported_by": "tool",
+   "match": {
+    "value": 18332.5,
+    "where": "tool:list_debts",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 1
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "Rs 27,392.76",
+   "value": 27392.76,
+   "supported_by": null,
+   "match": null,
+   "verified_by": null,
+   "derivation": null,
+   "rejected": null
+  }
+ ],
+ "unsupported": 1,
+ "derived_in_prose": 0,
+ "tools_called": [
+  "calculate_emi",
+  "list_debts"
+ ],
+ "required_tools": {
+  "required": [
+   "calculate_emi",
+   "list_debts"
+  ],
+  "called": [
+   "calculate_emi",
+   "list_debts"
+  ],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": []
+}

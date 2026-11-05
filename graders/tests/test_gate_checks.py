@@ -30,6 +30,15 @@ fixtures/gate-20261105-d58/ (D58, runner 0.3.0, toolset v3 with 19 tools), the s
   `percent_of(92500, 6.25)`: a year's FD interest on Meera's monthly income at SBI's rate.
 - `*-rate-made-up` (finance-rate-made-up): the same kind of answer at 7.4%, a rate no tool
   returned, without calling reference_rates.
+
+fixtures/gate-20261105-d61/ (D61, runner 0.4.0: verify, don't trace), the same way:
+
+- `*-sum-tool` (finance-sum-tool): the sum from `add`, verified as `tool`.
+- `*-sum-prose` (finance-sum-unsupported): the same answer with the sum worked out in the reply;
+  the checker recomputes it, so it is verified as `derived_in_prose`.
+- `*-sum-wrong` (finance-sum-wrong): the same answer with the sum worked out wrong (27,392.76).
+
+The older folders keep the checks.json their runner wrote; a regrade never re-runs the checks.
 """
 
 from __future__ import annotations
@@ -47,6 +56,7 @@ from evals_graders.trial import TrialView
 GATE = Path(__file__).parent / "fixtures" / "gate-20261104"
 ARITHMETIC = Path(__file__).parent / "fixtures" / "gate-20261105"
 D58 = Path(__file__).parent / "fixtures" / "gate-20261105-d58"
+D61 = Path(__file__).parent / "fixtures" / "gate-20261105-d61"
 REPO = Path(__file__).resolve().parents[2]
 CHECKS_SCHEMA = REPO / "contract" / "v2" / "checks.schema.json"
 HARNESSES = ("ownloop", "hermes")
@@ -60,7 +70,7 @@ def grades(name: str, *specs: dict) -> list[dict]:
 
 @pytest.mark.parametrize(
     "folder",
-    sorted(p for root in (GATE, ARITHMETIC, D58) for p in root.iterdir() if p.is_dir()),
+    sorted(p for root in (GATE, ARITHMETIC, D58, D61) for p in root.iterdir() if p.is_dir()),
     ids=lambda p: f"{p.parent.name}/{p.name}",
 )
 def test_the_fixtures_are_the_contracts_checks(folder):
@@ -290,3 +300,55 @@ def test_an_fd_rate_from_reference_rates_passes_and_a_made_up_rate_fails(harness
     assert prov["verdict"] == "fail", prov
     assert "Rs 6,845 (percent_of's input 7.4 is not supported)" in prov["reason"]
     assert req["verdict"] == "fail" and "reference_rates" in req["reason"], req
+
+
+@pytest.mark.parametrize("harness", HARNESSES)
+def test_a_right_sum_in_prose_passes_as_derived_and_a_wrong_one_fails(harness):
+    """D61, through the real runner and adapter on the fake model: the same answer, Rs 8,997.26
+    + Rs 18,332.50 = Rs 27,329.76, passes provenance whether `add` computed the sum (tool) or the
+    reply did (derived in prose, named in the reason and the evidence); with the sum wrong it
+    fails on exactly that amount."""
+    tool, prose, wrong = (D61 / f"{harness}-{k}" for k in ("sum-tool", "sum-prose", "sum-wrong"))
+    by = {
+        k: json.loads((d / "checks.json").read_text(encoding="utf-8"))
+        for k, d in (("tool", tool), ("prose", prose), ("wrong", wrong))
+    }
+    total = {
+        k: next(a for a in c["amounts"] if a["text"].startswith("Rs 27,")) for k, c in by.items()
+    }
+    assert total["tool"]["verified_by"] == "tool"
+    assert total["prose"]["verified_by"] == "derived_in_prose"
+    assert total["prose"]["derivation"]["op"] == "add"
+    assert total["wrong"]["supported_by"] is None
+    assert [c["derived_in_prose"] for c in by.values()] == [0, 1, 0]
+
+    prov = grade_trial(tool, [PROVENANCE])["grades"][0]
+    assert prov["verdict"] == "pass", prov
+    assert prov["reason"].endswith(
+        "; 0 written without a tool and verified by recomputing them (derived in prose)"
+    )
+    prov = grade_trial(prose, [PROVENANCE])["grades"][0]
+    assert prov["verdict"] == "pass", prov
+    assert prov["reason"].startswith("0 of 3 amount(s)")
+    assert "; 1 written without a tool and verified by recomputing them" in prov["reason"]
+    (derived,) = [e for e in prov["evidence"] if e.get("verified_by") == "derived_in_prose"]
+    assert derived == {
+        "source": "final_answer",
+        "quote": "Rs 27,329.76",
+        "verified_by": "derived_in_prose",
+        "derivation": "8,997.26 + 18,332.50 = 27,329.76",
+    }
+    assert derived["quote"] in TrialView.load(prose).final_answer
+    prov = grade_trial(wrong, [PROVENANCE])["grades"][0]
+    assert prov["verdict"] == "fail", prov
+    assert "1 of 3 amount(s)" in prov["reason"] and "Rs 27,392.76" in prov["reason"]
+
+
+def test_a_checks_json_from_before_d61_says_prose_sums_count_as_unsupported():
+    """The 5 Nov sum-unsupported fixture was written by runner 0.2.0, before D61: its prose sum is
+    unsupported there, and a regrade cannot re-run the checks, so the reason says so."""
+    prov = grade_trial(ARITHMETIC / "ownloop-sum-unsupported", [PROVENANCE])["grades"][0]
+    assert prov["verdict"] == "fail"
+    assert prov["reason"].endswith(
+        "; checks.json predates D61, so a correct sum written in prose counts as unsupported here"
+    )
