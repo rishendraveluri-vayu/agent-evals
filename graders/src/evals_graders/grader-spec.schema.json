@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-evals.local/graders/grader-spec.schema.json",
-  "title": "One entry of a task's `graders` list (DRAFT for Rishi, docs/proposals/grader-format.md)",
+  "title": "One entry of a task's `graders` list (docs/proposals/grader-format.md)",
   "description": "Each grader is {id, type, required, ...type fields}. The task passes when every required grader passes. Unknown fields are refused so a typo cannot silently weaken a grader.",
   "type": "object",
   "required": ["id", "type"],

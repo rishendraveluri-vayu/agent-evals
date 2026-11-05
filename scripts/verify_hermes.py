@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import urllib.parse
@@ -141,7 +142,7 @@ BOOLS = ("prompt_kept", "no_parallel_section", "no_cache_markers", "tools_ok", "
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("experiments", nargs="+")
-    ap.add_argument("--api", default="http://127.0.0.1:3001/api")
+    ap.add_argument("--api", default=f"http://127.0.0.1:{os.environ.get('API_PORT') or '3000'}/api")
     ap.add_argument("--json", type=Path, help="also write every row here")
     args = ap.parse_args()
     api = args.api.rstrip("/")

@@ -66,9 +66,9 @@ These are the documents we need so nothing gets lost. **Required** means the bri
 | `docs/cost.md` | Cost formula, actual spend, how to reduce cost | **Required** | Prices, pilot, final run | Done |
 | `docs/experiment.md` | Hypothesis, setup, results with CIs, 2 or 3 trajectories, conclusion | **Required** | Plan before the run, results after | Done but the conclusion |
 | Video link in `README.md` | 10 minutes or less: define a config, run it, compare, drill into a failed trial | **Required** | SP9 | Not started |
-| `docs/judge-validation.md` | Label set, agreement, kappa, per-config checks | Required content, own file by choice | SP5 | Done for the tuning set; held-out not run |
+| `docs/judge-validation.md` | Label set, agreement, kappa, per-config checks | Required content, own file by choice | SP5 | Done for the tuning set and the D74 dev rounds (rubric v4 frozen); the frozen judges have graded all 40 held-out trials, awaiting Rishi's held-out labels |
 | `tasks/` | The 20+ task set with graders | **Required** | SP4 | Done: 21 tasks, plus a skills demo |
-| `experiments/<id>/` | Exported raw JSON or CSV, config hashes, spend | Evidence behind `experiment.md` | SP8 | Instead: `examples/` ships the headline and its A/A as full bundles |
+| `experiments/<id>/` | Exported raw JSON or CSV, config hashes, spend | Evidence behind `experiment.md` | SP8 | Instead: `examples/` ships five full bundles: the headline, its A/A, the positive control and the two replications (own loop, LangGraph) |
 | `labels/` | Rishi's hand labels, with date and split | Evidence behind `judge-validation.md`, and hard to redo | SP5 | Done: `labels/tuning.jsonl` |
 | `docs/decisions.md` | Each call: options, choice, why, what would change it | Not required, but it's how Rishi explains the system | Each decision | Done |
 | `docs/hermes-notes.md` | Measured and unverified Hermes behaviour | Feeds limits and design | Each finding | Done |
