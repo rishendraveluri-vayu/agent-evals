@@ -32,5 +32,6 @@
   "t_0mw38a1yoe1f0efb7f0315742"
  ],
  "agreed_total": 23,
- "trials_total": 40
+ "trials_total": 40,
+ "superseded_by": "D74: Rishi labels all 40 trials of judge-panel/phase2-sample.json (the test set), so this list of 27 is no longer used"
 }
