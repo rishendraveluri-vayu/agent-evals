@@ -9,6 +9,7 @@ dependencies = []
 
 [project.scripts]
 evals-agreement = "evals_stats.agreement_cli:main"
+evals-panel = "evals_stats.panel:main"
 
 [build-system]
 requires = ["uv_build>=0.13.6,<0.14"]

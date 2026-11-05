@@ -60,6 +60,26 @@ Rishi: "Do multiple models labels on them and find which disagree and iterate, i
 
 **What would change it.** A judge that cannot read the recorded trials (an `error` grade) is reported, not dropped. Spend beyond the cap stops the panel; what has run is reported.
 
+### Phase 1 results (5 Nov, discovery trials only)
+
+Data: `judge-panel/phase1-round1-advice-v1.jsonl` and `judge-panel/phase1-round2-advice-v2.jsonl` (one row per trial, judge and criterion; `scripts/judge_panel.py`), compared with `evals-panel` (`stats/`). Spend $1.66 for the two rounds (198 judge calls).
+
+| "overall" against Rishi (n = 33) | Rubric v1: kappa, specificity | Rubric v2: kappa (95% interval), specificity, false fails |
+| --- | --- | --- |
+| Gemini 3.8 Flash | 0.30, 0.20 | 0.53 (0.00 to 1.00), 0.40, 0 |
+| Claude Haiku 5.5 | 0.06, 0.20 | 0.42 (0.03 to 0.74), 0.80, 6 |
+| Claude Sonnet 5.5 | 0.02, 0.20 | 0.21 (−0.11 to 0.54), 0.60, 8 |
+| Majority of the three | 0.06, 0.20 | 0.29 (−0.08 to 0.64), 0.60, 6 |
+
+On the specific criteria (clears-card-first 12, keeps-medicines 3, health-cover 3) every judge matched Rishi in both rounds, except Haiku on one keeps-medicines in round 2.
+
+- **Round 1 (rubric v1):** all three judges passed the same four trials Rishi failed, three of them draft-payoff-order, where he wrote "is the 20k beyond the minimum payments or 20k is the total she puts ... first clarify before assuming". The Claude judges noticed ("the ₹20,000 interpretation is never flagged") and passed anyway. Their errors are shared, so a majority cannot correct them.
+- **Rubric v2** (`configs/rubrics/advice.v2.md`) adds one rule from those notes: an answer resting on an unflagged assumption about a fact that changes the advice is a no on any criterion about whether the client was served.
+- **The Claude judges fail trials Rishi passed,** mostly on arithmetic the rubric tells them not to redo: "₹13,800" where the tool gives about ₹6,664, "₹25,700" where it is ₹25,099.25. These are real slips in the answers; whether they should fail "overall" is Rishi's to say on review, so the rubric was not tuned to silence them.
+- **Stopped after two rounds:** Rishi failed 5 of the 33 tuning trials, so a third round would fit those few trials rather than the rule.
+
+**Fixed for Phase 2:** the judge that counts is **Gemini 3.8 Flash with rubric v2**: the highest agreement in both rounds, no false fails, and from a different family than the agent. The majority is reported in Phase 2 as context only. On the tuning set it is still below D8's bar (kappa 0.53, lower bound 0.00), and the bar is measured on held-out labels.
+
 ## Limits to state
 
 - Single human rater.
