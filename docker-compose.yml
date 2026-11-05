@@ -90,14 +90,14 @@ services:
 
   fake-llm:
     build: ./services/fake-llm
-    image: agent-evals/fake-llm:dev
+    image: agent-evals/fake-llm:${EVALS_IMAGE_TAG:-dev}
     networks: [trials]
 
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    image: agent-evals/api:dev
+    image: agent-evals/api:${EVALS_IMAGE_TAG:-dev}
     environment:
       PORT: "3000"
       DATABASE_URL: postgresql://evals:${POSTGRES_PASSWORD:-evals-local}@postgres:5432/evals
@@ -168,7 +168,7 @@ services:
     build:
       context: .
       dockerfile: apps/ui/Dockerfile
-    image: agent-evals/ui:dev
+    image: agent-evals/ui:${EVALS_IMAGE_TAG:-dev}
     depends_on:
       api:
         condition: service_healthy
@@ -181,35 +181,35 @@ services:
     build:
       context: .
       dockerfile: workers/ownloop/Dockerfile
-    image: agent-evals/worker-ownloop:dev
+    image: agent-evals/worker-ownloop:${EVALS_IMAGE_TAG:-dev}
 
   worker-hermes:
     <<: *harness-worker
     build:
       context: .
       dockerfile: workers/hermes/Dockerfile
-    image: agent-evals/worker-hermes:dev
+    image: agent-evals/worker-hermes:${EVALS_IMAGE_TAG:-dev}
 
   worker-langgraph:
     <<: *harness-worker
     build:
       context: .
       dockerfile: workers/langgraph/Dockerfile
-    image: agent-evals/worker-langgraph:dev
+    image: agent-evals/worker-langgraph:${EVALS_IMAGE_TAG:-dev}
 
   worker-adk:
     <<: *harness-worker
     build:
       context: .
       dockerfile: workers/adk/Dockerfile
-    image: agent-evals/worker-adk:dev
+    image: agent-evals/worker-adk:${EVALS_IMAGE_TAG:-dev}
 
   worker-openai-agents:
     <<: *harness-worker
     build:
       context: .
       dockerfile: workers/openai-agents/Dockerfile
-    image: agent-evals/worker-openai-agents:dev
+    image: agent-evals/worker-openai-agents:${EVALS_IMAGE_TAG:-dev}
 
   # Grading is its own step after the trial. The grader claims finished trials that need grading,
   # downloads their files from the API over HTTP, runs the task's graders and reports the grades.
@@ -218,7 +218,7 @@ services:
   grader:
     <<: *worker-runtime
     build: ./graders
-    image: agent-evals/grader:dev
+    image: agent-evals/grader:${EVALS_IMAGE_TAG:-dev}
     restart: unless-stopped
     environment:
       EVALS_API_URL: http://api:3000/api
@@ -232,7 +232,7 @@ services:
   netcheck:
     <<: *worker-runtime
     build: ./workers/base
-    image: agent-evals/worker-base:dev
+    image: agent-evals/worker-base:${EVALS_IMAGE_TAG:-dev}
     profiles: [smoke]
     depends_on:
       api:

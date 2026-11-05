@@ -41,7 +41,9 @@ docker compose up -d --build --wait
 Then open **http://127.0.0.1:8080**. Every port binds to localhost only. If a port is taken, set
 `UI_PORT`, `API_PORT` or `LITELLM_PORT`, for example `API_PORT=3001 docker compose up -d --build --wait`,
 and pass the same variables to every later `docker compose` command and to the checks under
-Develop and test.
+Develop and test. A second checkout on the same machine also needs its own compose project, ports
+and image tag (`docker compose -p review`, `EVALS_IMAGE_TAG=review` in its `.env`), or its build
+replaces the first one's images.
 
 **Without a key** you can build, save and preview an agent (see exactly what reaches the model),
 and open the finished example, which is read-only: nothing in it runs again. You can also run
@@ -59,7 +61,8 @@ Stop it with `docker compose down`. `docker compose down -v` also wipes the loca
 (configs, experiments, grades), but not the files the stack writes into the repo folder: trial
 files stay in `./runs/`, your labels in `./labels/`, and prompt versions you saved in
 `configs/prompts/`. To remove the trial files, delete what is inside `runs/`, not the folder
-itself: `rm -rf runs/*` (one fake run of 150 trials left about 22 MB there in testing). No sudo is
+itself: `rm -rf runs/*` (one fake run of 150 trials left about 22 MB there in testing; opening all
+five shipped examples writes about 373 MB, 69 to 81 MB each). No sudo is
 needed. The API runs as uid 1000; when you are another user, its start-up step gives those three
 folders (the folders only, never what is in them) to uid 1000, keeps your group and makes them
 group-writable, so everything it writes there is yours to delete. If `rm` is refused anyway (a

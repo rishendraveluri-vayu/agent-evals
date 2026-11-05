@@ -303,7 +303,7 @@ COMPOSE_SERVICE = """  worker-{name}:
     build:
       context: .
       dockerfile: workers/{name}/Dockerfile
-    image: agent-evals/worker-{name}:dev
+    image: agent-evals/worker-{name}:${{EVALS_IMAGE_TAG:-dev}}
 """
 
 
