@@ -1,5 +1,6 @@
 import type { Grade, GradeKind, GradeVerdict, GradingJobStatus, GradingOutcome, Json, TrialGrading, TrialGradingJob } from '../contract';
 import type { Db } from '../database/db.service';
+import { JUDGE_MODEL_SQL } from './grading-core';
 
 interface JobRow {
   id: string;
@@ -70,9 +71,9 @@ export async function trialGrading(db: Db, trialId: string): Promise<{ grades: G
   let grades: Grade[] = [];
   if (current && current.grade_ids.length) {
     const rows = await db.query<GradeRow>(
-      `SELECT id::int AS id, grader_id, grader_version, kind, type, required, verdict, score, reason, evidence, judge_model,
-              run_index, created_at
-       FROM grades WHERE id = ANY($1::bigint[])`,
+      `SELECT g.id::int AS id, g.grader_id, g.grader_version, g.kind, g.type, g.required, g.verdict, g.score, g.reason, g.evidence,
+              ${JUDGE_MODEL_SQL('g')} AS judge_model, g.run_index, g.created_at
+       FROM grades g WHERE g.id = ANY($1::bigint[])`,
       [current.grade_ids],
     );
     const order = new Map(current.grade_ids.map((id, i) => [Number(id), i]));

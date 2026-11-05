@@ -786,6 +786,13 @@ key (`010_judge.sql`; approving and revoking are under Experiments).
   <spec_sha256>})`, the same in Python (`evals_graders.canonical`) and TypeScript
   (`apps/api/src/grading/grading-core.ts`), checked by shared vectors in
   `graders/tests/hash_vectors.json`.
+- **A judge grade's model** (`judge_model` on grades, in `GET /trials/:id` and the export; since 5
+  Nov, D72) is the model it called: the `model` of its `judge_call` evidence item, which the Python
+  judge writes whenever it makes a call. The API stores it when the grades are reported; for a
+  grade stored before then (the column was never written) it is read from that evidence item. Null
+  when the judge called no model (not approved, or it stopped before the call) and for every other
+  kind of grade. The model is not part of the grader version, so the comparison checks it beside the
+  version (D72, Experiments).
 
 1. `POST /grader/claim` with `{worker_id}`. 204 when nothing needs grading, or 200 with
    `{job_id, attempt, trial_id, lease_s: 120, task: {id, sha256, grader_source, note, summary},

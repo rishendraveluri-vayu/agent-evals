@@ -293,9 +293,9 @@ export class GradingService {
         const inserted = (await one<{ id: string }>(
           client,
           `INSERT INTO grades (trial_id, grader_id, grader_version, kind, type, required, verdict, score, reason, evidence,
-                               spec_sha256, framework_version, job_id, run_index)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id::text AS id`,
-          [trialId, g.grader_id, g.grader_version, g.kind, g.type, g.required, g.verdict, g.score, g.reason, JSON.stringify(g.evidence), g.spec_sha256, report.framework_version, jobId, next],
+                               spec_sha256, framework_version, job_id, run_index, judge_model)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id::text AS id`,
+          [trialId, g.grader_id, g.grader_version, g.kind, g.type, g.required, g.verdict, g.score, g.reason, JSON.stringify(g.evidence), g.spec_sha256, report.framework_version, jobId, next, g.judge_model],
         ))!;
         ids.push(inserted.id);
         fresh++;
