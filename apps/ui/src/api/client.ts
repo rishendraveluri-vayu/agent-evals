@@ -298,9 +298,10 @@ export const api = {
     return Array.isArray(body) ? (body as RecordedTrialSummary[]) : [];
   },
 
-  /** `experiment` limits the queue to one batch; `items` (comma-separated trial ids) to a chosen list. */
-  labelQueue: async (set: LabelSet, experiment?: string, items?: string): Promise<BlindItem[]> => {
-    const body = await call<unknown>('GET', `/labels/queue${query({ set, experiment, items })}`);
+  /** `experiment` limits the queue to one batch; `items` (comma-separated trial ids) to a chosen list.
+   *  `rater` makes it that rater's own queue (D73); without it, anyone's label counts. */
+  labelQueue: async (set: LabelSet, experiment?: string, items?: string, rater?: string): Promise<BlindItem[]> => {
+    const body = await call<unknown>('GET', `/labels/queue${query({ set, experiment, items, rater })}`);
     return Array.isArray(body) ? body.map(toBlindItem) : [];
   },
   saveLabel: (body: CreateLabelRequest) => post<LabelLine>('/labels', body),

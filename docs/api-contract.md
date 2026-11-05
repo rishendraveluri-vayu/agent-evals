@@ -1006,7 +1006,9 @@ field is left (a key inside a binary file cannot be scrubbed, so it fails the ex
   says whether anyone else labelled it. The one rule that crosses raters is D52's: a trial
   labelled in one set, by anyone, is offered in no other set. A malformed `rater` (including an
   empty one) is a 400 `invalid_rater`. Without `rater`, any rater's label counts, as before D73;
-  the experiments list and the Judge, trial and comparison pages ask that way.
+  the experiments list and the Judge, trial and comparison pages ask that way. The Label page
+  asks who is labelling before it loads anything, remembers the id in that browser, and sends it
+  with every queue request and every label.
 - `POST /labels` with `{item_id, set, rater, criterion, value: "yes"|"no"|"unsure", note, second_look?}`
   appends one line to `labels/<set>.jsonl` with the rater and the date (and `"second_look": true`
   on a second look). Labels are human judgments, Rishi's and the raters he names (D73), each

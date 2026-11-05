@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import App from './App.vue';
 import { api } from './api/client';
 import type { ConfigView } from './api/types';
+import { RATER_KEY } from './lib/rater';
 import configs from './fixtures/configs.json';
 import details from './fixtures/experiment-details.json';
 import experiments from './fixtures/experiments.json';
@@ -86,6 +87,18 @@ describe('plain words on every screen', () => {
       expect(hits).toEqual([]);
     });
   }
+});
+
+/** The labels screen above asks who is labelling; with an id remembered it shows an item. */
+describe('plain words on the labels screen once the labeller has given their id', () => {
+  beforeEach(() => window.localStorage.setItem(RATER_KEY, 'rater-one'));
+  afterEach(() => window.localStorage.removeItem(RATER_KEY));
+
+  it('the labels screen, on an item, names no decision-log entry and no raw API path', async () => {
+    const text = await screenText('#/labels');
+    expect(text).toContain('Labelling as rater-one');
+    expect(text.split('\n').filter((line) => INTERNAL.test(line))).toEqual([]);
+  });
 });
 
 /**
