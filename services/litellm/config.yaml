@@ -77,6 +77,20 @@ model_list:
       output_cost_per_token: 0.00000375
       cache_read_input_token_cost: 0.000000075
 
+  # The brief's "one open-weight model" route: Qwen2.5 7B served by a local Ollama container
+  # (docker compose --profile local-model up -d ollama; see README). Free per token, so priced at 0;
+  # on a CPU-only machine it is slow (minutes per call on a long prompt), so it suits a smoke check,
+  # not an experiment. Unreachable unless the local-model profile is up.
+  - model_name: qwen2.5-7b-local
+    litellm_params:
+      model: ollama_chat/qwen2.5:7b
+      api_base: http://ollama:11434
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+    model_info:
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
 litellm_settings:
   # Never on for trials: a cached reply would make repeated trials stop being
   # independent samples (CLAUDE.md). Checked in CI by scripts/check_litellm_config.py.

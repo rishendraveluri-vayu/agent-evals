@@ -236,6 +236,18 @@ services:
       fake-llm:
         condition: service_healthy
 
+  # Optional: a local open-weight model for the brief's "one open-weight model" route. Not started by
+  # default. Start it with `docker compose --profile local-model up -d ollama`, then pull the model
+  # once with `docker compose exec ollama ollama pull qwen2.5:7b` (about 4.7 GB, kept in the
+  # ollama-models volume). LiteLLM reaches it on the control network; workers never talk to it.
+  ollama:
+    image: ollama/ollama@sha256:ebaef4f4c5d93660e1f25f8ad085a112f51ccfb0e8458073e71793959dba91c9
+    profiles: [local-model]
+    networks: [control]
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+
 networks:
   control: {}
   # internal: no route to the internet. Workers live only here.
@@ -245,3 +257,4 @@ networks:
 
 volumes:
   pgdata: {}
+  ollama-models: {}

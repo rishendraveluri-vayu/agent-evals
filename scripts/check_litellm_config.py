@@ -96,9 +96,12 @@ def problems(cfg: dict) -> list[str]:
             if field in params:
                 found.append(f"model {name} sets {field}; retries live in router_settings")
         info = entry.get("model_info") or {}
+        # A model served by a local Ollama costs nothing per token, so 0 is its true price;
+        # every other model must be priced above 0, so a real model can never slip in unpriced.
+        local = str(params.get("model", "")).startswith(("ollama/", "ollama_chat/"))
         for field in ("input_cost_per_token", "output_cost_per_token"):
             value = info.get(field)
-            if not isinstance(value, (int, float)) or value <= 0:
+            if not isinstance(value, (int, float)) or value < 0 or (value == 0 and not local):
                 found.append(f"model {name} needs model_info.{field} > 0")
     return found
 
