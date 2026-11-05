@@ -788,6 +788,16 @@ def test_the_dates_in_reference_rates_are_not_sources():
     assert source_numbers(RATES) == [Decimal("6.25")]
 
 
+def test_the_digits_of_a_url_are_not_sources():
+    """A source's URL (an RBI press release id, a PDF name with %20 and a year) holds no
+    amounts, in a JSON string or in prose; the text after it still counts."""
+    rbi = '{"url":"https://www.rbi.org.in/scripts/BS_PressReleaseDisplay.aspx?prid=63742","v":5.50}'
+    assert source_numbers(rbi) == [Decimal("5.50")]
+    pdf = "See http://x.gov.in/1791801549227-Press%20Release,%202026.pdf for Rs 4,200."
+    assert source_numbers(pdf) == [Decimal(4200)]
+    assert source_numbers("prid=63742 at 20%") == [Decimal(63742), Decimal(20)]  # not a URL
+
+
 def test_the_client_file_and_the_user_message_support_amounts():
     files = {
         "client.json": '{"profile":{"monthly_net_income":92500},"debts":[{"balance":84250.00}]}'

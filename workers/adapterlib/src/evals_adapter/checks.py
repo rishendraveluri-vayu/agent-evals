@@ -88,6 +88,10 @@ TOKEN = re.compile(
 )
 # Dates and times in sources (transaction dates) are not amounts: 2026-10-25 is not ₹2,026.
 DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z?)?\b")
+# Nor are the digits of a URL (D58: reference_rates cites its sources, such as an RBI press release
+# at ...?prid=63742 or a PDF named with %20 and a year). A URL ends at whitespace or a quote, so
+# one inside a JSON string stops at the string's end.
+URL = re.compile(r"\bhttps?://[^\s\"'<>]+", re.IGNORECASE)
 RANGE_GAP = re.compile(r"^[ \t]*(?:–|—|-|to)[ \t]*$", re.IGNORECASE)
 WESTERN = re.compile(r"^\d{1,3}(?:,\d{3})+$")
 INDIAN = re.compile(r"^\d{1,2}(?:,\d{2})*,\d{3}$")
@@ -206,9 +210,9 @@ def _range_unit(text: str, end: int) -> int | None:
 def source_numbers(text: str) -> list[Decimal]:
     """Every number in a source text (a tool result, a message, the client file), in rupees
     where a lakh or crore word follows it. Commas that are not a digit grouping (a JSON list)
-    split the numbers."""
+    split the numbers. Dates and URLs hold none."""
     out: list[Decimal] = []
-    for m in TOKEN.finditer(DATE.sub(" ", text)):
+    for m in TOKEN.finditer(DATE.sub(" ", URL.sub(" ", text))):
         raw = m.group("num")
         parts = _grouped(raw)
         _, unit = _unit_of(m)
