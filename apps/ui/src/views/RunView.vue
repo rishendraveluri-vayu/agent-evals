@@ -12,7 +12,7 @@ import { armDifferences, armValue, armsCheck, axisChange, axisFromDiff, budgetCh
 import { changedLineCount, lineChanges, sentenceChanges, type LineChange } from '../lib/diff';
 import { capitalise, clock, minutes, money, plainText, plural, shortHash, wholeMoney } from '../lib/format';
 import { experimentName, infraReason, modelName, splitName } from '../lib/names';
-import { href, navigate } from '../router';
+import { href, navigate, replaceRoute } from '../router';
 import { eventView, pauseCause } from '../lib/runs';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
 import { armPauseHelp, defaultArms, defaultBudget, isEngineTest, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, validateSeed, type ArmDefaults } from '../lib/runSetup';
@@ -402,12 +402,14 @@ async function startNew() {
     });
     createdId = created.id;
     await api.startExperiment(created.id);
-    navigate(href.run(created.id));
+    // The run's own page replaces the setup in the address and in history, so neither a refresh
+    // nor Back offers to start the same trials again.
+    replaceRoute(href.run(created.id));
   } catch (err) {
     if (createdId) {
       // Saved but not started: its own page can start it or discard it, so a retry never makes a second one.
       setRunFlash(createdId, `The run was saved but did not start: ${plainRunError(err)} Start it here, or discard it.`);
-      navigate(href.run(createdId));
+      replaceRoute(href.run(createdId));
     } else {
       actionError.value = plainRunError(err);
     }

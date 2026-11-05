@@ -8,6 +8,7 @@ import experimentTrials from '../fixtures/experiment-trials.json';
 import harnessesJson from '../fixtures/harnesses.json';
 import { ApiError } from '../api/errors';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
+import { currentHash } from '../router';
 import { routeFetch, settle, useFixtures } from '../test/helpers';
 import RunView from './RunView.vue';
 
@@ -766,6 +767,25 @@ describe('RunView drafts: N, refusals and the name (QA major 12)', () => {
     await settle();
     expect(w.get('[data-test="action-error"]').text()).toBe('Arm A and arm B are the same agent. Pick a different agent for one of them.');
     expect(w.text()).not.toContain('config_hashes');
+  });
+
+  it('replaces the setup address with the run’s own page once it starts, so a refresh or Back never offers Start again', async () => {
+    const created = { ...(details as unknown as Record<string, ExperimentDetail>).exp_heldout, id: 'e_started', status: 'created' as const };
+    vi.spyOn(api, 'createExperiment').mockResolvedValue(created);
+    vi.spyOn(api, 'startExperiment').mockResolvedValue({ ...created, status: 'running' });
+    window.location.hash = `#/run?a=${encodeURIComponent(cfgV1.hash)}&b=${encodeURIComponent(cfgV2.hash)}`;
+    const entries = window.history.length;
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
+    await settle();
+    await w.get('[data-test="start"]').trigger('click');
+    await w.get('[data-test="confirm-paid-start"]').trigger('click');
+    await settle();
+    expect(window.location.hash).toBe('#/experiments/e_started/run');
+    expect(currentHash.value).toBe('#/experiments/e_started/run');
+    // Replaced, not added: Back goes to wherever the setup was opened from.
+    expect(window.history.length).toBe(entries);
   });
 
   it('opens the saved run when it was created but did not start, and says why there', async () => {
