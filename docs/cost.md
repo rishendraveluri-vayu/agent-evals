@@ -97,6 +97,7 @@ Every paid run, with its sign-off.
 | 5 Nov | Second-provider check (planned 14:26): Gemini 3.8 Flash as the agent on the own loop and on Hermes, 5 single-message discovery tasks x 2 trials each, prompt v1, finance/v3; first guessed at $0.10 (wrong: Gemini Flash is about 7.5x Haiku's price per token), the API's estimate is $1.14 (range to $2.28), cap $2.50; experiment `e_0mw3bbbba86e8364652ebd85f`, 20 of 20 answered and passed, 0 infra | 20 | $0.259 | Rishi, "As planned: 20 trials" after the correction |
 | 5 Nov | Judge retest (planned 14:26): Gemini 3.8 Flash re-judges the same 33 discovery outputs to measure its consistency with itself; expected about $0.26, within the existing $1 approval | 33 calls | $0.249 | Rishi, "Approve both" |
 
+| 5 Nov | Positive control (started): calculators down vs the full toolset, Hermes with Claude Haiku 5.5, prompt v1, all 21 tasks x 5 x 2; estimate $2.10 (range $1.05 to $4.20), cap $5 | 210 | (actual below when done) | Rishi, "All 8 calculators down" (about $2.30, cap $5) |
 **Total to 5 Nov: $5.89 in model calls** across the 15 runs above (most of it the two final runs, $4.25), plus $0.0183 for one conflict check (System calls, below) and about $0.14 of GCP time for the clean-machine test.
 
 Per trial on Haiku 5.5: a single question cost $0.0024 to $0.0035 (3 model calls); a 3-turn simulated-client conversation cost $0.012 to $0.014 (8 to 10 agent calls plus the simulator's).
