@@ -170,7 +170,7 @@ Each one has a done-when test. Scope stops growing once that test passes.
 **Needs:** D2.
 
 - [x] **[Rishi designs]** Data model: tasks, configs, experiments, trials, traces (R14, `docs/proposals/data-model.md`)
-- [ ] Write the shared contract and generate types for both languages
+- [ ] Write the shared contract and generate types for both languages (not as written: `contract/v2/*.schema.json` is the contract for both languages; the API's `contract.ts` is copied to the UI and kept byte-equal by a test, not generated)
 - [x] Version configs by content hash, including the harness SHA and model pin (`POST /api/configs`)
 - [x] Add persistence and migrations (Postgres, `apps/api/migrations/`)
 - [x] Add JSON or CSV export (`GET /api/experiments/:id/export`)
@@ -184,10 +184,10 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [x] Implement isolation per D3: one trial folder at a fixed path, leftover-process sweep, wipe and empty check between trials, with a test proving no state leaks from one trial to the next in the same container (image tests in all five worker images; files reach the API over HTTP, so workers mount no shared folder)
 - [x] Use a fixed `HERMES_HOME` path per trial, because the path appears in the system prompt (`/trial` in every container)
 - [x] Set LiteLLM per-call retries with backoff and a capped trial re-queue (D16), tested against the fake's forced 429s; update the config check (4 Nov: also 503s, 400s and a hung call, on a throwaway LiteLLM of the pinned image; attempts counted per trial in `proxy_usage`)
-- [ ] Handle timeouts, rate limits and retries: tested with the fake's forced faults, then seen on a signed-off real dev run (R9)
+- [ ] Handle timeouts, rate limits and retries: tested with the fake's forced faults, then seen on a signed-off real dev run (R9) (the fake's faults are tested, D16 above; a retry on a real run is not yet recorded in the docs)
 - [x] Separate infra failures from agent failures, including budget stops
 - [x] Make trial claiming idempotent and runs resumable (SKIP LOCKED claims, 60 s lease; passed the kill test on 4 Nov)
-- [ ] Show trials, estimated cost, time and whether N is enough before every run, and start only runs that can finish (R10.6)
+- [ ] Show trials, estimated cost, time and whether N is enough before every run, and start only runs that can finish (R10.6) (all but "whether N is enough": that is the parking lot's pre-run power estimate)
 - [x] Add a LiteLLM `max_budget` safety net per experiment and per trial, set well above the estimate; a trip is an infra event (R10.6) (the API mints each trial key with a budget and refuses experiments below the estimate's high end)
 - [x] Capture the full trace for every trial, including the rendered system prompt (stored with the API; Hermes's rendered prompt is an artifact)
 
@@ -221,7 +221,7 @@ The order matters because the rubric freezes with the platform:
 - [ ] Rishi labels the three sets above
 - [ ] Rishi relabels about 10 at the end to check his own consistency
 - [ ] Report Cohen's kappa, false positives, false negatives and agreement per config
-- [ ] Run test-retest: the same inputs judged 3 times
+- [ ] Run test-retest: the same inputs judged 3 times (twice so far, on the 33 tuning outputs: 98 of 99 verdicts repeated, `docs/judge-validation.md`)
 - [ ] Add any synthetic examples as a separate, clearly marked set
 - [ ] Apply D8 to any task under the threshold
 
@@ -254,10 +254,10 @@ The order matters because the rubric freezes with the platform:
 
 - [ ] Freeze the platform and tag the commit
 - [x] Rishi commits the hypothesis and analysis plan to `experiment.md` before the run (d85422b and f0f6e3b, before the runs)
-- [ ] Run a pilot on a cheap model, then choose N from its variance
+- [ ] Run a pilot on a cheap model, then choose N from its variance (not run: N came from the simulated power table; the discovery run, read afterwards as the pilot, is in `docs/design.md` section 6)
 - [x] Run the invariance diff on the two configs (`docs/experiment.md`, Invariance check)
 - [x] Run the experiment (5 Nov; `docs/experiment.md`, Results)
-- [ ] Export raw results to `experiments/<id>/`
+- [x] Export raw results to `experiments/<id>/` (instead: five full bundles in `examples/`, the headline, its A/A, the positive control and the two replications, each loadable from the Experiments screen and exportable as CSV or JSON)
 - [x] Inspect 2 or 3 trajectories that explain the difference (`docs/experiment.md`, Trajectories)
 - [x] Record actual spend in `cost.md`
 
