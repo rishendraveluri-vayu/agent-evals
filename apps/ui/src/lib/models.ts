@@ -26,6 +26,8 @@ export const FAKE_MODELS: FakeModel[] = [
 ];
 
 export const FAKE_SIM_MODEL = 'fake/sim-client';
+/** The fake agent model a new config falls back to when no real model has its key set. */
+export const FAKE_EMI_MODEL = 'fake/finance-emi';
 
 export function isFake(model: string | null | undefined): boolean {
   return !!model && model.startsWith('fake/');

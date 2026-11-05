@@ -12,7 +12,7 @@ import { mdBlocks } from '../lib/markdown';
 import { harnessVersion, plainText, shortHash, shortRef, splitIdents } from '../lib/format';
 import { autoConfigName, contentDiff, PLATFORM_DEFAULTS } from '../lib/checks';
 import { BOOLEAN_SETTINGS, harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
-import { agentModels, fakeDoes, isFake } from '../lib/models';
+import { agentModels, FAKE_EMI_MODEL, fakeDoes, isFake } from '../lib/models';
 import { NAME_MAX, settingProblem } from '../lib/limits';
 import { missingKey, needsKeyWords, ownConfigs } from '../lib/runSetup';
 import { ignoredReasons, toggleValue } from '../lib/settings';
@@ -78,6 +78,8 @@ const inCatalogue = (c: ConfigView, d: Loaded) => d.prompts.some((p) => p.sha256
 const replaced = reactive<{ prompt: string | null; toolset: string | null }>({ prompt: null, toolset: null });
 /** The config the form started from, when it is a shipped example's. */
 const fromExample = ref<ConfigView | null>(null);
+/** The model the form started on instead of its base config's, whose key is not set; said by the field. */
+const modelSwapped = ref<{ from: string; to: string } | null>(null);
 
 /**
  * A new config starts as a copy of the newest config of your own whose prompt and toolset are in
@@ -97,6 +99,14 @@ watch(data, (d) => {
   // first fake one, which needs no key and spends nothing.
   const runnable = d.models.find((m) => !missingKey(m.name, d.models));
   form.model = base?.model ?? runnable?.name ?? agentModels([]).fake[0]?.name ?? '';
+  // Your newest config on a model whose key is not set (one saved in the builder without a key)
+  // would start a new config on a model that cannot run: start on the first model with a key, else
+  // the fake EMI script, and say so. A fork stays an exact copy.
+  modelSwapped.value = null;
+  if (base && !forked && missingKey(base.model, d.models)) {
+    form.model = d.models.find((m) => m.key_set === true && !isFake(m.name))?.name ?? FAKE_EMI_MODEL;
+    modelSwapped.value = { from: base.model, to: form.model };
+  }
   const promptId = base?.prompt.id ?? d.prompts.find(isTaskPrompt)?.id ?? d.prompts[0]?.id;
   const newest = d.prompts.filter((p) => p.id === promptId).sort((a, b) => versionNumber(b.version) - versionNumber(a.version))[0];
   const forkedPrompt = forked && d.prompts.some((p) => p.sha256 === forked.prompt.sha256) ? forked.prompt.sha256 : null;
@@ -656,6 +666,11 @@ watch(
               v-else-if="model"
               class="secondary smaller"
             >Price per million tokens: {{ perMillion(model.input_per_mtok) }} in, {{ perMillion(model.output_per_mtok) }} out, from the LiteLLM config. A real model: each call costs money.</span>
+            <span
+              v-if="modelSwapped && form.model === modelSwapped.to"
+              class="secondary smaller"
+              data-test="model-swapped"
+            >Started on {{ modelName(modelSwapped.to) }}: {{ modelName(modelSwapped.from) }}, which the config this one copies uses, {{ needsKeyWords(modelSwapped.from, data.models) }}, and it is not set.</span>
             <span
               v-if="keyMissing"
               class="smaller needs-key"

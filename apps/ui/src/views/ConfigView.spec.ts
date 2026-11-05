@@ -457,6 +457,54 @@ describe('ConfigView says which models need a key (QA major 1)', () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 
+  describe('when your newest config is on a model whose key is not set (a builder save without a key)', () => {
+    const noHaikuKey = { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false };
+    /** The sample configs without the Gemini one, so the newest of your own is on Claude Haiku 5.5. */
+    const onHaiku = async () => (await api.configs()).filter((c) => c.model === 'claude-haiku-5-5');
+
+    it('starts a new config on the first model with a key, and says so in one line', async () => {
+      vi.spyOn(api, 'configs').mockResolvedValue(await onHaiku());
+      vi.spyOn(api, 'models').mockResolvedValue([noHaikuKey, { name: 'gemini-3.8-flash', provider: 'gemini', input_per_mtok: 0.75, output_per_mtok: 3.75, key_set: true }]);
+      const w = mount(ConfigView);
+      await settle();
+      expect((w.get('[data-test="model-select"]').element as HTMLSelectElement).value).toBe('gemini-3.8-flash');
+      expect(w.get('[data-test="model-swapped"]').text()).toBe('Started on Gemini 3.8 Flash: Claude Haiku 5.5, which the config this one copies uses, needs ANTHROPIC_API_KEY in .env, and it is not set.');
+      expect(w.find('[data-test="model-needs-key"]').exists()).toBe(false);
+      // Picking the model by hand is a choice: the line goes, and the key line says what it needs.
+      await haiku(w);
+      expect(w.find('[data-test="model-swapped"]').exists()).toBe(false);
+      expect(w.find('[data-test="model-needs-key"]').exists()).toBe(true);
+    });
+
+    it('starts on the fake EMI script when no model has a key', async () => {
+      vi.spyOn(api, 'configs').mockResolvedValue(await onHaiku());
+      vi.spyOn(api, 'models').mockResolvedValue([noHaikuKey, { name: 'gemini-3.8-flash', provider: 'gemini', input_per_mtok: 0.75, output_per_mtok: 3.75, key_set: false }]);
+      const w = mount(ConfigView);
+      await settle();
+      expect((w.get('[data-test="model-select"]').element as HTMLSelectElement).value).toBe('fake/finance-emi');
+      expect(w.get('[data-test="model-swapped"]').text()).toBe('Started on Fake model finance-emi: Claude Haiku 5.5, which the config this one copies uses, needs ANTHROPIC_API_KEY in .env, and it is not set.');
+    });
+
+    it('keeps a fork an exact copy, its model too', async () => {
+      const configs = await onHaiku();
+      vi.spyOn(api, 'configs').mockResolvedValue(configs);
+      vi.spyOn(api, 'models').mockResolvedValue([noHaikuKey]);
+      const w = mount(ConfigView, { props: { fork: configs[0].hash } });
+      await settle();
+      expect((w.get('[data-test="model-select"]').element as HTMLSelectElement).value).toBe('claude-haiku-5-5');
+      expect(w.find('[data-test="model-swapped"]').exists()).toBe(false);
+    });
+
+    it('changes nothing when the key is set', async () => {
+      vi.spyOn(api, 'configs').mockResolvedValue(await onHaiku());
+      vi.spyOn(api, 'models').mockResolvedValue([{ ...noHaikuKey, key_set: true }]);
+      const w = mount(ConfigView);
+      await settle();
+      expect((w.get('[data-test="model-select"]').element as HTMLSelectElement).value).toBe('claude-haiku-5-5');
+      expect(w.find('[data-test="model-swapped"]').exists()).toBe(false);
+    });
+  });
+
   it('starts a config with no saved one on a fake model when no real model can run', async () => {
     vi.spyOn(api, 'configs').mockResolvedValue([]);
     vi.spyOn(api, 'models').mockResolvedValue([{ name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false }]);
