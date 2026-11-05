@@ -4,7 +4,17 @@ from __future__ import annotations
 
 import json
 
-from evals_stats.panel import MAJORITY, disagreements, main, majority, pairs, summary, verdicts
+from evals_stats.panel import (
+    HUMANS,
+    MAJORITY,
+    disagreements,
+    main,
+    majority,
+    pairs,
+    read_weights,
+    summary,
+    verdicts,
+)
 
 
 def row(trial: str, model: str, criterion: str | None, verdict: str) -> dict:
@@ -53,7 +63,9 @@ def test_disagreements_list_judges_against_each_other_or_the_label():
 
 
 def test_summary_reports_each_judge_and_the_majority():
-    out = summary(ROWS, LABELS, "exclude")
+    out = summary(ROWS, {"rishi": LABELS}, "exclude")
+    assert out["reference"] == "rishi" and list(out["references"]) == ["rishi"]
+    assert out["between_raters"] == []
     assert list(out["judges"]) == ["a", "b", "c", MAJORITY]
     a = out["judges"]["a"][0]
     assert (a["tp"], a["fp"], a["fn"], a["tn"]) == (1, 1, 0, 1)
@@ -72,4 +84,31 @@ def test_cli_prints_tables_and_disagreements(tmp_path, capsys):
     )
     assert main([str(panel), "--labels", str(labels)]) == 0
     out = capsys.readouterr().out
-    assert "== majority" in out and "== disagreements (2)" in out
+    assert "== against rishi (the reference that counts)" in out
+    assert "  -- majority" in out
+    assert "== disagreements with rishi or among judges (2)" in out
+
+
+def test_with_two_raters_the_majority_counts_and_raters_are_compared():
+    other = {("t1", "overall"): "no", ("t2", "overall"): "yes", ("t3", "overall"): "yes"}
+    third = {("t1", "overall"): "no", ("t2", "overall"): "no", ("t3", "overall"): "unsure"}
+    out = summary(ROWS, {"rishi": LABELS, "asha": other, "dev": third}, "exclude")
+    assert out["reference"] == HUMANS
+    assert list(out["references"]) == ["asha", "dev", "rishi", HUMANS]
+    # The majority: t1 no (3 of 3), t2 no (2 of 3), t3 yes (2 firm answers, both yes).
+    a = out["references"][HUMANS]["a"][0]
+    assert (a["tp"], a["fp"], a["fn"], a["tn"]) == (1, 1, 0, 1)
+    pairs_ = {tuple(b["raters"]): b for b in out["between_raters"]}
+    assert pairs_[("asha", "rishi")]["n"] == 3 and pairs_[("asha", "rishi")]["agreement"] == 2 / 3
+    assert pairs_[("dev", "rishi")]["n"] == 2  # dev was unsure on t3: left out
+
+
+def test_weights_count_an_agreed_trial_for_the_ones_it_stands_for(tmp_path):
+    f = tmp_path / "to-label.json"
+    f.write_text(json.dumps({"disagreed": ["t1"], "agreed_drawn": ["t2"], "agreed_total": 4}))
+    weights = read_weights(f)
+    assert weights == {"t1": 1.0, "t2": 4.0}
+    out = summary(ROWS, {"rishi": LABELS}, "exclude", weights=weights)
+    t = out["weighted"]["rishi"]["a"]["overall"]
+    # t1: judge yes, human no (FP, weight 1); t2: no/no (TN, weight 4); t3: yes/yes (TP, weight 1).
+    assert (t["tp"], t["fp"], t["fn"], t["tn"]) == (1.0, 1.0, 0.0, 4.0)

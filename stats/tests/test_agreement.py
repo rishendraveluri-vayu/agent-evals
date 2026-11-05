@@ -209,3 +209,47 @@ def test_judge_verdicts_come_from_the_judge_grades_criterion_items():
         ]
     }
     assert judge_verdicts(trial) == {"tone": "yes", "numbers": "missing"}
+
+
+def test_d73_each_rater_reads_apart_and_another_raters_answer_is_not_a_relabel(tmp_path):
+    from evals_stats.agreement_cli import read_labels, read_rater_labels
+
+    path = tmp_path / "heldout.jsonl"
+    rows = [
+        {"trial_id": "t1", "criterion": "overall", "value": "yes", "labelled_at": "T1"},
+        {
+            "trial_id": "t1",
+            "criterion": "overall",
+            "value": "no",
+            "labelled_at": "T2",
+            "rater": "asha",
+        },
+        {
+            "trial_id": "t1",
+            "criterion": "overall",
+            "value": "no",
+            "labelled_at": "T3",
+            "rater": "rishi",
+        },
+    ]
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    by_rater = read_rater_labels(path)
+    # The first line has no rater, so it is Rishi's; his third line is his relabel; Asha's is not.
+    assert by_rater["rishi"] == ({("t1", "overall"): "yes"}, [("t1:overall", "yes", "no")])
+    assert by_rater["asha"] == ({("t1", "overall"): "no"}, [])
+    assert read_labels(path) == by_rater["rishi"]
+    assert read_labels(path, "asha") == by_rater["asha"]
+
+
+def test_d73_majority_and_raters_against_each_other():
+    from evals_stats.agreement import between_raters, human_majority
+
+    a = {("t1", "c"): "yes", ("t2", "c"): "no", ("t3", "c"): "yes"}
+    b = {("t1", "c"): "yes", ("t2", "c"): "yes", ("t3", "c"): "unsure"}
+    assert human_majority({"a": a, "b": b}, "exclude") == {
+        ("t1", "c"): "yes",
+        ("t2", "c"): "unsure",  # a tie is left out
+        ("t3", "c"): "yes",  # b unsure, a's firm answer decides
+    }
+    [pair] = between_raters({"a": a, "b": b}, "exclude")
+    assert pair["raters"] == ["a", "b"] and pair["n"] == 2 and pair["agreement"] == 0.5

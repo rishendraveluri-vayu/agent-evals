@@ -330,3 +330,66 @@ def self_agreement(first: Sequence[str], second: Sequence[str]) -> dict[str, Any
     ]
     t = table(pairs, "exclude")
     return {"n": t.n, "agreement": t.agreement, "kappa": t.kappa, "left_out": len(first) - t.n}
+
+
+# ---- D73: more than one human rater ----------------------------------------------------------
+
+
+def human_majority(
+    labels_by_rater: dict[str, dict[tuple[str, str], str]], human_unsure: str
+) -> dict[tuple[str, str], str]:
+    """Per (trial, criterion): what more than half of the raters who gave a firm answer said, under
+    the unsure policy; `unsure` (so left out) on a tie or when nobody gave one."""
+    keys: set[tuple[str, str]] = set()
+    for labels in labels_by_rater.values():
+        keys |= set(labels)
+    out: dict[tuple[str, str], str] = {}
+    for key in sorted(keys):
+        firm = [
+            v
+            for labels in labels_by_rater.values()
+            if key in labels and (v := human_value(labels[key], human_unsure)) is not None
+        ]
+        yes, no = firm.count("yes"), firm.count("no")
+        out[key] = "yes" if yes * 2 > len(firm) else "no" if no * 2 > len(firm) else "unsure"
+    return out
+
+
+def between_raters(
+    labels_by_rater: dict[str, dict[tuple[str, str], str]], human_unsure: str
+) -> list[dict[str, Any]]:
+    """Each pair of raters on the items both answered firmly: n, agreement and Cohen's kappa. The
+    agreement humans reach with each other is the ceiling a judge can be expected to reach."""
+    out = []
+    raters = sorted(labels_by_rater)
+    for i, a in enumerate(raters):
+        for b in raters[i + 1 :]:
+            shared = sorted(set(labels_by_rater[a]) & set(labels_by_rater[b]))
+            pairs = []
+            for trial, criterion in shared:
+                other = human_value(labels_by_rater[b][(trial, criterion)], human_unsure)
+                pairs.append(
+                    Pair(
+                        trial, criterion, labels_by_rater[a][(trial, criterion)], other or "unsure"
+                    )
+                )
+            t = table(pairs, human_unsure)
+            out.append({"raters": [a, b], "n": t.n, "agreement": t.agreement, "kappa": t.kappa})
+    return out
+
+
+def weighted_table(pairs: Iterable[Pair], weights: dict[str, float], human_unsure: str) -> Table:
+    """`table` with each pair counted `weights[trial_id]` times (1 when absent): for a sample that
+    labels some trials on behalf of others (D71 phase 2: the agreed trials drawn stand for all the
+    agreed ones). Counts may be fractional; kappa, sensitivity and specificity follow."""
+    tp = fp = fn = tn = 0.0
+    for p in pairs:
+        h = human_value(p.human, human_unsure)
+        if h is None or p.judge not in ("yes", "no"):
+            continue
+        w = weights.get(p.trial_id, 1.0)
+        if p.judge == "yes":
+            tp, fp = (tp + w, fp) if h == "yes" else (tp, fp + w)
+        else:
+            fn, tn = (fn + w, tn) if h == "yes" else (fn, tn + w)
+    return Table(tp, fp, fn, tn)  # type: ignore[arg-type]

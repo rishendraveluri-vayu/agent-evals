@@ -18,10 +18,53 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from evals_stats.agreement import HUMAN_UNSURE_POLICIES, Pair, report, self_agreement
+from evals_stats.agreement import (
+    HUMAN_UNSURE_POLICIES,
+    Pair,
+    between_raters,
+    human_majority,
+    report,
+    self_agreement,
+)
+
+RISHI = "rishi"
 
 
-def read_labels(path: Path) -> tuple[dict[tuple[str, str], str], list[tuple[str, str, str]]]:
+def rater_of(row: dict[str, Any]) -> str:
+    """The rater a label line names; a line from before D73 has none and is Rishi's."""
+    r = row.get("rater")
+    return r if isinstance(r, str) and r else RISHI
+
+
+def read_rater_labels(
+    path: Path,
+) -> dict[str, tuple[dict[tuple[str, str], str], list[tuple[str, str, str]]]]:
+    """D73: `read_labels` for every rater in the file, as {rater: (labels, relabels)}. A relabel is
+    the same rater answering the same criterion again; another rater's answer never is one."""
+    rows: list[dict[str, Any]] = []
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                try:
+                    rows.append(json.loads(line))
+                except ValueError:
+                    continue
+    by_rater: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        by_rater.setdefault(rater_of(r), []).append(r)
+    return {rater: _first_labels(rs) for rater, rs in sorted(by_rater.items())}
+
+
+def read_labels(
+    path: Path, rater: str = RISHI
+) -> tuple[dict[tuple[str, str], str], list[tuple[str, str, str]]]:
+    """One rater's labels (Rishi's by default, D73): see `_first_labels`."""
+    return read_rater_labels(path).get(rater, ({}, []))
+
+
+def _first_labels(
+    rows: list[dict[str, Any]],
+) -> tuple[dict[tuple[str, str], str], list[tuple[str, str, str]]]:
     """First label per (trial, criterion), and the relabels as (first, later) pairs.
 
     D46: a line with "second_look": true answers a criterion first marked "unsure"; it replaces
@@ -31,16 +74,7 @@ def read_labels(path: Path) -> tuple[dict[tuple[str, str], str], list[tuple[str,
     first: dict[tuple[str, str], str] = {}
     relabels: list[tuple[str, str, str]] = []
     second: set[tuple[str, str]] = set()
-    if not path.is_file():
-        return first, relabels
-    rows = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            rows.append(json.loads(line))
-        except ValueError:
-            continue
+    rows = list(rows)
     rows.sort(key=lambda r: str(r.get("labelled_at", "")))
     for r in rows:
         trial = r.get("trial_id") or r.get("item_id")
@@ -96,9 +130,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--api", default="http://127.0.0.1:3001/api")
     ap.add_argument("--resamples", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument(
+        "--rater",
+        default=RISHI,
+        help="whose labels to measure the judge against: a rater id, or `humans` for the raters' "
+        "majority (D73); default rishi",
+    )
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
-    labels, relabels = read_labels(args.labels / f"{args.set}.jsonl")
+    by_rater = read_rater_labels(args.labels / f"{args.set}.jsonl")
+    if args.rater == "humans":
+        labels = human_majority({r: lab for r, (lab, _) in by_rater.items()}, args.human_unsure)
+        relabels: list[tuple[str, str, str]] = []
+    else:
+        labels, relabels = by_rater.get(args.rater, ({}, []))
     if not labels:
         where = args.labels / f"{args.set}.jsonl"
         print(f"evals-agreement: no labels in {where}", file=sys.stderr)
@@ -122,13 +167,17 @@ def main(argv: list[str] | None = None) -> int:
         "trials": len(trials),
         "criteria": [r.as_dict() for r in reports],
         "self_agreement": self_agreement(first, later) if relabels else None,
+        "rater": args.rater,
+        "between_raters": between_raters(
+            {r: lab for r, (lab, _) in by_rater.items()}, args.human_unsure
+        ),
     }
     if args.json:
         print(json.dumps(out, indent=2))
         return 0
     print(
-        f"Set {args.set}: {len(labels)} labels on {len(trials)} trials; Rishi's unsure: "
-        f"{args.human_unsure}\n"
+        f"Set {args.set}: {len(labels)} labels on {len(trials)} trials, measured against "
+        f"{args.rater}; unsure labels: {args.human_unsure}\n"
     )
     print(
         "| criterion | n | kappa (95% CI) | sensitivity | specificity | false passes | "
@@ -145,6 +194,11 @@ def main(argv: list[str] | None = None) -> int:
             f"| {r.criterion} | {r.table.n} | {fmt(r.table.kappa)} ({fmt(k.low)} to "
             f"{fmt(k.high)}) | {fmt(r.table.sensitivity)} | {fmt(r.table.specificity)} | "
             f"{r.table.fp} | {r.table.fn} | {r.human_left_out} / {r.judge_undecided} | {gap} |"
+        )
+    for b in out["between_raters"]:
+        print(
+            f"\n{b['raters'][0]} with {b['raters'][1]} on {b['n']} shared labels: agreement "
+            f"{fmt(b['agreement'])}, kappa {fmt(b['kappa'])} (the ceiling for a judge, D73)"
         )
     if out["self_agreement"]:
         s = out["self_agreement"]
