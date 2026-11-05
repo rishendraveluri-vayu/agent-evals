@@ -325,6 +325,10 @@ cannot tell apart:
   reply's calls concurrently, so "after it" in *tool error* is by span start, not the model's
   order; ADK's synthetic `adk_handle_model_error` call is counted as a tool call.
 
+## Found in the v1 discovery run, kept as findings (D65 freeze)
+
+- **`draft-mba-loan-missing-info`'s `asks-for-missing-facts` false-fails a request followed by a list.** Trial `t_0mw33tqo5fceac29d7d70ac10` asks "Could you share three things?" and then lists the rate and tenure, take-home income and EMIs, and expected salary; the check reads only the question sentence and reports "names none of the missing facts". It is a discovery task, so the headline (held-out only) is not affected; it is a grader disagreement the trial page and the cause record show. Not fixed under the freeze (D65).
+
 ## To check before submission
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted
