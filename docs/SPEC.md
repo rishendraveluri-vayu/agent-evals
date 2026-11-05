@@ -293,6 +293,7 @@ Only if the frozen plan has slack.
 - [ ] UI sample data: `make-fixtures.mjs` still declares memory, skills and compression supported on LangGraph, ADK and the Agents SDK, where their `capabilities.json` says unsupported, so fixture mode shows them as available there.
 - [x] Provenance (D58): require at least one input with a real source per arithmetic call, so a figure made only of unit facts (`multiply([100, 12])`) is not "supported" from nothing (`docs/known-limits.md`, Platform checks). Decided as part of D61: every call needs a sourced amount (A44).
 - [x] `reference_rates` (D58): Rishi approves or edits the proposed values in `services/finance-mcp/src/finance_mcp/reference_rates.json` before any run uses `finance/v3` (approved 5 Nov, `debt_fund` removed; server 0.4.1), and re-reads them just before the experiment (October's CPI is due in mid-November; the NSE factsheet URLs are replaced monthly). A changed value is a new server version and toolset version.
+- [ ] Comparison page (D72): a Regrade button beside the "not graded alike" note, warning first when a judge approval is active (a regrade re-runs the judge and spends). Today the note gives the API call, and the judge panel's "Regrade with the judge" covers experiments with judged tasks only.
 
 ## Freeze (D65, 5 Nov)
 

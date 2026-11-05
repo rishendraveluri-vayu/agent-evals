@@ -123,6 +123,33 @@ export async function graderSet(
   return { graders, files };
 }
 
+/** At most this many characters of a judge model's name are kept on a grade. */
+const MAX_JUDGE_MODEL = 200;
+
+/**
+ * The model a judge grade called (D72): the `model` of its `judge_call` evidence item, which the
+ * Python judge writes whenever it makes a call (evals_graders.judge). Null when it called none (not
+ * approved, or it stopped before the call) and for every other kind of grade.
+ */
+export function judgeModelOf(kind: GradeKind, evidence: Json[]): string | null {
+  if (kind !== 'judge') return null;
+  for (const e of evidence) {
+    if (isObject(e) && e.source === 'judge_call' && typeof e.model === 'string' && e.model) return e.model.slice(0, MAX_JUDGE_MODEL);
+  }
+  return null;
+}
+
+/**
+ * The same as judgeModelOf in SQL, for grades row `g`: its `judge_model` column, else (a grade stored
+ * before D72 recorded the column) the model of its first `judge_call` evidence item.
+ */
+export const JUDGE_MODEL_SQL = (g: string): string =>
+  `CASE WHEN ${g}.kind = 'judge' THEN COALESCE(${g}.judge_model, (
+     SELECT left(e.item ->> 'model', ${MAX_JUDGE_MODEL})
+     FROM jsonb_array_elements(CASE WHEN jsonb_typeof(${g}.evidence) = 'array' THEN ${g}.evidence ELSE '[]'::jsonb END) WITH ORDINALITY AS e (item, ord)
+     WHERE jsonb_typeof(e.item) = 'object' AND e.item ->> 'source' = 'judge_call' AND jsonb_typeof(e.item -> 'model') = 'string' AND e.item ->> 'model' <> ''
+     ORDER BY e.ord LIMIT 1)) END`;
+
 /** The task's outcome from its grades: the same rule as evals_graders.graders.outcome. */
 export function outcomeOf(grades: { required: boolean; verdict: GradeVerdict }[]): { passed: boolean | null; outcome: GradingOutcome } {
   const required = grades.filter((g) => g.required);
@@ -143,6 +170,8 @@ export interface ReportedGrade {
   reason: string | null;
   evidence: Json[];
   spec_sha256: string;
+  /** For a judge grade, the model it called (judgeModelOf); null otherwise. */
+  judge_model: string | null;
 }
 
 export interface GradesReport {
@@ -202,17 +231,19 @@ export function parseGradesReport(raw: unknown, graders: GraderEntry[]): GradesR
     }
     if (JSON.stringify(evidence).length > MAX_EVIDENCE_JSON) throw badRequest('invalid_grade', `${where}.evidence is over ${MAX_EVIDENCE_JSON} characters`);
     const type = typeof g.type === 'string' ? g.type.slice(0, 64) : isObject(entry.spec) && typeof entry.spec.type === 'string' ? entry.spec.type : 'unknown';
+    const kind = kindOf(isObject(entry.spec) ? entry.spec.type : undefined);
     return {
       grader_id: specId,
       grader_version: expected,
       type,
-      kind: kindOf(isObject(entry.spec) ? entry.spec.type : undefined),
+      kind,
       required: g.required,
       verdict: g.verdict as GradeVerdict,
       score,
       reason: reason === null ? null : reason.slice(0, MAX_REASON),
       evidence: evidence as Json[],
       spec_sha256: entry.spec_sha256,
+      judge_model: judgeModelOf(kind, evidence as Json[]),
     };
   });
   const notes = Array.isArray(problems) ? problems.filter((p): p is string => typeof p === 'string').map((p) => p.slice(0, 500)).slice(0, 50) : [];

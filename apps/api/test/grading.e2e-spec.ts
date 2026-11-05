@@ -290,6 +290,26 @@ describeWithDb('grading (e2e, real Postgres)', () => {
     expect(await compare()).toEqual([expect.objectContaining({ trials: 3, graded: 3, passed: 3, incomplete: 0 })]);
   });
 
+  it('records the model a judge grade called, and reads it from the evidence for a grade stored before D72', async () => {
+    await drain();
+    const exp = await experiment(['emi-graded']);
+    const [trialId] = await runTrials();
+    const job = (await claimGrading())!;
+    const call = { source: 'judge_call', model: 'fake/judge', response_model: 'fake/judge', status: 200 };
+    const grades = gradesFor(job).map((g) => (g.grader_id === 'tone' ? { ...g, verdict: 'pass', score: 1, evidence: [{ criterion: 'acknowledges', verdict: 'yes', quote: 'Your EMI', reason: 'r' }, call] } : g));
+    await report(job, 'g1', grades).expect(200);
+    const stored = await env.pool.query<{ grader_id: string; judge_model: string | null }>('SELECT grader_id, judge_model FROM grades WHERE trial_id = $1 ORDER BY id', [trialId]);
+    expect(stored.rows.filter((g) => g.judge_model !== null)).toEqual([{ grader_id: 'tone', judge_model: 'fake/judge' }]);
+    const judgeOf = async (): Promise<(string | null)[]> => (await trial(trialId)).grades.filter((g) => g.kind === 'judge').map((g) => g.judge_model);
+    expect(await judgeOf()).toEqual(['fake/judge']);
+    // A grade stored before the column was written has the model only in its evidence.
+    await env.pool.query('UPDATE grades SET judge_model = NULL WHERE trial_id = $1', [trialId]);
+    expect(await judgeOf()).toEqual(['fake/judge']);
+    const exported = (await request(env.http).get(`/api/experiments/${exp.id}/export?format=json`).expect(200)).body as { trials: { grades: { grader_id: string; judge_model: string | null }[] }[] };
+    expect(exported.trials[0].grades.map((g) => [g.grader_id, g.judge_model])).toContainEqual(['tone', 'fake/judge']);
+    expect(exported.trials[0].grades.filter((g) => g.grader_id !== 'tone').every((g) => g.judge_model === null)).toBe(true);
+  });
+
   it('re-grades after a grader fix, keeping the old grades and re-running nothing', async () => {
     await drain();
     const exp = await experiment(['emi-graded']);
@@ -303,7 +323,7 @@ describeWithDb('grading (e2e, real Postgres)', () => {
     const fixed = { ...GRADED_TASK, version: '2', graders: GRADED_TASK.graders.map((g) => (g.id === 'emi' ? { ...g, tolerance: { rel: 0.01 } } : g)) };
     await writeTask(fixed, GRADER_PY);
     const queued = (await request(env.http).post(`/api/experiments/${exp.id}/regrade`).send({}).expect(202)).body as RegradeResponse;
-    expect(queued).toEqual({ experiment_id: exp.id, trials: 1, queued: 1, no_graders: 0, superseded: 0, from_trial_task: 0 });
+    expect(queued).toEqual({ experiment_id: exp.id, trials: 1, reused_trials: 0, queued: 1, no_graders: 0, superseded: 0, from_trial_task: 0 });
     // a second click replaces the queued job instead of adding another
     expect(((await request(env.http).post(`/api/experiments/${exp.id}/regrade`).send({}).expect(202)).body as RegradeResponse).superseded).toBe(1);
     expect((await trial(trialId)).grading.pending).toMatchObject({ status: 'queued', reason: 'regrade' });

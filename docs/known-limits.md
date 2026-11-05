@@ -324,6 +324,42 @@ the method as built (D10 revised: a task bootstrap, the sign-flip test, D42's ve
   comparison (it is the environment, the same for both arms), though it is in the experiment's
   spend. Trials from before D31 carry prompt caching in their cost (Cost comparisons, above).
 
+## Arms graded alike (D72, 5 Nov)
+
+The comparison refuses a verdict when a required grader's versions differ between the arms
+(`docs/design.md`, section 6). What the check cannot see:
+
+- **A judge model behind an alias that changes.** The check compares the model name the judge was
+  approved for and called (`judge_model`). If LiteLLM's route for that name is pointed at another
+  model between the arms' gradings (a new snapshot behind `claude-haiku-5-5`, a provider's own
+  silent update), both arms show the same name and the check passes. The judge's evidence records
+  the `response_model` LiteLLM returned, but the comparison does not read it.
+- **Grader code changed without a framework version bump.** A grader's version hashes its spec,
+  the files it reads and `evals_graders.FRAMEWORK_VERSION`, not the Python code that applies them.
+  A fix to a grader's code that does not bump the framework version leaves the versions equal, so
+  two arms graded before and after it pass the check. The project's rule is to bump it whenever a
+  verdict can move (A43, A44), but nothing enforces it.
+- **The judge's own spread under one version.** Two judge calls on the same version and model can
+  disagree (the test-retest figure in `docs/experiment.md`); that is noise, not a version change,
+  and the check does not look for it. A regrade re-runs the judge, so a regraded arm's judge
+  verdicts are a fresh draw.
+- **A judge with no call in some trials is not a difference.** Where judging was approved part-way,
+  the trials graded before have no judge model; they are incomplete and left out of the pass rates
+  (Statistics, "Unequal decided counts"), and the check does not refuse the verdict for them alone
+  (A47). A regrade under the approval judges them.
+- **What else a grade depends on.** The trial's stored files and the task summary the judge is
+  shown are not in the grader version; neither changes after a trial is reported, so they cannot
+  differ between gradings of the same trial.
+- **Regrading a child regrades its parent's trials too.** A trial has one current grading, not one
+  per experiment that reads it. A regrade of an experiment whose arm A reuses its parent's trials
+  (D34) gives those trials new current grades, which the parent's own comparison then reads; if the
+  parent's arm B stays on the old version, the parent shows no verdict until it is regraded as
+  well. Nothing is overwritten: the old grades stay as older versions.
+- **The last regrade queued wins a trial's queued job.** A trial has at most one queued grading
+  job, so a parent's regrade and a child's regrade of the same reused trial supersede each other
+  until one is claimed; the job claimed is judged under the approval of the experiment that queued
+  it, and that approval's budget pays.
+
 ## Failure causes and behaviour (D64, 5 Nov)
 
 The causes are rules over what each trial recorded (`docs/design.md`, "Failure causes and behaviour

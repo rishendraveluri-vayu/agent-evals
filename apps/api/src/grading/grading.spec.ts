@@ -6,7 +6,7 @@ import type { AppConfig } from '../common/app-config';
 import type { TaskFile } from '../catalogue/catalogue-files';
 import type { Db } from '../database/db.service';
 import type { LiteLlmClient } from '../litellm/litellm.client';
-import { type GraderEntry, MAX_GRADER_FILE_BYTES, graderSet, graderVersion, kindOf, outcomeOf, parseGradesReport, rubricPathOf, specSha256, taskCoreSha } from './grading-core';
+import { type GraderEntry, MAX_GRADER_FILE_BYTES, graderSet, graderVersion, judgeModelOf, kindOf, outcomeOf, parseGradesReport, rubricPathOf, specSha256, taskCoreSha } from './grading-core';
 import { GradingService, hasJudgeGrader, readRubricFile } from './grading.service';
 
 const REPO = path.resolve(__dirname, '../../../..');
@@ -88,6 +88,14 @@ describe('grader versions', () => {
     expect(asked).toEqual([]);
     expect(refused.files).toEqual({});
     expect(refused.graders[0].spec_sha256).toBe(specSha256(outside, {}));
+  });
+
+  it("reads a judge's model from its first judge_call item only (D72)", () => {
+    expect(judgeModelOf('judge', [{ source: 'final_answer', quote: 'x' }, { source: 'judge_call', model: 'gemini-3.8-flash' }, { source: 'judge_call', model: 'other' }])).toBe('gemini-3.8-flash');
+    expect(judgeModelOf('judge', [{ source: 'judge_call', model: '' }, { source: 'judge_call', model: 7 }])).toBeNull();
+    expect(judgeModelOf('judge', [])).toBeNull();
+    expect(judgeModelOf('exact', [{ source: 'judge_call', model: 'gemini-3.8-flash' }])).toBeNull();
+    expect(judgeModelOf('judge', [{ source: 'judge_call', model: 'm'.repeat(500) }])).toHaveLength(200);
   });
 
   it('maps types to the data model kinds', () => {
@@ -192,6 +200,17 @@ describe('a grades report', () => {
       ['a', 'state', 'pass'],
       ['b', 'exact', 'pass'],
     ]);
+  });
+
+  it("records a judge grade's model from its judge_call evidence, and none for other kinds (D72)", () => {
+    const judged: GraderEntry[] = [...graders, { spec: { id: 'j', type: 'judge', rubric: 'configs/rubrics/advice.v1.md', criteria: ['c'] }, spec_sha256: 'sha256:' + '3'.repeat(64) }];
+    const j = (over: Record<string, unknown>) => ({ ...grade(0), grader_id: 'j', type: 'judge', grader_version: graderVersion(judged[2].spec_sha256, '0.1.0'), ...over });
+    const call = { source: 'judge_call', model: 'fake/judge', response_model: 'fake-judge-2026', status: 200 };
+    const called = parseGradesReport(report([grade(0, { evidence: [call] }), grade(1), j({ evidence: [{ criterion: 'c', verdict: 'yes' }, call] })]), judged);
+    // A number grade quoting a judge_call item is still not a judge grade.
+    expect(called.grades.map((g) => g.judge_model)).toEqual([null, null, 'fake/judge']);
+    // Not approved: the judge answers not_implemented with no call, so it called no model.
+    expect(parseGradesReport(report([grade(0), grade(1), j({ verdict: 'not_implemented', evidence: [] })]), judged).grades[2].judge_model).toBeNull();
   });
 
   it.each([

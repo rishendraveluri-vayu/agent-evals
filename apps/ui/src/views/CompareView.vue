@@ -90,7 +90,13 @@ const judged = computed(() => {
   if (!d) return { tasks: 0, trials: 0 };
   const tasks = d.detail.tasks.filter(isJudged);
   const keys = new Set(tasks.map((t) => t.sha256));
-  return { tasks: tasks.length, trials: d.trials.filter((t) => t.status === 'done' && keys.has(t.task_sha256)).length };
+  const own = d.trials.filter((t) => t.status === 'done' && keys.has(t.task_sha256)).length;
+  // D72: a regrade also judges the trials arm A reuses from its parent, which the trial list (this
+  // experiment's own) leaves out; D34 reuses the same number for every task, so the paid-step count
+  // includes them.
+  const a = d.detail.arms[0];
+  const reused = a?.reused_from && d.detail.tasks.length ? Math.round((a.reused_trials * tasks.length) / d.detail.tasks.length) : 0;
+  return { tasks: tasks.length, trials: own + reused };
 });
 
 /** After an approval, a revoke or a regrade: the experiment again (its judge and spend), and its
@@ -111,6 +117,11 @@ watch(data, async (d, before) => {
   panel?.focus({ preventScroll: true });
 });
 const stats = computed(() => data.value?.compare.stats ?? null);
+/** D72: a required check was graded with different versions in the two arms, so the API gives no
+ *  verdict; its stats_note names which and says to regrade. */
+const notAlike = computed(() => (data.value?.compare.grader_versions?.blocking.length ?? 0) > 0);
+/** D72: optional checks graded with different versions in the two arms; the verdict stands. */
+const optionalVersionsNote = computed(() => (stats.value ? (data.value?.compare.grader_versions?.note ?? null) : null));
 const taskOf = (key: string): TaskView | undefined => data.value?.detail.tasks.find((t) => t.sha256 === key || t.id === key);
 const taskName = (key: string) => taskOf(key)?.id ?? key.replace(/^sha256:/, '').slice(0, 12);
 
@@ -931,6 +942,17 @@ const worthALook = computed(() => {
                 class="mono"
               >{{ part.text }}</span><template v-else>{{ part.text }}</template></template><a :href="href.judge()">{{ caveat.link }}</a>{{ caveat.after }}</span>
             </p>
+            <p
+              v-if="optionalVersionsNote"
+              class="caveat"
+              data-test="grader-versions-note"
+            >
+              <AppIcon
+                name="info"
+                :size="14"
+              />
+              <span><strong class="caveat-lead">Optional checks graded differently:</strong> {{ optionalVersionsNote }}</span>
+            </p>
           </template>
           <template v-else-if="incomplete">
             <h2
@@ -968,7 +990,7 @@ const worthALook = computed(() => {
               class="verdict-title"
               data-test="verdict-title"
             >
-              No verdict yet
+              {{ notAlike ? 'No verdict: the arms were not graded alike' : 'No verdict yet' }}
             </h2>
             <p
               v-if="totals"

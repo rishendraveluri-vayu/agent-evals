@@ -17,9 +17,12 @@ import type {
   ExperimentStatus,
   ExperimentSummary,
   FutilityRule,
+  GradeKind,
   GraderSeverity,
+  GraderVersionCheck,
   GradingJobStatus,
   GradingOutcome,
+  Json,
   PlatformCommitSource,
   StartExperimentRequest,
   TrialGradingState,
@@ -31,6 +34,8 @@ import { badRequest, conflict, notFound } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { hashCanonical, normalizeSha } from '../common/hashing';
 import { type AnalysisResult, STATS_METHOD_VERSION, type TaskInput, type TrialInput, analyse } from '../stats/analysis';
+import { type VersionTask, type VersionTrial, gradedAlike, noVerdictNote } from '../stats/graded-alike';
+import { JUDGE_MODEL_SQL } from '../grading/grading-core';
 import { type BehaviourTrial, behaviourOf, withRegressionCauses } from '../causes/behaviour';
 import { causesFor, loadTrialFacts } from '../causes/trial-facts';
 import { type PlatformCommit, platformCommit } from '../common/git-commit';
@@ -948,15 +953,15 @@ export class ExperimentsService {
     const r = await this.row(id);
     const arms = await this.arms(r);
     const reason = this.incompleteReason(r, arms);
-    if (reason) return { experiment_id: id, status: 'incomplete', reason, arms, rows: [], stats: null, stats_note: null, prose_figures: [], behaviour: null };
+    if (reason) return { experiment_id: id, status: 'incomplete', reason, arms, rows: [], stats: null, stats_note: null, grader_versions: null, prose_figures: [], behaviour: null };
     const rows = await this.compareRows(r, arms);
-    const { stats, note } = await this.statsOf(r, arms);
+    const { stats, note, versions } = await this.statsOf(r, arms);
     const prose_figures = await this.proseFigures(r, arms);
     const trials = await this.behaviourTrials(r);
     const behaviour = behaviourOf(r.id, arms.length >= 2 ? ['A', 'B'] : ['A'], r.task_sha256s, trials);
     // D64: each regression's failed trials get their cause, and the causes that grew from A to B.
     const withCauses = stats ? { ...stats, regressions: withRegressionCauses(stats.regressions, trials) } : null;
-    return { experiment_id: id, status: 'complete', reason: null, arms, rows, stats: withCauses, stats_note: note, prose_figures, behaviour };
+    return { experiment_id: id, status: 'complete', reason: null, arms, rows, stats: withCauses, stats_note: note, grader_versions: versions, prose_figures, behaviour };
   }
 
   /**
@@ -1074,15 +1079,16 @@ export class ExperimentsService {
   // ---- statistics (SP6) ----
 
   /** Computed statistics, keyed by the experiment and the exact grading they rest on, so a regrade recomputes. */
-  private readonly statsCache = new Map<string, AnalysisResult>();
+  private readonly statsCache = new Map<string, StatsResult>();
 
   /**
    * SP6: the verdict and intervals (stats/analysis.ts) from each done trial's current grading. Null,
-   * with a note, while grading is still running, for a pilot of one config, or when no task has a
-   * decided trial in both arms. Cached by the trials and grading jobs it reads.
+   * with a note, while grading is still running, for a pilot of one config, when a required
+   * grader's versions differ between the arms on some task (D72, stats/graded-alike.ts), or when no
+   * task has a decided trial in both arms. Cached by the trials and grading jobs it reads.
    */
-  private async statsOf(r: ExperimentRow, arms: ArmView[], withAa = true): Promise<AnalysisResult> {
-    if (arms.length < 2) return { stats: null, note: 'A pilot of one config has nothing to compare it with, so there is no verdict.' };
+  private async statsOf(r: ExperimentRow, arms: ArmView[], withAa = true): Promise<StatsResult> {
+    if (arms.length < 2) return { stats: null, note: 'A pilot of one config has nothing to compare it with, so there is no verdict.', versions: null };
     const trials = await this.db.query<StatsTrialRow>(
       `SELECT t.id, t.task_sha256, t.config_hash, t.repeat_index, t.cost_usd, t.input_tokens, t.output_tokens, t.wall_s,
               t.runner_report -> 'proxy_usage' ->> 'retried_calls' AS retried_calls,
@@ -1109,18 +1115,32 @@ export class ExperimentsService {
     );
     const waiting = trials.filter((t) => t.latest_status === null || t.latest_status === 'queued' || t.latest_status === 'claimed').length;
     if (waiting) {
-      return { stats: null, note: `Grading is still running for ${waiting} of ${trials.length} finished ${trials.length === 1 ? 'trial' : 'trials'}; the verdict waits for every grade.` };
+      return { stats: null, note: `Grading is still running for ${waiting} of ${trials.length} finished ${trials.length === 1 ? 'trial' : 'trials'}; the verdict waits for every grade.`, versions: null };
     }
     const key = `${STATS_METHOD_VERSION}|${r.id}|${hashCanonical(trials.map((t) => [t.id, t.job_id]))}`;
     let result = this.statsCache.get(key);
     if (!result) {
       const gradeIds = trials.flatMap((t) => t.grade_ids ?? []);
       const grades = gradeIds.length
-        ? await this.db.query<StatsGradeRow>('SELECT trial_id, grader_id, required, verdict FROM grades WHERE id = ANY($1::bigint[]) ORDER BY id', [gradeIds])
+        ? await this.db.query<StatsGradeRow>(
+            `SELECT g.trial_id, g.grader_id, g.required, g.verdict, g.grader_version, g.spec_sha256, g.framework_version, g.kind,
+                    ${JUDGE_MODEL_SQL('g')} AS judge_model
+             FROM grades g WHERE g.id = ANY($1::bigint[]) ORDER BY g.id`,
+            [gradeIds],
+          )
         : [];
-      const configs = await this.db.query<{ model: string }>('SELECT model FROM configs WHERE hash = ANY($1)', [r.config_hashes.slice(0, 2)]);
       const taskIds = new Map((await this.db.query<{ sha256: string; id: string }>('SELECT sha256, id FROM tasks WHERE sha256 = ANY($1)', [r.task_sha256s])).map((t) => [t.sha256, t.id]));
-      result = analyse({ seed: r.id, tasks: statsTasks(r, trials, grades, taskIds), madeUpPrices: configs.some((c) => isFakeModel(c.model)), calibration: r.calibration });
+      // D72: no verdict unless both arms were graded alike (one version of each required grader per task).
+      const versions = gradedAlike(versionTasks(r, trials, grades, taskIds));
+      if (versions.blocking.length) {
+        const a = arms[0];
+        const reused = a.reused_from ? { trials: a.reused_trials, parent: a.reused_from } : null;
+        result = { stats: null, note: noVerdictNote(versions, { experimentId: r.id, tasks: r.task_sha256s.length, reused }), versions };
+      } else {
+        const configs = await this.db.query<{ model: string }>('SELECT model FROM configs WHERE hash = ANY($1)', [r.config_hashes.slice(0, 2)]);
+        const analysed = analyse({ seed: r.id, tasks: statsTasks(r, trials, grades, taskIds), madeUpPrices: configs.some((c) => isFakeModel(c.model)), calibration: r.calibration });
+        result = { ...analysed, versions };
+      }
       if (this.statsCache.size >= 200) this.statsCache.delete(this.statsCache.keys().next().value as string);
       this.statsCache.set(key, result);
     }
@@ -1173,11 +1193,59 @@ interface StatsTrialRow {
   span_retried: boolean | null;
 }
 
+/** One grade of a done trial's current grading, as the statistics and D72's check read it. */
 interface StatsGradeRow {
   trial_id: string;
   grader_id: string;
   required: boolean;
   verdict: string | null;
+  grader_version: string;
+  spec_sha256: string | null;
+  framework_version: string | null;
+  kind: GradeKind;
+  judge_model: string | null;
+}
+
+/** The statistics with D72's check of the grader versions they rest on (null when it was not reached). */
+interface StatsResult extends AnalysisResult {
+  versions: GraderVersionCheck | null;
+}
+
+/**
+ * D72's input: per task, in the experiment's order, each done trial with a finished current grading
+ * (a `no_graders` one has no grades), its arm, and its grades' versions, each with the spec its
+ * grading froze. A done trial with no finished grading (its grading failed) has no versions to
+ * compare and is left out here; the statistics count it as incomplete.
+ */
+export function versionTasks(r: Pick<ExperimentRow, 'task_sha256s' | 'config_hashes' | 'n' | 'calibration'>, trials: StatsTrialRow[], grades: StatsGradeRow[], taskIds: Map<string, string>): VersionTask[] {
+  const byTrial = new Map<string, StatsGradeRow[]>();
+  for (const g of grades) byTrial.set(g.trial_id, [...(byTrial.get(g.trial_id) ?? []), g]);
+  return r.task_sha256s.map((task) => ({
+    task,
+    task_id: taskIds.get(task) ?? task,
+    trials: trials
+      .filter((t) => t.task_sha256 === task && t.job_id !== null)
+      .flatMap((t): VersionTrial[] => {
+        const arm = armIndex(r, t.config_hash, t.repeat_index);
+        if (arm !== 0 && arm !== 1) return [];
+        const specOf = (id: string): Json | null => ((t.graders ?? []).find((g) => g.spec?.id === id)?.spec as Json | undefined) ?? null;
+        return [
+          {
+            arm: arm === 0 ? 'A' : 'B',
+            grades: (byTrial.get(t.id) ?? []).map((g) => ({
+              grader_id: g.grader_id,
+              grader_version: g.grader_version,
+              spec_sha256: g.spec_sha256,
+              framework_version: g.framework_version,
+              required: g.required,
+              kind: g.kind,
+              judge_model: g.judge_model,
+              spec: specOf(g.grader_id),
+            })),
+          },
+        ];
+      }),
+  }));
 }
 
 /**

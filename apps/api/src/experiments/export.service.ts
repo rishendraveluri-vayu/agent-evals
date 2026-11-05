@@ -4,6 +4,7 @@ import { BUNDLE_TABLES } from '../contract';
 import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.service';
 import { Db } from '../database/db.service';
 import { causesFor } from '../causes/trial-facts';
+import { JUDGE_MODEL_SQL } from '../grading/grading-core';
 import { ExperimentsService, experimentTitle, gradingState, mayHaveCause } from './experiments.service';
 
 /** A trial's outcome as the run grid and the comparison count it (TrialGradingState); null before it is done. */
@@ -19,9 +20,9 @@ const outcomeOf = (r: ExportRow): TrialGradingState => gradingState({ ...r, stat
 
 const PAGE = 200;
 
-/** One grade as the export shows it (grades `g`). */
+/** One grade as the export shows it (grades `g`). A judge grade's model comes from its evidence when the column predates D72. */
 const GRADE_JSON = `json_build_object('grader_id', g.grader_id, 'grader_version', g.grader_version, 'kind', g.kind, 'required', g.required,
-  'verdict', g.verdict, 'score', g.score, 'evidence', g.evidence, 'judge_model', g.judge_model, 'run_index', g.run_index, 'job_id', g.job_id)`;
+  'verdict', g.verdict, 'score', g.score, 'evidence', g.evidence, 'judge_model', ${JUDGE_MODEL_SQL('g')}, 'run_index', g.run_index, 'job_id', g.job_id)`;
 
 interface ExportRow {
   id: string;

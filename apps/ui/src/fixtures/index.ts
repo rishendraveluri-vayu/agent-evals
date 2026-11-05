@@ -452,7 +452,7 @@ function revokeJudge(id: string) {
 function regrade(id: string): RegradeResponse {
   experimentDetail(id);
   const done = trialsFor(id).filter((t) => t.status === 'done').length;
-  return { experiment_id: id, trials: done, queued: done, no_graders: 0, superseded: 0, from_trial_task: 0 };
+  return { experiment_id: id, trials: done, reused_trials: 0, queued: done, no_graders: 0, superseded: 0, from_trial_task: 0 };
 }
 
 function saveLabel(body: CreateLabelRequest) {

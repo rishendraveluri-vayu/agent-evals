@@ -697,8 +697,10 @@ export interface CompareResponse {
   rows: CompareRow[];
   /** SP6: the verdict and its intervals, once every arm is complete and graded; null otherwise. */
   stats: CompareStats | null;
-  /** Why `stats` is null, in plain words (grading still running, one arm, no task decided in both arms); null when it is set. */
+  /** Why `stats` is null, in plain words (grading still running, one arm, the arms not graded alike (D72), no task decided in both arms); null when it is set. */
   stats_note: string | null;
+  /** D72: whether both arms were graded with the same grader versions, task by task; null while the run is incomplete, for a pilot of one config, and while grading is still running. */
+  grader_versions: GraderVersionCheck | null;
   /** D61: per arm, the money figures written without a tool; empty while the run is incomplete. */
   prose_figures: ProseFiguresArm[];
   /** D64: how each arm behaved (tools, steps, end states, failure causes); null while the run is incomplete. */
@@ -984,6 +986,50 @@ export interface AaCalibration {
   verdict: CompareVerdict;
 }
 
+// ---- D72: arms graded alike, or no verdict ----------------------------------------------
+
+/**
+ * What differs between the versions of one grader on one task: its spec; a file it reads (a judge's
+ * rubric, a unit test's grader.py) under the same spec; the grader framework's version; the model a
+ * judge called; or some trials' current grading has no grade from it (added or removed since).
+ */
+export type GraderVersionChange = 'spec' | 'files' | 'framework' | 'judge_model' | 'not_graded';
+
+/** One version of a grader on a task, and how many done trials of each arm hold it as their current grade. */
+export interface GraderVersionCount {
+  /** Null for the trials whose current grading has no grade from this grader. */
+  grader_version: string | null;
+  /** For a judge, the model the grade called; null when it called none, and for every other grader. */
+  judge_model: string | null;
+  a: number;
+  b: number;
+}
+
+/** One grader on one task whose current grades over both arms are not one version (or, for a judge, not one model). */
+export interface GraderVersionDifference {
+  task: string;
+  task_id: string;
+  grader_id: string;
+  /** Required in at least one of those gradings: then it blocks the verdict. */
+  required: boolean;
+  kind: GradeKind;
+  changes: GraderVersionChange[];
+  /** Most trials first. */
+  versions: GraderVersionCount[];
+}
+
+/** D72: on each task, every grader's current grades in both arms come from one version, or no verdict. */
+export interface GraderVersionCheck {
+  /** True when no grader differs, required or optional. */
+  alike: boolean;
+  /** Required graders that differ: while any is listed, `stats` is null and `stats_note` names them and says to regrade. */
+  blocking: GraderVersionDifference[];
+  /** Optional graders that differ: listed and named in `note`, and the verdict is still given. */
+  optional: GraderVersionDifference[];
+  /** The optional differences in plain words; null when there are none. */
+  note: string | null;
+}
+
 export interface CompareStats {
   /** Bumped when a change to the method can move a number. */
   method_version: string;
@@ -1141,8 +1187,10 @@ export interface GradesReportResponse {
 /** POST /experiments/:id/regrade */
 export interface RegradeResponse {
   experiment_id: string;
-  /** Done trials considered. */
+  /** Done trials considered: the experiment's own and those arm A reuses from its parent (D34, D72). */
   trials: number;
+  /** Of `trials`, those arm A reuses from its parent: regraded too, judged under this experiment's approval (D72). */
+  reused_trials: number;
   queued: number;
   /** Trials whose task has no graders: recorded, nothing to claim. */
   no_graders: number;
