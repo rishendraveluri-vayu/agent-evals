@@ -62,6 +62,10 @@ Rishi: "Do multiple models labels on them and find which disagree and iterate, i
 
 **What would change it.** A judge that cannot read the recorded trials (an `error` grade) is reported, not dropped. Spend beyond the cap stops the panel; what has run is reported.
 
+### Amended before any held-out label (D74, 5 Nov): the judge learns how Rishi judges
+
+Following "critique shadowing" (Husain: the expert's pass/fail plus a written critique, a few of them as worked examples in the judge prompt, the prompt revised on a dev set, then frozen and measured once on a hidden test set), rubric v3 (`configs/rubrics/advice.v3.md`) adds to v2 the six principles in Rishi's tuning notes, quoted, and four of his tuning trials as worked examples with his verdict and critique (payoff-order no, fd-real-value no, emi-home-loan yes, car-loan-afford yes). The split: **train** = those four trials (in the prompt); **dev** = the other 29 tuning trials (the judges run on these, at most 2 rounds); **test** = all 40 sampled held-out trials, which Rishi labels with a one-line why on each, and the frozen judge is measured on once. Labelling all 40 replaces "the disagreements plus 10 agreed": the test set no longer depends on which trials the judges disagreed on, so no weighting is needed. The judge that counts stays Gemini 3.8 Flash; the other two are context. Only 5 of the 33 tuning trials are fails and Rishi wrote a note on 6, so the dev results will have wide intervals.
+
 ### Phase 1 results (5 Nov, discovery trials only)
 
 Data: `judge-panel/phase1-round1-advice-v1.jsonl` and `judge-panel/phase1-round2-advice-v2.jsonl` (one row per trial, judge and criterion; `scripts/judge_panel.py`), compared with `evals-panel` (`stats/`). Spend $1.66 for the two rounds (198 judge calls).
