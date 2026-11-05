@@ -67,6 +67,9 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D55 No "equivalent" from a zero-width interval | When every task gives the same difference, the verdict is never "practically equivalent" | Rishi | 5 Nov |
 | D56 Provenance traces arithmetic inputs | An arithmetic tool's result counts as supported only when its inputs are themselves supported | Rishi | 5 Nov |
 | D57 Arithmetic tool descriptions | Plain: each says what it returns, not "use this instead of calculating yourself", so the prompt stays the only lever (as D54) | Rishi | 5 Nov |
+| D58 Unit facts and reference rates | Unit facts count as arithmetic inputs without a source (12, 100, 365, 366, 28 to 31, 52, 7, 1 lakh, 1 crore; never 0 or 1); an arithmetic result equal to one of its own unsupported inputs never counts; market rates come from a new `reference_rates` finance tool with sources and dates (values approved by Rishi before any run) | Rishi | 5 Nov |
+| D59 Futility check on fake-only runs | Off by default when every model in the run is fake; on by default for any paid run | Rishi | 5 Nov |
+| D60 Bind-mount permissions | The API starts as root only to create and own its writable folders, then drops privileges; the health check and smoke test fail loudly when they are not writable | Rishi | 5 Nov |
 
 ## Open
 
@@ -337,6 +340,14 @@ Why: Rishi picked it; it only removes a claim.
 Options: an arithmetic tool's result counts as supported only when its inputs are supported (by a finance tool's result, the client's file or the client's message); any tool result counts (documented only).
 Choice: trace the inputs, so a made-up figure cannot become "supported" by passing through `round(x)` or `add([x, 0])`. It changes what the grader counts: a new framework version, and the recorded trials regrade for free.
 Why: Rishi picked it, closing the loophole found while adding the tools (D54).
+
+### D58: Unit facts, an identity guard, and a reference-rates tool (5 Nov)
+Options for market rates an agent volunteers: a `reference_rates` tool with sourced, dated assumptions; unit facts only (a rate counts only if the task, client or a tool states it); unit facts plus any rate the answer discloses as an assumption.
+Choice: the tool. Rishi asked for "a smarter solution" than a short list of constants ("fd rate equity retuns days in a month a lot of them are there"). Three parts:
+- Unit facts need no source: 7, 12, 28 to 31, 52, 100, 365, 366, 1,00,000 (lakh) and 1,00,00,000 (crore). Never 0 or 1, which are the laundering tricks (`add([x, 0])`, `multiply([x, 1])`).
+- Identity guard: an arithmetic result equal to one of its own unsupported inputs never counts (`round(x)` and the like).
+- A new finance tool `reference_rates` returns documented market assumptions (FD, equity, inflation, PPF, savings and the like), each with its source and as-of date, so a rate the agent volunteers has a source and an invented one still fails. It is a new toolset version for both arms; no experiment has run yet, so nothing recorded changes.
+Why: our tasks already state the rates they need (in the message or the client file), so the remaining false "unsupported" came from unit facts and from rates an agent volunteers; grounding rates in a tool follows D54's rule that the model never invents what a tool can give.
 
 ## Entry template
 
