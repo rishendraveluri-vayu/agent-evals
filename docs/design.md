@@ -1,10 +1,10 @@
 # Design
 
-Rishi's design record. The brief requires all six topics below.
+My design record for the platform: the six topics the brief asks for, one section each.
 
 Each entry is one of three kinds:
 
-- **Decided:** Rishi's call, with the decision or ruling it comes from.
+- **Decided:** my call, with the decision (`docs/decisions.md`) or ruling it comes from.
 - **Constraint:** a verified fact the design has to respect, with the evidence. Not a choice.
 - **Open:** not decided yet. Options and tradeoffs live in `docs/decisions.md`.
 

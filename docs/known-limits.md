@@ -2,6 +2,30 @@
 
 Where this platform's conclusions should not be trusted. Add a line the moment one turns up. Remove a line only if it's actually fixed and tested.
 
+## The six that matter most
+
+1. **Few tasks decide the headline.** It has 10 held-out tasks, and 5 scored the same in both arms
+   (4 always passed, 1 always failed). Over the 5 left, the paired test cannot go below
+   p = 0.0625, so the headline could not be called "better" whatever its size. More tasks between
+   the ceiling and the floor would settle it; more trials would not (Statistics, below).
+2. **The judge decides nothing yet.** It was checked only against 33 tuning labels from one rater:
+   kappa 0.30 overall, too lenient (specificity 0.20), and never on held-out labels. Every judge
+   criterion is optional until trusted (D8), so every verdict rests on the deterministic checks
+   (`docs/judge-validation.md`).
+3. **The headline mostly measures one rule.** 31 of v1's 36 failures and 24 of v2's 27 fail only
+   the check that every rupee figure comes from a tool; without it the arms pass 95 and 97 of 100.
+   That check is strict: a correct figure rounded in prose fails it (Platform checks, below).
+4. **Models are named by alias.** `claude-haiku-5-5` is the provider's name, not a dated snapshot,
+   so a provider update behind it changes results between runs. Each call records the model id the
+   provider served (`gen_ai.response.model` on its span), but the config's hash does not cover it.
+5. **Conversations run on a simulated client.** Claude Haiku plays the client from a brief with
+   hidden facts and a synthetic client file. How it reveals a fact changes outcomes (trajectory 1
+   in `docs/experiment.md`), so conversation results describe this simulator, not real clients
+   (Simulated client, below).
+6. **Harnesses differ in what they add and how they end.** Hermes adds its own prompt text and,
+   at the step limit, answers with a summary; the own loop and LangGraph stop without one. A
+   comparison across harnesses includes these differences (`docs/harness-guide.md`).
+
 ## Topics the brief names
 
 - **Task-set size:** with 21 tasks, results may not generalise to other work. The headline compares the 10 held-out tasks only (D53), where the comparison finds a real +15 point improvement only about half the time (Statistics, below). In the real run 5 of the 10 tied (4 at 10 of 10 in both arms, 1 at 0 of 10), so only 5 tasks carried the test and p could not go below 0.0625 (`docs/experiment.md`, Results).

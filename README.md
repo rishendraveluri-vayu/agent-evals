@@ -16,24 +16,16 @@ judge was tuned), plus 2 engine tests that check the platform, not an
 agent, and 1 skills demo (`tasks/demo-skill-card-transfer`, whose answer only a seeded skill
 holds).
 
-> **Status, 5 Nov 2026.** The platform runs end to end with its statistics: configs, runs with N
-> trials, isolation, retries, traces, deterministic graders, an LLM judge, blind labelling,
-> failure causes, and the comparison (verdict, 95% intervals, a paired test, per-task flags,
-> critical-failure guardrail, cost and time, A/A calibration; `docs/design.md`, section 6).
-> **The real experiment has run:** on Hermes with Claude Haiku 5.5, prompt v2 passed 73 of 100
-> trials on the 10 held-out tasks against v1's 64, +9 points (95% interval +3 to +16, p = 0.0625),
-> which the rule fixed before the run calls "no detectable difference": 5 of the 10 tasks scored
-> the same in both arms (always passed or always failed), and the 5 left are too few for the test
-> to reach p < 0.05. v1 run against itself as a check gave −4 points (−12 to +3), no difference,
-> as it should. Nearly all of the +9 is one check, that every rupee figure comes from a tool
-> (the rule v2 adds); set aside, the arms pass 95 and 97 of 100 (`docs/known-limits.md`).
-> **The platform passes its own test:** with the calculator tools broken on purpose (a positive
-> control set out before the run), it found +44.8 points (+23.8 to +65.7, p = 0.0011), flagged 7
-> tasks, all among those predicted and none of the 7 controls, and named "wrong tool" as the
-> cause in 68 of 83 failures. The same v1 vs v2 on two more harnesses: own loop +8 (−4 to +23),
-> LangGraph +17 (+5 to +29, p = 0.047, "better"). **The judge is so far checked only against the
-> human labels used for tuning,** where its overall verdict was too lenient, so no judge verdict
-> counts in the result. The write-up, with inspected trials: `docs/experiment.md`.
+**Read this first.**
+
+1. **Run it:** `docker compose up -d --build --wait`, open http://127.0.0.1:8080 and choose "See
+   a finished example". No key is needed and nothing is spent.
+2. **The result:** prompt v1 vs v2 on Hermes with Claude Haiku 5.5, +9 points (+3 to +16),
+   p = 0.0625, so "no detectable difference" under the rule set before the run; the platform's own
+   checks (an A/A run and a positive control) behave as they should. Details below, under Results
+   so far, and in `docs/experiment.md`.
+3. **What to trust least:** the six limits at the top of `docs/known-limits.md`.
+4. **How it was built:** the last section of this file.
 
 ## Run it
 
@@ -75,6 +67,27 @@ folder Docker created because it was missing belongs to root), delete from insid
 
 If `docker compose up --wait` stops with the api container unhealthy, `docker compose logs api`
 says why in plain words: the database is down, or a folder above cannot be written, with the fix.
+
+## Results so far (5 Nov)
+
+The platform runs end to end with its statistics: configs, runs with N
+trials, isolation, retries, traces, deterministic graders, an LLM judge, blind labelling,
+failure causes, and the comparison (verdict, 95% intervals, a paired test, per-task flags,
+critical-failure guardrail, cost and time, A/A calibration; `docs/design.md`, section 6).
+**The real experiment has run:** on Hermes with Claude Haiku 5.5, prompt v2 passed 73 of 100
+trials on the 10 held-out tasks against v1's 64, +9 points (95% interval +3 to +16, p = 0.0625),
+which the rule fixed before the run calls "no detectable difference": 5 of the 10 tasks scored
+the same in both arms (always passed or always failed), and the 5 left are too few for the test
+to reach p < 0.05. v1 run against itself as a check gave −4 points (−12 to +3), no difference,
+as it should. Nearly all of the +9 is one check, that every rupee figure comes from a tool
+(the rule v2 adds); set aside, the arms pass 95 and 97 of 100 (`docs/known-limits.md`).
+**The platform passes its own test:** with the calculator tools broken on purpose (a positive
+control set out before the run), it found +44.8 points (+23.8 to +65.7, p = 0.0011), flagged 7
+tasks, all among those predicted and none of the 7 controls, and named "wrong tool" as the
+cause in 68 of 83 failures. The same v1 vs v2 on two more harnesses: own loop +8 (−4 to +23),
+LangGraph +17 (+5 to +29, p = 0.047, "better"). **The judge is so far checked only against the
+human labels used for tuning,** where its overall verdict was too lenient, so no judge verdict
+counts in the result. The write-up, with inspected trials: `docs/experiment.md`.
 
 ## Three ways in
 
@@ -211,12 +224,35 @@ otherwise recreates the API on its default port. If you started it with `-p <nam
 
 ## Docs
 
-- `docs/design.md`: architecture, adapter interfaces, data model, isolation and reproducibility,
-  graders and their validation, the statistics and the choice of N.
-- `docs/experiment.md`: the real experiment: the hypothesis and analysis plan committed before the
-  runs, then the results, the controls, the trajectories and the conclusion.
-- `docs/known-limits.md`: where the platform's conclusions should not be trusted.
-- `docs/cost.md`: the cost formula and the actual spend.
-- `docs/assumptions.md` and `docs/decisions.md`: every assumption, and every design decision with
-  its options and reasons.
-- `docs/harness-guide.md`: how each harness behaves and how it is wrapped.
+The brief's deliverables, and where each one is:
+
+| Deliverable | Where |
+| --- | --- |
+| Code, tests, setup, add a task, harness or model | This README; CI in `.github/workflows/ci.yml` |
+| Design: architecture, adapter interfaces, data model, isolation and reproduction, graders and their validation, statistics and the choice of N | `docs/design.md` (sections 1 to 6), with the adapter contract in `docs/adapter-contract.md` |
+| Known limits | `docs/known-limits.md` (the six that matter most are at the top) |
+| Cost: formula, actual spend, how to reduce it | `docs/cost.md` |
+| The real experiment: hypothesis, setup and N, results with intervals, trajectories, conclusion | `docs/experiment.md` |
+| Judge validation | `docs/judge-validation.md`, labels in `labels/tuning.jsonl` |
+| Every assumption | `docs/assumptions.md` |
+
+Also: `docs/decisions.md` (each decision with its options and reasons), `docs/harness-guide.md`
+(how each harness behaves and how it is wrapped), `docs/hermes-notes.md` (Hermes, measured and
+read from the code). `docs/proposals/`, `docs/research/` and `docs/premortem/` are the working
+papers behind the decisions.
+
+## How this was built
+
+I designed this platform and made its decisions; Claude Code, an AI coding agent, implemented most
+of the code and tests under them. Each decision is in `docs/decisions.md` with the options I
+weighed and why I chose as I did; where the docs quote "Rishi", that is my ruling recorded at the
+time. The working rules I set for the agent are in `CLAUDE.md`: no real model calls in tests,
+every paid run approved by me with its cost first, never tune the judge on held-out labels, never
+drop a failed trial.
+
+What I did myself: the hypothesis and the analysis plan, committed before the runs; the task set,
+its split and severities (drafted with the agent, reviewed and approved in D53); the 33 judge
+labels in `labels/tuning.jsonl`, written blind in the labelling screen; every paid run, each logged
+in `docs/cost.md` with its approval; and the conclusion. How I checked the result: the A/A run and
+the positive control, clean-clone tests on a fresh machine, CI on every push, and two independent
+reviews of the repository against the brief.
