@@ -35,7 +35,7 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
     expect(prompts.every((p) => !p.text.startsWith('<!--'))).toBe(true);
     const toolsets = (await request(env.http).get('/api/toolsets').expect(200)).body as ToolsetView[];
     expect(toolsets).toHaveLength(1);
-    expect(toolsets[0]).toMatchObject({ id: 'finance', version: 'all', manifest: [{ server: 'finance', server_version: '0.2.0' }] });
+    expect(toolsets[0]).toMatchObject({ id: 'finance', version: 'v2', manifest: [{ server: 'finance', server_version: '0.3.0' }] });
     // The hash covers the manifest, and the manifest is stored with it (migration 009).
     const { sha256, ...content } = toolsets[0];
     expect(sha256).toBe(hashCanonical(content));

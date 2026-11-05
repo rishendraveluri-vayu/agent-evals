@@ -163,7 +163,13 @@ export function compareVersions(a: string, b: string): number {
 // ---- Toolsets --------------------------------------------------------------------------
 
 /**
- * Every tool the finance MCP server has (services/finance-mcp/tests/snapshots/
+ * The arithmetic tools, on the finance server since 5 Nov (D54, server 0.3.0): with them every
+ * figure an answer gives can come from a tool result, so the agent never does its own sums.
+ */
+export const ARITHMETIC_TOOLS = ['add', 'subtract', 'multiply', 'divide', 'percent_of', 'percent_change', 'round'] as const;
+
+/**
+ * Every tool the finance MCP server has, in its order (services/finance-mcp/tests/snapshots/
  * tools_manifest.json). A unit test checks this list against that snapshot.
  */
 export const FINANCE_TOOLS = [
@@ -178,7 +184,20 @@ export const FINANCE_TOOLS = [
   'get_client_profile',
   'list_debts',
   'list_transactions',
+  ...ARITHMETIC_TOOLS,
 ] as const;
+
+/**
+ * The built-in toolset's version. A change to its tools (a tool added or removed, a description
+ * or schema edited, a new server version) is a new version here, never an edit of the old one in
+ * place, and a unit test pins the hash of each so an unlabelled change fails it.
+ *
+ * - `all` (4 Nov to 5 Nov): the eleven finance tools, last at server 0.2.0. It is not listed any
+ *   more, because today's server is 0.3.0, so its hash cannot be made again. Configs and trials
+ *   that used it keep their toolset row, its manifest and its hash.
+ * - `v2` (5 Nov, D54): the eleven plus the seven arithmetic tools, at server 0.3.0.
+ */
+export const FINANCE_TOOLSET_VERSION = 'v2';
 
 /** One tool as the server publishes it: what a model is shown. */
 export interface PublishedTool {
@@ -219,11 +238,13 @@ export function loadFinanceServer(dir: string): FinanceServerManifest {
 }
 
 /**
- * The one built-in toolset until more exist: every finance tool. Its sha256 covers the full
- * published manifest, not just the names: each allowed tool's name, description and input
- * schema, and the server's version, as canonical JSON. So a schema change (sip_future_value's
- * lump_sum, 4 Nov) or a new server version is a new toolset, and a past result points at the
- * exact tools its model was shown. Before 4 Nov the hash covered the names only.
+ * The one built-in toolset until more exist: every finance tool, as `finance` at
+ * FINANCE_TOOLSET_VERSION. It is the default for a new config and the builder's choice, since
+ * both take the first toolset listed. Its sha256 covers the full published manifest, not just
+ * the names: each allowed tool's name, description and input schema, and the server's version,
+ * as canonical JSON. So a schema change (sip_future_value's lump_sum, 4 Nov) or a new server
+ * version is a new toolset, and a past result points at the exact tools its model was shown.
+ * Before 4 Nov the hash covered the names only.
  */
 export function builtInToolsets(server: FinanceServerManifest): ToolsetView[] {
   const allowed = [...FINANCE_TOOLS];
@@ -231,7 +252,7 @@ export function builtInToolsets(server: FinanceServerManifest): ToolsetView[] {
   const missing = allowed.filter((n) => !byName.has(n));
   if (missing.length) throw new Error(`the finance server's manifest has no ${missing.join(', ')}`);
   const manifest = [{ server: 'finance', server_version: server.version, tools: allowed.map((n) => byName.get(n) as PublishedTool) }];
-  const content = { id: 'finance', version: 'all', servers: [{ name: 'finance', allowed_tools: allowed }], manifest };
+  const content = { id: 'finance', version: FINANCE_TOOLSET_VERSION, servers: [{ name: 'finance', allowed_tools: allowed }], manifest };
   return [{ ...content, sha256: hashCanonical(content) }];
 }
 

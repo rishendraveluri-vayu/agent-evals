@@ -4,7 +4,9 @@ import * as path from 'node:path';
 import { hashCanonical } from '../common/hashing';
 import type { Json } from '../contract';
 import {
+  ARITHMETIC_TOOLS,
   FINANCE_TOOLS,
+  FINANCE_TOOLSET_VERSION,
   type FinanceServerManifest,
   PROMPT_NAME_PART,
   type PublishedTool,
@@ -96,9 +98,9 @@ describe('the built-in toolset', () => {
 
   const server = loadFinanceServer(path.join(REPO, 'services/finance-mcp'));
 
-  it('is finance/all with a content hash over the published manifest', () => {
+  it('is finance/v2 with a content hash over the published manifest', () => {
     const [t] = builtInToolsets(server);
-    expect(t).toMatchObject({ id: 'finance', version: 'all', servers: [{ name: 'finance' }] });
+    expect(t).toMatchObject({ id: 'finance', version: 'v2', servers: [{ name: 'finance' }] });
     expect(t.sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(t.manifest).toHaveLength(1);
     expect(t.manifest[0].server_version).toBe(server.version);
@@ -128,8 +130,35 @@ describe('the built-in toolset', () => {
     const reversed = (o: Record<string, Json>): Json => Object.fromEntries(Object.entries(o).reverse());
     expect(edit((s) => (sip(s).input_schema = reversed(sip(s).input_schema as Record<string, Json>)))).toBe(base.sha256);
     // The names-only hash of before 4 Nov is not what it is any more.
-    const namesOnly = hashCanonical({ id: 'finance', version: 'all', servers: [{ name: 'finance', allowed_tools: [...FINANCE_TOOLS] }] });
+    const namesOnly = hashCanonical({ id: 'finance', version: FINANCE_TOOLSET_VERSION, servers: [{ name: 'finance', allowed_tools: [...FINANCE_TOOLS] }] });
     expect(base.sha256).not.toBe(namesOnly);
+  });
+
+  it('gives every harness the seven arithmetic tools after the eleven finance tools (D54)', () => {
+    const [t] = builtInToolsets(server);
+    const allowed = t.servers[0].allowed_tools;
+    expect(allowed).toHaveLength(18);
+    expect(allowed.slice(11)).toEqual([...ARITHMETIC_TOOLS]);
+    expect(t.manifest[0].server_version).toBe('0.3.0');
+    const add = t.manifest[0].tools.find((x) => x.name === 'add');
+    expect(add?.description).toMatch(/^The sum of two or more numbers/);
+    expect(add?.input_schema).toMatchObject({ properties: { values: { type: 'array', minItems: 2 } }, required: ['values'] });
+  });
+
+  // A change to the finance tools is a new toolset version, never an edit of an old one in place:
+  // recorded configs and trials keep the hash they were made with. If this fails after a
+  // deliberate tool change, add the next version to FINANCE_TOOLSET_VERSION (with a line saying
+  // what changed) and pin its hash here; do not re-pin this one.
+  it('pins the hash of the toolset version it lists', () => {
+    // finance/all is not pinned: it kept its label while its hash changed (names only before
+    // 4 Nov, sha256:e8a33031..., then the manifest at server 0.2.0, sha256:76def651...), which is
+    // what this test now prevents.
+    const pinned: Record<string, string> = {
+      v2: 'sha256:58700d434a81fa022fa63ddccda368d805775d5a6b1e9b7c55af7d09789ccb82',
+    };
+    const [t] = builtInToolsets(server);
+    expect(t.version).toBe(FINANCE_TOOLSET_VERSION);
+    expect(t.sha256).toBe(pinned[t.version]);
   });
 
   it('refuses a manifest that is missing a tool, or a server folder it cannot read', async () => {

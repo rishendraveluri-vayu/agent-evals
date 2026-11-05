@@ -286,4 +286,5 @@ Only if the frozen plan has slack.
 - [ ] Conflict check: mark each finding whose `harness_says` or `we_say` quote is not in the text verbatim, so an invented quote is visible (no extra call).
 - [ ] Probe on `fake/<real model name>` instead of `fake/finance-emi`, so Hermes's model-name-gated guidance (gpt, gemini, ...) appears in the rendered prompt. The fake server falls back to its default script for an unknown name. Needs Rishi's call (known-limits, "Pre-run checks").
 - [ ] Guided builder: offer to save the own-loop twin of a new agent (same model, prompt and settings) as its vanilla baseline, so "Evaluate it" always has a one-change comparison. Today it has one only when such an agent was saved before.
+- [ ] Hermes adapter: fail at start-up when a tool in `allowed_tools` is not on the server, as the other four adapters do, instead of Hermes dropping it silently (`docs/hermes-notes.md`).
 - [ ] UI sample data: `make-fixtures.mjs` still declares memory, skills and compression supported on LangGraph, ADK and the Agents SDK, where their `capabilities.json` says unsupported, so fixture mode shows them as available there.
