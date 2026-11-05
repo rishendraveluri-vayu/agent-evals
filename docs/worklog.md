@@ -37,6 +37,12 @@ Not required by the brief. It records what was built and by whom, so the next-ro
 - The worker review found that workers mounting `runs/` read-write let trial 2 read trial 1's stored files; files now go to the API over HTTP instead (D2), fixed before SP3 counts as done.
 - Surprises: an organisation-level Anthropic key without a workspace is refused with a 400, and the runner labelled that setup error `agent`; Haiku 5.5 rejects temperature outright; the simulated client contradicted its own client file and never ended a conversation; ADK replaces a malformed tool call with a call to a tool that does not exist, and LangGraph ends the run when a reply holds only malformed calls.
 
+## 5 Nov
+
+- Rishi designed the statistics (D10, D41 to D44) and, after the simulations below, revised D10's interval to a task bootstrap and approved the 6-task floor (D50).
+- Claude implemented SP6: the comparison's statistics in the API (`apps/api/src/stats/`, TypeScript, seeded): the verdict with its 95% interval and the exact sign-flip test, per-task Newcombe intervals and Fisher tests with Benjamini-Hochberg flags, the critical-failure guardrail from a new optional grader `severity`, the regression list, and cost, tokens and time (time without trials whose model call LiteLLM retried). A/A calibration runs (D44): one config on both arms when marked, its interval shown under every A/B of that config. The Compare, Run, Experiments and Tasks screens show it all.
+- Surprises: the first design's two-level bootstrap counted trial noise twice; on simulated data it covered the truth 99% of the time and found a real +15 points only 69% of the time at 20 tasks, against 85% for tasks only, which is why D10 was revised. At the headline's 10 to 12 held-out tasks, a real +15 is found only about half the time. Exactly counting 2^20 sign patterns took half a second per comparison until it was split into two halves of 2^10.
+
 ## Entry template
 
 ```markdown

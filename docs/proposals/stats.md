@@ -26,6 +26,11 @@ difference" always says how big a difference could still be hiding.
 
 ## 2. The interval: a two-level bootstrap
 
+**Revised 5 Nov (D10): the built method resamples tasks only.** Each task's observed rate already
+carries its trial noise, so drawing trials again inside tasks counted it twice; on simulated data
+this interval covered 99% and found +15 points 69% of the time at 20 tasks, against 92 to 94% and
+85% for tasks only (`docs/design.md` section 6). The text below is the original proposal.
+
 10,000 resamples: draw K tasks with replacement; within each drawn task, draw N trials with
 replacement for each arm; compute the mean d. The 2.5th and 97.5th percentiles are the 95% interval.
 With about 12 held-out tasks the interval will be wide; that is the honest answer, and §6 says how to

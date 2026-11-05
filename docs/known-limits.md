@@ -4,7 +4,7 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 
 ## Topics the brief names
 
-- **Task-set size:** to fill in. With about 20 tasks, results may not generalise to other work.
+- **Task-set size:** with about 20 tasks, results may not generalise to other work. The headline compares held-out tasks only, about 8 to 12, where the comparison finds a real +15 point improvement only about half the time (Statistics, below).
 - **Judge bias:** to fill in from `judge-validation.md`. Single human rater.
 - **Contamination:** to fill in from the isolation tests.
 - **Harness-specific quirks:** see below.
@@ -180,10 +180,75 @@ Number provenance is a text heuristic for highlighting, not a grade. Where it is
 
 - **A cost difference between harnesses includes how each uses the provider's prompt cache.** Hermes marks its prompt for Anthropic's cache and paid 17% less than list on 4 Nov; the own loop and LangGraph send no cache markers (`docs/hermes-notes.md`, `docs/cost.md`). A harness A/B's cost result is therefore a real difference in what each harness costs to run, not a difference in tokens used; read tokens per trial for the latter. The platform stores input and output tokens per trial, not the cache split, which is only in LiteLLM's spend log.
 
+## Statistics (SP6, 5 Nov)
+
+Measured on simulated data (`apps/api/src/stats/simulate.ts`: task pass rates spread uniformly
+from 10% to 75%, arm B adding a fixed effect; 1,000 runs per row, 2,000 bootstrap resamples), with
+the method as built (D10 revised: a task bootstrap, the sign-flip test, D42's verdict, D50's floor):
+
+| Tasks K, trials N | A/A: false better or worse | Interval covers the truth (A/A, +15) | +15 called better (power) | Interval width |
+| --- | --- | --- | --- | --- |
+| 4, 10 | 0% (cannot, D50) | 84.0%, 83.1% | 0% | 31 points |
+| 6, 10 | 0.9% | 87.7%, 86.7% | 10.5% | 28 |
+| 8, 10 | 2.7% | 88.5%, 90.7% | 30.4% | 25 |
+| 10, 10 | 2.9% | 90.5%, 91.8% | 49.9% | 23 |
+| 12, 10 | 3.3% | 92.0%, 90.8% | 54.7% | 21 |
+| 20, 10 | 3.4% (4.7% on other seeds) | 93.0%, 94.2% (91.6%, 93.7%) | 85.4% | 17 |
+
+- **Little power at the headline's size.** The headline compares held-out tasks only, so K may be
+  about 8 to 12. **At K = 10 to 12 and N = 10, a real +15 point improvement is called "better" only
+  about 50 to 55% of the time**, 30% at K = 8. A "no detectable difference" there is weak evidence
+  that nothing changed; read the "not ruled out" figure.
+- **The interval covers a little under 95% with few tasks.** The percentile interval of a task
+  bootstrap is too narrow with this few tasks: 91.6% and 93.7% at K = 20, N = 10 on one set of
+  seeds, 88 to 92% at K = 8 to 12. "Better" and "worse" also need the exact sign-flip p < 0.05, which
+  keeps false calls under 5% at every size measured; "practically equivalent" has no such check, so
+  it leans on the interval alone (a real +15 was called equivalent in 1.1% of runs at K = 8, 0.6% at
+  K = 10 to 12).
+- **Below 6 tasks there is no verdict** but "no detectable difference" (D50): the sign-flip test
+  cannot reach p < 0.05 (its smallest p is 2/2^K), and the bootstrap of so few tasks under-covers
+  (84% at K = 4) or, with one task, has no width at all.
+- **When every task gives the same difference, the interval has no width.** The task bootstrap sees
+  only the spread between tasks' observed differences. If every task ties (for example both arms
+  fail everything, a floor effect), the interval is 0 to 0 and the verdict can be "practically
+  equivalent" from very little: the API test for a regrade where every trial fails gets exactly
+  that over 7 tasks with one trial each. Read the per-task counts before trusting an "equivalent".
+- **Few trials per task.** A task's own flag comes from that task's trials only (Fisher's exact
+  test, Benjamini-Hochberg across tasks): at N = 5 a task can be flagged only on a near-total flip
+  (5 of 5 against 0 of 5 has p = 0.008). The per-task intervals are 40 to 100 points wide at N = 5.
+- **Unequal decided counts.** Each task weighs the same in the headline whatever its number of
+  decided trials, so a task with 1 decided trial (the rest incomplete) counts as much as one with
+  10. Trials with no outcome are left out, not counted as fails: if being undecided depends on the
+  answer (for example the judge erroring more on long answers), the pass rates are biased. A task
+  where an arm has no decided trial is left out of the headline altogether and listed; until the
+  judge is approved for an experiment, its judge-graded tasks are all left out.
+- **The simulation is a model.** Real tasks include ones every trial passes or fails (rates of 0%
+  or 100%), effects that differ by task, and outcomes that are not independent within a task; the
+  coverage and power above are for the simulated spread of 10% to 75%, not measured on our tasks.
+  The pilot's spread should replace them before N and K are chosen.
+- **A/A calibration.** Each one is a full paid run (D44). The comparison shows the latest finished
+  calibration of either arm's config, whatever its task set, N or platform commit; it is a check
+  on the setup, not matched to the A/B it sits under. No calibration has been run on a real model
+  yet, so the setup's own noise is unmeasured.
+- **The critical guardrail is only as good as the severities.** No task in `tasks/` has a severity
+  yet, so every comparison says "no check is marked critical". Only required checks marked critical
+  count, and only tasks that have one enter its comparison. A severity is part of the grader spec,
+  so adding one gives the grader a new version: a regrade picks it up and also re-runs the grader,
+  including the judge (paid, approved separately).
+- **Latency leaves out trials with a retried model call** (the grading guide's Retry Latency Skew;
+  D16). If one arm hit rate limits far more often, its time is measured on fewer trials, which may
+  differ from the rest (for example trials run at busy times); `left_out_retried` gives the counts
+  per arm. Trials recorded before 4 Nov carry no retry count and are kept (`retries_unknown`).
+  `wall_s` is the whole trial, so it includes the simulated client's turns, whose reply cache makes
+  a repeated conversation faster than a new one.
+- **Cost is the agent's LiteLLM cost only.** The simulated client's cost is left out of the
+  comparison (it is the environment, the same for both arms), though it is in the experiment's
+  spend. A cost difference between harnesses includes prompt caching (Cost comparisons, above).
+
 ## To check before submission
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted
-- [ ] Rate-limit retries that could affect latency numbers
+- [x] Rate-limit retries that could affect latency numbers (SP6: trials with a retried call are left out of time and counted; Statistics, above)
 - [ ] Prompt caching that could affect cost and latency differently per provider
 - [ ] Anything the invariance diff could not explain
 - Haiku 5.5 charges 5x for any request whose prompt is over 100,000 tokens (Claude pricing page, 4 Nov). LiteLLM's price fields have no 100k tier, so spend on such a request would be under-counted by up to 5x. Our prompts are far below it; a trial that grows past it should be flagged from the token counts.

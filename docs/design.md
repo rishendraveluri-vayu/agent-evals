@@ -109,6 +109,8 @@ Changed after the second fresh-clone QA (5 Nov), no migration: the API is told w
 
 Changed after the third fresh-clone QA (5 Nov), no migration: both exports carry `experiment_title`, the name screens show (a shipped example's manifest title, else the experiment's name), so an example's stored working name is never the only one a reader sees. `POST /experiments` caps a name at 200 characters, and the judge's approval refuses a model whose provider key is known not to be set. In the UI, one rule says what two configs differ in, with both values (`armDifferences` in `apps/ui/src/lib/arms.ts`, A35), and one names arms by it (`armsOf`): the comparison's header, the Run screen's arm labels, checks and default run name, the builder's "Evaluate it" and a config's compare-with-parent all read them (`apps/ui/src/lib/checks.ts` only phrases the entries); config auto-names are made from the config's content (A36).
 
+Added for A/A calibration (D44; migration `012_calibration.sql`): `experiments.calibration` marks a run that puts one config on both arms, and a check keeps it true exactly when `config_hashes` names one config twice. An arm is now keyed by (experiment, arm letter), no longer (experiment, config), since both arms of a calibration hold the same config. A calibration's arm B trials are repeats n to 2n - 1, which is how arm counts, pauses, the futility check, the spend guard, claims, events, the export and the comparison tell the arms apart (`TRIAL_IN_ARM` in `apps/api/src/experiments/run-state.ts`). The comparison's statistics (section 6) are computed on read and cached in memory, not stored: they are a function of the trials and their current grading.
+
 Interim, not a design decision: until SP2, the API reads finished trial folders from `RUNS_DIR` through a `TrialStore` interface (`apps/api/src/trials/trial-store.ts`), so the trace view and spend chart work now. SP2's database store replaces the file store behind the same interface.
 
 Planned in the spec, not yet designed:
@@ -162,17 +164,125 @@ Open:
 - D7: which tasks use the judge.
 - D8: the judge threshold, and what happens below it.
 
-The agreement arithmetic is a Python project at the repo root, `stats/` (package `evals_stats`, standard library only, D1), which SP6's comparison will join. It reads labels from `labels/` and grades from the API, and calls no model.
+The agreement arithmetic is a Python project at the repo root, `stats/` (package `evals_stats`, standard library only, D1); SP6's comparison runs in the API instead (section 6). It reads labels from `labels/` and grades from the API, and calls no model.
 
 Results go in `docs/judge-validation.md`.
 
 ## 6. Statistical method and choice of N
 
+The question is always "is B better than A, and how sure are we". The comparison answers it in
+`GET /experiments/:id/compare` (`stats`), computed in `apps/api/src/stats/`: pure, seeded
+TypeScript functions, tested against published values and on simulated data with a known truth.
+
+Decided (D10 as revised 5 Nov, D41, D42, D43, D44, D50; the proposal is `docs/proposals/stats.md`):
+
+- **Where it runs.** In the API, in TypeScript: the brief requires TypeScript for the API, and the
+  comparison is an API response. D1's Python covers the graders and the judge-agreement arithmetic
+  (`stats/`), not this.
+- **The task is the unit.** Per task and arm, pass rate = trials that passed / trials decided (pass
+  or fail). A trial with no outcome (a required check gave no verdict, such as the unapproved
+  judge) is left out and counted, never a pass or a fail. A task where an arm has no decided trial
+  is left out of the aggregate and listed with why. Why the task and not the trial: the 10 trials
+  of one task share that task's difficulty, so counting 2 x N x K trials as independent overstates
+  how sure we are. We want to say something about "tasks like these".
+- **The headline** is the mean over tasks of d(t) = rate_B(t) - rate_A(t), each task weighted
+  equally, in percentage points.
+- **The interval: a task bootstrap.** 10,000 times: draw K tasks with replacement and take the mean
+  of their observed d(t). The 2.5th and 97.5th percentiles of those means are the 95% interval.
+  Why tasks only (D10 revised): each task's observed rate already carries its trial-to-trial noise,
+  so resampling trials again inside each task counts that noise twice and makes the interval too
+  wide (Davison and Hinkley 1997, section 3.8). Measured on simulated data at K = 20 tasks and N =
+  10 trials: the two-level version (the first design) covered the truth 98.5 to 99% of the time,
+  made false "better or worse" calls 1.5% of the time and found a real +15 points 69% of the time,
+  with an interval 40% wider; tasks only covers 92 to 94%, makes 3.4 to 4.7% false calls and finds
+  +15 85% of the time (`apps/api/src/stats/simulation.spec.ts` keeps both).
+- **The paired test: sign flips.** If B made no difference, each task's d(t) is as likely to be
+  positive as negative. Flipping signs in every one of the 2^K patterns gives the spread of means
+  "no difference" would produce; p is the share at least as far from zero as the real one
+  (two-sided). Exact up to 30 tasks (counted by splitting the tasks in two halves, no listing of
+  2^K patterns), else 20,000 seeded flips. No normal-distribution assumption, and the pairing is
+  by task. McNemar does not fit: it needs one trial per task and arm.
+- **The verdict (D42, D43), in this order.** *Better*: the interval lies above 0 and p < 0.05.
+  *Worse*: the interval lies below 0 and p < 0.05. *Practically equivalent*: the whole interval
+  lies inside +/- 10 points. *No detectable difference*: anything else, always with "differences as
+  large as X points are not ruled out" (X is the interval end furthest from 0). Equivalence is a
+  claim about the whole interval: -2 points with an interval of -14 to +10 is not equivalent,
+  because a 14-point drop is still possible.
+- **Fewer than 6 tasks: no verdict but "no detectable difference" (D50).** With K tasks the
+  smallest possible sign-flip p is 2/2^K, which is 0.0625 at 5 tasks, so better and worse are
+  impossible below 6; the same floor keeps "equivalent" from resting on a bootstrap of so few
+  tasks, which under-covers (84% at K = 4) and has no width at all with one task.
+- **Per task (D41).** Each task's own difference gets Newcombe's interval for two independent
+  proportions (it stays inside -100 to +100 and behaves at 0 of 5 or 5 of 5, where the textbook
+  interval breaks) and Fisher's exact test. With 12 to 20 tasks at 5%, about one would look
+  different by chance, so a task is flagged "beyond noise" only after Benjamini-Hochberg at q =
+  0.05 across the tasks: among flagged tasks, at most about 5% are expected to be noise. A flag
+  means "look here", not a verdict. Holm was rejected because at N = 5 to 10 trials it can never
+  flag a task.
+- **The critical-failure guardrail (D10).** Each grader may carry a severity (critical, major or
+  minor) in its task file, set by Rishi; it never changes a verdict. Per task with a required
+  critical check, the critical-failure rate is the share of decided trials where such a check
+  failed; B minus A gets the same task bootstrap. B is never called better while that interval
+  lies above 0: the verdict is then *held back* ("not called better: critical failures rose"),
+  shown beside the verdict either way. With no check marked critical, the comparison says so
+  rather than claim safety. The severity is read from the grader specs of the grading that
+  produced each trial's grades (the task file it was graded with).
+- **The regression list (D10).** Every task where B dropped (d(t) < 0), or where any check's own
+  pass rate fell from A to B, whether or not it is beyond noise: counts, interval, flag, and the
+  checks that got worse (pass rate in each arm, severity), critical first, with links to B's failed
+  trials. Each failed trial has room for a cause (wrong tool, made-up arguments, gave up early, ran
+  out of steps, grader disagrees with the human label: the brief's stretch item 7), not filled yet.
+- **Cost, tokens and time next to quality** (proposal section 8). The same task bootstrap on each
+  task's mean cost per trial (LiteLLM's recorded cost of the agent's calls; the simulated client's
+  cost is the environment's and left out), tokens (input plus output) and time, as a difference
+  and a relative difference with intervals, and no verdict, so "v2 is better and costs 6% more"
+  reads in one line. A fake model's prices are made up, and the screen says so.
+- **Latency is not skewed by retry backoff** (the grading guide's "Retry Latency Skew"). LiteLLM
+  retries a failed call with backoff (D16) and records it: each spend-log row's
+  `attempted_retries`, which the runner reports as `proxy_usage.retried_calls` and puts on each
+  model call's span as `evals.proxy.attempts`. A trial in which any model call was retried (the
+  agent's or the simulated client's) is left out of the time comparison only, and counted per arm
+  (`left_out_retried`); cost and tokens keep it, since a backoff wait costs nothing. A trial whose
+  record does not say (recorded before 4 Nov, or with no LiteLLM record) is kept and counted
+  (`retries_unknown`).
+- **A/A calibration (D44).** A run marked as a calibration puts one config on both arms; arm B's
+  trials are repeats n to 2n - 1, interleaved with arm A's in the seeded claim order, so it
+  measures this setup's own noise, side effects included (claim order, shared workers). Its
+  comparison says whether it came out "no detectable difference", as it should. Every ordinary A/B
+  shows the latest finished calibration of either arm's config under its own interval, or says
+  there is none and links to set one up. Without the mark, the same config twice is refused.
+- **Repeatable and current.** Every random stream is seeded from the experiment id (sfc32 started
+  from a sha256), one stream per use, so the same data always gives the same numbers. Results are
+  cached by the trials and their current grading jobs, so a regrade recomputes them; while any
+  trial's grading is still running there is no verdict, and the screen says why.
+
 Constraints:
 
-- **With a two-sided exact paired test (sign-flip) across k tasks, the smallest possible p-value is 2/2^k**, however many trials each task gets. At 5 tasks that is 0.0625, so no per-tier result can reach p < 0.05 with 5 tasks.
+- **With a two-sided exact paired test (sign-flip) across k tasks, the smallest possible p-value is
+  2/2^k**, however many trials each task gets. At 5 tasks that is 0.0625.
+- **Measured power and coverage** (simulated: task pass rates spread uniformly from 10% to 75%, B
+  adding a fixed effect; 1,000 runs per row, 2,000 resamples each; `apps/api/src/stats/simulate.ts`):
 
-Open:
+  | Tasks K, trials N | A/A: false better or worse | Interval covers the truth (A/A, +15) | +15 called better (power) | Interval width |
+  | --- | --- | --- | --- | --- |
+  | 4, 10 | 0% (cannot, D50) | 84.0%, 83.1% | 0% | 31 points |
+  | 6, 10 | 0.9% | 87.7%, 86.7% | 10.5% | 28 |
+  | 8, 10 | 2.7% | 88.5%, 90.7% | 30.4% | 25 |
+  | 10, 10 | 2.9% | 90.5%, 91.8% | 49.9% | 23 |
+  | 12, 10 | 3.3% | 92.0%, 90.8% | 54.7% | 21 |
+  | 20, 5 | 3.6% | 93.9%, 94.4% | 51.9% | 24 |
+  | 20, 10 | 3.4% | 93.0%, 94.2% | 85.4% | 17 |
+  | 40, 10 | 4.1% | 93.6%, 95.1% | 99.0% | 12.5 |
 
-- N, split sizes, harness and model for the headline experiment, which is prompt v1 versus v2 on discovery and held-out tasks (D9, decided 3 Nov).
-- D10: the unit of analysis.
+  The false-call rate stays under 5% because better and worse also need p < 0.05 from the exact
+  test; the percentile interval covers a little under 95% with this few tasks.
+
+Choice of N (open: the headline experiment's N and K are Rishi's, in `docs/experiment.md`):
+
+- **The headline compares held-out tasks only, so K may be about 8 to 12. At K = 10 to 12 and N =
+  10, a real +15 point improvement is called "better" only about 50 to 55% of the time**; at K = 8,
+  30%. A "no detectable difference" at that size is weak evidence of no change. In this simulation
+  more tasks help more than more trials: K = 20 lifts power to 85% at N = 10, while N = 5 at K =
+  20 gives 52%.
+- The pre-run estimate of the smallest difference a planned N and K can detect (proposal section
+  6) is not built; the table above stands in for it.

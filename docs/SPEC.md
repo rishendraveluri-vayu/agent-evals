@@ -230,12 +230,12 @@ The order matters because the rubric freezes with the platform:
 **Done when:** an A/A comparison and a synthetic known difference both produce the right verdict.
 **Needs:** SP2, D1, D10.
 
-- [ ] **[Rishi designs]** Unit of analysis, paired test and CI method
-- [ ] Compute per-task deltas and the aggregate with intervals
-- [ ] Handle multiple comparisons in per-task deltas: with 20 tasks at 5%, about 1 can look significant by chance
-- [ ] Add an explicit verdict for when a difference is just noise
-- [ ] Show cost, latency and tokens next to quality
-- [ ] Test on simulated data with known effects
+- [x] **[Rishi designs]** Unit of analysis, paired test and CI method (D10, revised 5 Nov to a task bootstrap; D41 to D44, D50; `docs/design.md` section 6)
+- [x] Compute per-task deltas and the aggregate with intervals (`apps/api/src/stats/`, in `GET /experiments/:id/compare` once every arm is complete and graded; Newcombe per task, a task bootstrap for the aggregate, the sign-flip test; tested against published values)
+- [x] Handle multiple comparisons in per-task deltas: with 20 tasks at 5%, about 1 can look significant by chance (Benjamini-Hochberg at q = 0.05, D41)
+- [x] Add an explicit verdict for when a difference is just noise (better, worse, practically equivalent within +/- 10 points, or no detectable difference with what is not ruled out; none below 6 tasks; held back by the critical-failure guardrail; A/A calibration runs, D44)
+- [x] Show cost, latency and tokens next to quality (the same task bootstrap, no verdict; time leaves out trials with a retried model call)
+- [x] Test on simulated data with known effects (seeded: A/A false calls, coverage and power at K = 10 and 20, the -15 and equivalence cases, the 6-task floor, the two-level comparison; `docs/known-limits.md`, Statistics)
 
 ### SP7 API and UI (Thu)
 
@@ -278,6 +278,8 @@ The order matters because the rubric freezes with the platform:
 ## Parking lot
 
 Only if the frozen plan has slack.
+
+- [ ] Pre-run power estimate on the Run screen (stats proposal section 6): from the pilot's spread between and within tasks, the smallest difference the planned N and K detect 8 times in 10. Today the simulated table in `docs/known-limits.md` stands in for it.
 
 - [ ] Failure analysis: rule-based categories over traces (wrong tool, hallucinated tool args, gave up early, loop or step exhaustion, grader disagreement)
 - [ ] A third harness on an existing framework
