@@ -70,6 +70,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D58 Unit facts and reference rates | Unit facts count as arithmetic inputs without a source (12, 100, 365, 366, 28 to 31, 52, 7, 1 lakh, 1 crore; never 0 or 1); an arithmetic result equal to one of its own unsupported inputs never counts; market rates come from a new `reference_rates` finance tool with sources and dates (values approved by Rishi before any run) | Rishi | 5 Nov |
 | D59 Futility check on fake-only runs | Off by default when every model in the run is fake; on by default for any paid run | Rishi | 5 Nov |
 | D60 Bind-mount permissions | The API starts as root only to create and own its writable folders, then drops privileges; the health check and smoke test fail loudly when they are not writable | Rishi | 5 Nov |
+| D61 Provenance: verify, don't trace | A rupee figure counts when it matches a source within tolerance, or is a correct one-step derivation the checker recomputes from sourced numbers (small counts, periods, rates and unit facts need no source, but at least one operand must be a sourced value); "figures written without a tool" is reported per arm as its own measure. Supersedes D56's strict input tracing | Rishi | 5 Nov |
 
 ## Open
 
@@ -348,6 +349,12 @@ Choice: the tool. Rishi asked for "a smarter solution" than a short list of cons
 - Identity guard: an arithmetic result equal to one of its own unsupported inputs never counts (`round(x)` and the like).
 - A new finance tool `reference_rates` returns documented market assumptions (FD, equity, inflation, PPF, savings and the like), each with its source and as-of date, so a rate the agent volunteers has a source and an invented one still fails. It is a new toolset version for both arms; no experiment has run yet, so nothing recorded changes.
 Why: our tasks already state the rates they need (in the message or the client file), so the remaining false "unsupported" came from unit facts and from rates an agent volunteers; grounding rates in a tool follows D54's rule that the model never invents what a tool can give.
+
+### D61: Provenance verifies numbers instead of tracing tool calls (5 Nov)
+Options: verify, don't trace (the standard extract-and-match pattern with derived figures recomputed); keep D56 and D58 as decided (strict input tracing); match sources only (any tool result counts).
+Choice: verify, don't trace. A rupee figure in an answer counts when it matches a source (a tool result, `reference_rates` included; the user's or client's messages; the client file; the task's own text) within the existing tolerance, or when it is a correct one-step derivation the checker recomputes itself: a sum, difference, product, ratio or percentage of sourced numbers, where small counts, periods, rates and unit facts need no source but at least one operand must be a sourced value. A wrong sum fails; a correct one passes whether a tool or the prose computed it. Arithmetic tool results are judged the same way. "Figures written without a tool" (verified only as a derivation) is reported per arm as its own measure, so v1's prose arithmetic and v2's use of the tools stay visible, and the video can show the failure trace.
+Why: Rishi: "Source could be user input yes but if it is too restrictive it becomes useless like 12 lakhs car in a year means 1 comes up how do we handle or are we overthinking this try to find out how numbers are verified in llm outputs". The usual approaches extract each number and match it to the sources under a declared tolerance policy, report unverified numbers as unverified rather than wrong (Proof-Carrying Numbers, arXiv 2509.06902), and check the key figures against known answers (FinQA's execution accuracy; our `number` graders, marked critical). D56's tracing blocked a laundering trick no trial has shown, at the price of false fails on ordinary inputs ("in a year", "3 months of expenses").
+Kept from D58: the unit facts, the identity guard and the `reference_rates` tool (values still need Rishi's approval).
 
 ## Entry template
 
