@@ -76,7 +76,7 @@ The A/A run is the negative control (identical arms: the platform must not call 
 
 ## Invariance check
 
-Result of the diff on the first request of each config. Anything beyond the axis is explained here.
+Checked 5 Nov on the rendered first request of each config (`GET /api/configs/:hash/rendered-prompt`, a free probe on the fake model): **the 19 tools are identical** (same sha256 of the full tool list), and **the system prompts differ only in the prompt change**: v1's "Use your finance tools for every calculation" bullet is replaced by v2's "Every rupee figure you write comes from a tool, exactly", and v2 adds the "Clarify before you assume" and "Explain each key figure in plain words" bullets (4 changed lines; 5,891 against 6,826 characters). The configs' own diff is the prompt only (`GET /api/configs/:a/diff/:b`: prompt sha256 and version; the name is not content).
 
 ## Results
 
@@ -126,3 +126,5 @@ Rishi to write.
 ## Deviations
 
 Anything changed after the plan was committed, and why.
+
+- **A sensitivity analysis added after the results (5 Nov), not a change to the verdict.** Prompted by the survey of other eval tools (`docs/research/evals-landscape.md`), the per-task differences were also tested the way Miller (2024, "Adding Error Bars to Evals") recommends, with a paired t-test on the task differences (+30, +30, +10, +10, +10 and five zeros): mean +9.0 points, standard error 3.79, t(9) = 2.38, two-sided p = 0.041, 95% t interval +0.4 to +17.6. Under that test the result would read "better"; under the pre-registered exact sign-flip test it is p = 0.0625, "no detectable difference". The pre-registered verdict stands. The two tests disagree because the exact test treats the five tied tasks as carrying no information and cannot go below 2/2^5 with five informative tasks, while the t-test uses the size of the differences and leans on a normal approximation with ten tasks. Both say the same about direction and size; they differ only on whether 1 in 16 or 1 in 24 counts as rare enough.

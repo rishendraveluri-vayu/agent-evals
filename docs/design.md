@@ -17,7 +17,7 @@ Decided:
 - The control plane is a NestJS API and a Vue 3 UI, in TypeScript (brief).
 - Harness workers may be Python (spec).
 - Every model call from every harness goes through LiteLLM (Rishi, 3 Nov). This one choke point is where settings, spend and usage are checked, whichever harness made the call.
-- The model providers are Claude and Gemini (D4). The open-weight model is still open (D5).
+- The model providers are Claude and Gemini (D4), both run as agents through LiteLLM (Gemini 3.8 Flash on the own loop and Hermes, 5 Nov). The open-weight route is a local demo (D5): Qwen2.5 7B on Ollama, an optional compose profile (`local-model`), priced at 0.
 - LiteLLM's response cache is never on for trials. It would replay answers, so repeated trials would stop being independent samples (`CLAUDE.md`).
 
 - Graders and stats are Python (D1).
@@ -42,7 +42,7 @@ Decided:
 Constraints:
 
 - **The harnesses cannot share one Python environment.** Hermes pins `mcp==2.3.0` and `openai==2.54.0`. `langchain-mcp-adapters` 0.3.2 needs `mcp<2`. `openai-agents` 0.24.0 needs `openai>=3`, while `google-adk[extensions]` 2.13.0 needs `openai<3`. Checked 3 Nov with a resolve-only `uv pip compile`.
-- **So each harness has its own environment, and the adapter boundary is a process boundary.** The platform hands a trial to a harness process and reads back the answer, the trace and the usage. The shape of that contract is open.
+- **So each harness has its own environment, and the adapter boundary is a process boundary.** The platform hands a trial to a harness process and reads back the answer, the trace and the usage. That contract is `docs/adapter-contract.md` (contract v2): a trial spec in, a result, an OpenTelemetry trace and a runner report out.
 - **Hermes runs only on Python 3.14.** Its lockfile supports `python_version >= '3.14'` only.
 - **Hermes must be configured per process, before it is imported.** A bare `import run_agent` builds a full home folder under `HERMES_HOME`, so the home cannot be switched inside one process. Measured 3 Nov.
 - **Hermes changes requests in ways the adapter has to neutralise.** `gpt-5*` model names route to the Responses API. Temperature only reaches the request through `request_overrides`. A `max_iterations` stop makes one extra, uncounted summary call. Details are in `docs/hermes-notes.md`.
@@ -66,9 +66,7 @@ Decided, the field-by-field contract (R12, 3 Nov; to be iterated on 4 Nov):
 - **The config shape** is a common `settings` block (temperature, max output tokens, max steps, timeout, parallel tool calls, memory, skills, compression) plus `harness_options` validated against each adapter's own schema (D23).
 - **Platform checks after every trial** (4 Nov, from Rishi's review): the runner writes `checks.json` next to the result, the same for every harness: number provenance (each money amount the agent wrote, and whether a tool result, the client file or a user message holds it at the precision shown; since D56, 5 Nov, an arithmetic tool's result counts only when every number it was given is itself supported, traced through the calls in start order, so `round(x)` or `add([x, 0])` on a made-up x is still unsupported; since D58 an input that is a unit fact (7, 12, 28 to 31, 52, 100, 365, 366, a lakh, a crore) needs no source, and a result that only repeats an input with no source never counts; since D61 numbers are verified, not traced: a figure no source holds counts when the checker recomputes it as a one-step derivation of numbers the answer shows, with at least one sourced amount, recorded as `derived_in_prose`, and the comparison reports how many figures each arm wrote without a tool, as a measure beside the pass rate, not a gate) and the task's `required_tools` called or missing. Graders and the judge read it; it never changes a trial's label (contract section 12).
 
-Open:
-
-- D15: the remaining Hermes settings that are design calls (compression, `skill_manage` writes).
+Decided (D15, 5 Nov): compression, memory and skills off in both arms of the headline experiment; prompt-cache markers off (D31); Tool Search off (R10.7).
 
 ## 3. Data model
 
@@ -111,12 +109,7 @@ Changed after the third fresh-clone QA (5 Nov), no migration: both exports carry
 
 Added for A/A calibration (D44; migration `012_calibration.sql`): `experiments.calibration` marks a run that puts one config on both arms, and a check keeps it true exactly when `config_hashes` names one config twice. An arm is now keyed by (experiment, arm letter), no longer (experiment, config), since both arms of a calibration hold the same config. A calibration's arm B trials are repeats n to 2n - 1, which is how arm counts, pauses, the futility check, the spend guard, claims, events, the export and the comparison tell the arms apart (`TRIAL_IN_ARM` in `apps/api/src/experiments/run-state.ts`). The comparison's statistics (section 6) are computed on read and cached in memory, not stored: they are a function of the trials and their current grading.
 
-Interim, not a design decision: until SP2, the API reads finished trial folders from `RUNS_DIR` through a `TrialStore` interface (`apps/api/src/trials/trial-store.ts`), so the trace view and spend chart work now. SP2's database store replaces the file store behind the same interface.
-
-Planned in the spec, not yet designed:
-
-- Configs are versioned by content hash, including the harness SHA and the model pin.
-- A past result must trace back to the exact config, task and code versions that produced it.
+Storage: experiment trials, their spans, grading jobs, grades, labels and events live in Postgres; each trial's files (result, trace, checks, proxy logs) are stored by the API under `runs/<experiment>/<trial>/attempt-<n>/`, uploaded by the worker with a sha256 per file. A folder store (`FileTrialStore`) remains only for gate and smoke runs recorded outside an experiment.
 
 ## 4. How runs are isolated and reproduced
 
@@ -137,6 +130,14 @@ Decided (D3; Rishi delegated the call to "simpler and more robust"):
 - **The API writes the host's folders as uid 1000, whoever owns them** (5 Nov, the clean-machine test; Rishi: "fix in the container"). The API mounts `runs/`, `labels/` and `configs/prompts/` read-write from the clone, which belong to the host user; where that user is not uid 1000 the API could not write them. Its image now starts as root only for `apps/api/docker-entrypoint.sh`: for each of the three folders that uid 1000 does not own (or cannot write), it gives that folder alone, never its contents, to uid 1000, keeps its group and adds `g+rwxs`, then runs the server as uid 1000 with `setpriv` (umask 002, the folders' groups as supplementary groups, no capabilities, no new privileges). So what the API writes belongs to the host user's group and is group-writable, and the host user deletes it without sudo. Workers and the grader mount nothing and are unchanged. `GET /api/health` is 503 with a plain-words `files_problem` when a folder stays unwritable, so `docker compose up --wait` fails.
 - **A worker crash kills its own trial.** The trial's claim then lapses and it is re-run once, never twice.
 - **Each trial gets its own LiteLLM virtual key and budget**, since the key is readable inside the container.
+
+Reproduction: what pins a past result
+
+- **Everything a trial ran on is content-addressed.** A config's hash covers the harness and its pinned SHA (Hermes `6112c2a`), the adapter version and capabilities file, the model name, the prompt's sha256, the toolset's sha256 (every tool's name, description and schema plus the finance server's version), the settings and harness options, and any seed. Prompts, toolsets and tasks are stored as versioned rows by hash; an edit is a new version, never a change in place.
+- **An experiment freezes its inputs.** It stores the config hashes, the task sha256s, N, the simulated client's model and prompt, the claim-order seed and the analysis-plan commit; its trials keep the task version they ran on.
+- **Grades are versioned, never overwritten.** A grader's version is the hash of its spec and the framework version; a regrade adds new grade rows from the recorded trial files and re-runs nothing (R14), so an old result can be re-scored with new graders, or read as it was.
+- **The model side is recorded, not just requested.** LiteLLM logs every call per trial key; the platform keeps each request and response under `artifacts/proxy/`, and no response cache is ever on, so a re-run is a new sample, not a replay. What cannot be pinned: the provider's model behind a model name (`claude-haiku-5-5`) can change on the provider's side (`docs/known-limits.md`).
+- **The statistics are deterministic.** The bootstrap and the sign-flip test are seeded from the experiment id, so the same trials and grades give the same interval and verdict.
 
 Given up: consecutive trials in one container are separated by the sweep, the wipe and the read-only root, not by a fresh container. The SP3 leak test checks this. See the D3 entry in `docs/decisions.md` for the full tradeoff.
 

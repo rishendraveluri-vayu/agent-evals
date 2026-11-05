@@ -38,7 +38,7 @@ history, and tokens at list price (no cache) before that.
 
 ## Planning estimate
 
-These are assumptions until the pilot replaces them: 8 LLM calls per trial, 8k input and 300 output tokens per call, no caching. That is 64k input and 2.4k output per trial.
+The planning estimate of 3 Nov, kept for the record (the measured figures below replace it): 8 LLM calls per trial, 8k input and 300 output tokens per call, no caching. That is 64k input and 2.4k output per trial.
 
 | Model | Input $/MTok | Output $/MTok | $/trial | 400 trials | Price source |
 | --- | --- | --- | --- | --- | --- |
@@ -49,7 +49,7 @@ These are assumptions until the pilot replaces them: 8 LLM calls per trial, 8k i
 | Haiku 5.5 | 0.10 | 0.50 | 0.0076 | $3 | Claude pricing page, checked 4 Nov (prompts up to 100k tokens; cache write 0.125, read 0.01; 5x above 100k) |
 | GPT-6 Luna | 0.10 | 0.50 | 0.0076 | $3 | Costbench, as of 10 Oct, third-party |
 
-- 400 trials is 20 tasks × 2 configs × N=10, used as a placeholder until the pilot sets N.
+- 400 trials is 20 tasks × 2 configs × N=10, the 3 Nov placeholder; the real headline ran 10 held-out tasks × 2 configs × N=10 = 200 trials.
 - Sonnet vs Gemini Flash at 200 trials each: about $42.
 - Judge estimate (D45, Gemini 3.8 Flash): 3k input and 300 output per call is about $0.0034, before any thinking tokens; 60 labelled trials × 3 repeats is about $0.61. On Sonnet 5.5 it would be about $0.009 a call.
 - Check third-party prices on the provider pages before quoting them. Gemini 3.8 Flash is listed to rise to $1.50 / $7.50 from 1 Jan 2027.
@@ -62,18 +62,21 @@ Sources:
 
 ## Ways to reduce cost
 
-Fill in with what we actually tried and measured.
+**The formula on the real run** (headline, 5 Nov, Claude Haiku 5.5 at $0.10 / $0.50 per MTok): 10 tasks × 10 trials × 2 configs = 200 trials; v1 averaged 75.5k input and 3.8k output tokens a trial, v2 97.9k and 5.0k (about 86.7k and 4.4k overall), so the agent's cost is 200 × (86,700 × $0.10 + 4,400 × $0.50) / 1,000,000 ≈ $2.17, plus $0.125 for the simulated client = $2.295, which is what LiteLLM recorded. The A/A run on the same tasks cost $1.959; v2's extra tool calls cost about 30% more per trial than v1.
 
-- Provider prompt caching. Fine for independence, because the model still generates a new answer. It is off in every config since D31 so that harnesses compare like for like; before that, Hermes's cached trials paid about a quarter of list price for input (above). Turning it on for every harness at once would cut cost without tilting a comparison.
-- Fewer tools per config, since default toolsets cost about 3x the minimal set per call.
-- Early stopping when the outcome is already clear, with the stopping rule set in advance.
-- Sampling tasks or trials, with the effect on confidence stated.
-- Batch APIs for the judge. Claude lists a 50% batch discount.
-- Not LiteLLM response caching for trials, because repeats would stop being independent.
+What we did, and what each would save:
+
+- **Fake models for development and CI: done.** Every test and CI run uses the scripted fake server, so building the platform cost nothing in model calls; real calls were only the signed-off runs in the table below.
+- **A small pilot before the full N: done.** The discovery run used N = 3 ($0.32) to find failures and give labels before the N = 10 runs. The simulation table (`docs/design.md` section 6) shows more tasks buy more power than more trials, so N stays modest and K is where money should go.
+- **Early stopping: built, not used on the final runs.** The futility check pauses an arm that fails its first graded trials (D32); it was off for the final runs because the verdict needed the full planned N, and the $4 caps protected the spend.
+- **Provider prompt caching: measured, kept off.** Before D31, Hermes's cached trials paid about a quarter of list price for input; it is off in every config so harnesses compare like for like. Turning it on for both arms at once would cut cost without tilting a comparison; it does not affect independence, because the model still generates a new answer.
+- **Fewer tools and fewer calls.** v2's extra arithmetic tool calls cost about 30% more per trial than v1; a leaner toolset or a prompt that batches sums would cut that.
+- **The judge in batch.** Judging runs after the trials, so a provider batch API (Claude lists a 50% discount) fits it.
+- **Never LiteLLM's response cache for trials,** because repeated trials would stop being independent samples.
 
 ## Actual spend
 
-The pilot, the experiment and the judge go here too (SP8), with their tokens per trial.
+Every paid run, with its sign-off.
 
 | Date | Run | Trials | Spend | Signed off |
 | --- | --- | --- | --- | --- |
@@ -93,6 +96,8 @@ The pilot, the experiment and the judge go here too (SP8), with their tokens per
 | 5 Nov | A/A calibration of v1 on the same tasks x 10, `e_0mw38a2282836ad0614b7c07f`; 200 of 200, 0 infra | 200 | $1.959 | same |
 | 5 Nov | Second-provider check (planned 14:26): Gemini 3.8 Flash as the agent on the own loop and on Hermes, 5 single-message discovery tasks x 2 trials each, prompt v1, finance/v3; first guessed at $0.10 (wrong: Gemini Flash is about 7.5x Haiku's price per token), the API's estimate is $1.14 (range to $2.28), cap $2.50; experiment `e_0mw3bbbba86e8364652ebd85f`, 20 of 20 answered and passed, 0 infra | 20 | $0.259 | Rishi, "As planned: 20 trials" after the correction |
 | 5 Nov | Judge retest (planned 14:26): Gemini 3.8 Flash re-judges the same 33 discovery outputs to measure its consistency with itself; expected about $0.26, within the existing $1 approval | 33 calls | $0.249 | Rishi, "Approve both" |
+
+**Total to 5 Nov: $5.89 in model calls** across the 15 runs above (most of it the two final runs, $4.25), plus $0.0183 for one conflict check (System calls, below) and about $0.14 of GCP time for the clean-machine test.
 
 Per trial on Haiku 5.5: a single question cost $0.0024 to $0.0035 (3 model calls); a 3-turn simulated-client conversation cost $0.012 to $0.014 (8 to 10 agent calls plus the simulator's).
 
