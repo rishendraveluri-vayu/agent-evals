@@ -147,20 +147,20 @@
  },
  "integrity": {
   "before": {
-   "config.yaml": "sha256:8f85835e24121e0baddd37f7f9f24e6b03f3a47ccd17c18b9b5d54d282868080",
+   "config.yaml": "sha256:40daa4d1f63d709a275a1596bc3f891c22c3d0be94fab8469a8cdedf7141db12",
    "SOUL.md": "sha256:36c1f5a2e92cd1d018311eaf4c8f1e8886672eae78212e033c681d0e3d5d506f",
    "AGENTS.md": null
   },
   "after": {
-   "config.yaml": "sha256:8f85835e24121e0baddd37f7f9f24e6b03f3a47ccd17c18b9b5d54d282868080",
+   "config.yaml": "sha256:40daa4d1f63d709a275a1596bc3f891c22c3d0be94fab8469a8cdedf7141db12",
    "SOUL.md": "sha256:36c1f5a2e92cd1d018311eaf4c8f1e8886672eae78212e033c681d0e3d5d506f",
    "AGENTS.md": null
   }
  },
  "timing": {
-  "started_at": "2026-11-05T00:26:30.295515Z",
-  "ended_at": "2026-11-05T00:26:35.603144Z",
-  "wall_s": 5.308
+  "started_at": "2026-11-05T01:49:25.241138Z",
+  "ended_at": "2026-11-05T01:49:30.346162Z",
+  "wall_s": 5.105
  },
  "artifacts": [
   "artifacts/hermes-config.yaml",

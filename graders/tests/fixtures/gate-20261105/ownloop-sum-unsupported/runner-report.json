@@ -25,25 +25,25 @@
   "stderr": {
    "path": "stderr.log",
    "bytes": 84,
-   "sha256": "955d0fc2cf70b72521c3a147dba8b6ac9b9d5595d972fe3978aeb4c914283d35",
+   "sha256": "29fe565eaaa5bab597eb75cacaf8931ad8eceee7af8c606f6690e697f5ec7dfb",
    "truncated": false
   }
  },
  "files": [
   {
    "path": "checks.json",
-   "bytes": 882,
-   "sha256": "9a52b97d14eb565053a7f8cc2d0adebcd1962c4df635cc2178e452639d7c4a98"
+   "bytes": 994,
+   "sha256": "36e2fcfc3c42e9a6ba131ed1df3a070b0be4f897a9946ef95dcdd74b02aa6ac0"
   },
   {
    "path": "result.json",
    "bytes": 3075,
-   "sha256": "d8a8bdb54c7b0d312b4bc092da8b7363d7097e1f127ffbf243c63eaeca301c8e"
+   "sha256": "5bc29dd8aaa9f0f6ab82437be6882a9545f66e5e937c2f7052711d22bcdc0b2a"
   },
   {
    "path": "stderr.log",
    "bytes": 84,
-   "sha256": "955d0fc2cf70b72521c3a147dba8b6ac9b9d5595d972fe3978aeb4c914283d35"
+   "sha256": "29fe565eaaa5bab597eb75cacaf8931ad8eceee7af8c606f6690e697f5ec7dfb"
   },
   {
    "path": "stdout.log",
@@ -53,13 +53,13 @@
   {
    "path": "trace.jsonl",
    "bytes": 4510,
-   "sha256": "a358c6ac70d84ad56823bde7faa74dd753492d22e1e699849eeb47b5a522e588"
+   "sha256": "1659bcdd3940dd026f88c1a1c289dc56eb10f50c303de9467413332d55ecab73"
   }
  ],
  "timing": {
-  "started_at": "2026-11-05T00:26:21.019874Z",
-  "ended_at": "2026-11-05T00:26:23.558961Z",
-  "wall_s": 2.539,
+  "started_at": "2026-11-05T01:49:08.280754Z",
+  "ended_at": "2026-11-05T01:49:10.768191Z",
+  "wall_s": 2.487,
   "safety_net_s": 120.0
  },
  "checks": {

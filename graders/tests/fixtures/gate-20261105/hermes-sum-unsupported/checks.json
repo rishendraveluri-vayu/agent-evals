@@ -11,8 +11,10 @@
     "value": 8997.26,
     "where": "tool:calculate_emi",
     "how": "exact",
-    "precision": 0.01
-   }
+    "precision": 0.01,
+    "call": 0
+   },
+   "rejected": null
   },
   {
    "turn": 0,
@@ -23,15 +25,18 @@
     "value": 18332.5,
     "where": "tool:list_debts",
     "how": "exact",
-    "precision": 0.01
-   }
+    "precision": 0.01,
+    "call": 1
+   },
+   "rejected": null
   },
   {
    "turn": 0,
    "text": "Rs 27,329.76",
    "value": 27329.76,
    "supported_by": null,
-   "match": null
+   "match": null,
+   "rejected": null
   }
  ],
  "unsupported": 1,
@@ -50,5 +55,6 @@
   ],
   "missing": [],
   "only_errors": []
- }
+ },
+ "arithmetic": []
 }

@@ -11,8 +11,10 @@
     "value": 8997.26,
     "where": "tool:calculate_emi",
     "how": "exact",
-    "precision": 0.01
-   }
+    "precision": 0.01,
+    "call": 0
+   },
+   "rejected": null
   },
   {
    "turn": 0,
@@ -23,8 +25,10 @@
     "value": 18332.5,
     "where": "tool:list_debts",
     "how": "exact",
-    "precision": 0.01
-   }
+    "precision": 0.01,
+    "call": 1
+   },
+   "rejected": null
   },
   {
    "turn": 0,
@@ -35,8 +39,10 @@
     "value": 27329.76,
     "where": "tool:add",
     "how": "exact",
-    "precision": 0.01
-   }
+    "precision": 0.01,
+    "call": 2
+   },
+   "rejected": null
   }
  ],
  "unsupported": 0,
@@ -56,5 +62,40 @@
   ],
   "missing": [],
   "only_errors": []
- }
+ },
+ "arithmetic": [
+  {
+   "call": 2,
+   "tool": "add",
+   "turn": 0,
+   "supported": true,
+   "inputs": [
+    {
+     "arg": "values[0]",
+     "value": 8997.26,
+     "supported_by": "tool",
+     "match": {
+      "value": 8997.26,
+      "where": "tool:calculate_emi",
+      "how": "exact",
+      "precision": 0.01,
+      "call": 0
+     }
+    },
+    {
+     "arg": "values[1]",
+     "value": 18332.5,
+     "supported_by": "tool",
+     "match": {
+      "value": 18332.5,
+      "where": "tool:list_debts",
+      "how": "exact",
+      "precision": 0.1,
+      "call": 1
+     }
+    }
+   ],
+   "reason": null
+  }
+ ]
 }

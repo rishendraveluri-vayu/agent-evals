@@ -31,6 +31,7 @@ EXAMPLES = {
     "finance-emi-unsupported",
     "finance-sum-tool",
     "finance-sum-unsupported",
+    "finance-sum-laundered",
     "sim-client",
     "sim-empty",
     "judge",

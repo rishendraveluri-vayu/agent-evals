@@ -33,9 +33,12 @@ CASES = {
         ("emi-unsupported", "finance-emi-unsupported", ["calculate_emi", "list_debts"]),
     ],
     # D54: a sum taken from the arithmetic tool add, and the same answer without the add call.
+    # D56: and with the sum worked out in the reply and passed through round. Regenerated after
+    # D56 (runner 0.2.0), so their checks.json has `arithmetic`.
     "gate-20261105": [
         ("sum-tool", "finance-sum-tool", ["calculate_emi", "list_debts"]),
         ("sum-unsupported", "finance-sum-unsupported", ["calculate_emi", "list_debts"]),
+        ("sum-laundered", "finance-sum-laundered", ["calculate_emi", "list_debts"]),
     ],
 }
 
