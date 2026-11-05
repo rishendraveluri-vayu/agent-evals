@@ -1,5 +1,6 @@
 {
   "compiled_on": "2026-11-05",
+  "approval": "approved by Rishi, 5 Nov; debt_fund removed at review (an index return, not what a debt-fund investor earns after costs)",
   "note": "Documented assumptions for India, each with its source and the date it applies to. A snapshot gathered on the compiled_on date, not live rates.",
   "rates": {
     "fd_1y": {
@@ -73,18 +74,6 @@
         "url": "https://www.niftyindices.com/Factsheet/ind_nifty50.pdf"
       },
       "evidence": "Nifty 50 factsheet dated October 30, 2026, Statistics table: 'Total Return 1.95 -10.91 -9.45 6.70 12.15' for QTD, YTD, 1 Year, 5 Years, Since Inception; 'Returns for greater than one year are CAGR returns.' Base date November 03, 1995. The 5-year TRI CAGR is 6.70 and the 1-year -9.45. The URL is replaced each month. Read 2026-11-05."
-    },
-    "debt_fund": {
-      "name": "Long-run Indian debt return: the Nifty Composite Debt Index's annualised return since the index began, before fund costs and tax. An index, not a fund category average; a past return used as a planning assumption, not a promise or a forecast",
-      "value": 7.41,
-      "unit": "percent per year",
-      "as_of": "2026-10-31",
-      "as_of_means": "the end of the period measured; the index family's base date is 2001-09-03",
-      "source": {
-        "organisation": "NSE Indices Limited",
-        "url": "https://www.niftyindices.com/Factsheet/Factsheet_NIFTY_Aggregate_Indices.pdf"
-      },
-      "evidence": "Nifty Fixed Income Aggregate Indices factsheet, October 2026, 'Returns as on Oct 31, 2026': 'NIFTY Composite Debt Index ... -1.93 0.24 -0.05 5.30 7.41' for 3M, 6M, 1 Yr, 3 Yr, Since Inception; 'Returns for periods longer than 1 year are annualized'. Base date September 03, 2001; launch date February 09, 2018 (earlier values presumably back-calculated; the factsheet does not say). The URL is replaced each month. Read 2026-11-05."
     }
   }
 }

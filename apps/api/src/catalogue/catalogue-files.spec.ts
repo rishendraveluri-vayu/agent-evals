@@ -141,7 +141,7 @@ describe('the built-in toolset', () => {
     expect(allowed).toHaveLength(19);
     expect(allowed.slice(11, 18)).toEqual([...ARITHMETIC_TOOLS]);
     expect(allowed.slice(18)).toEqual([...REFERENCE_TOOLS]);
-    expect(t.manifest[0].server_version).toBe('0.4.0');
+    expect(t.manifest[0].server_version).toBe('0.4.1');
     const rates = t.manifest[0].tools.find((x) => x.name === 'reference_rates');
     expect(rates?.description).toMatch(/^Documented Indian market assumptions/);
     expect(rates?.description).toMatch(/dated snapshot, not live rates\.$/);
@@ -162,7 +162,9 @@ describe('the built-in toolset', () => {
     // record of the hash its configs and trials carry.
     const pinned: Record<string, string> = {
       v2: 'sha256:58700d434a81fa022fa63ddccda368d805775d5a6b1e9b7c55af7d09789ccb82',
-      v3: 'sha256:ffb6063019a7b3a9ba07b9843a4ee4eeb36ba2d48ea8ae15e150ea843267177c',
+      // Re-pinned once, on 5 Nov, before any run used v3: server 0.4.0 (seven proposed rates,
+      // sha256:ffb60630...) became 0.4.1 (six approved, debt_fund removed).
+      v3: 'sha256:8e0508d29b7d8b66b32454c2e884092bbe3b41d45bf27667bd91715eeb987148',
     };
     const [t] = builtInToolsets(server);
     expect(t.version).toBe(FINANCE_TOOLSET_VERSION);

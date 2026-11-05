@@ -32,7 +32,7 @@ outputs and final answers exactly, so every tool is deterministic. The same inpu
 | `percent_of` | `percent` percent of `value`: `value × percent / 100`. |
 | `percent_change` | The change from `from_value` to `to_value`, as a difference and as a percent of `from_value`. |
 | `round` | A number rounded half-up to `places` decimals (default 2; negative places round to tens, thousands, lakhs). |
-| `reference_rates` | Documented Indian market assumptions (FD, savings, PPF, CPI inflation, repo rate, long-run equity and debt returns), each with its value, unit, source and date. |
+| `reference_rates` | Documented Indian market assumptions (FD, savings, PPF, CPI inflation, repo rate, a long-run equity return), each with its value, unit, source and date. |
 
 All 19 tools are read-only (`readOnlyHint: true`). The full manifest the agents see is in
 `tests/snapshots/tools_manifest.json`, and a test fails on any change to it.
@@ -202,8 +202,10 @@ arithmetic input be a unit fact (12 months, 365 days, 100 for a percentage) with
   effect, the month an inflation figure measures, the end of a return period), `source`
   (`organisation`, `url`) and `evidence`, the verbatim text the value was read from and when.
   The tool serves everything but `evidence`, plus the file's `compiled_on` date and `note`.
-- **Proposed, then approved.** The values were gathered on 5 Nov 2026 and are proposed for
-  Rishi's approval before any run uses them. Edit the file to change one.
+- **Approved by Rishi, 5 Nov.** The six values were gathered on 5 Nov 2026 and approved at
+  review (the file's `approval`, not served); a seventh, `debt_fund`, an index return rather
+  than what a debt-fund investor earns after costs, was removed (server 0.4.1). Edit the file
+  to change one.
 - **A snapshot, not live rates.** The server has no network; a value stays what the file says
   until someone edits it. Each `as_of` says how old it is.
 - **Numbers are values only.** No text field holds a standalone number (names say "three
@@ -214,7 +216,7 @@ arithmetic input be a unit fact (12 months, 365 days, 100 for a percentage) with
   `tests/test_reference.py` pins the served bytes to the server version. Change a value, bump
   `__version__` (and `pyproject.toml`), pin the new bytes, and the API's toolset hash changes
   with it, so a trial's toolset says which values it was shown.
-- **No arguments.** It returns every rate at once, about 3,400 characters.
+- **No arguments.** It returns every rate at once, about 2,900 characters.
 
 ## What a result looks like
 

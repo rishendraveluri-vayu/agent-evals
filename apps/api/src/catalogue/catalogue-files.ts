@@ -205,7 +205,8 @@ export const FINANCE_TOOLS = [
  *   that used it keep their toolset row, its manifest and its hash.
  * - `v2` (5 Nov, D54): the eleven plus the seven arithmetic tools, at server 0.3.0. Not listed
  *   since v3, for the same reason as `all`; what recorded it keeps it.
- * - `v3` (5 Nov, D58): v2's eighteen plus `reference_rates`, at server 0.4.0. The rates' values
+ * - `v3` (5 Nov, D58): v2's eighteen plus `reference_rates`, at server 0.4.1 (six rates approved
+ *   by Rishi; it was 0.4.0, with a seventh, before any run used it, so v3 was re-pinned). The rates' values
  *   are pinned to the server version (services/finance-mcp/tests/test_reference.py), so a
  *   changed value is a new server version and so a new toolset version here.
  */

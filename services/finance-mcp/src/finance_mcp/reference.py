@@ -8,7 +8,9 @@ A test pins those bytes to the server version, so a change to a value is a new s
 so a new toolset hash.
 
 Each entry in the file also holds `evidence`: the verbatim text the value was read from, and
-when, for whoever reviews the file. It is not served; the agent sees only the fields in SERVED.
+when, for whoever reviews the file, and the file says who approved it (`approval`: "approved
+by Rishi, 5 Nov"). Neither is served; the agent sees `compiled_on`, `note` and, for each rate,
+the fields in SERVED.
 
 The file is checked when the server starts, so a malformed edit fails there, not in a trial.
 """
@@ -48,9 +50,10 @@ def validate(data: Any) -> dict[str, Any]:
     """The file's content if it is well formed, else ReferenceDataError. Every rate has every
     field in REQUIRED and nothing else; values are numbers; dates are real and not after
     `compiled_on`; URLs are https."""
-    if not isinstance(data, dict) or set(data) != {"compiled_on", "note", "rates"}:
-        raise ReferenceDataError("the file must hold exactly compiled_on, note and rates")
+    if not isinstance(data, dict) or set(data) != {"compiled_on", "approval", "note", "rates"}:
+        raise ReferenceDataError("the file must hold exactly compiled_on, approval, note and rates")
     compiled = _real_date(data["compiled_on"], "compiled_on")
+    _text(data["approval"], "approval")
     _text(data["note"], "note")
     rates = data["rates"]
     if not isinstance(rates, dict) or not rates:
