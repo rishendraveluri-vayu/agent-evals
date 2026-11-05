@@ -271,7 +271,7 @@ The order matters because the rubric freezes with the platform:
 - [ ] Finish `known-limits.md` and `assumptions.md`
 - [ ] Finish `cost.md`: formula, actual spend, how to reduce cost
 - [ ] Walk the Brief traceability table line by line
-- [ ] Test a clean-clone run
+- [x] Test a clean-clone run (6 Nov, e79aa26, keyless, no .env, cold build with no cache: 254 s build + 48 s start; every README test command passed; smoke 7/7, netcheck 6/6, kill test PASS, a 24-trial fake run graded, compared and exported; every route on desktop and phone with no console or HTTP errors and no sideways scroll; add a harness and add a task as the README says)
 - [ ] Record the video, 10 minutes or less
 - [ ] Submit
 
