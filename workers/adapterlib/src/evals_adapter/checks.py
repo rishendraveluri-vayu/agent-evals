@@ -13,28 +13,35 @@
    half-up, or cut (truncated) to the digits written ("about ₹8,997" matches 8997.26, "₹1,667"
    matches 1667.50, "₹1.23 lakh" matches 123,456). Trailing zeros in a whole amount may also be
    rounding, as long as two significant digits remain and the number is within 1% of the
-   amount ("about ₹49,500" matches 49,483; "₹31,000" does not match 31,330). An amount that
-   matches nothing is `unsupported`: a calculation with no tool behind it, to be flagged or at
-   least highlighted. This is a heuristic for a reader, not a grade.
+   amount ("about ₹49,500" matches 49,483; "₹31,000" does not match 31,330). This is a
+   heuristic for a reader, not a grade.
 
-   **Arithmetic tools (D56).** The result of an arithmetic tool (`add`, `subtract`, `multiply`,
-   `divide`, `percent_of`, `percent_change`, `round`) is a source only when the call returned no
-   error and every number it was given is itself supported: by an earlier non-arithmetic tool
-   result, an earlier supported arithmetic result, the client file, or a user message the agent
-   had by then. Inputs are matched exactly as written amounts are (the same `_match_rank`, at the
-   precision the argument is written in), and calls are traced in start order, so a chain (add,
-   then subtract on its result, then round) is supported when its first inputs are. A made-up
-   figure no longer becomes "supported" by passing through `round(x)` or `add([x, 0])`. Every
-   arithmetic call is listed in `arithmetic`, with each input's match and, when the result does
-   not count, the reason; an amount whose only match is such a result names it in `rejected`.
-   The other tools' results count as before, whatever their inputs.
+   **Verify, don't trace (D61, A44).** Each amount is verified one of three ways, recorded in
+   `verified_by`:
 
-   **Unit facts and the identity guard (D58).** An input equal to one of UNIT_FACTS (7, 12, 28
-   to 31, 52, 100, 365, 366, a lakh and a crore) needs no source, so `multiply([emi, 12])` and
-   `divide(annual, 365)` count when the other input does; 0 and 1 are never unit facts. A result
-   that only repeats an input with no source never counts, whatever UNIT_FACTS holds: `round(365)`
-   or `add([100, 0])` would otherwise turn a constant into a supported figure. "Repeats" is the
-   amounts' rule again: the result, at the digits it was returned with, matches the input.
+   - `source`: it matches a number in a source, as above;
+   - `tool`: it matches the result of an arithmetic call that counts (below);
+   - `derived_in_prose`: the checker recomputes it as a one-step derivation of numbers a reader
+     can see (derive.py): a sum or difference of a figure the answer wrote and verified and
+     another such figure or a sourced amount; a sourced amount or written figure times or
+     divided by 12 or a count the answer writes ("3 months"); a percentage of one at a rate the
+     answer states or a source holds; or the sum of a run of 3 to 8 verified figures written
+     next to it. It must match at the precision written, not by trailing-zeros rounding.
+
+   Anything else is `unsupported`, a wrong sum included. `derived_in_prose` counts the figures
+   written without a tool, the measure D61 reports per arm.
+
+   **Arithmetic tools** (`add`, `subtract`, `multiply`, `divide`, `percent_of`,
+   `percent_change`, `round`): a call's result counts when the call returned no error and each
+   number it was given is sourced (an earlier non-arithmetic tool result or counted arithmetic
+   result, the client file, or a message up to the call's turn) or a free factor (a unit fact,
+   a whole number from 1 to 60, a percentage the replies state); add, subtract, percent_change
+   and round need a source for every input; every call needs one sourced amount (100 or more);
+   and no number in its result only repeats an input with no source (D58's identity guard). So
+   `multiply([emi, 12])` counts and `multiply([100, 12])` does not, and `round(x)` or
+   `add([x, 0])` on a made-up x does not. Every call is listed in `arithmetic` with each input's
+   status and, when it does not count, the reason; an amount whose only match is such a result
+   names it in `rejected`. The other tools' results count whatever their inputs.
 
 2. **Required tool calls** (a grader primitive). A task may list `required_tools` in the spec;
    the check records which of them the agent called and which are missing, from the trace's
@@ -50,11 +57,12 @@ import json
 import re
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from evals_adapter.derive import AMOUNT_MIN, Derivation, Operand, Pool, Pools, find
 from evals_adapter.spec import CONTRACT_VERSION, TrialPaths
 
 SOURCES = ("tool", "client", "user")  # also the order of preference between equal matches
@@ -114,6 +122,53 @@ NOT_FIGURES = {"round": frozenset({"places"})}
 UNIT_FACTS = frozenset(
     Decimal(n) for n in (7, 12, 28, 29, 30, 31, 52, 100, 365, 366, 100_000, 10_000_000)
 )
+
+# D61 (A44): figures are verified, not traced. A figure counts when it matches a source, or when
+# the checker recomputes it as a one-step derivation (derive.py) with at least one sourced amount.
+# Free factors, which an arithmetic tool's input may be without a source: the unit facts, whole
+# numbers from 1 to COUNT_MAX (counts and periods: months, years, people, instalments), and
+# percentages written in the agent's replies.
+COUNT_MAX = 60
+# A derivation in prose uses only factors a reader can see: a count written in the replies (a
+# whole number from 2 to WRITTEN_COUNT_MAX that is not a money amount, in digits or as a word up
+# to twelve), 12 (months in a year, nearly always said in words), a percentage written in the
+# replies, or a rate in a source (a number written with %, or a JSON number under a key that
+# names a rate or percentage).
+WRITTEN_COUNT_MAX = 600
+_WORDS = "two three four five six seven eight nine ten eleven twelve"
+NUMBER_WORDS = {w: Decimal(n) for n, w in enumerate(_WORDS.split(), start=2)}
+# A count is a number written right before what it counts: "3 months", "24 EMIs", "two people".
+COUNTED = (
+    r"months?|years?|yrs?|weeks?|days?|quarters?|people|persons?|members?|children|kids|"
+    r"instal?l?ments?|EMIs?|payments?|times|visits?|sessions?"
+)
+CURRENCY_BEFORE = re.compile(r"(?:₹|\bRs\.?|\bINR)[ \t]*$", re.IGNORECASE)
+COUNT_TEXT = re.compile(
+    rf"(?<![\w.,])(?P<n>\d+|{'|'.join(NUMBER_WORDS)})[ \t-]*(?:more[ \t]+|extra[ \t]+)?"
+    rf"(?:{COUNTED})\b",
+    re.IGNORECASE,
+)
+# A JSON key names a rate when one of its words (split at _) is one of these: annual_rate_pct,
+# inflation_pct, expected_annual_return_pct. Not "returned_count".
+RATE_WORDS = frozenset(
+    {"pct", "percent", "percentage", "rate", "rates", "inflation", "return", "cagr"}
+)
+# A run of this many figures written one after another in a reply may add up to a figure next
+# to it ("₹9,650, ₹18,500 and ₹2,605: about ₹30,750").
+RUN_MIN, RUN_MAX = 3, 8
+# A percentage in text: "7.4%", "7.4 %", "7.4 per cent".
+PERCENT_TEXT = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)[ \t]*(?:%|per[ \t]?cent\b)", re.IGNORECASE)
+# Arithmetic tools whose inputs must all have a source: a sum, a difference, a percent change
+# and a rounding work on amounts, never on a free factor. The others (multiply, divide,
+# percent_of) need one sourced amount; their other inputs may be free factors.
+EVERY_INPUT_SOURCED = frozenset({"add", "subtract", "percent_change", "round"})
+SOURCED = ("tool", "client", "user")  # an input's supported_by when a source holds it
+# Whether a coarse match (trailing zeros within 1%) may verify a derivation, as it may a source.
+# It may not (A44): a round figure is usually a choice or an estimate ("such as ₹4,500 a month"),
+# and within 1% nearly every round figure is some sum or share of the numbers in an answer. On
+# the 4 Nov transcripts it raised the share of figures moved 7% to 13% off that still "derived"
+# from 4.5% to 10.9%. The cost: "about ₹40,200" for 40,211.63 stays unsupported.
+DERIVE_COARSE = False
 
 
 @dataclass(frozen=True)
@@ -271,6 +326,7 @@ class Source:
     numbers: list[Decimal]
     call: int | None = None  # a tool source: the call's position among the trial's tool calls
     arithmetic: bool = False  # an arithmetic tool's result, a source only if its call is (D56)
+    rates: list[Decimal] = field(default_factory=list)  # D61: its rates and percentages
 
 
 def _attrs(span: dict[str, Any]) -> dict[str, Any]:
@@ -345,10 +401,11 @@ def gather_sources(
                     source_numbers(str(call["result"])),
                     call=call["index"],
                     arithmetic=call["name"] in ARITHMETIC_TOOLS,
+                    rates=source_rates(str(call["result"])),
                 )
             )
     for name, text in sorted(client_files.items()):
-        sources.append(Source("client", name, -1, source_numbers(text)))
+        sources.append(Source("client", name, -1, source_numbers(text), rates=source_rates(text)))
     agent_turn = 0
     for index, entry in enumerate(transcript):
         if entry.get("source") == "agent":
@@ -356,7 +413,9 @@ def gather_sources(
             continue
         if entry.get("role") == "user":
             where = f"{entry.get('source') or 'user'}:{index}"
-            sources.append(Source("user", where, agent_turn, source_numbers(entry["content"])))
+            text = entry["content"]
+            numbers, rates = source_numbers(text), source_rates(text)
+            sources.append(Source("user", where, agent_turn, numbers, rates=rates))
     return sources
 
 
@@ -470,6 +529,137 @@ def is_unit_fact(number: Decimal) -> bool:
     return number.is_finite() and abs(number) in UNIT_FACTS
 
 
+def percentages(text: str) -> set[Decimal]:
+    """D61: the percentages written in a reply ("7.4%", "12 per cent"), which are free factors."""
+    out: set[Decimal] = set()
+    for m in PERCENT_TEXT.finditer(text or ""):
+        try:
+            out.add(Decimal(m.group(1)))
+        except InvalidOperation:
+            continue
+    return out
+
+
+def _walk_rates(value: Any, key: str, out: list[Decimal]) -> None:
+    if isinstance(value, dict):
+        unit = value.get("unit")
+        for k, item in value.items():
+            percent_value = k == "value" and isinstance(unit, str) and unit.startswith("percent")
+            _walk_rates(item, "pct" if percent_value else str(k), out)
+    elif isinstance(value, list):
+        for item in value:
+            _walk_rates(item, key, out)
+    elif isinstance(value, Decimal) and RATE_WORDS & set(re.split(r"[_\W]+", key.lower())):
+        out.append(abs(value))
+
+
+def source_rates(text: str) -> list[Decimal]:
+    """D61: the rates and percentages in a source, which a derivation in prose may take a
+    percentage at: numbers written with % (or "per cent"), and, in a JSON source, numbers under
+    a key that names a rate or a percentage (annual_rate_pct, inflation) or a `value` whose
+    `unit` is a percent (reference_rates)."""
+    out = sorted(percentages(text))
+    try:
+        data = json.loads(text, parse_float=Decimal, parse_int=Decimal)
+    except (ValueError, TypeError):
+        return out
+    found: list[Decimal] = []
+    _walk_rates(data, "", found)
+    return out + found
+
+
+def written_counts(text: str) -> set[Decimal]:
+    """D61: the counts written in a reply, which a derivation in prose may multiply or divide by:
+    a whole number from 2 to WRITTEN_COUNT_MAX, in digits or as a word from two to twelve,
+    written right before what it counts ("3 months", "24 EMIs", "two people")."""
+    out: set[Decimal] = set()
+    for m in COUNT_TEXT.finditer(text or ""):
+        if CURRENCY_BEFORE.search(text[max(0, m.start() - 6) : m.start()]):
+            continue  # money, not a count: "₹40 a day"
+        word = m.group("n").lower()
+        n = NUMBER_WORDS.get(word) or Decimal(word)
+        if 2 <= n <= WRITTEN_COUNT_MAX:
+            out.add(n)
+    return out
+
+
+def is_free_factor(number: Decimal, percents: set[Decimal]) -> bool:
+    """D61: a number that needs no source: a unit fact, a whole number from 1 to COUNT_MAX, or a
+    percentage the agent wrote in its replies."""
+    if not number.is_finite():
+        return False
+    n = abs(number)
+    whole = n == n.to_integral_value()
+    return n in UNIT_FACTS or (whole and 1 <= n <= COUNT_MAX) or n in percents
+
+
+def _window(amount: Amount, coarse: bool) -> tuple[Decimal, Decimal]:
+    """Every value that can match `amount` lies in this range, in rupees (a superset: the match
+    rank decides). Rounded half-up or truncated to the digits shown, or within 1% when trailing
+    zeros may be rounding."""
+    step = Decimal(1).scaleb(-amount.decimals)
+    shown = abs(amount.shown)
+    lo, hi = shown - step / 2, shown + step
+    if coarse and amount.decimals == 0 and shown != 0:
+        lo, hi = min(lo, shown * (1 - COARSE_TOLERANCE)), max(hi, shown * (1 + COARSE_TOLERANCE))
+    return max(lo, Decimal(0)) * amount.unit, hi * amount.unit
+
+
+def _ranker(amount: Amount, coarse: bool) -> Callable[[Decimal], int | None]:
+    def rank(value: Decimal) -> int | None:
+        ranked = _match_rank(amount, value)
+        if ranked is None or (ranked[0] == 3 and not coarse):
+            return None
+        return ranked[0]
+
+    return rank
+
+
+def _where(source: Source) -> str:
+    return f"{source.kind}:{source.where}" if source.kind != "user" else source.where
+
+
+def _pools(
+    sources: list[Source],
+    usable: Callable[[Source], bool],
+    written: list[tuple[Decimal, str]],
+    counts: list[tuple[Decimal, str]],
+    percents: list[tuple[Decimal, str]],
+) -> Pools:
+    """The pools for a derivation in prose (A44): the figures verified in the answer so far
+    (`written`, with where they were written); the amounts (those, and every sourced number of
+    AMOUNT_MIN or more in the usable sources); the multipliers (12, and the counts written in the
+    replies); and the percents (those written in the replies, and the usable sources' rates).
+    Sources are offered tool first, then client, then user, so a value is labelled with the
+    best place it was found."""
+    ordered = sorted((s for s in sources if usable(s)), key=lambda s: SOURCES.index(s.kind))
+    mine = [Operand(abs(v), where) for v, where in written]
+    sourced = [Operand(abs(n), _where(s)) for s in ordered for n in s.numbers]
+    rates = [Operand(r, _where(s)) for s in ordered for r in s.rates]
+    return Pools(
+        written=Pool(mine),
+        amounts=Pool([*mine, *(o for o in sourced if o.value >= AMOUNT_MIN)]),
+        multipliers=Pool(
+            [Operand(Decimal(12), "unit fact"), *(Operand(abs(v), w) for v, w in counts)]
+        ),
+        percents=Pool([*(Operand(abs(v), w) for v, w in percents), *rates]),
+    )
+
+
+def _derivation(d: Derivation) -> dict[str, Any]:
+    """checks.json's `derivation` for a figure or an input verified as a derivation (D61)."""
+    return {
+        "op": d.op,
+        "operands": [{"value": _number(o.value), "where": o.where} for o in d.operands],
+        "value": _number(d.value),
+        "how": HOW[d.rank],
+    }
+
+
+def _derive(amount: Amount, pools: Pools) -> Derivation | None:
+    return find(_window(amount, DERIVE_COARSE), _ranker(amount, DERIVE_COARSE), pools)
+
+
 def _repeated_input(
     result: list[Decimal], unsourced: list[Decimal]
 ) -> tuple[Decimal, Decimal] | None:
@@ -488,19 +678,44 @@ def _repeated_input(
     return None
 
 
+def _replies(transcript: list[dict[str, Any]]) -> list[tuple[int, str]]:
+    """The agent's replies as (turn, text), turns from 0."""
+    out = []
+    for entry in transcript:
+        if entry.get("source") == "agent":
+            out.append((len(out), entry.get("content") or ""))
+    return out
+
+
+def _percents_by_turn(replies: list[tuple[int, str]]) -> dict[int, set[Decimal]]:
+    """The percentages written in the replies up to and including each turn; -1 has them all."""
+    out: dict[int, set[Decimal]] = {}
+    seen: set[Decimal] = set()
+    for turn, text in replies:
+        seen = seen | percentages(text)
+        out[turn] = seen
+    out[-1] = seen
+    return out
+
+
 def trace_arithmetic(
-    calls: list[dict[str, Any]], sources: list[Source]
+    calls: list[dict[str, Any]],
+    sources: list[Source],
+    replies: list[tuple[int, str]] = (),  # type: ignore[assignment]
 ) -> tuple[list[dict[str, Any]], set[int]]:
-    """D56 and D58: each arithmetic call, in start order, and whether its result counts as a
-    source. It counts when the call returned no error, was given at least one number, every
-    number it was given matches a source the agent could have read by then (a non-arithmetic
-    tool result or an accepted arithmetic result from an earlier call, the client file, or a
-    user message up to the call's turn; every message, for a call with no turn parent) or is a
-    unit fact, and no number in its result only repeats an input that has no source (the
-    identity guard). Returns the calls' records, as checks.json's `arithmetic`, and the positions
-    of the accepted calls."""
+    """D61 (A44): each arithmetic call, in start order, and whether its result counts as a
+    source. Each number it was given is sourced (it matches a non-arithmetic tool result or a
+    counted arithmetic result from an earlier call, the client file, or a user message up to the
+    call's turn; or it is a one-step derivation of those), a free factor (a unit fact, a whole
+    number from 1 to COUNT_MAX, or a percentage written in the replies up to the call's turn), or
+    unsupported. The result counts when the call returned no error and was given numbers, none
+    unsupported; add, subtract, percent_change and round had a source for every input; at least
+    one input is a sourced amount (100 or more); and no number in the result only repeats an
+    input with no source (D58's identity guard). Returns the calls' records, as checks.json's
+    `arithmetic`, and the positions of the counted calls."""
     accepted: set[int] = set()
     records: list[dict[str, Any]] = []
+    percents_by_turn = _percents_by_turn(list(replies))
     for call in calls:
         name, index, turn = call["name"], call["index"], call["turn"]
         if name not in ARITHMETIC_TOOLS:
@@ -517,23 +732,36 @@ def trace_arithmetic(
         def unaccepted(s: Source, index: int = index) -> bool:
             return before(s, index) and s.arithmetic and s.call not in accepted
 
+        percents = percents_by_turn.get(turn, percents_by_turn.get(-1, set()))
         figures, unreadable = call_inputs(call)
-        inputs, missing, unsourced = [], [], []
+        inputs, missing, unsourced, unfree, amounts = [], [], [], [], []
         for arg, number in figures:
             amount = _input_amount(number)
             best = _best(amount, sources, supports) if amount else None
-            unit = best is None and is_unit_fact(number)
+            if best:
+                kind = best[3].kind
+            elif amount and is_unit_fact(number):
+                kind = "unit"
+            elif amount and is_free_factor(number, percents):
+                kind = "free"
+            else:
+                kind = None
             inputs.append(
                 {
                     "arg": arg,
                     "value": _number(number) if amount else None,
-                    "supported_by": best[3].kind if best else ("unit" if unit else None),
+                    "supported_by": kind,
                     "match": _match(best) if best else None,
                 }
             )
-            if best is None:
+            if kind in SOURCED:
+                if abs(number) >= AMOUNT_MIN:
+                    amounts.append(number)
+            else:
                 unsourced.append(number)
-            if best is None and not unit:
+                if kind is not None:
+                    unfree.append(_figure(number))
+            if kind is None:
                 via = _best(amount, sources, unaccepted) if amount else None
                 note = f" ({via[3].where}'s result, itself unsupported)" if via else ""
                 missing.append(_figure(number) + note)
@@ -551,6 +779,14 @@ def trace_arithmetic(
                 f"{name}'s {'input' if one else 'inputs'} {_listing(missing)}"
                 f" {'is' if one else 'are'} not supported"
             )
+        elif name in EVERY_INPUT_SOURCED and unfree:
+            one = len(unfree) == 1
+            reason = (
+                f"{name}'s {'input' if one else 'inputs'} {_listing(unfree)}"
+                f" {'has' if one else 'have'} no source ({name} needs a source for every input)"
+            )
+        elif not amounts:
+            reason = f"{name} was given no sourced amount (a sourced number of 100 or more)"
         elif repeated:
             reason = (
                 f"{name}'s result {_figure(repeated[0])} only repeats its input"
@@ -572,47 +808,118 @@ def trace_arithmetic(
     return records, accepted
 
 
+def _run_sum(
+    index: int, amounts: list[Amount], done: dict[int, dict[str, Any]], turn: int
+) -> Derivation | None:
+    """A run of RUN_MIN to RUN_MAX verified figures written one after another, just before or
+    just after figure `index` in the same reply, that adds up to it."""
+    amount = amounts[index]
+    rank = _ranker(amount, DERIVE_COARSE)
+    runs = []
+    for k in range(RUN_MIN, RUN_MAX + 1):
+        runs.append(range(index - k, index))
+        runs.append(range(index + 1, index + 1 + k))
+    best: Derivation | None = None
+    for run in runs:
+        if run.start < 0 or run.stop > len(amounts) or not all(i in done for i in run):
+            continue
+        parts = [amounts[i].value for i in run]
+        r = rank(sum(parts, Decimal(0)))
+        if r is not None and (best is None or r < best.rank):
+            operands = tuple(Operand(abs(v), f"answer:{turn}") for v in parts)
+            best = Derivation("sum", operands, sum(parts, Decimal(0)), r)
+    return best
+
+
 def provenance(
     transcript: list[dict[str, Any]],
     sources: list[Source],
     arithmetic: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """One row per money amount in the agent's replies, with its best match or none. An
-    arithmetic result counts only when `arithmetic` (trace_arithmetic's records) accepts its
-    call; an amount whose only matches are results that do not count names the best in
-    `rejected`, with the reason."""
+    """D61 (A44): one row per money amount in the agent's replies, verified one of three ways:
+    `source` (it matches a number in a source the agent had by the reply: a non-arithmetic tool
+    result, the client file, a user, client or task message), `tool` (it matches the result of
+    an arithmetic call that counts) or `derived_in_prose` (the checker recomputes it as a
+    one-step derivation with at least one sourced amount, from those sources and the figures
+    already verified in the replies; or as the sum of a run of verified figures next to it; or
+    it repeats a figure derived earlier). Else unsupported; an amount whose only match is an
+    arithmetic result that does not count names it in `rejected`, with the reason."""
     records = {r["call"]: r for r in arithmetic or []}
 
     def counts(source: Source) -> bool:
         return not source.arithmetic or bool(records.get(source.call, {}).get("supported"))
 
-    rows = []
-    agent_turn = -1
-    for entry in transcript:
-        if entry.get("source") != "agent":
-            continue
-        agent_turn += 1
-        for amount in money_amounts(entry.get("content") or ""):
+    answer: list[tuple[Decimal, str]] = []  # verified figures: (value, where written)
+    derived: list[tuple[Amount, str]] = []  # figures verified as derived, for repeats
+    tallies: list[tuple[Decimal, str]] = []  # counts written in the replies so far
+    stated: list[tuple[Decimal, str]] = []  # percentages written in the replies so far
+    rows: list[dict[str, Any]] = []
+    for turn, text in _replies(transcript):
+        tallies += [(n, f"answer:{turn}") for n in sorted(written_counts(text))]
+        stated += [(p, f"answer:{turn} %") for p in sorted(percentages(text))]
 
-            def readable(s: Source, turn: int = agent_turn) -> bool:
-                return s.turn <= turn  # read only after this reply was written otherwise
+        def readable(s: Source, turn: int = turn) -> bool:
+            return s.turn <= turn and counts(s)  # read only after this reply otherwise
 
-            best = _best(amount, sources, lambda s: readable(s) and counts(s))
-            row: dict[str, Any] = {
-                "turn": agent_turn,
-                "text": amount.text,
-                "value": _number(amount.value),
-                "supported_by": best[3].kind if best else None,
-                "match": _match(best) if best else None,
-                "rejected": None,
-            }
-            if best is None:
-                rejected = _best(amount, sources, lambda s: readable(s) and not counts(s))
+        amounts = money_amounts(text)
+        done: dict[int, dict[str, Any]] = {}
+        for i, amount in enumerate(amounts):
+            best = _best(amount, sources, readable)
+            if best:
+                by = "tool" if best[3].arithmetic else "source"
+                done[i] = _row(turn, amount, best[3].kind, _match(best), by, None)
+                answer.append((amount.value, f"answer:{turn}"))
+        changed = True
+        while changed and len(done) < len(amounts):
+            changed = False
+            pools = _pools(sources, readable, answer, tallies, stated)
+            for i, amount in enumerate(amounts):
+                if i in done:
+                    continue
+                found = _derive(amount, pools) or _run_sum(i, amounts, done, turn)
+                if found is None:
+                    rank = _ranker(amount, DERIVE_COARSE)
+                    for earlier, where in derived:
+                        r = rank(earlier.value)
+                        if r is not None:
+                            operand = Operand(abs(earlier.value), where)
+                            found = Derivation("repeat", (operand,), earlier.value, r)
+                            break
+                if found is not None:
+                    done[i] = _row(turn, amount, "derived", None, "derived_in_prose", found)
+                    answer.append((amount.value, f"answer:{turn}"))
+                    derived.append((amount, f"answer:{turn}"))
+                    changed = True
+        for i, amount in enumerate(amounts):
+            if i not in done:
+                row = _row(turn, amount, None, None, None, None)
+                rejected = _best(amount, sources, lambda s, t=turn: s.turn <= t and not counts(s))
                 if rejected is not None:
                     reason = records.get(rejected[3].call, {}).get("reason") or "not supported"
                     row["rejected"] = {**_match(rejected), "reason": reason}
-            rows.append(row)
+                done[i] = row
+            rows.append(done[i])
     return rows
+
+
+def _row(
+    turn: int,
+    amount: Amount,
+    by: str | None,
+    match: dict[str, Any] | None,
+    verified_by: str | None,
+    derivation: Derivation | None,
+) -> dict[str, Any]:
+    return {
+        "turn": turn,
+        "text": amount.text,
+        "value": _number(amount.value),
+        "supported_by": by,
+        "match": match,
+        "verified_by": verified_by,
+        "derivation": _derivation(derivation) if derivation else None,
+        "rejected": None,
+    }
 
 
 def required_tools_check(
@@ -653,7 +960,7 @@ def run_checks(
     transcript = ((result or {}).get("conversation") or {}).get("transcript") or []
     calls = tool_calls(spans)
     sources = gather_sources(calls, transcript, files)
-    arithmetic, _ = trace_arithmetic(calls, sources)
+    arithmetic, _ = trace_arithmetic(calls, sources, _replies(transcript))
     rows = provenance(transcript, sources, arithmetic)
     required = ((spec or {}).get("task") or {}).get("required_tools")
     seen: list[str] = []
@@ -666,6 +973,7 @@ def run_checks(
         "trial_id": trial_id or "unknown",
         "amounts": rows,
         "unsupported": sum(1 for r in rows if r["supported_by"] is None),
+        "derived_in_prose": sum(1 for r in rows if r["verified_by"] == "derived_in_prose"),
         "tools_called": seen,
         "required_tools": required_tools_check(required, calls),
         "arithmetic": arithmetic,
@@ -686,16 +994,27 @@ def check_trial(paths: TrialPaths, spec: dict[str, Any] | None = None) -> dict[s
 
 
 def summary(checks: dict[str, Any]) -> str:
-    lines = [f"{checks['trial_id']}: {checks['unsupported']} unsupported amount(s)"]
+    derived = checks.get("derived_in_prose")
+    lines = [
+        f"{checks['trial_id']}: {checks['unsupported']} unsupported amount(s)"
+        + (f", {derived} derived in prose" if derived else "")
+    ]
     for row in checks["amounts"]:
         if row["supported_by"] is None:
             rejected = row.get("rejected")
             why = (
                 f"{rejected['where']} matched, but {rejected['reason']}"
                 if rejected
-                else "no tool, client or user number"
+                else "no tool, client or user number, and no derivation"
             )
             lines.append(f"  turn {row['turn']}: {row['text']} ({why})")
+        elif row.get("derivation"):
+            d = row["derivation"]
+            parts = ", ".join(f"{o['value']} from {o['where']}" for o in d["operands"])
+            lines.append(
+                f"  turn {row['turn']}: {row['text']} = {d['op']}({parts}) = {d['value']}"
+                f" ({d['how']}, derived in prose)"
+            )
         else:
             m = row["match"]
             lines.append(

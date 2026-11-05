@@ -222,6 +222,8 @@ def write_checks(paths: TrialPaths, spec: dict[str, Any], result: dict[str, Any]
             "valid": False,
             "errors": [f"checks failed: {type(exc).__name__}: {exc}"[:500]],
             "unsupported_amounts": None,
+            "amounts": None,
+            "derived_in_prose": None,
             "missing_tools": None,
         }
     target = paths.out / "checks.json"
@@ -239,6 +241,8 @@ def write_checks(paths: TrialPaths, spec: dict[str, Any], result: dict[str, Any]
         "valid": not errors,
         "errors": errors[:50],
         "unsupported_amounts": checks["unsupported"],
+        "amounts": len(checks["amounts"]),
+        "derived_in_prose": checks["derived_in_prose"],
         "missing_tools": None if required is None else list(required["missing"]),
     }
 

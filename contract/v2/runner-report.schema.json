@@ -248,6 +248,22 @@
           ],
           "minimum": 0
         },
+        "amounts": {
+          "description": "D61: how many money amounts the replies hold. Absent before D61; null when the checks could not run.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "derived_in_prose": {
+          "description": "D61: how many of them the checker verified only by recomputing them, i.e. written without a tool (checks.json derived_in_prose). The comparison reports it per arm. Absent before D61; null when the checks could not run.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
         "missing_tools": {
           "description": "Null when the task lists no required_tools.",
           "oneOf": [
