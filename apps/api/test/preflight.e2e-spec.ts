@@ -278,6 +278,54 @@ describeWithDb('pre-run rendered prompt, conflict check and spend (e2e, real Pos
     expect(env.stub.chatCalls.length).toBe(calls + 2); // the bad reply, then one good call
   });
 
+  it('D75: a Hermes run on a real model starts only after a conflict check of its current prompt and settings', async () => {
+    const newRun = async (config: string, name: string): Promise<string> =>
+      (
+        (
+          await request(env.http)
+            .post('/api/experiments')
+            .send({ name, axis: 'none', config_hashes: [config], task_sha256s: [cat.tasks['emi-basic']], n: 1, budget_usd: 5 })
+            .expect(201)
+        ).body as { id: string }
+      ).id;
+    const start = (id: string) => request(env.http).post(`/api/experiments/${id}/start`);
+
+    // No rendered prompt and no check: refused, with the fix, and nothing is called or spent.
+    const real = await makeConfig(env.http, cat, { name: 'hermes on haiku', harness: 'hermes', model: 'claude-haiku-5-5', settings: { max_steps: 17 } });
+    const exp = await newRun(real, 'D75 gate');
+    const calls = env.stub.chatCalls.length;
+    const refused = await start(exp).expect(409);
+    expect(refused.body).toMatchObject({ error: 'conflict_check_required' });
+    expect((refused.body as { message: string }).message).toContain('(Hermes on claude-haiku-5-5)');
+    expect((refused.body as { fix: string }).fix).toContain(`/conflict-check`);
+    expect(((await request(env.http).get(`/api/experiments/${exp}`).expect(200)).body as { status: string }).status).toBe('created');
+
+    // Rendered but not checked: still refused.
+    await render(real, 'hermes', hermesSystem());
+    await start(exp).expect(409);
+    expect(env.stub.chatCalls.length).toBe(calls); // the gate reads stored checks only, it never calls
+
+    // Checked: it starts. The findings do not block (the checker is unvalidated).
+    env.stub.chatReply = JSON.stringify(FINDINGS);
+    expect(((await check(real).expect(200)).body as ConflictCheckView).conflicts[0].severity).toBe('high');
+    await start(exp).expect(200);
+
+    // Changed settings are a new input: the new config needs its own check.
+    const changed = await makeConfig(env.http, cat, { name: 'hermes on haiku, 19 steps', harness: 'hermes', model: 'claude-haiku-5-5', settings: { max_steps: 19 } });
+    await render(changed, 'hermes', hermesSystem());
+    await start(await newRun(changed, 'D75 changed settings')).expect(409);
+
+    // Exempt: Hermes on a fake model (tests, CI), and harnesses other than Hermes on a real model.
+    const fake = await newRun(hermes, 'D75 fake model');
+    await start(fake).expect(200);
+    const ownReal = await makeConfig(env.http, cat, { name: 'own loop on haiku, gate', harness: 'ownloop', model: 'claude-haiku-5-5', settings: { max_steps: 17 } });
+    const own = await newRun(ownReal, 'D75 own loop');
+    await start(own).expect(200);
+
+    // Leave no queued trial for the tests after this one to claim.
+    for (const id of [exp, fake, own]) await request(env.http).post(`/api/experiments/${id}/cancel`).expect(200);
+  });
+
   it('refuses with 402 allowance_exhausted when a check could pass the allowance, and makes no call', async () => {
     const cfg = await makeConfig(env.http, cat, { name: 'hermes over budget', harness: 'hermes', settings: { max_steps: 13 } });
     await render(cfg, 'hermes', hermesSystem());

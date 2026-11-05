@@ -30,7 +30,7 @@ import type {
   TrialStatus,
 } from '../contract';
 import { EXPERIMENT_NAME_MAX, GRADER_SEVERITIES, TRIAL_STATUSES } from '../contract';
-import { badRequest, conflict, notFound } from '../common/api-error';
+import { ApiError, badRequest, conflict, notFound } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { hashCanonical, normalizeSha } from '../common/hashing';
 import { type AnalysisResult, STATS_METHOD_VERSION, type TaskInput, type TrialInput, analyse } from '../stats/analysis';
@@ -43,6 +43,8 @@ import { newId } from '../common/ids';
 import { CatalogueService, type StoredPrompt, type StoredTask, taskView } from '../catalogue/catalogue.service';
 import { SCAFFOLD_PLACEHOLDER, isScaffolded } from '../catalogue/catalogue-files';
 import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.service';
+import { PreflightService } from '../preflight/preflight.service';
+import { conflictGateError, needsConflictCheck } from './conflict-gate';
 import { Db, type Queryable } from '../database/db.service';
 import { NOT_EXAMPLE_TRIAL, assertNotExample } from '../examples/example-guard';
 import { JudgeService } from '../judge/judge.service';
@@ -152,6 +154,7 @@ export class ExperimentsService {
     private readonly catalogue: CatalogueService,
     private readonly litellm: LiteLlmClient,
     private readonly judge: JudgeService,
+    private readonly preflight: PreflightService,
   ) {}
 
   // ---- planning ----
@@ -528,12 +531,34 @@ export class ExperimentsService {
       );
     }
     if (exp.status === 'paused') return this.resume(id);
+    if (exp.status === 'created') await this.requireConflictChecks(exp);
     await this.db.tx(async (client) => {
       if (planCommit !== null) await client.query(`UPDATE experiments SET plan_commit = $2 WHERE id = $1 AND status = 'created'`, [id, planCommit]);
       await client.query(`UPDATE experiments SET status = 'running', started_at = coalesce(started_at, now()) WHERE id = $1 AND status = 'created'`, [id]);
       await finishIfDone(client, id);
     });
     return this.get(id);
+  }
+
+  /**
+   * D75: refuses to start while a Hermes config on a real model has no conflict check for its
+   * current input (rendered prompt, our prompt, settings). Reads stored checks only: it never
+   * calls the checker or spends; the Run screen runs the missing checks before it starts.
+   */
+  private async requireConflictChecks(exp: Pick<ExperimentRow, 'config_hashes'>): Promise<void> {
+    const configs = await this.db.query<ConfigRow>(`${CONFIG_SELECT} WHERE c.hash = ANY($1)`, [[...new Set(exp.config_hashes)]]);
+    const missing: ConfigRow[] = [];
+    for (const cfg of configs.filter(needsConflictCheck)) {
+      const stored = await this.preflight.storedCheck(cfg.hash).catch((err: unknown) => {
+        if (err instanceof ApiError && err.code === 'rendered_prompt_required') return null;
+        throw err;
+      });
+      if (!stored) missing.push(cfg);
+    }
+    if (missing.length) {
+      const { message, fix } = conflictGateError(missing);
+      throw conflict('conflict_check_required', message, fix);
+    }
   }
 
   /**

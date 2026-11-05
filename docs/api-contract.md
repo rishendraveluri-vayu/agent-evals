@@ -258,7 +258,7 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
     (review header stripped). User message: `<harness_text>`, `<task_prompt>` and `<settings>`
     blocks (the config's resolved settings as JSON).
   - **Call.** `claude-sonnet-5-5` through LiteLLM's `/v1/chat/completions`, with a key the API
-    mints for this call (model-limited, budget $0.10) and revokes after. `max_tokens: 2000`;
+    mints for this call (model-limited, budget $0.10) and revokes after. `max_tokens: 6000` (since `3a1d009`; it was 2000);
     temperature is not sent and no thinking setting is sent, so the model's defaults apply
     (D38). Thinking counts towards `max_tokens`, so a long think can cut the reply short; that
     reply is refused, not repaired.
@@ -281,8 +281,8 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
     answer is 200 with `skipped: "no_harness_text"`, no conflicts, `cost_usd: 0`, and no call.
     When our prompt was not found in the rendered prompt, 409 `task_prompt_not_located`.
   - **Allowance (D38).** Before the call the API reserves the check's worst case: input
-    characters ÷ 2 as tokens at the input price plus 2,000 output tokens at the output price
-    (about $0.03 today), at LiteLLM's prices for the model. If settled spend plus open
+    characters ÷ 2 as tokens at the input price plus 6,000 output tokens at the output price
+    (about $0.07 to $0.08 today), at LiteLLM's prices for the model. If settled spend plus open
     reservations plus this one would pass the allowance (`EVALS_CONFLICT_CHECK_ALLOWANCE_USD`,
     default 2), the answer is 402 `allowance_exhausted`, and nothing is minted, called or
     recorded. A cached result is still returned, since it costs nothing.
@@ -433,7 +433,7 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 
   | Call | From | Does |
   | --- | --- | --- |
-  | `POST /experiments/:id/start` | `created`, `paused` | starts it, or resumes it (as `/resume`); marks it `done` if nothing is left to claim. Optional body `{plan_commit}` (`StartExperimentRequest`): on a `created` one it sets the analysis plan's commit first (format checked as on `POST /experiments`, 400 `invalid_plan_commit`), so an experiment left unstarted without one can be started from its run page; once it has started the commit is fixed, and a different one is a 409 `plan_commit_locked` (the same one again is fine) |
+  | `POST /experiments/:id/start` | `created`, `paused` | starts it, or resumes it (as `/resume`); marks it `done` if nothing is left to claim. Optional body `{plan_commit}` (`StartExperimentRequest`): on a `created` one it sets the analysis plan's commit first (format checked as on `POST /experiments`, 400 `invalid_plan_commit`), so an experiment left unstarted without one can be started from its run page; once it has started the commit is fixed, and a different one is a 409 `plan_commit_locked` (the same one again is fine). D75: a `created` one with a Hermes config on a real model (not `fake/*`) is a 409 `conflict_check_required` until `POST /configs/:hash/conflict-check` has a stored result for that config's current input (rendered prompt, our prompt, settings); the message names each config and the fix gives the two calls. It reads stored checks only and never calls the checker; a resume is not checked |
   | `POST /experiments/:id/discard` | `created`, no trial claimed | marks an experiment that never started `cancelled` and its queued trials `cancelled`, as a stop does; nothing is deleted. Event `discarded` (no `cancelled` event). Anything started is a 409 `experiment_started` (fix: stop it instead); a `done` or `cancelled` one a 409 `experiment_finished` |
   | `POST /experiments/:id/pause` | `running` (a `paused` one: no-op) | no new claims; trials already running finish and report; event `paused` |
   | `POST /experiments/:id/resume` | `paused` (a `running` one: no-op) | claims resume; event `resumed` |

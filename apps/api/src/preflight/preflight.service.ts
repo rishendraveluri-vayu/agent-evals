@@ -223,7 +223,6 @@ export class PreflightService {
 
   // ---- conflict check ----
 
-  /** The stored conflict check for the config as it is now, without a call; 404 when there is none. */
   /** The stored check for the config's current input, or null when none is stored yet. */
   async storedCheck(hashInput: string): Promise<ConflictCheckView | null> {
     const i = await this.checkInputs(hashInput);
