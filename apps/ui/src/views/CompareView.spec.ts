@@ -559,7 +559,7 @@ describe('CompareView against the API: an experiment on fake models', () => {
       '/api/labels/queue?set=heldout': [],
       '/api/models': [{ name: 'claude-haiku-5-5', input_per_mtok: 1, output_per_mtok: 5 }],
       'POST /api/experiments/exp_heldout/judge': { experiment_id: 'exp_heldout', model: 'claude-haiku-5-5', budget_usd: 2, approved_at: '2026-11-05T08:00:00.000Z' },
-      'POST /api/experiments/exp_heldout/regrade': { experiment_id: 'exp_heldout', trials: 40, queued: 40, no_graders: 0, superseded: 0, from_trial_task: 0 },
+      'POST /api/experiments/exp_heldout/regrade': { experiment_id: 'exp_heldout', trials: 40, reused_trials: 0, queued: 40, no_graders: 0, superseded: 0, from_trial_task: 0 },
     });
     return { w: mount(CompareView, { props: { experimentId: 'exp_heldout' } }), calls };
   }
@@ -1125,5 +1125,30 @@ describe('CompareView: a stopped run and a run on fake models (QA round 3, minor
     const w = mountWith({}, { ...(compares.exp_heldout as object), stats: null });
     await settle();
     expect(w.find('[data-test="fake-run-note"]').exists()).toBe(false);
+  });
+});
+
+describe('CompareView against the API: the judge panel with a reused arm A', () => {
+  it("counts the trials arm A reuses from its parent in the paid step, since a regrade judges them too (D72)", async () => {
+    const base = (details as Record<string, { arms: { config_hash: string; reused_from: string | null; reused_trials: number }[] }>).exp_heldout;
+    const detail = { ...base, arms: [{ ...base.arms[0], reused_from: 'exp_parent', reused_trials: 60 }, base.arms[1]] };
+    // The trial list is the experiment's own: arm B's only, since arm A's are the parent's.
+    const own = ((experimentTrials as Record<string, { config_hash: string }[]>).exp_heldout).filter((t) => t.config_hash === base.arms[1].config_hash);
+    routeFetch({
+      '/api/experiments/exp_heldout': detail,
+      '/api/experiments/exp_heldout/compare': compares.exp_heldout,
+      '/api/experiments/exp_heldout/trials': own,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+      '/api/models': [{ name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 1, output_per_mtok: 5, key_set: true }],
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    await w.get('[data-test="judge-approve-open"]').trigger('click');
+    const form = w.get('[data-test="judge-approve"]');
+    await form.get('[data-test="judge-model-select"]').setValue('claude-haiku-5-5');
+    await form.get('[data-test="judge-budget-input"]').setValue('2');
+    // 4 judged tasks of 12: arm B's 20 trials on them, and the 20 of arm A's 60 reused ones.
+    expect(form.get('[data-test="judge-confirm"]').text()).toContain('A paid step: approving sends 40 finished trials to Claude Haiku 5.5');
   });
 });

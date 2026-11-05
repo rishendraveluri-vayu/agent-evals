@@ -323,7 +323,7 @@ describeWithDb('grading (e2e, real Postgres)', () => {
     const fixed = { ...GRADED_TASK, version: '2', graders: GRADED_TASK.graders.map((g) => (g.id === 'emi' ? { ...g, tolerance: { rel: 0.01 } } : g)) };
     await writeTask(fixed, GRADER_PY);
     const queued = (await request(env.http).post(`/api/experiments/${exp.id}/regrade`).send({}).expect(202)).body as RegradeResponse;
-    expect(queued).toEqual({ experiment_id: exp.id, trials: 1, queued: 1, no_graders: 0, superseded: 0, from_trial_task: 0 });
+    expect(queued).toEqual({ experiment_id: exp.id, trials: 1, reused_trials: 0, queued: 1, no_graders: 0, superseded: 0, from_trial_task: 0 });
     // a second click replaces the queued job instead of adding another
     expect(((await request(env.http).post(`/api/experiments/${exp.id}/regrade`).send({}).expect(202)).body as RegradeResponse).superseded).toBe(1);
     expect((await trial(trialId)).grading.pending).toMatchObject({ status: 'queued', reason: 'regrade' });

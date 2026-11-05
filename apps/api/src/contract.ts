@@ -1131,8 +1131,10 @@ export interface GradesReportResponse {
 /** POST /experiments/:id/regrade */
 export interface RegradeResponse {
   experiment_id: string;
-  /** Done trials considered. */
+  /** Done trials considered: the experiment's own and those arm A reuses from its parent (D34, D72). */
   trials: number;
+  /** Of `trials`, those arm A reuses from its parent: regraded too, judged under this experiment's approval (D72). */
+  reused_trials: number;
   queued: number;
   /** Trials whose task has no graders: recorded, nothing to claim. */
   no_graders: number;

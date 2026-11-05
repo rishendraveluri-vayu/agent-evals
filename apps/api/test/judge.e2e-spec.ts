@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import request from 'supertest';
 import { APP_CONFIG, type AppConfig } from '../src/common/app-config';
-import type { ExperimentDetail, GraderClaimResponse, JudgeApprovalResponse, JudgeRevokeResponse, Json, SpendView } from '../src/contract';
+import type { ExperimentDetail, GraderClaimResponse, JudgeApprovalResponse, JudgeRevokeResponse, Json, RegradeResponse, SpendView } from '../src/contract';
 import { graderVersion, specSha256 } from '../src/grading/grading-core';
 import { type TestEnv, auth, bootEnv, catalogue, makeConfig } from './support/app';
 import { describeWithDb } from './support/db';
@@ -244,6 +244,52 @@ describeWithDb('LLM judge approval and its key (e2e, real Postgres)', () => {
     await regrade(exp.id);
     expect((await jobFor(trialId)).judge).toBeNull();
     await drain();
+  });
+
+  it("regrades the trials arm A reuses from its parent, judged under the regrading experiment's approval, never the parent's (D72)", async () => {
+    await drain();
+    await eng.quiesce();
+    const other = await makeConfig(env.http, await catalogue(env.http), { name: 'judged arm B', settings: { temperature: 0.9 } });
+    const parent = await eng.experiment({ config_hashes: [config], task_sha256s: [taskSha], n: 1 });
+    const reused = (await eng.claim('w1'))!;
+    await eng.report(reused, 'w1', 'agent');
+    await drain();
+    const child = await eng.experiment({ config_hashes: [config, other], task_sha256s: [taskSha], n: 1, parent_experiment_id: parent.id, reuse_baseline: true });
+    expect(child.baseline).toMatchObject({ applied: true, reused_trials: 1 });
+    const own = (await eng.claim('w1'))!;
+    await eng.report(own, 'w1', 'agent');
+    await drain();
+
+    // Each experiment has its own approval, on its own model and key.
+    await approve(parent.id, { model: 'fake/judge', budget_usd: 1 }).expect(201);
+    await approve(child.id, { model: 'fake/gpt-4o-mini', budget_usd: 1 }).expect(201);
+    const childKey = judgeKey(child.id);
+    const parentKey = judgeKey(parent.id);
+    const queued = (await regrade(child.id)).body as RegradeResponse;
+    expect(queued).toEqual({ experiment_id: child.id, trials: 2, reused_trials: 1, queued: 2, no_graders: 0, superseded: 0, from_trial_task: 0 });
+    // The parent's trial, regraded for the child, carries the child's key and model.
+    const forChild = await jobFor(reused.trial_id);
+    expect(forChild.judge).toEqual({ base_url: `${env.stub.url}/v1`, api_key: childKey.key, model: 'fake/gpt-4o-mini' });
+    await report(forChild);
+    expect((await jobFor(own.trial_id)).judge?.api_key).toBe(childKey.key);
+    const recorded = await env.pool.query<{ trial_id: string; regrade_experiment_id: string | null }>(
+      "SELECT trial_id, regrade_experiment_id FROM grading_jobs WHERE trial_id = ANY($1) AND reason = 'regrade'",
+      [[reused.trial_id, own.trial_id]],
+    );
+    expect(recorded.rows.map((r) => r.regrade_experiment_id)).toEqual([child.id, child.id]);
+    await drain();
+
+    // The parent's own regrade of that trial is judged under the parent's approval, as before.
+    expect((await regrade(parent.id)).body).toMatchObject({ trials: 1, reused_trials: 0, queued: 1 });
+    expect((await jobFor(reused.trial_id)).judge?.api_key).toBe(parentKey.key);
+    await drain();
+    // A regrade naming trials may name a reused one; a trial of neither experiment is not regraded.
+    const named = (await request(env.http).post(`/api/experiments/${child.id}/regrade`).send({ trial_ids: [reused.trial_id, 't_nope'] }).expect(202)).body as RegradeResponse;
+    expect(named).toMatchObject({ trials: 1, reused_trials: 1, queued: 1 });
+    expect((await jobFor(reused.trial_id)).judge?.api_key).toBe(childKey.key);
+    await drain();
+    await revoke(parent.id).expect(200);
+    await revoke(child.id).expect(200);
   });
 
   it('revokes: deletes the key in LiteLLM, then 404, and approves again with a new key', async () => {

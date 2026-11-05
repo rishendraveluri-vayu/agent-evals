@@ -90,7 +90,13 @@ const judged = computed(() => {
   if (!d) return { tasks: 0, trials: 0 };
   const tasks = d.detail.tasks.filter(isJudged);
   const keys = new Set(tasks.map((t) => t.sha256));
-  return { tasks: tasks.length, trials: d.trials.filter((t) => t.status === 'done' && keys.has(t.task_sha256)).length };
+  const own = d.trials.filter((t) => t.status === 'done' && keys.has(t.task_sha256)).length;
+  // D72: a regrade also judges the trials arm A reuses from its parent, which the trial list (this
+  // experiment's own) leaves out; D34 reuses the same number for every task, so the paid-step count
+  // includes them.
+  const a = d.detail.arms[0];
+  const reused = a?.reused_from && d.detail.tasks.length ? Math.round((a.reused_trials * tasks.length) / d.detail.tasks.length) : 0;
+  return { tasks: tasks.length, trials: own + reused };
 });
 
 /** After an approval, a revoke or a regrade: the experiment again (its judge and spend), and its

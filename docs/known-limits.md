@@ -318,6 +318,18 @@ the method as built (D10 revised: a task bootstrap, the sign-flip test, D42's ve
   comparison (it is the environment, the same for both arms), though it is in the experiment's
   spend. Trials from before D31 carry prompt caching in their cost (Cost comparisons, above).
 
+## Arms graded alike (D72, 5 Nov)
+
+- **Regrading a child regrades its parent's trials too.** A trial has one current grading, not one
+  per experiment that reads it. A regrade of an experiment whose arm A reuses its parent's trials
+  (D34) gives those trials new current grades, which the parent's own comparison then reads; if the
+  parent's arm B stays on the old version, the parent shows no verdict until it is regraded as
+  well. Nothing is overwritten: the old grades stay as older versions.
+- **The last regrade queued wins a trial's queued job.** A trial has at most one queued grading
+  job, so a parent's regrade and a child's regrade of the same reused trial supersede each other
+  until one is claimed; the job claimed is judged under the approval of the experiment that queued
+  it, and that approval's budget pays.
+
 ## Failure causes and behaviour (D64, 5 Nov)
 
 The causes are rules over what each trial recorded (`docs/design.md`, "Failure causes and behaviour

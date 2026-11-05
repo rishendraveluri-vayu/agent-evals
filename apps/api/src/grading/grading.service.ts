@@ -52,6 +52,8 @@ interface JobRow {
   passed: boolean | null;
   outcome: GradingOutcome | null;
   grade_ids: string[];
+  /** D72: the experiment whose regrade queued the job, whose judge approval its claim carries; null for a first grading. */
+  regrade_experiment_id: string | null;
 }
 
 interface TrialTaskRow {
@@ -60,6 +62,8 @@ interface TrialTaskRow {
   task_id: string;
   body: JsonObject;
   client_state_sha256: string | null;
+  /** In a regrade: the trial belongs to the parent experiment and arm A reuses it (D34). */
+  reused?: boolean;
 }
 
 interface Choice {
@@ -143,8 +147,17 @@ export class GradingService {
     return readCapped(path.join(folder, name));
   }
 
-  /** Inserts one job for the trial; returns its status and where its graders came from. */
-  private async queueJob(q: Queryable, task: TrialTaskRow, catalogue: TaskFile[], reason: 'trial_done' | 'regrade'): Promise<{ status: GradingJobStatus; source: Choice['source'] }> {
+  /**
+   * Inserts one job for the trial; returns its status and where its graders came from. A regrade
+   * job records the experiment that asked for it, whose judge approval its claim carries (D72).
+   */
+  private async queueJob(
+    q: Queryable,
+    task: TrialTaskRow,
+    catalogue: TaskFile[],
+    reason: 'trial_done' | 'regrade',
+    regradeExperimentId: string | null = null,
+  ): Promise<{ status: GradingJobStatus; source: Choice['source'] }> {
     const choice = this.choose(task, catalogue);
     const folder = choice.folder;
     // A rubric is not part of the task, so it is read as it is now whichever task the graders come from.
@@ -155,9 +168,9 @@ export class GradingService {
     );
     const status: GradingJobStatus = set.graders.length ? 'queued' : 'no_graders';
     await q.query(
-      `INSERT INTO grading_jobs (id, trial_id, reason, status, task_id, task_sha256, grader_source, source_note, graders, grader_files)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [newId('g'), task.trial_id, reason, status, task.task_id, choice.taskSha256, choice.source, choice.note, JSON.stringify(set.graders), JSON.stringify(set.files)],
+      `INSERT INTO grading_jobs (id, trial_id, reason, status, task_id, task_sha256, grader_source, source_note, graders, grader_files, regrade_experiment_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [newId('g'), task.trial_id, reason, status, task.task_id, choice.taskSha256, choice.source, choice.note, JSON.stringify(set.graders), JSON.stringify(set.files), regradeExperimentId],
     );
     return { status, source: choice.source };
   }
@@ -218,15 +231,17 @@ export class GradingService {
       );
       if (!job) return null;
       // The task summary as the blind labelling screen shows it (the trial's own task), and the
-      // judge's key if judging is approved for the trial's experiment now (SP4, R8).
+      // judge's key if judging is approved now (SP4, R8) for the experiment the job grades for: the
+      // one whose regrade queued it (D72: a reused trial is judged under the regrading
+      // experiment's approval, never its parent's), else the trial's own.
       const trial = (await one<{ files: StoredFile[] | null; end_state: string | null; label: string | null; summary: string | null; judge_model: string | null; judge_key: string | null }>(
         client,
         `SELECT t.files, t.end_state, t.label, k.summary, a.model AS judge_model, a.key AS judge_key
          FROM trials t
          LEFT JOIN tasks k ON k.sha256 = t.task_sha256
-         LEFT JOIN judge_approvals a ON a.experiment_id = t.experiment_id AND a.revoked_at IS NULL
+         LEFT JOIN judge_approvals a ON a.experiment_id = COALESCE($2::text, t.experiment_id) AND a.revoked_at IS NULL
          WHERE t.id = $1`,
-        [job.trial_id],
+        [job.trial_id, job.regrade_experiment_id],
       ))!;
       return {
         job_id: job.id,
@@ -334,7 +349,10 @@ export class GradingService {
   /**
    * Queues a new grading job for every done trial of the experiment (or the named ones), with the
    * graders as they are now (see choose). A queued job not yet claimed is superseded; nothing is
-   * re-run and no grade is deleted.
+   * re-run and no grade is deleted. D72: the trials arm A reuses from a parent (D34) are covered
+   * too, so a regrade can bring both arms onto the same grader versions; every job records this
+   * experiment, so its judge approval is the one that pays. A reused trial stays the parent's: its
+   * new grades are its current grades wherever it is compared, the parent's comparison included.
    */
   async regrade(experimentId: string, body: unknown): Promise<RegradeResponse> {
     const b = (body ?? {}) as Record<string, unknown>;
@@ -348,18 +366,30 @@ export class GradingService {
     const catalogue = await readTasks(this.config.tasksDir);
     return this.db.tx(async (client) => {
       await client.query('SELECT pg_advisory_xact_lock($1)', [QUEUE_LOCK]);
+      // D34, D72: the experiment's own done trials and the ones arm A reuses from its parent (never
+      // a shipped example's, which reuse refuses as a parent anyway: SP7 keeps its grades).
       const { rows } = await client.query<TrialTaskRow>(
-        `SELECT t.id AS trial_id, t.task_sha256, k.id AS task_id, k.body, k.client_state_sha256
+        `SELECT t.id AS trial_id, t.task_sha256, k.id AS task_id, k.body, k.client_state_sha256, t.experiment_id IS DISTINCT FROM $1 AS reused
          FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256
-         WHERE t.experiment_id = $1 AND t.status = 'done' AND ($2::text[] IS NULL OR t.id = ANY($2::text[]))
-         ORDER BY t.seq, t.attempt`,
+         WHERE (t.experiment_id = $1 OR t.id IN (SELECT unnest(reused_trial_ids) FROM experiment_arms WHERE experiment_id = $1))
+           AND t.status = 'done' AND ($2::text[] IS NULL OR t.id = ANY($2::text[]))
+           AND ${NOT_EXAMPLE_TRIAL('t')}
+         ORDER BY t.experiment_id IS DISTINCT FROM $1 DESC, t.seq, t.attempt`,
         [experimentId, only ?? null],
       );
-      const out: RegradeResponse = { experiment_id: experimentId, trials: rows.length, queued: 0, no_graders: 0, superseded: 0, from_trial_task: 0 };
+      const out: RegradeResponse = {
+        experiment_id: experimentId,
+        trials: rows.length,
+        reused_trials: rows.filter((r) => r.reused).length,
+        queued: 0,
+        no_graders: 0,
+        superseded: 0,
+        from_trial_task: 0,
+      };
       for (const row of rows) {
         const sup = await client.query(`UPDATE grading_jobs SET status = 'superseded' WHERE trial_id = $1 AND status = 'queued'`, [row.trial_id]);
         out.superseded += sup.rowCount ?? 0;
-        const { status, source } = await this.queueJob(client, row, catalogue, 'regrade');
+        const { status, source } = await this.queueJob(client, row, catalogue, 'regrade', experimentId);
         if (status === 'queued') out.queued++;
         else out.no_graders++;
         if (source === 'trial_task') out.from_trial_task++;

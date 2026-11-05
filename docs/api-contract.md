@@ -375,7 +375,10 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   applied and why ("arm A runs again: the platform commit differs (parent old0000, now
   abc1234)"). A reused arm shows `status: complete`, `reused_from` and `reused_trials`, its
   counts are the reused trials, and compare's arm-A rows are those trials. The estimate endpoint
-  takes the same two fields and returns `baseline` too.
+  takes the same two fields and returns `baseline` too. Reuse does not look at grading: the
+  reused trials keep the grades they had, the comparison gives no verdict while a required
+  grader's versions differ between the arms (D72, under Statistics below), and this experiment's
+  regrade covers the reused trials too (Grading).
 - **A/A calibration (D44, since 5 Nov).** `calibration: true` (here and on the estimate) marks a
   run that puts one config on both arms, to measure this setup's own noise; it should come out
   "no detectable difference". `config_hashes` must then name one config twice (`[h, h]`), else 400
@@ -801,8 +804,12 @@ key (`010_judge.sql`; approving and revoking are under Experiments).
    counts the job's claims. `task.summary` is the trial's task summary from the tasks table, the
    one the blind labelling screen shows, or null. `grader_files` keys are a unit_test's file
    name or a judge's rubric path (`configs/rubrics/open-coding.v0.md`), so a key may hold `/`.
-   `judge` is null unless the trial's experiment has an active judge approval and the job has a
+   `judge` is null unless the job's experiment has an active judge approval and the job has a
    judge grader; then it is that
+   approval's LiteLLM key and model. The job's experiment is the one whose regrade queued it
+   (`grading_jobs.regrade_experiment_id`, migration `015_regrade_experiment.sql`, since 5 Nov, D72),
+   else (a first grading) the trial's own; so a trial arm A reuses from a parent (D34) is judged
+   under the regrading experiment's approval and budget, never the parent's. The key is that
    approval's LiteLLM key and model, and `base_url` is the same OpenAI-compatible LiteLLM URL a
    trial spec's `model.base_url` gives workers (`LITELLM_URL` + `/v1`, `http://litellm:4000/v1`
    in compose). It is read at each claim, so an approval made after the trials finished
@@ -832,8 +839,16 @@ key (`010_judge.sql`; approving and revoking are under Experiments).
    re-run) is the next `run_index`. The job keeps the ids of its grades.
 - `POST /experiments/:id/regrade` with `{}` or `{trial_ids: [...]}` (202) queues a `regrade` job for
   every `done` trial of the experiment (or those named), with the graders as above, and supersedes
-  any job still queued for them. It returns `{experiment_id, trials, queued, no_graders,
-  superseded, from_trial_task}`. 404 `unknown_experiment`. Nothing is re-run; old grades stay.
+  any job still queued for them. **Since 5 Nov (D72) it also covers the trials arm A reuses from a
+  parent (D34)**, so one regrade can bring both arms onto the same grader versions; `trial_ids` may
+  name them too, and a trial of neither is ignored. Each job records this experiment, whose judge
+  approval its claim carries (above). A reused trial stays the parent's: its new grades are new
+  rows (never an overwrite) and become its current grades wherever it is compared, so the parent's
+  own comparison then reads them too, and gives no verdict if its arm B is left on the old version
+  (D72, Experiments) until the parent is regraded. A shipped example's trials are never regraded.
+  It returns `{experiment_id, trials, reused_trials, queued, no_graders, superseded,
+  from_trial_task}`, where `reused_trials` counts the reused ones among `trials`. 404
+  `unknown_experiment`. Nothing is re-run; old grades stay.
 - Views: `current_grading` (each trial's latest `done` job, by queue order) and `current_grades`
   (its grades). `GET /experiments/:id/compare` counts each trial's latest finished job's outcome;
   the export still lists every stored grade row of a trial, all versions (`docs/known-limits.md`).
