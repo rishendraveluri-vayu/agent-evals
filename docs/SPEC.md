@@ -201,7 +201,7 @@ Each one has a done-when test. Scope stops growing once that test passes.
 - [ ] Rishi reviews about 10 simulated-client transcripts and the simulator prompt is versioned before the experiment (D22, R11)
 - [x] Build deterministic graders: exact match, unit tests, state checks (`graders/`, ten types incl. a reserved judge, and `required_tools` and `provenance` on the runner's `checks.json`; grading as its own step through the API and a `grader` service, R14; the spec format is a draft for Rishi, `docs/proposals/grader-format.md`)
 - [ ] **[Rishi designs]** Judge rubric format. Judge is blind to harness and model, with a pinned model and a verdict and quoted evidence per criterion
-- [ ] Write tasks where skills or memory should help
+- [x] Write tasks where skills or memory should help (5 Nov: `demo-skill-card-transfer` with a seeded skill; 0 of 4 without it, 4 of 4 with it, `docs/experiment.md`)
 - [x] Seed skills and memory explicitly per config, since a fresh Hermes home has no skills (API: `POST /configs` takes `seed`, in the hash, copied into `spec.seed` at claim, D39; the Config screen's seed fields and the seeded content for D39's run are separate)
 - [x] Test each grader against known pass and fail outputs (96 tests in `graders/tests`, incl. the real 4 Nov transcripts of all five harnesses; API grading e2e with the real grader worker)
 

@@ -126,6 +126,14 @@ Same prompts, model, tools, tasks and N on each harness:
 - **Cost:** v2 costs 29 to 46% more per trial on every harness, from its extra tool calls.
 - **Harnesses at v1** (descriptive only, separate experiments, same tasks, model and prompt): Hermes 64%, own loop 56%, LangGraph 55%.
 
+## Skills demo (5 Nov, not part of the experiment)
+
+Brief: tasks where a skill should help, and a trace that shows which skills were invoked. Experiment `e_0mw3hq8zn8cdc95c5345b0fd6`, $0.110: Hermes with prompt v2 on Claude Haiku 5.5, arm A the headline's v2 config (skills off), arm B the same with skills on and the skill `configs/skills/balance-transfer-playbook.md` seeded; nothing else differs. Three tasks x 4 trials: `demo-skill-card-transfer`, whose offer terms only the skill holds, and two controls (draft-emi-home-loan, draft-first-year-interest).
+
+- **The skill decides the demo task:** 0 of 4 without it, 4 of 4 with it. Without it the agent does what it should and asks for the terms ("To tell you whether it's worth it, I need three terms from the offer", `t_0mw3hq8zn5a0d49abd7c7f9d4`). With it, every trial first loads the skill (`evals.skill.load`, shown on the trial page under Memory and skills), then follows its steps in order (`list_debts`, `calculate_emi` at 15% for 24 months, `percent_of` for the fee, the card's cost for comparison) and answers "Monthly EMI: ₹4,085.00 … Processing fee (1%, paid upfront): ₹842.50 … The transfer saves ₹27,033.04 in total" (`t_0mw3hq8zn5c4ef7e0d871272a`).
+- **No harm elsewhere:** both controls pass 4 of 4 in both arms, and no trial loaded the skill on them.
+- **No verdict, as it should be:** +33.3 points over 3 tasks; with fewer than 6 tasks the paired test cannot reach p < 0.05, and the page says so. The demo shows the mechanism and the trace, not a measured effect size.
+
 ## Trajectories
 
 Read on 5 Nov from the API (`GET /api/trials/:id`, its `result.json`, `checks.json` and spans, and the `cause` on `GET /api/experiments/e_0mw38a1ym89666c6ccc6bfd13/trials`). Three v1 failures, each paired with a v2 pass of the same task, then one failure that is the grader's fault, not the agent's.
