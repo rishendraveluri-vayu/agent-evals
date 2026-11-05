@@ -13,6 +13,10 @@ import { engine } from './support/engine';
  */
 const STAT_TASKS = Array.from({ length: 7 }, (_, i) => `stat-${i + 1}`);
 
+// Each test claims, reports and grades up to 28 trials over HTTP, then computes 10,000 resamples:
+// a few seconds alone, more beside the other suites.
+jest.setTimeout(60_000);
+
 describeWithDb('statistics and A/A calibration (e2e, real Postgres)', () => {
   let env: TestEnv;
   let cat: Awaited<ReturnType<typeof catalogue>>;

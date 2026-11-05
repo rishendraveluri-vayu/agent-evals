@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
-import type { CreateLabelRequest, JsonObject, LabelCriterion, LabelLine, LabelQueueItem, LabelSet } from '../contract';
+import type { CreateLabelRequest, JsonObject, LabelCriterion, LabelLine, LabelQueueItem, LabelSet, TaskSplit } from '../contract';
 import { LABEL_SETS } from '../contract';
 import { badRequest, notFound } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
@@ -37,6 +37,11 @@ export function judgeCriteria(task: JsonObject): LabelCriterion[] {
  *  harness cannot be told from it. */
 export function bareToolName(name: string): string {
   return name.replace(/^mcp__[a-z0-9_]+?__/, '');
+}
+
+/** D52: the task split a label set draws from. */
+export function splitFor(set: LabelSet): TaskSplit {
+  return set === 'tuning' ? 'discovery' : 'held_out';
 }
 
 function labelSet(value: unknown): LabelSet {
@@ -87,9 +92,9 @@ export class LabelsService {
         continue;
       }
       await this.db.query(
-        `INSERT INTO labels (trial_id, criterion, value, label_set, note, labelled_at, source, line_sha256)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (line_sha256) DO NOTHING`,
-        [trial, l.criterion, l.value, set, typeof l.note === 'string' ? l.note : null, l.labelled_at, `labels/${set}.jsonl`, sha256Hex(line)],
+        `INSERT INTO labels (trial_id, criterion, value, label_set, note, labelled_at, source, line_sha256, second_look)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (line_sha256) DO NOTHING`,
+        [trial, l.criterion, l.value, set, typeof l.note === 'string' ? l.note : null, l.labelled_at, `labels/${set}.jsonl`, sha256Hex(line), l.second_look === true],
       );
     }
   }
@@ -109,7 +114,10 @@ export class LabelsService {
     // his own runs, and an example's trials keep the ids they had on the machine they came from.
     // A trial whose agent ran on a fake model (`fake/*`) played a script: there is no agent output
     // to judge, so it is left out too.
-    let where = `t.status = 'done' AND NOT t.probe AND t.label = 'agent' AND t.result IS NOT NULL
+    // D52: the sets follow the task split, so no task is both tuned on and scored on: tuning takes
+    // trials of discovery tasks only; held-out and final take trials of held-out tasks only.
+    params.push(splitFor(set));
+    let where = `k.split = $${params.length} AND t.status = 'done' AND NOT t.probe AND t.label = 'agent' AND t.result IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM labels o WHERE o.trial_id = t.id AND o.label_set <> $1)
       AND ${NOT_EXAMPLE_TRIAL('t')}
       AND NOT EXISTS (SELECT 1 FROM configs fc WHERE fc.hash = t.config_hash AND fc.model LIKE 'fake/%')`;
@@ -117,21 +125,32 @@ export class LabelsService {
       params.push(experimentId);
       where += ` AND t.experiment_id = $${params.length}`;
     }
-    const rows = await this.db.query<{ id: string; result: JsonObject; body: JsonObject; summary: string; done: string[] }>(
+    // seen: criteria with any label in this set; settled: those with a firm answer (yes or no) or a
+    // second-look answer. A criterion seen but not settled was only ever marked "unsure" (D46).
+    const rows = await this.db.query<{ id: string; result: JsonObject; body: JsonObject; summary: string; seen: string[]; settled: string[] }>(
       `SELECT t.id, t.result, k.body, k.summary,
-              coalesce((SELECT array_agg(DISTINCT l.criterion) FROM labels l WHERE l.trial_id = t.id AND l.label_set = $1), '{}') AS done
+              coalesce((SELECT array_agg(DISTINCT l.criterion) FROM labels l WHERE l.trial_id = t.id AND l.label_set = $1), '{}') AS seen,
+              coalesce((SELECT array_agg(DISTINCT l.criterion) FROM labels l
+                        WHERE l.trial_id = t.id AND l.label_set = $1 AND (l.value <> 'unsure' OR l.second_look)), '{}') AS settled
        FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256
        WHERE ${where}
        ORDER BY md5($1 || ':' || t.id)`,
       params,
     );
-    const items: LabelQueueItem[] = [];
+    // Fresh criteria first. A criterion marked "unsure" comes back once, after every fresh item, for
+    // a firm answer (D46). An item with fresh criteria shows those first; its second look comes on a
+    // later load of the queue, so an item is never in the queue twice.
+    const fresh: LabelQueueItem[] = [];
+    const again: LabelQueueItem[] = [];
     for (const r of rows) {
-      const criteria = judgeCriteria(r.body).filter((c) => !r.done.includes(c.id));
+      const all = judgeCriteria(r.body);
+      const unseen = all.filter((c) => !r.seen.includes(c.id));
+      const unsure = all.filter((c) => r.seen.includes(c.id) && !r.settled.includes(c.id));
+      const [list, criteria, secondLook] = unseen.length ? [fresh, unseen, false] : [again, unsure, true];
       if (!criteria.length) continue;
-      items.push({ item_id: r.id, task_summary: r.summary, transcript: transcriptOf(r.result), tool_calls: await this.toolCalls(r.id), criteria });
+      list.push({ item_id: r.id, task_summary: r.summary, transcript: transcriptOf(r.result), tool_calls: await this.toolCalls(r.id), criteria, second_look: secondLook });
     }
-    return items;
+    return [...fresh, ...again];
   }
 
   private async toolCalls(trialId: string): Promise<LabelQueueItem['tool_calls']> {
@@ -155,14 +174,39 @@ export class LabelsService {
     if (typeof body.criterion !== 'string' || !body.criterion) throw badRequest('invalid_label', 'criterion is required');
     if (body.value !== 'yes' && body.value !== 'no' && body.value !== 'unsure') throw badRequest('invalid_label', 'value must be yes, no or unsure');
     if (body.note !== undefined && body.note !== null && typeof body.note !== 'string') throw badRequest('invalid_label', 'note must be text');
-    const [trial] = await this.db.query<{ id: string; body: JsonObject }>(
-      `SELECT t.id, k.body FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 WHERE t.id = $1 AND t.status = 'done'`,
+    const [trial] = await this.db.query<{ id: string; body: JsonObject; split: string; task_id: string }>(
+      `SELECT t.id, k.body, k.split, k.id AS task_id FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 WHERE t.id = $1 AND t.status = 'done'`,
       [body.item_id],
     );
     if (!trial) throw notFound('unknown_item', `no finished trial ${body.item_id} to label`);
+    if (trial.split !== splitFor(set)) {
+      throw badRequest(
+        'wrong_split',
+        `${trial.task_id} is a ${trial.split === 'held_out' ? 'held-out' : 'discovery'} task, and the ${set} set takes ${splitFor(set) === 'held_out' ? 'held-out' : 'discovery'} tasks only`,
+        'Label it in the set its task belongs to: tuning for discovery tasks, held-out or final for held-out tasks.',
+      );
+    }
     const criteria = judgeCriteria(trial.body);
     if (!criteria.some((c) => c.id === body.criterion)) {
       throw badRequest('unknown_criterion', `${body.criterion} is not one of this task's criteria: ${criteria.map((c) => c.id).join(', ') || 'none'}`);
+    }
+    if (body.second_look !== undefined && typeof body.second_look !== 'boolean') throw badRequest('invalid_label', 'second_look must be true or false');
+    const secondLook = body.second_look === true;
+    if (secondLook) {
+      // D46: a second look answers a criterion marked "unsure" in this set, and only once.
+      const [prior] = await this.db.query<{ unsure: number; settled: number }>(
+        `SELECT count(*) FILTER (WHERE value = 'unsure' AND NOT second_look)::int AS unsure,
+                count(*) FILTER (WHERE value <> 'unsure' OR second_look)::int AS settled
+         FROM labels WHERE trial_id = $1 AND criterion = $2 AND label_set = $3`,
+        [trial.id, body.criterion, set],
+      );
+      if (!prior.unsure || prior.settled) {
+        throw badRequest(
+          'not_a_second_look',
+          prior.settled ? `${body.criterion} on ${trial.id} already has a firm or second-look answer in ${set}` : `${body.criterion} on ${trial.id} was not marked unsure in ${set}`,
+          'Save it as an ordinary label (leave second_look out).',
+        );
+      }
     }
     const line: LabelLine = {
       item_id: body.item_id,
@@ -172,6 +216,7 @@ export class LabelsService {
       value: body.value,
       note: typeof body.note === 'string' && body.note.trim() ? body.note : null,
       labelled_at: new Date().toISOString(),
+      ...(secondLook ? { second_look: true } : {}),
     };
     await fs.mkdir(this.config.labelsDir, { recursive: true });
     await fs.appendFile(this.file(set), `${JSON.stringify(line)}\n`, { encoding: 'utf8', flag: 'a' });

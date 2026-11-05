@@ -26,10 +26,10 @@ const SETS: { set: LabelSet; name: string; file: string; purpose: string }[] = [
     set: 'tuning',
     name: 'Tuning',
     file: 'labels/tuning.jsonl',
-    purpose: 'Open coding before any rubric: your pass or fail and a line on why. These shape the rubric and never count towards the judge’s reported agreement.',
+    purpose: 'Open coding before any rubric: your pass or fail and a line on why. Trials of discovery tasks only. These shape the rubric and never count towards the judge’s reported agreement.',
   },
-  { set: 'heldout', name: 'Held-out', file: 'labels/heldout.jsonl', purpose: 'Your judgments are the ground truth the judge is measured against.' },
-  { set: 'final', name: 'Final run', file: 'labels/final.jsonl', purpose: 'Labels from the real experiment, to check the judge on the final model’s outputs.' },
+  { set: 'heldout', name: 'Held-out', file: 'labels/heldout.jsonl', purpose: 'Your judgments are the ground truth the judge is measured against. Trials of held-out tasks only, so the judge is never scored on a task its rubric was tuned on.' },
+  { set: 'final', name: 'Final run', file: 'labels/final.jsonl', purpose: 'Labels from the real experiment, to check the judge on the final model’s outputs. Trials of held-out tasks only.' },
 ];
 const VALUES: { value: LabelValue; text: string; key: string }[] = [
   { value: 'yes', text: 'Yes', key: '1' },
@@ -69,6 +69,13 @@ const saving = ref(false);
 const saveError = ref<string | null>(null);
 const savedCount = computed(() => savedIds[set.value].length);
 const skippedCount = ref(0);
+/** "Not sure" answers saved this visit on fresh items: each comes back once for a second look. */
+const unsureSaved = ref(0);
+const secondLookNote = computed(() =>
+  unsureSaved.value
+    ? `You marked ${unsureSaved.value === 1 ? 'one question' : `${unsureSaved.value} questions`} "Not sure": ${unsureSaved.value === 1 ? 'it comes' : 'they come'} back once for a second look. `
+    : '',
+);
 /** The longest note a label keeps here. */
 const NOTE_MAX = 500;
 const noteBox = ref<HTMLTextAreaElement | null>(null);
@@ -113,6 +120,7 @@ async function loadMore() {
   for (const s of SETS) savedIds[s.set].splice(0);
   index.value = 0;
   skippedCount.value = 0;
+  unsureSaved.value = 0;
   reset();
 }
 
@@ -132,7 +140,15 @@ async function saveAndNext() {
     // Trimmed and capped; a note of only spaces is no note.
     const text = note.value.trim().slice(0, NOTE_MAX);
     for (const c of criteria.value) {
-      await api.saveLabel({ item_id: current.item_id, set: set.value, criterion: c.id, value: answers[c.id] as LabelValue, note: text });
+      await api.saveLabel({
+        item_id: current.item_id,
+        set: set.value,
+        criterion: c.id,
+        value: answers[c.id] as LabelValue,
+        note: text,
+        ...(current.second_look ? { second_look: true } : {}),
+      });
+      if (answers[c.id] === 'unsure' && !current.second_look) unsureSaved.value += 1;
     }
     savedIds[set.value].push(current.item_id);
     await toNext(false);
@@ -277,7 +293,7 @@ const blocks = (text: string) => mdBlocks(text);
     >
       <p>
         {{ total ? `All ${total} in this queue done${savedCount ? `: ${savedCount} saved` : ''}${skippedCount ? `, ${skippedCount} skipped` : ''}.` : 'Nothing to label in this set yet.' }}
-        Trials that finish later join the queue, except trials on a fake model (their replies are a script, not an agent's) and the shipped example's, which are never labelled here.
+        {{ secondLookNote }}Trials that finish later join the queue, except trials on a fake model (their replies are a script, not an agent's) and the shipped example's, which are never labelled here.
       </p>
       <button
         type="button"
@@ -285,7 +301,7 @@ const blocks = (text: string) => mdBlocks(text);
         data-test="load-more"
         @click="loadMore"
       >
-        Check for more
+        {{ unsureSaved ? 'Take the second look' : 'Check for more' }}
       </button>
     </div>
     <div
@@ -311,6 +327,13 @@ const blocks = (text: string) => mdBlocks(text);
           class="secondary small summary"
         >
           {{ item.task_summary }}
+        </p>
+        <p
+          v-if="item.second_look"
+          class="caveat second-look"
+          data-test="second-look"
+        >
+          <span><strong class="caveat-lead">Second look:</strong> you marked {{ item.criteria.length === 1 ? 'this question' : 'these questions' }} "Not sure" before. Give a firm answer if you can; "Not sure" again leaves {{ item.criteria.length === 1 ? 'it' : 'them' }} out of the judge's agreement check, and {{ item.criteria.length === 1 ? 'it does' : 'they do' }} not come back.</span>
         </p>
         <template
           v-for="(m, i) in item.transcript"

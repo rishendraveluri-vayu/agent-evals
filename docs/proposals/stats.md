@@ -8,9 +8,10 @@ are we. It pairs with `docs/proposals/judge-validation.md` for judge-graded crit
 
 Both arms run the same tasks, N trials each. Trials of one task are not independent, so **the task
 is the unit**: each task gives one paired difference (B's pass rate minus A's on that task), and the
-headline is the mean of those differences. Its interval comes from a **two-level bootstrap**
-(resample tasks, then trials within each task), so it carries both "which tasks we happened to pick"
-and "trial-to-trial noise". A **sign-flip permutation test** on the task differences gives the paired
+headline is the mean of those differences. Its interval comes from a **bootstrap that resamples
+tasks** (D10 revision): each task's observed difference already carries its trial-to-trial noise,
+so resampling tasks carries both "which tasks we happened to pick" and that noise. (The first
+version also resampled trials inside each task, which counted the trial noise twice.) A **sign-flip permutation test** on the task differences gives the paired
 p-value. The verdict is one of three, **better, worse or no detectable difference**, and a "no
 difference" always says how big a difference could still be hiding.
 
@@ -24,15 +25,12 @@ difference" always says how big a difference could still be hiding.
 - Why not 2 x N x K trials as independent samples: 10 trials of one task share the task's
   difficulty; treating them as independent overstates confidence (D10's own note).
 
-## 2. The interval: a two-level bootstrap
+## 2. The interval: a bootstrap over tasks (revised 5 Nov)
 
-**Revised 5 Nov (D10): the built method resamples tasks only.** Each task's observed rate already
-carries its trial noise, so drawing trials again inside tasks counted it twice; on simulated data
-this interval covered 99% and found +15 points 69% of the time at 20 tasks, against 92 to 94% and
-85% for tasks only (`docs/design.md` section 6). The text below is the original proposal.
-
-10,000 resamples: draw K tasks with replacement; within each drawn task, draw N trials with
-replacement for each arm; compute the mean d. The 2.5th and 97.5th percentiles are the 95% interval.
+10,000 resamples: draw K tasks with replacement, keeping each drawn task's observed difference;
+compute the mean d. (Resampling the trials within each drawn task as well, the first version,
+counted the trial noise twice: in simulation it gave 1.5% false alarms instead of 5% and 69% power
+instead of 85% for +15 points at K = 20, N = 10; D10 revision in `docs/decisions.md`.) The 2.5th and 97.5th percentiles are the 95% interval.
 With about 12 held-out tasks the interval will be wide; that is the honest answer, and §6 says how to
 narrow it.
 
@@ -82,7 +80,7 @@ more trials help little when tasks differ a lot from each other; more tasks help
 ## 8. Cost, latency and tokens next to quality
 
 The same paired, task-level method for cost per trial, wall time and tokens, from LiteLLM's records
-(R10.9): a mean per-task difference with a two-level bootstrap interval. No verdict on these, only
+(R10.9): a mean per-task difference with a bootstrap interval over tasks. No verdict on these, only
 the difference and its interval, so "v2 is better and costs 6% more" reads in one line.
 
 ## 9. Pre-registered, then frozen
@@ -93,7 +91,9 @@ Any change after seeing results is recorded there as a deviation (CLAUDE.md).
 
 ## Decisions for Rishi
 
-1. **Settled 5 Nov (D10):** the task as the unit, two-level bootstrap plus sign-flip test.
+1. **Settled 5 Nov (D10), revised the same day:** the task as the unit, a bootstrap that resamples
+   tasks only (the two-level version counted trial noise twice; measurements under D10 revision in
+   `docs/decisions.md`), plus the sign-flip test.
 2. **Settled 5 Nov (D10):** the task pass rate is the headline, with a critical-failure guardrail
    and a regression list beside it (below).
    - Each grader carries a severity (critical, major, minor) in its task file, set by Rishi. B is

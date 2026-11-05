@@ -1,0 +1,109 @@
+{
+  "id": "draft-college-cost-stepup",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "DRAFT for Rishi: A Rs 15 lakh degree in 13 years at 10% education inflation; does a Rs 12,000 SIP at 12% get there, and does a 5% yearly step-up? Three chained answers.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "My daughter is 5. I want to save for her engineering degree, which I'll need when she turns 18. It costs about ₹15 lakh today, and education costs rise about 10% a year. What will it cost then? I can start a ₹12,000 monthly SIP that I expect to earn 12% a year: will that be enough? If not, would raising the SIP by 5% every year get me there?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": null,
+  "graders": [
+    {
+      "id": "future-cost-tool",
+      "type": "tool_called",
+      "required": true,
+      "tool": "inflation_adjusted_value",
+      "args": {
+        "amount": 1500000,
+        "annual_inflation_pct": 10,
+        "years": 13
+      }
+    },
+    {
+      "id": "stepup-tool",
+      "type": "tool_called",
+      "required": true,
+      "tool": "sip_future_value",
+      "args": {
+        "monthly_investment": 12000,
+        "expected_annual_return_pct": 12,
+        "years": 13,
+        "annual_step_up_pct": 5
+      }
+    },
+    {
+      "id": "future-cost",
+      "type": "number",
+      "required": true,
+      "expected": 5178406.82,
+      "tolerance": {
+        "rel": 0.002
+      }
+    },
+    {
+      "id": "sip-corpus",
+      "type": "number",
+      "required": true,
+      "expected": 4511173.74,
+      "tolerance": {
+        "rel": 0.002
+      }
+    },
+    {
+      "id": "stepup-corpus",
+      "type": "number",
+      "required": true,
+      "expected": 5675167.91,
+      "tolerance": {
+        "rel": 0.002
+      }
+    },
+    {
+      "id": "ends-answered",
+      "type": "end_state",
+      "required": true,
+      "states": [
+        "answered"
+      ]
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding plus proposed yes/no criteria (DRAFT for Rishi); optional until the rubric and D7 are settled.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "says-short",
+          "text": "Does the answer say plainly that ₹12,000 a month on its own falls short of the future cost? Yes or no."
+        },
+        {
+          "id": "says-stepup-reaches",
+          "text": "Does the answer say that a 5% yearly step-up reaches the target? Yes or no."
+        },
+        {
+          "id": "return-not-guaranteed",
+          "text": "Does the answer say that the 12% return is not guaranteed? Yes or no."
+        }
+      ]
+    }
+  ],
+  "judge_criteria_to_write": "Three chained answers: cost in 13 years 5178406.82 (present_value by mistake gives far less); SIP corpus 4511173.74, short; with a 5% step-up 5675167.91, enough. Gave-up-early shows as a missing step-up call and number."
+}

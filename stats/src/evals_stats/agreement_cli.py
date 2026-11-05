@@ -1,7 +1,8 @@
 """`evals-agreement --set tuning --human-unsure exclude`: the judge against Rishi's labels.
 
 Reads labels/<set>.jsonl (Rishi's own labels; the first label per trial and criterion counts, a
-later one is a relabel and goes to self-agreement), fetches each labelled trial from the API
+later one is a relabel and goes to self-agreement, except a second-look answer (D46), which
+replaces a first "unsure" and is not a relabel), fetches each labelled trial from the API
 (GET /trials/:id: its config, which is the arm, and its current judge grades), pairs the two per
 criterion, and prints the report as a table, or JSON with --json. Reads only; calls no model.
 
@@ -21,9 +22,15 @@ from evals_stats.agreement import HUMAN_UNSURE_POLICIES, Pair, report, self_agre
 
 
 def read_labels(path: Path) -> tuple[dict[tuple[str, str], str], list[tuple[str, str, str]]]:
-    """First label per (trial, criterion), and the relabels as (first, later) pairs."""
+    """First label per (trial, criterion), and the relabels as (first, later) pairs.
+
+    D46: a line with "second_look": true answers a criterion first marked "unsure"; it replaces
+    that "unsure" (a second-look "unsure" stays "unsure", so the policy still leaves it out) and is
+    not a relabel, since Rishi was asked again on purpose, not to test himself.
+    """
     first: dict[tuple[str, str], str] = {}
     relabels: list[tuple[str, str, str]] = []
+    second: set[tuple[str, str]] = set()
     if not path.is_file():
         return first, relabels
     rows = []
@@ -41,6 +48,11 @@ def read_labels(path: Path) -> tuple[dict[tuple[str, str], str], list[tuple[str,
         if not isinstance(trial, str) or not isinstance(crit, str) or not isinstance(value, str):
             continue
         key = (trial, crit)
+        if r.get("second_look") is True:
+            if first.get(key) == "unsure" and key not in second:
+                first[key] = value
+                second.add(key)
+            continue
         if key in first:
             relabels.append((f"{trial}:{crit}", first[key], value))
         else:

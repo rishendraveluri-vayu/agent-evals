@@ -918,7 +918,8 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     const queue = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as Record<string, unknown>[];
     expect(queue).toHaveLength(1);
     const item = queue[0];
-    expect(Object.keys(item).sort()).toEqual(['criteria', 'item_id', 'task_summary', 'tool_calls', 'transcript']);
+    expect(Object.keys(item).sort()).toEqual(['criteria', 'item_id', 'second_look', 'task_summary', 'tool_calls', 'transcript']);
+    expect(item.second_look).toBe(false);
     expect(JSON.stringify(item)).not.toMatch(/ownloop|claude-haiku|labelled arm|cost|wall_s/);
     expect(item.criteria).toEqual([
       { id: 'empathy', text: 'Acknowledges the client situation' },
@@ -937,10 +938,27 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
 
     const left = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as { criteria: { id: string }[] }[];
     expect(left[0].criteria.map((x) => x.id)).toEqual(['no_jargon']);
-    // The sets are disjoint: a trial with a tuning label is never offered for the held-out set.
+    // The sets follow the task split (D52): emi-basic is a discovery task, so its trials are tuning
+    // material only, never held-out or final, and a held-out label on one is refused.
     expect((await request(env.http).get(`/api/labels/queue?set=heldout&experiment=${exp.id}`).expect(200)).body).toHaveLength(0);
+    expect((await request(env.http).get(`/api/labels/queue?set=final&experiment=${exp.id}`).expect(200)).body).toHaveLength(0);
+    const wrong = await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'heldout', criterion: 'empathy', value: 'yes' }).expect(400);
+    expect(wrong.body).toMatchObject({ error: 'wrong_split' });
     const agreement = await request(env.http).get('/api/judge/agreement?set=heldout').expect(200);
     expect(agreement.text).toBe('null');
+
+    // D46: "unsure" comes back once, after the fresh items, for a firm answer.
+    await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'empathy', value: 'yes', second_look: true }).expect(400); // already firm
+    await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'no_jargon', value: 'yes', second_look: true }).expect(400); // never marked unsure
+    await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'no_jargon', value: 'unsure' }).expect(201);
+    const again = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as { item_id: string; second_look: boolean; criteria: { id: string }[] }[];
+    expect(again).toEqual([expect.objectContaining({ item_id: item.item_id, second_look: true, criteria: [{ id: 'no_jargon', text: 'no_jargon' }] })]);
+    const firm = await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'no_jargon', value: 'no', second_look: true }).expect(201);
+    expect(firm.body).toMatchObject({ criterion: 'no_jargon', value: 'no', second_look: true });
+    expect(JSON.parse((await fs.readFile(path.join(env.labelsDir, 'tuning.jsonl'), 'utf8')).trim().split('\n').at(-1)!)).toMatchObject({ value: 'no', second_look: true });
+    // Only once: no third look, and a second second-look is refused.
+    expect((await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body).toEqual([]);
+    await request(env.http).post('/api/labels').send({ item_id: item.item_id, set: 'tuning', criterion: 'no_jargon', value: 'yes', second_look: true }).expect(400);
   });
 
   it('takes a report far over Express’s 100 kB default body limit', async () => {

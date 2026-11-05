@@ -455,7 +455,7 @@ describe('client', () => {
 
   it('keeps only the blind fields of a labelling item', () => {
     const item = toBlindItem({ item_id: 'i', task_summary: 's', transcript: [{ role: 'user', content: 'q', model: 'x' }], tool_calls: [], criteria: ['c'], harness: 'hermes', cost_usd: 1, grade: 'fail' });
-    expect(item).toEqual({ item_id: 'i', task_summary: 's', transcript: [{ role: 'user', content: 'q' }], tool_calls: [], criteria: [{ id: 'c', text: 'c' }] });
+    expect(item).toEqual({ item_id: 'i', task_summary: 's', transcript: [{ role: 'user', content: 'q' }], tool_calls: [], criteria: [{ id: 'c', text: 'c' }], second_look: false });
   });
 
   it("takes Hermes's tool-name prefix and result wrapper off a labelling item, and leaves the rest alone", () => {

@@ -1,0 +1,79 @@
+{
+  "id": "draft-prepay-personal-loan",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "DRAFT for Rishi: Meera wants to put a Rs 1 lakh bonus into her 14.5% personal loan; the loan's terms are only in her file, and her 42% card is the better target.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "I'm getting a ₹1 lakh Diwali bonus. I want to put all of it into my personal loan so it finishes sooner. How much interest would that save me?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": "client.json",
+  "required_tools": [
+    "list_debts"
+  ],
+  "graders": [
+    {
+      "id": "read-the-file",
+      "type": "required_tools",
+      "required": true
+    },
+    {
+      "id": "loan-terms-from-file",
+      "type": "tool_called",
+      "required": true,
+      "tool": "prepayment_impact",
+      "args": {
+        "outstanding_principal": 310000,
+        "annual_rate_pct": 14.5,
+        "remaining_months": 36,
+        "prepayment_amount": 100000
+      }
+    },
+    {
+      "id": "interest-saved",
+      "type": "number",
+      "required": true,
+      "expected": 42874.99,
+      "tolerance": {
+        "rel": 0.005
+      }
+    },
+    {
+      "id": "mentions-card",
+      "type": "regex_present",
+      "required": true,
+      "target": "final_answer",
+      "pattern": "credit card|42\\s*%"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding plus proposed yes/no criteria (DRAFT for Rishi); optional until the rubric and D7 are settled.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "card-first",
+          "text": "Does the answer recommend using the bonus to clear the 42% credit card (₹84,250) before prepaying the 14.5% personal loan? Yes or no."
+        }
+      ]
+    }
+  ],
+  "judge_criteria_to_write": "Args from the file: Rs 3,10,000 at 14.5% with 36 months left (list_debts). prepayment_impact, reduce_tenure: interest saved 42874.99, 13 months sooner; reduce_emi would save 23915.58, so the wrong mode fails the interest check. R6 crux: the card at 42% costs far more than the loan at 14.5%; the bonus should clear the card's Rs 84,250 first."
+}

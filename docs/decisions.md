@@ -45,21 +45,31 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D36 Own loop on a cut-off reply | Re-send once with the cap doubled (up to 8,192), recording a `token_cap_raised` event and both calls; cut off again ends as `token_limit`. `max_output_tokens` means the first attempt's cap, as on Hermes | Rishi | 4 Nov |
 | D37 Config error mid-run | Only the failing arm pauses; the other keeps running; the UI says which arm, why and how to fix it; resuming continues it; no verdict until both arms are complete. Amends D26 | Rishi | 4 Nov |
 | D38 Prompt conflict checks | A standing $2 allowance for pre-run conflict checks on Claude Sonnet 5.5 (pinned, temperature not sent), each logged with its cost in `docs/cost.md`, with a note to Rishi at half. The UI shows it to the platform's user too: the Config screen shows each check's findings, its cost and the allowance used, and platform-made calls appear as their own line in the spend total, separate from trial spend. Anything else still needs a sign-off (R8) | Rishi ("we have to show this to the user somehow") | 4 Nov |
-| D39 Hermes verification run | 30 trials first on Hermes with Haiku 5.5 (10 each: memory off, on and empty, on and seeded), about $0.60, cap $2, after the simulator empty-reply fix; the other 70 decided from what they show. Ran 4 Nov: 30 of 30 passed every check, $0.275; the other 70 not run yet | Rishi | 4 Nov |
+| D39 Hermes verification run | 30 trials first on Hermes with Haiku 5.5 (10 each: memory off, on and empty, on and seeded), about $0.60, cap $2, after the simulator empty-reply fix; the other 70 decided from what they show. Ran 4 Nov: 30 of 30 passed every check, $0.275; the other 70 deferred on 5 Nov to after the experiment, if time and budget remain (memory is off in the experiment, D15) | Rishi | 4 Nov |
 | D40 Agent builder for reviewers | A guided "Build an agent" page (agent type with an explainer per harness, model, prompt, a few settings, then try it on the free fake model or evaluate it) and a short demo guide, on the existing API. No accounts, logins, per-account API keys or hosted demo: the brief does not ask for them (Rishi, asked whether to build a shared demo login on our keys: "They did not ask"). Reviewers run the platform locally; fake models need no key. Rishi: "They did not ask for a full login and all so we don't complicate it, maybe ask Friday evening if needed": revisit Friday evening | Rishi | 4 Nov |
-| D10 Unit of analysis and the verdict | The task is the unit: per-task pass-rate difference B minus A, two-level bootstrap interval (tasks, then trials), sign-flip permutation test; the headline is the task pass rate (decision 2 of the stats proposal); a critical-failure guardrail and a regression list with severity and cause sit beside it | Rishi | 5 Nov |
+| D10 Unit of analysis and the verdict | The task is the unit: per-task pass-rate difference B minus A, a bootstrap interval resampling tasks only (revised 5 Nov from two levels), sign-flip permutation test; the headline is the task pass rate (decision 2 of the stats proposal); a critical-failure guardrail and a regression list with severity and cause sit beside it | Rishi | 5 Nov |
 | D41 Per-task flags: multiple-comparison correction | Benjamini-Hochberg at 5% false discovery rate marks a task's difference as beyond noise; every task where B dropped is listed either way | Rishi | 5 Nov |
 | D42 Equivalence margin | +/- 10 points of pass rate: "practically equivalent" when the whole 95% interval of B minus A lies inside it | Rishi | 5 Nov |
 | D43 Significance level | Alpha 0.05 and 95% intervals throughout (verdict, critical guardrail, equivalence, BH q = 0.05) | Rishi | 5 Nov |
 | D44 A/A calibration | An explicit calibration run: the same config on both arms only when the run is marked "A/A calibration"; the comparison of an A/B shows the latest A/A interval for its configs; each one is a paid run signed off like any other | Rishi | 5 Nov |
+| D8 Judge trust bar | A judge criterion counts in the headline only when, on the held-out labels, kappa >= 0.6 with its 95% interval's lower end >= 0.4, no false-pass gap between arms, and test-retest agreement >= 90%; below it, it stays visible in trials and the report | Rishi | 5 Nov |
+| D45 Judge model | Gemini 3.8 Flash, pinned for the experiment (billing enabled 5 Nov and checked with one call) | Rishi | 5 Nov |
+| D46 "Not sure" labels | A second look: each "not sure" criterion comes back once, after the fresh items; still "not sure" then means excluded from the judge's agreement, with the count reported | Rishi | 5 Nov |
+| D47 Headline experiment's harness and model | Hermes Agent (pinned 6112c2a) on Claude Haiku 5.5, the same for both arms of prompt v1 vs v2 | Rishi | 5 Nov |
+| D48 Label budget | 20 tuning, 40 held-out, 20 from the final run, as planned in SPEC (about an hour of Rishi's labelling) | Rishi | 5 Nov |
+| D49 Judge-error correction | Pooled sensitivity and specificity from the held-out labels (Rogan-Gladen), since D8 already drops criteria with a false-pass gap between arms; the comparison shows both "as judged" and "corrected" | Rishi | 5 Nov |
+| D15 Hermes settings for the headline experiment | Compression, memory and skills off in both arms; prompt-cache markers off (D31); Tool Search off (R10.7) | Rishi | 5 Nov |
+| D50 Minimum tasks for a verdict | 6 tasks in the aggregate; below it the verdict is "no detectable difference" with "too few tasks for any verdict" | Rishi | 5 Nov |
+| D51 Fake models for reviewers | Kept as a test tool on the full Config screen, clearly labelled; they replay one script whatever the task, so their trials fail and show no A/B difference. Reviewers see real results in the shipped example and run agents with their own key | Rishi | 5 Nov |
+| D52 Label sets and the task split | Tuning labels come from discovery-task trials only; held-out and final labels from held-out-task trials only; the queue and POST /labels enforce it | Rishi | 5 Nov |
+| D53 The task set | The 21 tasks of docs/proposals/tasks-review.md (15 from 4 Nov, 6 new), split A: 11 discovery, 10 held-out; severities as proposed; the proposed grader fixes applied | Rishi | 5 Nov |
+| D54 Arithmetic tools; provenance stays required | Add basic arithmetic tools (add, subtract, multiply, divide, percentages, rounding) to the finance toolset for both arms; the agent never does its own arithmetic; provenance stays required at 0 unsupported; prompt v1 unchanged | Rishi | 5 Nov |
 
 ## Open
 
 | # | Call | Options | Lean | Needed by |
 | --- | --- | --- | --- | --- |
 | D7 | Tasks using the judge | Any share of the 20+ | About 6 to 8 | Thu |
-| D8 | Judge threshold and what happens below it | Set before seeing results | Below threshold leaves the headline score | Thu |
-| D15 | Hermes settings that are design calls | Compression on or off; Tool Search off or on (must be off for MCP tools, R10.7); in skills-on configs allow `skill_manage` writes or stage them; ~~accept the untrusted MCP wrapper or not~~ (settled by D20: accept) | None yet. Evidence in `docs/research/hermes/context_and_self_improvement.md` | Wed |
 
 ## Notes behind the open calls
 
@@ -248,6 +258,69 @@ Options: an explicit calibration run (the same config on both arms, allowed only
 Choice: the explicit calibration run. Without the mark, the same config on both arms stays refused (A30), so an accidental A/A cannot happen. The comparison of an A/B shows the latest A/A interval for its configs beside its own. The simulated A/A tests stay as well.
 Why: Rishi picked it. The stats design (proposal section 5) calls for an A/A run every time, and the grading guide asks to interrogate the math: only a real A/A shows the noise of this setup, harness and model.
 What would change it: cost (each A/A is a full run, about $1 to $2 on Haiku at 20 tasks x 10 trials, a rough estimate, needing a sign-off under R8).
+
+### D8: The judge's trust bar (5 Nov)
+Options: kappa >= 0.6, lower bound >= 0.4, retest >= 90%; kappa >= 0.7, lower >= 0.5, retest >= 95%; kappa >= 0.4, lower >= 0.2, retest >= 85%. In each, the false-pass rate must not differ between arms.
+Choice: kappa at least 0.6 and its 95% interval's lower end at least 0.4, on the held-out set; the false-pass gap between arms has an interval that includes 0; test-retest agreement at least 90%. A criterion below the bar is "not trusted": it stays in the trial view and the report with its numbers, and leaves the headline pass. Fixed in `docs/experiment.md` before the pilot; never moved after seeing held-out results.
+Why: Rishi picked it. 0.6 is "substantial" agreement on the usual scale; with about 40 held-out labels the kappa interval is about +/- 0.2 wide, so the lower-bound rule asks for a point estimate near 0.6 and the stricter bar would fail good judges on label count alone.
+What would change it: more held-out labels (a tighter interval would allow a stricter bar); kappa misleading on a criterion whose answer is almost always yes (then report raw agreement, sensitivity and specificity beside it, as section 3 of the proposal already does).
+
+### D45: The judge model is Gemini 3.8 Flash (5 Nov)
+Options: Claude Sonnet 5.5 (proposed); Claude Opus 5.5; Gemini 3.8 Flash.
+Choice: Gemini 3.8 Flash, pinned for the whole experiment. Every judging run still needs Rishi's approval with a model and a budget (`POST /experiments/:id/judge`).
+Why: Rishi picked it. It is the cheapest ($0.75 / $3.75 per MTok, listed to rise to $1.50 / $7.50 from 1 Jan 2027) and from a different family than the Claude agents, so a judge preferring its own family's writing cannot tilt a comparison of Claude configs.
+Unblocked 5 Nov: Rishi enabled billing; one check call answered in 2.4 s for $0.000235 (`docs/cost.md`). Before that, the Gemini key's project was not on a paid tier. On 4 Nov every Gemini call failed with 503 "high demand", then 429 "You exceeded your current quota, please check your plan and billing details" (`docs/cost.md`). The judge cannot run until billing is on. One call also took 3 minutes before a 503, against the judge's 300 s timeout (A22).
+What would change it: Gemini still failing or too slow with billing on (then Sonnet 5.5, the proposal's choice); the judge missing the trust bar (D8) where a stronger judge would pass.
+Not yet run: the judge has never met a real model; its JSON answer format, the 8,000-token cap and the quote check are tested against a stub and the fake server only (`docs/known-limits.md`).
+
+### D46: "Not sure" labels get a second look (5 Nov)
+Options: excluded from the agreement (proposed); counted as "no"; a second look.
+Choice: a second look. A criterion Rishi marks "not sure" comes back once in the same set, after every fresh item, marked "Second look". The answer then given replaces the "not sure" in the judge's agreement and is not counted as a relabel (it is not a self-consistency test). A second "not sure" is final: it is left out of the agreement (`--human-unsure exclude`) and counted per criterion. A criterion with many "not sure" labels points at an unclear rubric.
+Why: Rishi picked it: the best data for the judge check, at the cost of some extra labelling time.
+What would change it: labelling time running out before Friday (then exclude what is left, which is the same rule applied early).
+
+### D47: The headline experiment runs on Hermes with Claude Haiku 5.5 (5 Nov)
+Options: Hermes on Claude Haiku 5.5; Hermes on Gemini 3.8 Flash; the own loop on Claude Haiku 5.5.
+Choice: Hermes Agent at the pinned SHA 6112c2a on Claude Haiku 5.5, for both arms of prompt v1 vs v2.
+Why: Rishi picked it. Hermes is the brief's required harness and passed every D39 check on Haiku 5.5; Haiku is cheap (measured $0.0024 to $0.014 a trial on 4 Nov) and is not the judge's family (D45, Gemini), so the judge does not grade its own model family's answers.
+What would change it: Hermes failing on the final tasks in a way the platform cannot label as infra; Anthropic rate limits at the planned N.
+Rough cost, an estimate before the pilot: 20 tasks x 10 trials x 2 arms on Haiku 5.5 is about $2 to $5, plus the simulated client and the judge.
+
+### D15: Hermes settings in the headline experiment (5 Nov)
+Options: all off (compression, memory, skills); Hermes's defaults (compression on, memory and skills off); memory and skills on.
+Choice: compression, memory and skills off in both arms of prompt v1 vs v2, with prompt-cache markers off (D31) and Tool Search off (R10.7). `skill_manage` does not arise with skills off.
+Why: Rishi picked it. The prompt stays the only difference, and no hidden extra model call (compression rewrites the history through an auxiliary call) can change one arm's trajectories or cost; D39 found Hermes never writes memory within one session, so memory would add schema and prompt text without testing what it is for.
+What would change it: tasks long enough that an uncompressed conversation hits the model's context limit (none of ours is near it).
+
+### D10 revision: resample tasks only (5 Nov)
+Options: the two-level bootstrap as first settled (tasks, then trials within each task); tasks only (the standard cluster bootstrap); tasks only with a small-sample interval correction.
+Choice: tasks only. Each task's observed pass rate already carries the noise of its trials, so resampling the trials again counts that noise twice and widens the interval.
+Evidence (SP6's simulation, 1,000 simulated experiments per row, task pass rates uniform 10 to 75%, verdict = interval clear of 0 and sign-flip p < 0.05): at 20 tasks x 10 trials, two levels gave 1.5% false "better" or "worse" when nothing changed, 98.5 to 99% coverage, 69% power for a real +15 points and a 24.3-point mean width; tasks only gave 4.7%, 91.6 to 93.7% coverage, 85% power and 17.2 points. At 40 tasks, tasks only covers 95.1%. Reference: Davison and Hinkley (1997), Bootstrap Methods and their Application, section 3.8.
+Why: Rishi picked it: false alarms near the promised 5% and much more power; the slight under-coverage of the percentile interval at about 20 tasks is a known small-sample effect, recorded in `docs/known-limits.md`, and the verdict also needs the permutation test.
+What would change it: very few held-out tasks (the headline compares on held-out tasks only), where a small-sample interval correction would be worth its extra explanation.
+
+### D50: At least 6 tasks for any verdict (5 Nov)
+Options: a floor of 6 tasks; a floor of 8; no floor.
+Choice: 6. Below 6 tasks in the aggregate the verdict is "no detectable difference", with a sentence that there are too few tasks for any verdict. Better or worse cannot happen below 6 anyway: the sign-flip test's smallest two-sided p-value is 2 / 2^K, which is above 0.05 at K = 5.
+Why: Rishi picked it. "Practically equivalent" (D42) has no permutation test behind it, and the percentile interval under-covers with few tasks. SP6's simulation (tasks-only bootstrap, N = 10, 1,000 runs per row) called a real +15-point effect "equivalent" in 3.9% of runs at K = 4, 1.4% at K = 6, 1.1% at K = 8, 0.6% at K = 10 and 12, 0% at K = 20; a 95% interval should allow at most 2.5%.
+Also measured, power to call a real +15 "better": 0% at K = 4, 10.5% at 6, 30.4% at 8, 49.9% at 10, 54.7% at 12, 85.4% at 20. The headline compares on held-out tasks only, so the split decides this.
+
+### D52: The label sets follow the task split (5 Nov)
+Options: follow the task split; disjoint tasks assigned at random to sets; keep the sets disjoint by trial only.
+Choice: the tuning set takes trials of discovery tasks only; the held-out and final sets take trials of held-out tasks only. The label queue offers only those, and `POST /labels` refuses a label in the wrong set (400 `wrong_split`).
+Why: Rishi picked it. Disjoint by trial alone let one task appear in both tuning and held-out, so the judge could be tuned on a task's outputs and scored on more of the same task's, which flatters its agreement. Following the split also matches the experiment: the v2 prompt and the rubric are both shaped on discovery tasks, and both are measured on held-out ones.
+What would change it: too few held-out-task trials for 40 held-out labels before the final run (then label held-out tasks from a v1 run on them, still never a discovery task).
+
+### D53: The task set, its split and severities (5 Nov)
+Options: approve the six new tasks or drop some; split A (11 discovery, 10 held-out), B (9 / 12) or C (A without convo-where-to-start); severities as proposed or set by hand; the smaller grader fixes all, only the false fails, or none.
+Choice: all 21 tasks; split A, with held-out = the six new tasks, loan-to-clear-card and convo-consolidation, sip-education-goal and otp-scam; severities as proposed in `docs/proposals/tasks-review.md` section 3 (20 critical, 63 major, 1 minor of the 84 required deterministic graders); all proposed grader fixes (the months regexes become `number` checks, names-a-risk becomes a judge criterion, convo-payoff's hidden fact says "in total, minimums included" as a new task version, convo-where-to-start gets its own concern).
+Why: Rishi picked them. K = 10 held-out tasks lets the sign-flip test reach p = 0.002 and survive one reversal; the never-run tasks are the cleanest held-out set; near-duplicate scenarios stay on one side. Power for a real +15 points is about 50% at K = 10 (D50's table): the write-up says so.
+Recorded in `docs/experiment.md`: the four held-out tasks from 4 Nov (the consolidation pair, sip, otp) had their v1 outputs read before v2 was written; v2 is written from discovery traces only.
+
+### D54: Arithmetic tools, and provenance stays required (5 Nov)
+Options: make provenance optional and report it beside the pass rate; keep it required at 0; allow 1 or 2 unsupported amounts.
+Choice: keep it required at 0, and add basic arithmetic tools to the finance toolset (add, subtract, multiply, divide, percentages, rounding), so every figure in an answer can come from a tool and the model never does its own arithmetic. Both arms of the experiment get the new toolset. Prompt v1 stays as it is: it already forbids prose arithmetic and will see the new tools in its tool list.
+Why: Rishi: "addition if done wrong fails so keep it required add basic math tools like add / subtract/ multiply / divide and other basics and never allow llm to do its own calculation, we may highlight this in the video. the failure trace". On 4 Nov provenance failed 18 of 24 Hermes trials, almost all on sums written in prose (Rs 23,120 = Rs 14,120 + Rs 9,000): a missing tool, found by trace analysis. The video shows that failure trace, the tools added, then v1 vs v2 measured on held-out tasks; if v1 still does sums in prose with the tools available, v2 can tell it to use them, and the prompt stays the only difference.
 
 ## Entry template
 

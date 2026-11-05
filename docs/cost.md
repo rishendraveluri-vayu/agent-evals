@@ -22,12 +22,15 @@ Two things make this non-linear in the number of calls:
   D39's memory-off run): the own loop averaged 5.0k input tokens at 1 call and 85.6k at 11 calls (5.0k to 7.8k per
   call); Hermes 6.4k at 1 call and 141.8k at 13 calls (6.4k to 10.9k per call). Doubling
   `max_steps` can more than double a long trial's cost.
-- **Provider prompt caching prices part of the input at a tenth.** Hermes marks its prompt for
-  Anthropic's cache; the own loop and LangGraph do not. Of Hermes's 2.69M agent prompt tokens in
-  every Haiku 5.5 call on 4 Nov (LiteLLM's spend log, 280 calls), 683k (25%) were cache reads at $0.01/MTok and 59k cache writes at $0.125/MTok, so it paid
-  $0.294 where list price would be $0.354 (17% less). LiteLLM's recorded spend matches the formula
-  above exactly when the four token kinds are priced separately. This is LiteLLM pricing the
-  provider's cache, not LiteLLM's response cache, which stays off for trials.
+- **Provider prompt caching prices part of the input at a tenth.** Hermes, as it comes, marks its
+  prompt for Anthropic's cache; D31 (4 Nov) turned those markers off in every config (the adapter
+  writes `prompt_caching.cache_ttl: "off"`), so no harness uses the cache from then on and costs
+  compare like for like. Trials before the change were cached: in label batch 1, 86% of Hermes's
+  prompt tokens were cache reads (581,765 of 678,844, read at $0.01 instead of $0.10 per MTok),
+  so its input cost about a quarter of list price; in the two client-sim checks, 79% and 65%. From
+  the D39 runs on: none, in 1.87M prompt tokens. LiteLLM's recorded spend matches the formula
+  above when the four token kinds are priced separately. This is the provider's prompt cache,
+  which only prices the prompt; LiteLLM's response cache stays off for trials.
 
 The platform's estimate does not use this formula directly: it takes LiteLLM's recorded cost per
 trial from earlier trials of the same config and task, so both effects are in it once there is
@@ -48,7 +51,7 @@ These are assumptions until the pilot replaces them: 8 LLM calls per trial, 8k i
 
 - 400 trials is 20 tasks × 2 configs × N=10, used as a placeholder until the pilot sets N.
 - Sonnet vs Gemini Flash at 200 trials each: about $42.
-- Judge estimate: 3k input and 300 output per call on Sonnet is about $0.009. 60 labelled trials × 3 repeats is about $1.60.
+- Judge estimate (D45, Gemini 3.8 Flash): 3k input and 300 output per call is about $0.0034, before any thinking tokens; 60 labelled trials × 3 repeats is about $0.61. On Sonnet 5.5 it would be about $0.009 a call.
 - Check third-party prices on the provider pages before quoting them. Gemini 3.8 Flash is listed to rise to $1.50 / $7.50 from 1 Jan 2027.
 
 Sources:
@@ -61,7 +64,7 @@ Sources:
 
 Fill in with what we actually tried and measured.
 
-- Provider prompt caching. Fine for independence, because the model still generates a new answer. Hermes already does it (17% less than list price on 4 Nov, above); the own loop could mark its system prompt and tool schemas the same way.
+- Provider prompt caching. Fine for independence, because the model still generates a new answer. It is off in every config since D31 so that harnesses compare like for like; before that, Hermes's cached trials paid about a quarter of list price for input (above). Turning it on for every harness at once would cut cost without tilting a comparison.
 - Fewer tools per config, since default toolsets cost about 3x the minimal set per call.
 - Early stopping when the outcome is already clear, with the stopping rule set in advance.
 - Sampling tasks or trials, with the effect on confidence stated.
@@ -82,8 +85,18 @@ The pilot, the experiment and the judge go here too (SP8), with their tokens per
 | 4 Nov | Gemini 3.8 Flash smoke, 5 harnesses x 3 trials, after the D16 retries: every trial failed at Google with 503 "high demand" then 429 "You exceeded your current quota, please check your plan and billing details" (the key's project is not on a paid tier); all labelled infra, none counted against an agent | 15 | $0.00 | Rishi, R8 (the approved 30-trial smoke) |
 | 4 Nov | Label batch 1 (open coding): 15 draft tasks x own loop and Hermes on Haiku 5.5, experiment `e_0mw273dpt486807c2722a92dc`; all 30 answered | 30 | $0.135 | Rishi, R8, estimate $0.30, cap $2 |
 | 4 Nov | D39 Hermes verification on Haiku 5.5: 10 trials each with memory off, on and empty, on and seeded; every check passed (`docs/hermes-notes.md`) | 30 | $0.275 ($0.082, $0.106, $0.087) | Rishi, D39, estimate $0.60, cap $2 |
+| 5 Nov | Gemini billing check after Rishi enabled billing: one call to gemini-3.8-flash through LiteLLM ("Reply with the single word OK.", max 200 tokens): HTTP 200 in 2.4 s, "OK", 8 input and 61 output tokens (thinking included) | 1 call | $0.000235 | Rishi, "Enabled billing u can confirm" |
 
 Per trial on Haiku 5.5: a single question cost $0.0024 to $0.0035 (3 model calls); a 3-turn simulated-client conversation cost $0.012 to $0.014 (8 to 10 agent calls plus the simulator's).
+
+## Clean-machine test (planned, 5 Nov)
+
+One GCP VM for the final fresh-clone test, approved by Rishi ("Yes, today"; "dont give me a bill
+shock"): e2-standard-4 in asia-south1 with an 80 GB balanced disk, about $0.17 an hour, created with
+`--max-run-duration=4h --instance-termination-action=DELETE`, so Google deletes the VM and its disk
+after 4 hours at most: about $0.70 at worst. No static IP, no GPU, no keys on the machine. Created
+only when the code to test is merged; deleted by hand as soon as the test ends. Actual cost goes in
+the table above.
 
 ## System calls
 

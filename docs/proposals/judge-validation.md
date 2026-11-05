@@ -27,9 +27,9 @@ the judge's known error**, so the result we state is "after allowing for the jud
 
 | Set | Size | From | Used for |
 | --- | --- | --- | --- |
-| Tuning | about 20 | smoke trials | Tuning the rubric. Never counted in the reported agreement |
-| Held-out | about 40 | pilot trials | The agreement numbers and the trust decision |
-| Final | about 20 | the real experiment | Checking that agreement holds on the final model's outputs |
+| Tuning | 20 (D48) | trials of discovery tasks only (D52) | Tuning the rubric. Never counted in the reported agreement |
+| Held-out | 40 | trials of held-out tasks only, before the final run (D52) | The agreement numbers and the trust decision |
+| Final | 20 | the real experiment, held-out tasks (D52) | Checking that agreement holds on the final model's outputs |
 
 Sampling is **stratified**: across both arms, across tasks, and across the judge's own verdict, so
 there are enough judge-passes and judge-fails to estimate both kinds of error. Order is shuffled.
@@ -53,9 +53,9 @@ claim, and the report says so.
 ## 4. The trust rule (D8), set before any results
 
 A criterion is **trusted** when, on the held-out set:
-- kappa is at least **[0.6]** and its interval's lower end at least **[0.4]**;
+- kappa is at least **0.6** and its interval's lower end at least **0.4** (D8, settled 5 Nov);
 - the false-pass rate does not differ between arms (the interval for the gap includes 0);
-- test-retest agreement is at least **[90%]**.
+- test-retest agreement is at least **90%**.
 
 Otherwise it is **not trusted**: it stays in the trial view and the report, with its numbers, and is
 left out of the headline pass. The numbers in brackets are Rishi's to set; once set they go into
@@ -68,8 +68,8 @@ the judged one, a standard correction for a test with known error (Rogan and Gla
 
   true pass rate = (judged pass rate + Sp - 1) / (Se + Sp - 1)
 
-We compute it per arm (with each arm's own Se and Sp if the judge is biased between arms, pooled if
-not), and the A minus B difference from that. The uncertainty is a bootstrap over trials **and**
+We compute it per arm with the pooled Se and Sp (D49: a criterion biased between arms is already
+not trusted under D8), and the A minus B difference from that. The uncertainty is a bootstrap over trials **and**
 labels together, so the interval includes what we do not know about the judge.
 
 The Compare screen and the write-up then show two lines:
@@ -100,8 +100,10 @@ Se + Sp well above 1; a criterion near 1 is untrustworthy by definition and alre
 
 ## 8. Cost
 
-About $0.01 per trial per judge pass on Claude Sonnet 5.5 (estimate; measured on the first run), so
-120 trials x 3 test-retest passes on the labelled subset is a few dollars. Every judge run is signed
+About $0.0034 per trial per judge pass on Gemini 3.8 Flash (D45; 3,000 input and 300 output tokens
+at $0.75 / $3.75 per MTok, before any thinking tokens; an estimate until the first run measures it),
+so 120 trials x 3 test-retest passes on the labelled subset is about $1.20. Sonnet 5.5 would be
+about $0.009 a pass. Every judge run is signed
 off with an estimate first (R8).
 
 ## Built so far (4 Nov night): the arithmetic only
@@ -117,10 +119,12 @@ current grading, so that read is still to build.
 
 ## Decisions for Rishi
 
-1. The trust thresholds in §4 (kappa, its lower bound, test-retest).
-2. Per-arm or pooled sensitivity and specificity in the correction (per-arm is safer, needs more labels).
-3. Whether "not sure" labels count as fail, are excluded (proposed), or trigger a second look.
-4. The label budget: 20 / 40 / 20 as in SPEC, or more held-out labels for tighter intervals.
-5. The judge model: Claude Sonnet 5.5 (proposed, pinned) or another. For prompt v1 vs v2 both arms
+1. **Settled 5 Nov (D8):** kappa >= 0.6, lower bound >= 0.4, test-retest >= 90%.
+2. **Settled 5 Nov (D49):** pooled sensitivity and specificity in the correction; D8's arm-gap check
+   already drops criteria that treat the arms differently.
+3. **Settled 5 Nov (D46):** a "not sure" label triggers one second look, after the fresh items;
+   what is still "not sure" then is excluded, and the count is reported per criterion.
+4. **Settled 5 Nov (D48):** 20 tuning / 40 held-out / 20 final, as in SPEC.
+5. **Settled 5 Nov (D45):** Gemini 3.8 Flash, pinned; it needs billing on the Gemini key first. (Proposed was Claude Sonnet 5.5.) For prompt v1 vs v2 both arms
    use the same model, so this is fine; in a Claude-vs-Gemini comparison a Claude judge could favour
    its own family, and the per-arm bias check in §3 is what would show it.

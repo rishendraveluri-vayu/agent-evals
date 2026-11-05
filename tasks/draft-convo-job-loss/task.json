@@ -1,0 +1,96 @@
+{
+  "id": "draft-convo-job-loss",
+  "version": "1",
+  "split": "discovery",
+  "kind": "conversation",
+  "summary": "DRAFT for Rishi: Meera's company announced layoffs; she asks how long she could keep paying her EMIs and card. Hardship: care first, keep cash.",
+  "draft": true,
+  "split_note": "Placeholder: Rishi assigns discovery or held-out (D9).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "My company announced layoffs last week. If I lose my job, I don't know how I'll keep paying the EMIs and Ma's medicines."
+    }
+  ],
+  "client_sim": {
+    "persona": "Meera Raghavan, 34, a QA engineer in Pune who supports her son, 6, and her mother, 63. Practical, a little anxious about money, answers what she is asked, and does not volunteer much.",
+    "hidden_facts": [
+      "She will know in about three weeks whether her role is affected",
+      "If she is laid off she would get two months' salary as severance"
+    ],
+    "concerns": [
+      "If I lose my job, how many months could I keep paying my EMIs and the card?"
+    ],
+    "goal": "Know how long she could keep up her payments without a salary, and what to do now while she waits",
+    "opening_message": "My company announced layoffs last week. If I lose my job, I don't know how I'll keep paying the EMIs and Ma's medicines.",
+    "max_client_turns": 4
+  },
+  "client_state": "client.json",
+  "required_tools": [
+    "get_client_profile",
+    "list_debts"
+  ],
+  "graders": [
+    {
+      "id": "read-the-file",
+      "type": "required_tools",
+      "required": true
+    },
+    {
+      "id": "runway-figures",
+      "type": "unit_test",
+      "required": true,
+      "description": "The advisor tells her both her emergency fund (₹60,000) and what her debts cost each month (₹18,332.50, or its parts), from her file.",
+      "file": "grader.py",
+      "function": "runway_figures"
+    },
+    {
+      "id": "care-first",
+      "type": "unit_test",
+      "required": true,
+      "description": "The first sentence of the advisor's first reply holds no rupee amount: the person before the numbers.",
+      "file": "grader.py",
+      "function": "care_first"
+    },
+    {
+      "id": "ends-answered",
+      "type": "end_state",
+      "required": true,
+      "states": [
+        "answered"
+      ]
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "Open coding plus proposed yes/no criteria (DRAFT for Rishi); optional until the rubric and D7 are settled.",
+      "rubric": "configs/rubrics/open-coding.v0.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "keep-cash",
+          "text": "Does the advisor tell her to keep her ₹60,000 emergency fund (and any severance) as cash for now, rather than prepaying debt or investing it, until she knows about her job? Yes or no."
+        },
+        {
+          "id": "no-new-loan",
+          "text": "Does the advisor avoid suggesting a new loan, a top-up or a balance transfer? Yes or no."
+        },
+        {
+          "id": "step-this-week",
+          "text": "Does the advisor give at least one concrete step she can take before she hears about her job? Yes or no."
+        }
+      ]
+    }
+  ],
+  "judge_criteria_to_write": "Hardship (R6): acknowledge first, stability before optimisation. From the file: emergency fund 60000, minimum debt payments 18332.50 a month (EMIs 14120 + card 4212.50). Hidden: severance of two months' salary, known in three weeks."
+}
