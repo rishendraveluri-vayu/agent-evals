@@ -288,8 +288,12 @@ const runLink = computed(() => {
 
 /** The .env variable the picked model needs and lacks; null when it is set or not known. */
 const keyMissing = computed(() => missingKey(form.model, data.value?.models ?? []));
-/** No real model can run: every one lacks its key. A keyless reviewer is pointed at the free route. */
-const noKeys = computed(() => realModels.value.length > 0 && realModels.value.every((m) => missingKey(m.name, realModels.value)));
+/** No provider key is known to be set: no listed model has `key_set: true`. A model whose key is
+ *  unknown (`null`, such as the local Qwen, which needs none but runs only with its compose
+ *  profile) does not count as runnable. A keyless reviewer is pointed at the free route. */
+const noKeys = computed(() => realModels.value.length > 0 && !realModels.value.some((m) => m.key_set === true));
+/** The local open-weight model, when LiteLLM lists it: it needs no key, only its compose profile. */
+const localModel = computed(() => realModels.value.find((m) => m.key_set === null && m.name.endsWith('-local')) ?? null);
 </script>
 
 <template>
@@ -430,10 +434,12 @@ const noKeys = computed(() => realModels.value.length > 0 && realModels.value.ev
           role="note"
           data-test="no-keys"
         >
-          No provider key is set in <span class="mono">.env</span>, so no real model can run yet. You can still build and save an agent here, and preview what reaches the model, for free. Fake models run without a key, from the <a :href="href.config()">full Config screen</a>, but they make the same scripted calls whatever the task, so most trials fail: they exist to test the platform, not to judge an agent.
+          No provider key is set in <span class="mono">.env</span>, so no hosted model can run yet. You can still build and save an agent here, and preview what reaches the model, for free.<template v-if="localModel">
+            The local model, {{ modelName(localModel.name) }}, needs no key, but it runs only once its compose profile is up (see the README, Add a model), and slowly on a CPU.
+          </template> Fake models run without a key, from the <a :href="href.config()">full Config screen</a>, but they make the same scripted calls whatever the task, so most trials fail: they exist to test the platform, not to judge an agent.
         </p>
         <p
-          v-else
+          v-else-if="!realModels.length"
           class="secondary"
           data-test="no-models"
         >

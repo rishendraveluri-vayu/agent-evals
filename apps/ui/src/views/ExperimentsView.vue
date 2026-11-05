@@ -532,7 +532,7 @@ const rows = computed<Row[]>(() => {
           <a :href="data?.latest ? href.compare(data.latest.id) : href.experiments()">
             <span class="secondary small num block">3</span>
             <span class="flow-head">Compare</span>
-            <span class="secondary small block">Pass counts, cost and time per version, then task by task. No verdict or interval in this version.</span>
+            <span class="secondary small block">The verdict with its interval, then pass counts, cost and time per version, task by task.</span>
           </a>
         </li>
         <li>

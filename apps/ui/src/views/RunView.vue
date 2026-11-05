@@ -781,7 +781,7 @@ const runTitle = computed(() => (data.value?.experiment ? experimentName(data.va
 const simClient = computed(() => (data.value?.experiment?.sim_model ? modelName(data.value.experiment.sim_model) : null));
 
 /** The power tile's note. The API has no power estimate yet (SP6 adds `min_detectable_effect`). */
-const powerNote = 'Not estimated yet: the power estimate comes with the statistics step';
+const powerNote = 'Not computed before a run (docs/known-limits.md, Statistics, has the simulated power table); a verdict needs at least 6 tasks that differ between the arms';
 
 /** "2 workers per harness", from the workers the estimate's time assumes. */
 const workersNote = computed(() => {

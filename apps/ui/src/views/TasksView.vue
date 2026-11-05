@@ -28,7 +28,13 @@ const grader = ref('any');
 const tasks = computed(() => data.value?.tasks ?? []);
 const splits = computed(() => [...new Set(tasks.value.map((t) => t.split))]);
 const kinds = computed(() => [...new Set(tasks.value.flatMap((t) => graderKinds(t.graders)))]);
-const isCode = (t: TaskView) => !graderKinds(t.graders).includes('judge');
+/** A judge grader that decides the outcome: one not marked optional. Judge criteria stay optional
+ *  until they are trusted (D8), so a task with only an optional judge is decided by code. */
+const isRequiredJudge = (g: unknown) => typeof g === 'object' && g !== null && !Array.isArray(g) && graderKinds([g as never])[0] === 'judge' && (g as { required?: unknown }).required !== false;
+const isCode = (t: TaskView) => !t.graders.some(isRequiredJudge);
+const hasOptionalJudge = (t: TaskView) => isCode(t) && graderKinds(t.graders).includes('judge');
+/** A demo task (`demo-*`) shows one platform feature and is not part of the task set. */
+const isDemo = (t: TaskView) => t.id.startsWith('demo-');
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 const arms = computed(() => (data.value?.run ? armsOf(data.value.run.detail, data.value.run.detail.configs) : []));
@@ -38,8 +44,10 @@ const arms = computed(() => (data.value?.run ? armsOf(data.value.run.detail, dat
 const taskCount = computed(() => {
   if (!tasks.value.length) return 'The personal-finance tasks';
   const engine = tasks.value.filter(isEngineTest).length;
-  const real = plural(tasks.value.length - engine, 'personal-finance task', 'personal-finance tasks');
-  return engine ? `${real} and ${plural(engine, 'engine test', 'engine tests')} (checks of the platform, not of an agent)` : real;
+  const demo = tasks.value.filter(isDemo).length;
+  const real = plural(tasks.value.length - engine - demo, 'personal-finance task', 'personal-finance tasks');
+  const extra = [demo ? plural(demo, 'demo', 'demos') : '', engine ? `${plural(engine, 'engine test', 'engine tests')} (checks of the platform, not of an agent)` : ''].filter(Boolean);
+  return extra.length ? `${real}${extra.length === 2 ? ', ' : ' and '}${extra.join(' and ')}` : real;
 });
 
 const glance = computed(() => {
@@ -54,6 +62,9 @@ const glance = computed(() => {
   return {
     bySplit,
     graded: `${code} code, ${all.length - code} judge`,
+    gradedNote: all.some(hasOptionalJudge)
+      ? `${all.filter(hasOptionalJudge).length} of the code-graded also have a judge that does not count until it is trusted`
+      : 'Code means exact match, unit tests and state checks',
     client: `${plural(single, 'single prompt', 'single prompts')}, ${plural(all.length - single, 'conversation', 'conversations')}`,
     separatedLabel: arms.value.length === 2 ? `Separated ${arms.value[0].short} and ${arms.value[1].short}` : 'Separated the arms',
     separated: separated !== null && stats ? `${separated} of ${stats.tasks.length}${runSplit?.size === 1 ? ` ${[...runSplit][0]}` : ''}` : 'No verdict yet',
@@ -136,7 +147,7 @@ const groups = computed(() => {
       <div>
         <span class="stat-label">Graded by</span>
         <span class="glance-value">{{ glance.graded }}</span>
-        <span class="stat-note smaller">Code means exact match, unit tests and state checks</span>
+        <span class="stat-note smaller">{{ glance.gradedNote }}</span>
       </div>
       <div>
         <span class="stat-label">Client</span>

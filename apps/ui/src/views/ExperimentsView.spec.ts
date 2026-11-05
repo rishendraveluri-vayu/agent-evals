@@ -179,6 +179,7 @@ describe('ExperimentsView against the API: a finished A/B still grading', () => 
     expect(text).not.toContain('verdict shows here first');
     expect(text).not.toContain('how sure we can be');
     expect(text).toContain('See the trials, models, cost and time before anything starts.');
-    expect(text).toContain('No verdict or interval in this version.');
+    expect(text).toContain('The verdict with its interval, then pass counts, cost and time per version, task by task.');
+    expect(text).not.toContain('No verdict or interval');
   });
 });

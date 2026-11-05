@@ -305,6 +305,30 @@ describe('Build an agent, in fixture mode', () => {
     expect(noKeys.text()).toContain('Fake models run without a key, from the full Config screen, but they make the same scripted calls whatever the task, so most trials fail: they exist to test the platform, not to judge an agent.');
     expect(noKeys.get('a').attributes('href')).toBe('#/configs');
     expect(view.get('[data-test="save-agent"]').attributes('disabled')).toBeUndefined();
+    // Models are listed, so it never also says there are none (fresh-clone review, G1).
+    expect(view.find('[data-test="no-models"]').exists()).toBe(false);
+  });
+
+  it('counts the keyless local model as unknown, not runnable, and says what it needs', async () => {
+    vi.spyOn(api, 'models').mockResolvedValue([
+      { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false },
+      { name: 'qwen2.5-7b-local', provider: 'ollama_chat', input_per_mtok: 0, output_per_mtok: 0, key_set: null },
+    ]);
+    const view = await open();
+    const note = view.get('[data-test="no-keys"]').text();
+    expect(note).toContain('so no hosted model can run yet');
+    expect(note).toContain('needs no key, but it runs only once its compose profile is up');
+    expect(view.find('[data-test="no-models"]').exists()).toBe(false);
+  });
+
+  it('with a key set, shows neither the keyless note nor the no-models line', async () => {
+    vi.spyOn(api, 'models').mockResolvedValue([
+      { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: true },
+      { name: 'gemini-3.8-flash', provider: 'gemini', input_per_mtok: 0.75, output_per_mtok: 3.75, key_set: false },
+    ]);
+    const view = await open();
+    expect(view.find('[data-test="no-keys"]').exists()).toBe(false);
+    expect(view.find('[data-test="no-models"]').exists()).toBe(false);
   });
 
   it('has one field per setting: no stray checkbox beside a number, and no id twice', async () => {

@@ -106,4 +106,18 @@ describe('TasksView against the API: a shipped example, no statistics', () => {
     await settle();
     expect(w.get('.lede').text()).toMatch(/^24 personal-finance tasks and 1 engine test \(checks of the platform, not of an agent\), each needing/);
   });
+
+  it('counts a demo apart, and an optional judge as not deciding (fresh-clone review, O2)', async () => {
+    const base = (tasks as Record<string, unknown>[])[0];
+    const optionalJudge = { id: 'overall', type: 'judge', required: false };
+    const demo = { ...base, id: 'demo-skill-card-transfer', sha256: 'sha256:demo', graders: [{ id: 'emi', type: 'number' }] };
+    const judged = (tasks as Record<string, unknown>[]).map((t) => ({ ...t, graders: [{ id: 'n', type: 'number' }, optionalJudge] }));
+    routeFetch({ '/api/tasks': [...judged, demo], '/api/experiments': [] });
+    const w = mount(TasksView);
+    await settle();
+    expect(w.get('.lede').text()).toMatch(/^24 personal-finance tasks and 1 demo, each needing/);
+    const glance = w.get('[data-test="task-glance"]').text();
+    expect(glance).toContain('25 code, 0 judge');
+    expect(glance).toContain('24 of the code-graded also have a judge that does not count until it is trusted');
+  });
 });

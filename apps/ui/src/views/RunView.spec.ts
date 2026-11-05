@@ -55,7 +55,7 @@ describe('RunView, setting up a run in fixture mode', () => {
     expect(tiles[3].get('.stat-label').text()).toBe('Smallest overall difference it can see');
     // The API has no power estimate yet (SP6), so the tile says so rather than inventing one.
     expect(tiles[3].get('.stat-value').text()).toBe('–');
-    expect(tiles[3].get('[data-test="power-note"]').text()).toBe('Not estimated yet: the power estimate comes with the statistics step');
+    expect(tiles[3].get('[data-test="power-note"]').text()).toBe('Not computed before a run (docs/known-limits.md, Statistics, has the simulated power table); a verdict needs at least 6 tasks that differ between the arms');
     expect(nb).toBe('\u00a0');
   });
 
@@ -133,7 +133,7 @@ describe('RunView, a running experiment in fixture mode', () => {
     expect(w.get('[data-test="plan"]').classes()).toEqual(expect.arrayContaining(['stat-strip', 'plan', 'plan--past']));
     const tiles = w.findAll('[data-test="plan"] > div');
     expect(tiles[3].get('.stat-label').text()).toBe('Smallest overall difference it can see');
-    expect(tiles[3].get('[data-test="power-note"]').text()).toBe('Not estimated yet: the power estimate comes with the statistics step');
+    expect(tiles[3].get('[data-test="power-note"]').text()).toBe('Not computed before a run (docs/known-limits.md, Statistics, has the simulated power table); a verdict needs at least 6 tasks that differ between the arms');
     const actions = w.get('[data-test="run-actions"]');
     expect(actions.get('[data-test="pause"]').text()).toBe('Pause');
     expect(actions.get('[data-test="stop"]').text()).toBe('Stop');
