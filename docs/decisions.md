@@ -16,7 +16,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | Agents ADK (was D11) | Both: Google ADK and OpenAI Agents SDK, "both are most common" | Rishi | 3 Nov |
 | Task domain (was D13) | Personal-finance assistant: calculation tools plus context-sensitive advice | Rishi | 3 Nov |
 | Second provider (was D4) | Gemini, next to Claude | Rishi | 3 Nov |
-| Graders and stats (was D1) | Python | Rishi | 3 Nov |
+| Graders and stats (was D1) | Python for the graders and the judge-agreement maths (`stats/`); the comparison statistics in the API, in TypeScript (amended 5 Nov) | Rishi | 3 Nov, amended 5 Nov |
 | Worker boundary (was D2) | HTTP claim and report; workers never touch the database | Rishi | 3 Nov |
 | Trial isolation (was D3) | One long-lived container per harness, a fresh process per trial, one trial at a time per container | Rishi delegated ("simpler and more robust"); Claude's recommendation | 3 Nov |
 | Tool delivery (was D14) | One MCP server for the finance tools, shared by every harness, started per trial over stdio | Rishi | 3 Nov |
@@ -64,6 +64,8 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D52 Label sets and the task split | Tuning labels come from discovery-task trials only; held-out and final labels from held-out-task trials only; the queue and POST /labels enforce it | Rishi | 5 Nov |
 | D53 The task set | The 21 tasks of docs/proposals/tasks-review.md (15 from 4 Nov, 6 new), split A: 11 discovery, 10 held-out; severities as proposed; the proposed grader fixes applied | Rishi | 5 Nov |
 | D54 Arithmetic tools; provenance stays required | Add basic arithmetic tools (add, subtract, multiply, divide, percentages, rounding) to the finance toolset for both arms; the agent never does its own arithmetic; provenance stays required at 0 unsupported; prompt v1 unchanged | Rishi | 5 Nov |
+| D55 No "equivalent" from a zero-width interval | When every task gives the same difference, the verdict is never "practically equivalent" | Rishi | 5 Nov |
+| D56 Provenance traces arithmetic inputs | An arithmetic tool's result counts as supported only when its inputs are themselves supported | Rishi | 5 Nov |
 
 ## Open
 
@@ -321,6 +323,19 @@ Recorded in `docs/experiment.md`: the four held-out tasks from 4 Nov (the consol
 Options: make provenance optional and report it beside the pass rate; keep it required at 0; allow 1 or 2 unsupported amounts.
 Choice: keep it required at 0, and add basic arithmetic tools to the finance toolset (add, subtract, multiply, divide, percentages, rounding), so every figure in an answer can come from a tool and the model never does its own arithmetic. Both arms of the experiment get the new toolset. Prompt v1 stays as it is: it already forbids prose arithmetic and will see the new tools in its tool list.
 Why: Rishi: "addition if done wrong fails so keep it required add basic math tools like add / subtract/ multiply / divide and other basics and never allow llm to do its own calculation, we may highlight this in the video. the failure trace". On 4 Nov provenance failed 18 of 24 Hermes trials, almost all on sums written in prose (Rs 23,120 = Rs 14,120 + Rs 9,000): a missing tool, found by trace analysis. The video shows that failure trace, the tools added, then v1 vs v2 measured on held-out tasks; if v1 still does sums in prose with the tools available, v2 can tell it to use them, and the prompt stays the only difference.
+
+### D1 amendment: where the statistics run (5 Nov)
+The comparison statistics (SP6) were built in TypeScript in the API, against D1 as written ("graders and stats: Python"); Claude chose it from the brief's "TypeScript for the API" and did not flag the conflict with D1 before building. Rishi kept it: the statistics run where the comparison is served, tested against published values (cross-checked with SciPy and statsmodels). The graders and the judge-agreement maths (`stats/`, `evals-agreement`) stay Python.
+
+### D55: No "practically equivalent" from a zero-width interval (5 Nov)
+Options: a guard; no guard (documented only).
+Choice: the guard. When every task gives the same difference, the task bootstrap's interval has no width; that shows no spread, not a small one (a task at 10 of 10 against 10 of 10 is still consistent with a gap of over 20 points), so the verdict is "no detectable difference" with a sentence saying why. Better or worse can still follow when the sign-flip test agrees.
+Why: Rishi picked it; it only removes a claim.
+
+### D56: Provenance traces the inputs of arithmetic tools (5 Nov)
+Options: an arithmetic tool's result counts as supported only when its inputs are supported (by a finance tool's result, the client's file or the client's message); any tool result counts (documented only).
+Choice: trace the inputs, so a made-up figure cannot become "supported" by passing through `round(x)` or `add([x, 0])`. It changes what the grader counts: a new framework version, and the recorded trials regrade for free.
+Why: Rishi picked it, closing the loophole found while adding the tools (D54).
 
 ## Entry template
 

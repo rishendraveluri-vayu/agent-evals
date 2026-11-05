@@ -142,7 +142,9 @@ export function passRateVerdict(diff: StatsInterval, p: number, tasks: number, a
   if (tasks < MIN_TASKS_FOR_VERDICT) return 'no_detectable_difference';
   if (diff.low > 0 && p < alpha) return 'better';
   if (diff.high < 0 && p < alpha) return 'worse';
-  if (diff.low >= -margin && diff.high <= margin) return 'equivalent';
+  // D55: a zero-width interval (every task gave the same difference) shows no spread, not a small
+  // one, so it cannot support "practically equivalent".
+  if (diff.high > diff.low && diff.low >= -margin && diff.high <= margin) return 'equivalent';
   return 'no_detectable_difference';
 }
 

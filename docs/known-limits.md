@@ -220,9 +220,10 @@ the method as built (D10 revised: a task bootstrap, the sign-flip test, D42's ve
   (84% at K = 4) or, with one task, has no width at all.
 - **When every task gives the same difference, the interval has no width.** The task bootstrap sees
   only the spread between tasks' observed differences. If every task ties (for example both arms
-  fail everything, a floor effect), the interval is 0 to 0 and the verdict can be "practically
-  equivalent" from very little: the API test for a regrade where every trial fails gets exactly
-  that over 7 tasks with one trial each. Read the per-task counts before trusting an "equivalent".
+  fail everything, a floor effect), the interval is 0 to 0. Since 5 Nov (D55) a zero-width interval
+  never gives "practically equivalent": the verdict is "no detectable difference", saying every task
+  gave the same difference so the interval cannot show how large a difference could hide. Better or
+  worse can still follow from it when the paired test agrees (every task moved the same way).
 - **Few trials per task.** A task's own flag comes from that task's trials only (Fisher's exact
   test, Benjamini-Hochberg across tasks): at N = 5 a task can be flagged only on a near-total flip
   (5 of 5 against 0 of 5 has p = 0.008). The per-task intervals are 40 to 100 points wide at N = 5.

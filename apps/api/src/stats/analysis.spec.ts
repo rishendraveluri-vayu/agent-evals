@@ -36,6 +36,16 @@ describe('the verdict rule (D42, D43)', () => {
     expect(passRateVerdict({ estimate: 1, low: -2, high: 3 }, 0.9, 6)).toBe('equivalent');
   });
 
+  it('never calls a zero-width interval equivalent, however many tasks tie (D55)', () => {
+    expect(passRateVerdict({ estimate: 0, low: 0, high: 0 }, 1, 20)).toBe('no_detectable_difference');
+    expect(passRateVerdict({ estimate: 5, low: 5, high: 5 }, 0.001, 20)).toBe('better');
+    const tied = Array.from({ length: 8 }, (_, i) => task(`t${i}`, 10, 10, 10, 10));
+    const s = analyse({ seed: 'e_tied', tasks: tied }, fast).stats;
+    expect(s?.diff).toEqual({ estimate: 0, low: 0, high: 0 });
+    expect(s?.verdict).toBe('no_detectable_difference');
+    expect(s?.verdict_text).toContain('Every task gave the same difference');
+  });
+
   it('never calls one tied task equivalent, though its task bootstrap has no width', () => {
     const s = analyse({ seed: 'e_one', tasks: [task('t', 2, 4, 2, 4)] }, fast).stats;
     expect(s?.diff).toEqual({ estimate: 0, low: 0, high: 0 });
