@@ -16,6 +16,11 @@ describeWithDb('POST /prompts (e2e, real Postgres, a copy of configs/)', () => {
 
   beforeAll(async () => {
     env = await bootEnv();
+    // These tests start from a finance-advisor with v1 only; the repo's own later versions (v2, D67)
+    // are taken out of this test's copy of configs/ so the next version created here is v2.
+    for (const f of await fs.readdir(path.join(env.configsDir, 'prompts'))) {
+      if (/^finance-advisor\.v(?!1\.md$)\d+\.md$/.test(f)) await fs.rm(path.join(env.configsDir, 'prompts', f));
+    }
   });
 
   afterAll(async () => {

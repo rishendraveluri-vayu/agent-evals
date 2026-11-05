@@ -79,8 +79,9 @@ HELD_OUT = {
     "draft-otp-scam",
 }
 RANK = {"critical": 0, "major": 1, "minor": 2}
-# D63: the tasks whose graders changed (only graders, so their core did not).
-VERSION_3 = {
+# D63: the tasks whose graders changed (only graders, so their core did not); D68 then moved
+# every task one version up (the rubric and new judge criteria, graders only again).
+D63_TASKS = {
     "draft-otp-scam",
     "draft-car-loan-afford",
     "draft-convo-car",
@@ -109,7 +110,7 @@ def test_d53_split_a_and_no_draft_markers():
     assert {t["id"] for t in tasks if t["split"] == "held_out"} == HELD_OUT
     for t in tasks:
         assert "draft" not in t and not t["summary"].startswith("DRAFT"), t["id"]
-        assert t["version"] == ("3" if t["id"] in VERSION_3 else "2"), t["id"]
+        assert t["version"] == ("4" if t["id"] in D63_TASKS else "3"), t["id"]
     kinds = {(t["split"], t["kind"]) for t in tasks}
     assert ("held_out", "conversation") in kinds and ("discovery", "conversation") in kinds
     assert sum(t["kind"] == "conversation" for t in tasks) == 7
@@ -148,6 +149,79 @@ def test_d53_hidden_fact_and_concern_fixes():
     judge = next(g for g in risk["graders"] if g["type"] == "judge")
     assert "names-a-risk" in {c["id"] for c in judge["criteria"]}
     assert judge["severity"] == "critical"
+
+
+# ---- D68: the judge reads rubric advice.v1, with criteria for prompt v2's fixes --------------
+
+REPO = TASKS.parent
+RUBRIC = "configs/rubrics/advice.v1.md"
+CLARIFIES = {"draft-payoff-order", "draft-convo-payoff"}
+DECIDING = {
+    "draft-car-loan-afford",
+    "draft-convo-car",
+    "draft-convo-where-to-start",
+    "draft-convo-job-loss",
+    "draft-convo-phone-loan",
+    "draft-convo-consolidation",
+}
+
+
+def judge_of(t: dict) -> dict:
+    judges = [g for g in t["graders"] if g["type"] == "judge"]
+    assert len(judges) == 1, t["id"]
+    return judges[0]
+
+
+def test_d68_rubric_is_the_approved_draft_verbatim():
+    from evals_graders.judge import rubric_text
+
+    doc = (REPO / "docs/proposals/rubric-v1.md").read_text(encoding="utf-8")
+    section = doc.split("## Draft text", 1)[1]
+    start = section.index("```markdown\n") + len("```markdown\n")
+    draft = section[start : section.index("\n```", start)]
+    raw = (REPO / RUBRIC).read_text(encoding="utf-8")
+    assert raw.startswith("<!--") and "D68" in raw.split("-->", 1)[0]
+    assert rubric_text(raw) == draft.strip()
+
+
+def test_d68_every_judge_reads_the_rubric_and_keeps_its_criteria():
+    for t in all_tasks():
+        judge = judge_of(t)
+        ids = [c["id"] for c in judge["criteria"]]
+        assert judge["rubric"] == RUBRIC and judge["required"] is False, t["id"]
+        assert ids[0] == "overall" and ids.count("explains-plainly") == 1, t["id"]
+        assert ("clarifies-ambiguous-amount" in ids) == (t["id"] in CLARIFIES), t["id"]
+        assert ("asks-deciding-fact" in ids) == (t["id"] in DECIDING), t["id"]
+        # all three are major, so no judge grader is below major now
+        assert judge["severity"] in ("critical", "major"), t["id"]
+    held_out = {t["id"] for t in all_tasks() if t["split"] == "held_out"}
+    assert DECIDING & held_out == {
+        "draft-convo-job-loss",
+        "draft-convo-phone-loan",
+        "draft-convo-consolidation",
+    }
+    assert not CLARIFIES & held_out
+
+
+def test_d68_kept_criteria_are_unchanged():
+    by_id = {t["id"]: judge_of(t) for t in all_tasks()}
+    kept = {
+        "draft-car-loan-afford": ["overall", "clears-card-first"],
+        "draft-convo-where-to-start": ["overall", "keeps-medicines", "health-cover"],
+        "draft-convo-job-loss": ["overall", "keep-cash", "no-new-loan", "step-this-week"],
+        "draft-loan-to-clear-card": ["overall", "names-a-risk"],
+        "draft-prepay-personal-loan": ["overall", "card-first"],
+    }
+    for task_id, ids in kept.items():
+        assert [c["id"] for c in by_id[task_id]["criteria"]][: len(ids)] == ids
+
+
+def test_d68_no_judge_runs_without_an_approval(tmp_path):
+    out = make_trial(tmp_path, "Your EMI is ₹39,337.32.", [])
+    graders, folder = task("draft-emi-home-loan")
+    report = grade_trial(out, graders, task_dir=folder, repo_root=REPO)
+    judge = next(g for g in report["grades"] if g["type"] == "judge")
+    assert judge["verdict"] == "not_implemented", judge["reason"]
 
 
 # ---- D63: otp-scam's two critical checks are bounded unit tests ------------------------------

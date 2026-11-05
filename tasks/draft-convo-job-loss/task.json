@@ -1,6 +1,6 @@
 {
   "id": "draft-convo-job-loss",
-  "version": "2",
+  "version": "3",
   "split": "held_out",
   "kind": "conversation",
   "summary": "Meera's company announced layoffs; she asks how long she could keep paying her EMIs and card. Hardship: care first, keep cash.",
@@ -74,8 +74,8 @@
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "Open coding plus yes/no criteria (D53); optional until the rubric is written and the criteria pass the trust bar (D7, D8). Its severity is the most severe of its criteria's.",
-      "rubric": "configs/rubrics/open-coding.v0.md",
+      "description": "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's.",
+      "rubric": "configs/rubrics/advice.v1.md",
       "criteria": [
         {
           "id": "overall",
@@ -92,6 +92,14 @@
         {
           "id": "step-this-week",
           "text": "Does the advisor give at least one concrete step she can take before she hears about her job? Yes or no."
+        },
+        {
+          "id": "explains-plainly",
+          "text": "Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no."
+        },
+        {
+          "id": "asks-deciding-fact",
+          "text": "How long she can keep paying hinges on whether she would get severance or other money if laid off, which her records do not hold. Does the advisor ask, or say what it assumed and how the answer would change? Yes or no."
         }
       ],
       "severity": "critical"

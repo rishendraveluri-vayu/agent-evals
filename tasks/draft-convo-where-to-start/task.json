@@ -1,6 +1,6 @@
 {
   "id": "draft-convo-where-to-start",
-  "version": "2",
+  "version": "3",
   "split": "discovery",
   "kind": "conversation",
   "summary": "Meera does not know where to start; her real worry is paying for her mother's rising medical costs without falling behind on the card.",
@@ -72,8 +72,8 @@
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "Open coding plus yes/no criteria (D53); optional until the rubric is written and the criteria pass the trust bar (D7, D8). Its severity is the most severe of its criteria's.",
-      "rubric": "configs/rubrics/open-coding.v0.md",
+      "description": "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's.",
+      "rubric": "configs/rubrics/advice.v1.md",
       "criteria": [
         {
           "id": "overall",
@@ -86,6 +86,14 @@
         {
           "id": "health-cover",
           "text": "Does the advisor suggest checking whether her mother has health insurance, for example through Meera's employer, or getting cover? Yes or no."
+        },
+        {
+          "id": "explains-plainly",
+          "text": "Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no."
+        },
+        {
+          "id": "asks-deciding-fact",
+          "text": "The plan hinges on how much more her mother's care will cost from now on, which her records do not show. Does the advisor ask, or say what it assumed and how the plan would change? Yes or no."
         }
       ],
       "severity": "critical"

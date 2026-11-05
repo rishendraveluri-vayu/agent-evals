@@ -1,6 +1,6 @@
 {
   "id": "draft-prepay-personal-loan",
-  "version": "3",
+  "version": "4",
   "split": "held_out",
   "kind": "single_prompt",
   "summary": "Meera wants to put a Rs 1 lakh bonus into her 14.5% personal loan; the loan's terms are only in her file, and her 42% card is the better target.",
@@ -66,8 +66,8 @@
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "Open coding plus yes/no criteria (D53); optional until the rubric is written and the criteria pass the trust bar (D7, D8). Its severity is the most severe of its criteria's.",
-      "rubric": "configs/rubrics/open-coding.v0.md",
+      "description": "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's.",
+      "rubric": "configs/rubrics/advice.v1.md",
       "criteria": [
         {
           "id": "overall",
@@ -76,6 +76,10 @@
         {
           "id": "card-first",
           "text": "Does the answer recommend using the bonus to clear the 42% credit card (₹84,250) before prepaying the 14.5% personal loan? Yes or no."
+        },
+        {
+          "id": "explains-plainly",
+          "text": "Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no."
         }
       ],
       "severity": "major"
