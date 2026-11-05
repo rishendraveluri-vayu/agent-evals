@@ -71,6 +71,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 | D59 Futility check on fake-only runs | Off by default when every model in the run is fake; on by default for any paid run | Rishi | 5 Nov |
 | D60 Bind-mount permissions | The API starts as root only to create and own its writable folders, then drops privileges; the health check and smoke test fail loudly when they are not writable | Rishi | 5 Nov |
 | D61 Provenance: verify, don't trace | A rupee figure counts when it matches a source within tolerance, or is a correct one-step derivation the checker recomputes from sourced numbers (small counts, periods, rates and unit facts need no source, but at least one operand must be a sourced value); "figures written without a tool" is reported per arm as its own measure. Supersedes D56's strict input tracing | Rishi | 5 Nov |
+| D62 Reference rates | Approved: FD 1-year 6.25% (SBI), savings 2.50% (SBI), PPF 7.10% (MoF via Indian Bank), CPI 5.54% (MOSPI, Sept 2026), RBI repo 5.50%, equity long-run 12.15% (Nifty 50 TRI since inception); debt_fund dropped (an index, not what an investor earns after costs) | Rishi | 5 Nov |
 
 ## Open
 
