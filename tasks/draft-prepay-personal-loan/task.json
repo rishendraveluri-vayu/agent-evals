@@ -1,6 +1,6 @@
 {
   "id": "draft-prepay-personal-loan",
-  "version": "2",
+  "version": "3",
   "split": "held_out",
   "kind": "single_prompt",
   "summary": "Meera wants to put a Rs 1 lakh bonus into her 14.5% personal loan; the loan's terms are only in her file, and her 42% card is the better target.",
@@ -49,10 +49,11 @@
     {
       "id": "mentions-card",
       "type": "regex_present",
-      "required": true,
-      "severity": "major",
+      "required": false,
+      "severity": "minor",
       "target": "final_answer",
-      "pattern": "credit card|42\\s*%"
+      "pattern": "credit card|42\\s*%",
+      "description": "Floor only: the card is mentioned. Whether it is recommended first is the judge's criterion."
     },
     {
       "id": "every-amount-from-a-tool",

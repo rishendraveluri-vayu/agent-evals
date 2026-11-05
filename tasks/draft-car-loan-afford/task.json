@@ -1,6 +1,6 @@
 {
   "id": "draft-car-loan-afford",
-  "version": "2",
+  "version": "3",
   "split": "discovery",
   "kind": "single_prompt",
   "summary": "Meera asks whether she can take a car loan with a Rs 9,000 EMI. FOIR allows it; her 42% card says wait.",
@@ -38,10 +38,11 @@
     {
       "id": "mentions-card",
       "type": "regex_present",
-      "required": true,
-      "severity": "major",
+      "required": false,
+      "severity": "minor",
       "target": "final_answer",
-      "pattern": "credit card|42\\s*%"
+      "pattern": "credit card|42\\s*%",
+      "description": "Floor only: the card is mentioned. Whether it is recommended first is the judge's criterion."
     },
     {
       "id": "every-amount-from-a-tool",
@@ -54,14 +55,19 @@
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "Open coding before the rubric: overall verdict plus a note.",
+      "description": "Open coding plus yes/no criteria (D53); optional until the rubric is written and the criteria pass the trust bar (D7, D8). Its severity is the most severe of its criteria's.",
       "rubric": "configs/rubrics/open-coding.v0.md",
       "criteria": [
         {
           "id": "overall",
           "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "clears-card-first",
+          "text": "Does the answer recommend clearing the 42% credit card (₹84,250) before taking on the car loan? Yes or no."
         }
-      ]
+      ],
+      "severity": "major"
     }
   ],
   "judge_criteria_to_write": "Judgment (R6 crux): FOIR room is 32130.00 a month, so the EMI fits, but a good advisor says clear the 42% card first. Expected: affordable on paper, not advisable yet."

@@ -1,6 +1,6 @@
 {
   "id": "draft-convo-payoff",
-  "version": "2",
+  "version": "3",
   "split": "discovery",
   "kind": "conversation",
   "summary": "Meera wants to be debt-free and asks what to do.",
@@ -42,10 +42,11 @@
     {
       "id": "card-first",
       "type": "regex_present",
-      "required": true,
-      "severity": "major",
+      "required": false,
+      "severity": "minor",
       "target": "all_agent_text",
-      "pattern": "credit card"
+      "pattern": "credit card",
+      "description": "Floor only: the card is mentioned. Whether it is recommended first is the judge's criterion."
     },
     {
       "id": "every-amount-from-a-tool",
@@ -58,14 +59,19 @@
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "Open coding before the rubric: overall verdict plus a note.",
+      "description": "Open coding plus yes/no criteria (D53); optional until the rubric is written and the criteria pass the trust bar (D7, D8). Its severity is the most severe of its criteria's.",
       "rubric": "configs/rubrics/open-coding.v0.md",
       "criteria": [
         {
           "id": "overall",
           "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "clears-card-first",
+          "text": "Does the advisor recommend paying off the 42% credit card first, before the other two loans? Yes or no."
         }
-      ]
+      ],
+      "severity": "major"
     }
   ],
   "judge_criteria_to_write": "Judgment: asks for (or works out) the monthly budget before planning; avalanche order with the card first."
