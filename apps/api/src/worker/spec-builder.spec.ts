@@ -66,7 +66,7 @@ describe('buildSpec', () => {
     const spec = buildSpec(base) as { system_prompt: { sha256: string }; tools: { toolset: { sha256: string }; mcp_servers: { allowed_tools: string[] }[] } };
     expect(spec.system_prompt.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(spec.tools.toolset.sha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(spec.tools.mcp_servers[0].allowed_tools).toHaveLength(18);
+    expect(spec.tools.mcp_servers[0].allowed_tools).toHaveLength(19);
   });
 
   it('gives a simulated-client task the experiment simulator, at temperature 0 (D22)', () => {

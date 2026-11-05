@@ -53,3 +53,21 @@ def test_a_declared_end_state_accepts_only_a_labelled_unanswered_end(monkeypatch
         _check(monkeypatch, tmp_path, recovered=True, malformed_ends_in="agent_error")
     with pytest.raises(AssertionError):  # the wrong label
         _check(monkeypatch, tmp_path, recovered=False, malformed_ends_in="harness_error")
+
+
+def test_the_gate_tool_test_expects_toolset_v3s_19_tools():
+    """Every harness's gate test_tools compares what reaches the model with the finance server's
+    manifest snapshot, so since D58 it expects 19 tools, reference_rates last (toolset v3)."""
+    from evals_adapter.gate import ALL_FINANCE_TOOLS
+
+    assert len(ALL_FINANCE_TOOLS) == 19
+    assert ALL_FINANCE_TOOLS[11:] == [
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "percent_of",
+        "percent_change",
+        "round",
+        "reference_rates",
+    ]

@@ -170,6 +170,12 @@ export function compareVersions(a: string, b: string): number {
 export const ARITHMETIC_TOOLS = ['add', 'subtract', 'multiply', 'divide', 'percent_of', 'percent_change', 'round'] as const;
 
 /**
+ * Documented Indian market assumptions with sources and dates, on the finance server since 5 Nov
+ * (D58, server 0.4.0), so a rate an agent volunteers has a source and an invented one does not.
+ */
+export const REFERENCE_TOOLS = ['reference_rates'] as const;
+
+/**
  * Every tool the finance MCP server has, in its order (services/finance-mcp/tests/snapshots/
  * tools_manifest.json). A unit test checks this list against that snapshot.
  */
@@ -186,6 +192,7 @@ export const FINANCE_TOOLS = [
   'list_debts',
   'list_transactions',
   ...ARITHMETIC_TOOLS,
+  ...REFERENCE_TOOLS,
 ] as const;
 
 /**
@@ -196,9 +203,13 @@ export const FINANCE_TOOLS = [
  * - `all` (4 Nov to 5 Nov): the eleven finance tools, last at server 0.2.0. It is not listed any
  *   more, because today's server is 0.3.0, so its hash cannot be made again. Configs and trials
  *   that used it keep their toolset row, its manifest and its hash.
- * - `v2` (5 Nov, D54): the eleven plus the seven arithmetic tools, at server 0.3.0.
+ * - `v2` (5 Nov, D54): the eleven plus the seven arithmetic tools, at server 0.3.0. Not listed
+ *   since v3, for the same reason as `all`; what recorded it keeps it.
+ * - `v3` (5 Nov, D58): v2's eighteen plus `reference_rates`, at server 0.4.0. The rates' values
+ *   are pinned to the server version (services/finance-mcp/tests/test_reference.py), so a
+ *   changed value is a new server version and so a new toolset version here.
  */
-export const FINANCE_TOOLSET_VERSION = 'v2';
+export const FINANCE_TOOLSET_VERSION = 'v3';
 
 /** One tool as the server publishes it: what a model is shown. */
 export interface PublishedTool {
