@@ -232,6 +232,47 @@ def test_a_calculation_without_a_tool_is_unsupported():
     assert out["unsupported"] == 2
 
 
+def test_a_sum_from_the_add_tool_is_supported_and_the_same_sum_without_it_is_not():
+    """D54: the 4 Nov Hermes failure was a sum written in prose (Rs 23,120 = Rs 14,120 +
+    Rs 9,000); the fix is the arithmetic tool `add`. The same answer is fully supported when
+    `add` returned the sum, under either name a harness gives it, and has one unsupported amount
+    when it did not."""
+    reply = "Your EMIs are Rs 14,120 and the card plan Rs 9,000, so Rs 23,120 a month in all."
+    sources = [
+        turn_span("a" * 16, 0),
+        span("list_debts", "a" * 16, '{"emi_total":14120.00,"card_plan":9000.00}', start=1),
+    ]
+    for name in ("add", "mcp__finance__add"):
+        out = checks_for([reply], [*sources, span(name, "a" * 16, '{"sum":23120.00}', start=2)])
+        assert by_text(out)["Rs 23,120"] == {
+            "turn": 0,
+            "text": "Rs 23,120",
+            "value": 23120,
+            "supported_by": "tool",
+            "match": {"value": 23120, "where": "tool:add", "how": "exact", "precision": 1},
+        }
+        assert out["unsupported"] == 0
+        assert out["tools_called"] == ["list_debts", "add"]
+    out = checks_for([reply], sources)
+    assert [r["text"] for r in out["amounts"] if r["supported_by"] is None] == ["Rs 23,120"]
+    assert out["unsupported"] == 1
+
+
+def test_a_number_passed_into_a_tool_is_not_a_source_only_its_result_is():
+    """A tool's arguments are what the agent wrote, so a sum the agent worked out and passed in
+    is still unsupported; what the tool returned is the source."""
+    call = span("percent_of", "a" * 16, '{"amount":4116.00}')
+    call["attributes"].append(
+        {"key": "evals.tool.arguments", "value": {"stringValue": '{"value":23120,"percent":17.8}'}}
+    )
+    out = checks_for(
+        ["Rs 23,120 a month, of which Rs 4,116 is interest."], [turn_span("a" * 16, 0), call]
+    )
+    rows = by_text(out)
+    assert rows["Rs 23,120"]["supported_by"] is None
+    assert rows["Rs 4,116"]["match"]["where"] == "tool:percent_of"
+
+
 def test_the_client_file_and_the_user_message_support_amounts():
     files = {
         "client.json": '{"profile":{"monthly_net_income":92500},"debts":[{"balance":84250.00}]}'

@@ -29,6 +29,8 @@ EXAMPLES = {
     "finance-length",
     "finance-length-always",
     "finance-emi-unsupported",
+    "finance-sum-tool",
+    "finance-sum-unsupported",
     "sim-client",
     "sim-empty",
     "judge",

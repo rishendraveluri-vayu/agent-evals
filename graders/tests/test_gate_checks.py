@@ -9,6 +9,13 @@ Each task listed required_tools; the runner wrote checks.json:
 - `*-emi-unsupported` (finance-emi-unsupported): adds "about Rs 1,07,967 a year", worked out in
   the reply (8,997.26 x 12), which no tool returned; required_tools [calculate_emi, list_debts],
   and list_debts was never called.
+
+fixtures/gate-20261105/ (D54, the arithmetic tools), the same way, on the toolset with 18 tools:
+
+- `*-sum-tool` (finance-sum-tool): calculate_emi, list_debts, then `add` of the EMI and the
+  minimums, and an answer stating Rs 8,997.26, Rs 18,332.50 and their sum Rs 27,329.76.
+- `*-sum-unsupported` (finance-sum-unsupported): the same answer word for word, without the `add`
+  call: the sum is worked out in the reply, as Hermes did on 4 Nov.
 """
 
 from __future__ import annotations
@@ -23,6 +30,7 @@ from evals_graders.graders import grade_trial
 from evals_graders.trial import TrialView
 
 GATE = Path(__file__).parent / "fixtures" / "gate-20261104"
+ARITHMETIC = Path(__file__).parent / "fixtures" / "gate-20261105"
 REPO = Path(__file__).resolve().parents[2]
 CHECKS_SCHEMA = REPO / "contract" / "v2" / "checks.schema.json"
 HARNESSES = ("ownloop", "hermes")
@@ -34,12 +42,16 @@ def grades(name: str, *specs: dict) -> list[dict]:
     return grade_trial(GATE / name, list(specs))["grades"]
 
 
-@pytest.mark.parametrize("name", sorted(p.name for p in GATE.iterdir() if p.is_dir()))
-def test_the_fixtures_are_the_contracts_checks(name):
-    checks = json.loads((GATE / name / "checks.json").read_text(encoding="utf-8"))
+@pytest.mark.parametrize(
+    "folder",
+    sorted(p for root in (GATE, ARITHMETIC) for p in root.iterdir() if p.is_dir()),
+    ids=lambda p: f"{p.parent.name}/{p.name}",
+)
+def test_the_fixtures_are_the_contracts_checks(folder):
+    checks = json.loads((folder / "checks.json").read_text(encoding="utf-8"))
     schema = json.loads(CHECKS_SCHEMA.read_text(encoding="utf-8"))
     assert list(jsonschema.Draft202012Validator(schema).iter_errors(checks)) == []
-    report = json.loads((GATE / name / "runner-report.json").read_text(encoding="utf-8"))
+    report = json.loads((folder / "runner-report.json").read_text(encoding="utf-8"))
     assert report["checks"]["path"] == "checks.json" and report["checks"]["valid"] is True
 
 
@@ -90,3 +102,56 @@ def test_tool_called_is_the_other_path_to_the_same_fact():
         },
     )[0]
     assert args["verdict"] == "pass", args
+
+
+@pytest.mark.parametrize("harness", HARNESSES)
+def test_a_sum_from_add_passes_and_the_same_sum_without_it_fails(harness):
+    """D54: the same answer, Rs 8,997.26 + Rs 18,332.50 = Rs 27,329.76, through the real runner
+    and adapter on the fake model. With the `add` call every amount has a tool behind it and
+    provenance passes; without it the sum is the agent's own arithmetic and provenance fails on
+    exactly that amount."""
+    tool_dir, prose_dir = (
+        ARITHMETIC / f"{harness}-sum-tool",
+        ARITHMETIC / f"{harness}-sum-unsupported",
+    )
+    answer = TrialView.load(tool_dir).final_answer
+    assert answer == TrialView.load(prose_dir).final_answer
+    assert "Rs 27,329.76" in answer
+
+    with_add = json.loads((tool_dir / "checks.json").read_text(encoding="utf-8"))
+    total = next(a for a in with_add["amounts"] if a["text"] == "Rs 27,329.76")
+    assert total["supported_by"] == "tool"
+    assert total["match"] == {
+        "value": 27329.76,
+        "where": "tool:add",
+        "how": "exact",
+        "precision": 0.01,
+    }
+    assert with_add["tools_called"] == ["calculate_emi", "list_debts", "add"]
+
+    prov, req = grade_trial(tool_dir, [PROVENANCE, REQUIRED])["grades"]
+    assert prov["verdict"] == "pass", prov
+    assert prov["reason"].startswith("0 of 3 amount(s)")
+    assert req["verdict"] == "pass", req
+
+    prov, req = grade_trial(prose_dir, [PROVENANCE, REQUIRED])["grades"]
+    assert prov["verdict"] == "fail", prov
+    assert "1 of 3 amount(s)" in prov["reason"] and "Rs 27,329.76" in prov["reason"]
+    assert prov["evidence"] == [{"source": "final_answer", "quote": "Rs 27,329.76"}]
+    assert req["verdict"] == "pass", req  # the same tools were required and called
+
+
+def test_the_add_call_is_in_the_trace_under_the_harness_name():
+    """Hermes calls it mcp__finance__add, the own loop add; the checks and graders read both."""
+    names = {}
+    for harness in HARNESSES:
+        calls = TrialView.load(ARITHMETIC / f"{harness}-sum-tool").tool_calls()
+        names[harness] = [(c.raw_name, c.arguments, c.result) for c in calls if c.name == "add"]
+    added = ({"values": [8997.26, 18332.5]}, {"sum": 27329.76})
+    assert names == {"ownloop": [("add", *added)], "hermes": [("mcp__finance__add", *added)]}
+    added_spec = {"id": "added", "type": "tool_called", "tool": "add"}
+    for harness in HARNESSES:
+        called = grade_trial(ARITHMETIC / f"{harness}-sum-tool", [added_spec])["grades"][0]
+        assert called["verdict"] == "pass", called
+        absent = grade_trial(ARITHMETIC / f"{harness}-sum-unsupported", [added_spec])["grades"][0]
+        assert absent["verdict"] == "fail", absent
