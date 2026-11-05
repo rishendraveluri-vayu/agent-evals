@@ -25,7 +25,8 @@ holds).
    checks (an A/A run and a positive control) behave as they should. Details below, under Results
    so far, and in `docs/experiment.md`.
 3. **What to trust least:** the six limits at the top of `docs/known-limits.md`.
-4. **How it was built:** the last section of this file.
+4. **Who wrote it:** Claude Code, an AI coding agent, wrote almost all of the code; I designed it,
+   made the decisions and managed the build. The last section of this file says exactly what I did.
 
 ## Run it
 
@@ -246,16 +247,26 @@ papers behind the decisions.
 
 ## How this was built
 
-I designed this platform and made its decisions; Claude Code, an AI coding agent, implemented most
-of the code and tests under them. Each decision is in `docs/decisions.md` with the options I
-weighed and why I chose as I did; where the docs quote "Rishi", that is my ruling recorded at the
-time. The working rules I set for the agent are in `CLAUDE.md`: no real model calls in tests,
-every paid run approved by me with its cost first, never tune the judge on held-out labels, never
-drop a failed trial.
+To be plain about it: Claude Code, an AI coding agent, wrote almost all of the code, the tests and
+most of these documents. I did not write the code by hand. My part was the design, the decisions,
+managing the build and reviewing what came back. If the role calls for someone who writes most of
+their code themselves, you should know that this repository was not made that way.
 
-What I did myself: the hypothesis and the analysis plan, committed before the runs; the task set,
-its split and severities (drafted with the agent, reviewed and approved in D53); the 33 judge
-labels in `labels/tuning.jsonl`, written blind in the labelling screen; every paid run, each logged
-in `docs/cost.md` with its approval; and the conclusion. How I checked the result: the A/A run and
-the positive control, clean-clone tests on a fresh machine, CI on every push, and two independent
-reviews of the repository against the brief.
+What I did:
+
+- **Designed it and made every decision.** Each one is in `docs/decisions.md`, with the options I
+  weighed and why I chose as I did. Where the docs quote "Rishi", that is my ruling, recorded at
+  the time.
+- **Set the rules the agent worked under,** in `CLAUDE.md`: no real model calls in tests, every
+  paid run approved by me with its cost stated first, never tune the judge on held-out labels,
+  never drop a failed trial, and design calls left to me.
+- **Owned the experiment:** the hypothesis and analysis plan, committed before the runs; the task
+  set, its split and severities (drafted with the agent, reviewed and approved by me, D53); and
+  the conclusion.
+- **Made the human judgments:** the judge labels in `labels/` are mine, written blind in the
+  labelling screen; nothing there was written or inferred by the agent.
+- **Approved every paid run;** `docs/cost.md` logs each one with its approval and cost.
+
+How I checked the agent's work: the A/A run and the positive control, clean-clone tests on a fresh
+machine, CI on every push, and independent reviews of the repository against the brief by other AI
+agents, whose findings were checked against the code and fixed here.
