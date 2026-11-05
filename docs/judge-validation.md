@@ -66,6 +66,20 @@ Rishi: "Do multiple models labels on them and find which disagree and iterate, i
 
 Following "critique shadowing" (Husain: the expert's pass/fail plus a written critique, a few of them as worked examples in the judge prompt, the prompt revised on a dev set, then frozen and measured once on a hidden test set), rubric v3 (`configs/rubrics/advice.v3.md`) adds to v2 the six principles in Rishi's tuning notes, quoted, and four of his tuning trials as worked examples with his verdict and critique (payoff-order no, fd-real-value no, emi-home-loan yes, car-loan-afford yes). The split: **train** = those four trials (in the prompt); **dev** = the other 29 tuning trials (the judges run on these, at most 2 rounds); **test** = all 40 sampled held-out trials, which Rishi labels with a one-line why on each, and the frozen judge is measured on once. Labelling all 40 replaces "the disagreements plus 10 agreed": the test set no longer depends on which trials the judges disagreed on, so no weighting is needed. The judge that counts stays Gemini 3.8 Flash; the other two are context. Only 5 of the 33 tuning trials are fails and Rishi wrote a note on 6, so the dev results will have wide intervals.
 
+### D74 results on the dev set (5 Nov; 29 tuning trials, 3 of them fails)
+
+| "overall" against Rishi, dev set | v2 kappa | v3 kappa | v4 kappa (95% interval), specificity, false fails |
+| --- | --- | --- | --- |
+| Gemini 3.8 Flash (the judge that counts) | 0.47 | 0.51 | **0.63** (−0.05 to 1.00), 0.67, 1 |
+| Claude Haiku 5.5 | 0.25 | 0.25 | 0.53 (0.00 to 0.89), 1.00, 4 |
+| Claude Sonnet 5.5 | 0.01 | 0.21 | 0.46 (0.00 to 0.79), 1.00, 5 |
+| Majority of the three | 0.06 | 0.30 | 0.53 (0.00 to 0.89), 1.00, 4 |
+
+- **v3** (his principles and worked examples) let Gemini catch more of his fails (specificity 0.33 to 0.67) but added two false fails. One applied principle 5 ("look for a cheaper way out") as a reason for a no, where his own verdicts treat it as an aside; the other failed an arithmetic slip he passed.
+- **v4** says which principles he fails an answer for (an unasked assumption, a confusing explanation) and which only make a better answer, read from his verdicts. Every judge improved.
+- **Frozen: rubric v4, judge Gemini 3.8 Flash**, after the two rounds the plan allows. On the dev set Gemini's kappa clears D8's 0.6 as a point estimate, with a lower bound far below 0.4, so nothing is trusted until the held-out test.
+- One Gemini call in round 2 ran out of output (the reply was cut off at 8,000 tokens on a long conversation): an `error`, reported, not counted. Spend so far $4.55 of the panel's $8.
+
 ### Phase 1 results (5 Nov, discovery trials only)
 
 Data: `judge-panel/phase1-round1-advice-v1.jsonl` and `judge-panel/phase1-round2-advice-v2.jsonl` (one row per trial, judge and criterion; `scripts/judge_panel.py`), compared with `evals-panel` (`stats/`). Spend $1.66 for the two rounds (198 judge calls).
