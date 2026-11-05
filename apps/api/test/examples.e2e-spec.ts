@@ -472,6 +472,16 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
       const stats = compared.stats!;
       expect(stats.tasks.length + stats.excluded_tasks.length).toBe(detail.task_sha256s.length);
       expect(stats.seed).toBe(manifest.experiment_id);
+      // D64: its behaviour per arm is read from its recorded spans, and every failed trial has a cause.
+      const behaviour = compared.behaviour!;
+      const done = await q("SELECT count(*)::int AS n FROM trials WHERE experiment_id = $1 AND status = 'done'");
+      expect(behaviour.arms.reduce((s, a) => s + a.trials, 0)).toBe(done);
+      expect(behaviour.arms.reduce((s, a) => s + a.tool_calls.total, 0)).toBe(
+        await q("SELECT count(*)::int AS n FROM spans s JOIN trials t ON t.id = s.trial_id WHERE t.experiment_id = $1 AND t.status = 'done' AND s.name LIKE 'execute_tool%'"),
+      );
+      const rows = (await request(target.http).get(`/api/experiments/${manifest.experiment_id}/trials`).expect(200)).body as TrialRowSummary[];
+      for (const r of rows.filter((x) => x.grading === 'fail')) expect(r.cause).not.toBeNull();
+      expect(behaviour.arms.reduce((s, a) => s + a.causes.trials, 0)).toBe(rows.filter((x) => x.cause).length);
       // Its tasks have judge criteria, so its trials would be labelling items if they were your own.
       const queue = (await request(target.http).get('/api/labels/queue?set=tuning').expect(200)).body as { item_id: string }[];
       const ids = new Set(await trialIds(target, manifest.experiment_id));

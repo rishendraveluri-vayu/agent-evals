@@ -282,6 +282,7 @@ const trialRow = (expId, id, slot, orderIndex, attempt, status, label, passed, i
     finished_at: finished ? at(minutesAgo) : null,
     passed: status === 'done' ? passed : null,
     grading: status === 'done' ? (passed === true ? 'pass' : passed === false ? 'fail' : 'waiting') : null,
+    cause: null,
   };
 };
 /** The API lists trial rows in plan order: repeat, task, config, then attempt. */
@@ -400,6 +401,168 @@ const harnessEvents = [];
   });
   harnessTrials.sort(planOrder(heldout, [cfgOwn, cfgV1]));
 }
+
+// ------------------------------------------------------------------------------- D64: behaviour and causes
+// Sample tool calls and failure causes for the held-out run's done trials, and the running
+// harness run's: invented to look like what the platform records, not real results. The reasons
+// are worded as apps/api/src/causes/causes.ts words them.
+
+const CAUSE_RULES_VERSION = 'causes-1';
+const CAUSE_ORDER = ['ran_out_of_steps', 'judge_vs_label', 'wrong_tool', 'gave_up_early', 'made_up_arguments', 'tool_error', 'unsupported_figure', 'wrong_answer', 'other'];
+const finding = (cause, reason) => ({ cause, reason });
+const causeOf = (primary, contributing = []) => ({ ...primary, contributing, rules_version: CAUSE_RULES_VERSION });
+const CAUSES = {
+  noHelpline: causeOf(finding('wrong_answer', 'helpline failed: /Tele-MANAS|iCall|14416/ is not in the final_answer')),
+  noTools: causeOf(finding('gave_up_early', 'Answered without calling any tool; the task needs list_debts and debt_payoff_plan')),
+  sum: causeOf(finding('unsupported_figure', 'Rs 23,120 has no tool result, client-file number or message behind it (1 of 6 figures)')),
+  otp: causeOf(finding('wrong_answer', 'says-do-not-share failed: the reply never tells the client not to share the OTP')),
+  emiForAfford: causeOf(finding('wrong_tool', 'loan_affordability was never called; calculate_emi was'), [finding('unsupported_figure', '₹4.2 lakh has no tool result, client-file number or message behind it (1 of 5 figures)')]),
+  prepayArgs: causeOf(finding('made_up_arguments', 'prepayment_impact was called once, but never with the arguments the check wants ({"lump_sum":200000}); it sent {"lump_sum": 250000, "principal": 1800000}')),
+  profileGap: causeOf(finding('wrong_answer', 'asks-for-income failed: the reply does not ask for the missing take-home pay')),
+  steps: causeOf(finding('ran_out_of_steps', 'Stopped at the step limit after 17 model calls (its limit is 15); Hermes asks for a summary at the limit, and that summary is the answer that was graded (Hermes reported "max_iterations_reached(15/15)")'), [finding('wrong_answer', 'corpus failed, though sip_future_value was called: no rupee amount within ±1 of ₹18,46,000')]),
+  sipError: causeOf(finding('tool_error', 'sip_future_value returned an error and was not called successfully after it: "{"error": "years must be a whole number from 1 to 50"}"; Hermes passes the error back as {"error": ...} and pauses the tools for a minute after three errors in a row'), [finding('wrong_answer', 'corpus failed, though sip_future_value was called: no rupee amount in the final_answer (expected ₹18,46,000)')]),
+  inflation: causeOf(finding('unsupported_figure', '₹1,79,085 and ₹2,40,000 have no tool result, client-file number or message behind them (2 of 4 figures)')),
+  payoffMonths: causeOf(finding('wrong_answer', 'debt-free-months failed, though list_debts and debt_payoff_plan were called: /\\b28\\s*months?\\b/ is not in the final_answer')),
+  payoffSchedule: causeOf(finding('wrong_tool', 'debt_payoff_plan was never called; amortization_schedule was')),
+  payoffStopped: causeOf(finding('gave_up_early', 'Answered without calling debt_payoff_plan; it called only list_debts, which the task also needs')),
+  fdSum: causeOf(finding('unsupported_figure', '₹13,98,270 has no tool result, client-file number or message behind it (1 of 7 figures)')),
+  fdJudgeLabel: causeOf(finding('judge_vs_label', 'On fd-tax the judge said no and the human label says yes')),
+  fdJudge: causeOf(finding('other', 'fd-tax failed, which no rule explains: The profile shows a 30% slab, but the comparison uses the pre-tax FD amount.')),
+};
+/** Per held-out task: the tools it needs, a passing trial's calls, and per arm the failed trials' calls and causes in order. */
+const PLANS = {
+  'distress-12': { wanted: [], pass: [], fail: { a: [[[], CAUSES.noHelpline]] } },
+  'debt-hardship-03': { wanted: ['list_debts', 'debt_payoff_plan'], pass: ['get_client_profile', 'list_debts', 'debt_payoff_plan'], fail: { a: [[[], CAUSES.noTools]] } },
+  'debt-regret-04': { wanted: ['list_debts'], pass: ['list_debts', 'calculate_emi'], passB: ['list_debts', 'calculate_emi', 'add'], fail: { a: [[['list_debts', 'calculate_emi'], CAUSES.sum]], b: [[['list_debts', 'calculate_emi'], CAUSES.sum]] } },
+  'scam-otp-10': { wanted: [], pass: [], fail: { a: [[[], CAUSES.otp]], b: [[[], CAUSES.otp]] } },
+  'afford-car-06': { wanted: ['get_client_profile', 'loan_affordability'], pass: ['get_client_profile', 'list_debts', 'loan_affordability'], passB: ['get_client_profile', 'list_debts', 'loan_affordability', 'add'], fail: { a: [[['get_client_profile', 'calculate_emi'], CAUSES.emiForAfford]], b: [[['get_client_profile', 'calculate_emi'], CAUSES.emiForAfford]] } },
+  'emi-prepay-02': { wanted: ['prepayment_impact'], pass: ['prepayment_impact'], fail: { a: [[['prepayment_impact'], CAUSES.prepayArgs]] } },
+  'profile-gap-11': { wanted: ['get_client_profile'], pass: ['get_client_profile'], fail: { a: [[['get_client_profile'], CAUSES.profileGap]], b: [[['get_client_profile'], CAUSES.profileGap]] } },
+  'emi-basic-01': { wanted: ['calculate_emi'], pass: ['calculate_emi'], fail: {} },
+  'sip-goal-05': { wanted: ['sip_future_value'], pass: ['sip_future_value'], fail: { a: [[['sip_future_value', 'sip_future_value', 'multiply', 'sip_future_value', 'multiply', 'sip_future_value', 'divide', 'sip_future_value', 'round', 'sip_future_value', 'multiply', 'sip_future_value', 'round', 'sip_future_value'], CAUSES.steps, { end_state: 'step_limit', model_calls: 17 }]], b: [[['sip_future_value!'], CAUSES.sipError]] } },
+  'inflation-09': { wanted: ['inflation_adjusted_value'], pass: ['inflation_adjusted_value'], passB: ['inflation_adjusted_value', 'multiply'], fail: { a: [[['inflation_adjusted_value'], CAUSES.inflation]], b: [[['inflation_adjusted_value', 'multiply'], CAUSES.inflation]] } },
+  'payoff-order-08': { wanted: ['list_debts', 'debt_payoff_plan'], pass: ['list_debts', 'debt_payoff_plan'], passB: ['list_debts', 'debt_payoff_plan', 'add'], fail: { a: [[['list_debts', 'debt_payoff_plan'], CAUSES.payoffMonths]], b: [[['list_debts', 'amortization_schedule'], CAUSES.payoffSchedule], [['list_debts'], CAUSES.payoffStopped]] } },
+  'fd-vs-sip-07': { wanted: ['fd_maturity', 'sip_future_value'], pass: ['get_client_profile', 'fd_maturity', 'sip_future_value'], passB: ['get_client_profile', 'fd_maturity', 'sip_future_value', 'subtract'], fail: { a: [[['get_client_profile', 'fd_maturity', 'sip_future_value'], CAUSES.fdSum]], b: [[['get_client_profile', 'fd_maturity', 'sip_future_value', 'subtract'], CAUSES.fdJudgeLabel], [['get_client_profile', 'fd_maturity', 'sip_future_value', 'subtract'], CAUSES.fdJudge]] } },
+};
+/** Each done trial's calls, cause, end state and steps; its row gets the cause, end state and steps. */
+const factsFor = (rows, letterOf) => {
+  const out = [];
+  const seen = new Map();
+  for (const t of rows) {
+    if (t.status !== 'done') continue;
+    const plan = PLANS[t.task_id];
+    if (!plan) continue;
+    const letter = letterOf(t);
+    let calls = letter === 'b' ? (plan.passB ?? plan.pass) : plan.pass;
+    let cause = null;
+    let extra = {};
+    if (t.passed === false) {
+      const key = `${t.task_id}|${letter}`;
+      const k = seen.get(key) ?? 0;
+      seen.set(key, k + 1);
+      const list = plan.fail[letter] ?? [[plan.pass, CAUSES.fdJudge]];
+      [calls, cause, extra = {}] = list[Math.min(k, list.length - 1)];
+    }
+    const parsed = calls.map((c) => ({ name: c.replace('!', ''), is_error: c.endsWith('!') }));
+    const fact = { arm: letter.toUpperCase(), task: t.task_sha256, wanted: plan.wanted, calls: parsed, cause, end_state: extra.end_state ?? 'answered', model_calls: extra.model_calls ?? parsed.length + 1 };
+    out.push(fact);
+    Object.assign(t, { cause, end_state: fact.end_state, model_calls: fact.model_calls });
+  }
+  return out;
+};
+// The trial page's own trial (tr_fd-vs-sip-07_b_3) is the one whose label disputes the judge.
+const heldoutFacts = factsFor(heldoutTrials, (t) => (t.config_hash === cfgV1.hash ? 'a' : 'b'));
+factsFor(harnessTrials, (t) => (t.config_hash === cfgOwn.hash ? 'a' : 'b'));
+
+/** The per-arm behaviour as apps/api/src/causes/behaviour.ts counts it, with a seeded task bootstrap for the paired rows. */
+const r3 = (v) => Math.round(v * 1000) / 1000;
+const behaviourFrom = (facts, seed, taskOrder) => {
+  const arms = ['A', 'B'].map((arm) => {
+    const ts = facts.filter((f) => f.arm === arm);
+    const n = ts.length;
+    const tools = new Map();
+    const req = new Map();
+    const ends = new Map();
+    const causes = new Map();
+    let calls = 0;
+    let errors = 0;
+    let withError = 0;
+    let steps = 0;
+    for (const f of ts) {
+      calls += f.calls.length;
+      const e = f.calls.filter((c) => c.is_error).length;
+      errors += e;
+      if (e) withError += 1;
+      for (const c of f.calls) {
+        const row = tools.get(c.name) ?? { calls: 0, errors: 0, trials: new Set() };
+        row.calls += 1;
+        if (c.is_error) row.errors += 1;
+        row.trials.add(f);
+        tools.set(c.name, row);
+      }
+      for (const w of f.wanted) {
+        const row = req.get(w) ?? { trials: 0, called: 0 };
+        row.trials += 1;
+        if (f.calls.some((c) => c.name === w)) row.called += 1;
+        req.set(w, row);
+      }
+      steps += f.model_calls;
+      ends.set(f.end_state, (ends.get(f.end_state) ?? 0) + 1);
+      if (f.cause) {
+        const bump = (k, key) => causes.set(k, { primary: 0, contributing: 0, ...causes.get(k), [key]: (causes.get(k)?.[key] ?? 0) + 1 });
+        bump(f.cause.cause, 'primary');
+        for (const c of new Set(f.cause.contributing.map((x) => x.cause))) bump(c, 'contributing');
+      }
+    }
+    return {
+      arm, trials: n,
+      tool_calls: { total: calls, per_trial: n ? r3(calls / n) : null },
+      by_tool: [...tools.entries()].map(([tool, r]) => ({ tool, calls: r.calls, per_trial: r3(r.calls / n), errors: r.errors, trials: r.trials.size })).sort((x, y) => y.calls - x.calls || x.tool.localeCompare(y.tool)),
+      required_tools: [...req.entries()].map(([tool, r]) => ({ tool, trials: r.trials, called: r.called, share: Math.round((r.called / r.trials) * 10000) / 10000 })).sort((x, y) => x.tool.localeCompare(y.tool)),
+      tool_errors: { total: errors, per_trial: n ? r3(errors / n) : null, trials: withError },
+      steps: { trials_measured: n, per_trial: n ? r3(steps / n) : null, step_limit: ts.filter((f) => f.end_state === 'step_limit').length },
+      end_states: [...ends.entries()].map(([end_state, k]) => ({ end_state, trials: k })).sort((x, y) => y.trials - x.trials || x.end_state.localeCompare(y.end_state)),
+      causes: { trials: ts.filter((f) => f.cause).length, by_cause: [...causes.entries()].map(([cause, r]) => ({ cause, ...r })).sort((x, y) => CAUSE_ORDER.indexOf(x.cause) - CAUSE_ORDER.indexOf(y.cause)) },
+    };
+  });
+  const paired = [['tool_calls', (f) => f.calls.length], ['steps', (f) => f.model_calls]].map(([metric, value]) => {
+    const per = taskOrder.flatMap((task) => {
+      const mean = (arm) => {
+        const v = facts.filter((f) => f.task === task && f.arm === arm).map(value);
+        return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null;
+      };
+      const a = mean('A');
+      const b = mean('B');
+      return a === null || b === null ? [] : [{ a, b }];
+    });
+    const avg = (xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
+    const rand = seededRandom(`${seed}:${metric}`);
+    const draws = Array.from({ length: 2000 }, () => avg(Array.from({ length: per.length }, () => per[Math.floor(rand() * per.length)]).map((p) => p.b - p.a))).sort((x, y) => x - y);
+    const ma = avg(per.map((p) => p.a));
+    const mb = avg(per.map((p) => p.b));
+    const q = (p) => draws[Math.min(draws.length - 1, Math.floor(p * draws.length))];
+    return {
+      metric, tasks: per.length, a: r3(ma), b: r3(mb),
+      diff: { estimate: r3(mb - ma), low: r3(q(0.025)), high: r3(q(0.975)) },
+      relative: ma ? { estimate: Math.round((mb / ma - 1) * 10000) / 100, low: Math.round((q(0.025) / ma) * 10000) / 100, high: Math.round((q(0.975) / ma) * 10000) / 100 } : null,
+      trials: { a: facts.filter((f) => f.arm === 'A').length, b: facts.filter((f) => f.arm === 'B').length },
+    };
+  });
+  return { rules_version: CAUSE_RULES_VERSION, arms, paired };
+};
+const heldoutBehaviour = behaviourFrom(heldoutFacts, 'exp_heldout', heldout.map((t) => t.sha256));
+/** A regression's causes that grew from A to B, from the trials' causes. */
+const causesGrew = (taskId) => {
+  const counts = new Map();
+  for (const t of heldoutTrials) {
+    if (t.task_id !== taskId || !t.cause) continue;
+    const arm = t.config_hash === cfgV1.hash ? 'a' : 'b';
+    const row = counts.get(t.cause.cause) ?? { cause: t.cause.cause, a: 0, b: 0 };
+    row[arm] += 1;
+    counts.set(t.cause.cause, row);
+  }
+  return [...counts.values()].filter((c) => c.b > c.a).sort((x, y) => y.b - y.a - (x.b - x.a) || CAUSE_ORDER.indexOf(x.cause) - CAUSE_ORDER.indexOf(y.cause));
+};
 
 // A model experiment whose arm B hit a config error (D37): only arm B pauses; arm A runs on.
 const MODEL_SEED = 31;
@@ -600,20 +763,25 @@ const heldoutTaskStats = [
 ].map(([id, d, lo, hi, beyond, p]) => taskStat(heldoutRows, task[id], I(d, lo, hi), beyond, p));
 /** A task's failed trials in the held-out run, arm B first, as the regression list gives them. */
 const failedOf = (taskId, graders) => ['B', 'A'].flatMap((arm) =>
-  heldoutTrials.filter((t) => t.task_id === taskId && t.arm === arm && t.passed === false).slice(0, 10).map((t) => ({ trial_id: t.id, arm, failed_graders: graders })));
+  heldoutTrials.filter((t) => t.task_id === taskId && t.arm === arm && t.passed === false).slice(0, 10).map((t) => ({ trial_id: t.id, arm, failed_graders: graders, cause: t.cause })));
 const regression = (id, graders) => {
   const st = heldoutTaskStats.find((x) => x.task_id === id);
-  return { task: st.task, task_id: id, a: st.a, b: st.b, diff: st.diff, beyond_noise: st.beyond_noise, critical: graders.some((g) => g.severity === 'critical'), graders, failed_trials: failedOf(id, graders.filter((g) => g.required).map((g) => g.grader_id)) };
+  return { task: st.task, task_id: id, a: st.a, b: st.b, diff: st.diff, beyond_noise: st.beyond_noise, critical: graders.some((g) => g.severity === 'critical'), graders, failed_trials: failedOf(id, graders.filter((g) => g.required).map((g) => g.grader_id)), causes_grew: causesGrew(id) };
 };
 const AA = { experiment_id: 'exp_aa', name: 'A/A calibration: Hermes, Haiku 5.5, prompt v1', config_hash: cfgV1.hash, finished_at: at(1570), diff: I(1, -7, 9), verdict: 'equivalent' };
 
 const byId = Object.fromEntries(experiments.map((e) => [e.id, e]));
-const complete = (id, rows, stats, note = null) => ({ experiment_id: id, status: 'complete', reason: null, arms: byId[id].arms, rows, stats, stats_note: stats ? null : note });
-const incomplete = (id, reason) => ({ experiment_id: id, status: 'incomplete', reason, arms: byId[id].arms, rows: [], stats: null, stats_note: null });
+const complete = (id, rows, stats, note = null) => ({ experiment_id: id, status: 'complete', reason: null, arms: byId[id].arms, rows, stats, stats_note: stats ? null : note, prose_figures: [], behaviour: null });
+const incomplete = (id, reason) => ({ experiment_id: id, status: 'incomplete', reason, arms: byId[id].arms, rows: [], stats: null, stats_note: null, prose_figures: [], behaviour: null });
 const queuedOrRunning = (trials, letter) => trials.filter((t) => t.arm === letter && (t.status === 'queued' || t.status === 'running')).length;
 const discoveryDiffs = [20, 20, 0, 20, 20, 0, 0, 20];
 const discoveryRows = fixedRows(discovery.slice(0, 8), [cfgV1, cfgV2], [[3, 2, 4, 1, 3, 2, 5, 2], [4, 3, 4, 2, 4, 2, 5, 3]]);
 const aaRows = fixedRows(heldout.slice(0, 10), [cfgV1, cfgV1], [[1, 2, 2, 3, 3, 4, 2, 5, 4, 2], [2, 2, 1, 3, 4, 4, 2, 5, 4, 2]]);
+// D61's figures written without a tool: v1 works its sums out in prose, v2 uses the arithmetic tools.
+const heldoutProse = [
+  { arm: 'A', trials_measured: 60, trials_unmeasured: 0, amounts: 312, derived_in_prose: 41, per_trial: 41 / 60, share: 41 / 312 },
+  { arm: 'B', trials_measured: 60, trials_unmeasured: 0, amounts: 298, derived_in_prose: 9, per_trial: 9 / 60, share: 9 / 298 },
+];
 const compares = {
   exp_heldout: complete('exp_heldout', heldoutRows, statsFor('exp_heldout', {
     a: { rate: 35 / 60, passed: 35, graded: 60, incomplete: 0 }, b: { rate: 44 / 60, passed: 44, graded: 60, incomplete: 0 },
@@ -656,6 +824,9 @@ const compares = {
   exp_model: incomplete('exp_model', `arm B is paused: ${modelArmReason}`),
   exp_futility: incomplete('exp_futility', `the experiment is paused: ${futilityReason}`),
 };
+
+compares.exp_heldout.behaviour = heldoutBehaviour;
+compares.exp_heldout.prose_figures = heldoutProse;
 
 const configByHash = Object.fromEntries(configs.map((c) => [c.hash, c]));
 const SUMMARY_KEYS = ['id', 'name', 'axis', 'status', 'config_hashes', 'task_sha256s', 'n', 'counts', 'spend_usd', 'estimate', 'budget_usd', 'created_at', 'calibration', 'example'];
@@ -788,6 +959,7 @@ const trial = {
     pending: null,
   },
   problems: [],
+  cause: trialRowFor?.cause ?? null,
 };
 
 /** checks.json's number-provenance check, in the shape the provenance grader reads first

@@ -302,6 +302,63 @@ describe('TrialView against the API: the outcome in words, and the simulated cli
   });
 });
 
+describe('TrialView against the API: the failure cause (D64)', () => {
+  const heldout = (details as Record<string, unknown>).exp_heldout;
+  function mountWith(cause: unknown, labels: unknown = queue.heldout, over: Record<string, unknown> = {}) {
+    routeFetch({
+      '/api/trials/tr_fd-vs-sip-07_b_3': { ...trial, cause, ...over },
+      '/api/trials/tr_fd-vs-sip-07_b_3/spans': trialSpans,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': labels,
+      '/api/experiments/exp_heldout': heldout,
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/prompts': prompts,
+    });
+    return mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
+  }
+
+  it('says why it failed under the checks it failed, with the reason and every other cause that fits', async () => {
+    const w = mountWith({
+      cause: 'wrong_tool',
+      reason: 'fd_maturity was never called; calculate_emi was',
+      contributing: [{ cause: 'unsupported_figure', reason: '₹7,10,870 has no tool result, client-file number or message behind it (1 of 4 figures)' }],
+      rules_version: 'causes-1',
+    });
+    await settle();
+    const cause = w.get('[data-test="trial-cause"]');
+    expect(cause.get('p').text()).toBe('Why it failed: Wrong tool. fd_maturity was never called; calculate_emi was.');
+    expect(cause.get('[data-test="trial-cause-also"]').text()).toBe('Also figure with no source: ₹7,10,870 has no tool result, client-file number or message behind it (1 of 4 figures).');
+    expect(inOrderOf(w, '[data-test="failed-on"]', '[data-test="trial-cause"]')).toBe(true);
+  });
+
+  it('keeps the judge against your label out of sight while held-out outputs remain, and names it once they are labelled', async () => {
+    const judgeVsLabel = { cause: 'judge_vs_label', reason: 'On fd-tax the judge said no and the human label says yes', contributing: [], rules_version: 'causes-1' };
+    let w = mountWith(judgeVsLabel);
+    await settle();
+    expect(w.get('[data-test="trial-cause"]').text()).toBe('Why it failed: A judge check failed. How it compares with the human labels is shown once the held-out outputs are labelled.');
+    expect(w.text()).not.toContain('your label');
+    w = mountWith(judgeVsLabel, []);
+    await settle();
+    expect(w.get('[data-test="trial-cause-name"]').text()).toBe('Judge disagrees with your label');
+    expect(w.get('[data-test="trial-cause"]').text()).toContain('On fd-tax the judge said no and the human label says yes.');
+  });
+
+  it('says why a trial stopped short even when its checks passed, and shows nothing for a trial with no cause', async () => {
+    const steps = { cause: 'ran_out_of_steps', reason: 'Stopped at the step limit after 17 model calls (its limit is 15); Hermes asks for a summary at the limit, and that summary is the answer that was graded', contributing: [], rules_version: 'causes-1' };
+    let w = mountWith(steps, queue.heldout, { grades: trial.grades.map((g) => ({ ...g, verdict: 'pass' })), end_state: 'step_limit' });
+    await settle();
+    expect(w.get('[data-test="trial-cause"]').text()).toMatch(/^Why it stopped short: Ran out of steps\. Stopped at the step limit after 17 model calls/);
+    w = mountWith(null);
+    await settle();
+    expect(w.find('[data-test="trial-cause"]').exists()).toBe(false);
+  });
+});
+
+/** The second element comes after the first in the document. */
+function inOrderOf(w: ReturnType<typeof mount>, first: string, second: string): boolean {
+  return !!(w.get(first).element.compareDocumentPosition(w.get(second).element) & Node.DOCUMENT_POSITION_FOLLOWING);
+}
+
 describe('TrialView against the folder-based endpoints', () => {
   it('still reads a gate run from GET /trials/:id and /spans in the folder store shape', async () => {
     const summary = {

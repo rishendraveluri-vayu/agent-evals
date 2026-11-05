@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import type { Json, StoredFile, TaskSplit, TrialStatus, TrialView } from '../contract';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { Db } from '../database/db.service';
+import { causesFor } from '../causes/trial-facts';
 import { trialGrading } from '../grading/trial-grading';
 import { locate } from './trial-files';
 
@@ -96,6 +97,8 @@ export class DbTrialsService {
     );
     if (!r) return null;
     const { grades, grading } = await trialGrading(this.db, id);
+    // D64: the same cause the trial's row and the comparison give it.
+    const cause = r.probe ? null : ((await causesFor(this.db, [id])).get(id) ?? null);
     return {
       id: r.id,
       experiment_id: r.experiment_id,
@@ -143,6 +146,7 @@ export class DbTrialsService {
       grades,
       grading,
       problems: r.problems,
+      cause,
     };
   }
 

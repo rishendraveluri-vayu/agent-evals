@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import type { BundleTable, ExperimentBundle, GradingJobStatus, GradingOutcome, Json, JsonObject, TrialGradingState, TrialStatus } from '../contract';
+import type { BundleTable, ExperimentBundle, GradingJobStatus, GradingOutcome, Json, JsonObject, TrialCause, TrialGradingState, TrialStatus } from '../contract';
 import { BUNDLE_TABLES } from '../contract';
 import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.service';
 import { Db } from '../database/db.service';
-import { ExperimentsService, experimentTitle, gradingState } from './experiments.service';
+import { causesFor } from '../causes/trial-facts';
+import { ExperimentsService, experimentTitle, gradingState, mayHaveCause } from './experiments.service';
 
 /** A trial's outcome as the run grid and the comparison count it (TrialGradingState); null before it is done. */
 const outcomeOf = (r: ExportRow): TrialGradingState => gradingState({ ...r, status: r.status as TrialStatus });
@@ -83,6 +84,10 @@ export const CSV_COLUMNS = [
   'attempt',
   'status',
   'outcome',
+  // D64: a failed or not-answered trial's primary failure cause, its reason, and the other causes that matched.
+  'cause',
+  'cause_reason',
+  'causes_contributing',
   'label',
   'end_state',
   'task_sha256',
@@ -139,7 +144,15 @@ export class ExportService {
     private readonly experiments: ExperimentsService,
   ) {}
 
-  private async *rows(experimentId: string): AsyncGenerator<ExportRow> {
+  /** Each page's trials with their failure cause (D64), read for the rows that can have one. */
+  private async *rows(experimentId: string): AsyncGenerator<ExportRow & { cause: TrialCause | null }> {
+    for await (const page of this.pages(experimentId)) {
+      const causes = await causesFor(this.db, page.filter((r) => mayHaveCause({ ...r, status: r.status as TrialStatus })).map((r) => r.id));
+      for (const r of page) yield { ...r, cause: causes.get(r.id) ?? null };
+    }
+  }
+
+  private async *pages(experimentId: string): AsyncGenerator<ExportRow[]> {
     let after = -1;
     let afterAttempt = 0;
     for (;;) {
@@ -166,7 +179,7 @@ export class ExportService {
          ORDER BY t.seq, t.attempt LIMIT ${PAGE}`,
         [experimentId, after, afterAttempt],
       );
-      for (const row of page) yield row;
+      if (page.length) yield page;
       if (page.length < PAGE) return;
       const last = page[page.length - 1];
       after = last.seq;
@@ -199,6 +212,7 @@ export class ExportService {
         attempt: r.attempt,
         status: r.status,
         outcome: outcomeOf(r),
+        cause: r.cause,
         label: r.label,
         end_state: r.end_state,
         task: { sha256: r.task_sha256, id: r.task_id, version: r.task_version, split: r.task_split, kind: r.task_kind },
@@ -303,6 +317,9 @@ export class ExportService {
         attempt: r.attempt,
         status: r.status,
         outcome: outcomeOf(r),
+        cause: r.cause?.cause,
+        cause_reason: r.cause?.reason,
+        causes_contributing: r.cause?.contributing.length ? r.cause.contributing.map((c) => c.cause).join(';') : null,
         label: r.label,
         end_state: r.end_state,
         task_sha256: r.task_sha256,

@@ -361,6 +361,7 @@ function trialsFor(id: string): TrialRowSummary[] {
         finished_at: null,
         passed: null,
         grading: null,
+        cause: null,
       })),
     ),
   );

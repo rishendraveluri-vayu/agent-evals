@@ -632,6 +632,8 @@ export interface TrialRowSummary {
   passed: boolean | null;
   /** Where grading stands for the run grid and D32's futility check (see TrialGradingState). */
   grading: TrialGradingState;
+  /** D64: a done trial that failed, or ended other than answered, has its failure cause; null otherwise. */
+  cause: TrialCause | null;
 }
 
 /**
@@ -684,6 +686,117 @@ export interface CompareResponse {
   stats_note: string | null;
   /** D61: per arm, the money figures written without a tool; empty while the run is incomplete. */
   prose_figures: ProseFiguresArm[];
+  /** D64: how each arm behaved (tools, steps, end states, failure causes); null while the run is incomplete. */
+  behaviour: CompareBehaviour | null;
+}
+
+// ---- Failure causes and behaviour (D64) ------------------------------------------------
+// Rule-based and free: read from what each trial already recorded (end state, tool spans,
+// grades, the runner's checks as the grades quote them, Rishi's labels). docs/assumptions.md A45
+// gives the rules and their precedence; docs/design.md, "Failure causes", says why.
+
+/**
+ * In the order the rules are tried: the first that matches a trial is its primary cause. One
+ * exception (A45): a trial that ended in an agent or harness error is `other` right after
+ * `ran_out_of_steps`, with the harness's own stop reason quoted.
+ */
+export const CAUSE_KINDS = [
+  'ran_out_of_steps',
+  'judge_vs_label',
+  'wrong_tool',
+  'gave_up_early',
+  'made_up_arguments',
+  'tool_error',
+  'unsupported_figure',
+  'wrong_answer',
+  'other',
+] as const;
+export type CauseKind = (typeof CAUSE_KINDS)[number];
+
+export interface CauseFinding {
+  cause: CauseKind;
+  /** One plain sentence quoting the evidence ("calculate_emi was never called; amortization_schedule was"); what is harness-specific is said in it. */
+  reason: string;
+}
+
+/**
+ * Why a trial failed (its outcome is fail) or stopped short (an agent end state other than
+ * answered): one primary cause and every other rule that also matched, in precedence order.
+ */
+export interface TrialCause extends CauseFinding {
+  contributing: CauseFinding[];
+  /** Bumped when a rule changes, so a cause can be told from one made under other rules. */
+  rules_version: string;
+}
+
+/** A tool's calls in one arm. Names without a harness prefix (Hermes's mcp__finance__). */
+export interface BehaviourTool {
+  tool: string;
+  calls: number;
+  /** calls per done trial of the arm. */
+  per_trial: number;
+  /** Calls that returned an error. */
+  errors: number;
+  /** Done trials that called it at least once. */
+  trials: number;
+}
+
+/** A tool the task wants (its required_tools, and the tool of each required tool_called check), in one arm. */
+export interface BehaviourRequiredTool {
+  tool: string;
+  /** Done trials of the tasks that want it. */
+  trials: number;
+  /** Of those, the ones that called it at least once. */
+  called: number;
+  /** called / trials (0 to 1). */
+  share: number;
+}
+
+export interface BehaviourArm {
+  arm: string;
+  /** Done trials (agent outcomes); infra failures are counted on the run page, never here. */
+  trials: number;
+  /** execute_tool spans over the arm's done trials. */
+  tool_calls: { total: number; per_trial: number | null };
+  /** Most called first. */
+  by_tool: BehaviourTool[];
+  required_tools: BehaviourRequiredTool[];
+  tool_errors: { total: number; per_trial: number | null; trials: number };
+  /** Steps are model calls (D17), from LiteLLM's records of the agent's key. */
+  steps: { trials_measured: number; per_trial: number | null; step_limit: number };
+  /** Done trials by `end_state`, most first. */
+  end_states: { end_state: string; trials: number }[];
+  /** Trials with a cause, and how often each cause was the primary one and a contributing one. */
+  causes: { trials: number; by_cause: { cause: CauseKind; primary: number; contributing: number }[] };
+}
+
+/** Tool calls or steps per trial, B minus A per task, with the costs' task bootstrap and no verdict. */
+export interface BehaviourStat {
+  metric: 'tool_calls' | 'steps';
+  /** Tasks with a value in both arms. */
+  tasks: number;
+  /** Mean over those tasks of each arm's mean per trial. */
+  a: number;
+  b: number;
+  diff: StatsInterval;
+  /** (B - A) / A in percent; null when A's mean is 0. */
+  relative: StatsInterval | null;
+  trials: { a: number; b: number };
+}
+
+export interface CompareBehaviour {
+  rules_version: string;
+  /** The arms in order, A first. */
+  arms: BehaviourArm[];
+  /** Empty for a pilot of one config. */
+  paired: BehaviourStat[];
+}
+
+/** A cause's primary count in each arm of one task. */
+export interface RegressionCause {
+  cause: CauseKind;
+  a: number;
+  b: number;
 }
 
 /**
@@ -799,8 +912,8 @@ export interface RegressionTrial {
   arm: 'A' | 'B';
   /** The required checks that failed on it. */
   failed_graders: string[];
-  /** Reserved for the failure-cause step (the brief's stretch item 7: wrong tool, made-up tool arguments, gave up early, ran out of steps, grader disagrees with the human label). Not filled yet. */
-  cause?: string | null;
+  /** D64: its failure cause (the brief's stretch item 7); null only when no rule could be read. */
+  cause: TrialCause | null;
 }
 
 /** D10: a task where B dropped (its difference is below 0) or a check's pass rate fell from A to B. */
@@ -818,6 +931,8 @@ export interface Regression {
   graders: RegressionGrader[];
   /** The task's failed trials, arm B first. */
   failed_trials: RegressionTrial[];
+  /** D64: the primary causes that were more common in B than in A on this task, most grown first. */
+  causes_grew: RegressionCause[];
 }
 
 /** Cost, tokens and time next to quality: the same task bootstrap, with no verdict. */
@@ -1138,6 +1253,8 @@ export interface TrialView {
   grades: Grade[];
   grading: TrialGrading;
   problems: string[];
+  /** D64: as on the trial's row; null unless it failed or ended other than answered. */
+  cause: TrialCause | null;
 }
 
 // ---- Folder trials (gate and smoke runs outside an experiment, FileTrialStore) ----------

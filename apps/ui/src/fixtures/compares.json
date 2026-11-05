@@ -442,28 +442,64 @@
               "arm": "B",
               "failed_graders": [
                 "fd-tax"
-              ]
+              ],
+              "cause": {
+                "cause": "judge_vs_label",
+                "reason": "On fd-tax the judge said no and the human label says yes",
+                "contributing": [],
+                "rules_version": "causes-1"
+              }
             },
             {
               "trial_id": "tr_fd-vs-sip-07_b_4",
               "arm": "B",
               "failed_graders": [
                 "fd-tax"
-              ]
+              ],
+              "cause": {
+                "cause": "other",
+                "reason": "fd-tax failed, which no rule explains: The profile shows a 30% slab, but the comparison uses the pre-tax FD amount.",
+                "contributing": [],
+                "rules_version": "causes-1"
+              }
             },
             {
               "trial_id": "tr_fd-vs-sip-07_b_5",
               "arm": "B",
               "failed_graders": [
                 "fd-tax"
-              ]
+              ],
+              "cause": {
+                "cause": "other",
+                "reason": "fd-tax failed, which no rule explains: The profile shows a 30% slab, but the comparison uses the pre-tax FD amount.",
+                "contributing": [],
+                "rules_version": "causes-1"
+              }
             },
             {
               "trial_id": "tr_fd-vs-sip-07_a_2",
               "arm": "A",
               "failed_graders": [
                 "fd-tax"
-              ]
+              ],
+              "cause": {
+                "cause": "unsupported_figure",
+                "reason": "₹13,98,270 has no tool result, client-file number or message behind it (1 of 7 figures)",
+                "contributing": [],
+                "rules_version": "causes-1"
+              }
+            }
+          ],
+          "causes_grew": [
+            {
+              "cause": "other",
+              "a": 0,
+              "b": 2
+            },
+            {
+              "cause": "judge_vs_label",
+              "a": 0,
+              "b": 1
             }
           ]
         },
@@ -508,35 +544,77 @@
               "arm": "B",
               "failed_graders": [
                 "payoff-order"
-              ]
+              ],
+              "cause": {
+                "cause": "wrong_tool",
+                "reason": "debt_payoff_plan was never called; amortization_schedule was",
+                "contributing": [],
+                "rules_version": "causes-1"
+              }
             },
             {
               "trial_id": "tr_payoff-order-08_b_3",
               "arm": "B",
               "failed_graders": [
                 "payoff-order"
-              ]
+              ],
+              "cause": {
+                "cause": "gave_up_early",
+                "reason": "Answered without calling debt_payoff_plan; it called only list_debts, which the task also needs",
+                "contributing": [],
+                "rules_version": "causes-1"
+              }
             },
             {
               "trial_id": "tr_payoff-order-08_b_5",
               "arm": "B",
               "failed_graders": [
                 "payoff-order"
-              ]
+              ],
+              "cause": {
+                "cause": "gave_up_early",
+                "reason": "Answered without calling debt_payoff_plan; it called only list_debts, which the task also needs",
+                "contributing": [],
+                "rules_version": "causes-1"
+              }
             },
             {
               "trial_id": "tr_payoff-order-08_a_2",
               "arm": "A",
               "failed_graders": [
                 "payoff-order"
-              ]
+              ],
+              "cause": {
+                "cause": "wrong_answer",
+                "reason": "debt-free-months failed, though list_debts and debt_payoff_plan were called: /\\b28\\s*months?\\b/ is not in the final_answer",
+                "contributing": [],
+                "rules_version": "causes-1"
+              }
             },
             {
               "trial_id": "tr_payoff-order-08_a_4",
               "arm": "A",
               "failed_graders": [
                 "payoff-order"
-              ]
+              ],
+              "cause": {
+                "cause": "wrong_answer",
+                "reason": "debt-free-months failed, though list_debts and debt_payoff_plan were called: /\\b28\\s*months?\\b/ is not in the final_answer",
+                "contributing": [],
+                "rules_version": "causes-1"
+              }
+            }
+          ],
+          "causes_grew": [
+            {
+              "cause": "gave_up_early",
+              "a": 0,
+              "b": 2
+            },
+            {
+              "cause": "wrong_tool",
+              "a": 0,
+              "b": 1
             }
           ]
         }
@@ -918,7 +996,492 @@
         }
       ]
     },
-    "stats_note": null
+    "stats_note": null,
+    "prose_figures": [
+      {
+        "arm": "A",
+        "trials_measured": 60,
+        "trials_unmeasured": 0,
+        "amounts": 312,
+        "derived_in_prose": 41,
+        "per_trial": 0.6833333333333333,
+        "share": 0.13141025641025642
+      },
+      {
+        "arm": "B",
+        "trials_measured": 60,
+        "trials_unmeasured": 0,
+        "amounts": 298,
+        "derived_in_prose": 9,
+        "per_trial": 0.15,
+        "share": 0.030201342281879196
+      }
+    ],
+    "behaviour": {
+      "rules_version": "causes-1",
+      "arms": [
+        {
+          "arm": "A",
+          "trials": 60,
+          "tool_calls": {
+            "total": 92,
+            "per_trial": 1.533
+          },
+          "by_tool": [
+            {
+              "tool": "get_client_profile",
+              "calls": 17,
+              "per_trial": 0.283,
+              "errors": 0,
+              "trials": 17
+            },
+            {
+              "tool": "sip_future_value",
+              "calls": 17,
+              "per_trial": 0.283,
+              "errors": 0,
+              "trials": 10
+            },
+            {
+              "tool": "list_debts",
+              "calls": 15,
+              "per_trial": 0.25,
+              "errors": 0,
+              "trials": 15
+            },
+            {
+              "tool": "calculate_emi",
+              "calls": 12,
+              "per_trial": 0.2,
+              "errors": 0,
+              "trials": 12
+            },
+            {
+              "tool": "debt_payoff_plan",
+              "calls": 7,
+              "per_trial": 0.117,
+              "errors": 0,
+              "trials": 7
+            },
+            {
+              "tool": "fd_maturity",
+              "calls": 5,
+              "per_trial": 0.083,
+              "errors": 0,
+              "trials": 5
+            },
+            {
+              "tool": "inflation_adjusted_value",
+              "calls": 5,
+              "per_trial": 0.083,
+              "errors": 0,
+              "trials": 5
+            },
+            {
+              "tool": "prepayment_impact",
+              "calls": 5,
+              "per_trial": 0.083,
+              "errors": 0,
+              "trials": 5
+            },
+            {
+              "tool": "loan_affordability",
+              "calls": 3,
+              "per_trial": 0.05,
+              "errors": 0,
+              "trials": 3
+            },
+            {
+              "tool": "multiply",
+              "calls": 3,
+              "per_trial": 0.05,
+              "errors": 0,
+              "trials": 1
+            },
+            {
+              "tool": "round",
+              "calls": 2,
+              "per_trial": 0.033,
+              "errors": 0,
+              "trials": 1
+            },
+            {
+              "tool": "divide",
+              "calls": 1,
+              "per_trial": 0.017,
+              "errors": 0,
+              "trials": 1
+            }
+          ],
+          "required_tools": [
+            {
+              "tool": "calculate_emi",
+              "trials": 5,
+              "called": 5,
+              "share": 1
+            },
+            {
+              "tool": "debt_payoff_plan",
+              "trials": 10,
+              "called": 7,
+              "share": 0.7
+            },
+            {
+              "tool": "fd_maturity",
+              "trials": 5,
+              "called": 5,
+              "share": 1
+            },
+            {
+              "tool": "get_client_profile",
+              "trials": 10,
+              "called": 10,
+              "share": 1
+            },
+            {
+              "tool": "inflation_adjusted_value",
+              "trials": 5,
+              "called": 5,
+              "share": 1
+            },
+            {
+              "tool": "list_debts",
+              "trials": 15,
+              "called": 12,
+              "share": 0.8
+            },
+            {
+              "tool": "loan_affordability",
+              "trials": 5,
+              "called": 3,
+              "share": 0.6
+            },
+            {
+              "tool": "prepayment_impact",
+              "trials": 5,
+              "called": 5,
+              "share": 1
+            },
+            {
+              "tool": "sip_future_value",
+              "trials": 10,
+              "called": 10,
+              "share": 1
+            }
+          ],
+          "tool_errors": {
+            "total": 0,
+            "per_trial": 0,
+            "trials": 0
+          },
+          "steps": {
+            "trials_measured": 60,
+            "per_trial": 2.567,
+            "step_limit": 1
+          },
+          "end_states": [
+            {
+              "end_state": "answered",
+              "trials": 59
+            },
+            {
+              "end_state": "step_limit",
+              "trials": 1
+            }
+          ],
+          "causes": {
+            "trials": 25,
+            "by_cause": [
+              {
+                "cause": "ran_out_of_steps",
+                "primary": 1,
+                "contributing": 0
+              },
+              {
+                "cause": "wrong_tool",
+                "primary": 2,
+                "contributing": 0
+              },
+              {
+                "cause": "gave_up_early",
+                "primary": 3,
+                "contributing": 0
+              },
+              {
+                "cause": "made_up_arguments",
+                "primary": 1,
+                "contributing": 0
+              },
+              {
+                "cause": "unsupported_figure",
+                "primary": 7,
+                "contributing": 2
+              },
+              {
+                "cause": "wrong_answer",
+                "primary": 11,
+                "contributing": 1
+              }
+            ]
+          }
+        },
+        {
+          "arm": "B",
+          "trials": 60,
+          "tool_calls": {
+            "total": 107,
+            "per_trial": 1.783
+          },
+          "by_tool": [
+            {
+              "tool": "get_client_profile",
+              "calls": 20,
+              "per_trial": 0.333,
+              "errors": 0,
+              "trials": 20
+            },
+            {
+              "tool": "list_debts",
+              "calls": 19,
+              "per_trial": 0.317,
+              "errors": 0,
+              "trials": 19
+            },
+            {
+              "tool": "calculate_emi",
+              "calls": 11,
+              "per_trial": 0.183,
+              "errors": 0,
+              "trials": 11
+            },
+            {
+              "tool": "add",
+              "calls": 10,
+              "per_trial": 0.167,
+              "errors": 0,
+              "trials": 10
+            },
+            {
+              "tool": "sip_future_value",
+              "calls": 10,
+              "per_trial": 0.167,
+              "errors": 1,
+              "trials": 10
+            },
+            {
+              "tool": "debt_payoff_plan",
+              "calls": 7,
+              "per_trial": 0.117,
+              "errors": 0,
+              "trials": 7
+            },
+            {
+              "tool": "fd_maturity",
+              "calls": 5,
+              "per_trial": 0.083,
+              "errors": 0,
+              "trials": 5
+            },
+            {
+              "tool": "inflation_adjusted_value",
+              "calls": 5,
+              "per_trial": 0.083,
+              "errors": 0,
+              "trials": 5
+            },
+            {
+              "tool": "multiply",
+              "calls": 5,
+              "per_trial": 0.083,
+              "errors": 0,
+              "trials": 5
+            },
+            {
+              "tool": "prepayment_impact",
+              "calls": 5,
+              "per_trial": 0.083,
+              "errors": 0,
+              "trials": 5
+            },
+            {
+              "tool": "subtract",
+              "calls": 5,
+              "per_trial": 0.083,
+              "errors": 0,
+              "trials": 5
+            },
+            {
+              "tool": "loan_affordability",
+              "calls": 4,
+              "per_trial": 0.067,
+              "errors": 0,
+              "trials": 4
+            },
+            {
+              "tool": "amortization_schedule",
+              "calls": 1,
+              "per_trial": 0.017,
+              "errors": 0,
+              "trials": 1
+            }
+          ],
+          "required_tools": [
+            {
+              "tool": "calculate_emi",
+              "trials": 5,
+              "called": 5,
+              "share": 1
+            },
+            {
+              "tool": "debt_payoff_plan",
+              "trials": 10,
+              "called": 7,
+              "share": 0.7
+            },
+            {
+              "tool": "fd_maturity",
+              "trials": 5,
+              "called": 5,
+              "share": 1
+            },
+            {
+              "tool": "get_client_profile",
+              "trials": 10,
+              "called": 10,
+              "share": 1
+            },
+            {
+              "tool": "inflation_adjusted_value",
+              "trials": 5,
+              "called": 5,
+              "share": 1
+            },
+            {
+              "tool": "list_debts",
+              "trials": 15,
+              "called": 15,
+              "share": 1
+            },
+            {
+              "tool": "loan_affordability",
+              "trials": 5,
+              "called": 4,
+              "share": 0.8
+            },
+            {
+              "tool": "prepayment_impact",
+              "trials": 5,
+              "called": 5,
+              "share": 1
+            },
+            {
+              "tool": "sip_future_value",
+              "trials": 10,
+              "called": 10,
+              "share": 1
+            }
+          ],
+          "tool_errors": {
+            "total": 1,
+            "per_trial": 0.017,
+            "trials": 1
+          },
+          "steps": {
+            "trials_measured": 60,
+            "per_trial": 2.783,
+            "step_limit": 0
+          },
+          "end_states": [
+            {
+              "end_state": "answered",
+              "trials": 60
+            }
+          ],
+          "causes": {
+            "trials": 16,
+            "by_cause": [
+              {
+                "cause": "judge_vs_label",
+                "primary": 1,
+                "contributing": 0
+              },
+              {
+                "cause": "wrong_tool",
+                "primary": 2,
+                "contributing": 0
+              },
+              {
+                "cause": "gave_up_early",
+                "primary": 2,
+                "contributing": 0
+              },
+              {
+                "cause": "tool_error",
+                "primary": 1,
+                "contributing": 0
+              },
+              {
+                "cause": "unsupported_figure",
+                "primary": 4,
+                "contributing": 1
+              },
+              {
+                "cause": "wrong_answer",
+                "primary": 4,
+                "contributing": 1
+              },
+              {
+                "cause": "other",
+                "primary": 2,
+                "contributing": 0
+              }
+            ]
+          }
+        }
+      ],
+      "paired": [
+        {
+          "metric": "tool_calls",
+          "tasks": 12,
+          "a": 1.533,
+          "b": 1.783,
+          "diff": {
+            "estimate": 0.25,
+            "low": -0.383,
+            "high": 0.783
+          },
+          "relative": {
+            "estimate": 16.3,
+            "low": -25,
+            "high": 51.09
+          },
+          "trials": {
+            "a": 60,
+            "b": 60
+          }
+        },
+        {
+          "metric": "steps",
+          "tasks": 12,
+          "a": 2.567,
+          "b": 2.783,
+          "diff": {
+            "estimate": 0.217,
+            "low": -0.5,
+            "high": 0.767
+          },
+          "relative": {
+            "estimate": 8.44,
+            "low": -19.48,
+            "high": 29.87
+          },
+          "trials": {
+            "a": 60,
+            "b": 60
+          }
+        }
+      ]
+    }
   },
   "exp_discovery": {
     "experiment_id": "exp_discovery",
@@ -1417,7 +1980,9 @@
         }
       ]
     },
-    "stats_note": null
+    "stats_note": null,
+    "prose_figures": [],
+    "behaviour": null
   },
   "exp_aa": {
     "experiment_id": "exp_aa",
@@ -2004,7 +2569,9 @@
         }
       ]
     },
-    "stats_note": null
+    "stats_note": null,
+    "prose_figures": [],
+    "behaviour": null
   },
   "exp_pilot": {
     "experiment_id": "exp_pilot",
@@ -2138,7 +2705,9 @@
       }
     ],
     "stats": null,
-    "stats_note": "A pilot of one config has nothing to compare it with, so there is no verdict."
+    "stats_note": "A pilot of one config has nothing to compare it with, so there is no verdict.",
+    "prose_figures": [],
+    "behaviour": null
   },
   "exp_harness": {
     "experiment_id": "exp_harness",
@@ -2186,7 +2755,9 @@
     ],
     "rows": [],
     "stats": null,
-    "stats_note": null
+    "stats_note": null,
+    "prose_figures": [],
+    "behaviour": null
   },
   "exp_model": {
     "experiment_id": "exp_model",
@@ -2234,7 +2805,9 @@
     ],
     "rows": [],
     "stats": null,
-    "stats_note": null
+    "stats_note": null,
+    "prose_figures": [],
+    "behaviour": null
   },
   "exp_futility": {
     "experiment_id": "exp_futility",
@@ -2282,6 +2855,8 @@
     ],
     "rows": [],
     "stats": null,
-    "stats_note": null
+    "stats_note": null,
+    "prose_figures": [],
+    "behaviour": null
   }
 }

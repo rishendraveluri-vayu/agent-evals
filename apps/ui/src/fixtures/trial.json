@@ -309,5 +309,11 @@
     },
     "pending": null
   },
-  "problems": []
+  "problems": [],
+  "cause": {
+    "cause": "judge_vs_label",
+    "reason": "On fd-tax the judge said no and the human label says yes",
+    "contributing": [],
+    "rules_version": "causes-1"
+  }
 }

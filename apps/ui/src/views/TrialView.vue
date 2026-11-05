@@ -12,6 +12,7 @@ import SpanTimeline from '../components/SpanTimeline.vue';
 import { armIndexOf, armLetter, armsOf, namedByHash } from '../lib/arms';
 import { gradeView, markAmounts, outcomeOf, provenanceOf, type AmountCheck, type GradeView, type ProvenanceView } from '../lib/grading';
 import { optional, useLoad } from '../lib/async';
+import { causeView, sentence } from '../lib/causes';
 import { capitalise, count, harnessVersion, money, plainText, seconds, shortVersion } from '../lib/format';
 import { inlineParts, inlineStyles, type InlinePart } from '../lib/markdown';
 import { endStateName, experimentName, graderName, harnessName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
@@ -143,6 +144,15 @@ const isInfra = computed(() => !!vm.value?.label?.startsWith('infra:'));
 /** While held-out outputs remain to label, the page never says where your labels and the judge
  *  part ways. */
 const labelsDone = computed(() => (data.value?.queue.length ?? 0) === 0);
+
+/** D64: why a failed trial failed, or why it stopped short, by the API's rules; null otherwise. */
+const cause = computed(() => {
+  const d = data.value;
+  if (!d || d.any.kind !== 'experiment') return null;
+  const c = causeView(d.any.trial.cause, labelsDone.value);
+  if (!c) return null;
+  return { ...c, lead: outcome.value?.kind === 'fail' ? 'Why it failed' : 'Why it stopped short', reason: sentence(c.reason) };
+});
 /** Outputs of this trial's task still in the held-out queue: while any remain, the judge's reasons
  *  for the task (quotes, rationale, highlights) stay hidden, so they cannot steer those labels. */
 const queuedForTask = computed(() => {
@@ -692,6 +702,27 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               >{{ f.name }}</a>{{ f.note }}{{ fi < failedOn.length - 1 ? ', ' : '' }}
             </template>
           </p>
+          <div
+            v-if="cause"
+            class="small trial-cause"
+            data-test="trial-cause"
+          >
+            <p>
+              <span class="secondary">{{ cause.lead }}:</span> <strong data-test="trial-cause-name">{{ cause.name }}</strong>. <span class="cause-reason">{{ cause.reason }}</span>
+            </p>
+            <ul
+              v-if="cause.contributing.length"
+              class="cause-also secondary"
+              data-test="trial-cause-also"
+            >
+              <li
+                v-for="(c, ci) in cause.contributing"
+                :key="ci"
+              >
+                Also {{ c.name.toLowerCase() }}: <span class="cause-reason">{{ sentence(c.reason) }}</span>
+              </li>
+            </ul>
+          </div>
         </div>
         <div
           v-if="data.experiment"
@@ -1315,6 +1346,26 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 
 .failed-on {
   margin-top: 6px;
+}
+
+/* The rule-based cause under the checks it failed: a pointer, the trial below is the evidence. */
+.trial-cause {
+  margin-top: 6px;
+  max-width: 90ch;
+  display: grid;
+  gap: 2px;
+}
+
+.cause-reason {
+  overflow-wrap: anywhere;
+}
+
+.cause-also {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
 }
 
 .same-cell {

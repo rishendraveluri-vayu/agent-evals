@@ -8,6 +8,7 @@ import LoadState from '../components/LoadState.vue';
 import { ApiError } from '../api/errors';
 import { armIndexOf, armsOf, namedByHash, timeLeft, totalTrials } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
+import { causeView } from '../lib/causes';
 import { armDifferences, armValue, armsCheck, axisChange, axisFromDiff, budgetCheck, capabilityCheck, changeWords, changesWords, contentDiff, keysCheck, planCheck, runAutoName, RUN_NAME_MAX, splitCheck, type Check } from '../lib/checks';
 import { changedLineCount, lineChanges, sentenceChanges, type LineChange } from '../lib/diff';
 import { capitalise, clock, minutes, money, plainText, plural, shortHash, wholeMoney } from '../lib/format';
@@ -555,6 +556,13 @@ function slotState(attempts: TrialRowSummary[]): { state: CellState; hadInfra: b
   return { state, hadInfra };
 }
 
+/** The slot's latest attempt when it is done: the one its cell shows. */
+function latestDone(attempts: TrialRowSummary[]): TrialRowSummary | null {
+  if (!attempts.length) return null;
+  const latest = attempts.reduce((x, y) => (y.attempt > x.attempt ? y : x));
+  return latest.status === 'done' ? latest : null;
+}
+
 const grid = computed(() => {
   const e = data.value?.experiment;
   if (!e) return [];
@@ -578,7 +586,11 @@ const grid = computed(() => {
               ? `infra failure (${infraReason(last?.label) || 'infra'}), not re-run`
               : CELL_WORDS[state];
         const retried = hadInfra && (state === 'pass' || state === 'fail');
-        return { state, retried, attempts, label: `${t.id}, arm ${String.fromCharCode(65 + arm)}, trial ${r + 1}: ${words}${retried ? ', after an infra failure' : ''}` };
+        // D64: a failed or stopped-short trial's cause. This page does not load the label queue, so
+        // it keeps labelling blind: the judge against your label reads as a judge check that failed.
+        const cause = latestDone(attempts)?.cause ? causeView(latestDone(attempts)?.cause, false) : null;
+        const why = cause ? `; ${cause.name.toLowerCase()}` : '';
+        return { state, retried, attempts, label: `${t.id}, arm ${String.fromCharCode(65 + arm)}, trial ${r + 1}: ${words}${retried ? ', after an infra failure' : ''}${why}` };
       }),
     ),
   }));

@@ -259,19 +259,23 @@ describe('CompareView against the API: figures written without a tool (D61)', ()
       '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
     });
+  const proseTile = (w: VueWrapper) => w.findAll('[data-test="behaviour-tile"]').find((t) => t.text().startsWith('Figures written without a tool'));
 
-  it('shows each arm’s figures derived in prose as a measure beside the pass rate, not a gate', async () => {
+  it('shows each arm’s figures derived in prose with how the arms behaved, as a measure, not a gate', async () => {
     route([
       { arm: 'A', trials_measured: 4, trials_unmeasured: 0, amounts: 40, derived_in_prose: 12, per_trial: 3, share: 0.3 },
       { arm: 'B', trials_measured: 3, trials_unmeasured: 1, amounts: 24, derived_in_prose: 0, per_trial: 0, share: 0 },
     ]);
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
-    const tile = w.findAll('.metrics > div').find((t) => t.text().startsWith('Figures written without a tool'));
+    const tile = proseTile(w);
     expect(tile?.text()).toContain('−3.0 per trial');
-    expect(tile?.text()).toContain('12 of 40 figures and 0 of 24 figures, checked by recomputing them; a measure, not a gate; 1 trial from before D61 not counted');
+    // In plain words: no decision-log number on screen.
+    expect(tile?.text()).toContain('12 of 40 figures and 0 of 24 figures, checked by recomputing them; a measure, not a gate; 1 trial whose checks predate this measure not counted');
     expect(tile?.get('[data-test="bar-a"]').attributes('style')).toContain('width: 100%');
     expect(tile?.get('[data-test="bar-b"]').attributes('style')).toContain('width: 0%');
+    // Not a second time beside the pass rate and costs.
+    expect(w.findAll('.metrics > div').some((t) => t.text().startsWith('Figures written without a tool'))).toBe(false);
   });
 
   it('shows no such tile when an arm has no measured trial, or the API predates D61', async () => {
@@ -286,6 +290,140 @@ describe('CompareView against the API: figures written without a tool (D61)', ()
     w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     expect(w.text()).not.toContain('Figures written without a tool');
+  });
+});
+
+describe('CompareView: how the arms behaved (D64)', () => {
+  const base = compares.exp_heldout as unknown as Compare;
+  const route = (over: Partial<Compare> = {}, labels: unknown[] = queue.heldout) =>
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': { ...base, ...over },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': labels,
+    });
+  const rows = (w: VueWrapper, table: string) =>
+    w
+      .get(`[data-test="${table}"]`)
+      .findAll('tbody tr')
+      .map((tr) => tr.findAll('th, td').map((c) => c.text()));
+
+  it('sits after the pass rate and costs and before where B dropped, and says it is no verdict', async () => {
+    route();
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(inOrder(w, ['#costs', '[data-test="behaviour"]', '[data-test="regressions"]'])).toBe(true);
+    const section = w.get('[data-test="behaviour"]');
+    expect(section.get('h2').text()).toBe('How the arms behaved');
+    expect(section.text()).toContain('These explain the pass rate; none of them is a verdict.');
+    expect(section.findAll('[data-test="behaviour-tile"]').map((t) => t.get('.stat-label').text())).toEqual(['Tool calls per trial', 'Steps per trial', 'Tool errors per trial', 'Figures written without a tool']);
+  });
+
+  it('gives tool calls and steps per trial as B minus A with their interval, and step-limit hits per arm', async () => {
+    route();
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const [calls, steps, errors] = w.findAll('[data-test="behaviour-tile"]').map((t) => t.text());
+    expect(calls).toContain('+0.3 per trial');
+    expect(calls).toContain('interval −0.4 to +0.8, B minus A per task over 12 tasks; no verdict');
+    expect(calls).toContain('A 1.5');
+    expect(calls).toContain('B 1.8');
+    expect(steps).toContain('Stopped at the step limit: A 1 of 60, B 0 of 60');
+    expect(errors).toContain('A: 0 errors in 0 trials; B: 1 error in 1 trial');
+  });
+
+  it('lists tools as rows with both arms per trial side by side, marking the differences', async () => {
+    route();
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const table = w.get('[data-test="tool-table"]');
+    expect(table.findAll('thead th').map((th) => th.text())).toEqual(['Tool', 'A', 'B', 'B − A']);
+    const byTool = Object.fromEntries(rows(w, 'tool-table').map((r) => [r[0].split(' ')[0], r]));
+    expect(byTool.get_client_profile.slice(1)).toEqual(['0.3', '0.3', '+0.05']);
+    expect(byTool.add).toEqual(['add only in B', '0.0', '0.2', '+0.2']);
+    expect(byTool.round[0]).toBe('round only in A');
+    // An error is counted under the arm whose call returned it.
+    expect(byTool.sip_future_value[2]).toBe('0.21 error');
+    const marked = table.findAll('[data-test="tool-mark"]').map((m) => m.text());
+    expect(marked).toContain('only in B');
+    expect(marked).not.toContain('differs');
+  });
+
+  it('gives the share of trials that called each tool their task needs, and how trials ended', async () => {
+    route();
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(rows(w, 'required-table').find((r) => r[0] === 'list_debts')).toEqual(['list_debts', '80%12 of 15', '100%15 of 15']);
+    expect(rows(w, 'end-table')).toEqual([
+      ['Agent answered', '59 of 60', '60 of 60'],
+      ['Hit the step limit', '1 of 60', '0 of 60'],
+    ]);
+  });
+
+  it('counts each cause per arm in rule order, primary and also, and says how causes are decided', async () => {
+    route({}, []);
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const causes = rows(w, 'cause-table');
+    expect(causes.map((r) => r[0])).toEqual(['Ran out of steps', 'Judge disagrees with your label', 'Wrong tool', 'Gave up early', 'Made-up tool arguments', 'Tool error, not recovered', 'Figure with no source', 'Wrong answer', 'Other']);
+    expect(causes.find((r) => r[0] === 'Figure with no source')).toEqual(['Figure with no source', '7also 2', '4also 1']);
+    expect(w.get('[data-test="behaviour"]').text()).toContain('Trials with a cause: A 25 of 60, B 16 of 60.');
+    const rules = w.get('[data-test="cause-rules"]');
+    expect(rules.get('summary').text()).toBe('How causes are decided');
+    expect(rules.findAll('li')).toHaveLength(9);
+    expect(rules.text()).toContain('Wrong tool. A tool the task needs was never called and another tool was');
+    expect(w.find('[data-test="cause-blind"]').exists()).toBe(false);
+  });
+
+  it('keeps where the judge and your labels disagree out of sight while held-out outputs remain to label', async () => {
+    route();
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const names = rows(w, 'cause-table').map((r) => r[0]);
+    expect(names).toContain('A judge check failed');
+    expect(names).not.toContain('Judge disagrees with your label');
+    expect(w.get('[data-test="cause-rules"]').text()).not.toContain('Judge disagrees');
+    expect(w.get('[data-test="cause-blind"]').text()).toBe('Where the judge and the human labels disagree stays hidden until the held-out outputs are labelled.');
+  });
+
+  it('says on each task where B dropped which causes grew from A to B, and the opened trial’s cause', async () => {
+    route();
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const [fd, payoff] = w.findAll('[data-test="regression"]');
+    expect(payoff.get('[data-test="regression-causes"]').text()).toBe('More common in B: gave up early, 0 → 2; wrong tool, 0 → 1');
+    expect(payoff.get('[data-test="regression-link-cause"]').text()).toBe('· wrong tool');
+    // The judge against your label stays hidden while labelling is blind.
+    expect(fd.get('[data-test="regression-causes"]').text()).toBe('More common in B: other, 0 → 2');
+    expect(fd.get('[data-test="regression-link-cause"]').text()).toBe('· a judge check failed');
+  });
+
+  it('shows the judge against your label on the regression list once the held-out outputs are labelled', async () => {
+    route({}, []);
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const fd = w.findAll('[data-test="regression"]')[0];
+    expect(fd.get('[data-test="regression-causes"]').text()).toBe('More common in B: other, 0 → 2; judge disagrees with your label, 0 → 1');
+    expect(fd.get('[data-test="regression-link-cause"]').text()).toBe('· judge disagrees with your label');
+  });
+
+  it('shows no behaviour section when the API has none (an older API, or a run not complete)', async () => {
+    route({ behaviour: undefined as unknown as null });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.find('[data-test="behaviour"]').exists()).toBe(false);
+    expect(w.find('[data-test="regression"]').exists()).toBe(true);
+  });
+
+  it('shows one column and no difference for a pilot of one arm', async () => {
+    const one = { ...base.behaviour!, arms: [base.behaviour!.arms[0]], paired: [] };
+    route({ behaviour: one, prose_figures: [] });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="tool-table"]').findAll('thead th').map((th) => th.text())).toEqual(['Tool', 'A']);
+    expect(w.find('[data-test="tool-mark"]').exists()).toBe(false);
+    expect(w.findAll('[data-test="behaviour-tile"]')[0].text()).toContain('1.5 per trial');
   });
 });
 
