@@ -40,11 +40,11 @@ status, plus `"fix": "<what to change>"` where the API can say how to put the re
 
 | Method and path | Returns |
 | --- | --- |
-| `GET /harnesses` | `[{name, package, ref, python, capabilities}]`, one per `workers/*/src/*/capabilities.json` (read-only mount). |
+| `GET /harnesses` | `[{name, package, ref, python, capabilities}]`, one per `workers/*/src/*/capabilities.json` (read-only mount). A harness `make new-harness` made and nobody finished, whose `version.package` or `version.ref` is still the scaffold's `"TODO"`, is left out (since 5 Nov, review A2): its adapter is a stub and no worker claims its trials. |
 | `GET /prompts` | `[{id, version, sha256, path, text}]` from `configs/prompts/<id>.<version>.md` (the leading `<!-- -->` review header stripped, as `prompt_text` does). |
 | `POST /prompts` | `{id, base_version, text}` writes the next version of an existing prompt and returns `{id, version, sha256, path}` (below). |
 | `GET /toolsets` | `[{id, version, sha256, servers: [{name, allowed_tools}], manifest: [{server, server_version, tools: [{name, description, input_schema}]}], description, validation_only}]`. Two built-in toolsets, in this order. First `finance/v3` (since 5 Nov): the 11 finance tools, the 7 arithmetic tools (`add`, `subtract`, `multiply`, `divide`, `percent_of`, `percent_change`, `round`; D54) and `reference_rates` (D58) at server 0.4.1; being first, it is the new-config default and the builder's choice. Then `finance-no-calculators/v3` (5 Nov, D70), `validation_only: true`: the same server and version with the eight calculators left out (`calculate_emi`, `amortization_schedule`, `prepayment_impact`, `debt_payoff_plan`, `sip_future_value`, `fd_maturity`, `inflation_adjusted_value`, `loan_affordability`), so 11 tools, as if the calculator service were down. It is for the positive control only: the builder never gives it to an agent, a new config never starts on it (not even one copied from a config that has it), and the Config screen offers it in the toolset list as "(validation only)" with its description; a fork of a config that has it keeps it. `description` and `validation_only` are words for people, outside the hash. `finance/all` (the 11 tools, server 0.2.0 and earlier) and `finance/v2` (the 18, server 0.3.0) are no longer listed; configs and trials that used them keep their row and hash, and a fork of one is moved to `finance/v3` with a note. A change to the tools is a new version, never an edit of a listed one (a unit test pins each version's hash). `sha256` is the canonical JSON hash of `{id, version, servers, manifest}`, so it covers the allowed list, each allowed tool's description and input schema and the server's version, not just the names (since 4 Nov; configs made before keep their names-only hash). Pinned: `finance/v3` `sha256:8e0508d2…`, `finance-no-calculators/v3` `sha256:34e53515…`. |
-| `GET /tasks` | `[{sha256, id, version, split, kind, summary, graders}]` from `tasks/<id>/task.json`. |
+| `GET /tasks` | `[{sha256, id, version, split, kind, summary, graders, problems}]` from `tasks/<id>/task.json`. `problems` lists, in words, why a task cannot be used (an empty list when it can): the fields below, and since 5 Nov (A5) each grader against the grader framework's schema, `graders/src/evals_graders/grader-spec.schema.json`, for example `graders[1].tolerence is not a field this grader type takes`, plus a grader id used twice. `POST /experiments` and the estimate refuse a task with problems (400 `invalid_task`, naming them). |
 | `GET /models` | `[{name, provider, input_per_mtok, output_per_mtok, key_set}]` from LiteLLM's `/model/info`, real models only. `key_set` says whether the provider's key is in `.env` for LiteLLM: compose passes the API a flag per key (`ANTHROPIC_KEY_SET: ${ANTHROPIC_API_KEY:+1}`, likewise `GEMINI_KEY_SET`), `1` when set and empty when not, never the key. It is `null` when the API was not told (the flag is absent, as outside compose) and for a provider it has no flag for (`gemini` and `vertex_ai` read the Gemini flag). |
 
 **New prompt version** (`POST /prompts`, for the UI's prompt editor). The API writes
@@ -91,6 +91,13 @@ and passed through unread:
  "graders": []}
 ```
 
+`graders` is a list of grader specs, each checked against the grader framework's schema
+(`graders/src/evals_graders/grader-spec.schema.json`, the file the grader itself validates
+against; the API image copies it to the same path under `/repo`) when the task is read, so a typo
+is a task problem in `GET /tasks`, not an `error` grade after the trial has run (since 5 Nov, A5).
+If the API cannot load that schema, every grader is a problem ("cannot be checked"), never a pass.
+A regex that Python cannot compile, a missing `unit_test` file and a missing rubric are still found
+only at grading time.
 An optional `required_tools` (finance tool names, such as `["calculate_emi"]`) is copied into
 the spec's `task.required_tools`, a grader primitive: the runner's `checks.json` records which
 were called (docs/adapter-contract.md section 12). A name the finance server does not have, or a
@@ -159,6 +166,7 @@ simulated-client task the API also summarises that file (profile and debts) into
   | `invalid_setting` | a bad value | "Set max_steps to an integer of at least 1, or leave it unset for the default." |
   | `unknown_setting` | a name that is not a setting | "Did you mean temperature? Rename temprature to temperature." |
   | `invalid_harness_options`, `unknown_harness`, `unknown_model`, `unknown_prompt`, `unknown_toolset` | | where to pick a valid one |
+  | `harness_not_implemented` | the harness is scaffolded, not implemented: its capabilities file still has the scaffold's `"TODO"` version (since 5 Nov, A2) | "Finish it first (workers/crewai/README.md): write setup and run_turn, run probe.sh, set version.package and version.ref in its capabilities.json, and add its worker to docker-compose.yml. Until then pick a harness from GET /harnesses: ..." |
 
   **Warnings** (valid but risky, stored anyway): `warnings: [{code, message, fix}]`. Today one
   code: `langgraph_model_name_rewrite`, for a LangGraph config whose model name langchain-openai
@@ -294,9 +302,12 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 
 ## Spend
 
-- `GET /spend` returns `{trials_usd, fake_trials_usd, system_usd, judge_usd, judge_approvals, total_usd,
+- `GET /spend` returns `{trials_usd, trials_spend_unknown, fake_trials_usd, system_usd, judge_usd, judge_approvals, total_usd,
   system_by_kind: {<kind>: {usd, calls}}, allowances: [{kind, limit_usd, used_usd,
-  remaining_usd, calls, half_reached}]}`. `judge_usd` is the LLM judge's spend across every
+  remaining_usd, calls, half_reached}]}`. `trials_usd` includes abandoned attempts' spend, read
+  by the lease sweep (worker protocol step 6, since 5 Nov, G3); `trials_spend_unknown` counts the
+  abandoned attempts on a real model whose spend LiteLLM could not give, which `trials_usd` and
+  `total_usd` therefore leave out (the header says so when it is above 0). `judge_usd` is the LLM judge's spend across every
   approval, revoked ones included: for each key, the sum of `spend` over its LiteLLM spend-log
   rows (for a revoked key, at least what the log showed at revoke, and that figure when LiteLLM
   cannot be read). It is null when an active key's log cannot be read. `judge_approvals` counts
@@ -340,11 +351,24 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 - `POST /experiments` with `{name, axis, config_hashes, task_sha256s, n, sim_model,
   budget_usd, plan_commit, sim_prompt_sha256, order_seed, futility, parent_experiment_id,
   reuse_baseline, calibration}` creates the experiment and all its trial rows
-  (`queued`), records the platform commit (`EVALS_PLATFORM_COMMIT`), and sets a LiteLLM budget
+  (`queued`), records the platform commit, and sets a LiteLLM budget
   for the whole experiment. It returns the experiment. Nothing runs until it is started.
+  **Platform commit (since 5 Nov, G2).** `EVALS_PLATFORM_COMMIT`, when set, is recorded as given,
+  with `platform_commit_source: "env"`. Left blank (the default, so a plain `docker compose up`),
+  the API reads the checkout's HEAD from its `.git`, which compose mounts read-only at
+  `/repo/.git` (`EVALS_GIT_DIR` elsewhere), each time an experiment is created or estimated:
+  a detached commit, or the branch HEAD names, from its loose ref file or `packed-refs`; no git is
+  run. It is recorded with `platform_commit_source: "git"`. Either way the working tree is
+  unknown-dirty: the API cannot see uncommitted changes, nor which commit the running images were
+  built from. With neither, both fields are null (a copy without `.git`, a worktree whose git
+  folder is outside the mount); so are an older experiment's source. The baseline decision (D34,
+  below) compares the commit read the same way.
   `name` is trimmed and must be 1 to 200 characters (`EXPERIMENT_NAME_MAX`); a longer one is a 400
   `invalid_experiment` that says its length, with the fix "Shorten the name to 200 characters or
   fewer." (since 5 Nov, QA round 3; nothing is created).
+  A config whose stored harness version is the scaffold's `"TODO"` (saved for a scaffolded harness
+  before `POST /configs` refused one) is a 400 `harness_not_implemented`, here and on the estimate,
+  since no worker would ever claim its trials (since 5 Nov, A2).
   `budget_usd` must cover the estimate's high end (400 `budget_below_estimate`, R10.6), **except
   for a run on fake models only**: when every model it calls (each arm's, and the simulator's when
   a task needs one) is `fake/*`, nothing real is spent and the prices are made up for testing, so
@@ -466,8 +490,12 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 - `GET /experiments/:id` adds `actual` next to `estimate` (item 8): null until a trial has
   finished, then `{finished_trials, spend_usd, cost_per_trial_usd, wall_s_per_trial,
   elapsed_minutes, projected_spend_usd}` (elapsed from the start to the finish or now; the
-  projection is the spend guard's). Reused trials are the parent's spend, not this one's.
-- `GET /experiments/:id` also adds `tasks`, `configs`, `arms`, `order_seed`, `futility`,
+  projection is the spend guard's). Reused trials are the parent's spend, not this one's. An
+  abandoned attempt's spend (G3) is in `spend_usd` and the projection, but the attempt is not a
+  reported trial: `cost_per_trial_usd` is the whole spend over the trials that reported, and the
+  spend guard projects the trials left at that mean, crashed attempts' spend included.
+- `GET /experiments/:id` also adds `platform_commit` and `platform_commit_source` (`env`, `git`
+  or null; above), `tasks`, `configs`, `arms`, `order_seed`, `futility`,
   `parent_experiment_id`, `baseline`, `paused_at`, `paused_reason` and `events`, newest first: `[{at, kind, trial_id, attempt, arm, config_hash,
   detail}]`. Claims, infra failures, config errors, re-queues, budget trips, abandons and file
   problems come from the trial rows; pauses and resumes (`paused`, `resumed`, `arm_paused`,
@@ -612,7 +640,10 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   `seed` is the experiment id, so the same data always gives the same numbers; results are cached
   by the trials and their current grading jobs, so a regrade recomputes them.
 - `GET /experiments/:id/export?format=json|csv` streams every trial row (infra failures,
-  abandoned and cancelled rows included) joined with its config, task, grades and spend. Each
+  abandoned and cancelled rows included) joined with its config, task, grades and spend. An
+  abandoned row carries the spend the lease sweep read for it (G3); `spend_unknown` (a CSV column
+  after `sim_cost_usd`, and in the JSON's `spend`) is true when LiteLLM could not give it, so its
+  empty cost is unknown, not zero. Each
   row has `arm` (`A` or `B` by the config's place in the experiment; in a run of one config twice,
   the second arm's repeats come after the first's) and `outcome`, the trial's current grading
   exactly as the run grid (`grading` on `GET /experiments/:id/trials`) and the comparison count
@@ -750,7 +781,17 @@ trial cannot read or change another trial's stored files (D3).
    paused arms.
 6. A lease with no heartbeat for 60 s lapses: the API marks the attempt `abandoned`, revokes
    its keys, and queues the next attempt under the same cap (also while the experiment is
-   paused; the attempt waits for the resume).
+   paused; the attempt waits for the resume). **Before revoking (since 5 Nov, G3)** it reads
+   LiteLLM's spend log for the attempt's agent key, and its simulator key when it had one, and
+   stores them on the abandoned row as a report would: `cost_usd` and `input_tokens`,
+   `output_tokens`, `model_calls` from the agent key's rows, `sim_cost_usd` from the simulator
+   key's (null without one). So the attempt's spend counts in `GET /spend`, the experiment's
+   `spend_usd` and `actual.spend_usd`, the spend guard and the export. When LiteLLM cannot be
+   read, the row gets `spend_unknown: true` and its costs stay null, unknown and not zero; while
+   its keys are still live (LiteLLM down, so their revoke failed too) the next sweep reads again
+   and clears the mark. The log of a key already revoked is never read for this (assumption A19
+   is unchecked), so an attempt whose log could not be read but whose keys were revoked keeps the
+   mark. Attempts abandoned before migration 015 are marked unknown.
 
 ## Grading (SP4, R14)
 

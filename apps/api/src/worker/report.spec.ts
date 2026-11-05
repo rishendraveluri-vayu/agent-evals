@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { ApiError } from '../common/api-error';
 import type { JsonObject } from '../contract';
-import { configErrorFix, configErrorReason, parseReport, reportedSha, spanRows, usageOf } from './report';
+import { configErrorFix, configErrorReason, parseReport, reportedSha, spanRows, spendLogUsage, usageOf } from './report';
 
 const EXAMPLES = path.resolve(__dirname, '../../../../contract/v2/examples');
 const exampleSpans = readFileSync(path.join(EXAMPLES, 'trace.jsonl'), 'utf8')
@@ -118,5 +118,25 @@ describe('configErrorFix (D37)', () => {
     const fix = configErrorFix(report(status));
     expect(fix).toContain(text);
     expect(fix).toContain('/arms/:config_hash/resume');
+  });
+});
+
+describe("an abandoned attempt's spend from LiteLLM's spend log (G3)", () => {
+  it('sums spend and tokens as the runner sums a reported trial, one row per call, failed calls included', () => {
+    const agent = [
+      { request_id: 'a', status: 'success', spend: 0.0101, prompt_tokens: 1000, completion_tokens: 90 },
+      { request_id: 'b', status: 'failure', spend: 0, prompt_tokens: 0, completion_tokens: 0 },
+      { request_id: 'c', status: 'success', spend: '0.0002', prompt_tokens: 50, completion_tokens: 10 },
+    ];
+    expect(spendLogUsage(agent, [{ spend: 0.003 }, { spend: 0.001 }])).toEqual({ cost_usd: 0.0103, sim_cost_usd: 0.004, input_tokens: 1050, output_tokens: 100, model_calls: 3 });
+  });
+
+  it('is zero for a key with no calls, and has no simulator cost without a simulator key', () => {
+    expect(spendLogUsage([], null)).toEqual({ cost_usd: 0, sim_cost_usd: null, input_tokens: 0, output_tokens: 0, model_calls: 0 });
+    expect(spendLogUsage([], []).sim_cost_usd).toBe(0);
+  });
+
+  it('skips rows that are not objects and fields that are not numbers', () => {
+    expect(spendLogUsage(['x', null, { spend: 'n/a', prompt_tokens: 'many' }, { spend: 0.5, prompt_tokens: 7 }], null)).toMatchObject({ cost_usd: 0.5, input_tokens: 7, model_calls: 2 });
   });
 });

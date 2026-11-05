@@ -40,7 +40,10 @@ const spendWords = computed(() => {
   const judge = typeof v.judge_usd === 'number' && v.judge_usd > 0 ? `, the judge ${money(v.judge_usd)}` : '';
   // Fake models' prices are made up for testing: never counted as spend, and said so.
   const fake = typeof v.fake_trials_usd === 'number' && v.fake_trials_usd > 0 ? `. Fake-model trials are free: their made-up prices (${money(v.fake_trials_usd)}) are not counted` : '';
-  return `Spent ${money(v.total_usd)}${budget.value ? ` of ${wholeMoney(budget.value)}` : ''}: trials on real models ${money(v.trials_usd)}, the platform's own calls ${money(v.system_usd)}${judge}${fake}`;
+  // G3: an abandoned attempt whose spend LiteLLM could not give is unknown, not zero: say so.
+  const n = typeof v.trials_spend_unknown === 'number' ? v.trials_spend_unknown : 0;
+  const unknown = n > 0 ? `. The spend of ${n} abandoned attempt${n === 1 ? '' : 's'} is unknown (LiteLLM could not be read), so the real total may be higher` : '';
+  return `Spent ${money(v.total_usd)}${budget.value ? ` of ${wholeMoney(budget.value)}` : ''}: trials on real models ${money(v.trials_usd)}, the platform's own calls ${money(v.system_usd)}${judge}${fake}${unknown}`;
 });
 /** The conflict-check allowance in words, for its tooltip and screen readers. */
 const allowanceWords = computed(() => {

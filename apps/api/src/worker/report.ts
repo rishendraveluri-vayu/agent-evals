@@ -1,6 +1,7 @@
 import type { JsonObject, ReportRequest } from '../contract';
 import { badRequest } from '../common/api-error';
 import { normalizeSha } from '../common/hashing';
+import { spendLogUsd } from '../judge/judge-core';
 import { isLabel } from '../trials/status';
 import { plainValue } from '../trials/trial-store';
 
@@ -164,6 +165,26 @@ export interface Usage {
   proxy_complete: boolean | null;
   wall_s: number | null;
   end_state: string | null;
+}
+
+/**
+ * G3: what an abandoned attempt spent, from LiteLLM's spend-log rows for its keys, summed as the
+ * runner sums a reported trial's (`ProxyClient.usage`: `spend`, `prompt_tokens`,
+ * `completion_tokens`, one row per call). `sim` is null when the attempt had no simulator key.
+ */
+export function spendLogUsage(
+  agent: unknown[],
+  sim: unknown[] | null,
+): { cost_usd: number; sim_cost_usd: number | null; input_tokens: number; output_tokens: number; model_calls: number } {
+  const rows = agent.filter(isObj);
+  const tokens = (field: string): number => rows.reduce((s, r) => s + (int(r[field]) ?? 0), 0);
+  return {
+    cost_usd: spendLogUsd(agent),
+    sim_cost_usd: sim === null ? null : spendLogUsd(sim),
+    input_tokens: tokens('prompt_tokens'),
+    output_tokens: tokens('completion_tokens'),
+    model_calls: rows.length,
+  };
 }
 
 /** The numbers the API indexes: LiteLLM's usage for the agent key (R10.9), and the

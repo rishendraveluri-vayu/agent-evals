@@ -14,7 +14,7 @@ import { type ExperimentRow, finishIfDone, isSimTask } from '../experiments/expe
 import { LiteLlmClient, LiteLlmHttpError, type MintedKey } from '../litellm/litellm.client';
 import { FINISHED, HELD, LEASE_S, PAUSES_ARM, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
 import { MAX_FILE_BYTES, checkFiles, locate, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
-import { configErrorFix, configErrorReason, parseReport, spanRows, usageOf } from './report';
+import { configErrorFix, configErrorReason, parseReport, spanRows, spendLogUsage, usageOf } from './report';
 import { applyRunRules } from '../experiments/rules';
 import { TRIAL_IN_ARM, pauseArm } from '../experiments/run-state';
 import { SIM_REPLIES_FILE, type SimReplyRow, type SimScope, parseSimReplies, simScope } from './sim-cache';
@@ -520,7 +520,8 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
 
   /**
    * Marks every claim with no heartbeat for LEASE_S as abandoned, queues the slot's next attempt
-   * under the same cap, then revokes keys that are still live. Returns what it changed.
+   * under the same cap, then revokes keys that are still live, reading an abandoned attempt's
+   * spend from LiteLLM first (G3). Returns what it changed.
    */
   async sweep(): Promise<{ abandoned: string[]; requeued: string[] }> {
     const changed = await this.db.tx(async (client) => {
@@ -551,13 +552,41 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
       return { abandoned: rows.map((r) => r.id), requeued };
     });
     if (changed.abandoned.length) this.logger.warn(`abandoned lapsed trials: ${changed.abandoned.join(', ')}`);
-    const pending = await this.db.query<{ id: string; agent_key_token: string | null; sim_key_token: string | null }>(
-      `SELECT id, agent_key_token, sim_key_token FROM trials
+    const pending = await this.db.query<{ id: string; status: TrialStatus; agent_key_token: string; sim_key_token: string | null }>(
+      `SELECT id, status, agent_key_token, sim_key_token FROM trials
        WHERE keys_revoked_at IS NULL AND agent_key_token IS NOT NULL AND status = ANY($1) ORDER BY finished_at LIMIT 200`,
       [FINISHED],
     );
+    // G3: an abandoned attempt never reports, so its spend is read here, while its keys still exist.
+    for (const r of pending) if (r.status === 'abandoned') await this.recordAbandonedSpend(r);
     await this.revoke(pending);
     return changed;
+  }
+
+  /**
+   * What an abandoned attempt spent (G3): LiteLLM's spend log for its agent key, and its simulator
+   * key when it had one, summed as the runner sums a reported trial's (spendLogUsage) and stored
+   * on the row, so GET /spend, each experiment's spend, the spend guard and the export count it.
+   * Read before the keys are revoked: that a deleted key's log stays readable is only assumed
+   * (A19). When LiteLLM cannot be read the row is marked `spend_unknown` and its cost stays null,
+   * never zero; while the keys are still live (LiteLLM down, so the revoke fails too) the next
+   * sweep reads again and clears the mark.
+   */
+  private async recordAbandonedSpend(r: { id: string; agent_key_token: string; sim_key_token: string | null }): Promise<void> {
+    let usage: ReturnType<typeof spendLogUsage>;
+    try {
+      const agent = await this.litellm.spendLogs(r.agent_key_token);
+      usage = spendLogUsage(agent, r.sim_key_token ? await this.litellm.spendLogs(r.sim_key_token) : null);
+    } catch (err) {
+      this.logger.warn(`could not read the spend of abandoned ${r.id}, so it is recorded as unknown: ${err instanceof Error ? err.message : String(err)}`);
+      await this.db.query(`UPDATE trials t SET spend_unknown = true WHERE t.id = $1 AND t.status = 'abandoned' AND ${NOT_EXAMPLE_TRIAL('t')}`, [r.id]);
+      return;
+    }
+    await this.db.query(
+      `UPDATE trials t SET cost_usd = $2, sim_cost_usd = $3, input_tokens = $4, output_tokens = $5, model_calls = $6, spend_unknown = false
+       WHERE t.id = $1 AND t.status = 'abandoned' AND ${NOT_EXAMPLE_TRIAL('t')}`,
+      [r.id, usage.cost_usd, usage.sim_cost_usd, usage.input_tokens, usage.output_tokens, usage.model_calls],
+    );
   }
 
   /** Best effort: a key LiteLLM no longer has counts as revoked; an unreachable LiteLLM is retried by the sweep. */

@@ -37,6 +37,8 @@ interface ExportRow {
   finished_at: Date | null;
   cost_usd: number | null;
   sim_cost_usd: number | null;
+  /** G3: an abandoned attempt whose spend LiteLLM could not give; its costs are null, unknown not zero. */
+  spend_unknown: boolean;
   input_tokens: number | null;
   output_tokens: number | null;
   model_calls: number | null;
@@ -109,6 +111,7 @@ export const CSV_COLUMNS = [
   'toolset_sha256',
   'cost_usd',
   'sim_cost_usd',
+  'spend_unknown',
   'input_tokens',
   'output_tokens',
   'model_calls',
@@ -158,7 +161,7 @@ export class ExportService {
     for (;;) {
       const page = await this.db.query<ExportRow>(
         `SELECT t.id, t.experiment_id, t.repeat_index, t.attempt, t.seq, t.status, t.label, t.end_state, t.worker_id,
-                t.claimed_at, t.finished_at, t.cost_usd, t.sim_cost_usd, t.input_tokens, t.output_tokens, t.model_calls,
+                t.claimed_at, t.finished_at, t.cost_usd, t.sim_cost_usd, t.spend_unknown, t.input_tokens, t.output_tokens, t.model_calls,
                 t.proxy_complete, t.wall_s, t.folder, t.problems, t.result, t.runner_report, t.config_hash, t.task_sha256,
                 k.id AS task_id, k.version AS task_version, k.split AS task_split, k.kind AS task_kind,
                 gd.id AS grading_job_id, gd.status AS graded_status, gd.outcome AS graded_outcome, gl.status AS latest_job_status,
@@ -220,6 +223,7 @@ export class ExportService {
         spend: {
           cost_usd: r.cost_usd,
           sim_cost_usd: r.sim_cost_usd,
+          spend_unknown: r.spend_unknown,
           input_tokens: r.input_tokens,
           output_tokens: r.output_tokens,
           model_calls: r.model_calls,
@@ -341,6 +345,7 @@ export class ExportService {
         toolset_sha256: c?.toolset_sha256,
         cost_usd: r.cost_usd,
         sim_cost_usd: r.sim_cost_usd,
+        spend_unknown: r.spend_unknown,
         input_tokens: r.input_tokens,
         output_tokens: r.output_tokens,
         model_calls: r.model_calls,

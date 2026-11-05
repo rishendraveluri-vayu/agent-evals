@@ -19,6 +19,7 @@
       "max_output_tokens": 2048
     },
     "platform_commit": "c4d2e19",
+    "platform_commit_source": "env",
     "plan_commit": "3e1a9f0",
     "budgets": {
       "trial_usd": 0.5,
@@ -389,6 +390,7 @@
       "max_output_tokens": 2048
     },
     "platform_commit": "c4d2e19",
+    "platform_commit_source": "env",
     "plan_commit": "3e1a9f0",
     "budgets": {
       "trial_usd": 0.5,
@@ -756,6 +758,7 @@
       "max_output_tokens": 2048
     },
     "platform_commit": "c4d2e19",
+    "platform_commit_source": "env",
     "plan_commit": "3e1a9f0",
     "budgets": {
       "trial_usd": 0.5,
@@ -1268,6 +1271,7 @@
       "max_output_tokens": 2048
     },
     "platform_commit": "c4d2e19",
+    "platform_commit_source": "env",
     "plan_commit": "3e1a9f0",
     "budgets": {
       "trial_usd": 0.5,
@@ -1784,6 +1788,7 @@
       "max_output_tokens": 2048
     },
     "platform_commit": "c4d2e19",
+    "platform_commit_source": "env",
     "plan_commit": "3e1a9f0",
     "budgets": {
       "trial_usd": 0.5,
@@ -2201,6 +2206,7 @@
       "max_output_tokens": 2048
     },
     "platform_commit": "c4d2e19",
+    "platform_commit_source": "env",
     "plan_commit": "3e1a9f0",
     "budgets": {
       "trial_usd": 0.5,
@@ -2587,6 +2593,7 @@
       "max_output_tokens": 2048
     },
     "platform_commit": "c4d2e19",
+    "platform_commit_source": "env",
     "plan_commit": "3e1a9f0",
     "budgets": {
       "trial_usd": 0.5,

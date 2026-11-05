@@ -1,10 +1,12 @@
 import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import request from 'supertest';
 import { hashCanonical } from '../src/common/hashing';
 import type { ToolsetView } from '../src/contract';
-import { type TestEnv, bootEnv, catalogue, makeConfig } from './support/app';
+import { REPO, type TestEnv, bootEnv, catalogue, makeConfig } from './support/app';
 import { describeWithDb } from './support/db';
+import { writeScaffold } from './support/scaffold';
 
 describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
   let env: TestEnv;
@@ -299,10 +301,111 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
     }
   });
 
+  it('shows a grader typo as a task problem and keeps the task out of experiments, before any trial is paid for (A5)', async () => {
+    const dir = path.join(env.tasksDir, 'emi-typo');
+    const task = {
+      id: 'emi-typo',
+      version: '1',
+      split: 'discovery',
+      summary: 'EMI with a misspelt grader field (test fixture)',
+      messages: [{ role: 'user', content: 'What is my EMI on Rs 10 lakh at 9% for 20 years?' }],
+      client_sim: null,
+      graders: [
+        { id: 'answered', type: 'end_state', states: ['answered'] },
+        { id: 'emi', type: 'number', expected: 8997.26, tolerence: { abs: 1 } },
+      ],
+    };
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'task.json'), JSON.stringify(task, null, 2));
+    try {
+      const tasks = (await request(env.http).get('/api/tasks').expect(200)).body as { id: string; sha256: string; problems: string[] }[];
+      const typo = tasks.find((t) => t.id === 'emi-typo')!;
+      expect(typo.problems).toEqual(['graders[1].tolerence is not a field this grader type takes']);
+      // The fixtures' own tasks still load clean.
+      expect(tasks.filter((t) => t.id !== 'emi-typo').map((t) => [t.id, t.problems])).toEqual([
+        ['emi-basic', []],
+        ['widow-loan', []],
+      ]);
+      const config = await makeConfig(env.http, cat, { name: 'typo run' });
+      const body = { name: 'typo', axis: 'none', config_hashes: [config], task_sha256s: [typo.sha256], n: 1, sim_model: null, budget_usd: 5 };
+      for (const route of ['/api/experiments/estimate', '/api/experiments']) {
+        const res = await request(env.http).post(route).send(body).expect(400);
+        expect(res.body).toMatchObject({ error: 'invalid_task', message: expect.stringContaining('graders[1].tolerence is not a field this grader type takes') as string });
+      }
+      expect((await env.pool.query('SELECT 1 FROM tasks WHERE sha256 = $1', [typo.sha256])).rowCount).toBe(0); // never stored
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('gives errors the contract shape', async () => {
     const res = await request(env.http).get('/api/configs/not-a-hash').expect(400);
     expect(res.body).toEqual({ error: 'invalid_hash', message: expect.any(String) as string });
     const unknown = await request(env.http).get('/api/nothing-here').expect(404);
     expect(Object.keys(unknown.body as object).sort()).toEqual(['error', 'message']);
+  });
+});
+
+describeWithDb('a scaffolded harness (A2, e2e, real Postgres)', () => {
+  let env: TestEnv;
+  let cat: Awaited<ReturnType<typeof catalogue>>;
+  let workersDir: string;
+
+  beforeAll(async () => {
+    // The repo's own loop, and a harness exactly as `make new-harness NAME=crewai` leaves it.
+    workersDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evals-workers-'));
+    await fs.symlink(path.join(REPO, 'workers', 'ownloop'), path.join(workersDir, 'ownloop'), 'dir');
+    await writeScaffold(workersDir, 'crewai');
+    env = await bootEnv({ workersDir });
+    cat = await catalogue(env.http);
+  });
+
+  afterAll(async () => {
+    await env.close();
+    await fs.rm(workersDir, { recursive: true, force: true });
+  });
+
+  it('is left out of GET /harnesses, so the builder never offers it', async () => {
+    const names = ((await request(env.http).get('/api/harnesses').expect(200)).body as { name: string }[]).map((h) => h.name);
+    expect(names).toEqual(['ownloop']);
+  });
+
+  it('cannot be given a config: 400 harness_not_implemented, in plain words, with what to do', async () => {
+    const res = await request(env.http)
+      .post('/api/configs')
+      .send({ name: 'x', harness: 'crewai', model: 'fake/finance-emi', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset })
+      .expect(400);
+    expect(res.body).toEqual({
+      error: 'harness_not_implemented',
+      message:
+        'harness crewai is scaffolded but not implemented: workers/crewai/src/crewai_adapter/capabilities.json still has the scaffold\'s version "TODO", so no worker would run its trials',
+      fix: expect.stringContaining('workers/crewai/README.md') as string,
+    });
+    expect((res.body as { fix: string }).fix).toContain('pick a harness from GET /harnesses: ownloop.');
+    expect((await env.pool.query("SELECT 1 FROM configs WHERE harness = 'crewai'")).rowCount).toBe(0);
+  });
+
+  it('cannot be put in an experiment through a config saved before that refusal, whose trials would wait forever', async () => {
+    const real = await makeConfig(env.http, cat);
+    // A config stored for the scaffold before POST /configs refused one: the own loop's row with the scaffold's version.
+    const stale = `sha256:${'5'.repeat(64)}`;
+    await env.pool.query(
+      `INSERT INTO configs (hash, name, harness, harness_package, harness_ref, adapter_version, capabilities_sha256, capabilities, model, api_format,
+                            prompt_sha256, toolset_sha256, settings, settings_sources, harness_options, seed)
+       SELECT $2, 'crewai stub', 'crewai', 'TODO', 'TODO', adapter_version, capabilities_sha256, capabilities, model, api_format,
+              prompt_sha256, toolset_sha256, settings, settings_sources, harness_options, seed
+       FROM configs WHERE hash = $1`,
+      [real, stale],
+    );
+    const body = { name: 'stub run', axis: 'harness', config_hashes: [real, stale], task_sha256s: [cat.tasks['emi-basic']], n: 1, sim_model: null, budget_usd: 5 };
+    for (const route of ['/api/experiments/estimate', '/api/experiments']) {
+      const res = await request(env.http).post(route).send(body).expect(400);
+      expect(res.body).toMatchObject({
+        error: 'harness_not_implemented',
+        message: expect.stringContaining('crewai, which was scaffolded but not implemented') as string,
+        fix: expect.stringContaining('save the config again') as string,
+      });
+    }
+    expect((await env.pool.query('SELECT 1 FROM experiments')).rowCount).toBe(0);
   });
 });

@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import { GRADER_SCHEMA_FILE } from '../catalogue/catalogue-files';
 
 /**
  * Settings read from the environment once, at startup. Paths default to the repo layout, so
@@ -11,8 +12,13 @@ export interface AppConfig {
   litellmMasterKey: string | null;
   /** Workers send it as `Authorization: Bearer`. */
   workerToken: string | null;
-  /** Recorded on every experiment; null when unset. */
+  /**
+   * EVALS_PLATFORM_COMMIT: recorded on every experiment as given, when set. When it is not, the
+   * API reads the checkout's HEAD from `gitDir` each time an experiment is created (git-commit.ts).
+   */
   platformCommit: string | null;
+  /** The checkout's `.git` (EVALS_GIT_DIR; compose mounts the repo's read-only at /repo/.git). */
+  gitDir: string;
   workersDir: string;
   configsDir: string;
   tasksDir: string;
@@ -22,6 +28,12 @@ export interface AppConfig {
   runsDir: string;
   /** The finance MCP server's folder: its published tool manifest and version give the toolset's hash. */
   financeMcpDir: string;
+  /**
+   * The grader framework's schema for a grader spec (graders/src/evals_graders/grader-spec.schema.json),
+   * which the catalogue checks every task's graders against. The API image copies it to the same
+   * path under /repo, so the default holds in compose too.
+   */
+  graderSchemaFile: string;
   /** D38: the standing allowance for pre-run conflict checks, in USD. */
   conflictCheckAllowanceUsd: number;
   /**
@@ -73,12 +85,14 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     litellmMasterKey: nonEmpty(env.LITELLM_MASTER_KEY),
     workerToken: nonEmpty(env.EVALS_WORKER_TOKEN),
     platformCommit: nonEmpty(env.EVALS_PLATFORM_COMMIT),
+    gitDir: dir('EVALS_GIT_DIR', '.git'),
     workersDir: dir('WORKERS_DIR', 'workers'),
     configsDir: dir('CONFIGS_DIR', 'configs'),
     tasksDir: dir('TASKS_DIR', 'tasks'),
     labelsDir: dir('LABELS_DIR', 'labels'),
     examplesDir: dir('EXAMPLES_DIR', 'examples'),
     financeMcpDir: dir('FINANCE_MCP_DIR', 'services/finance-mcp'),
+    graderSchemaFile: dir('GRADER_SCHEMA_FILE', GRADER_SCHEMA_FILE),
     // RUNS_DIR keeps its SP1 meaning: relative to the working directory.
     runsDir: path.resolve(nonEmpty(env.RUNS_DIR) ?? 'runs'),
     conflictCheckAllowanceUsd: usd('EVALS_CONFLICT_CHECK_ALLOWANCE_USD', env.EVALS_CONFLICT_CHECK_ALLOWANCE_USD, DEFAULT_CONFLICT_CHECK_ALLOWANCE_USD),

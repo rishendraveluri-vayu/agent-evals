@@ -8,6 +8,7 @@ import {
   CALCULATOR_TOOLS,
   FINANCE_TOOLS,
   FINANCE_TOOLSET_VERSION,
+  GRADER_SCHEMA_FILE,
   REFERENCE_TOOLS,
   type FinanceServerManifest,
   PROMPT_NAME_PART,
@@ -15,7 +16,9 @@ import {
   builtInToolsets,
   checkTask,
   headerDate,
+  isScaffolded,
   loadFinanceServer,
+  loadGraderCheck,
   nextPromptVersion,
   parsePromptName,
   parsePyproject,
@@ -90,6 +93,38 @@ describe('harness files', () => {
     const hermes = harnesses.find((h) => h.name === 'hermes');
     expect(hermes).toMatchObject({ package: 'hermes-agent', ref: '6112c2adb9e11f69734a29be9d2696f345ffa06a', python: '>=3.14', dir: 'workers/hermes' });
     expect(hermes?.capabilities_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+    // Every harness in the repo is implemented: none still has the scaffold's TODO version.
+    expect(harnesses.filter((h) => h.scaffolded).map((h) => h.name)).toEqual([]);
+  });
+
+  it('marks a harness `make new-harness` made and nobody finished as scaffolded (A2)', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'evals-workers-'));
+    // What scaffold.py writes into capabilities.json's version, then one with only the package filled.
+    const write = async (name: string, version: { package: string; ref: string }): Promise<void> => {
+      const pkg = path.join(dir, name, 'src', `${name}_adapter`);
+      await fs.mkdir(pkg, { recursive: true });
+      const caps = { contract_version: '2', harness: name, version, model_api_formats: ['openai_chat'], settings: {}, known_differences: [] };
+      await fs.writeFile(path.join(pkg, 'capabilities.json'), JSON.stringify(caps, null, 2));
+      await fs.writeFile(path.join(dir, name, 'pyproject.toml'), `[project]\nname = "${name}-worker"\nversion = "0.1.0"\nrequires-python = ">=3.14"\n`);
+    };
+    try {
+      await write('crewai', { package: 'TODO', ref: 'TODO' });
+      await write('halfway', { package: 'halfway', ref: 'TODO' });
+      await write('finished', { package: 'finished', ref: '1.2.3' });
+      const byName = new Map((await readHarnesses(dir)).map((h) => [h.name, h]));
+      expect(byName.get('crewai')).toMatchObject({ scaffolded: true, capabilitiesPath: 'workers/crewai/src/crewai_adapter/capabilities.json', dir: 'workers/crewai' });
+      expect(byName.get('halfway')?.scaffolded).toBe(true);
+      expect(byName.get('finished')?.scaffolded).toBe(false);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('calls a version scaffolded while its package or ref is still the placeholder', () => {
+    expect(isScaffolded({ package: 'TODO', ref: 'TODO' })).toBe(true);
+    expect(isScaffolded({ package: 'langgraph', ref: 'TODO' })).toBe(true);
+    expect(isScaffolded({ package: 'TODO', ref: '1.0.0' })).toBe(true);
+    expect(isScaffolded({ package: 'langgraph', ref: '1.0.0' })).toBe(false);
   });
 });
 
@@ -213,18 +248,79 @@ describe('the built-in toolset', () => {
 
 describe('task files', () => {
   const good = { id: 'emi-01', version: '1', split: 'discovery', messages: [{ role: 'user', content: 'hi' }], client_sim: null, graders: [] };
+  /** The grader framework's own schema, read from the repo as the API reads it. */
+  const SCHEMA = path.join(REPO, GRADER_SCHEMA_FILE);
+  const graders = loadGraderCheck(SCHEMA);
+  const check = (task: unknown): string[] => checkTask(task, graders);
 
   it('accepts the minimum the engine reads', () => {
-    expect(checkTask(good)).toEqual([]);
+    expect(check(good)).toEqual([]);
   });
 
   it('accepts a grader severity of critical, major or minor (D10), or none', () => {
     const graders = ['critical', 'major', 'minor'].map((severity, i) => ({ id: `g${i}`, type: 'end_state', states: ['answered'], severity }));
-    expect(checkTask({ ...good, graders: [...graders, { id: 'plain', type: 'end_state', states: ['answered'] }] })).toEqual([]);
+    expect(check({ ...good, graders: [...graders, { id: 'plain', type: 'end_state', states: ['answered'] }] })).toEqual([]);
   });
 
   it('accepts required_tools naming finance tools (a grader primitive)', () => {
-    expect(checkTask({ ...good, required_tools: ['calculate_emi', 'list_debts'] })).toEqual([]);
+    expect(check({ ...good, required_tools: ['calculate_emi', 'list_debts'] })).toEqual([]);
+  });
+
+  it('accepts every grader type in the shape the grader schema allows', () => {
+    const all = [
+      { id: 'emi', type: 'number', expected: { from_tool: 'calculate_emi', field: 'emi', call: 'last' }, tolerance: { abs: 1 }, target: 'final_answer', match: 'amount' },
+      { id: 'used', type: 'tool_called', tool: 'mcp__finance__calculate_emi', args: { principal: 1000000 }, min_calls: 1, successful: true },
+      { id: 'no-sip', type: 'tool_not_called', tool: 'sip_future_value' },
+      { id: 'says', type: 'regex_present', pattern: '8,997', case_sensitive: false },
+      { id: 'no-promise', type: 'regex_absent', pattern: 'guaranteed', target: 'all_agent_text' },
+      { id: 'answered', type: 'end_state', states: ['answered'], required: false, description: 'ended with an answer' },
+      { id: 'every-amount', type: 'provenance', max_unsupported: 0 },
+      { id: 'tools', type: 'required_tools', successful: true },
+      { id: 'unit', type: 'unit_test', file: 'grader.py', function: 'grade', timeout_s: 5 },
+      { id: 'tone', type: 'judge', rubric: { id: 'advice', version: 'v1' }, criteria: ['acknowledges', { id: 'clear', text: 'Clear', required: false }] },
+    ];
+    expect(check({ ...good, graders: all })).toEqual([]);
+  });
+
+  // A5: each was an `error` grade after a paid trial; now each is a task problem before any trial.
+  it.each<[string, unknown, string]>([
+    ['a misspelt field', { id: 'emi', type: 'number', expected: 1, tolerence: { abs: 1 } }, 'graders[0].tolerence is not a field this grader type takes'],
+    ['an unknown grader type', { id: 'emi', type: 'numbr', expected: 1 }, 'graders[0].type must be one of number, tool_called'],
+    ['a field the type needs', { id: 'emi', type: 'number' }, 'graders[0].expected is missing'],
+    ['a judge without its rubric', { id: 'tone', type: 'judge', criteria: ['clear'] }, 'graders[0].rubric is missing'],
+    ['a value of the wrong kind', { id: 'used', type: 'tool_called', tool: 'calculate_emi', min_calls: 0 }, 'graders[0].min_calls must be >= 1'],
+    ['an expected value in neither allowed shape', { id: 'emi', type: 'number', expected: 'emi' }, 'graders[0].expected does not fit any of the shapes the schema allows'],
+    ['a nested typo', { id: 'emi', type: 'number', expected: { from_tool: 'calculate_emi', feild: 'emi' } }, 'graders[0].expected'],
+    ['a list item outside its enum', { id: 'end', type: 'end_state', states: ['answerd'] }, 'graders[0].states[0] must be one of answered'],
+    ['an id with capitals', { id: 'EMI', type: 'end_state', states: ['answered'] }, 'graders[0].id must match pattern'],
+    ['an unknown grader severity', { id: 'emi', type: 'number', expected: 1, severity: 'blocker' }, 'graders[0].severity must be one of critical, major, minor'],
+    ['a grader that is not an object', 'emi', 'graders[0] must be a JSON object'],
+  ])('flags %s in a grader, naming where', (_what, grader, words) => {
+    expect(check({ ...good, graders: [grader] }).join(' | ')).toContain(words);
+  });
+
+  it('says each grader problem once, without the schema plumbing (if/then, oneOf branches)', () => {
+    const problems = check({ ...good, graders: [{ id: 'emi', type: 'number', expected: 'emi', tolerence: 1 }] });
+    expect(problems).toEqual(['graders[0].tolerence is not a field this grader type takes', 'graders[0].expected does not fit any of the shapes the schema allows']);
+  });
+
+  it('flags two graders with one id, as the grader framework does', () => {
+    const twice = { ...good, graders: [{ id: 'a', type: 'provenance' }, { id: 'b', type: 'provenance' }, { id: 'a', type: 'required_tools' }] };
+    expect(check(twice)).toEqual(['graders[2].id "a" is used by more than one grader in this task']);
+  });
+
+  it('never passes graders it could not check: a missing schema is a problem on every grader', () => {
+    const blind = loadGraderCheck(path.join(os.tmpdir(), 'no-such-dir', 'grader-spec.schema.json'));
+    const problems = checkTask({ ...good, graders: [{ id: 'answered', type: 'end_state', states: ['answered'] }] }, blind);
+    expect(problems).toEqual([expect.stringContaining('graders[0] cannot be checked: the API could not load the grader schema') as string]);
+    expect(checkTask(good, blind)).toEqual([]); // no graders, nothing to check
+  });
+
+  it('loads every task in tasks/ with no problems against the real grader schema', async () => {
+    const tasks = await readTasks(path.join(REPO, 'tasks'), SCHEMA);
+    expect(tasks.length).toBeGreaterThan(10);
+    expect(tasks.filter((t) => t.graders.length).length).toBeGreaterThan(10);
+    expect(tasks.filter((t) => t.problems.length).map((t) => [t.sourcePath, t.problems])).toEqual([]);
   });
 
   it.each<[string, Record<string, unknown>, string]>([
@@ -237,9 +333,9 @@ describe('task files', () => {
     ['an unknown required tool', { required_tools: ['calculate_emi', 'mcp__finance__list_debts'] }, 'required_tools'],
     ['required tools that are not a list', { required_tools: 'calculate_emi' }, 'required_tools'],
     ['a repeated required tool', { required_tools: ['calculate_emi', 'calculate_emi'] }, 'repeat'],
-    ['an unknown grader severity', { graders: [{ id: 'emi', type: 'number', expected: 1, severity: 'blocker' }] }, 'graders[0].severity'],
+    ['graders that are not a list', { graders: { id: 'emi' } }, 'graders must be a list'],
   ])('flags %s', (_what, change, word) => {
-    expect(checkTask({ ...good, ...change }).join(' ')).toContain(word);
+    expect(check({ ...good, ...change }).join(' ')).toContain(word);
   });
 
   it('hashes task.json bytes, reads the client state, and keeps a bad task listed with its problems', async () => {
@@ -250,7 +346,7 @@ describe('task files', () => {
       await fs.writeFile(path.join(dir, 'emi-01', 'client.json'), '{"name":"test"}');
       await fs.mkdir(path.join(dir, 'broken'));
       await fs.writeFile(path.join(dir, 'broken', 'task.json'), '{not json');
-      const tasks = await readTasks(dir);
+      const tasks = await readTasks(dir, SCHEMA);
       const emi = tasks.find((t) => t.id === 'emi-01');
       expect(emi?.problems).toEqual([]);
       expect(emi?.kind).toBe('single_prompt');

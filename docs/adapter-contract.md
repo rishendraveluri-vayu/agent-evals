@@ -167,7 +167,7 @@ Everything else is read-only. Nothing in `/trial` survives to the next trial; ev
 
    The library does everything else: reading the spec, the timeout wrapper, the MCP command, the conversation loop with the simulated client, error and end-state mapping, writing the result atomically and writing spans. The five adapters are 304 (own loop) to 421 (Hermes) lines; the planning estimate was 100 to 200, and most of the difference is each framework's quirks, recorded in `docs/harness-guide.md`.
 
-3. **Probe.** `make probe-harness NAME=<name>` runs each setting against the fake model server and writes the `supported`, `default` and `evidence` fields from what it actually captured. The file is generated from evidence and committed. Only things a request cannot show, such as memory, are declared by hand.
+3. **Probe.** `make probe-harness NAME=<name>` runs each setting against the fake model server and writes the `supported`, `default` and `evidence` fields from what it actually captured. The file is generated from evidence and committed. Only things a request cannot show, such as memory, are declared by hand. So is `version`: the scaffold writes `{"package": "TODO", "ref": "TODO"}`, and until both name the harness package and its exact version or commit, the API treats the harness as scaffolded, not implemented: `GET /harnesses` leaves it out and `POST /configs` refuses it (`harness_not_implemented`), so no trial for it can wait for a worker that does not exist.
 4. **Gate tests and effect checks** (section 8). Then the harness counts.
 
 Uses of the file:

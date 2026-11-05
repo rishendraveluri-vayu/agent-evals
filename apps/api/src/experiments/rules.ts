@@ -152,7 +152,9 @@ export async function applyRunRules(q: Queryable, experimentId: string): Promise
   const { rows: arms } = await q.query<{ arm: string; config_hash: string; remaining: number; reported: number; cost: number }>(
     `SELECT a.arm, a.config_hash,
             count(t.id) FILTER (WHERE t.status IN ('queued', 'claimed', 'running'))::int AS remaining,
-            count(t.id) FILTER (WHERE t.cost_usd IS NOT NULL)::int AS reported,
+            -- G3: an abandoned attempt's spend counts in cost, but it is not a reported trial, so the
+            -- mean cost of the trials left is the arm's whole spend over the trials that reported.
+            count(t.id) FILTER (WHERE t.cost_usd IS NOT NULL AND t.status <> 'abandoned')::int AS reported,
             coalesce(sum(coalesce(t.cost_usd, 0) + coalesce(t.sim_cost_usd, 0)), 0)::float8 AS cost
      FROM experiment_arms a JOIN experiments e ON e.id = a.experiment_id
      LEFT JOIN trials t ON t.experiment_id = a.experiment_id AND ${TRIAL_IN_ARM}

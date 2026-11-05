@@ -542,12 +542,22 @@ export interface BaselineDecision {
   reused_trials: number;
 }
 
+/**
+ * Where an experiment's `platform_commit` came from (G2, 5 Nov): `env` is EVALS_PLATFORM_COMMIT as
+ * set; `git` is the checkout's HEAD, read by the API from its `.git` when the experiment was
+ * created. Either way the working tree is unknown-dirty: the API cannot see uncommitted changes,
+ * nor whether the running images were built from that commit.
+ */
+export type PlatformCommitSource = 'env' | 'git';
+
 /** GET /experiments/:id (and the POST /experiments response). */
 export interface ExperimentDetail extends ExperimentSummary {
   sim_model: string | null;
   /** `temperature` null: not sent, the model's default applies (D27; Haiku 5.5 refuses any). */
   sim: { prompt: VersionRef; temperature: number | null; max_output_tokens: number } | null;
   platform_commit: string | null;
+  /** Null with no commit, and for experiments made before 5 Nov (G2), which had only `env`. */
+  platform_commit_source: PlatformCommitSource | null;
   plan_commit: string | null;
   /** D32: the seed the claim order was shuffled from; null for experiments made before it. */
   order_seed: number | null;
@@ -1531,8 +1541,15 @@ export interface SpendView {
   /**
    * Experiment trials' real spend: agent calls on a real model, and simulator calls on a real
    * model. Calls to fake models (`fake/*`), probe trials and shipped examples are not counted.
+   * An abandoned attempt's calls count once the lease sweep has read them from LiteLLM (G3).
    */
   trials_usd: number;
+  /**
+   * G3: abandoned attempts on a real model whose spend LiteLLM could not give when their lease
+   * lapsed, so `trials_usd` leaves out an amount nobody knows (unknown, not zero). The sweep reads
+   * an abandoned attempt's spend before revoking its keys; 0 when every one was read.
+   */
+  trials_spend_unknown: number;
   /**
    * The made-up prices LiteLLM counted for experiment trials' calls to fake models (`fake/*`).
    * Not money: kept apart, and not in `total_usd`.

@@ -107,7 +107,9 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local-dev-only}
       # Workers send this as Authorization: Bearer on /api/worker/*.
       EVALS_WORKER_TOKEN: *worker-token
-      # Recorded on every experiment; set it to `git rev-parse HEAD` when starting a real run.
+      # The platform commit recorded on every experiment. Left blank, the API reads the checkout's
+      # HEAD from the read-only .git mount below each time an experiment is created, so nothing
+      # needs setting by hand; a value here overrides that and is recorded as given.
       EVALS_PLATFORM_COMMIT: ${EVALS_PLATFORM_COMMIT:-}
       # The standing allowance, in USD, for the paid conflict checks run on Claude Sonnet 5.5
       # before a run; each check still asks first, with its cost.
@@ -150,6 +152,10 @@ services:
       - ./labels:/repo/labels
       # Read-only: a load copies an example's trial files into runs/, never the other way.
       - ./examples:/repo/examples:ro
+      # Read-only: the API reads HEAD (and the ref it names) to record the platform commit. It runs
+      # no git and writes nothing here. In a copy without .git (a zip), Docker makes an empty .git
+      # folder for this mount and no commit is recorded (docs/known-limits.md).
+      - ./.git:/repo/.git:ro
     depends_on:
       postgres:
         condition: service_healthy

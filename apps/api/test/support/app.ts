@@ -27,9 +27,10 @@ export const TASKS = {
       messages: [{ role: 'user', content: 'What is my EMI on Rs 10 lakh at 9% for 20 years?' }],
       client_sim: null,
       client_state: 'client.json',
+      // Valid grader specs: since A5 the catalogue refuses a task whose graders the grader schema refuses.
       graders: [
-        { id: 'emi-exact', kind: 'exact' },
-        { id: 'tone', kind: 'judge', criteria: [{ id: 'empathy', text: 'Acknowledges the client situation' }, 'no_jargon'] },
+        { id: 'emi-exact', type: 'number', expected: 8997.26 },
+        { id: 'tone', type: 'judge', rubric: { id: 'advice', version: 'v1' }, criteria: [{ id: 'empathy', text: 'Acknowledges the client situation' }, 'no_jargon'] },
       ],
     },
     state: '{"name": "Test Client (synthetic)"}',
@@ -84,8 +85,13 @@ async function writeTasks(dir: string): Promise<void> {
   }
 }
 
-/** Boots the real AppModule against a fresh database, the LiteLLM stub and temp folders. */
-export async function bootEnv(): Promise<TestEnv> {
+/**
+ * Boots the real AppModule against a fresh database, the LiteLLM stub and temp folders.
+ * `workersDir` replaces the repo's workers/ (a test that needs a harness the repo does not have).
+ * `platformCommit` is EVALS_PLATFORM_COMMIT (default `abc1234`; empty to read `gitDir`, G2), and
+ * `gitDir` the checkout's .git the API reads then (EVALS_GIT_DIR; default the repo's own).
+ */
+export async function bootEnv(opts: { workersDir?: string; platformCommit?: string; gitDir?: string } = {}): Promise<TestEnv> {
   const db = await createDatabase();
   const stub = new LiteLlmStub();
   await stub.start();
@@ -102,8 +108,9 @@ export async function bootEnv(): Promise<TestEnv> {
     LITELLM_URL: stub.url,
     LITELLM_MASTER_KEY: STUB_MASTER_KEY,
     EVALS_WORKER_TOKEN: WORKER_TOKEN,
-    EVALS_PLATFORM_COMMIT: 'abc1234',
-    WORKERS_DIR: path.join(REPO, 'workers'),
+    EVALS_PLATFORM_COMMIT: opts.platformCommit ?? 'abc1234',
+    ...(opts.gitDir ? { EVALS_GIT_DIR: opts.gitDir } : {}),
+    WORKERS_DIR: opts.workersDir ?? path.join(REPO, 'workers'),
     CONFIGS_DIR: configsDir,
     TASKS_DIR: tasksDir,
     LABELS_DIR: labelsDir,
@@ -130,7 +137,7 @@ export async function bootEnv(): Promise<TestEnv> {
       await stub.stop();
       await db.drop();
       await fs.rm(tmp, { recursive: true, force: true });
-      for (const k of ['DATABASE_URL', 'LITELLM_URL', 'LITELLM_MASTER_KEY', 'EVALS_WORKER_TOKEN', 'EVALS_PLATFORM_COMMIT', 'WORKERS_DIR', 'CONFIGS_DIR', 'TASKS_DIR', 'LABELS_DIR', 'RUNS_DIR']) {
+      for (const k of ['DATABASE_URL', 'LITELLM_URL', 'LITELLM_MASTER_KEY', 'EVALS_WORKER_TOKEN', 'EVALS_PLATFORM_COMMIT', 'EVALS_GIT_DIR', 'WORKERS_DIR', 'CONFIGS_DIR', 'TASKS_DIR', 'LABELS_DIR', 'RUNS_DIR']) {
         delete process.env[k];
       }
     },

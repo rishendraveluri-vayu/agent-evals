@@ -1,7 +1,7 @@
+import Ajv2020, { type ErrorObject } from 'ajv/dist/2020';
 import { promises as fs, readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import type { HarnessView, Json, JsonObject, PromptView, TaskSplit, ToolsetView } from '../contract';
-import { GRADER_SEVERITIES } from '../contract';
 import { hashCanonical, sha256Ref } from '../common/hashing';
 
 /**
@@ -50,9 +50,32 @@ export function parsePyproject(text: string): { version: string | null; python: 
 export interface HarnessFile extends HarnessView {
   /** The worker folder, e.g. workers/openai-agents. */
   dir: string;
+  /** Its capabilities file, e.g. workers/openai-agents/src/openai_agents_adapter/capabilities.json. */
+  capabilitiesPath: string;
+  /** Made by `make new-harness` and not finished yet (isScaffolded): no worker runs it. */
+  scaffolded: boolean;
 }
 
-/** One entry per workers/<dir>/src/<pkg>/capabilities.json. */
+/**
+ * What `make new-harness` writes into a new capabilities.json's `version` (`{"package": "TODO",
+ * "ref": "TODO"}`, workers/adapterlib/src/evals_adapter/scaffold.py). The author replaces both
+ * when the adapter works.
+ */
+export const SCAFFOLD_PLACEHOLDER = 'TODO';
+
+/**
+ * A harness whose capabilities still carry the scaffold's placeholder version is scaffolded, not
+ * implemented: its adapter is a stub and no worker service claims its trials, so a config for it
+ * would queue trials that wait forever.
+ */
+export function isScaffolded(version: { package: string; ref: string }): boolean {
+  return version.package === SCAFFOLD_PLACEHOLDER || version.ref === SCAFFOLD_PLACEHOLDER;
+}
+
+/**
+ * One entry per workers/<dir>/src/<pkg>/capabilities.json, a scaffolded one included (marked
+ * `scaffolded`; the catalogue service leaves it out of what a config can use).
+ */
 export async function readHarnesses(workersDir: string): Promise<HarnessFile[]> {
   const out: HarnessFile[] = [];
   for (const dir of await listDir(workersDir)) {
@@ -78,15 +101,20 @@ export async function readHarnesses(workersDir: string): Promise<HarnessFile[]> 
       } catch {
         // no pyproject: version unknown
       }
-      out.push({
-        name: caps.harness,
+      const version = {
         package: typeof caps.version.package === 'string' ? caps.version.package : '',
         ref: typeof caps.version.ref === 'string' ? caps.version.ref : '',
+      };
+      out.push({
+        name: caps.harness,
+        ...version,
         python: pyproject.python,
         adapter_version: pyproject.version ?? 'unknown',
         capabilities_sha256: sha256Ref(raw),
         capabilities: caps as JsonObject,
         dir: path.join('workers', dir),
+        capabilitiesPath: path.join('workers', dir, 'src', pkg, 'capabilities.json'),
+        scaffolded: isScaffolded(version),
       });
     }
   }
@@ -352,8 +380,105 @@ export interface TaskFile {
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/;
 const SIM_FIELDS = ['persona', 'hidden_facts', 'concerns', 'goal', 'opening_message', 'max_client_turns'] as const;
 
-/** Checks the minimum the engine reads (docs/api-contract.md, "Task file"). */
-export function checkTask(task: unknown): string[] {
+// ---- Grader specs ------------------------------------------------------------------------
+
+/**
+ * The grader framework's own schema for one entry of a task's `graders`, relative to the repo
+ * root. It is the one source: the grader validates each spec against it before grading
+ * (evals_graders.spec), and the catalogue checks every task against the same file when it loads
+ * it, so a typo is a task problem before any trial runs, not an `error` grade after the trial has
+ * been paid for (review A5, 5 Nov). The API image copies it to this path (apps/api/Dockerfile).
+ */
+export const GRADER_SCHEMA_FILE = path.join('graders', 'src', 'evals_graders', 'grader-spec.schema.json');
+
+/** One grader spec's problems in plain words, each starting with `where` (`graders[2]`); empty when valid. */
+export type GraderCheck = (spec: unknown, where: string) => string[];
+
+/** `/expected/field` to `.expected.field`, `/criteria/0` to `.criteria[0]`. */
+function jsonPath(pointer: string): string {
+  return pointer
+    .split('/')
+    .slice(1)
+    .map((p) => p.replace(/~1/g, '/').replace(/~0/g, '~'))
+    .map((p) => (/^\d+$/.test(p) ? `[${p}]` : `.${p}`))
+    .join('');
+}
+
+/**
+ * Ajv's errors in the words the grader's own check uses (field, then what is wrong), without the
+ * noise: an `if` that only says its `then` failed, and the per-branch errors under a `oneOf`
+ * that already says no branch fits.
+ */
+export function graderSchemaErrors(errors: ErrorObject[], where: string): string[] {
+  const branches = errors.filter((e) => e.keyword === 'oneOf' || e.keyword === 'anyOf').map((e) => `${e.schemaPath}/`);
+  const out: string[] = [];
+  for (const e of errors) {
+    if (e.keyword === 'if') continue;
+    if (branches.some((b) => e.schemaPath.startsWith(b))) continue;
+    const at = `${where}${jsonPath(e.instancePath)}`;
+    const p = e.params as Record<string, unknown>;
+    let text: string;
+    if (e.keyword === 'additionalProperties') text = `${at}.${String(p.additionalProperty)} is not a field this grader type takes`;
+    else if (e.keyword === 'required') text = `${at}.${String(p.missingProperty)} is missing`;
+    else if (e.keyword === 'enum') text = `${at} must be one of ${(p.allowedValues as unknown[]).map((v) => String(v)).join(', ')}`;
+    else if (e.keyword === 'oneOf' || e.keyword === 'anyOf') text = `${at} does not fit any of the shapes the schema allows`;
+    else text = `${at} ${e.message ?? 'is not valid'}`;
+    if (!out.includes(text)) out.push(text);
+  }
+  return out;
+}
+
+/** A check from the grader schema itself (a parsed grader-spec.schema.json). */
+export function graderCheckFromSchema(schema: object): GraderCheck {
+  // Its own Ajv: the schema has an $id, which one Ajv instance accepts only once.
+  const validate = new Ajv2020({ allErrors: true, strict: false }).compile(schema);
+  return (spec, where) => {
+    if (!isObject(spec)) return [`${where} must be a JSON object`];
+    return validate(spec) ? [] : graderSchemaErrors(validate.errors ?? [], where);
+  };
+}
+
+const graderChecks = new Map<string, GraderCheck>();
+
+/**
+ * The grader check from the schema file, compiled once per file. A file that cannot be read or
+ * compiled is not a pass: every grader then has a problem saying so, so no task with graders
+ * can go into an experiment until the API can check them.
+ */
+export function loadGraderCheck(file: string): GraderCheck {
+  const cached = graderChecks.get(file);
+  if (cached) return cached;
+  let check: GraderCheck;
+  try {
+    check = graderCheckFromSchema(JSON.parse(readFileSync(file, 'utf8')) as object);
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    return (_spec, where) => [`${where} cannot be checked: the API could not load the grader schema ${file} (${why})`];
+  }
+  graderChecks.set(file, check);
+  return check;
+}
+
+/**
+ * Each grader against the grader schema (which also holds D10's severities: a misspelt one must not
+ * quietly leave a critical check unrated), and one id per grader in a task, as the grader
+ * framework requires (evals_graders.spec.prepare). What only the grader can see stays a grading-time
+ * check: a regex pattern Python cannot compile, a unit_test file or a rubric that is missing.
+ */
+export function checkGraders(graders: unknown[], check: GraderCheck): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  graders.forEach((g, i) => {
+    problems.push(...check(g, `graders[${i}]`));
+    const id = isObject(g) && typeof g.id === 'string' ? g.id : null;
+    if (id !== null && seen.has(id)) problems.push(`graders[${i}].id ${JSON.stringify(id)} is used by more than one grader in this task`);
+    if (id !== null) seen.add(id);
+  });
+  return problems;
+}
+
+/** Checks the minimum the engine reads (docs/api-contract.md, "Task file"), and the graders against their schema. */
+export function checkTask(task: unknown, graderCheck: GraderCheck): string[] {
   if (!isObject(task)) return ['task.json is not a JSON object'];
   const problems: string[] = [];
   if (typeof task.id !== 'string' || !ID.test(task.id) || task.id.length > 128) problems.push('id must be a string of letters, digits and _.:-');
@@ -389,15 +514,7 @@ export function checkTask(task: unknown): string[] {
     problems.push('client_state must be a file name next to task.json');
   }
   if (task.graders !== undefined && !Array.isArray(task.graders)) problems.push('graders must be a list');
-  // D10: a grader's severity feeds the comparison's critical-failure guardrail, so a misspelt one
-  // must not quietly leave a critical check unrated. The grader framework checks the rest of a spec.
-  if (Array.isArray(task.graders)) {
-    task.graders.forEach((g, i) => {
-      if (isObject(g) && g.severity !== undefined && !(GRADER_SEVERITIES as readonly unknown[]).includes(g.severity)) {
-        problems.push(`graders[${i}].severity must be one of ${GRADER_SEVERITIES.join(', ')}`);
-      }
-    });
-  }
+  if (Array.isArray(task.graders)) problems.push(...checkGraders(task.graders, graderCheck));
   const required = task.required_tools;
   if (required !== undefined) {
     const known: readonly string[] = FINANCE_TOOLS;
@@ -417,8 +534,12 @@ function firstText(task: Obj): string {
   return text.length > 200 ? `${text.slice(0, 199)}…` : text;
 }
 
-/** Every tasks/<dir>/task.json. A task with problems is still listed, with its problems. */
-export async function readTasks(tasksDir: string): Promise<TaskFile[]> {
+/**
+ * Every tasks/<dir>/task.json. A task with problems is still listed, with its problems.
+ * `graderSchemaFile` is the grader framework's schema (GRADER_SCHEMA_FILE under the repo root).
+ */
+export async function readTasks(tasksDir: string, graderSchemaFile: string): Promise<TaskFile[]> {
+  const graderCheck = loadGraderCheck(graderSchemaFile);
   const out: TaskFile[] = [];
   for (const dir of await listDir(tasksDir)) {
     const folder = path.join(tasksDir, dir);
@@ -436,7 +557,7 @@ export async function readTasks(tasksDir: string): Promise<TaskFile[]> {
     } catch (err) {
       problems.push(`task.json is not JSON: ${err instanceof Error ? err.message : String(err)}`);
     }
-    problems.push(...(parsed === undefined ? [] : checkTask(parsed)));
+    problems.push(...(parsed === undefined ? [] : checkTask(parsed, graderCheck)));
     const task: Obj = isObject(parsed) ? parsed : {};
     let clientState: Buffer | null = null;
     const stateName = typeof task.client_state === 'string' ? task.client_state : null;

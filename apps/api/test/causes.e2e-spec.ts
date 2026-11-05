@@ -20,17 +20,18 @@ jest.setTimeout(60_000);
 const TASKS = {
   'cause-emi': {
     required_tools: ['list_debts'],
+    // Valid grader specs: since A5 the catalogue refuses a task whose graders the grader schema refuses.
     graders: [
       { id: 'used-emi', type: 'tool_called', tool: 'calculate_emi', args: { principal: 1000000 } },
-      { id: 'emi-value', type: 'number', severity: 'critical' },
+      { id: 'emi-value', type: 'number', expected: 8997.26, severity: 'critical' },
       { id: 'every-amount', type: 'provenance' },
-      { id: 'overall', type: 'judge', required: false, criteria: [{ id: 'clear', text: 'Clear to a client (test criterion)' }] },
+      { id: 'overall', type: 'judge', required: false, rubric: { id: 'advice', version: 'v1' }, criteria: [{ id: 'clear', text: 'Clear to a client (test criterion)' }] },
     ],
   },
   'cause-fd': {
     graders: [
       { id: 'used-fd', type: 'tool_called', tool: 'fd_maturity' },
-      { id: 'maturity', type: 'number' },
+      { id: 'maturity', type: 'number', expected: 710870 },
     ],
   },
 };

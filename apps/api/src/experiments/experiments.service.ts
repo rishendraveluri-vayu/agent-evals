@@ -20,6 +20,7 @@ import type {
   GraderSeverity,
   GradingJobStatus,
   GradingOutcome,
+  PlatformCommitSource,
   StartExperimentRequest,
   TrialGradingState,
   TrialRowSummary,
@@ -32,8 +33,10 @@ import { hashCanonical, normalizeSha } from '../common/hashing';
 import { type AnalysisResult, STATS_METHOD_VERSION, type TaskInput, type TrialInput, analyse } from '../stats/analysis';
 import { type BehaviourTrial, behaviourOf, withRegressionCauses } from '../causes/behaviour';
 import { causesFor, loadTrialFacts } from '../causes/trial-facts';
+import { type PlatformCommit, platformCommit } from '../common/git-commit';
 import { newId } from '../common/ids';
 import { CatalogueService, type StoredPrompt, type StoredTask, taskView } from '../catalogue/catalogue.service';
+import { SCAFFOLD_PLACEHOLDER, isScaffolded } from '../catalogue/catalogue-files';
 import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.service';
 import { Db, type Queryable } from '../database/db.service';
 import { NOT_EXAMPLE_TRIAL, assertNotExample } from '../examples/example-guard';
@@ -89,6 +92,8 @@ export interface ExperimentRow {
   example_loaded_at: Date | null;
   // 012: D44, an A/A calibration run (one config on both arms; arm B's repeats are n to 2n - 1).
   calibration: boolean;
+  // 014: G2, where platform_commit came from; null before 014 and when there is no commit.
+  platform_commit_source: PlatformCommitSource | null;
 }
 
 /**
@@ -166,6 +171,17 @@ export class ExperimentsService {
     const configs = await this.db.query<ConfigRow>(`${CONFIG_SELECT} WHERE c.hash = ANY($1)`, [configHashes]);
     const missingConfig = configHashes.find((h) => !configs.some((c) => c.hash === h));
     if (missingConfig) throw badRequest('unknown_config', `no config ${missingConfig}`);
+    // A config saved for a scaffolded harness (before POST /configs refused one) would queue trials
+    // no worker claims. Its stored version says so, whatever the harness folder holds now.
+    const scaffold = configs.find((c) => isScaffolded({ package: c.harness_package, ref: c.harness_ref }));
+    if (scaffold) {
+      throw badRequest(
+        'harness_not_implemented',
+        `config ${scaffold.name} (${scaffold.hash}) is for harness ${scaffold.harness}, which was scaffolded but not implemented when the config was saved ` +
+          `(its version is "${SCAFFOLD_PLACEHOLDER}"), so no worker would run its trials`,
+        `Finish the ${scaffold.harness} adapter, then save the config again (it gets a new hash); or pick a config for a harness in GET /harnesses.`,
+      );
+    }
     const { tasks, problems } = await this.catalogue.tasksBySha(taskShas);
     for (const sha of taskShas) {
       const why = problems.get(sha);
@@ -284,8 +300,11 @@ export class ExperimentsService {
     parentId: string | null;
     baseline: (BaselineOutcome & { requested: true }) | null;
     run: Plan;
+    /** The platform commit now (G2): what the baseline decision compares and a new experiment records. */
+    platform: PlatformCommit;
   }> {
     const plan = await this.plan(body);
+    const platform = platformCommit(this.config.platformCommit, this.config.gitDir);
     const simPrompt = await this.simPromptFor(body, plan.simModel);
     const parentId = body.parent_experiment_id ?? null;
     if (parentId !== null && typeof parentId !== 'string') throw badRequest('invalid_experiment', 'parent_experiment_id must be an experiment id or null');
@@ -297,7 +316,7 @@ export class ExperimentsService {
       [parent] = await this.db.query<ExperimentRow>('SELECT * FROM experiments WHERE id = $1', [parentId]);
       if (!parent) throw badRequest('unknown_parent_experiment', `no experiment ${parentId} to be the parent`, 'Name an experiment from GET /experiments, or leave parent_experiment_id out.');
     }
-    if (!body.reuse_baseline) return { plan, simPrompt, parentId, baseline: null, run: plan };
+    if (!body.reuse_baseline) return { plan, simPrompt, parentId, baseline: null, run: plan, platform };
     if (plan.calibration) {
       throw badRequest('invalid_calibration', 'an A/A calibration run cannot reuse a parent\'s trials: both of its arms must run side by side', 'Leave reuse_baseline out.');
     }
@@ -335,14 +354,14 @@ export class ExperimentsService {
       },
       armA: armA.hash,
       tasks: plan.tasks.map((t) => t.sha256),
-      platformCommit: this.config.platformCommit,
+      platformCommit: platform.commit,
       simModel: plan.simModel,
       simPromptSha256: simPrompt?.sha256 ?? null,
       n: plan.n,
       finished: byTask,
     });
     const run = outcome.applied ? await this.plan({ ...body, config_hashes: [armB.hash] }) : plan;
-    return { plan, simPrompt, parentId, baseline: { ...outcome, requested: true }, run };
+    return { plan, simPrompt, parentId, baseline: { ...outcome, requested: true }, run, platform };
   }
 
   async estimate(body: EstimateRequest): Promise<EstimateResponse> {
@@ -362,7 +381,7 @@ export class ExperimentsService {
       throw badRequest('invalid_experiment', 'budget_usd must be a number above 0');
     }
     const planCommit = planCommitOf(body.plan_commit);
-    const { plan, simPrompt, parentId, baseline, run } = await this.resolveRun(body);
+    const { plan, simPrompt, parentId, baseline, run, platform } = await this.resolveRun(body);
     // R10.6: start only runs that can finish. The budget is a safety net, so it must cover
     // the top of the estimate's range, not just the expected cost. With arm A reused (D34),
     // the estimate is of arm B alone. A run on fake models only spends nothing real (their prices
@@ -411,8 +430,8 @@ export class ExperimentsService {
         `INSERT INTO experiments (id, name, axis, config_hashes, task_sha256s, n, sim_model, sim_prompt_sha256,
                                   sim_temperature, sim_max_output_tokens, budget_usd, trial_budget_usd, sim_budget_usd,
                                   platform_commit, plan_commit, estimate, status, order_seed, futility,
-                                  parent_experiment_id, reuse_baseline, baseline_decision, calibration)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'created', $17, $18, $19, $20, $21, $22)`,
+                                  parent_experiment_id, reuse_baseline, baseline_decision, calibration, platform_commit_source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'created', $17, $18, $19, $20, $21, $22, $23)`,
         [
           id,
           name,
@@ -427,7 +446,7 @@ export class ExperimentsService {
           budgetUsd,
           run.estimate.budgets.trial_usd,
           run.estimate.budgets.sim_usd,
-          this.config.platformCommit,
+          platform.commit,
           planCommit,
           JSON.stringify(run.estimate),
           seed,
@@ -436,6 +455,7 @@ export class ExperimentsService {
           baseline !== null,
           baseline?.reason ?? null,
           plan.calibration,
+          platform.source,
         ],
       );
       await client.query(
@@ -711,6 +731,7 @@ export class ExperimentsService {
       sim_model: r.sim_model,
       sim,
       platform_commit: r.platform_commit,
+      platform_commit_source: r.platform_commit_source ?? null,
       plan_commit: r.plan_commit,
       order_seed: r.order_seed === null ? null : Number(r.order_seed),
       futility: r.futility,
@@ -736,7 +757,8 @@ export class ExperimentsService {
       `SELECT config_hash,
               count(*) FILTER (WHERE status IN ('done', 'infra_failed', 'abandoned'))::int AS finished,
               count(*) FILTER (WHERE status IN ('queued', 'claimed', 'running'))::int AS remaining,
-              count(*) FILTER (WHERE cost_usd IS NOT NULL)::int AS reported,
+              -- G3: as the spend guard counts it (rules.ts): abandoned spend is spent, not a reported trial.
+              count(*) FILTER (WHERE cost_usd IS NOT NULL AND status <> 'abandoned')::int AS reported,
               coalesce(sum(coalesce(cost_usd, 0) + coalesce(sim_cost_usd, 0)), 0)::float8 AS cost,
               sum(wall_s)::float8 AS wall_s, count(wall_s)::int AS walled
        FROM trials WHERE experiment_id = $1 GROUP BY config_hash`,
