@@ -8,6 +8,43 @@ Each entry is one of three kinds:
 - **Constraint:** a verified fact the design has to respect, with the evidence. Not a choice.
 - **Open:** not decided yet. Options and tradeoffs live in `docs/decisions.md`.
 
+## At a glance
+
+```mermaid
+flowchart LR
+  UI["Vue UI (8080)"] -->|/api| API["NestJS API (3000)<br/>queue, statistics, exports"]
+  API <--> PG[("Postgres")]
+  W["Harness workers, one service each:<br/>Hermes, own loop, LangGraph, ADK, Agents SDK"] -->|claim a trial, report it, upload its files| API
+  W -->|"every model call, with a per-trial key and budget"| LLM["LiteLLM proxy (4000)<br/>no response cache"]
+  LLM --> P["Anthropic, Gemini, local Ollama"]
+  W -->|"stdio, a fresh server per trial"| MCP["Finance tools (MCP)"]
+  G["Grader service"] -->|claim a grading job, report grades| API
+  G -->|"judge calls, only when approved"| LLM
+```
+
+**A trial's life.** A config is harness × model × settings × prompt × toolset, content-hashed. An experiment freezes two configs (or one, twice, for an A/A run), the tasks' hashes and N, and queues one trial per config, task and repeat. A worker claims a trial and gets its spec and a LiteLLM key capped for that trial. The shared adapter library runs the harness in a fresh folder on an internal network: the conversation (a simulated client for multi-turn tasks), the timeout and the trace. The worker uploads `result.json`, `trace.jsonl` (OpenTelemetry spans, the model calls taken from LiteLLM's own records) and `checks.json` (which figures have a source). The grader service then grades the trial as its own step, so a grader fix never re-runs a trial. The API compares the arms: a verdict, intervals, per-task flags, the A/A line, cost and time, and a cause for every failure.
+
+**A harness is an adapter: two methods** on the shared library (section 2, `docs/adapter-contract.md`):
+
+```python
+class MyHarness(Adapter):
+    def setup(self, ctx): ...                            # map our settings to the harness's own
+    def run_turn(self, ctx, history, max_steps): ...     # one agent turn -> TurnResult
+```
+
+A model is one entry in LiteLLM's config (README, Add a model).
+
+**The main entities** (section 3):
+
+| Entity | What it is |
+| --- | --- |
+| Task | `tasks/<id>/task.json`: the messages or a simulated client, the client's file, the graders. Content-hashed; a change is a new version |
+| Config | Harness × model × settings × prompt × toolset, content-hashed and insert-only |
+| Experiment | Its frozen configs, task hashes, N, plan commit and platform commit; arms A and B |
+| Trial | One attempt of one config, task and repeat, with its folder of result, trace and checks |
+| Span | One step of a trial: a model call (from LiteLLM), a tool call, a turn, memory and skill events |
+| Grading job and grade | One grading of a trial; every grade is versioned and never overwritten |
+| Label | A human's judgment of one trial and criterion, with its rater (`labels/*.jsonl`) |
 
 ## 1. Architecture
 
@@ -19,7 +56,7 @@ Decided:
 - The model providers are Claude and Gemini (D4), both run as agents through LiteLLM (Gemini 3.8 Flash on the own loop and Hermes, 5 Nov). The open-weight route is a local demo (D5): Qwen2.5 7B on Ollama, an optional compose profile (`local-model`), priced at 0. It ran end to end on 5 Nov (`e_0mw3gbt9d38648a872d3c4b8b`, own loop, 2 tasks x 1): on the EMI task Qwen called `calculate_emi` with the right arguments and passed every check; on the distress task it answered without the helpline and failed. The local Qwen refuses `parallel_tool_calls`, so it is in the per-model table of refused settings (D25) and the field is never sent to it.
 - LiteLLM's response cache is never on for trials. It would replay answers, so repeated trials would stop being independent samples (`CLAUDE.md`).
 
-- Graders and stats are Python (D1).
+- Graders are Python (D1). The comparison's statistics run in the API, in TypeScript (D1 as amended, 5 Nov); the judge-agreement maths is Python (`stats/`).
 - Workers talk only to the NestJS API, over HTTP: they claim a trial, then report its result. They never hold database credentials, so the API is the one owner of the schema and the one place that logs and checks what workers do (D2).
 - Each harness runs as its own long-lived compose service, with a fresh process per trial (D3, section 4).
 
