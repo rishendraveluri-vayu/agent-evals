@@ -1,0 +1,12 @@
+# As finance-rate-tool, but the agent picks its own FD rate (7.4%) instead of calling
+# reference_rates (D58). percent_of's result is not supported, because one of its inputs has no
+# source, so the number-provenance check flags the interest.
+description: Calls get_client_profile and percent_of at a rate no tool returned, then answers with the interest.
+steps:
+  - tool_calls:
+      - name: get_client_profile
+        arguments: {}
+  - tool_calls:
+      - name: percent_of
+        arguments: {value: 92500, percent: 7.4}
+  - text: "One month's income, Rs 92,500, in a one-year fixed deposit at about 7.4% would earn about Rs 6,845 in interest over the year."

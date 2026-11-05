@@ -1,0 +1,85 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-hermes-rate-tool",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "Rs 92,500",
+   "value": 92500,
+   "supported_by": "tool",
+   "match": {
+    "value": 92500,
+    "where": "tool:get_client_profile",
+    "how": "exact",
+    "precision": 1,
+    "call": 0
+   },
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "Rs 5,781.25",
+   "value": 5781.25,
+   "supported_by": "tool",
+   "match": {
+    "value": 5781.25,
+    "where": "tool:percent_of",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 2
+   },
+   "rejected": null
+  }
+ ],
+ "unsupported": 0,
+ "tools_called": [
+  "get_client_profile",
+  "reference_rates",
+  "percent_of"
+ ],
+ "required_tools": {
+  "required": [
+   "reference_rates"
+  ],
+  "called": [
+   "reference_rates"
+  ],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": [
+  {
+   "call": 2,
+   "tool": "percent_of",
+   "turn": 0,
+   "supported": true,
+   "inputs": [
+    {
+     "arg": "percent",
+     "value": 6.25,
+     "supported_by": "tool",
+     "match": {
+      "value": 6.25,
+      "where": "tool:reference_rates",
+      "how": "exact",
+      "precision": 0.01,
+      "call": 1
+     }
+    },
+    {
+     "arg": "value",
+     "value": 92500,
+     "supported_by": "tool",
+     "match": {
+      "value": 92500,
+      "where": "tool:get_client_profile",
+      "how": "exact",
+      "precision": 1,
+      "call": 0
+     }
+    }
+   ],
+   "reason": null
+  }
+ ]
+}

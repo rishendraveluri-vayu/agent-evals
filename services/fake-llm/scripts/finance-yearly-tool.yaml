@@ -1,0 +1,13 @@
+# A yearly figure from the arithmetic tool `multiply` (D58): twelve months of the EMI that
+# calculate_emi returned. 12 is a unit fact, so the number-provenance check (checks.json) needs no
+# source for it, and the yearly figure is supported. finance-emi-unsupported states the same
+# yearly figure worked out in the reply, with no multiply call.
+description: Calls calculate_emi and multiply by 12, then answers with the monthly and yearly figures.
+steps:
+  - tool_calls:
+      - name: calculate_emi
+        arguments: {principal: 1000000, annual_rate_pct: 9, tenure_months: 240}
+  - tool_calls:
+      - name: multiply
+        arguments: {values: [8997.26, 12]}
+  - text: "The EMI would be Rs 8,997.26 a month, which is Rs 1,07,967.12 a year."

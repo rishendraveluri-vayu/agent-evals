@@ -9,7 +9,9 @@ The grader spec format is a draft for Rishi: docs/proposals/grader-format.md.
 
 # Part of every grader version: bump it when a change to this framework can change a verdict,
 # so the new grades are stored next to the old ones instead of looking like the same grader.
-FRAMEWORK_VERSION = "0.4.0"  # 0.4.0: provenance traces arithmetic inputs (D56); 0.3.0: the
-# judge runs (when approved); 0.2.0: real checks.json
+FRAMEWORK_VERSION = "0.5.0"  # 0.5.0: provenance on checks.json from runner 0.3.0 (D58: unit
+# facts, the identity guard, reference_rates; the grader reads the runner's decision as before);
+# 0.4.0: provenance traces arithmetic inputs (D56); 0.3.0: the judge runs (when approved); 0.2.0:
+# real checks.json
 
 __all__ = ["FRAMEWORK_VERSION"]

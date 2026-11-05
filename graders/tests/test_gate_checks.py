@@ -21,6 +21,15 @@ fixtures/gate-20261105/ (D54, the arithmetic tools), the same way, on the toolse
 
 The gate-20261105 folder was regenerated after D56 (runner 0.2.0), so its checks.json has
 `arithmetic`; gate-20261104's were written before it and keep the older shape.
+
+fixtures/gate-20261105-d58/ (D58, runner 0.3.0, toolset v3 with 19 tools), the same way:
+
+- `*-yearly-tool` (finance-yearly-tool): calculate_emi, then `multiply([8997.26, 12])`, and an
+  answer stating the EMI and the yearly Rs 1,07,967.12; 12 is a unit fact.
+- `*-rate-tool` (finance-rate-tool): get_client_profile, `reference_rates`, then
+  `percent_of(92500, 6.25)`: a year's FD interest on Meera's monthly income at SBI's rate.
+- `*-rate-made-up` (finance-rate-made-up): the same kind of answer at 7.4%, a rate no tool
+  returned, without calling reference_rates.
 """
 
 from __future__ import annotations
@@ -37,6 +46,7 @@ from evals_graders.trial import TrialView
 
 GATE = Path(__file__).parent / "fixtures" / "gate-20261104"
 ARITHMETIC = Path(__file__).parent / "fixtures" / "gate-20261105"
+D58 = Path(__file__).parent / "fixtures" / "gate-20261105-d58"
 REPO = Path(__file__).resolve().parents[2]
 CHECKS_SCHEMA = REPO / "contract" / "v2" / "checks.schema.json"
 HARNESSES = ("ownloop", "hermes")
@@ -50,7 +60,7 @@ def grades(name: str, *specs: dict) -> list[dict]:
 
 @pytest.mark.parametrize(
     "folder",
-    sorted(p for root in (GATE, ARITHMETIC) for p in root.iterdir() if p.is_dir()),
+    sorted(p for root in (GATE, ARITHMETIC, D58) for p in root.iterdir() if p.is_dir()),
     ids=lambda p: f"{p.parent.name}/{p.name}",
 )
 def test_the_fixtures_are_the_contracts_checks(folder):
@@ -235,3 +245,48 @@ def test_a_checks_json_from_before_d56_cannot_decide_an_amount_from_an_arithmeti
     )
     # The 4 Nov gate fixtures predate D56 too, but no amount rests on an arithmetic tool there.
     assert grades("ownloop-emi", PROVENANCE)[0]["verdict"] == "pass"
+
+
+@pytest.mark.parametrize("harness", HARNESSES)
+def test_a_year_of_emis_from_multiply_by_12_passes(harness):
+    """D58: 12 months is a unit fact, so multiply's result counts with only the EMI sourced; the
+    same yearly figure worked out in the reply fails (the 4 Nov emi-unsupported fixture)."""
+    folder = D58 / f"{harness}-yearly-tool"
+    checks = json.loads((folder / "checks.json").read_text(encoding="utf-8"))
+    (call,) = checks["arithmetic"]
+    assert (call["tool"], call["supported"], call["reason"]) == ("multiply", True, None)
+    assert [(i["value"], i["supported_by"]) for i in call["inputs"]] == [
+        (8997.26, "tool"),
+        (12, "unit"),
+    ]
+    prov, req = grade_trial(folder, [PROVENANCE, REQUIRED])["grades"]
+    assert prov["verdict"] == "pass", prov
+    assert prov["reason"].startswith("0 of 2 amount(s)")
+    assert req["verdict"] == "pass", req
+
+
+@pytest.mark.parametrize("harness", HARNESSES)
+def test_an_fd_rate_from_reference_rates_passes_and_a_made_up_rate_fails(harness):
+    """D58: an FD rate the agent volunteers is supported when it came from reference_rates, under
+    either harness name; the same kind of answer at a rate it picked fails on exactly the
+    interest, with checks.json's reason, and on the missing reference_rates call."""
+    sourced, made_up = D58 / f"{harness}-rate-tool", D58 / f"{harness}-rate-made-up"
+    raw = {"ownloop": "reference_rates", "hermes": "mcp__finance__reference_rates"}[harness]
+    (rates,) = [c for c in TrialView.load(sourced).tool_calls() if c.name == "reference_rates"]
+    assert rates.raw_name == raw
+    assert rates.result["rates"]["fd_1y"]["value"] == 6.25
+    checks = json.loads((sourced / "checks.json").read_text(encoding="utf-8"))
+    (call,) = checks["arithmetic"]
+    assert call["supported"] is True
+    assert {i["value"]: i["match"]["where"] for i in call["inputs"]} == {
+        6.25: "tool:reference_rates",
+        92500: "tool:get_client_profile",
+    }
+    prov, req = grade_trial(sourced, [PROVENANCE, REQUIRED])["grades"]
+    assert prov["verdict"] == "pass", prov
+    assert req["verdict"] == "pass", req
+
+    prov, req = grade_trial(made_up, [PROVENANCE, REQUIRED])["grades"]
+    assert prov["verdict"] == "fail", prov
+    assert "Rs 6,845 (percent_of's input 7.4 is not supported)" in prov["reason"]
+    assert req["verdict"] == "fail" and "reference_rates" in req["reason"], req
