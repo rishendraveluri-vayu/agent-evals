@@ -71,3 +71,24 @@ def test_the_gate_tool_test_expects_toolset_v3s_19_tools():
         "round",
         "reference_rates",
     ]
+
+
+def test_no_calculator_tools_are_d70s_eleven():
+    """The gate's finance-no-calculators list is the API's (catalogue-files.ts): every finance
+    server tool but the eight calculators, in the server's order."""
+    from evals_adapter.gate import ALL_FINANCE_TOOLS, CALCULATOR_TOOLS, NO_CALCULATOR_TOOLS
+
+    assert set(CALCULATOR_TOOLS) <= set(ALL_FINANCE_TOOLS)
+    assert NO_CALCULATOR_TOOLS == [
+        "get_client_profile",
+        "list_debts",
+        "list_transactions",
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "percent_of",
+        "percent_change",
+        "round",
+        "reference_rates",
+    ]

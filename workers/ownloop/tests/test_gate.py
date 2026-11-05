@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from evals_adapter.gate import FakeServer, Gate
+from evals_adapter.gate import NO_CALCULATOR_TOOLS, FakeServer, Gate
 
 CAPS_FILE = Path(__file__).resolve().parents[1] / "src" / "ownloop" / "capabilities.json"
 CAPS = json.loads(CAPS_FILE.read_text())
@@ -39,6 +39,11 @@ def test_steps(tmp_path, fake):
 
 def test_tools(tmp_path, fake):
     GATE.test_tools(tmp_path, fake)
+
+
+def test_tools_without_calculators(tmp_path, fake):
+    """D70's finance-no-calculators: only its 11 tools reach the model."""
+    GATE.test_tools(tmp_path, fake, NO_CALCULATOR_TOOLS, "finance-no-calculators")
 
 
 def test_timeout(tmp_path, fake):

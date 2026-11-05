@@ -47,6 +47,19 @@ TOOLS_SNAPSHOT = FINANCE_DIR / "tests" / "snapshots" / "tools_manifest.json"
 ALL_FINANCE_TOOLS = (
     [t["name"] for t in json.loads(TOOLS_SNAPSHOT.read_text())] if TOOLS_SNAPSHOT.exists() else []
 )
+# D70's positive control: the `finance-no-calculators` toolset is the finance server without its
+# eight calculators (CALCULATOR_TOOLS in apps/api/src/catalogue/catalogue-files.ts).
+CALCULATOR_TOOLS = (
+    "calculate_emi",
+    "amortization_schedule",
+    "prepayment_impact",
+    "debt_payoff_plan",
+    "sip_future_value",
+    "fd_maturity",
+    "inflation_adjusted_value",
+    "loan_affordability",
+)
+NO_CALCULATOR_TOOLS = [t for t in ALL_FINANCE_TOOLS if t not in CALCULATOR_TOOLS]
 SIM_PROMPT_FILE = REPO / "configs" / "prompts" / "client-sim.v1.md"
 GATE_SYSTEM_PROMPT = (
     "You are a careful personal-finance assistant for clients in India. [gate test]"
@@ -439,11 +452,34 @@ class Gate:
         )
         return run
 
-    def test_tools(self, tmp_path: Path, fake: FakeServer) -> GateRun:
-        run = self.run(tmp_path, fake, self.spec(tmp_path / "trial", "finance-emi", fake))
+    def test_tools(
+        self,
+        tmp_path: Path,
+        fake: FakeServer,
+        allowed: list[str] | None = None,
+        toolset_id: str = "finance",
+    ) -> GateRun:
+        """With `allowed`, a narrower toolset (D70's finance-no-calculators): the same server, and
+        only those tools may reach the model, so the harness's own filter is what is tested. The
+        model then answers without a tool call, since the EMI script's tool may not be offered."""
+        spec = self.spec(tmp_path / "trial", "finance-emi" if allowed is None else "echo", fake)
+        if allowed is not None:
+            unknown = set(allowed) - set(ALL_FINANCE_TOOLS)
+            assert not unknown, f"not finance server tools: {sorted(unknown)}"
+            spec["tools"]["toolset"] = {
+                "id": toolset_id,
+                "version": "gate",
+                "sha256": _sha(",".join(allowed)),
+            }
+            spec["tools"]["mcp_servers"][0]["allowed_tools"] = list(allowed)
+        run = self.run(tmp_path, fake, spec)
         first = self.agent_requests(run)[0]["body"]
         sent = {t["function"]["name"]: t["function"] for t in first.get("tools", [])}
-        manifest = json.loads(TOOLS_SNAPSHOT.read_text())
+        manifest = [
+            t
+            for t in json.loads(TOOLS_SNAPSHOT.read_text())
+            if allowed is None or t["name"] in allowed
+        ]
         expected = {self.tool_name(t["name"]): t for t in manifest}
         assert set(sent) == set(expected), (
             f"extra {set(sent) - set(expected)}, missing {set(expected) - set(sent)}"
