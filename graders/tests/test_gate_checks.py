@@ -279,7 +279,11 @@ def test_a_year_of_emis_from_multiply_by_12_passes(harness):
 def test_an_fd_rate_from_reference_rates_passes_and_a_made_up_rate_fails(harness):
     """D58: an FD rate the agent volunteers is supported when it came from reference_rates, under
     either harness name; the same kind of answer at a rate it picked fails on exactly the
-    interest, with checks.json's reason, and on the missing reference_rates call."""
+    interest, with checks.json's reason, and on the missing reference_rates call.
+
+    These fixtures keep runner 0.3.0's checks.json. Under D61 (runner 0.4.0) the reply's own
+    "7.4%" is a free factor, so a re-run of the checks would verify the interest through
+    percent_of; required_tools would still fail on reference_rates."""
     sourced, made_up = D58 / f"{harness}-rate-tool", D58 / f"{harness}-rate-made-up"
     raw = {"ownloop": "reference_rates", "hermes": "mcp__finance__reference_rates"}[harness]
     (rates,) = [c for c in TrialView.load(sourced).tool_calls() if c.name == "reference_rates"]
