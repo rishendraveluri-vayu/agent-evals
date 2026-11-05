@@ -103,7 +103,7 @@ Every paid run, with its sign-off.
 | 5 Nov | Skills demo (Rishi: "Full demo", about $0.30, cap $1): Hermes, prompt v2, Claude Haiku 5.5, skills off vs on with the balance-transfer playbook, 3 tasks x 4; API estimate $0.21 ($0.11 to $0.42); `e_0mw3hq8zn8cdc95c5345b0fd6`, 24 of 24, 0 infra | 24 | $0.110 | Rishi |
 | 5 Nov | Judge panel (D71, planned): Gemini 3.8 Flash, Claude Sonnet 5.5 and Claude Haiku 5.5 on 33 discovery trials (up to 3 rounds) then 40 held-out trials; about $0.03 a trial for the three (Gemini $0.0075, Sonnet about $0.02, Haiku about $0.001); expected $4 to $5, one LiteLLM key capped at $8 | up to 220 trial-judgings | (to fill) | Rishi, "Go, as described" |
 | 5 Nov | Open-weight check: own loop on the local Qwen2.5 7B (Ollama, priced at 0), 2 single-message tasks x 1; the first try (`e_0mw3bp0xh198a4e7c959ba244`) stopped on a config error and was cancelled, the second (`e_0mw3gbt9d38648a872d3c4b8b`) ran 2 of 2 | 3 | $0 (local, CPU time only) | Rishi, local Ollama |
-**Total to 5 Nov: $12.80 in model calls** across the runs above (the two final runs $4.25, the positive control $2.30, the two cross-harness replications $4.33, the video rehearsal $0.17, the skills demo $0.11), plus $0.0183 for one conflict check (System calls, below) and about $0.14 of GCP time for the clean-machine test.
+**Total to 5 Nov: $12.80 in model calls** across the runs above (the two final runs $4.25, the positive control $2.30, the two cross-harness replications $4.33, the video rehearsal $0.17, the skills demo $0.11), plus $0.0715 for three conflict checks (System calls, below: $0.0183 on 4 Nov, and $0.053 for the headline's two configs, checked after the run on 6 Nov) and about $0.14 of GCP time for the clean-machine test.
 
 Per trial on Haiku 5.5: a single question cost $0.0024 to $0.0035 (3 model calls); a 3-turn simulated-client conversation cost $0.012 to $0.014 (8 to 10 agent calls plus the simulator's).
 
@@ -129,4 +129,6 @@ Model calls the platform makes itself, outside any trial (D38). Today there is o
 | Date | Id | Kind | Model | Ref | Status | Input tok | Output tok | Cost | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-11-04 | `ss_0mw2514q91eea4107aead` | conflict_check | claude-sonnet-5-5 | config a54a75646e13 | done | 3,596 | 1,109 | $0.0183 | spend_log |
+| 2026-11-05 | `ss_0mw45wvwp346e1b3cfcd7` | conflict_check | claude-sonnet-5-5 | config 9051fae02f4c | done | 3,418 | 1,658 | $0.0234 | spend_log |
+| 2026-11-05 | `ss_0mw45xa13973b1bde4446` | conflict_check | claude-sonnet-5-5 | config d46271c1b43f | done | 3,717 | 2,232 | $0.0298 | spend_log |
 <!-- system-calls:end -->

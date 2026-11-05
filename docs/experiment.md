@@ -86,6 +86,22 @@ Rishi: "how do agents across hermes and other compare ideally with same v1 and v
 
 Checked 5 Nov on the rendered first request of each config (`GET /api/configs/:hash/rendered-prompt`, a free probe on the fake model): **the 19 tools are identical** (same sha256 of the full tool list), and **the system prompts differ only in the prompt change**: v1's "Use your finance tools for every calculation" bullet is replaced by v2's "Every rupee figure you write comes from a tool, exactly", and v2 adds the "Clarify before you assume" and "Explain each key figure in plain words" bullets (4 changed lines; 5,891 against 6,826 characters). The configs' own diff is the prompt only (`GET /api/configs/:a/diff/:b`: prompt sha256 and version; the name is not content).
 
+## Conflict check against Hermes's own instructions (after the run, 6 Nov)
+
+Hermes wraps our prompt in its own system text ("You are Hermes Agent…", reply style, finish-the-job rules). The conflict check (`POST /api/configs/:hash/conflict-check`, Claude Sonnet 5.5, prompt `conflict-check.v1`) reads that text, our prompt and the settings, and lists where they pull in different directions. It is one model's reading, never validated against labels (`docs/known-limits.md`, Pre-run checks), so these are things to look at, not measured effects. Both configs were checked after the results (Deviations).
+
+- **Neither check names v2's new rule** ("Every rupee figure you write comes from a tool, exactly"), the rule behind nearly all of the +9 points. Nothing in Hermes's text was found to push against it.
+- **Both arms share three findings**, so they cannot explain a difference between the arms: Hermes's "no filler, no restating the request" against our opening acknowledgement (medium), Hermes's reply shapes ("match the length to the ask", "a short report of what changed") against our person-first, numbers, steps layout (medium), and two identities, "You are Hermes Agent" and "a personal finance advisor" (low).
+- **Two findings are v2's own**, from the lines v2 adds:
+  - Hermes's "keep working until you have … produced the requested result" against v2's "Clarify before you assume … ask one clear question" (medium): the agent may assume and calculate instead of asking. Not measured here; it is what the judge's clarifies-ambiguous-amount criterion would see, and that criterion counts for nothing until the judge passes on held-out labels.
+  - `max_steps` 24 with one tool call per figure and parallel calls off (low): a long answer may run out of steps. It happened once: v2 stopped at the step limit in 1 of 100 trials, v1 in none, and v2 took more steps (8.5 a trial against 6.9) and more tool calls (6.4 against 4.8).
+- **One more v2 finding is on a line both prompts share**: Hermes's "Depth is earned … or the stakes demand it" against our "Stay under about 250 words" (low). v1's check did not list it, so the checker's own run-to-run spread is part of what differs between the two lists.
+
+| Config | Findings | Cost |
+| --- | --- | --- |
+| v1 (`9051fae`) | 2 medium, 1 low | $0.0234 |
+| v2 (`d46271c`) | 3 medium, 3 low | $0.0298 |
+
 ## Results
 
 Run 5 Nov, plan commit f0f6e3b; both runs 200 of 200 trials, no infra failure.
@@ -173,6 +189,8 @@ Rishi to write.
 ## Deviations
 
 Anything changed after the plan was committed, and why.
+
+- **The conflict check ran after the results (6 Nov), not before the run.** The check of our prompt and settings against Hermes's own instructions (D33, D38) ran on 4 Nov on an earlier v1 config only; neither headline config had been checked when the runs started. Both were checked after the results, on Rishi's request ($0.053 on Claude Sonnet 5.5, `docs/cost.md`, System calls). It changes nothing in the analysis or the verdict; what it found is below, under "Conflict check against Hermes's own instructions".
 
 - **The judge did not grade the final runs.** The plan above says it would, under its own approval; that approval was never given, so each trial's judge grade in both runs is a `not_implemented` placeholder and nothing was spent on it. No outcome changes: every judge criterion is optional until it meets the trust bar on held-out labels (D8), and none has been tested there, so a judge grade could not have counted. The headline is decided by the deterministic checks alone.
 
