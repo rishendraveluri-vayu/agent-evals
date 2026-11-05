@@ -1,8 +1,9 @@
 import { mount, type VueWrapper } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api/client';
-import type { ConfigView, EstimateResponse, ExperimentDetail, TrialRowSummary } from '../api/types';
+import type { ConfigView, ConflictCheckView, EstimateResponse, ExperimentDetail, TrialRowSummary } from '../api/types';
 import configsJson from '../fixtures/configs.json';
+import conflictChecksJson from '../fixtures/conflict-checks.json';
 import details from '../fixtures/experiment-details.json';
 import experimentTrials from '../fixtures/experiment-trials.json';
 import harnessesJson from '../fixtures/harnesses.json';
@@ -14,7 +15,7 @@ import RunView from './RunView.vue';
 
 // D75: these paid runs start Hermes agents on a real model; their prompt check is already stored,
 // so the start runs no check (the gate's own flow is tested in lib/conflictGate.spec.ts).
-const STORED_CHECK = { config_hash: '', conflicts: [], notes: '', cost_usd: 0.02, cached: true } as unknown as Awaited<ReturnType<typeof api.conflictCheck>>;
+const STORED_CHECK = { ...(Object.values(conflictChecksJson)[0] as unknown as ConflictCheckView), cached: true };
 beforeEach(() => {
   vi.spyOn(api, 'conflictCheck').mockResolvedValue(STORED_CHECK);
 });
@@ -663,7 +664,7 @@ describe('RunView checks a Hermes prompt before a paid run starts (D75)', () => 
     expect(cfgV1.harness).toBe('hermes');
     vi.spyOn(api, 'conflictCheck').mockResolvedValue(null);
     const render = vi.spyOn(api, 'renderPrompt').mockResolvedValue({ status: 'ready' } as Awaited<ReturnType<typeof api.renderPrompt>>);
-    const run = vi.spyOn(api, 'runConflictCheck').mockResolvedValue(STORED_CHECK as Awaited<ReturnType<typeof api.runConflictCheck>>);
+    const run = vi.spyOn(api, 'runConflictCheck').mockResolvedValue(STORED_CHECK);
     const create = vi.spyOn(api, 'createExperiment');
     const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
     await settle();
