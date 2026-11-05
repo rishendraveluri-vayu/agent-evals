@@ -133,9 +133,13 @@ export class GradingService {
         note: match.sha256 === task.task_sha256 ? null : `graders from ${match.sourcePath} (version ${match.version}), which differs from the trial's task only in its graders`,
       };
     }
+    // A task file with problems (a grader the schema refuses, A5) is never a source of graders.
+    const broken = catalogue.find((f) => f.id === task.task_id && f.problems.length);
     const why = candidates.length
       ? `tasks/${task.task_id} changed beyond its graders since this trial ran, so the trial is graded with the graders it ran with`
-      : `tasks/${task.task_id} is not in the catalogue now, so the trial is graded with the graders it ran with`;
+      : broken
+        ? `${broken.sourcePath} has problems (${broken.problems.join('; ')}), so the trial is graded with the graders it ran with`
+        : `tasks/${task.task_id} is not in the catalogue now, so the trial is graded with the graders it ran with`;
     return { source: 'trial_task', taskSha256: task.task_sha256, specs: specsOf(task.body), folder: null, note: why };
   }
 
@@ -171,7 +175,7 @@ export class GradingService {
        LIMIT 1`,
     );
     if (!waiting.length) return 0;
-    const catalogue = await readTasks(this.config.tasksDir);
+    const catalogue = await readTasks(this.config.tasksDir, this.config.graderSchemaFile);
     return this.db.tx(async (client) => {
       await client.query('SELECT pg_advisory_xact_lock($1)', [QUEUE_LOCK]);
       const { rows } = await client.query<TrialTaskRow>(
@@ -345,7 +349,7 @@ export class GradingService {
     const [exp] = await this.db.query<ExampleMark>('SELECT id, example_name FROM experiments WHERE id = $1', [experimentId]);
     if (!exp) throw notFound('unknown_experiment', `no experiment ${experimentId}`);
     assertNotExample(exp, 'be re-graded');
-    const catalogue = await readTasks(this.config.tasksDir);
+    const catalogue = await readTasks(this.config.tasksDir, this.config.graderSchemaFile);
     return this.db.tx(async (client) => {
       await client.query('SELECT pg_advisory_xact_lock($1)', [QUEUE_LOCK]);
       const { rows } = await client.query<TrialTaskRow>(

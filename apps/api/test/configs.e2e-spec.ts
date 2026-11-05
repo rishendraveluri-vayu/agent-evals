@@ -301,6 +301,43 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
     }
   });
 
+  it('shows a grader typo as a task problem and keeps the task out of experiments, before any trial is paid for (A5)', async () => {
+    const dir = path.join(env.tasksDir, 'emi-typo');
+    const task = {
+      id: 'emi-typo',
+      version: '1',
+      split: 'discovery',
+      summary: 'EMI with a misspelt grader field (test fixture)',
+      messages: [{ role: 'user', content: 'What is my EMI on Rs 10 lakh at 9% for 20 years?' }],
+      client_sim: null,
+      graders: [
+        { id: 'answered', type: 'end_state', states: ['answered'] },
+        { id: 'emi', type: 'number', expected: 8997.26, tolerence: { abs: 1 } },
+      ],
+    };
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'task.json'), JSON.stringify(task, null, 2));
+    try {
+      const tasks = (await request(env.http).get('/api/tasks').expect(200)).body as { id: string; sha256: string; problems: string[] }[];
+      const typo = tasks.find((t) => t.id === 'emi-typo')!;
+      expect(typo.problems).toEqual(['graders[1].tolerence is not a field this grader type takes']);
+      // The fixtures' own tasks still load clean.
+      expect(tasks.filter((t) => t.id !== 'emi-typo').map((t) => [t.id, t.problems])).toEqual([
+        ['emi-basic', []],
+        ['widow-loan', []],
+      ]);
+      const config = await makeConfig(env.http, cat, { name: 'typo run' });
+      const body = { name: 'typo', axis: 'none', config_hashes: [config], task_sha256s: [typo.sha256], n: 1, sim_model: null, budget_usd: 5 };
+      for (const route of ['/api/experiments/estimate', '/api/experiments']) {
+        const res = await request(env.http).post(route).send(body).expect(400);
+        expect(res.body).toMatchObject({ error: 'invalid_task', message: expect.stringContaining('graders[1].tolerence is not a field this grader type takes') as string });
+      }
+      expect((await env.pool.query('SELECT 1 FROM tasks WHERE sha256 = $1', [typo.sha256])).rowCount).toBe(0); // never stored
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('gives errors the contract shape', async () => {
     const res = await request(env.http).get('/api/configs/not-a-hash').expect(400);
     expect(res.body).toEqual({ error: 'invalid_hash', message: expect.any(String) as string });

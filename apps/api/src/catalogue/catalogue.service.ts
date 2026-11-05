@@ -194,7 +194,7 @@ export class CatalogueService {
 
   /** Every task file, stored when valid. A stored task whose state file changed is flagged. */
   async taskFiles(): Promise<TaskFile[]> {
-    const tasks = await readTasks(this.config.tasksDir);
+    const tasks = await readTasks(this.config.tasksDir, this.config.graderSchemaFile);
     if (!this.db.configured) return tasks;
     for (const t of tasks) {
       if (t.problems.length) continue;

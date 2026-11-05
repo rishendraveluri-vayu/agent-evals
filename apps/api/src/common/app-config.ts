@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import { GRADER_SCHEMA_FILE } from '../catalogue/catalogue-files';
 
 /**
  * Settings read from the environment once, at startup. Paths default to the repo layout, so
@@ -22,6 +23,12 @@ export interface AppConfig {
   runsDir: string;
   /** The finance MCP server's folder: its published tool manifest and version give the toolset's hash. */
   financeMcpDir: string;
+  /**
+   * The grader framework's schema for a grader spec (graders/src/evals_graders/grader-spec.schema.json),
+   * which the catalogue checks every task's graders against. The API image copies it to the same
+   * path under /repo, so the default holds in compose too.
+   */
+  graderSchemaFile: string;
   /** D38: the standing allowance for pre-run conflict checks, in USD. */
   conflictCheckAllowanceUsd: number;
   /**
@@ -79,6 +86,7 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     labelsDir: dir('LABELS_DIR', 'labels'),
     examplesDir: dir('EXAMPLES_DIR', 'examples'),
     financeMcpDir: dir('FINANCE_MCP_DIR', 'services/finance-mcp'),
+    graderSchemaFile: dir('GRADER_SCHEMA_FILE', GRADER_SCHEMA_FILE),
     // RUNS_DIR keeps its SP1 meaning: relative to the working directory.
     runsDir: path.resolve(nonEmpty(env.RUNS_DIR) ?? 'runs'),
     conflictCheckAllowanceUsd: usd('EVALS_CONFLICT_CHECK_ALLOWANCE_USD', env.EVALS_CONFLICT_CHECK_ALLOWANCE_USD, DEFAULT_CONFLICT_CHECK_ALLOWANCE_USD),

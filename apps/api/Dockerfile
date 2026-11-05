@@ -41,6 +41,10 @@ COPY --from=build /repo/apps/api/dist ./apps/api/dist
 COPY apps/api/package.json ./apps/api/package.json
 # Plain SQL, applied in order at startup (src/database/migrate.ts reads ../../migrations).
 COPY apps/api/migrations ./apps/api/migrations
+# The grader framework's spec schema, at its repo path, so the catalogue checks each task's graders
+# against the very file the grader checks them against (A5). Copied, not mounted: the grader image
+# copies it too, so both containers built from one checkout hold the same schema.
+COPY graders/src/evals_graders/grader-spec.schema.json ./graders/src/evals_graders/grader-spec.schema.json
 # The start-up step: as root, it makes the three folders the API writes (mounted from the host)
 # usable by node, uid 1000, then runs the server as node with setpriv, which the base image has.
 # The server never runs as root. See the script for exactly what it changes, and when.

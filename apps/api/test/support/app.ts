@@ -27,9 +27,10 @@ export const TASKS = {
       messages: [{ role: 'user', content: 'What is my EMI on Rs 10 lakh at 9% for 20 years?' }],
       client_sim: null,
       client_state: 'client.json',
+      // Valid grader specs: since A5 the catalogue refuses a task whose graders the grader schema refuses.
       graders: [
-        { id: 'emi-exact', kind: 'exact' },
-        { id: 'tone', kind: 'judge', criteria: [{ id: 'empathy', text: 'Acknowledges the client situation' }, 'no_jargon'] },
+        { id: 'emi-exact', type: 'number', expected: 8997.26 },
+        { id: 'tone', type: 'judge', rubric: { id: 'advice', version: 'v1' }, criteria: [{ id: 'empathy', text: 'Acknowledges the client situation' }, 'no_jargon'] },
       ],
     },
     state: '{"name": "Test Client (synthetic)"}',

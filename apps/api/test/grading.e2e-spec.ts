@@ -341,6 +341,17 @@ describeWithDb('grading (e2e, real Postgres)', () => {
     const rubric = readFileSync(path.join(REPO, 'configs/rubrics/advice.v1.md'));
     expect(old.grader_files).toEqual({ 'grader.py': null, 'configs/rubrics/advice.v1.md': { base64: rubric.toString('base64'), sha256: `sha256:${sha(rubric)}` } });
     await report(old).expect(200);
+
+    // A5: a "fix" the grader schema refuses is never applied; the trial keeps the graders it ran with, and the note says why
+    await writeTask({ ...GRADED_TASK, version: '4', graders: GRADED_TASK.graders.map((g) => (g.id === 'emi' ? { ...g, tolerence: { rel: 0.01 } } : g)) }, GRADER_PY);
+    expect(((await request(env.http).post(`/api/experiments/${exp.id}/regrade`).send({}).expect(202)).body as RegradeResponse).from_trial_task).toBe(1);
+    const kept = (await claimGrading())!;
+    expect(kept.task).toMatchObject({
+      grader_source: 'trial_task',
+      sha256: tasks['emi-graded'],
+      note: 'tasks/emi-graded/task.json has problems (graders[1].tolerence is not a field this grader type takes), so the trial is graded with the graders it ran with',
+    });
+    await report(kept).expect(200);
     await writeTask(GRADED_TASK, GRADER_PY);
   });
 

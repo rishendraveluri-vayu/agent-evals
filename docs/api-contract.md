@@ -44,7 +44,7 @@ status, plus `"fix": "<what to change>"` where the API can say how to put the re
 | `GET /prompts` | `[{id, version, sha256, path, text}]` from `configs/prompts/<id>.<version>.md` (the leading `<!-- -->` review header stripped, as `prompt_text` does). |
 | `POST /prompts` | `{id, base_version, text}` writes the next version of an existing prompt and returns `{id, version, sha256, path}` (below). |
 | `GET /toolsets` | `[{id, version, sha256, servers: [{name, allowed_tools}], manifest: [{server, server_version, tools: [{name, description, input_schema}]}], description, validation_only}]`. Two built-in toolsets, in this order. First `finance/v3` (since 5 Nov): the 11 finance tools, the 7 arithmetic tools (`add`, `subtract`, `multiply`, `divide`, `percent_of`, `percent_change`, `round`; D54) and `reference_rates` (D58) at server 0.4.1; being first, it is the new-config default and the builder's choice. Then `finance-no-calculators/v3` (5 Nov, D70), `validation_only: true`: the same server and version with the eight calculators left out (`calculate_emi`, `amortization_schedule`, `prepayment_impact`, `debt_payoff_plan`, `sip_future_value`, `fd_maturity`, `inflation_adjusted_value`, `loan_affordability`), so 11 tools, as if the calculator service were down. It is for the positive control only: the builder never gives it to an agent, a new config never starts on it (not even one copied from a config that has it), and the Config screen offers it in the toolset list as "(validation only)" with its description; a fork of a config that has it keeps it. `description` and `validation_only` are words for people, outside the hash. `finance/all` (the 11 tools, server 0.2.0 and earlier) and `finance/v2` (the 18, server 0.3.0) are no longer listed; configs and trials that used them keep their row and hash, and a fork of one is moved to `finance/v3` with a note. A change to the tools is a new version, never an edit of a listed one (a unit test pins each version's hash). `sha256` is the canonical JSON hash of `{id, version, servers, manifest}`, so it covers the allowed list, each allowed tool's description and input schema and the server's version, not just the names (since 4 Nov; configs made before keep their names-only hash). Pinned: `finance/v3` `sha256:8e0508d2…`, `finance-no-calculators/v3` `sha256:34e53515…`. |
-| `GET /tasks` | `[{sha256, id, version, split, kind, summary, graders}]` from `tasks/<id>/task.json`. |
+| `GET /tasks` | `[{sha256, id, version, split, kind, summary, graders, problems}]` from `tasks/<id>/task.json`. `problems` lists, in words, why a task cannot be used (an empty list when it can): the fields below, and since 5 Nov (A5) each grader against the grader framework's schema, `graders/src/evals_graders/grader-spec.schema.json`, for example `graders[1].tolerence is not a field this grader type takes`, plus a grader id used twice. `POST /experiments` and the estimate refuse a task with problems (400 `invalid_task`, naming them). |
 | `GET /models` | `[{name, provider, input_per_mtok, output_per_mtok, key_set}]` from LiteLLM's `/model/info`, real models only. `key_set` says whether the provider's key is in `.env` for LiteLLM: compose passes the API a flag per key (`ANTHROPIC_KEY_SET: ${ANTHROPIC_API_KEY:+1}`, likewise `GEMINI_KEY_SET`), `1` when set and empty when not, never the key. It is `null` when the API was not told (the flag is absent, as outside compose) and for a provider it has no flag for (`gemini` and `vertex_ai` read the Gemini flag). |
 
 **New prompt version** (`POST /prompts`, for the UI's prompt editor). The API writes
@@ -91,6 +91,13 @@ and passed through unread:
  "graders": []}
 ```
 
+`graders` is a list of grader specs, each checked against the grader framework's schema
+(`graders/src/evals_graders/grader-spec.schema.json`, the file the grader itself validates
+against; the API image copies it to the same path under `/repo`) when the task is read, so a typo
+is a task problem in `GET /tasks`, not an `error` grade after the trial has run (since 5 Nov, A5).
+If the API cannot load that schema, every grader is a problem ("cannot be checked"), never a pass.
+A regex that Python cannot compile, a missing `unit_test` file and a missing rubric are still found
+only at grading time.
 An optional `required_tools` (finance tool names, such as `["calculate_emi"]`) is copied into
 the spec's `task.required_tools`, a grader primitive: the runner's `checks.json` records which
 were called (docs/adapter-contract.md section 12). A name the finance server does not have, or a
