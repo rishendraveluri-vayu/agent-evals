@@ -15,6 +15,7 @@ import {
   builtInToolsets,
   checkTask,
   headerDate,
+  isScaffolded,
   loadFinanceServer,
   nextPromptVersion,
   parsePromptName,
@@ -90,6 +91,38 @@ describe('harness files', () => {
     const hermes = harnesses.find((h) => h.name === 'hermes');
     expect(hermes).toMatchObject({ package: 'hermes-agent', ref: '6112c2adb9e11f69734a29be9d2696f345ffa06a', python: '>=3.14', dir: 'workers/hermes' });
     expect(hermes?.capabilities_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+    // Every harness in the repo is implemented: none still has the scaffold's TODO version.
+    expect(harnesses.filter((h) => h.scaffolded).map((h) => h.name)).toEqual([]);
+  });
+
+  it('marks a harness `make new-harness` made and nobody finished as scaffolded (A2)', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'evals-workers-'));
+    // What scaffold.py writes into capabilities.json's version, then one with only the package filled.
+    const write = async (name: string, version: { package: string; ref: string }): Promise<void> => {
+      const pkg = path.join(dir, name, 'src', `${name}_adapter`);
+      await fs.mkdir(pkg, { recursive: true });
+      const caps = { contract_version: '2', harness: name, version, model_api_formats: ['openai_chat'], settings: {}, known_differences: [] };
+      await fs.writeFile(path.join(pkg, 'capabilities.json'), JSON.stringify(caps, null, 2));
+      await fs.writeFile(path.join(dir, name, 'pyproject.toml'), `[project]\nname = "${name}-worker"\nversion = "0.1.0"\nrequires-python = ">=3.14"\n`);
+    };
+    try {
+      await write('crewai', { package: 'TODO', ref: 'TODO' });
+      await write('halfway', { package: 'halfway', ref: 'TODO' });
+      await write('finished', { package: 'finished', ref: '1.2.3' });
+      const byName = new Map((await readHarnesses(dir)).map((h) => [h.name, h]));
+      expect(byName.get('crewai')).toMatchObject({ scaffolded: true, capabilitiesPath: 'workers/crewai/src/crewai_adapter/capabilities.json', dir: 'workers/crewai' });
+      expect(byName.get('halfway')?.scaffolded).toBe(true);
+      expect(byName.get('finished')?.scaffolded).toBe(false);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('calls a version scaffolded while its package or ref is still the placeholder', () => {
+    expect(isScaffolded({ package: 'TODO', ref: 'TODO' })).toBe(true);
+    expect(isScaffolded({ package: 'langgraph', ref: 'TODO' })).toBe(true);
+    expect(isScaffolded({ package: 'TODO', ref: '1.0.0' })).toBe(true);
+    expect(isScaffolded({ package: 'langgraph', ref: '1.0.0' })).toBe(false);
   });
 });
 

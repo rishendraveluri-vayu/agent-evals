@@ -34,6 +34,7 @@ import { type BehaviourTrial, behaviourOf, withRegressionCauses } from '../cause
 import { causesFor, loadTrialFacts } from '../causes/trial-facts';
 import { newId } from '../common/ids';
 import { CatalogueService, type StoredPrompt, type StoredTask, taskView } from '../catalogue/catalogue.service';
+import { SCAFFOLD_PLACEHOLDER, isScaffolded } from '../catalogue/catalogue-files';
 import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.service';
 import { Db, type Queryable } from '../database/db.service';
 import { NOT_EXAMPLE_TRIAL, assertNotExample } from '../examples/example-guard';
@@ -166,6 +167,17 @@ export class ExperimentsService {
     const configs = await this.db.query<ConfigRow>(`${CONFIG_SELECT} WHERE c.hash = ANY($1)`, [configHashes]);
     const missingConfig = configHashes.find((h) => !configs.some((c) => c.hash === h));
     if (missingConfig) throw badRequest('unknown_config', `no config ${missingConfig}`);
+    // A config saved for a scaffolded harness (before POST /configs refused one) would queue trials
+    // no worker claims. Its stored version says so, whatever the harness folder holds now.
+    const scaffold = configs.find((c) => isScaffolded({ package: c.harness_package, ref: c.harness_ref }));
+    if (scaffold) {
+      throw badRequest(
+        'harness_not_implemented',
+        `config ${scaffold.name} (${scaffold.hash}) is for harness ${scaffold.harness}, which was scaffolded but not implemented when the config was saved ` +
+          `(its version is "${SCAFFOLD_PLACEHOLDER}"), so no worker would run its trials`,
+        `Finish the ${scaffold.harness} adapter, then save the config again (it gets a new hash); or pick a config for a harness in GET /harnesses.`,
+      );
+    }
     const { tasks, problems } = await this.catalogue.tasksBySha(taskShas);
     for (const sha of taskShas) {
       const why = problems.get(sha);

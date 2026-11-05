@@ -230,6 +230,9 @@ The {name} harness adapter on the shared adapter library (`workers/adapterlib`).
 2. Write `setup` and `run_turn` in `src/{pkg}/adapter.py`, and set `IMPLEMENTED = True`.
 3. `./probe.sh` writes the probed fields of `src/{pkg}/capabilities.json` from what reaches the
    fake model. Declare memory, skills and compression by hand, and list `known_differences`.
+   Set `version.package` and `version.ref` there to the harness package and its exact version:
+   while either is still `TODO` the platform leaves the harness out of its catalogue and refuses
+   configs for it.
 4. `uv run pytest -q` runs the gate tests and the capabilities drift test.
 5. Add the `worker-{name}` service that `evals-new-harness` printed to `docker-compose.yml`, then
    `docker compose up -d --build worker-{name}`. The `Dockerfile` here builds it from `uv.lock`.

@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import type { CreatePromptRequest, CreatedPrompt, HarnessView, JsonObject, ModelView, PromptView, TaskSplit, TaskView, ToolsetView } from '../contract';
-import { badRequest, conflict } from '../common/api-error';
+import { type ApiError, badRequest, conflict } from '../common/api-error';
 import { APP_CONFIG, type AppConfig, PROVIDER_KEYS, type ProviderKeyName } from '../common/app-config';
 import { sha256Ref } from '../common/hashing';
 import { Db } from '../database/db.service';
@@ -11,6 +11,7 @@ import {
   type HarnessFile,
   PROMPT_MAX_BYTES,
   PROMPT_NAME_PART,
+  SCAFFOLD_PLACEHOLDER,
   type TaskFile,
   builtInToolsets,
   loadFinanceServer,
@@ -75,8 +76,17 @@ export class CatalogueService {
     private readonly litellm: LiteLlmClient,
   ) {}
 
-  harnesses(): Promise<HarnessFile[]> {
+  /** Every harness folder under workers/, a scaffolded one (`make new-harness`, not finished) included. */
+  allHarnesses(): Promise<HarnessFile[]> {
     return readHarnesses(this.config.workersDir);
+  }
+
+  /**
+   * The harnesses a config can use, and GET /harnesses' list: a scaffolded one is left out, since
+   * no worker runs it yet (POST /configs says so by name: harnessNotImplemented).
+   */
+  async harnesses(): Promise<HarnessFile[]> {
+    return (await this.allHarnesses()).filter((h) => !h.scaffolded);
   }
 
   async harness(name: string): Promise<HarnessFile | null> {
@@ -267,6 +277,19 @@ export class CatalogueService {
     );
     return { tasks, problems };
   }
+}
+
+/**
+ * POST /configs' refusal for a harness `make new-harness` made and nobody finished: its
+ * capabilities still say version TODO, its adapter is a stub and no worker would claim its trials.
+ */
+export function harnessNotImplemented(h: Pick<HarnessFile, 'name' | 'dir' | 'capabilitiesPath'>, available: string[]): ApiError {
+  return badRequest(
+    'harness_not_implemented',
+    `harness ${h.name} is scaffolded but not implemented: ${h.capabilitiesPath} still has the scaffold's version "${SCAFFOLD_PLACEHOLDER}", so no worker would run its trials`,
+    `Finish it first (${h.dir}/README.md): write setup and run_turn, run probe.sh, set version.package and version.ref in its capabilities.json, ` +
+      `and add its worker to docker-compose.yml. Until then pick a harness from GET /harnesses: ${available.join(', ')}.`,
+  );
 }
 
 function round(n: number): number {

@@ -1,10 +1,12 @@
 import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import request from 'supertest';
 import { hashCanonical } from '../src/common/hashing';
 import type { ToolsetView } from '../src/contract';
-import { type TestEnv, bootEnv, catalogue, makeConfig } from './support/app';
+import { REPO, type TestEnv, bootEnv, catalogue, makeConfig } from './support/app';
 import { describeWithDb } from './support/db';
+import { writeScaffold } from './support/scaffold';
 
 describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
   let env: TestEnv;
@@ -304,5 +306,69 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
     expect(res.body).toEqual({ error: 'invalid_hash', message: expect.any(String) as string });
     const unknown = await request(env.http).get('/api/nothing-here').expect(404);
     expect(Object.keys(unknown.body as object).sort()).toEqual(['error', 'message']);
+  });
+});
+
+describeWithDb('a scaffolded harness (A2, e2e, real Postgres)', () => {
+  let env: TestEnv;
+  let cat: Awaited<ReturnType<typeof catalogue>>;
+  let workersDir: string;
+
+  beforeAll(async () => {
+    // The repo's own loop, and a harness exactly as `make new-harness NAME=crewai` leaves it.
+    workersDir = await fs.mkdtemp(path.join(os.tmpdir(), 'evals-workers-'));
+    await fs.symlink(path.join(REPO, 'workers', 'ownloop'), path.join(workersDir, 'ownloop'), 'dir');
+    await writeScaffold(workersDir, 'crewai');
+    env = await bootEnv({ workersDir });
+    cat = await catalogue(env.http);
+  });
+
+  afterAll(async () => {
+    await env.close();
+    await fs.rm(workersDir, { recursive: true, force: true });
+  });
+
+  it('is left out of GET /harnesses, so the builder never offers it', async () => {
+    const names = ((await request(env.http).get('/api/harnesses').expect(200)).body as { name: string }[]).map((h) => h.name);
+    expect(names).toEqual(['ownloop']);
+  });
+
+  it('cannot be given a config: 400 harness_not_implemented, in plain words, with what to do', async () => {
+    const res = await request(env.http)
+      .post('/api/configs')
+      .send({ name: 'x', harness: 'crewai', model: 'fake/finance-emi', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset })
+      .expect(400);
+    expect(res.body).toEqual({
+      error: 'harness_not_implemented',
+      message:
+        'harness crewai is scaffolded but not implemented: workers/crewai/src/crewai_adapter/capabilities.json still has the scaffold\'s version "TODO", so no worker would run its trials',
+      fix: expect.stringContaining('workers/crewai/README.md') as string,
+    });
+    expect((res.body as { fix: string }).fix).toContain('pick a harness from GET /harnesses: ownloop.');
+    expect((await env.pool.query("SELECT 1 FROM configs WHERE harness = 'crewai'")).rowCount).toBe(0);
+  });
+
+  it('cannot be put in an experiment through a config saved before that refusal, whose trials would wait forever', async () => {
+    const real = await makeConfig(env.http, cat);
+    // A config stored for the scaffold before POST /configs refused one: the own loop's row with the scaffold's version.
+    const stale = `sha256:${'5'.repeat(64)}`;
+    await env.pool.query(
+      `INSERT INTO configs (hash, name, harness, harness_package, harness_ref, adapter_version, capabilities_sha256, capabilities, model, api_format,
+                            prompt_sha256, toolset_sha256, settings, settings_sources, harness_options, seed)
+       SELECT $2, 'crewai stub', 'crewai', 'TODO', 'TODO', adapter_version, capabilities_sha256, capabilities, model, api_format,
+              prompt_sha256, toolset_sha256, settings, settings_sources, harness_options, seed
+       FROM configs WHERE hash = $1`,
+      [real, stale],
+    );
+    const body = { name: 'stub run', axis: 'harness', config_hashes: [real, stale], task_sha256s: [cat.tasks['emi-basic']], n: 1, sim_model: null, budget_usd: 5 };
+    for (const route of ['/api/experiments/estimate', '/api/experiments']) {
+      const res = await request(env.http).post(route).send(body).expect(400);
+      expect(res.body).toMatchObject({
+        error: 'harness_not_implemented',
+        message: expect.stringContaining('crewai, which was scaffolded but not implemented') as string,
+        fix: expect.stringContaining('save the config again') as string,
+      });
+    }
+    expect((await env.pool.query('SELECT 1 FROM experiments')).rowCount).toBe(0);
   });
 });

@@ -50,9 +50,32 @@ export function parsePyproject(text: string): { version: string | null; python: 
 export interface HarnessFile extends HarnessView {
   /** The worker folder, e.g. workers/openai-agents. */
   dir: string;
+  /** Its capabilities file, e.g. workers/openai-agents/src/openai_agents_adapter/capabilities.json. */
+  capabilitiesPath: string;
+  /** Made by `make new-harness` and not finished yet (isScaffolded): no worker runs it. */
+  scaffolded: boolean;
 }
 
-/** One entry per workers/<dir>/src/<pkg>/capabilities.json. */
+/**
+ * What `make new-harness` writes into a new capabilities.json's `version` (`{"package": "TODO",
+ * "ref": "TODO"}`, workers/adapterlib/src/evals_adapter/scaffold.py). The author replaces both
+ * when the adapter works.
+ */
+export const SCAFFOLD_PLACEHOLDER = 'TODO';
+
+/**
+ * A harness whose capabilities still carry the scaffold's placeholder version is scaffolded, not
+ * implemented: its adapter is a stub and no worker service claims its trials, so a config for it
+ * would queue trials that wait forever.
+ */
+export function isScaffolded(version: { package: string; ref: string }): boolean {
+  return version.package === SCAFFOLD_PLACEHOLDER || version.ref === SCAFFOLD_PLACEHOLDER;
+}
+
+/**
+ * One entry per workers/<dir>/src/<pkg>/capabilities.json, a scaffolded one included (marked
+ * `scaffolded`; the catalogue service leaves it out of what a config can use).
+ */
 export async function readHarnesses(workersDir: string): Promise<HarnessFile[]> {
   const out: HarnessFile[] = [];
   for (const dir of await listDir(workersDir)) {
@@ -78,15 +101,20 @@ export async function readHarnesses(workersDir: string): Promise<HarnessFile[]> 
       } catch {
         // no pyproject: version unknown
       }
-      out.push({
-        name: caps.harness,
+      const version = {
         package: typeof caps.version.package === 'string' ? caps.version.package : '',
         ref: typeof caps.version.ref === 'string' ? caps.version.ref : '',
+      };
+      out.push({
+        name: caps.harness,
+        ...version,
         python: pyproject.python,
         adapter_version: pyproject.version ?? 'unknown',
         capabilities_sha256: sha256Ref(raw),
         capabilities: caps as JsonObject,
         dir: path.join('workers', dir),
+        capabilitiesPath: path.join('workers', dir, 'src', pkg, 'capabilities.json'),
+        scaffolded: isScaffolded(version),
       });
     }
   }

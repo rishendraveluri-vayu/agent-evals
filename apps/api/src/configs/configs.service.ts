@@ -3,7 +3,7 @@ import type { ConfigDetail, ConfigDiffEntry, ConfigView, CreateConfigRequest, Js
 import { SETTING_NAMES } from '../contract';
 import { badRequest, notFound } from '../common/api-error';
 import { canonicalJson, hashCanonical, normalizeSha } from '../common/hashing';
-import { CatalogueService } from '../catalogue/catalogue.service';
+import { CatalogueService, harnessNotImplemented } from '../catalogue/catalogue.service';
 import { Db } from '../database/db.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
 import { checkSeed, seedIsEmpty } from './seed';
@@ -161,6 +161,8 @@ export class ConfigsService {
     const harnesses = await this.catalogue.harnesses();
     const harness = harnesses.find((h) => h.name === body.harness);
     if (!harness) {
+      const scaffold = (await this.catalogue.allHarnesses()).find((h) => h.name === body.harness && h.scaffolded);
+      if (scaffold) throw harnessNotImplemented(scaffold, harnesses.map((h) => h.name));
       throw badRequest('unknown_harness', `no harness named ${body.harness} under workers/`, `Pick a harness from GET /harnesses: ${harnesses.map((h) => h.name).join(', ')}.`);
     }
     const caps = harness.capabilities as { settings?: Record<string, { supported?: unknown }>; model_api_formats?: unknown; harness_options_schema?: unknown };

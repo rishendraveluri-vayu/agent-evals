@@ -40,7 +40,7 @@ status, plus `"fix": "<what to change>"` where the API can say how to put the re
 
 | Method and path | Returns |
 | --- | --- |
-| `GET /harnesses` | `[{name, package, ref, python, capabilities}]`, one per `workers/*/src/*/capabilities.json` (read-only mount). |
+| `GET /harnesses` | `[{name, package, ref, python, capabilities}]`, one per `workers/*/src/*/capabilities.json` (read-only mount). A harness `make new-harness` made and nobody finished, whose `version.package` or `version.ref` is still the scaffold's `"TODO"`, is left out (since 5 Nov, review A2): its adapter is a stub and no worker claims its trials. |
 | `GET /prompts` | `[{id, version, sha256, path, text}]` from `configs/prompts/<id>.<version>.md` (the leading `<!-- -->` review header stripped, as `prompt_text` does). |
 | `POST /prompts` | `{id, base_version, text}` writes the next version of an existing prompt and returns `{id, version, sha256, path}` (below). |
 | `GET /toolsets` | `[{id, version, sha256, servers: [{name, allowed_tools}], manifest: [{server, server_version, tools: [{name, description, input_schema}]}], description, validation_only}]`. Two built-in toolsets, in this order. First `finance/v3` (since 5 Nov): the 11 finance tools, the 7 arithmetic tools (`add`, `subtract`, `multiply`, `divide`, `percent_of`, `percent_change`, `round`; D54) and `reference_rates` (D58) at server 0.4.1; being first, it is the new-config default and the builder's choice. Then `finance-no-calculators/v3` (5 Nov, D70), `validation_only: true`: the same server and version with the eight calculators left out (`calculate_emi`, `amortization_schedule`, `prepayment_impact`, `debt_payoff_plan`, `sip_future_value`, `fd_maturity`, `inflation_adjusted_value`, `loan_affordability`), so 11 tools, as if the calculator service were down. It is for the positive control only: the builder never gives it to an agent, a new config never starts on it (not even one copied from a config that has it), and the Config screen offers it in the toolset list as "(validation only)" with its description; a fork of a config that has it keeps it. `description` and `validation_only` are words for people, outside the hash. `finance/all` (the 11 tools, server 0.2.0 and earlier) and `finance/v2` (the 18, server 0.3.0) are no longer listed; configs and trials that used them keep their row and hash, and a fork of one is moved to `finance/v3` with a note. A change to the tools is a new version, never an edit of a listed one (a unit test pins each version's hash). `sha256` is the canonical JSON hash of `{id, version, servers, manifest}`, so it covers the allowed list, each allowed tool's description and input schema and the server's version, not just the names (since 4 Nov; configs made before keep their names-only hash). Pinned: `finance/v3` `sha256:8e0508d2…`, `finance-no-calculators/v3` `sha256:34e53515…`. |
@@ -159,6 +159,7 @@ simulated-client task the API also summarises that file (profile and debts) into
   | `invalid_setting` | a bad value | "Set max_steps to an integer of at least 1, or leave it unset for the default." |
   | `unknown_setting` | a name that is not a setting | "Did you mean temperature? Rename temprature to temperature." |
   | `invalid_harness_options`, `unknown_harness`, `unknown_model`, `unknown_prompt`, `unknown_toolset` | | where to pick a valid one |
+  | `harness_not_implemented` | the harness is scaffolded, not implemented: its capabilities file still has the scaffold's `"TODO"` version (since 5 Nov, A2) | "Finish it first (workers/crewai/README.md): write setup and run_turn, run probe.sh, set version.package and version.ref in its capabilities.json, and add its worker to docker-compose.yml. Until then pick a harness from GET /harnesses: ..." |
 
   **Warnings** (valid but risky, stored anyway): `warnings: [{code, message, fix}]`. Today one
   code: `langgraph_model_name_rewrite`, for a LangGraph config whose model name langchain-openai
@@ -345,6 +346,9 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   `name` is trimmed and must be 1 to 200 characters (`EXPERIMENT_NAME_MAX`); a longer one is a 400
   `invalid_experiment` that says its length, with the fix "Shorten the name to 200 characters or
   fewer." (since 5 Nov, QA round 3; nothing is created).
+  A config whose stored harness version is the scaffold's `"TODO"` (saved for a scaffolded harness
+  before `POST /configs` refused one) is a 400 `harness_not_implemented`, here and on the estimate,
+  since no worker would ever claim its trials (since 5 Nov, A2).
   `budget_usd` must cover the estimate's high end (400 `budget_below_estimate`, R10.6), **except
   for a run on fake models only**: when every model it calls (each arm's, and the simulator's when
   a task needs one) is `fake/*`, nothing real is spent and the prices are made up for testing, so

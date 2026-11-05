@@ -84,8 +84,11 @@ async function writeTasks(dir: string): Promise<void> {
   }
 }
 
-/** Boots the real AppModule against a fresh database, the LiteLLM stub and temp folders. */
-export async function bootEnv(): Promise<TestEnv> {
+/**
+ * Boots the real AppModule against a fresh database, the LiteLLM stub and temp folders.
+ * `workersDir` replaces the repo's workers/ (a test that needs a harness the repo does not have).
+ */
+export async function bootEnv(opts: { workersDir?: string } = {}): Promise<TestEnv> {
   const db = await createDatabase();
   const stub = new LiteLlmStub();
   await stub.start();
@@ -103,7 +106,7 @@ export async function bootEnv(): Promise<TestEnv> {
     LITELLM_MASTER_KEY: STUB_MASTER_KEY,
     EVALS_WORKER_TOKEN: WORKER_TOKEN,
     EVALS_PLATFORM_COMMIT: 'abc1234',
-    WORKERS_DIR: path.join(REPO, 'workers'),
+    WORKERS_DIR: opts.workersDir ?? path.join(REPO, 'workers'),
     CONFIGS_DIR: configsDir,
     TASKS_DIR: tasksDir,
     LABELS_DIR: labelsDir,
