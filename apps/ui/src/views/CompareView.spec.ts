@@ -745,6 +745,27 @@ describe('CompareView against the API: the check on the method', () => {
     expect(few.text()).not.toContain('stays above zero');
   });
 
+  it('never calls an interval clear of zero unlikely to be noise when the paired test does not reach the threshold', async () => {
+    // The 5 Nov headline: +9 (+3 to +16), p = 0.0625, because only 5 of the 10 tasks differed.
+    const tasks = base.stats!.tasks.slice(0, 10).map((t, i) => ({ ...t, diff: { ...t.diff, estimate: i < 5 ? 10 : 0 } }));
+    expect(tasks).toHaveLength(10);
+    withStats({ verdict: 'no_detectable_difference', pass_rate_verdict: 'no_detectable_difference', diff: { estimate: 9, low: 3, high: 16 }, p_value: 0.0625, not_ruled_out_points: 16, tasks });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="verdict-title"]').text()).toBe('No detectable difference');
+    expect(w.findAll('[data-test="why-title"]')[0].text()).toBe('Why this is not called better');
+    expect(w.findAll('[data-test="why-line"]')[0].text()).toBe(`The interval stays above zero, but the verdict rests on the paired sign-flip test, and it gives p${nb}=${nb}0.0625, not below 0.05.`);
+    expect(w.get('[data-test="verdict-sub"]').text()).toBe(
+      `Differences as large as 16${nb}points are not ruled out. Only 5 of the 10 tasks passed at different rates in the two arms, and only those count in the paired test: over 5 tasks its smallest possible p is 0.0625, so it could not reach p${nb}<${nb}0.05 however large the difference.`,
+    );
+    expect(w.text()).not.toContain('unlikely to be noise');
+    // The same interval going down is "not called worse".
+    withStats({ verdict: 'no_detectable_difference', pass_rate_verdict: 'no_detectable_difference', diff: { estimate: -9, low: -16, high: -3 }, p_value: 0.0625, not_ruled_out_points: 16, tasks });
+    const down = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(down.findAll('[data-test="why-title"]')[0].text()).toBe('Why this is not called worse');
+  });
+
   it('says what an A/A calibration with no width shows, and what it cannot', async () => {
     withStats({ aa: { ...base.stats!.aa!, diff: { estimate: 0, low: 0, high: 0 }, verdict: 'no_detectable_difference' } });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });

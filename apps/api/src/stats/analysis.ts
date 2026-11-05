@@ -301,13 +301,22 @@ function costsOf(input: AnalysisInput, opts: Required<Pick<AnalysisOptions, 'res
   return out;
 }
 
-function verdictText(v: PassRateVerdict | 'held_back', diff: StatsInterval, p: number, k: number, notRuledOut: number | null): string {
+/**
+ * `differing` counts the tasks whose arms passed at different rates: only they move the sign-flip
+ * test, so over fewer than MIN_TASKS_FOR_VERDICT of them it cannot reach p < 0.05 whatever k is.
+ */
+function verdictText(v: PassRateVerdict | 'held_back', diff: StatsInterval, p: number, k: number, differing: number, notRuledOut: number | null): string {
   const numbers = `${pts(diff.estimate)} points (95% interval ${pts(diff.low)} to ${pts(diff.high)}), ${pValueText(p)} by the paired sign-flip test over ${k} ${k === 1 ? 'task' : 'tasks'}`;
   if (v === 'held_back') return `Not called better: the pass rate alone says B is better (${numbers}), but its critical failures rose beyond noise.`;
   if (v === 'better') return `B passes more than A: ${numbers}.`;
   if (v === 'worse') return `B passes less than A: ${numbers}.`;
   if (v === 'equivalent') return `Practically equivalent: ${numbers}. The whole interval lies inside the +/-${MARGIN_POINTS}-point margin set before the run.`;
-  const few = k < MIN_TASKS_FOR_VERDICT ? ` With fewer than ${MIN_TASKS_FOR_VERDICT} tasks no other verdict is possible: the paired test cannot reach p < 0.05.` : '';
+  const few =
+    k < MIN_TASKS_FOR_VERDICT
+      ? ` With fewer than ${MIN_TASKS_FOR_VERDICT} tasks no other verdict is possible: the paired test cannot reach p < 0.05.`
+      : differing > 0 && differing < MIN_TASKS_FOR_VERDICT
+        ? ` Only ${differing} of the ${k} tasks passed at different rates in the two arms, and only those count in the paired test: over ${differing} its smallest possible p is ${2 / 2 ** differing}, so it could not reach p < 0.05 however large the difference.`
+        : '';
   // Every task gave the same difference: the task bootstrap has no spread to show, so it cannot say
   // how large a difference could be hiding (docs/known-limits.md, "Statistics").
   const hiding = notRuledOut === null ? ' Every task gave the same difference, so the interval has no width and cannot say how large a difference could be hiding.' : ` Differences as large as ${notRuledOut} points are not ruled out.`;
@@ -368,7 +377,7 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
   const verdict = blocks ? 'held_back' : prVerdict;
 
   const notRuledOut = prVerdict === 'no_detectable_difference' && diff.high > diff.low ? round(Math.max(Math.abs(diff.low), Math.abs(diff.high)), 1) : null;
-  const text = verdictText(verdict, diff, test.p, k, notRuledOut);
+  const text = verdictText(verdict, diff, test.p, k, diffs.filter((d) => d !== 0).length, notRuledOut);
 
   const pooled = (arm: 'a' | 'b') =>
     eligible.reduce((acc, e) => ({ passed: acc.passed + e[arm].passed, graded: acc.graded + e[arm].graded, incomplete: acc.incomplete + e[arm].incomplete }), { passed: 0, graded: 0, incomplete: 0 });

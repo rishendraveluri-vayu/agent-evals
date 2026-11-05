@@ -313,12 +313,22 @@ const heroText = computed(() => {
   };
 });
 
+/** The tasks whose two arms passed at different rates. Only these move the paired sign-flip test:
+ *  over K of them its smallest possible p is 2/2^K, so below 6 it cannot reach p < 0.05 (D50). */
+const tasksThatDiffer = computed(() => stats.value?.tasks.filter((t) => t.diff.estimate !== 0).length ?? 0);
+
 /** Under the hero: what the verdict rests on, in a sentence. "No detectable difference" always
  *  says how large a difference is not ruled out (D42); equivalence names its margin. */
 const verdictSub = computed(() => {
   const s = stats.value;
   if (!s) return null;
-  const few = s.tasks.length < 6 ? ` With ${plural(s.tasks.length, 'task')} in the comparison no other verdict is possible: the paired test needs at least 6 tasks to reach p${NBSP}<${NBSP}0.05.` : '';
+  const k = tasksThatDiffer.value;
+  const few =
+    s.tasks.length < 6
+      ? ` With ${plural(s.tasks.length, 'task')} in the comparison no other verdict is possible: the paired test needs at least 6 tasks to reach p${NBSP}<${NBSP}0.05.`
+      : k > 0 && k < 6
+        ? ` Only ${k} of the ${s.tasks.length} tasks passed at different rates in the two arms, and only those count in the paired test: over ${plural(k, 'task')} its smallest possible p is ${2 / 2 ** k}, so it could not reach p${NBSP}<${NBSP}0.05 however large the difference.`
+        : '';
   if (s.verdict === 'equivalent') return `The whole interval lies inside the ±${s.margin_points}-point margin set before the run, so any difference is too small to matter.`;
   if (s.verdict === 'held_back') return 'The pass rate alone would say better, but critical failures rose beyond noise, so it is not called better.';
   if (s.verdict !== 'no_detectable_difference') return null;
@@ -343,10 +353,13 @@ const why = computed(() => {
   const points = (v: number) => `${signed(v)}${NBSP}${Math.abs(Math.round(v)) === 1 ? 'point' : 'points'}`;
   // D55: an interval with no width (0 to 0 included) neither crosses zero nor stays clear of it in
   // any useful sense: every task gave the same difference, so there is no spread to show.
+  const alpha = Number((1 - s.level).toFixed(2));
   const interval = noWidth(s.diff)
     ? `Every task gave the same difference, ${points(s.diff.estimate)}, so no spread can be shown: an interval with no width is not a narrow one.`
     : excludesZero(s.diff)
-      ? `The interval stays ${side} zero.`
+      ? notCalled(s)
+        ? `The interval stays ${side} zero, but the verdict rests on the paired sign-flip test, and it gives p${NBSP}=${NBSP}${s.p_value}, not below ${alpha}.`
+        : `The interval stays ${side} zero.`
       : 'The interval crosses zero, so these trials cannot rule out no difference at all.';
   let aa = '';
   if (s.aa) {
@@ -362,11 +375,20 @@ const why = computed(() => {
   return [interval, ...(aa ? [aa] : []), method];
 });
 
+/** An interval clear of zero (with width) while the paired test, which the verdict rests on, does
+ *  not reach the threshold: the page must not call it unlikely to be noise beside "no detectable
+ *  difference". */
+function notCalled(s: NonNullable<typeof stats.value>): boolean {
+  return s.pass_rate_verdict === 'no_detectable_difference' && !noWidth(s.diff) && excludesZero(s.diff);
+}
+
 /** The aside's heading. An interval clear of zero is unlikely to be noise; one with no width shows
- *  no spread either way, so there only the paired test's verdict can say (D55). */
+ *  no spread either way, so there only the paired test's verdict can say (D55). When the interval
+ *  is clear but the test is not, the heading says why it is not called better (or worse). */
 const whyTitle = computed(() => {
   const s = stats.value;
   if (!s) return '';
+  if (notCalled(s)) return s.diff.low > 0 ? 'Why this is not called better' : 'Why this is not called worse';
   const clear = noWidth(s.diff) ? s.pass_rate_verdict === 'better' || s.pass_rate_verdict === 'worse' : excludesZero(s.diff);
   return clear ? 'Why this is unlikely to be noise' : 'Why this could be noise';
 });

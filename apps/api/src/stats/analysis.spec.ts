@@ -46,6 +46,25 @@ describe('the verdict rule (D42, D43)', () => {
     expect(s?.verdict_text).toContain('Every task gave the same difference');
   });
 
+  it('says when too few tasks differ for the paired test to reach p < 0.05, though there are enough tasks', () => {
+    // The 5 Nov headline's shape: 10 tasks, 5 tied (at the ceiling or the floor), 5 better in B.
+    const tasks = [
+      ...[1, 3, 1, 3, 1].map((up, i) => task(`up${i}`, 5, 10, 5 + up, 10)),
+      ...Array.from({ length: 5 }, (_, i) => task(`tie${i}`, i % 2 ? 10 : 0, 10, i % 2 ? 10 : 0, 10)),
+    ];
+    const s = analyse({ seed: 'e_five', tasks }, fast).stats!;
+    expect(s.p_value).toBe(0.0625);
+    expect(s.diff.low).toBeGreaterThan(0);
+    expect(s.verdict).toBe('no_detectable_difference');
+    expect(s.verdict_text).toContain(
+      'Only 5 of the 10 tasks passed at different rates in the two arms, and only those count in the paired test: over 5 its smallest possible p is 0.0625, so it could not reach p < 0.05 however large the difference.',
+    );
+    // With 6 that differ it can, and says nothing of the kind.
+    const six = analyse({ seed: 'e_six', tasks: [...tasks.slice(0, 5), task('up5', 5, 10, 7, 10), ...tasks.slice(6)] }, fast).stats!;
+    expect(six.p_value).toBe(0.03125);
+    expect(six.verdict_text).not.toContain('Only');
+  });
+
   it('never calls one tied task equivalent, though its task bootstrap has no width', () => {
     const s = analyse({ seed: 'e_one', tasks: [task('t', 2, 4, 2, 4)] }, fast).stats;
     expect(s?.diff).toEqual({ estimate: 0, low: 0, high: 0 });
