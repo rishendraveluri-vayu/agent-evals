@@ -33,6 +33,15 @@ Settled 5 Nov (D10, D41 to D44, D8, D46; details in `docs/proposals/stats.md` an
 - Held-out task list: the ten under Setup (D53). Each grader's severity is in its task file (D53, D63: 20 critical, 59 major and 1 minor of the 80 required deterministic checks; the five card regexes are optional minor floors, and whether the card comes first is a judge criterion, counted only once trusted); the guardrail reads only required checks marked critical.
 - Still to fill in before the run: N (from the pilot).
 
+## The final runs, as approved before they start (5 Nov)
+
+Rishi: "Approve both, N=10". Both on the 10 held-out tasks, Hermes Agent 6112c2a with Claude Haiku 5.5, toolset `finance/v3`, Haiku 5.5 as the simulated client, N = 10 per task and arm, Hermes scaled to 4 workers:
+
+- **v1 vs v2** (the headline): configs `sha256:9051fae0…` (prompt v1) and `sha256:d46271c1…` (prompt v2), which differ only in the prompt. 200 trials, expected about $1.95 (estimate $1.54, range $0.77 to $3.09), spending limit $4.
+- **A/A calibration of v1** (D44): the v1 config on both arms, 200 trials, the same expected cost and limit.
+- **Futility check off on both,** set here before the runs: a pause would stall a run whose full N the verdict needs, and the $4 limits protect the spend.
+- **The judge** (Gemini 3.8 Flash, rubric v1, D68) grades both runs afterwards, from the recorded trials, under its own approval.
+
 ## Discovery: v1 on the discovery tasks (5 Nov)
 
 Experiment `e_0mw33tqo41489091e4da80c75`: prompt v1 on Hermes with Claude Haiku 5.5, toolset `finance/v3`, the 11 discovery tasks x 3 trials, $0.321, all 33 answered, no infra failure. Graded (framework 0.6.0, no judge): 21 pass, 12 fail.
