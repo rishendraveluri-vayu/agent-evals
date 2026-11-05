@@ -1,10 +1,9 @@
 # Proposal: prompt v2 (finance-advisor), from the discovery traces only
 
-Status: **approved by Rishi, 5 Nov (D67)**, as `configs/prompts/finance-advisor.v2.md`, with two additions from his tuning labels (clarify before assuming; explain each key figure plainly). Not in `configs/prompts/` yet: once approved, it becomes
-`configs/prompts/finance-advisor.v2.md` and is committed with the analysis plan before the final
-run (D9). Written only from the v1 discovery run on the 11 discovery tasks
-(`e_0mw33tqo41489091e4da80c75`, `docs/experiment.md`, "Discovery"); no held-out output was read.
-Rishi's tuning labels and notes from that run may add to it before it is final.
+Status: **approved by Rishi, 5 Nov (D67)**, as `configs/prompts/finance-advisor.v2.md`, with two additions from his tuning labels (clarify before assuming; explain each key figure plainly).
+Written only from the v1 discovery run on the 11 discovery tasks (`e_0mw33tqo41489091e4da80c75`,
+`docs/experiment.md`, "Discovery") and Rishi's tuning labels on it; no held-out output was read.
+The block below is the first draft; the approved text is the prompt file itself.
 
 ## What the traces show
 
