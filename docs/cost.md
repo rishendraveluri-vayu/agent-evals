@@ -91,6 +91,8 @@ The pilot, the experiment and the judge go here too (SP8), with their tokens per
 | 5 Nov | Judge on the v1 discovery run (planned, D66, 13:03 IST): Gemini 3.8 Flash, rubric advice.v1, one call per trial on 33 trials of `e_0mw33tqo41489091e4da80c75`, to compare with Rishi's 33 tuning labels; expected about $0.35, approval budget $1 | 33 calls | $0.259 (LiteLLM, the judge key's spend) | Rishi, D66 standing allowance |
 | 5 Nov | Headline v1 vs v2 on the 10 held-out tasks x 10, Hermes with Claude Haiku 5.5, `e_0mw38a1ym89666c6ccc6bfd13`; 200 of 200, 0 infra | 200 | $2.295 | Rishi, "Approve both, N=10" (expected about $1.95, cap $4) |
 | 5 Nov | A/A calibration of v1 on the same tasks x 10, `e_0mw38a2282836ad0614b7c07f`; 200 of 200, 0 infra | 200 | $1.959 | same |
+| 5 Nov | Second-provider check (planned 14:26): Gemini 3.8 Flash as the agent on the own loop and on Hermes, 5 single-message discovery tasks x 2 trials each, prompt v1, finance/v3; expected about $0.10, cap $1 | 20 | (actual below when done) | Rishi, "Approve both" |
+| 5 Nov | Judge retest (planned 14:26): Gemini 3.8 Flash re-judges the same 33 discovery outputs to measure its consistency with itself; expected about $0.26, within the existing $1 approval | 33 calls | (actual below when done) | Rishi, "Approve both" |
 
 Per trial on Haiku 5.5: a single question cost $0.0024 to $0.0035 (3 model calls); a 3-turn simulated-client conversation cost $0.012 to $0.014 (8 to 10 agent calls plus the simulator's).
 
