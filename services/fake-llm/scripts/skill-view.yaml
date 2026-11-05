@@ -1,0 +1,8 @@
+# Loads a seeded Hermes skill with skill_view, then answers. For the memory and skill trace
+# events (contract v2 section 7): Hermes-only, since only Hermes has a skills toolset.
+description: Calls skill_view for the emi-playbook skill, then answers.
+steps:
+  - tool_calls:
+      - name: skill_view
+        arguments: {name: emi-playbook}
+  - text: "Following the playbook: your EMI would be about Rs 8,997 a month."

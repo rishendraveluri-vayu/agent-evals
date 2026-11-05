@@ -39,6 +39,8 @@ EXAMPLES = {
     "sim-client",
     "sim-empty",
     "judge",
+    "skill-view",
+    "memory-write",
 }
 
 

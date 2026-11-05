@@ -392,3 +392,59 @@ describe('TrialView against the folder-based endpoints', () => {
     expect(w.get('[data-test="trial-files"] a').attributes('href')).toBe('/api/trials/gate-1/files/result.json');
   });
 });
+
+describe('TrialView against the API: memory and skills (brief item 6)', () => {
+  type Detail = Record<string, unknown>;
+  const heldout = (details as unknown as Record<string, Detail>).exp_heldout;
+  const on = { value: { enabled: true }, source: 'config' };
+  const ev = (name: string, at: string, attrs: Record<string, string>) => ({
+    name,
+    timeUnixNano: at,
+    attributes: Object.entries(attrs).map(([key, v]) => ({ key, value: { stringValue: v } })),
+  });
+  function mountWith(memorySkillsOn: boolean, events: unknown[]) {
+    const [root, ...rest] = trialSpans as unknown as Record<string, unknown>[];
+    const applied = { ...trial.result.applied_settings, ...(memorySkillsOn ? { memory: on, skills: on } : {}) };
+    routeFetch({
+      '/api/trials/tr_fd-vs-sip-07_b_3': { ...trial, result: { ...trial.result, applied_settings: applied } },
+      '/api/trials/tr_fd-vs-sip-07_b_3/spans': [{ ...root, events }, ...rest],
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+      '/api/experiments/exp_heldout': heldout,
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/prompts': prompts,
+    });
+    return mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
+  }
+
+  it('lists what was read from memory, written to it and which skills were loaded, in time order', async () => {
+    const w = mountWith(true, [
+      ev('evals.skill.load', '1793878280000000000', { 'evals.skill.name': 'emi-playbook' }),
+      ev('evals.memory.read', '1793878273000000000', { 'evals.memory.target': 'memory', 'evals.memory.entries': '2', 'evals.memory.content': 'Salary on the 1st.\n§\nNo new loans.' }),
+      ev('evals.memory.write', '1793878290000000000', { 'evals.memory.target': 'user', 'evals.memory.action': 'add', 'evals.memory.content': 'Prefers EMIs under Rs 20,000.' }),
+      ev('evals.compression', '1793878291000000000', {}),
+    ]);
+    await settle();
+    const items = w.get('[data-test="memory-skills"]').findAll('li');
+    expect(items.map((i) => i.get('.memory-skills__title').text())).toEqual([
+      'Memory read into the prompt at the start: 2 entries',
+      'Skill loaded: emi-playbook',
+      'Memory written (user profile): add',
+    ]);
+    expect(items[0].get('.memory-skills__detail').text()).toBe('Salary on the 1st.\n§\nNo new loans.');
+    expect(w.text()).toContain('Memory events: 2. Skill events: 1. They are listed under Memory and skills.');
+  });
+
+  it('says so when memory or skills were on but nothing was read, written or loaded', async () => {
+    const w = mountWith(true, []);
+    await settle();
+    expect(w.get('[data-test="memory-skills"]').text()).toContain('Memory or skills were on, but the agent read no memory and loaded or wrote no skill.');
+  });
+
+  it('shows no such section when both are off', async () => {
+    const w = mountWith(false, []);
+    await settle();
+    expect(w.find('[data-test="memory-skills"]').exists()).toBe(false);
+    expect(w.text()).toContain('No memory was read or written and no skills were loaded: both are off in this config.');
+  });
+});

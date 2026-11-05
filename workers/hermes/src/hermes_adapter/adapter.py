@@ -123,6 +123,71 @@ def seed_home(ctx: TrialContext, home: Path) -> None:
         )
 
 
+MEMORY_TEXT_LIMIT = 2000
+
+
+def memory_read_events(ctx: TrialContext, home: Path) -> None:
+    """Contract v2's `evals.memory.read`: the entries Hermes reads into the system prompt when a
+    session starts (MEMORY.md and USER.md in its home, as memory_tool_store loads them)."""
+    for target, filename in (("memory", "MEMORY.md"), ("user", "USER.md")):
+        path = home / "memories" / filename
+        if not path.exists():
+            continue
+        entries = [e.strip() for e in path.read_text().split("\n§\n") if e.strip()]
+        if entries:
+            ctx.event(
+                "evals.memory.read",
+                {
+                    "evals.memory.target": target,
+                    "evals.memory.entries": len(entries),
+                    "evals.memory.content": "\n§\n".join(entries)[:MEMORY_TEXT_LIMIT],
+                },
+            )
+
+
+def memory_skill_events(ctx: TrialContext, name: str, args: Any, result: Any) -> None:
+    """Contract v2's `evals.memory.write`, `evals.skill.load` and `evals.skill.write`, from
+    Hermes's own memory, skill_view and skill_manage tool calls. A call that failed changed
+    nothing and loaded nothing, so it gets no event (its tool span still shows the error)."""
+    if name not in ("memory", "skill_view", "skill_manage") or is_error_result(result):
+        return
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except ValueError:
+            return
+    if not isinstance(args, dict):
+        return
+    if name == "memory":
+        ops = args.get("operations")
+        # Hermes still accepts the single-operation shape at the top level (memory_tool.py).
+        for op in ops if isinstance(ops, list) else [args]:
+            if not isinstance(op, dict):
+                continue
+            text = op.get("content") or op.get("new_text") or op.get("old_text") or ""
+            ctx.event(
+                "evals.memory.write",
+                {
+                    "evals.memory.target": str(args.get("target") or "memory"),
+                    "evals.memory.action": str(op.get("action") or ""),
+                    "evals.memory.content": str(text)[:MEMORY_TEXT_LIMIT],
+                },
+            )
+    elif name == "skill_view":
+        attrs = {"evals.skill.name": str(args.get("name") or "")}
+        if args.get("file_path"):
+            attrs["evals.skill.file"] = str(args["file_path"])
+        ctx.event("evals.skill.load", attrs)
+    else:
+        ctx.event(
+            "evals.skill.write",
+            {
+                "evals.skill.name": str(args.get("name") or ""),
+                "evals.skill.action": str(args.get("action") or ""),
+            },
+        )
+
+
 def is_error_result(result: Any) -> bool:
     if isinstance(result, str):
         try:
@@ -202,11 +267,14 @@ class Hermes(Adapter):
             memory_manager=None,
             quiet_mode=True,
             tool_start_callback=lambda call_id, name, args: ctx.tool_started(call_id, name, args),
-            tool_complete_callback=lambda call_id, name, args, result: ctx.tool_finished(
-                call_id,
-                result,
-                is_error=is_error_result(result),
-                error_kind="tool_error" if is_error_result(result) else None,
+            tool_complete_callback=lambda call_id, name, args, result: (
+                ctx.tool_finished(
+                    call_id,
+                    result,
+                    is_error=is_error_result(result),
+                    error_kind="tool_error" if is_error_result(result) else None,
+                ),
+                memory_skill_events(ctx, name, args, result),
             ),
             event_callback=lambda *a, **k: ctx.event(
                 "evals.compression", {"evals.hermes.event": str(a[0]) if a else str(k)}
@@ -214,6 +282,7 @@ class Hermes(Adapter):
         )
         self.messages: list[dict[str, Any]] | None = None
         self._log_offset = 0
+        self.memory_on = memory_on
         tool_names = [t.get("function", {}).get("name") for t in self.agent.tools or []]
         ctx.harness_extra["tool_names"] = tool_names
         ctx.harness_extra["prompt_cache_markers"] = bool(
@@ -252,6 +321,8 @@ class Hermes(Adapter):
         if max_steps is not None:
             self.agent.max_iterations = max_steps  # Hermes resets its budget from this per turn
         if self.messages is None:
+            if self.memory_on:
+                memory_read_events(ctx, ctx.paths.harness / "hermes")
             earlier = [{"role": m["role"], "content": m["content"]} for m in history[:-1]]
         else:
             earlier = self.messages

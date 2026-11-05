@@ -1,0 +1,8 @@
+# Saves one fact with Hermes's memory tool, then answers. For the memory trace events
+# (contract v2 section 7): Hermes-only, since only Hermes has a memory toolset.
+description: Adds one entry to memory, then answers.
+steps:
+  - tool_calls:
+      - name: memory
+        arguments: {target: memory, operations: [{action: add, content: "Client prefers to keep EMIs under Rs 20,000 a month."}]}
+  - text: "Noted. Your EMI would be about Rs 8,997 a month."

@@ -424,6 +424,38 @@ const conversation = computed<(ToolItem | MessageItem)[]>(() => {
   return out;
 });
 
+/** Contract v2's memory and skill span events (brief item 6), in time order, in words. Hermes
+ *  records them from its own memory, skill_view and skill_manage calls; a harness without memory
+ *  or skills records none. */
+const memorySkills = computed(() => {
+  const out: { key: string; kind: 'memory' | 'skill'; title: string; detail: string }[] = [];
+  const events = (data.value?.spans ?? []).flatMap((s) => s.events.map((e, i) => ({ e, key: `${s.spanId}:${i}` })));
+  events.sort((x, y) => (BigInt(x.e.timeNs) < BigInt(y.e.timeNs) ? -1 : BigInt(x.e.timeNs) > BigInt(y.e.timeNs) ? 1 : 0));
+  for (const { e, key } of events) {
+    const a = (k: string) => text(e.attributes[k] ?? '');
+    const profile = a('evals.memory.target') === 'user' ? ' (user profile)' : '';
+    if (e.name === 'evals.memory.read') {
+      const n = Number(a('evals.memory.entries')) || 0;
+      out.push({ key, kind: 'memory', title: `Memory read into the prompt at the start${profile}: ${n} ${n === 1 ? 'entry' : 'entries'}`, detail: a('evals.memory.content') });
+    } else if (e.name === 'evals.memory.write') {
+      out.push({ key, kind: 'memory', title: `Memory written${profile}: ${a('evals.memory.action') || 'change'}`, detail: a('evals.memory.content') });
+    } else if (e.name === 'evals.skill.load') {
+      const file = a('evals.skill.file');
+      out.push({ key, kind: 'skill', title: `Skill loaded: ${a('evals.skill.name')}${file ? `, file ${file}` : ''}`, detail: '' });
+    } else if (e.name === 'evals.skill.write') {
+      out.push({ key, kind: 'skill', title: `Skill written: ${a('evals.skill.name')} (${a('evals.skill.action') || 'change'})`, detail: '' });
+    }
+  }
+  return out;
+});
+
+/** Memory or skills on in this trial's applied settings. */
+const memoryOrSkillsOn = computed(() => {
+  const applied = vm.value?.result.applied_settings ?? {};
+  const on = (k: string) => !!applied[k] && toggleOf(applied[k].value) === true;
+  return on('memory') || on('skills');
+});
+
 const ending = computed(() => {
   const v = vm.value;
   if (!v) return '';
@@ -436,10 +468,8 @@ const ending = computed(() => {
   const off = (k: string) => applied[k] && (applied[k].value === false || applied[k].value === null || toggleOf(applied[k].value) === false);
   if (off('memory') && off('skills')) parts.push('No memory was read or written and no skills were loaded: both are off in this config.');
   else if (applied.memory || applied.skills) {
-    const tools = timelineRows(data.value?.spans ?? []).rows.filter((r) => r.role === 'tool').map((r) => text(r.span.attributes['gen_ai.tool.name']));
-    const memory = tools.filter((t) => t.includes('memory')).length;
-    const skills = tools.filter((t) => t.includes('skill')).length;
-    parts.push(`Memory tool calls: ${memory}. Skill tool calls: ${skills}.`);
+    const n = (kind: 'memory' | 'skill') => memorySkills.value.filter((x) => x.kind === kind).length;
+    parts.push(`Memory events: ${n('memory')}. Skill events: ${n('skill')}. They are listed under Memory and skills.`);
   }
   return parts.join(' ');
 });
@@ -899,6 +929,42 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             >
               {{ ending }}
             </p>
+          </section>
+
+          <section
+            v-if="memoryOrSkillsOn || memorySkills.length"
+            aria-labelledby="memory-skills"
+            class="stack"
+            data-test="memory-skills"
+          >
+            <h2
+              id="memory-skills"
+              class="section-title"
+            >
+              Memory and skills
+            </h2>
+            <p
+              v-if="!memorySkills.length"
+              class="secondary"
+            >
+              Memory or skills were on, but the agent read no memory and loaded or wrote no skill.
+            </p>
+            <ol
+              v-else
+              class="memory-skills"
+            >
+              <li
+                v-for="m in memorySkills"
+                :key="m.key"
+                :data-kind="m.kind"
+              >
+                <span class="memory-skills__title">{{ m.title }}</span>
+                <span
+                  v-if="m.detail"
+                  class="memory-skills__detail secondary small"
+                >{{ m.detail }}</span>
+              </li>
+            </ol>
           </section>
 
           <section
@@ -1488,6 +1554,19 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 
 .tool-body .block {
   margin-bottom: 4px;
+}
+
+.memory-skills {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.memory-skills__detail {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .ending {

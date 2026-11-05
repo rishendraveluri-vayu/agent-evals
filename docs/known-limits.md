@@ -185,6 +185,7 @@ Number provenance began as a text check for highlighting. Since D54 the `provena
 ## Hermes memory (D39, 4 Nov)
 
 - **Memory is never written within one trial.** In 20 memory-on trials on Haiku 5.5, Hermes did not call its `memory` tool once. Each trial is a fresh session, so a memory-on vs memory-off comparison on these tasks measures the extra tool schema and prompt text, and a seeded config measures the seeded facts. It does not measure whether Hermes saves the right things for later. Testing that needs a task that runs two sessions on one home, which we have not built.
+- **Memory and skill events come from Hermes's own tool calls (5 Nov).** A read is recorded when a session starts with seeded entries, since Hermes puts them in the prompt; whether the model then used an entry is not recorded, only that it was there. A skill whose text Hermes puts in the prompt's skills index without a `skill_view` call is not a load. Other harnesses have no memory or skills, so they never record these events.
 
 ## Shipped examples (SP7, 4 Nov)
 
