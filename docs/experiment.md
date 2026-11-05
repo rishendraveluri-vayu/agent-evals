@@ -102,6 +102,30 @@ Why it is not called: the sign-flip test gets no information from a tied task, s
 
 Raw export: `GET /api/experiments/<id>/export?format=csv|json` for both experiments.
 
+## Validation results: the positive control (5 Nov)
+
+Experiment `e_0mw3cb6519603428c4ce9bcad`, $2.299, 210 of 210 trials, no infra failure. Against the criteria committed before the run:
+
+1. **Verdict: pass.** "B passes more than A": +44.8 points (95% interval +23.8 to +65.7), sign-flip p = 0.0011 over 21 tasks. Broken 22 of 105, fixed 69 of 105. Critical failures fell from 44.6% to 4.6% of graded trials (−40 points, −63.1 to −16.9).
+2. **Flags: pass.** Seven tasks are flagged beyond noise (Benjamini-Hochberg q < 0.05): college-cost-stepup, emi-home-loan, fd-real-value, first-year-interest, payoff-order, prepay-bonus, prepay-personal-loan, all among the 14 predicted. **None of the 7 controls is flagged**; the largest control difference, convo-job-loss −40 points (3 of 5 to 1 of 5), has q = 0.85, noise at N = 5. Of the other predicted tasks, spending-review and convo-consolidation were at 0 in both arms (floor), and car-loan-afford, sip-education-goal, loan-to-clear-card, convo-payoff and convo-phone-loan rose (0 of 5 to 2 to 4 of 5) but are not flagged at N = 5.
+3. **Causes: pass.** In the broken arm the primary cause is "wrong tool" in 68 of its 83 failed trials; without the calculators the agent made 235 `multiply` calls (26 errors), trying to build EMIs from arithmetic.
+
+With the A/A run (identical arms, "no detectable difference"), both controls behave as they should: the platform calls a known large effect and points at the right tasks, and calls no effect when there is none.
+
+## Cross-harness replication results (5 Nov)
+
+Same prompts, model, tools, tasks and N on each harness:
+
+| Harness | v1 | v2 | v2 − v1, 95% interval | Sign-flip p | Verdict | Tasks up / down / tied | Cost per trial, v1 → v2 |
+|---|---|---|---|---|---|---|---|
+| Hermes (`e_0mw38a1ym89666c6ccc6bfd13`) | 64% | 73% | +9.0 (+3 to +16) | 0.0625 | no detectable difference | 5 / 0 / 5 | $0.0094 → $0.0123 |
+| Own loop (`e_0mw3cy22s7dd697c36b50430d`) | 56% | 64% | +8.0 (−4 to +23) | 0.44 | no detectable difference | 3 / 2 / 5 | $0.0087 → $0.0112 |
+| LangGraph (`e_0mw3cy2930970251621fd47f3`) | 55% | 72% | +17.0 (+5 to +29) | 0.047 | better | 6 / 1 / 3 | $0.0085 → $0.0124 |
+
+- **Direction:** v2 is ahead on all three harnesses, by 8 to 17 points; one of the three verdicts clears the pre-registered rule. Three tests at alpha 0.05 make a single p of 0.047 modest on its own; the consistent direction across three independent harnesses is the stronger evidence.
+- **Cost:** v2 costs 29 to 46% more per trial on every harness, from its extra tool calls.
+- **Harnesses at v1** (descriptive only, separate experiments, same tasks, model and prompt): Hermes 64%, own loop 56%, LangGraph 55%.
+
 ## Trajectories
 
 Read on 5 Nov from the API (`GET /api/trials/:id`, its `result.json`, `checks.json` and spans, and the `cause` on `GET /api/experiments/e_0mw38a1ym89666c6ccc6bfd13/trials`). Three v1 failures, each paired with a v2 pass of the same task, then one failure that is the grader's fault, not the agent's.
