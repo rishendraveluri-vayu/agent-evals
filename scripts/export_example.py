@@ -3,7 +3,7 @@
 Run (it only sends GET requests to the API, so it never changes anything there):
 
   python3 scripts/export_example.py <experiment_id> --name <slug> --title "<one line>" \\
-      [--description "<a few sentences>"] [--api http://127.0.0.1:3001/api] \\
+      [--description "<a few sentences>"] [--api http://127.0.0.1:3000/api] \\
       [--out examples] [--replace]
 
 It writes three files, which the API loads with POST /api/examples/<name>/load:
@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parent.parent
-DEFAULT_API = "http://127.0.0.1:3001/api"
+DEFAULT_API = f"http://127.0.0.1:{os.environ.get('API_PORT') or '3000'}/api"  # as compose: API_PORT, else 3000
 
 FORMAT = "agent-evals-example"
 FORMAT_VERSION = 1

@@ -5,7 +5,7 @@ The work plan is `docs/SPEC.md`. Read it before starting any task.
 
 ## Roles
 
-Rishi is the architect and designer. He has to explain every part of this system in the next interview round.
+Rishi is the architect and designer.
 You implement what he has agreed. You do not make design calls for him.
 
 - Open decisions are listed in `docs/decisions.md`. Status there is the only thing that counts.
@@ -92,7 +92,7 @@ Run an experiment and export results (SP2, SP3):
 
 ```bash
 API_PORT=3001 docker compose up -d --build --wait     # includes the five worker containers
-python3 scripts/sp3_kill_test.py --n 10              # engine check on fake models: kill a worker mid-run, every trial done once
+API_PORT=3001 python3 scripts/sp3_kill_test.py --n 10   # engine check on fake models: kill a worker mid-run, every trial done once (CI runs --n 2)
 # configs, experiments, start, progress, export: see docs/api-contract.md (all paths under /api)
 curl -s http://127.0.0.1:3001/api/experiments/<id>/export?format=csv > results.csv
 # grading runs by itself in the grader service once trials are done (SP4, R14); after a grader fix:

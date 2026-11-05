@@ -6,7 +6,7 @@ is not in the table yet (matched by its id), oldest first. A call still pending 
 later run. Stdlib only; it makes no model call and changes nothing in the API.
 
     python3 scripts/log_system_spend.py           # API on 127.0.0.1:$API_PORT (default 3000)
-    python3 scripts/log_system_spend.py --api http://127.0.0.1:3001/api
+    python3 scripts/log_system_spend.py --api http://127.0.0.1:3000/api   # or API_PORT
     python3 scripts/log_system_spend.py --from-file rows.json --dry-run
 """
 

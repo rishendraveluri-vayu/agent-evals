@@ -165,7 +165,7 @@ Everything else is read-only. Nothing in `/trial` survives to the next trial; ev
    - `setup(ctx)`: map our settings to the harness's native ones.
    - `run_turn(ctx, history, max_steps)`: run one agent turn and report what happened through the library's span helpers.
 
-   The library does everything else: reading the spec, the timeout wrapper, the MCP command, the conversation loop with the simulated client, error and end-state mapping, writing the result atomically and writing spans. The five adapters are 304 (own loop) to 414 (LangGraph) lines; the planning estimate was 100 to 200, and most of the difference is each framework's quirks, recorded in `docs/harness-guide.md`.
+   The library does everything else: reading the spec, the timeout wrapper, the MCP command, the conversation loop with the simulated client, error and end-state mapping, writing the result atomically and writing spans. The five adapters are 304 (own loop) to 421 (Hermes) lines; the planning estimate was 100 to 200, and most of the difference is each framework's quirks, recorded in `docs/harness-guide.md`.
 
 3. **Probe.** `make probe-harness NAME=<name>` runs each setting against the fake model server and writes the `supported`, `default` and `evidence` fields from what it actually captured. The file is generated from evidence and committed. Only things a request cannot show, such as memory, are declared by hand.
 4. **Gate tests and effect checks** (section 8). Then the harness counts.

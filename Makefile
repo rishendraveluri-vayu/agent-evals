@@ -9,12 +9,16 @@ new-harness:
 ## make probe-harness NAME=ownloop   rewrite its capabilities.json from probe evidence
 probe-harness:
 	@test -n "$(NAME)" || (echo "usage: make probe-harness NAME=<name>" && exit 2)
-	cd workers/$(NAME) && ./probe.sh
+	cd services/fake-llm && uv sync --locked -q
+	cd workers/$(NAME) && uv sync --locked -q && ./probe.sh
 
 ## make test-harness NAME=ownloop    gate tests and the capabilities drift test
 test-harness:
 	@test -n "$(NAME)" || (echo "usage: make test-harness NAME=<name>" && exit 2)
-	cd workers/$(NAME) && uv run pytest -q
+	# The gate tests start the fake model server and the finance MCP server from their own envs.
+	cd services/fake-llm && uv sync --locked -q
+	cd services/finance-mcp && uv sync --locked -q
+	cd workers/$(NAME) && uv sync --locked -q && uv run pytest -q
 
 ## make dev-trials                   record gate scenarios through LiteLLM into runs/
 dev-trials:

@@ -117,7 +117,8 @@ with a read-only root filesystem and one writable trial folder (`docs/design.md`
 ## Add a harness
 
 One folder under `workers/` (an adapter, a capabilities file, a Dockerfile and the gate tests) and
-one service block in `docker-compose.yml`. Nothing in the platform core changes.
+one service block in `docker-compose.yml`. The platform core runs it unchanged; a display name, the
+Build screen's card text and a CI job for its gate tests are optional extras.
 
 ```bash
 make new-harness NAME=crewai      # scaffold workers/crewai/, Dockerfile included, and print its compose service
@@ -125,10 +126,12 @@ make probe-harness NAME=crewai    # measure what actually reaches the model, aga
 make test-harness NAME=crewai     # the contract's gate tests
 ```
 
-You write two methods on the shared adapter library: `setup(ctx)`, which maps our settings to the
-harness's own, and `run_turn(ctx, history, max_steps)`, one agent turn. The library does the rest
-(the spec, the timeout, the tools, the conversation with the simulated client, the result and the
-trace). The five adapters here are 304 to 414 lines each.
+You write two required methods on the shared adapter library: `setup(ctx)`, which maps our
+settings to the harness's own, and `run_turn(ctx, history, max_steps)`, one agent turn; `version`,
+`collect` and `teardown` are optional. Most frameworks also need one small class that hooks their
+tool calls into the library's spans. The library does the rest (the spec, the timeout, the tools,
+the conversation with the simulated client, the result and the trace). The five adapters here are
+304 to 421 lines each.
 
 The contract is `docs/adapter-contract.md`; how each existing harness was wrapped is in
 `docs/harness-guide.md`.
@@ -141,7 +144,9 @@ passed to LiteLLM: add the variable to the `litellm` service's `environment` in
 `docker-compose.yml` and its name to `.env.example`. If a real run shows the model refusing a
 setting (a 400), list it in `MODEL_REJECTS` (`apps/api/src/configs/settings.ts`) so configs for
 that model leave it out; that table holds Haiku 5.5's `temperature` and the local Qwen's
-`parallel_tool_calls`. Then check it:
+`parallel_tool_calls`. For the UI to say when a new provider's key is missing, also add it to
+`PROVIDER_KEYS` (`apps/api/src/common/app-config.ts`) and its flag in compose; without that the
+model still runs, and its key shows as unknown. Then check it:
 
 ```bash
 uv run --no-project --with pyyaml==6.0.3 python scripts/check_litellm_config.py   # no cache, prices set
@@ -158,8 +163,11 @@ in a config. It costs nothing, but on a CPU-only machine each model call takes m
 One folder `tasks/<id>/` with a `task.json`: the messages (or a simulated client), the client's
 data file if it has one, and its graders (exact numbers from a tool, tool called or not, text
 present or absent, end state, number provenance, a Python unit test, or the LLM judge with a
-rubric). See `tasks/README.md` and `docs/proposals/grader-format.md`; the API picks a new task
-up without a restart.
+rubric). `tasks/demo-skill-card-transfer/task.json` is a short hand-written example; the field list
+is in `docs/api-contract.md` (Task file) and the graders in `docs/proposals/grader-format.md`. The
+API picks a new task up without a restart. The 21 task folders keep the `draft-` prefix from their
+first review so their recorded trials stay linked; `scripts/make_draft_tasks.py` writes those and
+overwrites hand edits, so give a hand-written task another name.
 
 ## Develop and test
 
@@ -172,13 +180,19 @@ pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build      # ap
 cd graders && uv sync --locked && uv run pytest -q                           # graders and the judge
 cd stats && uv sync --locked && uv run pytest -q                             # judge agreement maths
 cd workers/adapterlib && uv sync --locked && uv run pytest -q                # contract, runner
+cd services/finance-mcp && uv sync --locked && uv run pytest -q              # the finance tools
+cd services/fake-llm && uv sync --locked && uv run pytest -q                 # the fake model server
+make test-harness NAME=ownloop       # one harness's gate tests (syncs the fake and finance servers first)
+scripts/setup_hermes.sh && make test-harness NAME=hermes   # Hermes needs its pinned checkout first
 python3 scripts/smoke.py                                                     # the running stack, end to end
 docker compose --profile smoke run --rm netcheck                             # worker isolation
+python3 scripts/sp3_kill_test.py --n 2       # crash recovery: kills a worker mid-run, checks every trial ran once
 ```
 
 **The API's database tests.** Without `TEST_DATABASE_URL`, `pnpm test` skips the API's
 database suites: Jest's summary for the API reads `Test Suites: 11 skipped, 32 passed, 32 of 43
-total`, and a warning says they were skipped, not passed. To run them, start a throwaway
+total`; the skipped count is the only sign, since Jest prints its warning only when one suite
+file runs alone. CI runs them against Postgres. To run them here, start a throwaway
 Postgres (never the compose one), then stop it:
 
 ```bash

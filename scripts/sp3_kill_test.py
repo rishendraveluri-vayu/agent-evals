@@ -3,7 +3,7 @@ duplicated or mislabelled. Fake models only (fake/* through LiteLLM): no spend.
 
 Needs the full stack up (`docker compose up -d --build --wait`), with the worker services.
 
-    python3 scripts/sp3_kill_test.py [--api http://127.0.0.1:3001/api] [--n 10]
+    python3 scripts/sp3_kill_test.py [--api http://127.0.0.1:3000/api] [--n 10]   # default: API_PORT, else 3000
 
 What it does: creates two configs (own loop and LangGraph, both on fake/finance-emi), one
 experiment with the engine-smoke task x 2 configs x N, starts it, waits until the own-loop
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -51,7 +52,7 @@ def by_id(items: list[dict], key: str, value: str) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--api", default="http://127.0.0.1:3001/api")
+    ap.add_argument("--api", default=f"http://127.0.0.1:{os.environ.get('API_PORT') or '3000'}/api")
     ap.add_argument("--n", type=int, default=10)
     ap.add_argument("--check", help="only check an existing experiment id (after it drains)")
     args = ap.parse_args()
