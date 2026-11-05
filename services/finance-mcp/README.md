@@ -32,8 +32,9 @@ outputs and final answers exactly, so every tool is deterministic. The same inpu
 | `percent_of` | `percent` percent of `value`: `value × percent / 100`. |
 | `percent_change` | The change from `from_value` to `to_value`, as a difference and as a percent of `from_value`. |
 | `round` | A number rounded half-up to `places` decimals (default 2; negative places round to tens, thousands, lakhs). |
+| `reference_rates` | Documented Indian market assumptions (FD, savings, PPF, CPI inflation, repo rate, long-run equity and debt returns), each with its value, unit, source and date. |
 
-All 18 tools are read-only (`readOnlyHint: true`). The full manifest the agents see is in
+All 19 tools are read-only (`readOnlyHint: true`). The full manifest the agents see is in
 `tests/snapshots/tools_manifest.json`, and a test fails on any change to it.
 
 The last seven, the arithmetic tools, were added on 5 Nov (D54, server version 0.3.0), so that
@@ -42,6 +43,12 @@ The platform's number-provenance check counts a figure as supported only when a 
 client file or a user message holds it, and an arithmetic tool's result only when every number it
 was given is supported in turn (D56); on 4 Nov most Hermes failures of that check were sums
 written in prose. The first eleven tools are unchanged.
+
+`reference_rates` was added on 5 Nov too (D58, server version 0.4.0), so that a rate an agent
+volunteers (an FD rate, inflation, an equity return) has a documented source and date, and an
+invented one still fails the provenance check. Its values are in
+`src/finance_mcp/reference_rates.json` (see below). The platform's check also lets an
+arithmetic input be a unit fact (12 months, 365 days, 100 for a percentage) without a source.
 
 ## Conventions
 
@@ -187,6 +194,27 @@ written in prose. The first eleven tools are unchanged.
   `places` ≤ 0 (`23120.456` at -3 is `23000`).
 - **Precision is 2 decimals.** A small ratio loses digits (`divide(9, 1200)` is `0.01`). For
   percentages use `percent_of` and `percent_change`, which work in percent.
+
+### `reference_rates`
+
+- **One file.** The values live in `src/finance_mcp/reference_rates.json`: for each key a
+  `name`, `value`, `unit`, `as_of` date, `as_of_means` (what the date is: when a rate took
+  effect, the month an inflation figure measures, the end of a return period), `source`
+  (`organisation`, `url`) and `evidence`, the verbatim text the value was read from and when.
+  The tool serves everything but `evidence`, plus the file's `compiled_on` date and `note`.
+- **Proposed, then approved.** The values were gathered on 5 Nov 2026 and are proposed for
+  Rishi's approval before any run uses them. Edit the file to change one.
+- **A snapshot, not live rates.** The server has no network; a value stays what the file says
+  until someone edits it. Each `as_of` says how old it is.
+- **Numbers are values only.** No text field holds a standalone number (names say "three
+  crore", "Nifty50"), and the provenance check skips dates and URLs, so the result supports
+  exactly its rates and nothing else. A test checks this.
+- **An edit is a new server version.** The file is checked at startup (a missing field, a
+  non-number value, an `as_of` after `compiled_on` or a non-https URL fails it), and
+  `tests/test_reference.py` pins the served bytes to the server version. Change a value, bump
+  `__version__` (and `pyproject.toml`), pin the new bytes, and the API's toolset hash changes
+  with it, so a trial's toolset says which values it was shown.
+- **No arguments.** It returns every rate at once, about 3,400 characters.
 
 ## What a result looks like
 
@@ -348,6 +376,9 @@ FINANCE_MCP_UPDATE_SNAPSHOT=1 uv run pytest tests/test_mcp.py -k snapshot   # af
   `fractions.Fraction` reference that rounds half-up once and refuses out-of-range results; plus
   the edge cases: empty and one-item lists, division by zero, a zero start for
   `percent_change`, non-numbers, NaN and infinity, and a product of 100 numbers of 10^12.
+- **Reference-rate tests** (`tests/test_reference.py`): the result's shape, that its only
+  numbers are the rates, that a malformed edit is refused at startup, and the served bytes
+  pinned to the server version.
 - **Compatibility tests.** `tests/test_compat_mcp1.py` runs an `mcp` 1.30.0 client from its own
   locked environment in `tests/compat/mcp1/`, because 1.x and 2.x cannot share one
   environment. `uv` builds that environment on first use, which needs network access once; the

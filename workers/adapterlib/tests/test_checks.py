@@ -798,6 +798,18 @@ def test_the_digits_of_a_url_are_not_sources():
     assert source_numbers("prid=63742 at 20%") == [Decimal(63742), Decimal(20)]  # not a URL
 
 
+def test_the_finance_servers_reference_rates_support_exactly_their_values():
+    """The real data file (services/finance-mcp, served without `evidence`): every number the
+    check reads from the tool's result is one of the rates, in order, so its names, dates and
+    URLs support nothing else."""
+    path = REPO / "services/finance-mcp/src/finance_mcp/reference_rates.json"
+    data = json.loads(path.read_text(encoding="utf-8"), parse_float=Decimal)
+    for rate in data["rates"].values():
+        rate.pop("evidence")
+    served = json.dumps(data, ensure_ascii=False, default=str)
+    assert source_numbers(served) == [rate["value"] for rate in data["rates"].values()]
+
+
 def test_the_client_file_and_the_user_message_support_amounts():
     files = {
         "client.json": '{"profile":{"monthly_net_income":92500},"debts":[{"balance":84250.00}]}'

@@ -69,7 +69,8 @@ def test_client_under_test_is_mcp_2_3_0() -> None:
 
 
 async def test_list_tools_returns_exactly_the_expected_tools(state_dir: Path) -> None:
-    """Eleven finance tools, then the seven arithmetic tools added on 5 Nov (D54)."""
+    """Eleven finance tools, then the seven arithmetic tools added on 5 Nov (D54), then
+    reference_rates (D58)."""
     async with Client(create_server(state_dir), mode="legacy") as client:
         tools = (await client.list_tools()).tools
     assert [t.name for t in tools] == EXPECTED_TOOLS
@@ -215,6 +216,11 @@ def test_nested_debt_objects_are_inlined() -> None:
             {"client_id": "x"},
             "Error executing tool get_client_profile: unknown argument(s) client_id; it takes "
             "no arguments",
+        ),
+        (
+            "reference_rates",
+            {"key": "fd_1y"},
+            "Error executing tool reference_rates: unknown argument(s) key; it takes no arguments",
         ),
         (
             "amortization_schedule",

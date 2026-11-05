@@ -75,6 +75,8 @@ SAMPLE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ("percent_of", {"value": 92500, "percent": 40}),
     ("percent_change", {"from_value": 14120, "to_value": 23120}),
     ("round", {"value": 23120.456, "places": -3}),
+    # The reference rates (D58, 5 Nov).
+    ("reference_rates", {}),
 ]
 
 EXPECTED_TOOLS = [name for name, _ in SAMPLE_CALLS]
