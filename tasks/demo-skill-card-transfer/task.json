@@ -1,0 +1,64 @@
+{
+  "id": "demo-skill-card-transfer",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "Skills demo: is the firm's balance-transfer offer, whose terms only a seeded skill holds, worth it for Meera's 42% card?",
+  "split_note": "Skills demo (5 Nov), not one of the experiment's 21 tasks. The offer's terms (15% a year for 24 months, a 1% processing fee) are only in the skill configs/skills/balance-transfer-playbook.md, seeded in the skills-on config, so an agent without the skill cannot give the exact EMI and fee.",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Your firm mentioned a balance-transfer offer for my credit card. Is it worth it for me?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": "client.json",
+  "graders": [
+    {
+      "id": "read-debts",
+      "type": "tool_called",
+      "required": true,
+      "severity": "major",
+      "tool": "list_debts"
+    },
+    {
+      "id": "transfer-emi-from-a-tool",
+      "type": "tool_called",
+      "required": true,
+      "severity": "major",
+      "tool": "calculate_emi",
+      "args": {
+        "principal": 84250,
+        "annual_rate_pct": 15,
+        "tenure_months": 24
+      }
+    },
+    {
+      "id": "transfer-emi",
+      "type": "number",
+      "required": true,
+      "severity": "critical",
+      "expected": 4085.0,
+      "tolerance": {
+        "abs": 1
+      }
+    },
+    {
+      "id": "processing-fee",
+      "type": "number",
+      "required": true,
+      "severity": "major",
+      "expected": 842.5,
+      "tolerance": {
+        "abs": 0.5
+      }
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "severity": "major",
+      "max_unsupported": 0
+    }
+  ]
+}

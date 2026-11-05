@@ -13,7 +13,8 @@ where spend, tokens, latency and settings are recorded. The task set is a person
 assistant with calculator tools and simulated clients. It holds 21 tasks, 10 of them held out to
 score the experiment and 11 for discovery (where the first prompt's failures were found and the
 judge was tuned), plus 2 engine tests that check the platform, not an
-agent.
+agent, and 1 skills demo (`tasks/demo-skill-card-transfer`, whose answer only a seeded skill
+holds).
 
 > **Status, 5 Nov 2026.** The platform runs end to end with its statistics: configs, runs with N
 > trials, isolation, retries, traces, deterministic graders, an LLM judge, blind labelling,
