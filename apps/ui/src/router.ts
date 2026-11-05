@@ -15,7 +15,7 @@ export type Route =
   | { name: 'compare'; id: string; panel: string | null }
   | { name: 'trial'; id: string }
   | { name: 'recorded' }
-  | { name: 'labels'; set: LabelSet | null; experiment: string | null }
+  | { name: 'labels'; set: LabelSet | null; experiment: string | null; items: string | null }
   | { name: 'judge' }
   | { name: 'harnesses' }
   | { name: 'tasks' }
@@ -46,7 +46,7 @@ export function parseHash(hash: string): Route {
   if (first === 'trials' && second && parts.length === 2) return { name: 'trial', id: dec(second) };
   if (first === 'labels' && parts.length === 1) {
     const set = params.get('set');
-    return { name: 'labels', set: (LABEL_SETS as readonly string[]).includes(set ?? '') ? (set as LabelSet) : null, experiment: params.get('experiment') };
+    return { name: 'labels', set: (LABEL_SETS as readonly string[]).includes(set ?? '') ? (set as LabelSet) : null, experiment: params.get('experiment'), items: params.get('items') };
   }
   if (first === 'labels' && second === 'judge') return { name: 'judge' };
   if (first === 'harnesses' && parts.length === 1) return { name: 'harnesses' };

@@ -9,8 +9,8 @@ export class LabelsController {
 
   /** Blind items for Rishi to label: no harness, model, arm, timing, cost or grade. */
   @Get('labels/queue')
-  queue(@Query('set') set: string, @Query('experiment') experiment?: string): Promise<LabelQueueItem[]> {
-    return this.labels.queue(set, experiment);
+  queue(@Query('set') set: string, @Query('experiment') experiment?: string, @Query('items') items?: string): Promise<LabelQueueItem[]> {
+    return this.labels.queue(set, experiment, items);
   }
 
   /** Appends Rishi's label to labels/<set>.jsonl. */

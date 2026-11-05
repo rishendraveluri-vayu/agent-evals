@@ -11,6 +11,8 @@ import { Db } from '../database/db.service';
 import { NOT_EXAMPLE_TRIAL } from '../examples/example-guard';
 
 type Obj = Record<string, unknown>;
+/** A trial id as the API mints them (`t_` and base36/hex), with room for test fixtures. */
+const TRIAL_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
@@ -122,8 +124,15 @@ export class LabelsService {
    * in this set, in a fixed shuffled order (a hash of set and trial id) so arms are mixed.
    * Optionally limited to one experiment. Nothing that tells the arm apart is included.
    */
-  async queue(setInput: unknown, experimentId?: string): Promise<LabelQueueItem[]> {
+  async queue(setInput: unknown, experimentId?: string, itemsInput?: string): Promise<LabelQueueItem[]> {
     const set = labelSet(setInput);
+    // `items` (comma-separated trial ids) limits the queue to a chosen list, such as the trials a
+    // judge panel disagreed on (D71). Every other rule still applies: a listed trial outside the
+    // set is simply not offered.
+    const items = itemsInput === undefined || itemsInput === '' ? null : itemsInput.split(',').map((s) => s.trim()).filter(Boolean);
+    if (items && (items.length > 500 || items.some((id) => !TRIAL_ID.test(id)))) {
+      throw badRequest('invalid_items', 'items must be up to 500 comma-separated trial ids', 'Pass trial ids as GET /experiments/:id/trials lists them, for example items=t_abc,t_def.');
+    }
     await this.importFile(set);
     const params: unknown[] = [set];
     // The sets stay disjoint: a trial labelled in one set never appears in another, so tuning
@@ -142,6 +151,10 @@ export class LabelsService {
     if (experimentId) {
       params.push(experimentId);
       where += ` AND t.experiment_id = $${params.length}`;
+    }
+    if (items) {
+      params.push(items);
+      where += ` AND t.id = ANY($${params.length}::text[])`;
     }
     // seen: criteria with any label in this set; settled: those with a firm answer (yes or no) or a
     // second-look answer. A criterion seen but not settled was only ever marked "unsure" (D46).

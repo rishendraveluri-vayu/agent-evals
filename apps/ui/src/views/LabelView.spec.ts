@@ -65,6 +65,21 @@ describe('LabelView in fixture mode', () => {
 });
 
 describe('LabelView against the API', () => {
+  it('asks for a chosen list of trials when the address names one (D71)', async () => {
+    const { calls } = routeFetch({
+      '/api/labels/queue?set=tuning&items=t_a%2Ct_b': [],
+      '/api/labels/queue?set=final&items=t_a%2Ct_b': [],
+      '/api/labels/queue?set=heldout&items=t_a%2Ct_b': [],
+    });
+    mount(LabelView, { props: { initialSet: 'heldout', items: 't_a,t_b' } });
+    await settle();
+    expect(calls.map((c) => c.url).sort()).toEqual([
+      '/api/labels/queue?set=final&items=t_a%2Ct_b',
+      '/api/labels/queue?set=heldout&items=t_a%2Ct_b',
+      '/api/labels/queue?set=tuning&items=t_a%2Ct_b',
+    ]);
+  });
+
   it('drops any field that could unblind the item, even when the API sends it', async () => {
     routeFetch({
       '/api/labels/queue?set=tuning': [],

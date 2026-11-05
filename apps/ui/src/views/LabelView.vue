@@ -16,9 +16,10 @@ import { optional, useLoad } from '../lib/async';
 import { mdBlocks } from '../lib/markdown';
 import { href } from '../router';
 
-/** `set` and `experiment` come from the address (#/labels?set=tuning&experiment=e_...): the set to
- *  open on, and one batch to label (GET /labels/queue takes `experiment`). */
-const props = defineProps<{ initialSet?: LabelSet | null; experiment?: string | null }>();
+/** `set`, `experiment` and `items` come from the address (#/labels?set=heldout&items=t_a,t_b): the
+ *  set to open on, one batch to label, or a chosen list of trials (GET /labels/queue takes both),
+ *  such as the trials a judge panel disagreed on (D71). */
+const props = defineProps<{ initialSet?: LabelSet | null; experiment?: string | null; items?: string | null }>();
 
 const fixtures = isFixtureMode();
 const SETS: { set: LabelSet; name: string; file: string; purpose: string }[] = [
@@ -39,7 +40,7 @@ const VALUES: { value: LabelValue; text: string; key: string }[] = [
 
 const set = ref<LabelSet>(props.initialSet ?? 'tuning');
 const { data, error, loading, reload } = useLoad(async () => {
-  const entries = await Promise.all(SETS.map(async (s) => [s.set, await optional(api.labelQueue(s.set, props.experiment ?? undefined), null)] as const));
+  const entries = await Promise.all(SETS.map(async (s) => [s.set, await optional(api.labelQueue(s.set, props.experiment ?? undefined, props.items ?? undefined), null)] as const));
   return Object.fromEntries(entries) as Record<LabelSet, BlindItem[] | null>;
 });
 /** Opens on the first set with something to label, unless the address names one. */

@@ -953,6 +953,13 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
 
     const left = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as { criteria: { id: string }[] }[];
     expect(left[0].criteria.map((x) => x.id)).toEqual(['no_jargon']);
+    // D71: `items` limits the queue to listed trials (a judge panel's disagreements); an unlisted
+    // or unknown id is simply not offered, and a malformed list is refused.
+    const listed = (await request(env.http).get(`/api/labels/queue?set=tuning&items=${c.trial_id},t_not_a_trial`).expect(200)).body as { item_id: string }[];
+    expect(listed.map((x) => x.item_id)).toEqual([c.trial_id]);
+    expect((await request(env.http).get('/api/labels/queue?set=tuning&items=t_not_a_trial').expect(200)).body).toEqual([]);
+    const bad = await request(env.http).get(`/api/labels/queue?set=tuning&items=${encodeURIComponent("t_x' OR 1=1")}`).expect(400);
+    expect(bad.body).toMatchObject({ error: 'invalid_items' });
     // The sets follow the task split (D52): emi-basic is a discovery task, so its trials are tuning
     // material only, never held-out or final, and a held-out label on one is refused.
     expect((await request(env.http).get(`/api/labels/queue?set=heldout&experiment=${exp.id}`).expect(200)).body).toHaveLength(0);

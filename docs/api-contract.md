@@ -900,7 +900,10 @@ field is left (a key inside a binary file cannot be scrubbed, so it fails the ex
   fails on the 503; `scripts/smoke.py` checks `files` too.
 - `GET /labels/queue?set=tuning|heldout|final` returns blind items `{item_id, task_summary,
   transcript, tool_calls, criteria, second_look}` with no harness, model, arm, timing, cost or
-  grade. Only trials whose agent ran on a real model are items: a `fake/*` model plays a script,
+  grade. `experiment=<id>` limits it to one experiment's trials, and `items=<trial id>,...` (up to
+  500, since 5 Nov, D71) to a chosen list, such as the trials a judge panel disagreed on; a listed
+  trial the set would not offer is left out, and a malformed list is a 400 `invalid_items`. The
+  UI takes the same as `#/labels?set=heldout&items=...`. Only trials whose agent ran on a real model are items: a `fake/*` model plays a script,
   so its output is nothing to label (since 5 Nov). Probe trials and shipped examples are left out
   too. **The sets follow the task split (D52):** `tuning` offers trials of discovery tasks only;
   `heldout` and `final` offer trials of held-out tasks only, so no task is both tuned on and scored
