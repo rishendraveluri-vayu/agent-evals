@@ -59,7 +59,7 @@ const DRAFT = {
 };
 
 describe('The front door, against the API', () => {
-  it("names the example by its own title, says it is a real but small draft that the full experiment replaces, and promises no verdict", async () => {
+  it("names the example by its own title, says it is a real but small draft that the full experiment replaces, and says what the result gives", async () => {
     vi.unstubAllEnvs();
     routeFetch({ '/api/configs': [], '/api/examples': [DRAFT] });
     const w = mount(StartView);
@@ -70,10 +70,11 @@ describe('The front door, against the API', () => {
     expect(door.text()).toContain('It is a small draft, for now: the full experiment replaces it.');
     // Not "an A/B experiment, already run", which the draft title contradicts.
     expect(door.text()).not.toContain('A/B experiment');
-    // Nothing on the page promises the verdict, its interval or how sure we can be as if built.
+    // The result step says what the comparison gives now that the statistics exist (SP6).
     const result = w.get('[data-test="guide-result"]').text();
-    expect(result).toContain('This version gives counts only: the verdict with its interval, how sure a difference is, is not built yet.');
-    expect(w.get('.lede').text()).toContain('is not built yet');
+    expect(result).toContain('The verdict first: better, worse, practically the same, or too close to tell from noise, with its 95% interval.');
+    expect(w.get('.lede').text()).toContain('whether the change made it better or worse and how sure we can be');
+    expect(w.text()).not.toContain('not built yet');
   });
 
   it('says nothing about a draft when the shipped example is the full experiment', async () => {

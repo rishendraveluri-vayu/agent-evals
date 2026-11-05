@@ -41,14 +41,14 @@ describe('TasksView in fixture mode', () => {
     expect(w.get('[data-test="last-run-head"]').text()).toBe('Last run');
     expect(w.get('[data-test="last-run-head"]').classes()).toContain('last-run-head');
     const caption = w.get('[data-test="run-caption"]');
-    expect(caption.text()).toBe('Last run: Prompt v1 vs v2, held-out, 5 trials per arm. No clear difference is not the same as unchanged.');
+    expect(caption.text()).toBe('Last run: Prompt v1 vs v2, held-out, 5 trials per arm. No detectable difference is not the same as unchanged.');
     expect(caption.classes()).toContain('result-detail');
     // The caption sits between the filters and the table.
     expect(caption.element.previousElementSibling?.classList.contains('filters')).toBe(true);
     expect(caption.element.nextElementSibling?.classList.contains('table-wrap')).toBe(true);
     const plain = rows().filter((r) => r.find('[data-verdict="none"]').exists());
     expect(plain.length).toBeGreaterThan(0);
-    expect(plain[0].get('[data-verdict="none"]').text()).toBe('No clear difference');
+    expect(plain[0].get('[data-verdict="none"]').text()).toBe('Within noise');
     expect(rows()[0].get('.result-detail').text()).toBe('A 1 of 5 · B 5 of 5');
     await w.findAll('.seg button').find((b) => b.text() === 'Discovery')?.trigger('click');
     expect(rows()).toHaveLength(12);
@@ -57,7 +57,7 @@ describe('TasksView in fixture mode', () => {
 });
 
 describe('TasksView against the API: a shipped example, no statistics', () => {
-  it('names the last run by its example title and promises no per-task verdict', async () => {
+  it('names the last run by its example title and, with no statistics, says it has no verdict yet', async () => {
     const example = { name: 'harness-ownloop-vs-hermes-haiku', title: 'Draft stand-in: own loop vs Hermes on Claude Haiku 5.5 (15 draft tasks, one trial each)', loaded_at: '2026-11-05T08:00:00.000Z' };
     const working = 'Label batch 1: open coding (R8, approved: 30 trials, cap $2)';
     const summary = (experiments as { id: string }[]).find((e) => e.id === 'exp_heldout');
@@ -65,14 +65,15 @@ describe('TasksView against the API: a shipped example, no statistics', () => {
       '/api/tasks': tasks,
       '/api/experiments': [{ ...summary, name: working, example }],
       '/api/experiments/exp_heldout': { ...(details as Record<string, object>).exp_heldout, name: working, example },
-      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null },
+      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null, stats_note: 'Grading is still running for 2 of 30 finished trials; the verdict waits for every grade.' },
     });
     const w = mount(TasksView);
     await settle();
     const caption = w.get('[data-test="run-caption"]').text();
-    expect(caption).toBe(`Last run: ${example.title}, 5 trials per arm. Pass counts only: this version does not compute a verdict per task.`);
+    expect(caption).toBe(`Last run: ${example.title}, 5 trials per arm. Pass counts only: this run has no verdict yet.`);
     expect(w.text()).not.toContain('Label batch 1');
-    expect(w.get('[data-test="task-glance"]').text()).toContain('needs the statistics step, not built in this version');
+    expect(w.get('[data-test="task-glance"]').text()).toContain('No verdict yetGrading is still running for 2 of 30 finished trials; the verdict waits for every grade.');
+    expect(w.text()).not.toContain('not built');
   });
 
   it('shows undecided tasks as the comparison does, never as 0/0', async () => {

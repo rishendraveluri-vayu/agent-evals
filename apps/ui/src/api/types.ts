@@ -6,10 +6,11 @@
  * - ./pending.ts adds, as an optional field, the one thing a screen reads that no contract has
  *   yet: a trial row's pass or fail, for the run grid.
  * - Below are the UI's readings of what the contract carries as loose JSON, each typed from the
- *   schema that defines it, and two shapes the contract does not define yet (SP5's agreement and
- *   SP6's stats), each marked PROVISIONAL. Grades and checks.json are read in lib/grading.ts.
+ *   schema that defines it, and one shape the contract does not define yet (SP5's agreement),
+ *   marked PROVISIONAL. SP6's statistics are the contract's own (CompareStats). Grades and
+ *   checks.json are read in lib/grading.ts.
  */
-import type { ArmView, CompareResponse, HarnessView, LabelCriterion, Sha256 } from './contract';
+import type { ArmView, CompareResponse, HarnessView, LabelCriterion, Sha256, StatsInterval } from './contract';
 import './pending';
 
 export * from './contract';
@@ -75,34 +76,13 @@ export interface TrialResult {
 }
 
 // ---------------------------------------------------------------------------------------------
-// GET /experiments/:id/compare: `stats` is SP6's and `null` in the contract until then
+// GET /experiments/:id/compare: SP6's statistics are the contract's (CompareStats)
 
-export interface Interval {
-  estimate: number;
-  low: number;
-  high: number;
-}
+/** An estimate and its 95% interval: differences are B minus A, in points for pass rate. */
+export type Interval = StatsInterval;
 
-/** PROVISIONAL: SP6 owns this shape; the contract types `stats` as null until it exists. It is
- *  what the comparison screen reads. Differences are B minus A, in percentage points for pass rate. */
-export interface CompareStats {
-  measure: 'pass_rate';
-  level: number;
-  a: { rate: number; passed: number; graded: number };
-  b: { rate: number; passed: number; graded: number };
-  diff: Interval;
-  p_value: number | null;
-  method: string;
-  verdict: 'better' | 'worse' | 'no_clear_difference';
-  tasks: { task: string; diff: Interval; significant: boolean }[];
-  correction: string | null;
-  aa: { experiment_id: string; diff: Interval } | null;
-  costs: { metric: 'cost_usd' | 'wall_s' | 'tokens'; a: number; b: number; diff: Interval; relative: Interval | null }[];
-  judge: { kappa: number; low: number; high: number; bar: number; tasks: number } | null;
-}
-
-/** The compare response as the screen reads it: the contract's, with SP6's stats once they exist. */
-export type Compare = Omit<CompareResponse, 'stats'> & { stats: CompareStats | null };
+/** The compare response as the screens read it. */
+export type Compare = CompareResponse;
 
 // ---------------------------------------------------------------------------------------------
 // GET /judge/agreement: SP5, which returns null until then

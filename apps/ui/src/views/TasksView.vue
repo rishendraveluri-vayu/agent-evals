@@ -49,19 +49,17 @@ const glance = computed(() => {
   const single = all.filter((t) => clientKind(t.kind) === 'Single prompt').length;
   const run = data.value?.run;
   const stats = run?.compare.stats;
-  const separated = stats ? stats.tasks.filter((t) => t.significant).length : null;
+  const separated = stats ? stats.tasks.filter((t) => t.beyond_noise).length : null;
   const runSplit = run ? new Set(run.detail.tasks.map((t) => splitName(t.split))) : null;
   return {
     bySplit,
     graded: `${code} code, ${all.length - code} judge`,
     client: `${plural(single, 'single prompt', 'single prompts')}, ${plural(all.length - single, 'conversation', 'conversations')}`,
     separatedLabel: arms.value.length === 2 ? `Separated ${arms.value[0].short} and ${arms.value[1].short}` : 'Separated the arms',
-    separated: separated !== null && stats ? `${separated} of ${stats.tasks.length}${runSplit?.size === 1 ? ` ${[...runSplit][0]}` : ''}` : 'Not computed',
+    separated: separated !== null && stats ? `${separated} of ${stats.tasks.length}${runSplit?.size === 1 ? ` ${[...runSplit][0]}` : ''}` : 'No verdict yet',
     separatedNote: stats
-      ? stats.correction
-        ? `After correcting for ${stats.tasks.length} comparisons`
-        : 'Before correcting for many comparisons'
-      : 'Which tasks tell the arms apart needs the statistics step, not built in this version',
+      ? `Beyond noise after correcting for ${stats.tasks.length} comparisons`
+      : (run?.compare.stats_note ?? 'The last run has no verdict yet, so which tasks tell the arms apart is not known'),
   };
 });
 
@@ -70,7 +68,7 @@ const runCaption = computed(() => {
   const run = data.value?.run;
   if (!run) return '';
   const n = run.detail.n;
-  const tail = run.compare.stats ? ' No clear difference is not the same as unchanged.' : ' Pass counts only: this version does not compute a verdict per task.';
+  const tail = run.compare.stats ? ' No detectable difference is not the same as unchanged.' : ' Pass counts only: this run has no verdict yet.';
   return `Last run: ${experimentName(run.detail)}, ${n} ${n === 1 ? 'trial' : 'trials'} per arm.${tail}`;
 });
 
@@ -86,7 +84,8 @@ const lastRun = (t: TaskView): { a: string; b: string; verdict: Verdict; label?:
   if (!a || !b) return null;
   const stat = run.compare.stats?.tasks.find((x) => x.task === t.sha256 || x.task === t.id);
   const words = { a: passedText(a), b: passedText(b) };
-  if (stat) return { ...words, verdict: stat.significant ? (stat.diff.estimate >= 0 ? 'better' : 'worse') : 'none' };
+  // D41's words per task: beyond noise (better or worse), else within noise.
+  if (stat) return { ...words, verdict: stat.beyond_noise ? (stat.diff.estimate >= 0 ? 'better' : 'worse') : 'none', label: stat.beyond_noise ? undefined : 'Within noise' };
   // No statistics: a difference only when both arms have outcomes; otherwise say how they stand.
   const both = a.graded && b.graded;
   return { ...words, verdict: 'pending', label: both ? undefined : noDiffWords([armState(a), armState(b)]).tag };

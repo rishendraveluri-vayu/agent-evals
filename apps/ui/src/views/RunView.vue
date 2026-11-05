@@ -19,7 +19,7 @@ import { armPauseHelp, defaultArms, defaultBudget, isEngineTest, missingKey, nee
 import { FAKE_SIM_MODEL, isFake, simModels } from '../lib/models';
 import { text } from '../trials';
 
-const props = defineProps<{ experimentId?: string; a?: string | null; b?: string | null }>();
+const props = defineProps<{ experimentId?: string; a?: string | null; b?: string | null; calibration?: boolean }>();
 const draft = !props.experimentId;
 const fixtures = isFixtureMode();
 
@@ -73,8 +73,10 @@ interface Setup {
   plan: string;
   name: string;
   seed: string;
+  /** D44: an A/A calibration run, the same agent on both arms, to measure the setup's own noise. */
+  calibration: boolean;
 }
-const setup = reactive<Setup>({ a: props.a ?? '', b: props.b ?? '', split: 'held_out', n: 5, simModel: '', budget: '', plan: '', name: '', seed: '' });
+const setup = reactive<Setup>({ a: props.a ?? '', b: props.b ?? '', split: 'held_out', n: 5, simModel: '', budget: '', plan: '', name: '', seed: '', calibration: !!props.calibration });
 const touched = reactive({ budget: false, name: false, sim: false });
 /** Tasks taken out of the run by hand, by sha256. Engine tests start out of it. */
 const excluded = reactive(new Set<string>());
@@ -87,8 +89,9 @@ watch(data, (d) => {
   // other arm, and never an A/A run (lib/runSetup.ts).
   const arms = defaultArms(d.configs, props.a, props.b);
   setup.a = arms.a;
-  setup.b = arms.b;
-  armNote.value = arms.note;
+  // D44: a calibration runs arm A's agent on arm B too.
+  setup.b = setup.calibration && arms.a ? arms.a : arms.b;
+  armNote.value = setup.calibration ? null : arms.note;
   setup.simModel = defaultSim.value;
   if (!d.allTasks.some((t) => t.split === setup.split)) setup.split = 'all';
   for (const t of d.allTasks) if (isEngineTest(t)) excluded.add(t.sha256);
@@ -136,6 +139,19 @@ const pickable = computed(() => {
 const fakeOnly = computed(() => hashes.value.length > 0 && realModels.value.length === 0);
 const configOf = (h: string) => data.value?.configs.find((c) => c.hash === h);
 const sameConfig = computed(() => hashes.value.length === 2 && hashes.value[0] === hashes.value[1]);
+/** The run is an A/A calibration (D44): the draft's box, or the saved experiment's own flag. */
+const isCalibration = computed(() => (draft ? setup.calibration : !!data.value?.experiment?.calibration));
+/** The same agent on both arms without the calibration box: refused, as the API refuses it (A30). */
+const sameByMistake = computed(() => sameConfig.value && !isCalibration.value);
+// Ticking the box puts arm A's agent on arm B; unticking it picks arm B again as the defaults would.
+watch(
+  () => [setup.calibration, setup.a] as const,
+  ([on, a], before) => {
+    if (!draft || !data.value) return;
+    if (on) setup.b = a;
+    else if (before?.[0] && setup.b === a) setup.b = defaultArms(data.value.configs, a, undefined).b;
+  },
+);
 /** Arms whose config id is not a saved agent here (a mistyped or stale link): said plainly, and
  *  nothing else about the run is worked out or claimed until each is picked again. */
 const unknownArms = computed(() =>
@@ -169,7 +185,7 @@ const nameError = computed(() => (setup.name.trim().length > RUN_NAME_MAX ? `The
 /** The validated N (the experiment's own once it exists); null while what is typed is not valid. */
 const n = computed<number | null>(() => (draft ? nCheck.value.value : (data.value?.experiment?.n ?? 0)));
 /** The trials a draft would create, from what is picked; null until it is a valid run. */
-const plannedTrials = computed(() => (n.value !== null && !sameConfig.value && hashes.value.length && !unknownArms.value.length ? tasks.value.length * hashes.value.length * n.value : null));
+const plannedTrials = computed(() => (n.value !== null && !sameByMistake.value && hashes.value.length && !unknownArms.value.length ? tasks.value.length * hashes.value.length * n.value : null));
 
 const diff = shallowRef<ConfigDiffEntry[]>([]);
 watch(
@@ -189,8 +205,8 @@ const estimateError = ref<string | null>(null);
 /** What the draft would run, as one key; null when it is not a run yet (no arm, no task, a bad
  *  N, or the same config on both arms), so nothing is estimated and no stale figure is shown. */
 const estimateKey = computed(() => {
-  if (!draft || !hashes.value.length || !tasks.value.length || n.value === null || sameConfig.value || unknownArms.value.length) return null;
-  return JSON.stringify([hashes.value, tasks.value.map((t) => t.sha256), n.value, setup.simModel]);
+  if (!draft || !hashes.value.length || !tasks.value.length || n.value === null || sameByMistake.value || unknownArms.value.length) return null;
+  return JSON.stringify([hashes.value, tasks.value.map((t) => t.sha256), n.value, setup.simModel, isCalibration.value]);
 });
 /** Each estimate request is numbered, so an answer to an older one (a slow network) is dropped. */
 let estimateSeq = 0;
@@ -202,7 +218,7 @@ watch(
     estimateError.value = null;
     if (key === null || n.value === null) return;
     try {
-      const e = await api.estimate({ config_hashes: hashes.value, task_sha256s: tasks.value.map((t) => t.sha256), n: n.value, sim_model: setup.simModel || null });
+      const e = await api.estimate({ config_hashes: hashes.value, task_sha256s: tasks.value.map((t) => t.sha256), n: n.value, sim_model: setup.simModel || null, ...(isCalibration.value ? { calibration: true } : {}) });
       if (mine !== estimateSeq) return;
       draftEstimate.value = e;
       if (!touched.budget) setup.budget = String(defaultBudget(e.cost_usd.high));
@@ -226,6 +242,7 @@ const budget = computed(() => {
 const suggestedName = computed(() => {
   const [a, b] = hashes.value.map(configOf);
   if (!a || (hashes.value.length === 2 && !b)) return '';
+  if (isCalibration.value && sameConfig.value) return `A/A calibration: ${a.name}`;
   return runAutoName(a, b, taskSetWords(tasks.value, data.value?.allTasks ?? [], setup.split));
 });
 watch(suggestedName, (v) => {
@@ -255,13 +272,16 @@ const checks = computed<Check[]>(() => {
     ];
   }
   const configs = hashes.value.map(configOf).filter((c): c is ConfigView => !!c);
-  // An A/A run (the same config on both arms) is not offered: the API refuses it, and whether
-  // to run one as a calibration is a separate question.
+  // The same config on both arms only as a marked A/A calibration (D44); otherwise it is refused.
   const pair = configs.length === 2 ? ([configs[0], configs[1]] as [ConfigView, ConfigView]) : undefined;
   const arms = armsCheck(diff.value, false, pair);
-  const armRow: Check = sameConfig.value
-    ? { ok: false, title: 'Arm A and arm B are the same agent', detail: 'Pick a different agent for one of the arms, or set arm B to None to run this agent on its own.' }
-    : arms.ok || !hashes.value[1]
+  const armRow: Check = sameByMistake.value
+    ? { ok: false, title: 'Arm A and arm B are the same agent', detail: 'Pick a different agent for one of the arms, set arm B to None to run this agent on its own, or tick A/A calibration to measure the setup’s own noise.' }
+    : isCalibration.value
+      ? sameConfig.value
+        ? { ok: true, title: 'A/A calibration: the same agent on both arms', detail: 'Any difference this run finds is the noise of the setup itself; it should come out "no detectable difference".' }
+        : { ok: false, title: 'An A/A calibration needs the same agent on both arms', detail: 'Pick the same agent for arm B, or untick A/A calibration to compare two agents.' }
+      : arms.ok || !hashes.value[1]
       ? arms
       : { ...arms, link: { href: href.fork(hashes.value[1]), text: 'Fork arm B’s agent to change one thing' } };
   // A model whose key is not set would fail every call: the run stays off until it is added.
@@ -279,7 +299,7 @@ const checks = computed<Check[]>(() => {
   ];
   if (fakeOnly.value) {
     list.push({ ok: true, title: 'No spending limit needed: every model here is fake', detail: 'Fake models spend nothing real; the estimate is at made-up test prices.' });
-  } else if (!draft || (n.value !== null && !sameConfig.value)) {
+  } else if (!draft || (n.value !== null && !sameByMistake.value)) {
     list.push(budgetCheck(budget.value, estimate.value));
   }
   return list;
@@ -303,7 +323,7 @@ const diffValue = (v: unknown): string => (typeof v === 'string' && /^sha256:[0-
  *  and its values (`fields`) for a Details disclosure. */
 const armDiff = computed<{ summary: string; lines: LineChange[]; fields: LineChange[] }>(() => {
   const content = contentDiff(diff.value);
-  if (sameConfig.value) return { summary: 'The same config on both arms. Nothing differs.', lines: [], fields: [] };
+  if (sameConfig.value) return { summary: isCalibration.value ? 'The same config on both arms, as an A/A calibration needs. Nothing differs.' : 'The same config on both arms. Nothing differs.', lines: [], fields: [] };
   if (!content.length) return { summary: 'Nothing differs.', lines: [], fields: [] };
   const [ca, cb] = hashes.value.map(configOf);
   const pa = data.value?.prompts.find((p) => p.sha256 === ca?.prompt.sha256);
@@ -366,6 +386,7 @@ async function startNew() {
       budget_usd: budget.value ?? 0,
       plan_commit: setup.plan.trim() || null,
       ...(seedCheck.value.value !== null ? { order_seed: seedCheck.value.value } : {}),
+      ...(isCalibration.value ? { calibration: true } : {}),
     });
     createdId = created.id;
     await api.startExperiment(created.id);
@@ -1138,6 +1159,8 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                 <span class="arm"><span class="dot dot--b" />Arm B</span>
                 <select
                   v-model="setup.b"
+                  :disabled="setup.calibration"
+                  :title="setup.calibration ? 'An A/A calibration runs arm A’s agent on arm B too' : undefined"
                   data-test="arm-b"
                 >
                   <option value="">
@@ -1181,13 +1204,24 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                 </template>
                 The link may be mistyped, or from another database. Pick a saved agent above; <a :href="href.config()">Configs</a> lists every one.
               </p>
+              <label
+                class="aa-option small"
+                data-test="calibration"
+              >
+                <input
+                  v-model="setup.calibration"
+                  type="checkbox"
+                  data-test="calibration-box"
+                >
+                <span><strong>A/A calibration</strong>: runs one agent on both arms to measure this setup’s own noise; it should come out “no detectable difference”.</span>
+              </label>
               <p
-                v-if="sameConfig"
+                v-if="sameByMistake"
                 class="error small same-config"
                 role="alert"
                 data-test="same-config"
               >
-                Arm A and arm B are the same agent. Pick a different agent for one of them, or set arm B to None to run it on its own.
+                Arm A and arm B are the same agent. Pick a different agent for one of them, set arm B to None to run it on its own, or tick A/A calibration above.
               </p>
               <fieldset class="field fieldset">
                 <legend class="field-label">
@@ -2267,6 +2301,24 @@ onBeforeUnmount(() => taskObserver?.disconnect());
   margin: 4px 0 0;
   overflow-wrap: anywhere;
   font-size: 12px;
+}
+
+.aa-option {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 2px 0 10px;
+  color: var(--ink-2);
+}
+
+.aa-option input {
+  margin-top: 3px;
+  flex: none;
+}
+
+.aa-option strong {
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .task-option {

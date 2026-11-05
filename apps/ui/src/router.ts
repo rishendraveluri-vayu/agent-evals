@@ -10,7 +10,7 @@ export type Route =
   | { name: 'experiments' }
   | { name: 'config'; fork: string | null }
   | { name: 'config-page'; hash: string }
-  | { name: 'run-new'; a: string | null; b: string | null }
+  | { name: 'run-new'; a: string | null; b: string | null; calibration: boolean }
   | { name: 'run'; id: string }
   | { name: 'compare'; id: string; panel: string | null }
   | { name: 'trial'; id: string }
@@ -39,7 +39,7 @@ export function parseHash(hash: string): Route {
   if (first === 'example' && parts.length === 1) return { name: 'example' };
   if (first === 'configs' && parts.length === 1) return { name: 'config', fork: params.get('fork') };
   if (first === 'configs' && second && parts.length === 2) return { name: 'config-page', hash: dec(second) };
-  if (first === 'run' && parts.length === 1) return { name: 'run-new', a: params.get('a'), b: params.get('b') };
+  if (first === 'run' && parts.length === 1) return { name: 'run-new', a: params.get('a'), b: params.get('b'), calibration: params.get('aa') === '1' };
   if (first === 'experiments' && second && third === 'run' && parts.length === 3) return { name: 'run', id: dec(second) };
   if (first === 'experiments' && second && parts.length === 2) return { name: 'compare', id: dec(second), panel: params.get('panel') };
   if (first === 'trials' && parts.length === 1) return { name: 'recorded' };
@@ -90,10 +90,12 @@ export const href = {
   /** A new config that starts as a copy of `hash` and names it as its parent (D34). */
   fork: (hash: string) => `#/configs?fork=${enc(hash)}`,
   configPage: (hash: string) => `#/configs/${enc(hash)}`,
-  runNew: (a?: string, b?: string) => {
+  /** `calibration`: an A/A calibration run of `a` (D44), the same agent on both arms. */
+  runNew: (a?: string, b?: string, opts: { calibration?: boolean } = {}) => {
     const q = new URLSearchParams();
     if (a) q.set('a', a);
     if (b) q.set('b', b);
+    if (opts.calibration) q.set('aa', '1');
     const s = q.toString();
     return `#/run${s ? `?${s}` : ''}`;
   },

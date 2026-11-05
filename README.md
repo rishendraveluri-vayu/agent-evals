@@ -2,9 +2,10 @@
 
 A platform that runs an AI agent (a harness plus a model) on a set of tasks, many times each, built
 to answer one question with evidence: **did the agent get better, worse or stay the same after a
-change, and how sure are we?** This version reports the evidence (pass counts, cost and time per
-version and per task, every trial's trace and grades); the verdict with its interval is not built
-yet (see Status).
+change, and how sure are we?** Each comparison gives a verdict (better, worse, practically
+equivalent, or no detectable difference) with a 95% interval over the tasks and a paired test, per
+task results flagged after a multiple-comparison correction, a guardrail on critical checks, and
+cost, tokens and time beside it, down to every trial's trace and grades.
 
 Five harnesses plug in through one adapter contract: Hermes Agent, LangGraph, Google ADK, the
 OpenAI Agents SDK and a plain tool-calling loop. Every model call goes through a LiteLLM proxy,
@@ -13,11 +14,13 @@ assistant with calculator tools and simulated clients. Today it holds 15 draft t
 summaries still start "DRAFT") and 2 engine tests that check the platform, not an agent; the
 task set is being finished.
 
-> **Status, 4 Nov 2026.** The platform runs end to end: configs, runs with N trials, isolation,
-> retries, traces, deterministic graders, the judge's plumbing and blind labelling. Still being
-> finished: the comparison's verdict and intervals (statistics), the judge's validation against
-> human labels, and the real experiment. Until then the comparison shows the per-task results
-> without a verdict. The write-up lands in `docs/experiment.md`.
+> **Status, 5 Nov 2026.** The platform runs end to end: configs, runs with N trials, isolation,
+> retries, traces, deterministic graders, the judge's plumbing, blind labelling, and the
+> comparison's statistics (verdict, intervals, per-task flags, critical-failure guardrail,
+> regression list, cost and time, and A/A calibration runs; `docs/design.md`, "Statistics").
+> Still being finished: the judge's validation against human labels and the real experiment. A
+> comparison whose trials are still grading says so instead of giving a verdict. The write-up
+> lands in `docs/experiment.md`.
 
 ## Run it
 

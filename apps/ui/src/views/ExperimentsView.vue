@@ -6,7 +6,7 @@ import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { armsOf, axisWords, checksToGo, doneCount, excludesZero, headline, intervalText, judgeCaveat, NBSP, pointsWithInterval, setupOf, timeLeft, totalTrials, type Verdict } from '../lib/arms';
+import { armsOf, axisWords, checksToGo, doneCount, headline, intervalText, judgeCaveat, NBSP, pointsWithInterval, setupOf, timeLeft, totalTrials, verdictWords, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { capitalise, identParts, minutes, money, percent, plainText, plural, relative, signed } from '../lib/format';
 import { isFake } from '../lib/models';
@@ -48,7 +48,7 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
   // The list is newest first (by when each was made). The latest result is the newest finished
   // A/B with statistics; while the statistics step is not built, the newest finished A/B whose
   // comparison is complete, read as counts.
-  const ab = finished.filter((e) => e.config_hashes[0] !== e.config_hashes[1]);
+  const ab = finished.filter((e) => !e.calibration && e.config_hashes[0] !== e.config_hashes[1]);
   const latestId = (ab.find((e) => compares.get(e.id)?.stats) ?? ab.find((e) => compares.get(e.id)?.status === 'complete'))?.id;
   const latest = latestId ? await optional(api.experiment(latestId), null) : null;
   const trials = latestId ? await optional(api.experimentTrials(latestId, { status: 'done' }), [] as TrialRowSummary[]) : [];
@@ -75,8 +75,8 @@ const latestResult = computed(() => {
   const values = [stats.diff.low, stats.diff.high, ...(stats.aa ? [stats.aa.diff.low, stats.aa.diff.high] : [])];
   const [min, max] = domainFor(values, -20, 30);
   const level = Math.round(stats.level * 100);
-  // The A/A run is drawn as its own row under the result, so the caption does not repeat it.
-  const noise = stats.aa ? '' : ' No A/A run on this setup yet, so the noise floor is not measured.';
+  // The A/A calibration is drawn as its own row under the result, so the caption does not repeat it.
+  const noise = stats.aa ? '' : ' No A/A calibration run for these configs yet, so the setup’s own noise is not measured.';
   const main: StripRow = {
     estimate: stats.diff.estimate,
     low: stats.diff.low,
@@ -84,7 +84,7 @@ const latestResult = computed(() => {
     tone: verdictTone(stats.verdict),
     label: arms.length === 2 ? `${arms[1].short} minus ${arms[0].short}, ${stats.tasks.length} tasks` : undefined,
   };
-  const aa: StripRow[] = stats.aa ? [{ estimate: stats.aa.diff.estimate, low: stats.aa.diff.low, high: stats.aa.diff.high, tone: 'neutral', size: 'sm', label: 'A/A run, same config twice' }] : [];
+  const aa: StripRow[] = stats.aa ? [{ estimate: stats.aa.diff.estimate, low: stats.aa.diff.low, high: stats.aa.diff.high, tone: 'neutral', size: 'sm', label: 'A/A calibration, same config twice' }] : [];
   return {
     experiment: latest,
     stats,
@@ -98,13 +98,13 @@ const latestResult = computed(() => {
     rows: [main, ...aa],
     caption: `${level}% interval ${intervalText(stats.diff)}, paired over ${latest.tasks.length}${split ? ` ${split}` : ''} tasks with ${latest.n} trials each.${noise}`,
     caveat: judgeCaveat({
-      differing: stats.tasks.filter((t) => t.significant).map((t) => latest.tasks.find((x) => x.sha256 === t.task || x.id === t.task)),
+      differing: stats.tasks.filter((t) => t.beyond_noise).map((t) => latest.tasks.find((x) => x.sha256 === t.task || x.id === t.task)),
       isJudged,
       judge: stats.judge,
       toGo: d.heldoutToGo ?? 0,
       alsoGraded: alsoGradedBy,
     }),
-    aria: `Difference in pass rate: ${signed(stats.diff.estimate)} points, ${level}% interval ${intervalText(stats.diff)}, on a scale from ${min} to ${max}.${stats.aa ? ` An A/A run on the same setup gave ${signed(stats.aa.diff.estimate)}, interval ${intervalText(stats.aa.diff)}.` : ''}`,
+    aria: `Difference in pass rate: ${signed(stats.diff.estimate)} points, ${level}% interval ${intervalText(stats.diff)}, on a scale from ${min} to ${max}.${stats.aa ? ` An A/A calibration of the same config gave ${signed(stats.aa.diff.estimate)}, interval ${intervalText(stats.aa.diff)}.` : ''}`,
   };
 });
 
@@ -126,6 +126,7 @@ const latestCounts = computed(() => {
     name: experimentName(latest),
     arms: arms.slice(0, 2).map((arm, i) => ({ key: arm.key, label: arm.label, counts: `${(i ? b : a).passed} of ${(i ? b : a).graded} graded trials passed` })),
     undecided: open ? `${plural(open, 'trial')} ${open === 1 ? 'has' : 'have'} no outcome: a required check could not decide, so ${open === 1 ? 'it counts' : 'they count'} as neither a pass nor a fail.` : '',
+    why: compare.stats_note ?? 'there is no verdict yet.',
   };
 });
 
@@ -236,6 +237,8 @@ interface Row {
   updated: string;
   status: string;
   verdict: Verdict | null;
+  /** The verdict's words when the tag's default would not say it (equivalent, held back, A/A). */
+  verdictLabel?: string;
   detail: string;
   estimate: string;
   /** Under the spend of a run on a fake model: its prices are made up for testing, not money. */
@@ -259,11 +262,12 @@ const rows = computed<Row[]>(() => {
       const arms = armsOf(e, d.configs);
       const total = totalTrials(e);
       const done = doneCount(e.counts);
-      const stats = d.compares.get(e.id)?.stats ?? null;
-      const sameTwice = twoArms(e) && e.config_hashes[0] === e.config_hashes[1];
-      let status = 'Finished';
+      const compare = d.compares.get(e.id) ?? null;
+      const stats = compare?.stats ?? null;
+      let status = e.calibration ? 'A/A calibration' : 'Finished';
       let verdict: Verdict | null = null;
-      let detail = 'Pass counts only: no verdict in this version yet';
+      let verdictLabel: string | undefined;
+      let detail = compare?.stats_note ? `No verdict yet. ${compare.stats_note}` : 'Pass counts only: no verdict yet';
       if (e.status === 'running') {
         status = 'Running';
         const left = timeLeft(e.estimate, done, total);
@@ -283,9 +287,15 @@ const rows = computed<Row[]>(() => {
       } else if (e.config_hashes.length > 2) {
         status = 'Finished';
         detail = `${e.config_hashes.length} configs, made before experiments had two arms`;
+      } else if (stats?.calibration) {
+        // D44: an A/A calibration should find nothing; say whether it did.
+        verdict = 'none';
+        verdictLabel = stats.calibration.as_expected ? 'No difference, as it should' : 'Found a difference: check the setup';
+        detail = `A/A calibration: ${pointsWithInterval(stats.diff)}`;
       } else if (stats) {
         verdict = stats.verdict === 'better' ? 'better' : stats.verdict === 'worse' ? 'worse' : 'none';
-        detail = `${pointsWithInterval(stats.diff)}${sameTwice && !excludesZero(stats.diff) ? ', as expected' : ''}`;
+        verdictLabel = verdict === 'none' ? verdictWords(stats.verdict) : undefined;
+        detail = pointsWithInterval(stats.diff);
       }
       return {
         e,
@@ -301,6 +311,7 @@ const rows = computed<Row[]>(() => {
         updated: updatedAt(e, d.live.get(e.id) ?? (d.latest?.id === e.id ? d.latest : null)),
         status,
         verdict,
+        verdictLabel,
         detail,
         estimate: e.estimate ? `of ${money(e.estimate.cost_usd.expected)} estimated` : '',
         fakePrices: fakePricesWords(arms),
@@ -316,7 +327,7 @@ const rows = computed<Row[]>(() => {
         Experiments
       </h1>
       <p class="lede">
-        Each experiment changes one thing and runs both versions on the same tasks, so their pass counts, cost and time can be read side by side, task by task. Whether a difference is real, the verdict with its interval, is not computed in this version.
+        Each experiment changes one thing and runs both versions on the same tasks. Its comparison says whether the change made the agent better, worse or practically the same, or whether the difference is too small to tell from noise, with a 95% interval, task by task, and with cost and time beside it.
       </p>
     </div>
     <div class="head-actions">
@@ -435,7 +446,7 @@ const rows = computed<Row[]>(() => {
         <p class="secondary small">
           <template v-if="latestCounts.undecided">
             {{ latestCounts.undecided }}{{ ' ' }}
-          </template>These are counts, not a conclusion: this version does not compute the verdict and its interval.
+          </template>These are counts, not a conclusion: {{ latestCounts.why }}
         </p>
       </section>
       <section
@@ -450,7 +461,7 @@ const rows = computed<Row[]>(() => {
           No finished comparison yet
         </h2>
         <p class="secondary">
-          When an experiment with two arms finishes, each arm’s pass counts show here. This version does not compute a verdict or its interval.
+          When an experiment with two arms finishes and its trials are graded, its verdict and interval show here.
         </p>
       </section>
 
@@ -634,6 +645,7 @@ const rows = computed<Row[]>(() => {
                 <VerdictTag
                   v-if="r.verdict"
                   :verdict="r.verdict"
+                  :label="r.verdictLabel"
                 />
                 <span
                   v-else

@@ -10,7 +10,7 @@ import JudgePanel from '../components/JudgePanel.vue';
 import LoadState from '../components/LoadState.vue';
 import NotFound from '../components/NotFound.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { agreementWords, armDifferences, armIndexOf, armLetter, armsOf, armState, differingShort, namedByHash, noDiffWords as noDiffFor, excludesZero, intervalText, judgeCaveat, methodName, NBSP, passedText, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
+import { agreementWords, armDifferences, armIndexOf, armLetter, armsOf, armState, differingShort, namedByHash, noDiffWords as noDiffFor, excludesZero, intervalText, judgeCaveat, NBSP, passedText, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { identParts, money, percent, plainText, plural, seconds, shortHash, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
 import { isFake } from '../lib/models';
@@ -168,7 +168,8 @@ const noVerdictText = computed(() => {
   const undecided = open
     ? ` ${open} more ${open === 1 ? 'trial has' : 'trials have'} no outcome: a required check could not be decided (often the judge, when judging is not approved), so ${open === 1 ? 'it counts' : 'they count'} as neither a pass nor a fail.`
     : '';
-  return `A passed ${t.a.passed} of ${t.a.graded} graded trials${b}.${undecided} This version of the platform does not compute the verdict and its interval yet, so read these as counts, not a conclusion; the per-task results below are complete.${more}`;
+  const why = data.value?.compare.stats_note ?? 'There is no verdict yet.';
+  return `A passed ${t.a.passed} of ${t.a.graded} graded trials${b}.${undecided} ${why} Read these as counts, not a conclusion; the per-task results below are complete.${more}`;
 });
 
 /** In the verdict box of a run on a fake model: its outputs are a script, not an agent's. */
@@ -280,14 +281,14 @@ const hero = computed(() => {
   const name = a && b && a.short !== b.short ? `${b.short} minus ${a.short}` : 'B minus A';
   // Arm colour only when the result holds up; a result with no clear difference is grey.
   const rows: StripRow[] = [{ estimate: s.diff.estimate, low: s.diff.low, high: s.diff.high, tone: verdictTone(s.verdict), label: `${name}, ${s.tasks.length} tasks` }];
-  const aa: StripRow[] = s.aa ? [{ estimate: s.aa.diff.estimate, low: s.aa.diff.low, high: s.aa.diff.high, tone: 'neutral', size: 'sm', label: 'A/A run, same config twice' }] : [];
+  const aa: StripRow[] = s.aa ? [{ estimate: s.aa.diff.estimate, low: s.aa.diff.low, high: s.aa.diff.high, tone: 'neutral', size: 'sm', label: 'A/A calibration, same config twice' }] : [];
   return {
     level,
     min,
     max,
     ticks: ticksFor(min, max, 10),
     rows: [...rows, ...aa],
-    aria: `Difference ${signed(s.diff.estimate)} points, interval ${intervalText(s.diff)}.${s.aa ? ` The A/A run gave ${signed(s.aa.diff.estimate)}, interval ${intervalText(s.aa.diff)}.` : ''}`,
+    aria: `Difference ${signed(s.diff.estimate)} points, interval ${intervalText(s.diff)}.${s.aa ? ` The A/A calibration gave ${signed(s.aa.diff.estimate)}, interval ${intervalText(s.aa.diff)}.` : ''}`,
   };
 });
 
@@ -306,8 +307,26 @@ const heroText = computed(() => {
   };
 });
 
-/** Why the result is or is not noise: the interval, the check on the method (an A/A run), and
- *  the method itself, named only as the statistics step names it. */
+/** Under the hero: what the verdict rests on, in a sentence. "No detectable difference" always
+ *  says how large a difference is not ruled out (D42); equivalence names its margin. */
+const verdictSub = computed(() => {
+  const s = stats.value;
+  if (!s) return null;
+  const few = s.tasks.length < 6 ? ` With ${plural(s.tasks.length, 'task')} in the comparison no other verdict is possible: the paired test needs at least 6 tasks to reach p${NBSP}<${NBSP}0.05.` : '';
+  if (s.verdict === 'equivalent') return `The whole interval lies inside the ±${s.margin_points}-point margin set before the run, so any difference is too small to matter.`;
+  if (s.verdict === 'held_back') return 'The pass rate alone would say better, but critical failures rose beyond noise, so it is not called better.';
+  if (s.verdict === 'no_detectable_difference' && s.not_ruled_out_points !== null) return `Differences as large as ${Math.round(s.not_ruled_out_points)}${NBSP}points are not ruled out.${few}`;
+  return null;
+});
+
+/** D44: the latest A/A calibration of these configs, or a link to set one up for arm A's agent. */
+const aaSetup = computed(() => {
+  const a = arms.value[0];
+  return a ? href.runNew(a.hash, a.hash, { calibration: true }) : null;
+});
+
+/** Why the result is or is not noise: the interval, the check on the method (an A/A calibration),
+ *  and the method itself, in plain words. */
 const why = computed(() => {
   const s = stats.value;
   if (!s) return [];
@@ -315,18 +334,56 @@ const why = computed(() => {
   const interval = excludesZero(s.diff)
     ? `The interval stays ${side} zero.`
     : 'The interval crosses zero, so these trials cannot rule out no difference at all.';
-  let aa = 'No A/A run on this setup yet, so the method has not been checked on a run where nothing changed.';
+  let aa = '';
   if (s.aa) {
     aa = excludesZero(s.aa.diff)
-      ? `Check on the method: the same config run twice gave ${pointsWithInterval(s.aa.diff)}, a difference where there is none. Treat this result with caution.`
-      : `Check on the method: the same config run twice gave ${pointsWithInterval(s.aa.diff)}, which includes zero, so the method did not invent a difference when nothing changed.`;
+      ? `Check on the method: the latest A/A calibration of this config gave ${pointsWithInterval(s.aa.diff)}, a difference where there is none. Treat this result with caution.`
+      : `Check on the method: the latest A/A calibration of this config gave ${pointsWithInterval(s.aa.diff)}, which includes zero, so the setup did not invent a difference when nothing changed.`;
   }
-  const p = s.p_value !== null ? `, p${NBSP}=${NBSP}${s.p_value}` : '';
-  const method = s.method === 'paired_task_bootstrap'
-    ? `Paired by task: each task is compared with itself across the two arms. ${methodName(s.method)}${p}.`
-    : `${methodName(s.method)}${p}.`;
-  return [interval, aa, method];
+  const count = (v: number) => v.toLocaleString('en-US');
+  const flips = s.test.exact ? `every one of the ${count(s.test.flips)} ways to flip the tasks' signs` : `${count(s.test.flips)} random sign flips`;
+  const method = `Paired by task: each task is compared with itself across the two arms, and the ${Math.round(s.level * 100)}% interval comes from resampling the tasks ${count(s.resamples)} times. The sign-flip test over ${flips} gives p${NBSP}=${NBSP}${s.p_value}.`;
+  return [interval, ...(aa ? [aa] : []), method];
 });
+
+/** The statistics' sentences write a negative number with a hyphen; the page uses a minus sign. */
+const minus = (text: string) => text.replace(/(^|[\s(])-(?=\d)/g, '$1\u2212');
+
+/** D10's guardrail beside the verdict: what happened to critical failures, or that no check is
+ *  marked critical (nothing is claimed about them then). */
+const critical = computed(() => {
+  const c = stats.value?.critical;
+  if (!c) return null;
+  return { text: minus(c.text), alarm: c.status === 'rose', none: c.status === 'no_critical_checks' };
+});
+
+/** D44: on a calibration run, whether it came out as it should. */
+const calibrationText = computed(() => (stats.value?.calibration ? minus(stats.value.calibration.text) : ''));
+
+/** D10: where B dropped or a check got worse, critical first, as the statistics list them. */
+const regressions = computed(() => {
+  const s = stats.value;
+  if (!s) return [];
+  const sev = (x: string | null) => (x ? `${x}` : 'not rated');
+  const rate = (c: { passed: number; graded: number }) => (c.graded ? `${c.passed} of ${c.graded}` : 'none decided');
+  return s.regressions.map((r) => {
+    const failedB = r.failed_trials.find((t) => t.arm === 'B') ?? r.failed_trials[0];
+    return {
+      key: r.task,
+      name: r.task_id,
+      critical: r.critical,
+      beyond: r.beyond_noise,
+      counts: `A ${passedText({ ...r.a, trials: r.a.graded + r.a.incomplete })}, B ${passedText({ ...r.b, trials: r.b.graded + r.b.incomplete })}`,
+      diff: r.diff ? `${signed(r.diff.estimate)} (${intervalText(r.diff)})` : 'not in the comparison: an arm has no decided trial',
+      graders: r.graders.map((g) => ({ id: g.grader_id, words: `${rate(g.a)} in A, ${rate(g.b)} in B`, severity: sev(g.severity), critical: g.severity === 'critical', optional: !g.required })),
+      link: failedB ? href.trial(failedB.trial_id) : null,
+      linkText: failedB ? `Open a failed trial (arm ${failedB.arm})` : '',
+    };
+  });
+});
+
+/** Tasks left out of the comparison, each with why (an arm has no decided trial). */
+const excludedTasks = computed(() => stats.value?.excluded_tasks.map((t) => ({ key: t.task, name: t.task_id, why: t.why })) ?? []);
 
 interface Metric {
   name: string;
@@ -355,7 +412,7 @@ const metrics = computed<Metric[]>(() => {
   const out: Metric[] = [];
   const rel = (i: Interval | null, abs: string) => (i ? `${signed(i.estimate)}%, interval ${signed(i.low)}% to ${signed(i.high)}%` : abs);
   if (s) {
-    out.push({ name: 'Pass rate', delta: `${signed(s.diff.estimate)} points`, interval: `interval ${intervalText(s.diff)} points`, a: s.a.rate, b: s.b.rate, aText: percent(s.a.rate), bText: percent(s.b.rate), max: 1 });
+    out.push({ name: 'Pass rate', delta: `${signed(s.diff.estimate)} ${Math.abs(Math.round(s.diff.estimate)) === 1 ? 'point' : 'points'}`, interval: `interval ${intervalText(s.diff)} points`, a: s.a.rate, b: s.b.rate, aText: percent(s.a.rate), bText: percent(s.b.rate), max: 1 });
   } else if (t.a.graded && t.b.graded) {
     const ra = t.a.passed / t.a.graded;
     const rb = t.b.passed / t.b.graded;
@@ -365,7 +422,12 @@ const metrics = computed<Metric[]>(() => {
   if (costs.length) {
     for (const c of costs) {
       if (c.metric === 'cost_usd') out.push({ name: 'Cost per trial', delta: signedMoney(c.diff.estimate), interval: rel(c.relative, `interval ${signedMoney(c.diff.low)} to ${signedMoney(c.diff.high)}`), a: c.a, b: c.b, aText: money(c.a), bText: money(c.b), max: Math.max(c.a, c.b) });
-      if (c.metric === 'wall_s') out.push({ name: 'Time per trial, median', delta: `${signed(c.diff.estimate)} s`, interval: rel(c.relative, `interval ${signed(c.diff.low)} to ${signed(c.diff.high)} s`), a: c.a, b: c.b, aText: `${Math.round(c.a)} s`, bText: `${Math.round(c.b)} s`, max: Math.max(c.a, c.b) });
+      if (c.metric === 'wall_s') {
+        // Retry Latency Skew: trials whose model call LiteLLM retried waited out its backoff.
+        const left = (c.left_out_retried?.a ?? 0) + (c.left_out_retried?.b ?? 0);
+        const note = left ? `; ${plural(left, 'trial')} left out: a model call was retried, and its wait would skew the time` : '';
+        out.push({ name: 'Time per trial', delta: `${signed(c.diff.estimate, 1)} s`, interval: `${rel(c.relative, `interval ${signed(c.diff.low, 1)} to ${signed(c.diff.high, 1)} s`)}${note}`, a: c.a, b: c.b, aText: seconds(c.a), bText: seconds(c.b), max: Math.max(c.a, c.b) });
+      }
       if (c.metric === 'tokens') out.push({ name: 'Tokens per trial', delta: signed(c.diff.estimate), interval: rel(c.relative, `interval ${signed(c.diff.low)} to ${signed(c.diff.high)}`), a: c.a, b: c.b, aText: thousands(c.a), bText: thousands(c.b), max: Math.max(c.a, c.b) });
     }
     return out;
@@ -431,7 +493,7 @@ const taskRows = computed<TaskRow[]>(() => {
   if (!d) return [];
   const s = stats.value;
   const base = s
-    ? s.tasks.map((t) => ({ key: t.task, diff: t.diff, significant: t.significant }))
+    ? s.tasks.map((t) => ({ key: t.task, diff: t.diff, significant: t.beyond_noise }))
     : d.detail.tasks.map((t) => {
         const a = cell(t.sha256, 0);
         const b = cell(t.sha256, 1);
@@ -482,8 +544,8 @@ function verdictOf(r: TaskRow): { kind: Verdict; label?: string } {
   if (!stats.value) return { kind: 'pending' };
   if (r.significant) return { kind: r.diff.estimate >= 0 ? 'better' : 'worse' };
   // Clear of zero on its own, but not once the other comparisons are accounted for.
-  if (excludesZero(r.diff)) return { kind: 'none', label: 'No clear difference after correction' };
-  return { kind: 'none' };
+  if (excludesZero(r.diff)) return { kind: 'none', label: 'Within noise after correction' };
+  return { kind: 'none', label: 'Within noise' };
 }
 const labelOf = (r: TaskRow) => (!r.diff ? noDiffWords(r).detail : stats.value ? `${signed(r.diff.estimate)} (${intervalText(r.diff)})` : `${signed(r.diff.estimate)}, no interval`);
 
@@ -503,7 +565,7 @@ const taskSummary = computed(() => {
   const first = `${n} ${n === 1 ? 'task differs' : 'tasks differ'} ${correctionWords.value ? `after ${correctionWords.value} for ${total} comparisons` : 'before any correction for many comparisons'}.`;
   const other = total - n;
   if (!other) return first;
-  let line = `${first} The other ${other} ${other === 1 ? 'shows' : 'show'} no clear difference.`;
+  let line = `${first} The other ${other} ${other === 1 ? 'is' : 'are'} within noise.`;
   const widths = taskRows.value.filter((r) => !r.significant && r.diff).map((r) => Math.round((r.diff?.high ?? 0) - (r.diff?.low ?? 0)));
   if (widths.length) {
     const lo = Math.min(...widths);
@@ -518,11 +580,8 @@ const taskSummary = computed(() => {
 });
 
 const correctionWords = computed(() => {
-  const c = stats.value?.correction;
-  if (!c) return null;
-  if (c.toLowerCase() === 'holm') return "Holm's correction";
-  if (c.toLowerCase() === 'bonferroni') return 'the Bonferroni correction';
-  return `the ${c} correction`;
+  // D41: Benjamini-Hochberg is the one correction the statistics apply.
+  return stats.value?.correction === 'benjamini_hochberg' ? 'the Benjamini-Hochberg correction' : null;
 });
 
 /** What it rests on: how much the judge graded. When the caveat under the figure shows, it already
@@ -578,8 +637,8 @@ const worthALook = computed(() => {
   const finding = worst.significant
     ? `B passed ${passedText(worst.b)}, A passed ${passedText(worst.a)}. This difference holds up ${numbers}.`
     : excludesZero(worst.diff)
-      ? `No clear difference after correcting for ${s.tasks.length} tasks ${numbers}.`
-      : `No clear difference: its interval includes zero even before correcting for ${s.tasks.length} tasks ${numbers}.`;
+      ? `Within noise after correcting for ${s.tasks.length} tasks ${numbers}.`
+      : `Within noise: its interval includes zero even before correcting for ${s.tasks.length} tasks ${numbers}.`;
   const look = lookTrial(worst.key);
   return {
     row: worst,
@@ -761,6 +820,13 @@ const worthALook = computed(() => {
             <p class="verdict-text">
               <strong class="num">{{ heroText?.big }}</strong>{{ heroText?.rest }}
             </p>
+            <p
+              v-if="verdictSub"
+              class="verdict-sub"
+              data-test="verdict-sub"
+            >
+              {{ verdictSub }}
+            </p>
             <IntervalStrip
               :min="hero.min"
               :max="hero.max"
@@ -769,6 +835,30 @@ const worthALook = computed(() => {
               :reference="{ value: 0, dashed: true }"
               :summary="hero.aria"
             />
+            <p
+              v-if="stats.calibration"
+              class="caveat"
+              :class="{ 'caveat--alarm': !stats.calibration.as_expected }"
+              data-test="calibration-note"
+            >
+              <AppIcon
+                :name="stats.calibration.as_expected ? 'info' : 'alert'"
+                :size="14"
+              />
+              <span><strong class="caveat-lead">{{ stats.calibration.as_expected ? 'A/A calibration, as it should be' : 'A/A calibration found a difference' }}:</strong> {{ calibrationText }}</span>
+            </p>
+            <p
+              v-if="critical"
+              class="caveat"
+              :class="{ 'caveat--alarm': critical.alarm }"
+              data-test="critical"
+            >
+              <AppIcon
+                :name="critical.alarm ? 'alert' : 'info'"
+                :size="14"
+              />
+              <span><strong class="caveat-lead">Critical checks:</strong> {{ critical.text }}</span>
+            </p>
             <p
               v-if="caveat"
               class="caveat"
@@ -888,6 +978,17 @@ const worthALook = computed(() => {
           >
             {{ line }}
           </p>
+          <p
+            v-if="!stats.aa && !stats.calibration"
+            data-test="no-aa"
+          >
+            No A/A calibration run for these configs yet, so the setup’s own noise has not been measured on a run where nothing changed.
+            <a
+              v-if="aaSetup && !data.detail.example"
+              :href="aaSetup"
+              data-test="aa-setup"
+            >Set one up</a>
+          </p>
           <h3
             class="why-title rests-title"
             data-test="why-title"
@@ -1000,6 +1101,69 @@ const worthALook = computed(() => {
             </div>
           </div>
         </div>
+      </section>
+
+      <section
+        v-if="stats"
+        aria-labelledby="regressions"
+        class="stack"
+        data-test="regressions"
+      >
+        <h2
+          id="regressions"
+          class="section-title"
+        >
+          Where B dropped
+        </h2>
+        <p
+          v-if="!regressions.length"
+          class="secondary"
+        >
+          No task where B passed less than A, and no check that got worse.
+        </p>
+        <template v-else>
+          <p class="secondary small">
+            Every task where B passed less, or where a check passed less often in B, whether or not it holds up after correction; checks marked critical first. A flag means look here, not a verdict.
+          </p>
+          <ul class="regression-list">
+            <li
+              v-for="r in regressions"
+              :key="r.key"
+              class="regression"
+              data-test="regression"
+            >
+              <div class="regression-head">
+                <span class="mono regression-name">{{ r.name }}</span>
+                <span
+                  v-if="r.critical"
+                  class="regression-tag regression-tag--critical"
+                >critical check got worse</span>
+                <span
+                  v-if="r.beyond"
+                  class="regression-tag"
+                >beyond noise</span>
+                <span class="secondary small num">{{ r.counts }}; {{ r.diff }}</span>
+              </div>
+              <ul
+                v-if="r.graders.length"
+                class="regression-graders small"
+              >
+                <li
+                  v-for="g in r.graders"
+                  :key="g.id"
+                  data-test="regression-grader"
+                >
+                  <span class="mono">{{ g.id }}</span> ({{ g.severity }}{{ g.optional ? ', optional' : '' }}): <span class="num">{{ g.words }}</span>
+                </li>
+              </ul>
+              <a
+                v-if="r.link"
+                :href="r.link"
+                class="small"
+              >{{ r.linkText }}</a>
+            </li>
+          </ul>
+        </template>
       </section>
 
       <section
@@ -1187,6 +1351,21 @@ const worthALook = computed(() => {
             </tbody>
           </table>
         </div>
+        <div
+          v-if="excludedTasks.length"
+          class="secondary small"
+          data-test="excluded-tasks"
+        >
+          <p>Left out of the comparison, because an arm has no decided trial on them:</p>
+          <ul class="excluded-list">
+            <li
+              v-for="t in excludedTasks"
+              :key="t.key"
+            >
+              <span class="mono">{{ t.name }}</span>: {{ t.why }}
+            </li>
+          </ul>
+        </div>
       </section>
     </template>
   </LoadState>
@@ -1305,6 +1484,71 @@ const worthALook = computed(() => {
 
 .verdict-text strong {
   font-weight: 600;
+}
+
+.verdict-sub {
+  max-width: 60ch;
+  color: var(--ink-2);
+}
+
+/* A caveat that changes the reading (critical failures rose; an A/A run found a difference). */
+.caveat--alarm .caveat-lead {
+  color: var(--warning);
+}
+
+.regression-list,
+.excluded-list,
+.regression-graders {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.regression-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.regression {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  min-width: 0;
+}
+
+.regression-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.regression-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.regression-tag {
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  color: var(--ink-2);
+}
+
+.regression-tag--critical {
+  border-color: var(--warning);
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.regression-graders li,
+.excluded-list li {
+  overflow-wrap: anywhere;
 }
 
 .verdict-why {

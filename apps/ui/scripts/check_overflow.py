@@ -47,6 +47,7 @@ SCREENS = {
     "config": "#/configs",
     "config-page": "#/configs/sha256%3A3b81e04c40d821f8210af346e05a4ff775263c73f1c541e5281257f8701430c8",
     "compare": "#/experiments/exp_heldout",
+    "compare-aa": "#/experiments/exp_aa",
     "trial": "#/trials/tr_fd-vs-sip-07_b_3",
     "recorded": "#/trials",
     "labels": "#/labels",
@@ -54,7 +55,7 @@ SCREENS = {
     "tasks": "#/tasks",
     "harnesses": "#/harnesses",
 }
-OPTIONAL = {"run": "#/run", "run-progress": "#/experiments/exp_harness/run"}
+OPTIONAL = {"run": "#/run", "run-aa": "#/run?aa=1", "run-progress": "#/experiments/exp_harness/run"}
 
 # Screens in a state a click or a typed value opens: name -> (route, steps). A step is
 # ("click", selector), ("fill", selector, value) or ("select", selector, value).

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeSpan, toBlindItem } from '../api/client';
 import type { ConfigView, Estimate, TaskView } from '../api/types';
-import { agreementWords, armDifferences, armsOf, armState, axisWords, checksToGo, differenceText, headline, judgeCaveat, methodName, noDiffWords, passedText, pointsWithInterval, setupOf, timeLeft, verdictTitle } from './arms';
+import { agreementWords, armDifferences, armsOf, armState, axisWords, checksToGo, differenceText, headline, judgeCaveat, methodName, noDiffWords, passedText, pointsWithInterval, setupOf, timeLeft, verdictTitle, verdictWords } from './arms';
 import { coverage, coverageText } from './capabilities';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, splitCheck } from './checks';
 import { sentenceChanges } from './diff';
@@ -141,7 +141,9 @@ describe('scale', () => {
   it('gives an arm colour only to a result that holds up', () => {
     expect(verdictTone('better')).toBe('b');
     expect(verdictTone('worse')).toBe('a');
-    expect(verdictTone('no_clear_difference')).toBe('neutral');
+    expect(verdictTone('no_detectable_difference')).toBe('neutral');
+    expect(verdictTone('equivalent')).toBe('neutral');
+    expect(verdictTone('held_back')).toBe('neutral');
   });
 });
 
@@ -215,12 +217,18 @@ describe('arms', () => {
     const arms = armsOf(exp, configs);
     expect(arms.map((a) => a.label)).toEqual(['Prompt v1', 'Prompt v2']);
     expect(setupOf(exp, arms)).toBe('Hermes with Claude Haiku 5.5');
-    const stats = { verdict: 'better' } as Parameters<typeof headline>[0];
+    const stats = { verdict: 'better' } as const;
     expect(headline(stats, arms, [taskOf('a', 'held_out')])).toBe('Prompt v2 beats v1 on the held-out tasks');
     // The verdict title uses the same verbs, with both arms named.
     expect(verdictTitle(stats, arms)).toBe('v2 beats v1');
-    expect(verdictTitle({ verdict: 'worse' } as Parameters<typeof verdictTitle>[0], arms)).toBe('v2 does worse than v1');
-    expect(verdictTitle({ verdict: 'no_clear_difference' } as Parameters<typeof verdictTitle>[0], arms)).toBe('No clear difference');
+    expect(verdictTitle({ verdict: 'worse' }, arms)).toBe('v2 does worse than v1');
+    expect(verdictTitle({ verdict: 'no_detectable_difference' }, arms)).toBe('No detectable difference');
+    expect(verdictTitle({ verdict: 'equivalent' }, arms)).toBe('Practically equivalent');
+    expect(verdictTitle({ verdict: 'held_back' }, arms)).toBe('v2 is not called better: critical failures rose');
+    expect(headline({ verdict: 'equivalent' }, arms, [taskOf('a', 'held_out')])).toBe('Prompt v2 and v1 are practically equivalent on the held-out tasks');
+    expect(headline({ verdict: 'no_detectable_difference' }, arms, [taskOf('a', 'held_out')])).toBe('No detectable difference between Prompt v1 and v2 on the held-out tasks');
+    expect(verdictWords('held_back')).toBe('Not called better');
+    expect(axisWords({ axis: 'none', config_hashes: [configs[0].hash, configs[0].hash], calibration: true })).toBe('nothing: an A/A calibration (same config twice)');
     expect(armsOf({ axis: 'none', config_hashes: [configs[0].hash, configs[0].hash] }, configs).map((a) => a.label)).toEqual(['Config 3b81e04', 'Config 3b81e04']);
   });
 

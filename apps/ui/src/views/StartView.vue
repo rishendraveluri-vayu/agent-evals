@@ -6,8 +6,8 @@
  * so the card names the run it opens. The example opens through #/example, which loads the
  * shipped example the first time.
  *
- * Every line says only what this version does: it reports pass counts, cost and time per version
- * and per task; the verdict with its interval (the statistics step) is not built yet.
+ * Every line says only what this version does: it reports the verdict with its 95% interval (SP6),
+ * pass counts, cost and time per version and per task, down to each trial.
  */
 import { computed } from 'vue';
 import { api } from '../api/client';
@@ -88,7 +88,7 @@ const steps = computed(() => [
   {
     key: 'result',
     title: 'Read the result',
-    detail: 'Pass counts, cost and time for each version, then task by task down to each trial. This version gives counts only: the verdict with its interval, how sure a difference is, is not built yet.',
+    detail: 'The verdict first: better, worse, practically the same, or too close to tell from noise, with its 95% interval. Then cost and time for each version, the tasks where it dropped, and task by task down to each trial.',
     link: 'Open the experiments',
     to: href.experiments(),
   },
@@ -101,7 +101,7 @@ const steps = computed(() => [
       Evaluate an agent
     </h1>
     <p class="lede">
-      Run two versions of an agent on the same tasks, then compare them task by task, down to each trial’s trace and grades. This version reports pass counts, cost and time; the verdict with its interval, whether a change is better or worse and how sure we can be, is not built yet.
+      Run two versions of an agent on the same tasks, then compare them: whether the change made it better or worse and how sure we can be, with cost and time beside it, task by task, down to each trial’s trace and grades.
     </p>
   </div>
 

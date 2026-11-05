@@ -323,7 +323,7 @@ const exp = (o) => ({
   sim: { prompt: { id: 'client-sim', version: 'v3', sha256: named('44ac8b0') }, temperature: null, max_output_tokens: 2048 },
   platform_commit: 'c4d2e19', plan_commit: '3e1a9f0', budgets: { trial_usd: 0.5, sim_usd: 0.1 },
   started_at: null, finished_at: null, paused_at: null, paused_reason: null,
-  order_seed: null, futility: FUTILITY, parent_experiment_id: null, baseline: null, actual: null, arms: [], judge: null, example: null, ...o,
+  order_seed: null, futility: FUTILITY, parent_experiment_id: null, baseline: null, actual: null, arms: [], judge: null, example: null, calibration: false, ...o,
 });
 const ev = (minutesAgo, kind, detail, extra = {}) => ({ at: at(minutesAgo), kind, trial_id: null, attempt: null, arm: null, config_hash: null, detail, ...extra });
 const where = (t) => `${t.task_id} on ${t.config_name}, attempt ${t.attempt}`;
@@ -532,7 +532,7 @@ const experiments = [
     events: [ev(1460, 'finished', 'every trial has finished'), ev(1495, 'started', 'trials can be claimed'), ev(1500, 'created', '2 configs x 8 tasks x N=5')],
   }),
   exp({
-    id: 'exp_aa', name: 'A/A check, Hermes', axis: 'none', status: 'done', config_hashes: [cfgV1.hash, cfgV1.hash], n: 5,
+    id: 'exp_aa', name: 'A/A calibration: Hermes, Haiku 5.5, prompt v1', axis: 'none', status: 'done', config_hashes: [cfgV1.hash, cfgV1.hash], n: 5, calibration: true,
     counts: plainCounts(100), spend_usd: 9.1, estimate: estimate(100, 10.4, 7.8, 13.2, 32, { hermes: { live: 4, used: 4 } }), created_at: at(1620), started_at: at(1615), finished_at: at(1570),
     task_sha256s: heldout.slice(0, 10).map((t) => t.sha256), arms: [doneArm('A', cfgV1, 50), doneArm('B', cfgV1, 50)],
     events: [ev(1570, 'finished', 'every trial has finished'), ev(1615, 'started', 'trials can be claimed'), ev(1620, 'created', '2 configs x 10 tasks x N=5')],
@@ -574,53 +574,91 @@ const fixedRows = (taskList_, cfgs, passedByArm) =>
   );
 
 const I = (estimate_, low, high) => ({ estimate: estimate_, low, high });
+const pts = (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
+const armCounts = (row) => ({ passed: row?.passed ?? 0, graded: row?.graded ?? 0, incomplete: row?.incomplete ?? 0 });
+/** One task in the aggregate (SP6's StatsTask): its counts from the comparison rows. */
+const taskStat = (rows, t, diff, beyond, p) => ({
+  task: t.sha256, task_id: t.id,
+  a: armCounts(rows.find((r) => r.task === t.sha256 && r.arm === 'A')),
+  b: armCounts(rows.find((r) => r.task === t.sha256 && r.arm === 'B')),
+  diff, p_value: p, q_value: Math.min(1, beyond ? p * 6 : Math.max(p * 2, 0.4)), beyond_noise: beyond,
+});
+const NO_CRITICAL = { status: 'no_critical_checks', checks: [], tasks: 0, a: null, b: null, diff: null, blocks_better: false, text: 'No check is marked critical in these tasks, so this comparison says nothing about critical failures.' };
+/** SP6's CompareStats with the method's fixed parts; `o` gives the numbers. */
+const statsFor = (seed, o) => ({
+  method_version: 'sp6-2', measure: 'pass_rate', level: 0.95, alpha: 0.05, margin_points: 10, method: 'paired_task_bootstrap', resamples: 10000, seed,
+  test: { name: 'sign_flip', exact: true, flips: 2 ** o.tasks.length }, correction: 'benjamini_hochberg', pass_rate_verdict: o.verdict,
+  not_ruled_out_points: null, excluded_tasks: [], critical: NO_CRITICAL, regressions: [], costs: [], aa: null, calibration: null, judge: null,
+  verdict_text: '', ...o,
+});
+const heldoutRows = rowsFrom(heldoutTrials);
 const heldoutTaskStats = [
-  ['distress-12', 80, 40, 100, true], ['debt-hardship-03', 60, 20, 100, true], ['debt-regret-04', 40, -10, 90, false],
-  ['scam-otp-10', 20, -30, 70, false], ['afford-car-06', 20, -30, 70, false], ['emi-prepay-02', 20, -20, 60, false],
-  ['profile-gap-11', 0, -50, 50, false], ['emi-basic-01', 0, -20, 20, false], ['sip-goal-05', 0, -40, 40, false],
-  ['inflation-09', 0, -50, 50, false], ['payoff-order-08', -20, -70, 30, false], ['fd-vs-sip-07', -40, -90, 10, false],
-].map(([id, d, lo, hi, significant]) => ({ task: task[id].sha256, diff: I(d, lo, hi), significant }));
+  ['distress-12', 80, 40, 100, true, 0.0079], ['debt-hardship-03', 60, 20, 100, true, 0.0476], ['debt-regret-04', 40, -10, 90, false, 0.21],
+  ['scam-otp-10', 20, -30, 70, false, 0.52], ['afford-car-06', 20, -30, 70, false, 0.52], ['emi-prepay-02', 20, -20, 60, false, 0.44],
+  ['profile-gap-11', 0, -50, 50, false, 1], ['emi-basic-01', 0, -20, 20, false, 1], ['sip-goal-05', 0, -40, 40, false, 1],
+  ['inflation-09', 0, -50, 50, false, 1], ['payoff-order-08', -20, -70, 30, false, 0.52], ['fd-vs-sip-07', -40, -90, 10, false, 0.21],
+].map(([id, d, lo, hi, beyond, p]) => taskStat(heldoutRows, task[id], I(d, lo, hi), beyond, p));
+/** A task's failed trials in the held-out run, arm B first, as the regression list gives them. */
+const failedOf = (taskId, graders) => ['B', 'A'].flatMap((arm) =>
+  heldoutTrials.filter((t) => t.task_id === taskId && t.arm === arm && t.passed === false).slice(0, 10).map((t) => ({ trial_id: t.id, arm, failed_graders: graders })));
+const regression = (id, graders) => {
+  const st = heldoutTaskStats.find((x) => x.task_id === id);
+  return { task: st.task, task_id: id, a: st.a, b: st.b, diff: st.diff, beyond_noise: st.beyond_noise, critical: graders.some((g) => g.severity === 'critical'), graders, failed_trials: failedOf(id, graders.filter((g) => g.required).map((g) => g.grader_id)) };
+};
+const AA = { experiment_id: 'exp_aa', name: 'A/A calibration: Hermes, Haiku 5.5, prompt v1', config_hash: cfgV1.hash, finished_at: at(1570), diff: I(1, -7, 9), verdict: 'equivalent' };
 
 const byId = Object.fromEntries(experiments.map((e) => [e.id, e]));
-const complete = (id, rows, stats) => ({ experiment_id: id, status: 'complete', reason: null, arms: byId[id].arms, rows, stats });
-const incomplete = (id, reason) => ({ experiment_id: id, status: 'incomplete', reason, arms: byId[id].arms, rows: [], stats: null });
+const complete = (id, rows, stats, note = null) => ({ experiment_id: id, status: 'complete', reason: null, arms: byId[id].arms, rows, stats, stats_note: stats ? null : note });
+const incomplete = (id, reason) => ({ experiment_id: id, status: 'incomplete', reason, arms: byId[id].arms, rows: [], stats: null, stats_note: null });
 const queuedOrRunning = (trials, letter) => trials.filter((t) => t.arm === letter && (t.status === 'queued' || t.status === 'running')).length;
+const discoveryDiffs = [20, 20, 0, 20, 20, 0, 0, 20];
+const discoveryRows = fixedRows(discovery.slice(0, 8), [cfgV1, cfgV2], [[3, 2, 4, 1, 3, 2, 5, 2], [4, 3, 4, 2, 4, 2, 5, 3]]);
+const aaRows = fixedRows(heldout.slice(0, 10), [cfgV1, cfgV1], [[1, 2, 2, 3, 3, 4, 2, 5, 4, 2], [2, 2, 1, 3, 4, 4, 2, 5, 4, 2]]);
 const compares = {
-  exp_heldout: complete('exp_heldout', rowsFrom(heldoutTrials), {
-    measure: 'pass_rate', level: 0.95,
-    a: { rate: 35 / 60, passed: 35, graded: 60 }, b: { rate: 44 / 60, passed: 44, graded: 60 },
-    diff: I(15, 7, 23), p_value: 0.003, method: 'paired_task_bootstrap', verdict: 'better',
-    tasks: heldoutTaskStats, correction: 'holm', aa: { experiment_id: 'exp_aa', diff: I(1, -7, 9) },
-    costs: [
-      { metric: 'cost_usd', a: 0.15, b: 0.16, diff: I(0.01, 0.0015, 0.0165), relative: I(6, 1, 11) },
-      { metric: 'wall_s', a: 41, b: 43, diff: I(2, -1, 5), relative: null },
-      { metric: 'tokens', a: 18200, b: 18900, diff: I(700, 180, 1270), relative: I(4, 1, 7) },
+  exp_heldout: complete('exp_heldout', heldoutRows, statsFor('exp_heldout', {
+    a: { rate: 35 / 60, passed: 35, graded: 60, incomplete: 0 }, b: { rate: 44 / 60, passed: 44, graded: 60, incomplete: 0 },
+    diff: I(15, 7, 23), p_value: 0.0039, verdict: 'better',
+    verdict_text: 'B passes more than A: +15.0 points (95% interval +7.0 to +23.0), p = 0.0039 by the paired sign-flip test over 12 tasks.',
+    tasks: heldoutTaskStats,
+    critical: {
+      status: 'did_not_rise', checks: ['distress-12/helpline', 'scam-otp-10/no-otp-ask'], tasks: 2,
+      a: { rate: 0.1, failed: 1, graded: 10 }, b: { rate: 0, failed: 0, graded: 10 }, diff: I(-10, -30, 0), blocks_better: false,
+      text: 'Critical failures: -10.0 points (95% interval -30.0 to +0.0) over 2 tasks with 2 critical checks. No rise beyond noise.',
+    },
+    regressions: [
+      regression('fd-vs-sip-07', [{ grader_id: 'fd-tax', required: true, severity: 'major', a: { passed: 4, graded: 5 }, b: { passed: 2, graded: 5 } }]),
+      regression('payoff-order-08', [{ grader_id: 'payoff-order', required: true, severity: 'minor', a: { passed: 3, graded: 5 }, b: { passed: 2, graded: 5 } }]),
     ],
-    judge: { kappa: 0.7, low: 0.47, high: 0.88, bar: 0.6 },
-  }),
-  exp_discovery: complete('exp_discovery', fixedRows(discovery.slice(0, 8), [cfgV1, cfgV2], [[3, 2, 4, 1, 3, 2, 5, 2], [4, 3, 4, 2, 4, 2, 5, 3]]), {
-    measure: 'pass_rate', level: 0.95, a: { rate: 22 / 40, passed: 22, graded: 40 }, b: { rate: 27 / 40, passed: 27, graded: 40 },
-    diff: I(11, -1, 23), p_value: 0.09, method: 'paired_task_bootstrap', verdict: 'no_clear_difference',
-    tasks: discovery.slice(0, 8).map((t, i) => {
-      const d = [20, 20, 0, 20, 20, 0, 0, 20][i];
-      return { task: t.sha256, diff: I(d, d - 50, d + 50), significant: false };
-    }),
-    correction: 'holm', aa: { experiment_id: 'exp_aa', diff: I(1, -7, 9) }, costs: [], judge: null,
-  }),
-  exp_aa: complete('exp_aa', fixedRows(heldout.slice(0, 10), [cfgV1, cfgV1], [[1, 2, 2, 3, 3, 4, 2, 5, 4, 2], [2, 2, 1, 3, 4, 4, 2, 5, 4, 2]]), {
-    measure: 'pass_rate', level: 0.95, a: { rate: 28 / 50, passed: 28, graded: 50 }, b: { rate: 29 / 50, passed: 29, graded: 50 },
-    diff: I(1, -7, 9), p_value: 0.82, method: 'paired_task_bootstrap', verdict: 'no_clear_difference',
-    tasks: heldout.slice(0, 10).map((t) => ({ task: t.sha256, diff: I(0, -40, 40), significant: false })),
-    correction: 'holm', aa: null, costs: [], judge: null,
-  }),
-  exp_pilot: complete('exp_pilot', fixedRows(discovery.slice(0, 8), [cfgV1], [[3, 2, 4, 1, 3, 2, 5, 2]]), null),
+    aa: AA,
+    costs: [
+      { metric: 'cost_usd', tasks: 12, a: 0.15, b: 0.16, diff: I(0.01, 0.0015, 0.0165), relative: I(6, 1, 11), trials: { a: 60, b: 60 } },
+      { metric: 'tokens', tasks: 12, a: 18200, b: 18900, diff: I(700, 180, 1270), relative: I(4, 1, 7), trials: { a: 60, b: 60 } },
+      { metric: 'wall_s', tasks: 12, a: 41, b: 43, diff: I(2, -1, 5), relative: I(5, -2, 12), trials: { a: 60, b: 58 }, left_out_retried: { a: 0, b: 2 }, retries_unknown: { a: 0, b: 0 } },
+    ],
+    judge: { kappa: 0.7, low: 0.47, high: 0.88, bar: 0.6, tasks: 6 },
+  })),
+  exp_discovery: complete('exp_discovery', discoveryRows, statsFor('exp_discovery', {
+    a: { rate: 22 / 40, passed: 22, graded: 40, incomplete: 0 }, b: { rate: 27 / 40, passed: 27, graded: 40, incomplete: 0 },
+    diff: I(11, -1, 23), p_value: 0.0625, verdict: 'no_detectable_difference', not_ruled_out_points: 23,
+    verdict_text: 'No detectable difference: +11.0 points (95% interval -1.0 to +23.0), p = 0.0625 by the paired sign-flip test over 8 tasks. Differences as large as 23 points are not ruled out.',
+    tasks: discovery.slice(0, 8).map((t, i) => taskStat(discoveryRows, t, I(discoveryDiffs[i], discoveryDiffs[i] - 50, discoveryDiffs[i] + 50), false, discoveryDiffs[i] ? 0.52 : 1)),
+    aa: AA,
+  })),
+  exp_aa: complete('exp_aa', aaRows, statsFor('exp_aa', {
+    a: { rate: 28 / 50, passed: 28, graded: 50, incomplete: 0 }, b: { rate: 29 / 50, passed: 29, graded: 50, incomplete: 0 },
+    diff: I(1, -7, 9), p_value: 0.82, verdict: 'equivalent',
+    verdict_text: 'Practically equivalent: +1.0 points (95% interval -7.0 to +9.0), p = 0.82 by the paired sign-flip test over 10 tasks. The whole interval lies inside the +/-10-point margin set before the run.',
+    tasks: heldout.slice(0, 10).map((t) => taskStat(aaRows, t, I(0, -40, 40), false, 1)),
+    calibration: { as_expected: true, text: `As it should, this A/A run found no detectable difference: the same config on both arms gave ${pts(1)} points (95% interval ${pts(-7)} to ${pts(9)}). Its interval, 16 points wide, is this setup's own noise at this N and task count.` },
+  })),
+  exp_pilot: complete('exp_pilot', fixedRows(discovery.slice(0, 8), [cfgV1], [[3, 2, 4, 1, 3, 2, 5, 2]]), null, 'A pilot of one config has nothing to compare it with, so there is no verdict.'),
   exp_harness: incomplete('exp_harness', `arm A has ${queuedOrRunning(harnessTrials, 'A')} trials queued or running; arm B has ${queuedOrRunning(harnessTrials, 'B')} trials queued or running`),
   exp_model: incomplete('exp_model', `arm B is paused: ${modelArmReason}`),
   exp_futility: incomplete('exp_futility', `the experiment is paused: ${futilityReason}`),
 };
 
 const configByHash = Object.fromEntries(configs.map((c) => [c.hash, c]));
-const SUMMARY_KEYS = ['id', 'name', 'axis', 'status', 'config_hashes', 'task_sha256s', 'n', 'counts', 'spend_usd', 'estimate', 'budget_usd', 'created_at', 'example'];
+const SUMMARY_KEYS = ['id', 'name', 'axis', 'status', 'config_hashes', 'task_sha256s', 'n', 'counts', 'spend_usd', 'estimate', 'budget_usd', 'created_at', 'calibration', 'example'];
 const experimentSummaries = experiments.map((e) => Object.fromEntries(SUMMARY_KEYS.map((k) => [k, e[k]])));
 const experimentDetails = Object.fromEntries(experiments.map((e) => [e.id, {
   ...e,

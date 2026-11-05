@@ -460,13 +460,43 @@ describe('RunView arm defaults (QA blocker 3)', () => {
     estimate.mockClear();
     await w.get('[data-test="arm-b"]').setValue(cfgV1.hash);
     await settle();
-    expect(w.get('[data-test="same-config"]').text()).toBe('Arm A and arm B are the same agent. Pick a different agent for one of them, or set arm B to None to run it on its own.');
-    expect(checkTexts(w)).toContain('Arm A and arm B are the same agentCheck failed.Pick a different agent for one of the arms, or set arm B to None to run this agent on its own.');
+    expect(w.get('[data-test="same-config"]').text()).toBe('Arm A and arm B are the same agent. Pick a different agent for one of them, set arm B to None to run it on its own, or tick A/A calibration above.');
+    expect(checkTexts(w)).toContain('Arm A and arm B are the same agentCheck failed.Pick a different agent for one of the arms, set arm B to None to run this agent on its own, or tick A/A calibration to measure the setup’s own noise.');
     expect(w.get('[data-test="start"]').attributes('disabled')).toBeDefined();
     expect(w.get('[data-test="start"]').text()).toBe('Start');
     expect(estimate).not.toHaveBeenCalled();
     expect(w.text()).not.toContain('same hash twice');
-    expect(w.text()).not.toContain('A/A');
+    // D44: an A/A run is offered only through its own box, unticked by default.
+    expect((w.get('[data-test="calibration-box"]').element as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('runs an A/A calibration when its box is ticked: arm B follows arm A, the name says so, and the API is told (D44)', async () => {
+    const estimate = vi.spyOn(api, 'estimate');
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    expect(w.get('[data-test="calibration"]').text()).toBe('A/A calibration: runs one agent on both arms to measure this setup’s own noise; it should come out “no detectable difference”.');
+    await w.get('[data-test="calibration-box"]').setValue(true);
+    await settle();
+    const armB = w.get('[data-test="arm-b"]').element as HTMLSelectElement;
+    expect(armB.value).toBe(cfgV1.hash);
+    expect(armB.disabled).toBe(true);
+    expect(w.find('[data-test="same-config"]').exists()).toBe(false);
+    expect(checkTexts(w).some((t) => t.startsWith('A/A calibration: the same agent on both armsCheck passed.'))).toBe(true);
+    expect(estimate).toHaveBeenLastCalledWith(expect.objectContaining({ config_hashes: [cfgV1.hash, cfgV1.hash], calibration: true }));
+    expect((w.get('[data-test="run-name"]').element as HTMLInputElement).value).toBe(`A/A calibration: ${cfgV1.name}`);
+    // Unticking it puts a different agent back on arm B.
+    await w.get('[data-test="calibration-box"]').setValue(false);
+    await settle();
+    expect(armB.disabled).toBe(false);
+    expect(armB.value).not.toBe(cfgV1.hash);
+  });
+
+  it('starts with the box ticked when the link asks for a calibration', async () => {
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV1.hash, calibration: true } });
+    await settle();
+    expect((w.get('[data-test="calibration-box"]').element as HTMLInputElement).checked).toBe(true);
+    expect((w.get('[data-test="arm-b"]').element as HTMLSelectElement).value).toBe(cfgV1.hash);
+    expect(w.find('[data-test="same-config"]').exists()).toBe(false);
   });
 });
 

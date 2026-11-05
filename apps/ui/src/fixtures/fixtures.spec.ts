@@ -17,7 +17,7 @@ const FIELDS = {
     'hash', 'name', 'harness', 'harness_ref', 'adapter_version', 'capabilities_sha256', 'model', 'prompt', 'toolset', 'settings', 'settings_sources',
     'unsupported', 'warnings', 'harness_options', 'seed', 'parent_hash', 'example_only', 'created_at',
   ],
-  summary: ['id', 'name', 'axis', 'status', 'config_hashes', 'task_sha256s', 'n', 'counts', 'spend_usd', 'estimate', 'budget_usd', 'created_at', 'example'],
+  summary: ['id', 'name', 'axis', 'status', 'config_hashes', 'task_sha256s', 'n', 'counts', 'spend_usd', 'estimate', 'budget_usd', 'created_at', 'calibration', 'example'],
   detailExtra: [
     'sim_model', 'sim', 'platform_commit', 'plan_commit', 'budgets', 'started_at', 'finished_at', 'order_seed', 'futility', 'parent_experiment_id',
     'baseline', 'actual', 'paused_at', 'paused_reason', 'arms', 'tasks', 'configs', 'events', 'judge',
@@ -29,7 +29,7 @@ const FIELDS = {
     'id', 'experiment_id', 'task_sha256', 'task_id', 'config_hash', 'config_name', 'harness', 'model', 'repeat_index', 'order_index', 'attempt', 'status',
     'label', 'end_state', 'cost_usd', 'input_tokens', 'output_tokens', 'model_calls', 'wall_s', 'worker_id', 'claimed_at', 'finished_at', 'passed', 'grading',
   ],
-  compare: ['experiment_id', 'status', 'reason', 'arms', 'rows', 'stats'],
+  compare: ['experiment_id', 'status', 'reason', 'arms', 'rows', 'stats', 'stats_note'],
   compareRow: ['task', 'task_id', 'arm', 'config', 'config_name', 'passed', 'graded', 'incomplete', 'trials', 'infra_failed', 'abandoned'],
   trial: [
     'id', 'experiment_id', 'probe', 'task', 'config', 'repeat_index', 'attempt', 'status', 'label', 'end_state', 'spec', 'result', 'runner_report', 'usage',

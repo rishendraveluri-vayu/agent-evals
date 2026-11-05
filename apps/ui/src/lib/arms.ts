@@ -235,8 +235,9 @@ export function setupOf(experiment: Pick<ExperimentSummary, 'axis'>, arms: Arm[]
   return `${harnessShort(c.harness)} with ${modelName(c.model)}`;
 }
 
-export function axisWords(experiment: Pick<ExperimentSummary, 'axis' | 'config_hashes'>): string {
+export function axisWords(experiment: Pick<ExperimentSummary, 'axis' | 'config_hashes'> & { calibration?: boolean }): string {
   const { axis, config_hashes: hashes } = experiment;
+  if (experiment.calibration) return 'nothing: an A/A calibration (same config twice)';
   if (axis === 'none' || hashes.length < 2 || hashes[0] === hashes[1]) {
     if (hashes.length === 2 && hashes[0] === hashes[1]) return 'nothing (same config twice)';
     return 'nothing (one config)';
@@ -272,22 +273,31 @@ export function sharedSplit(tasks: TaskView[]): string | null {
   return splits.size === 1 ? splitName([...splits][0]) : null;
 }
 
-/** "Prompt v2 beats v1 on the held-out tasks" */
-export function headline(stats: CompareStats, arms: Arm[], tasks: TaskView[]): string {
+/** "Prompt v2 beats v1 on the held-out tasks". One sentence per verdict (D42, D10's guardrail). */
+export function headline(stats: Pick<CompareStats, 'verdict'>, arms: Arm[], tasks: TaskView[]): string {
   const [a, b] = arms;
   const split = sharedSplit(tasks);
   const where = split ? ` on the ${split} tasks` : '';
   if (stats.verdict === 'better') return `${b.label} beats ${a.short}${where}`;
   if (stats.verdict === 'worse') return `${b.label} does worse than ${a.short}${where}`;
-  return `No clear difference between ${a.label} and ${b.short}${where}`;
+  if (stats.verdict === 'equivalent') return `${b.label} and ${a.short} are practically equivalent${where}`;
+  if (stats.verdict === 'held_back') return `${b.label} is not called better than ${a.short}${where}: critical failures rose`;
+  return `No detectable difference between ${a.label} and ${b.short}${where}`;
 }
 
 /** "v2 beats v1": the same verbs as headline(), with each arm's short name. */
-export function verdictTitle(stats: CompareStats, arms: Arm[]): string {
+export function verdictTitle(stats: Pick<CompareStats, 'verdict'>, arms: Arm[]): string {
   const [a, b] = arms;
   if (stats.verdict === 'better') return `${b.short} beats ${a.short}`;
   if (stats.verdict === 'worse') return `${b.short} does worse than ${a.short}`;
-  return 'No clear difference';
+  if (stats.verdict === 'equivalent') return 'Practically equivalent';
+  if (stats.verdict === 'held_back') return `${b.short} is not called better: critical failures rose`;
+  return 'No detectable difference';
+}
+
+/** A verdict as a short tag ("Better", "Practically equivalent"), for lists. */
+export function verdictWords(verdict: CompareStats['verdict']): string {
+  return { better: 'Better', worse: 'Worse', equivalent: 'Practically equivalent', no_detectable_difference: 'No detectable difference', held_back: 'Not called better' }[verdict];
 }
 
 /** A no-break space (U+00A0): keeps a number with its unit, and "κ" or "p =" with its value. */

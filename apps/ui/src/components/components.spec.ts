@@ -236,7 +236,7 @@ describe('SpanTimeline', () => {
 });
 
 describe('VerdictTag', () => {
-  it('tints better and worse with an arrow, and leaves no clear difference as plain text', () => {
+  it('tints better and worse with an arrow, and leaves no detectable difference as plain text', () => {
     const better = mount(VerdictTag, { props: { verdict: 'better' } });
     expect(better.text()).toBe('Better');
     expect(better.classes()).toContain('verdict-tag--better');
@@ -247,7 +247,7 @@ describe('VerdictTag', () => {
     expect(worse.attributes('data-verdict')).toBe('worse');
     expect(worse.find('svg').exists()).toBe(true);
     const none = mount(VerdictTag, { props: { verdict: 'none' } });
-    expect(none.text()).toBe('No clear difference');
+    expect(none.text()).toBe('No detectable difference');
     expect(none.classes()).toEqual(['result-plain']);
     // theme.css sets this one in regular weight: the absence of evidence, lighter than a finding.
     expect(none.attributes('data-verdict')).toBe('none');
@@ -256,7 +256,7 @@ describe('VerdictTag', () => {
     expect(pending.text()).toBe('No interval yet');
     expect(pending.classes()).toEqual(['result-plain']);
     expect(pending.attributes('data-verdict')).toBe('pending');
-    expect(mount(VerdictTag, { props: { verdict: 'none', label: 'No clear difference after correction' } }).text()).toBe('No clear difference after correction');
+    expect(mount(VerdictTag, { props: { verdict: 'none', label: 'Within noise after correction' } }).text()).toBe('Within noise after correction');
   });
 });
 

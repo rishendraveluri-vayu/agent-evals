@@ -76,6 +76,7 @@
     },
     "budget_usd": 20,
     "created_at": "2026-11-05T13:56:00.000Z",
+    "calibration": false,
     "example": null
   },
   {
@@ -154,6 +155,7 @@
     },
     "budget_usd": 20,
     "created_at": "2026-11-05T13:43:00.000Z",
+    "calibration": false,
     "example": null
   },
   {
@@ -245,6 +247,7 @@
     },
     "budget_usd": 40,
     "created_at": "2026-11-05T13:38:00.000Z",
+    "calibration": false,
     "example": null
   },
   {
@@ -332,6 +335,7 @@
     },
     "budget_usd": 40,
     "created_at": "2026-11-05T11:18:00.000Z",
+    "calibration": false,
     "example": null
   },
   {
@@ -414,11 +418,12 @@
     },
     "budget_usd": 40,
     "created_at": "2026-11-04T13:08:00.000Z",
+    "calibration": false,
     "example": null
   },
   {
     "id": "exp_aa",
-    "name": "A/A check, Hermes",
+    "name": "A/A calibration: Hermes, Haiku 5.5, prompt v1",
     "axis": "none",
     "status": "done",
     "config_hashes": [
@@ -498,6 +503,7 @@
     },
     "budget_usd": 40,
     "created_at": "2026-11-04T11:08:00.000Z",
+    "calibration": true,
     "example": null
   },
   {
@@ -579,6 +585,7 @@
     },
     "budget_usd": 40,
     "created_at": "2026-11-03T12:58:00.000Z",
+    "calibration": false,
     "example": null
   }
 ]

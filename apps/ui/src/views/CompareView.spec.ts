@@ -43,9 +43,10 @@ describe('CompareView in fixture mode', () => {
     expect(w.findAll('[data-test="why-title"]').map((h) => h.text())).toEqual(['Why this is unlikely to be noise', 'What it rests on']);
     expect(w.findAll('[data-test="why-line"]').map((p) => p.text())).toEqual([
       'The interval stays above zero.',
-      `Check on the method: the same config run twice gave +1${nb}point (−7 to +9), which includes zero, so the method did not invent a difference when nothing changed.`,
-      `Paired by task: each task is compared with itself across the two arms. Paired task bootstrap, p${nb}=${nb}0.003.`,
+      `Check on the method: the latest A/A calibration of this config gave +1${nb}point (−7 to +9), which includes zero, so the setup did not invent a difference when nothing changed.`,
+      `Paired by task: each task is compared with itself across the two arms, and the 95% interval comes from resampling the tasks 10,000 times. The sign-flip test over every one of the 4,096 ways to flip the tasks' signs gives p${nb}=${nb}0.0039.`,
     ]);
+    expect(w.find('[data-test="no-aa"]').exists()).toBe(false);
     expect(w.text()).not.toContain('Permutation');
     expect(w.text()).not.toContain('wobble');
     expect(w.text()).not.toContain('resampled');
@@ -108,7 +109,7 @@ describe('CompareView in fixture mode', () => {
     const hero = w.get('[data-test="verdict"] svg[role="img"]');
     expect(hero.findAll('.range').map((r) => toneOf(r.classes(), 'range--'))).toEqual(['b', 'neutral']);
     const labels = [...hero.findAll('[data-test="strip-label"]').map((t) => t.text()), ...w.findAll('[data-test="strip-legend"] li').map((l) => l.text())];
-    expect(labels).toEqual(expect.arrayContaining(['v2 minus v1, 12 tasks', 'A/A run, same config twice']));
+    expect(labels).toEqual(expect.arrayContaining(['v2 minus v1, 12 tasks', 'A/A calibration, same config twice']));
   });
 
   it('draws the zero line once for the whole plot column, with a centred, stubbed tick every 50 points', async () => {
@@ -146,7 +147,7 @@ describe('CompareView in fixture mode', () => {
     expect(last.text()).toContain('−40 (−90 to +10)');
     expect(last.find('svg').attributes('aria-label')).toBe('fd-vs-sip-07: −40 points, interval −90 to +10');
     expect(w.get('[data-test="task-summary"]').text()).toBe(
-      "2 tasks differ after Holm's correction for 12 comparisons. The other 10 show no clear difference. At 5 trials per arm their intervals are 40 to 100 points wide, so a real change on one task can hide here.",
+      "2 tasks differ after the Benjamini-Hochberg correction for 12 comparisons. The other 10 are within noise. At 5 trials per arm their intervals are 40 to 100 points wide, so a real change on one task can hide here.",
     );
     expect(w.get('.forest thead').text()).toContain('Difference in points, B minus A, 95% interval (not corrected)');
   });
@@ -159,10 +160,10 @@ describe('CompareView in fixture mode', () => {
       ['better', 'Better'],
       ['better', 'Better'],
     ]);
-    expect(verdicts.slice(2).every(([kind, text]) => kind === 'none' && text === 'No clear difference')).toBe(true);
+    expect(verdicts.slice(2).every(([kind, text]) => kind === 'none' && text === 'Within noise')).toBe(true);
   });
 
-  it('calls out the worst drop in counts, says it is no clear difference, and opens an undisputed failure', async () => {
+  it('calls out the worst drop in counts, says it is within noise, and opens an undisputed failure', async () => {
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     const fd = w.findAll('[data-test="forest-row"]')[11];
@@ -175,7 +176,7 @@ describe('CompareView in fixture mode', () => {
     expect(look.get('h3').text()).toBe('Worth a look: fd-vs-sip-07 fell from 4 of 5 to 2 of 5');
     expect(w.findAll('h2, h3').filter((h) => h.text().startsWith('Worth a look'))).toHaveLength(1);
     expect(look.text()).toContain(
-      'No clear difference: its interval includes zero even before correcting for 12 tasks (−40, interval −90 to +10). Open the failed trials to see whether the agent or the grader is behind it.',
+      'Within noise: its interval includes zero even before correcting for 12 tasks (−40, interval −90 to +10). Open the failed trials to see whether the agent or the grader is behind it.',
     );
     expect(look.text()).not.toContain('got worse');
     expect(look.text()).not.toContain('B passed');
@@ -213,7 +214,7 @@ describe('CompareView in fixture mode', () => {
   it('says on a phone what the shared axis shows, and that export needs the API in sample mode', async () => {
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
-    expect(w.get('[data-test="axis-caption"]').text()).toBe("B minus A, in points. 95% intervals, not corrected; verdicts after Holm's correction for 12 tasks.");
+    expect(w.get('[data-test="axis-caption"]').text()).toBe('B minus A, in points. 95% intervals, not corrected; verdicts after the Benjamini-Hochberg correction for 12 tasks.');
     expect(w.get('[data-test="export-note"]').text()).toBe('Export needs the API');
     expect(w.get('.actions button').attributes('disabled')).toBeDefined();
   });
@@ -250,10 +251,10 @@ describe('CompareView in fixture mode', () => {
 });
 
 describe('CompareView against the API: no statistics yet', () => {
-  it('says there is no verdict yet when every arm is complete but the statistics have not reported', async () => {
+  it('says there is no verdict yet, and why, when every arm is complete but grading is still running', async () => {
     routeFetch({
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
-      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null },
+      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null, stats_note: 'Grading is still running for 3 of 120 finished trials; the verdict waits for every grade.' },
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
       '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
@@ -264,9 +265,10 @@ describe('CompareView against the API: no statistics yet', () => {
     expect(w.text()).toContain('graded trials');
     expect(w.findAll('[data-test="forest-row"]')).toHaveLength(12);
     expect(w.text()).toContain('no interval');
-    // Not "pending": the verdict is not computed by this version at all.
-    expect(w.text()).toContain('does not compute the verdict and its interval yet');
-    expect(w.text()).not.toContain('has not reported');
+    // The API's reason, as it gave it; never a claim that this version computes no verdict.
+    expect(w.text()).toContain('Grading is still running for 3 of 120 finished trials; the verdict waits for every grade. Read these as counts, not a conclusion');
+    expect(w.text()).not.toContain('does not compute');
+    expect(w.find('[data-test="regressions"]').exists()).toBe(false);
   });
 
   it('counts trials with no outcome apart, as neither a pass nor a fail', async () => {
@@ -480,17 +482,17 @@ describe('CompareView against the API: the check on the method', () => {
   }
 
   it('warns when the same config run twice showed a difference', async () => {
-    withStats({ aa: { experiment_id: 'exp_aa', diff: { estimate: 9, low: 2, high: 16 } } });
+    withStats({ aa: { ...base.stats!.aa!, diff: { estimate: 9, low: 2, high: 16 }, verdict: 'better' } });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     expect(w.findAll('[data-test="why-line"]')[1].text()).toBe(
-      `Check on the method: the same config run twice gave +9${nb}points (+2 to +16), a difference where there is none. Treat this result with caution.`,
+      `Check on the method: the latest A/A calibration of this config gave +9${nb}points (+2 to +16), a difference where there is none. Treat this result with caution.`,
     );
   });
 
   it('gives the judge agreement in the aside when a task that differs is code-graded, so no caveat shows', async () => {
     const emi = (details as unknown as { exp_heldout: { tasks: { id: string; sha256: string }[] } }).exp_heldout.tasks.find((t) => t.id === 'emi-basic-01');
-    withStats({ tasks: base.stats!.tasks.map((t) => (t.task === emi?.sha256 ? { ...t, significant: true, diff: { estimate: 30, low: 5, high: 55 } } : t)) });
+    withStats({ tasks: base.stats!.tasks.map((t) => (t.task === emi?.sha256 ? { ...t, beyond_noise: true, diff: { estimate: 30, low: 5, high: 55 } } : t)) });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     expect(w.find('[data-test="judge-caveat"]').exists()).toBe(false);
@@ -513,12 +515,91 @@ describe('CompareView against the API: the check on the method', () => {
     expect(w.get('[data-test="meta-line"]').text()).toBe('Hermes 6112c2a with Claude Haiku 5.5 · 120 trials · plan 3e1a9f0, committed before the run · platform c4d2e19');
   });
 
-  it('says the method is unchecked when there is no A/A run', async () => {
+  it('says there is no A/A calibration for these configs yet, and links to set one up for arm A', async () => {
     withStats({ aa: null });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
-    expect(w.findAll('[data-test="why-line"]')[1].text()).toBe('No A/A run on this setup yet, so the method has not been checked on a run where nothing changed.');
+    const none = w.get('[data-test="no-aa"]');
+    expect(none.text()).toBe('No A/A calibration run for these configs yet, so the setup’s own noise has not been measured on a run where nothing changed. Set one up');
+    const a = (details as unknown as { exp_heldout: { config_hashes: string[] } }).exp_heldout.config_hashes[0];
+    expect(none.get('[data-test="aa-setup"]').attributes('href')).toBe(`#/run?a=${encodeURIComponent(a)}&b=${encodeURIComponent(a)}&aa=1`);
+    expect(w.findAll('[data-test="why-line"]')).toHaveLength(2);
     expect(w.find('[data-test="export-note"]').exists()).toBe(false);
+  });
+
+  it('says how large a difference is not ruled out, and that too few tasks allow no other verdict', async () => {
+    withStats({ verdict: 'no_detectable_difference', pass_rate_verdict: 'no_detectable_difference', diff: { estimate: 4, low: -9, high: 17 }, p_value: 0.31, not_ruled_out_points: 17 });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="verdict-title"]').text()).toBe('No detectable difference');
+    expect(w.get('[data-test="verdict-sub"]').text()).toBe(`Differences as large as 17${nb}points are not ruled out.`);
+    withStats({ verdict: 'no_detectable_difference', pass_rate_verdict: 'no_detectable_difference', not_ruled_out_points: 30, tasks: base.stats!.tasks.slice(0, 4) });
+    const few = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(few.get('[data-test="verdict-sub"]').text()).toContain(`With 4 tasks in the comparison no other verdict is possible: the paired test needs at least 6 tasks to reach p${nb}<${nb}0.05.`);
+  });
+
+  it('names practical equivalence by its margin', async () => {
+    withStats({ verdict: 'equivalent', pass_rate_verdict: 'equivalent', diff: { estimate: 1, low: -6, high: 8 } });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="verdict-title"]').text()).toBe('Practically equivalent');
+    expect(w.get('[data-test="verdict-sub"]').text()).toBe('The whole interval lies inside the ±10-point margin set before the run, so any difference is too small to matter.');
+  });
+
+  it('shows the critical-failure guardrail beside the verdict, and holds back a better B when critical failures rose', async () => {
+    withStats({});
+    let w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const fine = w.get('[data-test="critical"]');
+    expect(fine.text()).toBe('Critical checks: Critical failures: −10.0 points (95% interval −30.0 to +0.0) over 2 tasks with 2 critical checks. No rise beyond noise.');
+    expect(fine.classes()).not.toContain('caveat--alarm');
+    const rose = { ...base.stats!.critical, status: 'rose' as const, diff: { estimate: 20, low: 5, high: 35 }, blocks_better: true, text: 'Critical failures: +20.0 points (95% interval +5.0 to +35.0) over 2 tasks with 2 critical checks. They rose beyond noise, so B is not called better although its pass rate rose.' };
+    withStats({ verdict: 'held_back', critical: rose });
+    w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="verdict-title"]').text()).toBe('v2 is not called better: critical failures rose');
+    expect(w.get('[data-test="verdict-sub"]').text()).toBe('The pass rate alone would say better, but critical failures rose beyond noise, so it is not called better.');
+    expect(w.get('[data-test="critical"]').classes()).toContain('caveat--alarm');
+    withStats({ critical: { status: 'no_critical_checks', checks: [], tasks: 0, a: null, b: null, diff: null, blocks_better: false, text: 'No check is marked critical in these tasks, so this comparison says nothing about critical failures.' } });
+    w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="critical"]').text()).toBe('Critical checks: No check is marked critical in these tasks, so this comparison says nothing about critical failures.');
+  });
+
+  it('lists where B dropped, with the checks that got worse and their severity, critical first', async () => {
+    withStats({});
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const items = w.findAll('[data-test="regression"]');
+    expect(items.map((i) => i.get('.regression-name').text())).toEqual(['fd-vs-sip-07', 'payoff-order-08']);
+    expect(items[0].text()).toContain('A 4 of 5, B 2 of 5; −40 (−90 to +10)');
+    expect(items[0].findAll('[data-test="regression-grader"]').map((g) => g.text())).toEqual(['fd-tax (major): 4 of 5 in A, 2 of 5 in B']);
+    expect(items[0].get('a').attributes('href')).toMatch(/^#\/trials\/tr_fd-vs-sip-07_b_\d+$/);
+    expect(items[0].find('.regression-tag--critical').exists()).toBe(false);
+    const critical = { ...base.stats!.regressions[1], critical: true, graders: [{ grader_id: 'no-otp-ask', required: true, severity: 'critical' as const, a: { passed: 5, graded: 5 }, b: { passed: 4, graded: 5 } }] };
+    withStats({ regressions: [critical, base.stats!.regressions[0]] });
+    const w2 = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w2.get('[data-test="regression"]').get('.regression-tag--critical').text()).toBe('critical check got worse');
+  });
+
+  it('lists tasks left out of the comparison, with why', async () => {
+    withStats({ excluded_tasks: [{ task: 'sha256:x', task_id: 'gold-loan-16', a: { passed: 0, graded: 0, incomplete: 5 }, b: { passed: 2, graded: 5, incomplete: 0 }, why: 'arm A has no decided trial (5 without an outcome)' }] });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="excluded-tasks"]').text()).toBe('Left out of the comparison, because an arm has no decided trial on them:gold-loan-16: arm A has no decided trial (5 without an outcome)');
+  });
+
+  it('says plainly whether an A/A calibration run came out as it should', async () => {
+    withStats({ calibration: { as_expected: false, text: 'This A/A run found a difference where there should be none.' }, aa: null });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const note = w.get('[data-test="calibration-note"]');
+    expect(note.text()).toBe('A/A calibration found a difference: This A/A run found a difference where there should be none.');
+    expect(note.classes()).toContain('caveat--alarm');
+    // A calibration run is the check itself: no link to set up another.
+    expect(w.find('[data-test="no-aa"]').exists()).toBe(false);
   });
 });
 

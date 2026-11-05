@@ -42,10 +42,10 @@ describe('ExperimentsView in fixture mode', () => {
     const w = mount(ExperimentsView);
     await settle();
     const strip = w.get('[data-test="latest-result"] svg[role="img"]');
-    expect(strip.attributes('aria-label')).toContain('An A/A run on the same setup gave +1, interval −7 to +9.');
+    expect(strip.attributes('aria-label')).toContain('An A/A calibration of the same config gave +1, interval −7 to +9.');
     expect(strip.findAll('.range').map((r) => r.classes().find((c) => /^range--(a|b|neutral|ink)$/.test(c)))).toEqual(['range--b', 'range--neutral']);
     const labels = [...strip.findAll('[data-test="strip-label"]').map((t) => t.text()), ...w.findAll('[data-test="strip-legend"] li').map((l) => l.text())];
-    expect(labels).toEqual(expect.arrayContaining(['v2 minus v1, 12 tasks', 'A/A run, same config twice']));
+    expect(labels).toEqual(expect.arrayContaining(['v2 minus v1, 12 tasks', 'A/A calibration, same config twice']));
     const ticks = strip
       .findAll('text.tick:not(.row-label)')
       .sort((p, q) => Number(p.attributes('x')) - Number(q.attributes('x')))
@@ -80,8 +80,11 @@ describe('ExperimentsView in fixture mode', () => {
     expect(rows()[3].get('[data-verdict]').attributes('data-verdict')).toBe('better');
     expect(rows()[3].text()).toContain('Better');
     expect(rows()[3].text()).toContain(`+15${nb}points (+7 to +23)`);
-    expect(rows()[5].get('[data-verdict]').text()).toBe('No clear difference');
-    expect(rows()[5].text()).toContain(`+1${nb}point (−7 to +9), as expected`);
+    // The A/A calibration says whether it came out as it should (D44).
+    expect(rows()[5].get('[data-verdict]').text()).toBe('No difference, as it should');
+    expect(rows()[5].text()).toContain(`A/A calibration: +1${nb}point (−7 to +9)`);
+    expect(rows()[5].text()).toContain('nothing: an A/A calibration (same config twice)');
+    expect(rows()[4].get('[data-verdict]').text()).toBe('No detectable difference');
     expect(rows()[1].get('[data-test="status"]').text()).toBe('Paused');
     expect(rows()[1].get('[data-test="result"]').text()).toContain('The futility check: arm B passed 0 of its first 3 graded trials');
     await w.get('[data-test="show-filter"]').setValue('running');
@@ -103,7 +106,7 @@ describe('ExperimentsView in fixture mode', () => {
       expect(r.find('.result-detail').exists()).toBe(true);
     }
     const plain = results.flatMap((r) => r.findAll('.result-plain').map((p) => p.text()));
-    expect(plain).toEqual(expect.arrayContaining(['Running', 'Paused', 'No clear difference', 'One arm']));
+    expect(plain).toEqual(expect.arrayContaining(['Running', 'Paused', 'No detectable difference', 'No difference, as it should', 'One arm']));
     expect(results.filter((r) => r.find('.verdict-tag').exists())).toHaveLength(1);
   });
 
@@ -114,7 +117,7 @@ describe('ExperimentsView in fixture mode', () => {
   });
 });
 
-describe('ExperimentsView against the API: no statistics in this version', () => {
+describe('ExperimentsView against the API: a finished A/B still grading', () => {
   /** The shipped example as the live API lists it: its working name, and the manifest's title. */
   const EXAMPLE = { name: 'harness-ownloop-vs-hermes-haiku', title: 'Draft stand-in: own loop vs Hermes on Claude Haiku 5.5 (15 draft tasks, one trial each)', loaded_at: '2026-11-05T08:00:00.000Z' };
   const done = (experiments as { id: string }[]).find((e) => e.id === 'exp_heldout') as Record<string, unknown>;
@@ -127,21 +130,22 @@ describe('ExperimentsView against the API: no statistics in this version', () =>
       '/api/harnesses': [],
       '/api/labels/queue?set=heldout': [],
       '/api/labels/queue?set=tuning': [],
-      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null },
+      '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null, stats_note: 'Grading is still running for 2 of 30 finished trials; the verdict waits for every grade.' },
       '/api/experiments/exp_heldout': { ...detail, name: 'Label batch 1: open coding (R8, approved: 30 trials, cap $2)', example: EXAMPLE },
       '/api/experiments/exp_heldout/trials?status=done': [],
     });
     return mount(ExperimentsView);
   }
 
-  it('leads with the latest finished A/B as counts, by its one name, and promises no verdict', async () => {
+  it('leads with the latest finished A/B as counts while it has no verdict, by its one name, saying why', async () => {
     const w = mountLive();
     await settle();
     expect(w.find('[data-test="latest-result"]').exists()).toBe(false);
     const latest = w.get('[data-test="latest-counts"]');
     expect(latest.get('h2').text()).toBe(EXAMPLE.title);
     expect(latest.text()).toMatch(/A: .+, \d+ of \d+ graded trials passed/);
-    expect(latest.text()).toContain('These are counts, not a conclusion: this version does not compute the verdict and its interval.');
+    expect(latest.text()).toContain('These are counts, not a conclusion: Grading is still running for 2 of 30 finished trials; the verdict waits for every grade.');
+    expect(w.text()).not.toContain('does not compute');
     expect(latest.get('a').attributes('href')).toBe('#/experiments/exp_heldout');
     // The list names the example the same way, and never by its working name.
     expect(w.get('[data-test="experiments-table"] .row-link').text()).toBe(EXAMPLE.title);

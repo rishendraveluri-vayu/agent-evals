@@ -12,7 +12,7 @@ export interface StripRow {
 }
 
 /** An arm's colour only when the result holds up: B's orange when B is better, A's blue when B
- *  is worse, grey when there is no clear difference. */
+ *  is worse, grey otherwise (no detectable difference, equivalent, or held back). */
 export function verdictTone(verdict: string): StripRow['tone'] {
   if (verdict === 'better') return 'b';
   if (verdict === 'worse') return 'a';

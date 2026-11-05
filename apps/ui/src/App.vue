@@ -71,9 +71,10 @@ watch(
     />
     <RunView
       v-else-if="route.name === 'run-new'"
-      :key="`new-${route.a}-${route.b}`"
+      :key="`new-${route.a}-${route.b}-${route.calibration}`"
       :a="route.a"
       :b="route.b"
+      :calibration="route.calibration"
     />
     <RunView
       v-else-if="route.name === 'run'"
