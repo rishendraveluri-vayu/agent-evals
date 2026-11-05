@@ -57,6 +57,14 @@ These traces are what v2 is written from (D9: discovery traces only).
 
 Gemini 3.8 Flash with rubric advice.v1 on the 33 discovery trials ($0.259), against Rishi's 33 tuning labels (`evals-agreement --set tuning --human-unsure exclude`): clears-card-first agreed 12 of 12, keeps-medicines 3 of 3, health-cover 3 of 3 (kappa undefined: his labels were all one value); **overall: kappa 0.30 (0.00 to 0.78), sensitivity 1.00, specificity 0.20**, 4 false passes, 3 of them the payoff-order trials he failed for assuming what ₹20,000 meant. On those same trials the new `clarifies-ambiguous-amount` criterion said no 3 of 3, and `explains-plainly` said no on the FD answer he called confusing: the specific criteria saw what the overall one missed, which is why the criteria are scored and reported separately (judge-validation section 6). Tuning-set agreement says nothing about trust; that is decided on the held-out labels (D8).
 
+## The judge's consistency with itself (5 Nov)
+
+The grading guide warns that a judge giving different verdicts on the same output inflates variance. Gemini 3.8 Flash re-judged the same 33 discovery outputs ($0.249): **98 of 99 criterion verdicts repeated (99.0%)**. Per criterion: overall 33/33, explains-plainly 33/33, clears-card-first 12/12, asks-deciding-fact 9/9, health-cover 3/3, keeps-medicines 3/3; clarifies-ambiguous-amount 5/6 (83%, one flip from no to yes on trial ending 45b3ed), below the 90% retest bar of D8 on a sample of six.
+
+## Second provider (5 Nov)
+
+The brief asks for models from at least two providers through one interface. Gemini 3.8 Flash as the agent, through the same LiteLLM proxy, on the own loop and on Hermes, 5 single-message discovery tasks x 2 trials each (`e_0mw3bbbba86e8364652ebd85f`, $0.259): 20 of 20 answered and graded, all 20 passed, no infra failure. A capability check, not a comparison: N = 2 and easy tasks.
+
 ## Validation: a positive control (pre-registered 5 Nov, before the run)
 
 The A/A run is the negative control (identical arms: the platform must not call a difference; it did not). This is the positive control (D70): a change whose effect is known in advance, which the platform must detect.
