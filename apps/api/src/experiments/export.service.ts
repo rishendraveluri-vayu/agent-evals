@@ -5,7 +5,7 @@ import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.se
 import { Db } from '../database/db.service';
 import { causesFor } from '../causes/trial-facts';
 import { JUDGE_MODEL_SQL } from '../grading/grading-core';
-import { ExperimentsService, experimentTitle, gradingState, mayHaveCause } from './experiments.service';
+import { armIndex, type ExperimentRow, ExperimentsService, experimentTitle, gradingState, mayHaveCause } from './experiments.service';
 
 /** A trial's outcome as the run grid and the comparison count it (TrialGradingState); null before it is done. */
 const outcomeOf = (r: ExportRow): TrialGradingState => gradingState({ ...r, status: r.status as TrialStatus });
@@ -71,12 +71,11 @@ interface ExportRow {
 }
 
 /**
- * The arm a trial ran in, by its config's place in the experiment: A, B. An A/A run (the same
- * config twice) has its second arm's repeats after the first's (lib/arms.ts armIndexOf in the UI).
+ * The arm a trial ran in, as a letter: A, B. One rule for every screen and export: armIndex
+ * (by the config's place, or by the repeat in an A/A calibration run, D44).
  */
-export function armOf(configHashes: string[], n: number, configHash: string, repeatIndex: number): string {
-  const [a, b] = configHashes;
-  const i = configHashes.length === 2 && a === b ? (repeatIndex >= n ? 1 : 0) : configHashes.indexOf(configHash);
+export function armOf(experiment: Pick<ExperimentRow, 'config_hashes' | 'n' | 'calibration'>, configHash: string, repeatIndex: number): string {
+  const i = armIndex(experiment, configHash, repeatIndex);
   return i < 0 ? '' : String.fromCharCode(65 + i);
 }
 
@@ -221,7 +220,7 @@ export class ExportService {
       const trial = {
         id: r.id,
         experiment_id: r.experiment_id,
-        arm: armOf(experiment.config_hashes, experiment.n, r.config_hash, r.repeat_index),
+        arm: armOf(experiment, r.config_hash, r.repeat_index),
         repeat_index: r.repeat_index,
         attempt: r.attempt,
         status: r.status,
@@ -328,7 +327,7 @@ export class ExportService {
         experiment_id: r.experiment_id,
         experiment_title: title,
         trial_id: r.id,
-        arm: armOf(experiment.config_hashes, experiment.n, r.config_hash, r.repeat_index),
+        arm: armOf(experiment, r.config_hash, r.repeat_index),
         repeat_index: r.repeat_index,
         attempt: r.attempt,
         status: r.status,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeSpan, toBlindItem } from '../api/client';
 import type { ConfigView, Estimate, TaskView } from '../api/types';
-import { agreementWords, armDifferences, armsOf, armState, axisWords, checksToGo, differenceText, headline, judgeCaveat, methodName, noDiffWords, passedText, pointsWithInterval, setupOf, timeLeft, verdictTitle, verdictWords } from './arms';
+import { agreementWords, armDifferences, armIndexOf, armsOf, armState, axisWords, checksToGo, differenceText, headline, judgeCaveat, methodName, noDiffWords, passedText, pointsWithInterval, setupOf, timeLeft, verdictTitle, verdictWords } from './arms';
 import { coverage, coverageText } from './capabilities';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, splitCheck } from './checks';
 import { sentenceChanges } from './diff';
@@ -483,5 +483,18 @@ describe('client', () => {
     expect(item.task_summary).toBe(raw.task_summary);
     expect(item.transcript).toEqual(raw.transcript);
     expect(item.criteria).toEqual(raw.criteria);
+  });
+});
+
+describe('armIndexOf (G8: one rule, the calibration flag, as the API armIndex)', () => {
+  const t = (config_hash: string, repeat_index: number) => ({ config_hash, repeat_index });
+  it('reads the arm from the config place in an ordinary run', () => {
+    const e = { config_hashes: ['ha', 'hb'], n: 3, calibration: false };
+    expect(armIndexOf(t('ha', 2), e)).toBe(0);
+    expect(armIndexOf(t('hb', 0), e)).toBe(1);
+  });
+  it('reads it from the repeat in an A/A calibration run: arm B is n to 2n - 1', () => {
+    const e = { config_hashes: ['ha', 'ha'], n: 3, calibration: true };
+    expect([0, 2, 3, 5].map((r) => armIndexOf(t('ha', r), e))).toEqual([0, 0, 1, 1]);
   });
 });

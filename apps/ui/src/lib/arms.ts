@@ -24,10 +24,10 @@ export interface Arm {
 }
 
 /** Which arm a trial row ran in, by its position: 0 is A. Trial rows carry the config hash, not
- *  the arm; an A/A run has one hash twice, and its second arm's repeats come after the first's. */
-export function armIndexOf(t: Pick<TrialRowSummary, 'config_hash' | 'repeat_index'>, e: Pick<ExperimentSummary, 'config_hashes' | 'n'>): number {
-  const [ha, hb] = e.config_hashes;
-  if (e.config_hashes.length === 2 && ha === hb) return t.repeat_index >= e.n ? 1 : 0;
+ *  the arm; an A/A calibration run (D44) has one hash twice, and its second arm's repeats come
+ *  after the first's. The experiment's `calibration` flag decides, as in the API's armIndex. */
+export function armIndexOf(t: Pick<TrialRowSummary, 'config_hash' | 'repeat_index'>, e: Pick<ExperimentSummary, 'config_hashes' | 'n' | 'calibration'>): number {
+  if (e.calibration) return t.repeat_index >= e.n ? 1 : 0;
   return Math.max(0, e.config_hashes.indexOf(t.config_hash));
 }
 
