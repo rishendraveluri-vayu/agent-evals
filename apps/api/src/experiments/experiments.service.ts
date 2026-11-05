@@ -379,7 +379,9 @@ export class ExperimentsService {
       throw badRequest('invalid_experiment', 'order_seed must be an integer from 0 to 4294967295', 'Leave order_seed out for a random one, or give the seed of the order to repeat.');
     }
     const seed = isSeed(body.order_seed) ? body.order_seed : newSeed();
-    const futility = resolveFutility(body.futility);
+    // A41: left out, the futility check is off when nothing in the run spends (fake models only),
+    // by the same reading of the run as the budget rule above.
+    const futility = resolveFutility(body.futility, { fakeOnly: run.fakeOnly });
 
     const id = newId('e');
     const slots: { id: string; task: string; config: string; harness: string; repeat: number; seq: number; order: number }[] = [];

@@ -425,8 +425,11 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   `paused_reason`; resume or stop after review. None of them looks at the difference between the
   arms: the verdict uses the full planned N, so nothing stops or decides on an apparent win.
   - **Futility**, `futility: {enabled, after, min_passed}` on `POST /experiments` (left out:
-    `{enabled: true, after: 3, min_passed: 1}`; `{"enabled": false}` turns it off; shown resolved
-    as `futility` in the detail). Once per arm: when the arm has `after` graded trials, it pauses
+    `{enabled: true, after: 3, min_passed: 1}`, or `enabled: false` when every model the run calls,
+    each arm's and the simulated client's when a task needs one, is `fake/*`, since the check
+    protects spend and such a run spends nothing (A41, since 5 Nov; the same reading of the run as
+    the fake-only budget rule); `{"enabled": false}` turns it off and any other object turns it
+    on, whatever the models; shown resolved as `futility` in the detail). Once per arm: when the arm has `after` graded trials, it pauses
     the run if fewer than `min_passed` of them passed. **Passed is the grading outcome** (SP4,
     since 4 Nov): a trial whose current grading outcome is `pass` counts as a pass and `fail` as a
     fail; one whose grading is `incomplete`, has not finished, or has no graders is not counted at

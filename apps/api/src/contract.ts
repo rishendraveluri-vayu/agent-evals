@@ -361,7 +361,11 @@ export interface CreateExperimentRequest {
    * recorded. The same seed, tasks, configs and N give the same order.
    */
   order_seed?: number | null;
-  /** D32: left out (or null) for `{enabled: true, after: 3, min_passed: 1}`; `{enabled: false}` turns it off. */
+  /**
+   * D32: left out (or null) for `{enabled: true, after: 3, min_passed: 1}`, except that when every
+   * model the run calls is `fake/*` it is off (A41: it protects spend, and such a run spends
+   * nothing). `{enabled: false}` turns it off; any other object turns it on, whatever the models.
+   */
   futility?: Partial<FutilityRule> | null;
   /** D34: the experiment this one follows from. */
   parent_experiment_id?: string | null;

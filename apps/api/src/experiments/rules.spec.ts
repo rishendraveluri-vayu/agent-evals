@@ -10,6 +10,19 @@ describe('resolveFutility (D32)', () => {
     expect(resolveFutility({ enabled: false })).toEqual({ enabled: false, after: 3, min_passed: 1 });
   });
 
+  it('is off by default when every model in the run is fake, since such a run spends nothing (A41)', () => {
+    expect(resolveFutility(undefined, { fakeOnly: true })).toEqual({ enabled: false, after: 3, min_passed: 1 });
+    expect(resolveFutility(null, { fakeOnly: true })).toEqual({ enabled: false, after: 3, min_passed: 1 });
+    // A paid run keeps it on by default.
+    expect(resolveFutility(undefined, { fakeOnly: false })).toEqual(FUTILITY_DEFAULT);
+  });
+
+  it('can still be switched by hand either way, whatever the models', () => {
+    expect(resolveFutility({ enabled: true }, { fakeOnly: true })).toEqual({ enabled: true, after: 3, min_passed: 1 });
+    expect(resolveFutility({ after: 2, min_passed: 2 }, { fakeOnly: true })).toEqual({ enabled: true, after: 2, min_passed: 2 });
+    expect(resolveFutility({ enabled: false }, { fakeOnly: false })).toEqual({ enabled: false, after: 3, min_passed: 1 });
+  });
+
   it.each([[[]], ['3'], [{ after: 0 }], [{ after: 2.5 }], [{ min_passed: 4 }], [{ enabled: 'no' }], [{ threshold: 1 }]])('refuses %p with a fix', (input) => {
     let err: unknown;
     try {

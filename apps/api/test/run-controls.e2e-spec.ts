@@ -253,8 +253,28 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
     return i;
   }
 
+  it('leaves the futility check on by default for a paid run, and off when every model is fake (A41)', async () => {
+    // The configs are on fake/finance-emi: with no simulated client the run spends nothing.
+    const fake = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 1 }, { start: false });
+    expect(fake.futility).toEqual({ enabled: false, after: 3, min_passed: 1 });
+    // A real simulated client makes it a paid run, so the check is on.
+    const paidSim = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['widow-loan']], n: 1, sim_model: 'claude-haiku-5-5' }, { start: false });
+    expect(paidSim.futility).toEqual({ enabled: true, after: 3, min_passed: 1 });
+    // So does an arm on a real model.
+    const paid = await makeConfig(env.http, cat, { name: 'arm on a real model', model: 'claude-haiku-5-5' });
+    const paidArm = await e.experiment({ config_hashes: [A, paid], task_sha256s: [cat.tasks['emi-basic']], n: 1 }, { start: false });
+    expect(paidArm.futility).toEqual({ enabled: true, after: 3, min_passed: 1 });
+    // Either default can be switched by hand.
+    const on = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 1, futility: { enabled: true } }, { start: false });
+    expect(on.futility).toEqual({ enabled: true, after: 3, min_passed: 1 });
+    const off = await e.experiment({ config_hashes: [A, paid], task_sha256s: [cat.tasks['emi-basic']], n: 1, futility: { enabled: false } }, { start: false });
+    expect(off.futility).toEqual({ enabled: false, after: 3, min_passed: 1 });
+    for (const x of [fake, paidSim, paidArm, on, off]) await request(env.http).post(`/api/experiments/${x.id}/discard`).expect(200);
+  });
+
   it('pauses after 3 graded trials per arm when an arm passed none, once per arm, never on the A/B difference (D32)', async () => {
-    const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 4, order_seed: 3 });
+    // Fake models: the check is off by default there (A41), so it is turned on by hand.
+    const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 4, order_seed: 3, futility: { enabled: true } });
     expect(exp.futility).toEqual({ enabled: true, after: 3, min_passed: 1 });
     // Every trial answers; arm A's graders pass and arm B's fail, so arm B passes nothing.
     const ran = await drainGraded('w-fut', (config) => (config === B ? 'fail' : 'pass'));
@@ -278,7 +298,7 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
   });
 
   it('counts only graded outcomes: an answer is not a pass, and an ungraded or incomplete trial is not counted (D32)', async () => {
-    const exp = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 6 });
+    const exp = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 6, futility: { enabled: true } });
     const reportOne = async (): Promise<string> => {
       const c = (await e.claim('w-fut-g'))!;
       await e.report(c, 'w-fut-g', 'agent'); // end state answered: it used to count as a pass

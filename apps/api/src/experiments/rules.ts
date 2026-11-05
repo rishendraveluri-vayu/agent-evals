@@ -25,10 +25,16 @@ export const INFRA_GUARD = { min_finished: 5, max_rate: 0.3 } as const;
 
 export const PASSED_MEANS = 'passed means the grading outcome is pass; a trial whose grading is incomplete or not finished yet is not counted';
 
-/** The rule from a request: defaults for anything left out; `{"enabled": false}` turns it off. */
-export function resolveFutility(input: unknown): FutilityRule {
-  if (input === undefined || input === null) return { ...FUTILITY_DEFAULT };
-  const fix = 'Send futility as {"after": <finished trials per arm, at least 1>, "min_passed": <0 to after>}, {"enabled": false} to turn it off, or leave it out for after 3, min_passed 1.';
+/**
+ * The rule from a request: defaults for anything left out; `{"enabled": false}` turns it off.
+ *
+ * Left out (or null), the check is on, unless every model the run calls is fake (`fakeOnly`): the
+ * check protects spend, and a run on fake models spends nothing real, so it is off there. Sent as
+ * an object, the check is on unless the object says `"enabled": false`, whatever the models.
+ */
+export function resolveFutility(input: unknown, opts: { fakeOnly?: boolean } = {}): FutilityRule {
+  if (input === undefined || input === null) return { ...FUTILITY_DEFAULT, enabled: !opts.fakeOnly };
+  const fix = 'Send futility as {"after": <finished trials per arm, at least 1>, "min_passed": <0 to after>}, {"enabled": false} to turn it off, or leave it out for after 3, min_passed 1 (off when every model is fake).';
   if (typeof input !== 'object' || Array.isArray(input)) throw badRequest('invalid_experiment', 'futility must be an object', fix);
   const f = input as Record<string, unknown>;
   const unknown = Object.keys(f).find((k) => !['enabled', 'after', 'min_passed'].includes(k));
