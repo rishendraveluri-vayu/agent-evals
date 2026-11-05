@@ -542,12 +542,22 @@ export interface BaselineDecision {
   reused_trials: number;
 }
 
+/**
+ * Where an experiment's `platform_commit` came from (G2, 5 Nov): `env` is EVALS_PLATFORM_COMMIT as
+ * set; `git` is the checkout's HEAD, read by the API from its `.git` when the experiment was
+ * created. Either way the working tree is unknown-dirty: the API cannot see uncommitted changes,
+ * nor whether the running images were built from that commit.
+ */
+export type PlatformCommitSource = 'env' | 'git';
+
 /** GET /experiments/:id (and the POST /experiments response). */
 export interface ExperimentDetail extends ExperimentSummary {
   sim_model: string | null;
   /** `temperature` null: not sent, the model's default applies (D27; Haiku 5.5 refuses any). */
   sim: { prompt: VersionRef; temperature: number | null; max_output_tokens: number } | null;
   platform_commit: string | null;
+  /** Null with no commit, and for experiments made before 5 Nov (G2), which had only `env`. */
+  platform_commit_source: PlatformCommitSource | null;
   plan_commit: string | null;
   /** D32: the seed the claim order was shuffled from; null for experiments made before it. */
   order_seed: number | null;

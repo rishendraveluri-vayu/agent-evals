@@ -348,8 +348,18 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 - `POST /experiments` with `{name, axis, config_hashes, task_sha256s, n, sim_model,
   budget_usd, plan_commit, sim_prompt_sha256, order_seed, futility, parent_experiment_id,
   reuse_baseline, calibration}` creates the experiment and all its trial rows
-  (`queued`), records the platform commit (`EVALS_PLATFORM_COMMIT`), and sets a LiteLLM budget
+  (`queued`), records the platform commit, and sets a LiteLLM budget
   for the whole experiment. It returns the experiment. Nothing runs until it is started.
+  **Platform commit (since 5 Nov, G2).** `EVALS_PLATFORM_COMMIT`, when set, is recorded as given,
+  with `platform_commit_source: "env"`. Left blank (the default, so a plain `docker compose up`),
+  the API reads the checkout's HEAD from its `.git`, which compose mounts read-only at
+  `/repo/.git` (`EVALS_GIT_DIR` elsewhere), each time an experiment is created or estimated:
+  a detached commit, or the branch HEAD names, from its loose ref file or `packed-refs`; no git is
+  run. It is recorded with `platform_commit_source: "git"`. Either way the working tree is
+  unknown-dirty: the API cannot see uncommitted changes, nor which commit the running images were
+  built from. With neither, both fields are null (a copy without `.git`, a worktree whose git
+  folder is outside the mount); so are an older experiment's source. The baseline decision (D34,
+  below) compares the commit read the same way.
   `name` is trimmed and must be 1 to 200 characters (`EXPERIMENT_NAME_MAX`); a longer one is a 400
   `invalid_experiment` that says its length, with the fix "Shorten the name to 200 characters or
   fewer." (since 5 Nov, QA round 3; nothing is created).
@@ -478,7 +488,8 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   finished, then `{finished_trials, spend_usd, cost_per_trial_usd, wall_s_per_trial,
   elapsed_minutes, projected_spend_usd}` (elapsed from the start to the finish or now; the
   projection is the spend guard's). Reused trials are the parent's spend, not this one's.
-- `GET /experiments/:id` also adds `tasks`, `configs`, `arms`, `order_seed`, `futility`,
+- `GET /experiments/:id` also adds `platform_commit` and `platform_commit_source` (`env`, `git`
+  or null; above), `tasks`, `configs`, `arms`, `order_seed`, `futility`,
   `parent_experiment_id`, `baseline`, `paused_at`, `paused_reason` and `events`, newest first: `[{at, kind, trial_id, attempt, arm, config_hash,
   detail}]`. Claims, infra failures, config errors, re-queues, budget trips, abandons and file
   problems come from the trial rows; pauses and resumes (`paused`, `resumed`, `arm_paused`,

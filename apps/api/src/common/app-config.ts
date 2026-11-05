@@ -12,8 +12,13 @@ export interface AppConfig {
   litellmMasterKey: string | null;
   /** Workers send it as `Authorization: Bearer`. */
   workerToken: string | null;
-  /** Recorded on every experiment; null when unset. */
+  /**
+   * EVALS_PLATFORM_COMMIT: recorded on every experiment as given, when set. When it is not, the
+   * API reads the checkout's HEAD from `gitDir` each time an experiment is created (git-commit.ts).
+   */
   platformCommit: string | null;
+  /** The checkout's `.git` (EVALS_GIT_DIR; compose mounts the repo's read-only at /repo/.git). */
+  gitDir: string;
   workersDir: string;
   configsDir: string;
   tasksDir: string;
@@ -80,6 +85,7 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     litellmMasterKey: nonEmpty(env.LITELLM_MASTER_KEY),
     workerToken: nonEmpty(env.EVALS_WORKER_TOKEN),
     platformCommit: nonEmpty(env.EVALS_PLATFORM_COMMIT),
+    gitDir: dir('EVALS_GIT_DIR', '.git'),
     workersDir: dir('WORKERS_DIR', 'workers'),
     configsDir: dir('CONFIGS_DIR', 'configs'),
     tasksDir: dir('TASKS_DIR', 'tasks'),

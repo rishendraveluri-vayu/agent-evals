@@ -88,8 +88,10 @@ async function writeTasks(dir: string): Promise<void> {
 /**
  * Boots the real AppModule against a fresh database, the LiteLLM stub and temp folders.
  * `workersDir` replaces the repo's workers/ (a test that needs a harness the repo does not have).
+ * `platformCommit` is EVALS_PLATFORM_COMMIT (default `abc1234`; empty to read `gitDir`, G2), and
+ * `gitDir` the checkout's .git the API reads then (EVALS_GIT_DIR; default the repo's own).
  */
-export async function bootEnv(opts: { workersDir?: string } = {}): Promise<TestEnv> {
+export async function bootEnv(opts: { workersDir?: string; platformCommit?: string; gitDir?: string } = {}): Promise<TestEnv> {
   const db = await createDatabase();
   const stub = new LiteLlmStub();
   await stub.start();
@@ -106,7 +108,8 @@ export async function bootEnv(opts: { workersDir?: string } = {}): Promise<TestE
     LITELLM_URL: stub.url,
     LITELLM_MASTER_KEY: STUB_MASTER_KEY,
     EVALS_WORKER_TOKEN: WORKER_TOKEN,
-    EVALS_PLATFORM_COMMIT: 'abc1234',
+    EVALS_PLATFORM_COMMIT: opts.platformCommit ?? 'abc1234',
+    ...(opts.gitDir ? { EVALS_GIT_DIR: opts.gitDir } : {}),
     WORKERS_DIR: opts.workersDir ?? path.join(REPO, 'workers'),
     CONFIGS_DIR: configsDir,
     TASKS_DIR: tasksDir,
@@ -134,7 +137,7 @@ export async function bootEnv(opts: { workersDir?: string } = {}): Promise<TestE
       await stub.stop();
       await db.drop();
       await fs.rm(tmp, { recursive: true, force: true });
-      for (const k of ['DATABASE_URL', 'LITELLM_URL', 'LITELLM_MASTER_KEY', 'EVALS_WORKER_TOKEN', 'EVALS_PLATFORM_COMMIT', 'WORKERS_DIR', 'CONFIGS_DIR', 'TASKS_DIR', 'LABELS_DIR', 'RUNS_DIR']) {
+      for (const k of ['DATABASE_URL', 'LITELLM_URL', 'LITELLM_MASTER_KEY', 'EVALS_WORKER_TOKEN', 'EVALS_PLATFORM_COMMIT', 'EVALS_GIT_DIR', 'WORKERS_DIR', 'CONFIGS_DIR', 'TASKS_DIR', 'LABELS_DIR', 'RUNS_DIR']) {
         delete process.env[k];
       }
     },
