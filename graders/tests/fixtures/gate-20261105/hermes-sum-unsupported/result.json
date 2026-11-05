@@ -147,20 +147,20 @@
  },
  "integrity": {
   "before": {
-   "config.yaml": "sha256:521f77505d4ea302196ff3c835bb5170d07346c76309c135d316cd415291d2ea",
+   "config.yaml": "sha256:6989ef878d2e91657583dcb565adfc8201b707ab32a722efcd6f2977bff7266a",
    "SOUL.md": "sha256:36c1f5a2e92cd1d018311eaf4c8f1e8886672eae78212e033c681d0e3d5d506f",
    "AGENTS.md": null
   },
   "after": {
-   "config.yaml": "sha256:521f77505d4ea302196ff3c835bb5170d07346c76309c135d316cd415291d2ea",
+   "config.yaml": "sha256:6989ef878d2e91657583dcb565adfc8201b707ab32a722efcd6f2977bff7266a",
    "SOUL.md": "sha256:36c1f5a2e92cd1d018311eaf4c8f1e8886672eae78212e033c681d0e3d5d506f",
    "AGENTS.md": null
   }
  },
  "timing": {
-  "started_at": "2026-11-05T00:26:35.838704Z",
-  "ended_at": "2026-11-05T00:26:41.180024Z",
-  "wall_s": 5.341
+  "started_at": "2026-11-05T01:49:30.641386Z",
+  "ended_at": "2026-11-05T01:49:35.737716Z",
+  "wall_s": 5.096
  },
  "artifacts": [
   "artifacts/hermes-config.yaml",

@@ -1,6 +1,6 @@
 [project]
 name = "evals-adapter"
-version = "0.1.0"
+version = "0.2.0"
 description = "Shared adapter library for agent-evals harness workers (contract v2): spec in, result and OpenTelemetry spans out, timeout, conversation loop, runner."
 readme = "README.md"
 # Every harness environment installs this, and they run different Pythons, so it uses the

@@ -1,0 +1,120 @@
+{
+  "contract_version": "2",
+  "trial_id": "t_01JEXAMPLE0002",
+  "amounts": [
+    {
+      "turn": 0,
+      "text": "Rs 14,120",
+      "value": 14120,
+      "supported_by": "tool",
+      "match": {
+        "value": 14120,
+        "where": "tool:list_debts",
+        "how": "exact",
+        "precision": 1,
+        "call": 0
+      },
+      "rejected": null
+    },
+    {
+      "turn": 0,
+      "text": "Rs 9,000",
+      "value": 9000,
+      "supported_by": "tool",
+      "match": {
+        "value": 9000,
+        "where": "tool:list_debts",
+        "how": "exact",
+        "precision": 1,
+        "call": 0
+      },
+      "rejected": null
+    },
+    {
+      "turn": 0,
+      "text": "Rs 23,120",
+      "value": 23120,
+      "supported_by": "tool",
+      "match": {
+        "value": 23120,
+        "where": "tool:add",
+        "how": "exact",
+        "precision": 1,
+        "call": 1
+      },
+      "rejected": null
+    },
+    {
+      "turn": 0,
+      "text": "Rs 3,000",
+      "value": 3000,
+      "supported_by": null,
+      "match": null,
+      "rejected": {
+        "value": 3000,
+        "where": "tool:round",
+        "how": "exact",
+        "precision": 1,
+        "call": 2,
+        "reason": "round's input 2,950 is not supported"
+      }
+    }
+  ],
+  "unsupported": 1,
+  "tools_called": [
+    "list_debts",
+    "add",
+    "round"
+  ],
+  "required_tools": null,
+  "arithmetic": [
+    {
+      "call": 1,
+      "tool": "add",
+      "turn": 0,
+      "supported": true,
+      "inputs": [
+        {
+          "arg": "values[0]",
+          "value": 14120,
+          "supported_by": "tool",
+          "match": {
+            "value": 14120,
+            "where": "tool:list_debts",
+            "how": "exact",
+            "precision": 1,
+            "call": 0
+          }
+        },
+        {
+          "arg": "values[1]",
+          "value": 9000,
+          "supported_by": "tool",
+          "match": {
+            "value": 9000,
+            "where": "tool:list_debts",
+            "how": "exact",
+            "precision": 1,
+            "call": 0
+          }
+        }
+      ],
+      "reason": null
+    },
+    {
+      "call": 2,
+      "tool": "round",
+      "turn": 0,
+      "supported": false,
+      "inputs": [
+        {
+          "arg": "value",
+          "value": 2950,
+          "supported_by": null,
+          "match": null
+        }
+      ],
+      "reason": "round's input 2,950 is not supported"
+    }
+  ]
+}

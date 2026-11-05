@@ -167,6 +167,38 @@ describe('TrialView number check', () => {
     expect(check.text()).toContain("₹7,10,870 from fd_maturity's result");
     expect(check.text()).toContain("₹5 lakh from the client's message");
     expect(w.findAll('[data-test="unsupported-amount"]').map((m) => m.text())).toEqual(['Amount with no source found: ₹4 lakh']);
+    expect(w.find('[data-test="unsupported-note"]').exists()).toBe(false);
+  });
+
+  it('says why an amount from an arithmetic tool does not count (D56)', async () => {
+    // As the runner writes it since D56: add's inputs came from list_debts, round's did not.
+    const d56 = {
+      contract_version: '2',
+      trial_id: ID,
+      amounts: [
+        { turn: 0, text: '₹23,120', value: 23120, supported_by: 'tool', match: { value: 23120, where: 'tool:add', how: 'exact', precision: 1, call: 1 }, rejected: null },
+        {
+          turn: 0,
+          text: '₹3,000',
+          value: 3000,
+          supported_by: null,
+          match: null,
+          rejected: { value: 3000, where: 'tool:round', how: 'exact', precision: 1, call: 2, reason: "round's input 2,950 is not supported" },
+        },
+      ],
+      unsupported: 1,
+      tools_called: ['list_debts', 'add', 'round'],
+      required_tools: null,
+      arithmetic: [],
+    };
+    const w = mountWith({ checks: d56 });
+    await settle();
+    const check = w.get('[data-test="number-check"]');
+    expect(check.findAll('[data-test="unsupported-list"] li').map((li) => li.text())).toEqual([
+      "₹3,000 no source found: it matches round's result, but round's input 2,950 is not supported",
+    ]);
+    expect(check.text()).toContain("₹23,120 from add's result");
+    expect(provenanceOf(d56)?.amounts.map((a) => a.note)).toEqual([null, "it matches round's result, but round's input 2,950 is not supported"]);
   });
 
   it('says when checks.json is there but cannot be read', async () => {

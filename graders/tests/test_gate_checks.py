@@ -16,11 +16,17 @@ fixtures/gate-20261105/ (D54, the arithmetic tools), the same way, on the toolse
   minimums, and an answer stating Rs 8,997.26, Rs 18,332.50 and their sum Rs 27,329.76.
 - `*-sum-unsupported` (finance-sum-unsupported): the same answer word for word, without the `add`
   call: the sum is worked out in the reply, as Hermes did on 4 Nov.
+- `*-sum-laundered` (finance-sum-laundered, D56): the same answer again, with the sum worked out
+  in the reply and passed through `round`, which returns it unchanged.
+
+The gate-20261105 folder was regenerated after D56 (runner 0.2.0), so its checks.json has
+`arithmetic`; gate-20261104's were written before it and keep the older shape.
 """
 
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import jsonschema
@@ -126,8 +132,16 @@ def test_a_sum_from_add_passes_and_the_same_sum_without_it_fails(harness):
         "where": "tool:add",
         "how": "exact",
         "precision": 0.01,
+        "call": 2,
     }
     assert with_add["tools_called"] == ["calculate_emi", "list_debts", "add"]
+    # D56: add's inputs are calculate_emi's EMI and list_debts' minimums, so its result counts.
+    (added,) = with_add["arithmetic"]
+    assert added["supported"] is True
+    assert [i["match"]["where"] for i in added["inputs"]] == [
+        "tool:calculate_emi",
+        "tool:list_debts",
+    ]
 
     prov, req = grade_trial(tool_dir, [PROVENANCE, REQUIRED])["grades"]
     assert prov["verdict"] == "pass", prov
@@ -155,3 +169,69 @@ def test_the_add_call_is_in_the_trace_under_the_harness_name():
         assert called["verdict"] == "pass", called
         absent = grade_trial(ARITHMETIC / f"{harness}-sum-unsupported", [added_spec])["grades"][0]
         assert absent["verdict"] == "fail", absent
+
+
+@pytest.mark.parametrize("harness", HARNESSES)
+def test_a_sum_worked_out_in_the_reply_and_passed_through_round_still_fails(harness):
+    """D56: the same answer as with `add`, but the agent worked the sum out itself and passed it
+    through round, which returns it unchanged. round's input has no source, so its result does
+    not count and provenance fails on exactly that amount, saying why and quoting the call."""
+    folder = ARITHMETIC / f"{harness}-sum-laundered"
+    assert (
+        TrialView.load(folder).final_answer
+        == TrialView.load(ARITHMETIC / f"{harness}-sum-tool").final_answer
+    )
+    checks = json.loads((folder / "checks.json").read_text(encoding="utf-8"))
+    total = next(a for a in checks["amounts"] if a["text"] == "Rs 27,329.76")
+    assert (total["supported_by"], total["match"]) == (None, None)
+    reason = "round's input 27,329.76 is not supported"
+    assert total["rejected"] == {
+        "value": 27329.76,
+        "where": "tool:round",
+        "how": "exact",
+        "precision": 0.01,
+        "call": 2,
+        "reason": reason,
+    }
+    assert [(c["tool"], c["supported"], c["reason"]) for c in checks["arithmetic"]] == [
+        ("round", False, reason)
+    ]
+
+    prov, req = grade_trial(folder, [PROVENANCE, REQUIRED])["grades"]
+    assert prov["verdict"] == "fail", prov
+    assert "1 of 3 amount(s)" in prov["reason"]
+    assert f"Rs 27,329.76 ({reason})" in prov["reason"]
+    raw = {"ownloop": "round", "hermes": "mcp__finance__round"}[harness]
+    (call,) = [c for c in TrialView.load(folder).tool_calls() if c.raw_name == raw]
+    assert prov["evidence"] == [
+        {"source": "final_answer", "quote": "Rs 27,329.76"},
+        {"source": "span", "span_id": call.span_id, "tool": "round", "quote": call.arguments_text},
+    ]
+    assert "27329.76" in call.arguments_text
+    assert req["verdict"] == "pass", req
+
+
+def test_a_checks_json_from_before_d56_cannot_decide_an_amount_from_an_arithmetic_tool(
+    tmp_path,
+):
+    """The sum-tool trial as the runner wrote it before D56: no `arithmetic`, so whether add's
+    inputs were supported is unknown, and with nothing else unsupported the grade is an error
+    rather than a pass. The same folder with D56's checks passes."""
+    old = tmp_path / "ownloop-sum-tool"
+    shutil.copytree(ARITHMETIC / "ownloop-sum-tool", old)
+    checks = json.loads((old / "checks.json").read_text(encoding="utf-8"))
+    checks.pop("arithmetic")
+    for row in checks["amounts"]:
+        row.pop("rejected")
+        row["match"].pop("call")
+    (old / "checks.json").write_text(json.dumps(checks), encoding="utf-8")
+
+    prov = grade_trial(old, [PROVENANCE])["grades"][0]
+    assert prov["verdict"] == "error", prov
+    assert "predates D56" in prov["reason"] and "Rs 27,329.76" in prov["reason"]
+    assert {"source": "final_answer", "quote": "Rs 27,329.76"} in prov["evidence"]
+    assert grade_trial(ARITHMETIC / "ownloop-sum-tool", [PROVENANCE])["grades"][0]["verdict"] == (
+        "pass"
+    )
+    # The 4 Nov gate fixtures predate D56 too, but no amount rests on an arithmetic tool there.
+    assert grades("ownloop-emi", PROVENANCE)[0]["verdict"] == "pass"

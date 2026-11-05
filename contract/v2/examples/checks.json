@@ -11,8 +11,10 @@
         "value": 8997.26,
         "where": "tool:calculate_emi",
         "how": "exact",
-        "precision": 0.01
-      }
+        "precision": 0.01,
+        "call": 0
+      },
+      "rejected": null
     }
   ],
   "unsupported": 0,
@@ -28,5 +30,6 @@
     ],
     "missing": [],
     "only_errors": []
-  }
+  },
+  "arithmetic": []
 }

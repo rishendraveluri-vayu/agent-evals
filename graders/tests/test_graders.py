@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from support import EMI_ARGS, EMI_RESULT, make_trial
 
@@ -459,6 +460,83 @@ def test_provenance_on_the_final_answer_only(tmp_path):
     assert every["evidence"] == [{"source": "agent_message", "index": 1, "quote": "₹2,810"}]
     final = one(out, {"id": "p", "type": "provenance", "target": "final_answer"})
     assert final["verdict"] == "pass", final
+
+
+ROUNDED = "About ₹23,120 a month, and ₹11.59 lakh in interest."
+
+
+def on_round(text, turn=0):
+    """An amount checks.json matched to round's result, as a pre-D56 runner wrote it."""
+    row = amount(text, turn, "tool")
+    row["match"]["where"] = "tool:round"
+    return row
+
+
+def test_provenance_on_a_checks_json_from_before_d56(tmp_path):
+    """A checks.json without `arithmetic` never traced arithmetic inputs, so an amount matched
+    to round's result may be unsupported: with the other amounts within the cap the grade cannot
+    say pass (error); with them over it, it fails anyway. With `arithmetic`, the runner traced
+    them and the grade trusts it."""
+    checks = contract_checks([on_round("₹23,120"), amount("₹11.59 lakh", 0, None)])
+    out = make_trial(tmp_path, ROUNDED, checks=checks)
+    failed = one(out, {"id": "p", "type": "provenance"})
+    assert failed["verdict"] == "fail"
+    assert "more than the 0 allowed; checks.json predates D56" in failed["reason"]
+    assert "1 more amount(s) resting on an arithmetic tool's result" in failed["reason"]
+    undecided = one(out, {"id": "p", "type": "provenance", "max_unsupported": 1})
+    assert undecided["verdict"] == "error" and undecided["score"] is None
+    assert undecided["reason"].endswith("re-run the trial's checks to decide")
+    assert {"source": "final_answer", "quote": "₹23,120"} in undecided["evidence"]
+    assert_quotes_verbatim(out, undecided)
+    traced = make_trial(tmp_path / "d56", ROUNDED, checks={**checks, "arithmetic": []})
+    assert one(traced, {"id": "p", "type": "provenance", "max_unsupported": 1})["verdict"] == "pass"
+
+
+def test_provenance_says_why_an_arithmetic_result_did_not_count(tmp_path):
+    """D56: an amount whose only match is round's result, when round's input has no source,
+    is unsupported; the grade gives checks.json's reason and quotes the round call."""
+    row = amount("₹23,120", 0, None)
+    row["rejected"] = {
+        "value": 23120,
+        "where": "tool:round",
+        "how": "exact",
+        "precision": 1,
+        "call": 0,
+        "reason": "round's input 23,120 is not supported",
+    }
+    checks = {**contract_checks([row]), "arithmetic": []}
+    tools = [("mcp__finance__round", {"value": 23120, "places": 0}, {"rounded": 23120})]
+    out = make_trial(tmp_path, ROUNDED, tools=tools, checks=checks)
+    g = one(out, {"id": "p", "type": "provenance"})
+    assert g["verdict"] == "fail"
+    assert "₹23,120 (round's input 23,120 is not supported)" in g["reason"]
+    assert g["evidence"] == [
+        {"source": "final_answer", "quote": "₹23,120"},
+        {
+            "source": "span",
+            "span_id": f"{1:016x}",
+            "tool": "round",
+            "quote": '{"value": 23120, "places": 0}',
+        },
+    ]
+    # A call index that names another tool is not quoted: the wrong call is worse than none.
+    row["rejected"]["call"] = 5
+    other = make_trial(tmp_path / "x", ROUNDED, tools=tools, checks=checks)
+    assert [e["source"] for e in one(other, {"id": "p", "type": "provenance"})["evidence"]] == [
+        "final_answer"
+    ]
+
+
+def test_the_arithmetic_tools_are_the_runners():
+    """The grader's ARITHMETIC_TOOLS is the runner's (evals_adapter.checks), which a test there
+    pins to the finance server and the API catalogue."""
+    from pathlib import Path
+
+    from evals_graders.graders import ARITHMETIC_TOOLS
+
+    src = Path(__file__).resolve().parents[2] / "workers/adapterlib/src/evals_adapter/checks.py"
+    block = re.search(r"ARITHMETIC_TOOLS = frozenset\(\s*\{([^}]*)\}", src.read_text())
+    assert block and set(re.findall(r'"(\w+)"', block.group(1))) == ARITHMETIC_TOOLS
 
 
 def test_provenance_errors_on_a_checks_file_it_cannot_read(tmp_path):

@@ -17,6 +17,18 @@
    matches nothing is `unsupported`: a calculation with no tool behind it, to be flagged or at
    least highlighted. This is a heuristic for a reader, not a grade.
 
+   **Arithmetic tools (D56).** The result of an arithmetic tool (`add`, `subtract`, `multiply`,
+   `divide`, `percent_of`, `percent_change`, `round`) is a source only when the call returned no
+   error and every number it was given is itself supported: by an earlier non-arithmetic tool
+   result, an earlier supported arithmetic result, the client file, or a user message the agent
+   had by then. Inputs are matched exactly as written amounts are (the same `_match_rank`, at the
+   precision the argument is written in), and calls are traced in start order, so a chain (add,
+   then subtract on its result, then round) is supported when its first inputs are. A made-up
+   figure no longer becomes "supported" by passing through `round(x)` or `add([x, 0])`. Every
+   arithmetic call is listed in `arithmetic`, with each input's match and, when the result does
+   not count, the reason; an amount whose only match is such a result names it in `rejected`.
+   The other tools' results count as before, whatever their inputs.
+
 2. **Required tool calls** (a grader primitive). A task may list `required_tools` in the spec;
    the check records which of them the agent called and which are missing, from the trace's
    `execute_tool` spans, with harness prefixes such as Hermes's `mcp__finance__` removed.
@@ -30,6 +42,7 @@ import argparse
 import json
 import re
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
@@ -74,6 +87,14 @@ INDIAN = re.compile(r"^\d{1,2}(?:,\d{2})*,\d{3}$")
 INDIAN_LAKH_PLUS = re.compile(r"^\d{1,2}(?:,\d{2})+,\d{3}$")  # 1,00,000 and up
 MCP_PREFIX = re.compile(r"^mcp__.+?__")
 COARSE_TOLERANCE = Decimal("0.01")
+
+# D56: the finance server's arithmetic tools (toolset finance/v2, D54). Their results are sources
+# only when their inputs are supported; every other tool's result is a source as it stands.
+ARITHMETIC_TOOLS = frozenset(
+    {"add", "subtract", "multiply", "divide", "percent_of", "percent_change", "round"}
+)
+# Arguments that say how a tool works, not a figure it works on (A40): round's decimal places.
+NOT_FIGURES = {"round": frozenset({"places"})}
 
 
 @dataclass(frozen=True)
@@ -229,6 +250,8 @@ class Source:
     where: str
     turn: int  # the first agent turn that could have read it
     numbers: list[Decimal]
+    call: int | None = None  # a tool source: the call's position among the trial's tool calls
+    arithmetic: bool = False  # an arithmetic tool's result, a source only if its call is (D56)
 
 
 def _attrs(span: dict[str, Any]) -> dict[str, Any]:
@@ -258,8 +281,9 @@ def read_spans(path: Path) -> list[dict[str, Any]]:
 
 
 def tool_calls(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The execute_tool spans as {name, turn, is_error, result}, in start order. `turn` is the
-    agent turn the call belongs to, or -1 when the span has no turn parent."""
+    """The execute_tool spans as {index, name, turn, is_error, arguments, result}, in start
+    order. `index` is the call's position in that order, from 0; `turn` is the agent turn the
+    call belongs to, or -1 when the span has no turn parent."""
     turns = {
         s.get("spanId"): _attrs(s).get("evals.turn.index")
         for s in spans
@@ -275,9 +299,11 @@ def tool_calls(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
         turn = turns.get(span.get("parentSpanId"))
         calls.append(
             {
+                "index": len(calls),
                 "name": tool_name(str(raw)),
                 "turn": int(turn) if turn is not None else -1,
                 "is_error": bool(a.get("evals.tool.is_error")),
+                "arguments": a.get("evals.tool.arguments"),
                 "result": a.get("evals.tool.result"),
             }
         )
@@ -293,7 +319,14 @@ def gather_sources(
     for call in calls:
         if call["result"]:
             sources.append(
-                Source("tool", call["name"], call["turn"], source_numbers(str(call["result"])))
+                Source(
+                    "tool",
+                    call["name"],
+                    call["turn"],
+                    source_numbers(str(call["result"])),
+                    call=call["index"],
+                    arithmetic=call["name"] in ARITHMETIC_TOOLS,
+                )
             )
     for name, text in sorted(client_files.items()):
         sources.append(Source("client", name, -1, source_numbers(text)))
@@ -308,8 +341,197 @@ def gather_sources(
     return sources
 
 
-def provenance(transcript: list[dict[str, Any]], sources: list[Source]) -> list[dict[str, Any]]:
-    """One row per money amount in the agent's replies, with its best match or none."""
+Best = tuple[int, int, Decimal, Source, Decimal]  # rank, source order, step, source, number
+
+
+def _best(amount: Amount, sources: list[Source], usable: Callable[[Source], bool]) -> Best | None:
+    """The source number that best explains `amount` among the sources `usable` accepts: the
+    best match rank (exact, rounded, truncated, trailing zeros), then tool, client, user, then
+    the first in source order."""
+    best: Best | None = None
+    for source in sources:
+        if not usable(source):
+            continue
+        order = SOURCES.index(source.kind)
+        for number in source.numbers:
+            ranked = _match_rank(amount, number)
+            if ranked is None:
+                continue
+            if best is None or (ranked[0], order) < (best[0], best[1]):
+                best = (ranked[0], order, ranked[1], source, number)
+    return best
+
+
+def _match(best: Best) -> dict[str, Any]:
+    """checks.json's `match` for a best match; `call` names the tool call a tool match is from."""
+    rank, _, step, source, number = best
+    out: dict[str, Any] = {
+        "value": _number(number),
+        "where": f"{source.kind}:{source.where}" if source.kind != "user" else source.where,
+        "how": HOW[rank],
+        "precision": _number(step),
+    }
+    if source.call is not None:
+        out["call"] = source.call
+    return out
+
+
+def _figure(value: Decimal) -> str:
+    """A number for a sentence, grouped as the finance tools group money: 23,120, 4,41,050,
+    17.8, -500."""
+    if not value.is_finite():
+        return str(value)
+    whole, dot, frac = format(abs(value), "f").partition(".")
+    if len(whole) > 3:
+        head, groups = whole[:-3], [whole[-3:]]
+        while head:
+            groups.insert(0, head[-2:])
+            head = head[:-2]
+        whole = ",".join(groups)
+    return ("-" if value < 0 else "") + whole + dot + frac
+
+
+def _walk_figures(value: Any, path: str, out: list[tuple[str, Decimal]]) -> None:
+    if isinstance(value, bool) or value is None:
+        return
+    if isinstance(value, Decimal):
+        out.append((path, value))
+    elif isinstance(value, str):  # a number sent as a string, which the server coerces
+        try:
+            out.append((path, Decimal(value.strip())))
+        except InvalidOperation:
+            return
+    elif isinstance(value, list):
+        for i, item in enumerate(value):
+            _walk_figures(item, f"{path}[{i}]", out)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _walk_figures(item, f"{path}.{key}", out)
+
+
+def call_inputs(call: dict[str, Any]) -> tuple[list[tuple[str, Decimal]], str | None]:
+    """The figures an arithmetic call was given, as (argument, number) in argument order, or
+    ([], why not) when its arguments are not in the trace or are not a JSON object. Numbers keep
+    the digits they were written with, so an input is matched at its own precision. Arguments in
+    NOT_FIGURES (round's `places`) are left out."""
+    raw = call.get("arguments")
+    if not isinstance(raw, str) or not raw.strip():
+        return [], "arguments are not in the trace"
+    try:
+        args = json.loads(raw, parse_float=Decimal, parse_int=Decimal, parse_constant=Decimal)
+    except ValueError:  # also a JSON object cut at the trace's string limit
+        return [], "arguments could not be read"
+    if not isinstance(args, dict):
+        return [], "arguments could not be read"
+    skip = NOT_FIGURES.get(call["name"], frozenset())
+    out: list[tuple[str, Decimal]] = []
+    for key, value in args.items():
+        if key not in skip:
+            _walk_figures(value, str(key), out)
+    return out, None
+
+
+def _input_amount(number: Decimal) -> Amount | None:
+    """An input as if it were an amount written in rupees with the digits it was given with, so
+    it is matched by the same rule as an amount in a reply. None for NaN or an infinity, which
+    nothing supports."""
+    if not number.is_finite():
+        return None
+    exponent = number.as_tuple().exponent
+    decimals = max(0, -exponent) if isinstance(exponent, int) else 0
+    return Amount(str(number), abs(number), 1, decimals)
+
+
+def _listing(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def trace_arithmetic(
+    calls: list[dict[str, Any]], sources: list[Source]
+) -> tuple[list[dict[str, Any]], set[int]]:
+    """D56: each arithmetic call, in start order, and whether its result counts as a source. It
+    counts when the call returned no error, was given at least one number, and every number it
+    was given matches a source the agent could have read by then: a non-arithmetic tool result
+    or an accepted arithmetic result from an earlier call, the client file, or a user message up
+    to the call's turn (every message, for a call with no turn parent). Returns the calls'
+    records, as checks.json's `arithmetic`, and the positions of the accepted calls."""
+    accepted: set[int] = set()
+    records: list[dict[str, Any]] = []
+    for call in calls:
+        name, index, turn = call["name"], call["index"], call["turn"]
+        if name not in ARITHMETIC_TOOLS:
+            continue
+
+        def before(s: Source, index: int = index) -> bool:
+            return s.kind == "tool" and s.call is not None and s.call < index
+
+        def supports(s: Source, index: int = index, turn: int = turn) -> bool:
+            if s.kind == "tool":
+                return before(s, index) and (not s.arithmetic or s.call in accepted)
+            return s.kind == "client" or turn == -1 or s.turn <= turn
+
+        def unaccepted(s: Source, index: int = index) -> bool:
+            return before(s, index) and s.arithmetic and s.call not in accepted
+
+        figures, unreadable = call_inputs(call)
+        inputs, missing = [], []
+        for arg, number in figures:
+            amount = _input_amount(number)
+            best = _best(amount, sources, supports) if amount else None
+            inputs.append(
+                {
+                    "arg": arg,
+                    "value": _number(number) if amount else None,
+                    "supported_by": best[3].kind if best else None,
+                    "match": _match(best) if best else None,
+                }
+            )
+            if best is None:
+                via = _best(amount, sources, unaccepted) if amount else None
+                note = f" ({via[3].where}'s result, itself unsupported)" if via else ""
+                missing.append(_figure(number) + note)
+        if call["is_error"]:
+            reason = f"{name} returned an error"
+        elif unreadable:
+            reason = f"{name}'s {unreadable}"
+        elif not figures:
+            reason = f"{name} was given no numbers"
+        elif missing:
+            one = len(missing) == 1
+            reason = (
+                f"{name}'s {'input' if one else 'inputs'} {_listing(missing)}"
+                f" {'is' if one else 'are'} not supported"
+            )
+        else:
+            reason = None
+            accepted.add(index)
+        records.append(
+            {
+                "call": index,
+                "tool": name,
+                "turn": turn,
+                "supported": reason is None,
+                "inputs": inputs,
+                "reason": reason,
+            }
+        )
+    return records, accepted
+
+
+def provenance(
+    transcript: list[dict[str, Any]],
+    sources: list[Source],
+    arithmetic: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """One row per money amount in the agent's replies, with its best match or none. An
+    arithmetic result counts only when `arithmetic` (trace_arithmetic's records) accepts its
+    call; an amount whose only matches are results that do not count names the best in
+    `rejected`, with the reason."""
+    records = {r["call"]: r for r in arithmetic or []}
+
+    def counts(source: Source) -> bool:
+        return not source.arithmetic or bool(records.get(source.call, {}).get("supported"))
+
     rows = []
     agent_turn = -1
     for entry in transcript:
@@ -317,36 +539,24 @@ def provenance(transcript: list[dict[str, Any]], sources: list[Source]) -> list[
             continue
         agent_turn += 1
         for amount in money_amounts(entry.get("content") or ""):
-            best: tuple[int, int, Decimal, Source, Decimal] | None = None
-            for source in sources:
-                if source.turn > agent_turn:
-                    continue  # read only after this reply was written
-                order = SOURCES.index(source.kind)
-                for number in source.numbers:
-                    ranked = _match_rank(amount, number)
-                    if ranked is None:
-                        continue
-                    key = (ranked[0], order)
-                    if best is None or key < (best[0], best[1]):
-                        best = (ranked[0], order, ranked[1], source, number)
+
+            def readable(s: Source, turn: int = agent_turn) -> bool:
+                return s.turn <= turn  # read only after this reply was written otherwise
+
+            best = _best(amount, sources, lambda s: readable(s) and counts(s))
             row: dict[str, Any] = {
                 "turn": agent_turn,
                 "text": amount.text,
                 "value": _number(amount.value),
-                "supported_by": None,
-                "match": None,
+                "supported_by": best[3].kind if best else None,
+                "match": _match(best) if best else None,
+                "rejected": None,
             }
-            if best is not None:
-                rank, _, step, source, number = best
-                row["supported_by"] = source.kind
-                row["match"] = {
-                    "value": _number(number),
-                    "where": f"{source.kind}:{source.where}"
-                    if source.kind != "user"
-                    else source.where,
-                    "how": HOW[rank],
-                    "precision": _number(step),
-                }
+            if best is None:
+                rejected = _best(amount, sources, lambda s: readable(s) and not counts(s))
+                if rejected is not None:
+                    reason = records.get(rejected[3].call, {}).get("reason") or "not supported"
+                    row["rejected"] = {**_match(rejected), "reason": reason}
             rows.append(row)
     return rows
 
@@ -388,7 +598,9 @@ def run_checks(
     """checks.json for one trial, from its spec, result, spans and client files."""
     transcript = ((result or {}).get("conversation") or {}).get("transcript") or []
     calls = tool_calls(spans)
-    rows = provenance(transcript, gather_sources(calls, transcript, files))
+    sources = gather_sources(calls, transcript, files)
+    arithmetic, _ = trace_arithmetic(calls, sources)
+    rows = provenance(transcript, sources, arithmetic)
     required = ((spec or {}).get("task") or {}).get("required_tools")
     seen: list[str] = []
     for call in calls:
@@ -402,6 +614,7 @@ def run_checks(
         "unsupported": sum(1 for r in rows if r["supported_by"] is None),
         "tools_called": seen,
         "required_tools": required_tools_check(required, calls),
+        "arithmetic": arithmetic,
     }
 
 
@@ -422,12 +635,21 @@ def summary(checks: dict[str, Any]) -> str:
     lines = [f"{checks['trial_id']}: {checks['unsupported']} unsupported amount(s)"]
     for row in checks["amounts"]:
         if row["supported_by"] is None:
-            lines.append(f"  turn {row['turn']}: {row['text']} (no tool, client or user number)")
+            rejected = row.get("rejected")
+            why = (
+                f"{rejected['where']} matched, but {rejected['reason']}"
+                if rejected
+                else "no tool, client or user number"
+            )
+            lines.append(f"  turn {row['turn']}: {row['text']} ({why})")
         else:
             m = row["match"]
             lines.append(
                 f"  turn {row['turn']}: {row['text']} = {m['value']} ({m['how']}, {m['where']})"
             )
+    for call in checks.get("arithmetic") or []:
+        if not call["supported"]:
+            lines.append(f"  call {call['call']}: {call['tool']} is not a source: {call['reason']}")
     req = checks["required_tools"]
     if req is not None:
         lines.append(f"  required tools: called {req['called']}, missing {req['missing']}")

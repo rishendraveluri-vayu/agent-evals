@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from decimal import Decimal
 from pathlib import Path
 
@@ -16,10 +17,13 @@ from support import REPO, errors, make_spec
 from test_trial import run
 
 from evals_adapter.checks import (
+    ARITHMETIC_TOOLS,
+    NOT_FIGURES,
     check_trial,
     money_amounts,
     run_checks,
     source_numbers,
+    summary,
     tool_name,
 )
 from evals_adapter.spec import TrialPaths
@@ -119,12 +123,15 @@ def test_tool_names_lose_the_harness_prefix():
 # ---- matching ----------------------------------------------------------------------------------
 
 
-def span(name, turn_id, result, is_error=False, start=1):
+def span(name, turn_id, result, is_error=False, start=1, args=None):
     attrs = [
         {"key": "gen_ai.tool.name", "value": {"stringValue": name}},
         {"key": "evals.tool.result", "value": {"stringValue": result}},
         {"key": "evals.tool.is_error", "value": {"boolValue": is_error}},
     ]
+    if args is not None:
+        text = args if isinstance(args, str) else json.dumps(args)
+        attrs.append({"key": "evals.tool.arguments", "value": {"stringValue": text}})
     return {
         "name": f"execute_tool {name}",
         "spanId": f"{start:016x}",
@@ -179,6 +186,7 @@ def test_rounding_to_the_precision_shown_matches_a_tool_number():
         "where": "tool:calculate_emi",
         "how": "rounded",
         "precision": 1,
+        "call": 0,
     }
     assert rows["₹8,997.26"]["match"]["how"] == "exact"
     assert rows["₹11.59 lakh"]["supported_by"] == "tool"
@@ -196,6 +204,7 @@ def test_one_point_two_three_lakh_matches_123456_and_truncation_counts():
         "where": "tool:debt_payoff_plan",
         "how": "truncated",
         "precision": 1,
+        "call": 0,
     }
 
 
@@ -232,45 +241,321 @@ def test_a_calculation_without_a_tool_is_unsupported():
     assert out["unsupported"] == 2
 
 
+T = "a" * 16
+DEBTS = '{"emi_total":14120.00,"card_plan":9000.00}'
+
+
 def test_a_sum_from_the_add_tool_is_supported_and_the_same_sum_without_it_is_not():
-    """D54: the 4 Nov Hermes failure was a sum written in prose (Rs 23,120 = Rs 14,120 +
+    """D54 and D56: the 4 Nov Hermes failure was a sum written in prose (Rs 23,120 = Rs 14,120 +
     Rs 9,000); the fix is the arithmetic tool `add`. The same answer is fully supported when
-    `add` returned the sum, under either name a harness gives it, and has one unsupported amount
-    when it did not."""
+    `add` returned the sum of two figures from a tool result, under either name a harness gives
+    it, and has one unsupported amount when it did not."""
     reply = "Your EMIs are Rs 14,120 and the card plan Rs 9,000, so Rs 23,120 a month in all."
-    sources = [
-        turn_span("a" * 16, 0),
-        span("list_debts", "a" * 16, '{"emi_total":14120.00,"card_plan":9000.00}', start=1),
-    ]
+    sources = [turn_span(T, 0), span("list_debts", T, DEBTS, start=1)]
     for name in ("add", "mcp__finance__add"):
-        out = checks_for([reply], [*sources, span(name, "a" * 16, '{"sum":23120.00}', start=2)])
+        add = span(name, T, '{"sum":23120.00}', start=2, args={"values": [14120, 9000]})
+        out = checks_for([reply], [*sources, add])
         assert by_text(out)["Rs 23,120"] == {
             "turn": 0,
             "text": "Rs 23,120",
             "value": 23120,
             "supported_by": "tool",
-            "match": {"value": 23120, "where": "tool:add", "how": "exact", "precision": 1},
+            "match": {
+                "value": 23120,
+                "where": "tool:add",
+                "how": "exact",
+                "precision": 1,
+                "call": 1,
+            },
+            "rejected": None,
         }
         assert out["unsupported"] == 0
         assert out["tools_called"] == ["list_debts", "add"]
+        from_debts = {"where": "tool:list_debts", "how": "exact", "precision": 1, "call": 0}
+        assert out["arithmetic"] == [
+            {
+                "call": 1,
+                "tool": "add",
+                "turn": 0,
+                "supported": True,
+                "inputs": [
+                    {
+                        "arg": "values[0]",
+                        "value": 14120,
+                        "supported_by": "tool",
+                        "match": {"value": 14120, **from_debts},
+                    },
+                    {
+                        "arg": "values[1]",
+                        "value": 9000,
+                        "supported_by": "tool",
+                        "match": {"value": 9000, **from_debts},
+                    },
+                ],
+                "reason": None,
+            }
+        ]
     out = checks_for([reply], sources)
     assert [r["text"] for r in out["amounts"] if r["supported_by"] is None] == ["Rs 23,120"]
     assert out["unsupported"] == 1
+    assert out["arithmetic"] == []
 
 
-def test_a_number_passed_into_a_tool_is_not_a_source_only_its_result_is():
+def test_a_number_passed_into_a_tool_is_not_a_source():
     """A tool's arguments are what the agent wrote, so a sum the agent worked out and passed in
-    is still unsupported; what the tool returned is the source."""
-    call = span("percent_of", "a" * 16, '{"amount":4116.00}')
-    call["attributes"].append(
-        {"key": "evals.tool.arguments", "value": {"stringValue": '{"value":23120,"percent":17.8}'}}
-    )
-    out = checks_for(
-        ["Rs 23,120 a month, of which Rs 4,116 is interest."], [turn_span("a" * 16, 0), call]
-    )
+    is still unsupported, and since D56 so is the arithmetic result made from it."""
+    call = span("percent_of", T, '{"amount":4116.00}', args='{"value":23120,"percent":17.8}')
+    out = checks_for(["Rs 23,120 a month, of which Rs 4,116 is interest."], [turn_span(T, 0), call])
     rows = by_text(out)
     assert rows["Rs 23,120"]["supported_by"] is None
-    assert rows["Rs 4,116"]["match"]["where"] == "tool:percent_of"
+    assert rows["Rs 23,120"]["rejected"] is None  # no tool returned it
+    assert rows["Rs 4,116"]["supported_by"] is None
+    assert rows["Rs 4,116"]["rejected"] == {
+        "value": 4116,
+        "where": "tool:percent_of",
+        "how": "exact",
+        "precision": 1,
+        "call": 0,
+        "reason": "percent_of's inputs 23,120 and 17.8 are not supported",
+    }
+    assert out["unsupported"] == 2
+
+
+# ---- D56: arithmetic results count only when their inputs are supported --------------------
+
+
+def test_the_arithmetic_tools_are_the_finance_servers_and_the_apis():
+    """The seven names the check treats as arithmetic are the finance server's (its manifest
+    snapshot) and the API catalogue's ARITHMETIC_TOOLS, and round's `places` is a real argument."""
+    manifest = json.loads(
+        (REPO / "services/finance-mcp/tests/snapshots/tools_manifest.json").read_text()
+    )
+    schemas = {t["name"]: t["inputSchema"]["properties"] for t in manifest}
+    assert ARITHMETIC_TOOLS.issubset(schemas)
+    catalogue = (REPO / "apps/api/src/catalogue/catalogue-files.ts").read_text()
+    listed = re.search(r"export const ARITHMETIC_TOOLS = \[([^\]]*)\]", catalogue)
+    assert listed and set(re.findall(r"'(\w+)'", listed.group(1))) == ARITHMETIC_TOOLS
+    for tool, args in NOT_FIGURES.items():
+        assert args.issubset(schemas[tool])
+
+
+@pytest.mark.parametrize("name", ["round", "mcp__finance__round"])
+def test_rounding_a_made_up_figure_does_not_make_it_supported(name):
+    call = span(name, T, '{"rounded":23120}', args={"value": 23120, "places": 0})
+    out = checks_for(["About Rs 23,120 a month."], [turn_span(T, 0), call])
+    (row,) = out["amounts"]
+    assert (row["supported_by"], row["match"]) == (None, None)
+    assert row["rejected"] == {
+        "value": 23120,
+        "where": "tool:round",
+        "how": "exact",
+        "precision": 1,
+        "call": 0,
+        "reason": "round's input 23,120 is not supported",
+    }
+    assert out["unsupported"] == 1
+    (record,) = out["arithmetic"]
+    assert (record["tool"], record["supported"]) == ("round", False)
+    # round's places says how to round, not a figure, so it needs no source (A40).
+    assert record["inputs"] == [
+        {"arg": "value", "value": 23120, "supported_by": None, "match": None}
+    ]
+    assert "tool:round matched, but round's input 23,120 is not supported" in summary(out)
+
+
+@pytest.mark.parametrize(
+    ("tool", "args", "result"),
+    [
+        ("add", {"values": [12345, 0]}, '{"sum":12345.00}'),
+        ("multiply", {"values": [12345, 1]}, '{"product":12345.00}'),
+    ],
+)
+def test_adding_zero_or_multiplying_by_one_does_not_make_a_made_up_figure_supported(
+    tool, args, result
+):
+    """0 and 1 are in a tool result here, so only the made-up 12,345 is unsupported."""
+    spans = [
+        turn_span(T, 0),
+        span("list_debts", T, '{"count":1,"overdue":0}', start=1),
+        span(tool, T, result, start=2, args=args),
+    ]
+    out = checks_for(["You can save Rs 12,345 a month."], spans)
+    (row,) = out["amounts"]
+    assert row["supported_by"] is None
+    assert row["rejected"]["reason"] == f"{tool}'s input 12,345 is not supported"
+    (record,) = out["arithmetic"]
+    assert [(i["arg"], i["supported_by"]) for i in record["inputs"]] == [
+        ("values[0]", None),
+        ("values[1]", "tool"),
+    ]
+
+
+def test_a_chain_of_arithmetic_on_sourced_figures_is_supported_in_call_order():
+    """add, then subtract on add's result, then round on subtract's: every input is a tool
+    figure or the result of an accepted call before it. With the subtracted figure made up, the
+    chain breaks there, and round's result goes with it."""
+    debts = '{"emi_total":14120.00,"card_plan":9000.00,"interest":4116.50}'
+
+    def chain(debts_result):
+        return [
+            turn_span(T, 0),
+            span("list_debts", T, debts_result, start=1),
+            span("add", T, '{"sum":23120.00}', start=2, args={"values": [14120, 9000]}),
+            span("subtract", T, '{"difference":19003.50}', start=3, args={"a": 23120, "b": 4116.5}),
+            span(
+                "mcp__finance__round",
+                T,
+                '{"rounded":19004}',
+                start=4,
+                args={"value": 19003.5, "places": 0},
+            ),
+        ]
+
+    reply = "Rs 23,120 in all; Rs 19,003.50 without the interest, so about Rs 19,004."
+    out = checks_for([reply], chain(debts))
+    assert out["unsupported"] == 0
+    assert [(r["text"], r["match"]["where"], r["match"]["call"]) for r in out["amounts"]] == [
+        ("Rs 23,120", "tool:add", 1),
+        ("Rs 19,003.50", "tool:subtract", 2),
+        ("Rs 19,004", "tool:round", 3),
+    ]
+    assert [(c["tool"], c["supported"]) for c in out["arithmetic"]] == [
+        ("add", True),
+        ("subtract", True),
+        ("round", True),
+    ]
+    subtract, rounded = out["arithmetic"][1:]
+    assert [(i["match"]["where"], i["match"]["call"]) for i in subtract["inputs"]] == [
+        ("tool:add", 1),
+        ("tool:list_debts", 0),
+    ]
+    assert rounded["inputs"][0]["match"]["where"] == "tool:subtract"
+
+    out = checks_for([reply], chain(DEBTS))  # no interest figure: 4,116.5 is made up
+    assert [(c["tool"], c["reason"]) for c in out["arithmetic"]] == [
+        ("add", None),
+        ("subtract", "subtract's input 4,116.5 is not supported"),
+        (
+            "round",
+            "round's input 19,003.5 (subtract's result, itself unsupported) is not supported",
+        ),
+    ]
+    rows = by_text(out)
+    assert rows["Rs 23,120"]["supported_by"] == "tool"
+    assert rows["Rs 19,003.50"]["rejected"]["where"] == "tool:subtract"
+    assert rows["Rs 19,004"]["rejected"]["where"] == "tool:round"
+    assert out["unsupported"] == 2
+
+
+def test_a_figure_from_the_clients_message_is_a_supported_input():
+    spans = [
+        turn_span(T, 0),
+        span("list_debts", T, '{"total_minimum_payments":18332.50}', start=1),
+        span("subtract", T, '{"difference":1667.50}', start=2, args={"a": 20000, "b": 18332.5}),
+    ]
+    out = checks_for(
+        ["After the minimums, Rs 1,667.50 of your Rs 20,000 is left."],
+        spans,
+        user=("I can put about Rs 20,000 a month towards my debts.",),
+    )
+    assert by_text(out)["Rs 1,667.50"]["match"]["where"] == "tool:subtract"
+    assert out["unsupported"] == 0
+    (record,) = out["arithmetic"]
+    assert record["inputs"][0] == {
+        "arg": "a",
+        "value": 20000,
+        "supported_by": "user",
+        "match": {"value": 20000, "where": "task:0", "how": "exact", "precision": 1},
+    }
+
+
+def test_a_message_supports_an_input_only_from_its_turn_on():
+    """The simulated client says Rs 20,000 in its second message (turn 1): a subtract in turn 0
+    could not have read it, one in turn 1 could. A call with no turn parent may use any message,
+    as its result counts for any reply."""
+    users = ("Where do I start?", "I pay Rs 18,332.50 and can spare Rs 20,000.")
+    replies = ["What can you spare each month?", "Rs 1,667.50 is left over."]
+    for parent, supported in (("a" * 16, False), ("b" * 16, True), (None, True)):
+        spans = [
+            turn_span("a" * 16, 0),
+            turn_span("b" * 16, 1),
+            span("subtract", parent, '{"difference":1667.50}', args={"a": 20000, "b": 18332.5}),
+        ]
+        out = checks_for(replies, spans, user=users)
+        (record,) = out["arithmetic"]
+        assert record["supported"] is supported, parent
+        assert (out["amounts"][-1]["supported_by"] == "tool") is supported
+
+
+def test_a_figure_from_the_client_file_is_a_supported_input():
+    files = {"client.json": '{"debts":[{"balance":84250.00,"annual_rate_pct":42}]}'}
+    call = span("percent_of", T, '{"amount":35385.00}', args={"value": 84250, "percent": 42})
+    out = checks_for(
+        ["A year's interest on the card is about Rs 35,385."], [turn_span(T, 0), call], files=files
+    )
+    assert out["amounts"][0]["match"]["where"] == "tool:percent_of"
+    assert [i["supported_by"] for i in out["arithmetic"][0]["inputs"]] == ["client", "client"]
+
+
+def test_a_tool_result_after_the_call_does_not_support_its_inputs():
+    spans = [
+        turn_span(T, 0),
+        span("add", T, '{"sum":23120.00}', start=1, args={"values": [14120, 9000]}),
+        span("list_debts", T, DEBTS, start=2),
+    ]
+    out = checks_for(["Rs 23,120 a month in all."], spans)
+    assert out["arithmetic"][0]["reason"] == "add's inputs 14,120 and 9,000 are not supported"
+    assert out["unsupported"] == 1
+
+
+def test_inputs_are_matched_by_the_amounts_rule_at_the_precision_written():
+    """As an amount in a reply: 8997 is 8,997.26 rounded and 18332 is 18,332.50 cut; 31000 does
+    not match 31,330.07 (trailing zeros count as rounding only within 1%)."""
+    figures = span("list_debts", T, '{"emi":8997.26,"minimums":18332.50,"spare":31330.07}', start=1)
+    add = span("add", T, '{"sum":27329.00}', start=2, args={"values": [8997, 18332]})
+    out = checks_for(["Rs 27,329 a month."], [turn_span(T, 0), figures, add])
+    assert [i["match"]["how"] for i in out["arithmetic"][0]["inputs"]] == ["rounded", "truncated"]
+    assert out["unsupported"] == 0
+    loose = span("subtract", T, '{"difference":3000.00}', start=2, args={"a": 31000, "b": 28000})
+    out = checks_for(["Rs 3,000 to spare."], [turn_span(T, 0), figures, loose])
+    assert out["arithmetic"][0]["reason"] == "subtract's inputs 31,000 and 28,000 are not supported"
+
+
+def test_an_arithmetic_result_needs_readable_arguments_given_numbers_and_no_error():
+    debts = span("list_debts", T, DEBTS, start=1)
+    values = {"values": [14120, 9000]}
+    cases = {
+        "add returned an error": span("add", T, '{"sum":23120.00}', True, 2, values),
+        "add's arguments are not in the trace": span("add", T, '{"sum":23120.00}', start=2),
+        "add's arguments could not be read": span(
+            "add",
+            T,
+            '{"sum":23120.00}',
+            start=2,
+            args='{"values": [14120, 90...[truncated 9 chars]',
+        ),
+        "add was given no numbers": span(
+            "add", T, '{"sum":23120.00}', start=2, args={"values": []}
+        ),
+    }
+    for reason, add in cases.items():
+        out = checks_for(["Rs 23,120 a month in all."], [turn_span(T, 0), debts, add])
+        assert out["arithmetic"][0]["reason"] == reason
+        assert out["amounts"][0]["rejected"]["reason"] == reason
+
+
+def test_a_finance_tools_result_counts_whatever_it_was_given():
+    """D56 changes only the arithmetic tools: calculate_emi's result is a source even when its
+    principal was made up (docs/known-limits.md, Platform checks)."""
+    call = span(
+        "calculate_emi",
+        T,
+        '{"emi":9852.70}',
+        args={"principal": 777777, "annual_rate_pct": 9, "tenure_months": 120},
+    )
+    out = checks_for(["Rs 9,852.70 a month."], [turn_span(T, 0), call])
+    assert out["amounts"][0]["supported_by"] == "tool"
+    assert out["arithmetic"] == []
 
 
 def test_the_client_file_and_the_user_message_support_amounts():
@@ -363,9 +648,12 @@ def test_the_runner_writes_checks_json_after_every_trial(tmp_path):
                 "where": "tool:calculate_emi",
                 "how": "exact",
                 "precision": 0.01,
+                "call": 0,
             },
+            "rejected": None,
         }
     ]
+    assert checks["arithmetic"] == []
     assert report["checks"] == {
         "path": "checks.json",
         "valid": True,

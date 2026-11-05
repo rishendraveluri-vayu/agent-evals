@@ -29,10 +29,25 @@ def test_every_schema_is_a_valid_json_schema():
         ("result-sim-error.json", "result"),
         ("runner-report-sim-error.json", "runner-report"),
         ("checks.json", "checks"),
+        ("checks-arithmetic.json", "checks"),
     ],
 )
 def test_examples_validate(example, schema):
     assert errors(schema, json.loads((EXAMPLES / example).read_text())) == []
+
+
+def test_a_checks_json_from_before_d56_still_validates():
+    """D56's fields are additive: without `arithmetic`, `rejected` and `match.call`, a checks.json
+    is the shape the runner wrote before 5 Nov, and the schema still takes it."""
+    checks = json.loads((EXAMPLES / "checks-arithmetic.json").read_text())
+    checks.pop("arithmetic")
+    for row in checks["amounts"]:
+        row.pop("rejected")
+        if row["match"]:
+            row["match"].pop("call")
+    assert errors("checks", checks) == []
+    checks["amounts"][0]["rejected"] = {"value": 1, "where": "tool:add"}  # but not half of one
+    assert errors("checks", checks) != []
 
 
 def test_trace_example_validates_line_by_line():

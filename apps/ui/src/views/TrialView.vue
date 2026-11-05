@@ -1071,7 +1071,11 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                 v-for="a in numberCheck.unsupported"
                 :key="a.text"
               >
-                <mark class="amount-mark mono">{{ a.text }}</mark> no source found
+                <mark class="amount-mark mono">{{ a.text }}</mark> no source found<span
+                  v-if="a.note"
+                  class="secondary"
+                  data-test="unsupported-note"
+                >: {{ a.note }}</span>
               </li>
             </ul>
             <details

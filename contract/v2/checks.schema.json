@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-evals.local/contract/v2/checks.schema.json",
   "title": "Platform checks (contract v2)",
-  "description": "Written by the runner to /trial/out/checks.json after every trial (evals_adapter.checks), never by the adapter. Number provenance: every money amount the agent wrote, and whether a tool result, the task's client file or a user message holds it at the precision shown. Required tool calls: which of the task's required_tools the agent called. Heuristics for a reader and a grader primitive, not a grade. See docs/adapter-contract.md section 12.",
+  "description": "Written by the runner to /trial/out/checks.json after every trial (evals_adapter.checks), never by the adapter. Number provenance: every money amount the agent wrote, and whether a tool result, the task's client file or a user message holds it at the precision shown; an arithmetic tool's result counts only when every number it was given is itself supported (D56, 5 Nov). Required tool calls: which of the task's required_tools the agent called. Heuristics for a reader and a grader primitive, not a grade. See docs/adapter-contract.md section 12. The fields marked D56 were added on 5 Nov and are optional here, so a checks.json written before them still validates; the runner always writes them now.",
   "type": "object",
   "additionalProperties": false,
   "required": ["contract_version", "trial_id", "amounts", "unsupported", "tools_called", "required_tools"],
@@ -21,24 +21,13 @@
           "text": {"description": "The amount as written, such as '₹4.41 lakh'.", "type": "string", "minLength": 1},
           "value": {"description": "The amount in rupees.", "type": "number", "minimum": 0},
           "supported_by": {
-            "description": "Where a matching number was: a tool result (tool), the task's client file (client), or a user or simulated-client message (user); null when nothing matched, a calculation with no tool behind it.",
+            "description": "Where a matching number was: a tool result (tool), the task's client file (client), or a user or simulated-client message (user); null when nothing matched, a calculation with no tool behind it. An arithmetic tool's result is a tool source only when `arithmetic` accepts its call (D56).",
             "enum": ["tool", "client", "user", null]
           },
-          "match": {
-            "oneOf": [
-              {"type": "null"},
-              {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["value", "where", "how", "precision"],
-                "properties": {
-                  "value": {"description": "The matching number, in rupees.", "type": "number"},
-                  "where": {"description": "tool:<tool name>, client:<file name>, or <source>:<transcript index> for a message (task:0, client_sim:2).", "type": "string", "minLength": 1},
-                  "how": {"description": "exact; rounded half-up to the precision shown (or at trailing zeros, within 1%); truncated to the precision shown.", "enum": ["exact", "rounded", "truncated"]},
-                  "precision": {"description": "The step the amount was compared at, in rupees: 0.01 for '₹8,997.26', 1000 for '₹4.41 lakh'.", "type": "number", "exclusiveMinimum": 0}
-                }
-              }
-            ]
+          "match": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/match"}]},
+          "rejected": {
+            "description": "D56: null unless the amount has no source and matched an arithmetic result that does not count: the best such match, and the call's reason from `arithmetic`.",
+            "oneOf": [{"type": "null"}, {"$ref": "#/$defs/rejected"}]
           }
         }
       }
@@ -61,6 +50,68 @@
           }
         }
       ]
+    },
+    "arithmetic": {
+      "description": "D56: every call of an arithmetic tool (add, subtract, multiply, divide, percent_of, percent_change, round), in start order, and whether its result counts as a source. It counts only when the call returned no error, was given at least one number, and every number it was given (round's places aside) matches, by the same rule as an amount, an earlier non-arithmetic tool result or accepted arithmetic result, the client file, or a user message up to the call's turn. Absent from a checks.json written before D56, which did not trace arithmetic inputs.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["call", "tool", "turn", "supported", "inputs", "reason"],
+        "properties": {
+          "call": {"$ref": "#/$defs/call"},
+          "tool": {"description": "The tool, with harness prefixes removed.", "type": "string", "minLength": 1},
+          "turn": {"description": "The agent turn the call belongs to, from 0; -1 when its span has no turn parent.", "type": "integer", "minimum": -1},
+          "supported": {"description": "Whether the call's result counts as a source.", "type": "boolean"},
+          "inputs": {
+            "description": "Every number the call was given, in argument order.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["arg", "value", "supported_by", "match"],
+              "properties": {
+                "arg": {"description": "The argument it was given in: values[0], a, value.", "type": "string", "minLength": 1},
+                "value": {"description": "The number as given; null for NaN or an infinity.", "type": ["number", "null"]},
+                "supported_by": {"enum": ["tool", "client", "user", null]},
+                "match": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/match"}]}
+              }
+            }
+          },
+          "reason": {"description": "Null when the result counts; else why not: \"add's input 12,345 is not supported\", \"round returned an error\", \"divide's arguments could not be read\".", "type": ["string", "null"]}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "call": {"description": "D56: a tool call's position among the trial's tool calls (its execute_tool spans in start order), from 0.", "type": "integer", "minimum": 0},
+    "how": {"description": "exact; rounded half-up to the precision shown (or at trailing zeros, within 1%); truncated to the precision shown.", "enum": ["exact", "rounded", "truncated"]},
+    "where": {"description": "tool:<tool name>, client:<file name>, or <source>:<transcript index> for a message (task:0, client_sim:2).", "type": "string", "minLength": 1},
+    "precision": {"description": "The step the amount was compared at, in rupees: 0.01 for '₹8,997.26', 1000 for '₹4.41 lakh'.", "type": "number", "exclusiveMinimum": 0},
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "where", "how", "precision"],
+      "properties": {
+        "value": {"description": "The matching number, in rupees.", "type": "number"},
+        "where": {"$ref": "#/$defs/where"},
+        "how": {"$ref": "#/$defs/how"},
+        "precision": {"$ref": "#/$defs/precision"},
+        "call": {"$ref": "#/$defs/call"}
+      }
+    },
+    "rejected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "where", "how", "precision", "call", "reason"],
+      "properties": {
+        "value": {"description": "The arithmetic result that matched.", "type": "number"},
+        "where": {"$ref": "#/$defs/where"},
+        "how": {"$ref": "#/$defs/how"},
+        "precision": {"$ref": "#/$defs/precision"},
+        "call": {"$ref": "#/$defs/call"},
+        "reason": {"description": "Why that result is not a source, such as \"add's input 12,345 is not supported\".", "type": "string", "minLength": 1}
+      }
     }
   }
 }

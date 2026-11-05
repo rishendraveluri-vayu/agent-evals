@@ -64,7 +64,7 @@ Decided, the field-by-field contract (R12, 3 Nov; to be iterated on 4 Nov):
 
 - **`docs/adapter-contract.md` v2** defines the trial folder, `spec.json`, `capabilities.json`, `result.json`, the span names, exit codes, gate tests, effect checks, the simulated client and what is stored. The JSON Schemas in `contract/v2/` are its machine-readable form.
 - **The config shape** is a common `settings` block (temperature, max output tokens, max steps, timeout, parallel tool calls, memory, skills, compression) plus `harness_options` validated against each adapter's own schema (D23).
-- **Platform checks after every trial** (4 Nov, from Rishi's review): the runner writes `checks.json` next to the result, the same for every harness: number provenance (each money amount the agent wrote, and whether a tool result, the client file or a user message holds it at the precision shown) and the task's `required_tools` called or missing. Graders and the judge read it; it never changes a trial's label (contract section 12).
+- **Platform checks after every trial** (4 Nov, from Rishi's review): the runner writes `checks.json` next to the result, the same for every harness: number provenance (each money amount the agent wrote, and whether a tool result, the client file or a user message holds it at the precision shown; since D56, 5 Nov, an arithmetic tool's result counts only when every number it was given is itself supported, traced through the calls in start order, so `round(x)` or `add([x, 0])` on a made-up x is still unsupported) and the task's `required_tools` called or missing. Graders and the judge read it; it never changes a trial's label (contract section 12).
 
 Open:
 

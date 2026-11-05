@@ -1,0 +1,17 @@
+# As finance-sum-unsupported, but the sum the reply works out itself (8,997.26 + 18,332.50 =
+# 27,329.76) is first passed through the arithmetic tool `round`, which returns it unchanged.
+# The answer is word for word the one in finance-sum-tool. Before D56 round's result made the
+# sum "supported"; since D56 an arithmetic result counts only when its inputs are supported, and
+# no tool, client file or message holds 27,329.76, so the provenance check still flags it.
+description: Calls calculate_emi and list_debts, rounds a sum it worked out itself, then answers with it.
+steps:
+  - tool_calls:
+      - name: calculate_emi
+        arguments: {principal: 1000000, annual_rate_pct: 9, tenure_months: 240}
+  - tool_calls:
+      - name: list_debts
+        arguments: {}
+  - tool_calls:
+      - name: round
+        arguments: {value: 27329.76, places: 2}
+  - text: "The new EMI would be Rs 8,997.26 a month. With the Rs 18,332.50 you already pay on your three debts, your loan payments would come to Rs 27,329.76 a month."

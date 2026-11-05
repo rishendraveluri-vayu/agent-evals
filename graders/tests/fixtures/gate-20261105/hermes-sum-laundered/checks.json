@@ -1,0 +1,84 @@
+{
+ "contract_version": "2",
+ "trial_id": "gate-hermes-sum-laundered",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "Rs 8,997.26",
+   "value": 8997.26,
+   "supported_by": "tool",
+   "match": {
+    "value": 8997.26,
+    "where": "tool:calculate_emi",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 0
+   },
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "Rs 18,332.50",
+   "value": 18332.5,
+   "supported_by": "tool",
+   "match": {
+    "value": 18332.5,
+    "where": "tool:list_debts",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 1
+   },
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "Rs 27,329.76",
+   "value": 27329.76,
+   "supported_by": null,
+   "match": null,
+   "rejected": {
+    "value": 27329.76,
+    "where": "tool:round",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 2,
+    "reason": "round's input 27,329.76 is not supported"
+   }
+  }
+ ],
+ "unsupported": 1,
+ "tools_called": [
+  "calculate_emi",
+  "list_debts",
+  "round"
+ ],
+ "required_tools": {
+  "required": [
+   "calculate_emi",
+   "list_debts"
+  ],
+  "called": [
+   "calculate_emi",
+   "list_debts"
+  ],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": [
+  {
+   "call": 2,
+   "tool": "round",
+   "turn": 0,
+   "supported": false,
+   "inputs": [
+    {
+     "arg": "value",
+     "value": 27329.76,
+     "supported_by": null,
+     "match": null
+    }
+   ],
+   "reason": "round's input 27,329.76 is not supported"
+  }
+ ]
+}

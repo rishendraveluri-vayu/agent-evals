@@ -29,6 +29,12 @@ from evals_graders.judge import grade_judge as judge_grade
 from evals_graders.spec import Prepared, prepare
 from evals_graders.trial import ToolCall, TrialView, normalise_tool_name
 
+# The finance server's arithmetic tools, as the runner's checks name them
+# (evals_adapter.checks.ARITHMETIC_TOOLS; a test keeps the two lists equal). D56: their results
+# are sources only when their inputs are, which a checks.json from before 5 Nov did not trace.
+ARITHMETIC_TOOLS = frozenset(
+    {"add", "subtract", "multiply", "divide", "percent_of", "percent_change", "round"}
+)
 DEFAULT_NUMBER_TOLERANCE = {"abs": 1.0}
 DEFAULT_ARGS_TOLERANCE = {"abs": 1e-6}
 VERDICTS = ("pass", "fail", "not_applicable", "error", "not_implemented")
@@ -459,9 +465,53 @@ def _reply_source(ctx: Context, turn: Any) -> dict[str, Any]:
     return {"source": "checks"}
 
 
+def _on_arithmetic(row: dict[str, Any]) -> bool:
+    """Whether an amount's match is an arithmetic tool's result (`where` is tool:<name>)."""
+    match = row.get("match")
+    where = match.get("where") if isinstance(match, dict) else None
+    return (
+        isinstance(where, str)
+        and where.startswith("tool:")
+        and normalise_tool_name(where[5:]) in ARITHMETIC_TOOLS
+    )
+
+
+def _why(row: dict[str, Any]) -> str:
+    """An unsupported amount for a sentence, with D56's reason when an arithmetic result matched
+    it: 'Rs 23,120 (round's input 23,120 is not supported)'."""
+    rejected = row.get("rejected")
+    reason = rejected.get("reason") if isinstance(rejected, dict) else None
+    text = str(row.get("text"))
+    return f"{text} ({reason})" if isinstance(reason, str) and reason else text
+
+
+def _rejected_calls(ctx: Context, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Evidence for the arithmetic calls the unsupported amounts matched but that do not count:
+    each call's arguments, quoted from its span. `rejected.call` is the call's position among
+    the trial's tool calls in start order, the order TrialView.tool_calls() gives."""
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        rejected = row.get("rejected")
+        call = rejected.get("call") if isinstance(rejected, dict) else None
+        where = str(rejected.get("where", "")) if isinstance(rejected, dict) else ""
+        if not isinstance(call, int) or not 0 <= call < len(ctx.calls):
+            continue
+        c = ctx.calls[call]
+        if f"tool:{c.name}" != where or c.span_id in seen:
+            continue  # not the call checks.json means: quote nothing rather than the wrong one
+        seen.add(c.span_id)
+        out.append(_call_ev(c))
+    return out
+
+
 def grade_provenance(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
     """checks.json's number provenance (note 31): how many money amounts the agent wrote have
-    no tool result, client-file number or user message behind them at the precision shown."""
+    no tool result, client-file number or user message behind them at the precision shown. An
+    arithmetic tool's result counts only when its inputs are supported (D56); checks.json says
+    so in `arithmetic`. A checks.json written before D56 lacks that field: an amount it matched
+    to an arithmetic result may or may not be supported, so the grade fails when the other
+    unsupported amounts already exceed the cap, and is an error otherwise."""
     checks, early = _checks(ctx)
     if checks is None:
         return early
@@ -481,15 +531,36 @@ def grade_provenance(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
         {**_reply_source(ctx, a.get("turn")), "quote": str(a.get("text", ""))}
         for a in unsupported[:20]
     ]
-    shown = ", ".join(str(a.get("text")) for a in unsupported[:5])
+    ev += _rejected_calls(ctx, unsupported[:20])
+    shown = ", ".join(_why(a) for a in unsupported[:5])
     listed = f": {shown}" + (", ..." if len(unsupported) > 5 else "") if unsupported else ""
     summary = (
         f"{count} of {len(amounts)} amount(s) in {where} have no tool result, client-file"
         f" number or user message behind them{listed}"
     )
+    untraced = [] if "arithmetic" in checks else [a for a in amounts if _on_arithmetic(a)]
+    note = ""
+    if untraced:
+        names = ", ".join(str(a.get("text")) for a in untraced[:5])
+        more = ", ..." if len(untraced) > 5 else ""
+        note = (
+            f"; checks.json predates D56 (5 Nov) and did not trace arithmetic inputs, so"
+            f" {len(untraced)} more amount(s) resting on an arithmetic tool's result may be"
+            f" unsupported: {names}{more}"
+        )
+        if count <= cap:
+            untraced_ev = [
+                {**_reply_source(ctx, a.get("turn")), "quote": str(a.get("text", ""))}
+                for a in untraced[:20]
+            ]
+            return _grade(
+                "error",
+                f"{summary} (allowed {cap}){note}; re-run the trial's checks to decide",
+                ev + untraced_ev,
+            )
     if count <= cap:
         return _grade("pass", f"{summary} (allowed {cap})", ev)
-    return _grade("fail", f"{summary}, more than the {cap} allowed", ev)
+    return _grade("fail", f"{summary}, more than the {cap} allowed{note}", ev)
 
 
 def grade_required_tools(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
