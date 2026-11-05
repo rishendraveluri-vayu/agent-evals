@@ -232,7 +232,8 @@ function regressionsOf(input: AnalysisInput, perTask: Map<string, StatsTask>): R
       t.trials
         .filter((x) => x.arm === arm && x.outcome === 'fail')
         .slice(0, FAILED_TRIALS_PER_ARM)
-        .map((x) => ({ trial_id: x.trial_id, arm, failed_graders: x.grades.filter((g) => g.required && g.verdict === 'fail').map((g) => g.grader_id) }));
+        // The cause (D64) is filled after the statistics, from rules that also read labels: causes/behaviour.ts.
+        .map((x) => ({ trial_id: x.trial_id, arm, failed_graders: x.grades.filter((g) => g.required && g.verdict === 'fail').map((g) => g.grader_id), cause: null }));
     out.push({
       order,
       r: {
@@ -245,6 +246,7 @@ function regressionsOf(input: AnalysisInput, perTask: Map<string, StatsTask>): R
         critical: fell.some((g) => g.severity === 'critical'),
         graders: fell,
         failed_trials: [...failed('B'), ...failed('A')],
+        causes_grew: [],
       },
     });
   });

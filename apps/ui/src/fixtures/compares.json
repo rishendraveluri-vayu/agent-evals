@@ -442,30 +442,35 @@
               "arm": "B",
               "failed_graders": [
                 "fd-tax"
-              ]
+              ],
+              "cause": null
             },
             {
               "trial_id": "tr_fd-vs-sip-07_b_4",
               "arm": "B",
               "failed_graders": [
                 "fd-tax"
-              ]
+              ],
+              "cause": null
             },
             {
               "trial_id": "tr_fd-vs-sip-07_b_5",
               "arm": "B",
               "failed_graders": [
                 "fd-tax"
-              ]
+              ],
+              "cause": null
             },
             {
               "trial_id": "tr_fd-vs-sip-07_a_2",
               "arm": "A",
               "failed_graders": [
                 "fd-tax"
-              ]
+              ],
+              "cause": null
             }
-          ]
+          ],
+          "causes_grew": []
         },
         {
           "task": "sha256:924c8f26ddd6933aa36a956ab55875ee3e106d751564c9f1cf4d9be98b6306ea",
@@ -508,37 +513,43 @@
               "arm": "B",
               "failed_graders": [
                 "payoff-order"
-              ]
+              ],
+              "cause": null
             },
             {
               "trial_id": "tr_payoff-order-08_b_3",
               "arm": "B",
               "failed_graders": [
                 "payoff-order"
-              ]
+              ],
+              "cause": null
             },
             {
               "trial_id": "tr_payoff-order-08_b_5",
               "arm": "B",
               "failed_graders": [
                 "payoff-order"
-              ]
+              ],
+              "cause": null
             },
             {
               "trial_id": "tr_payoff-order-08_a_2",
               "arm": "A",
               "failed_graders": [
                 "payoff-order"
-              ]
+              ],
+              "cause": null
             },
             {
               "trial_id": "tr_payoff-order-08_a_4",
               "arm": "A",
               "failed_graders": [
                 "payoff-order"
-              ]
+              ],
+              "cause": null
             }
-          ]
+          ],
+          "causes_grew": []
         }
       ],
       "costs": [
@@ -918,7 +929,9 @@
         }
       ]
     },
-    "stats_note": null
+    "stats_note": null,
+    "prose_figures": [],
+    "behaviour": null
   },
   "exp_discovery": {
     "experiment_id": "exp_discovery",
@@ -1417,7 +1430,9 @@
         }
       ]
     },
-    "stats_note": null
+    "stats_note": null,
+    "prose_figures": [],
+    "behaviour": null
   },
   "exp_aa": {
     "experiment_id": "exp_aa",
@@ -2004,7 +2019,9 @@
         }
       ]
     },
-    "stats_note": null
+    "stats_note": null,
+    "prose_figures": [],
+    "behaviour": null
   },
   "exp_pilot": {
     "experiment_id": "exp_pilot",
@@ -2138,7 +2155,9 @@
       }
     ],
     "stats": null,
-    "stats_note": "A pilot of one config has nothing to compare it with, so there is no verdict."
+    "stats_note": "A pilot of one config has nothing to compare it with, so there is no verdict.",
+    "prose_figures": [],
+    "behaviour": null
   },
   "exp_harness": {
     "experiment_id": "exp_harness",
@@ -2186,7 +2205,9 @@
     ],
     "rows": [],
     "stats": null,
-    "stats_note": null
+    "stats_note": null,
+    "prose_figures": [],
+    "behaviour": null
   },
   "exp_model": {
     "experiment_id": "exp_model",
@@ -2234,7 +2255,9 @@
     ],
     "rows": [],
     "stats": null,
-    "stats_note": null
+    "stats_note": null,
+    "prose_figures": [],
+    "behaviour": null
   },
   "exp_futility": {
     "experiment_id": "exp_futility",
@@ -2282,6 +2305,8 @@
     ],
     "rows": [],
     "stats": null,
-    "stats_note": null
+    "stats_note": null,
+    "prose_figures": [],
+    "behaviour": null
   }
 }

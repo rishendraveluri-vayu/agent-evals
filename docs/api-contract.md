@@ -511,9 +511,24 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   whose grading is queued, running or not queued yet; `no_graders` a done trial of a task with no
   graders; `grading_failed` a done trial whose last grading job gave up (3 lapsed leases) with no
   finished job before it; `null` a trial that is not done (nothing to grade). `passed` is true or
-  false with a `pass` or `fail`, else null.
+  false with a `pass` or `fail`, else null. `cause` (D64) is the trial's failure cause
+  (`TrialCause`, below) when it is done and failed or ended other than `answered`, else null.
+- **Failure causes (D64; rules in `docs/assumptions.md` A45, `apps/api/src/causes/`).** A
+  `TrialCause` is `{cause, reason, contributing: [{cause, reason}], rules_version}`: the first rule
+  that matches is `cause`, every other rule that matches is in `contributing`, in rule order.
+  `cause` is one of `CAUSE_KINDS`: `ran_out_of_steps`, `judge_vs_label`, `wrong_tool`,
+  `gave_up_early`, `made_up_arguments`, `tool_error`, `unsupported_figure`, `wrong_answer`,
+  `other`. `reason` is one plain sentence quoting the evidence ("calculate_emi was never called;
+  amortization_schedule was"), saying what is harness-specific (Hermes's summary at the step
+  limit, the own loop's re-send of a cut-off reply, how each harness passes a tool error back).
+  Only done trials (agent outcomes) get one; infra failures keep their infra label. The rules
+  read what is already recorded (end state and stop reason, execute_tool spans, the current
+  grading's grades with their reasons and evidence, the grader specs of that grading, the
+  spec's limits and `required_tools`, Rishi's labels) and call no model; nothing is regraded.
+  `rules_version` is `causes-1`. Causes are computed on each read, not stored, so a new label or
+  a regrade shows at once.
 - `GET /experiments/:id/compare` returns `{experiment_id, status, reason, arms, rows, stats,
-  stats_note, prose_figures}`.
+  stats_note, prose_figures, behaviour}`.
   **No comparison until every arm is complete** (D37, D32): while `status` is `incomplete`,
   `reason` says why ("arm B is paused: ...", "the experiment was stopped before every trial ran
   (...); a verdict needs the full planned N (D32)", "the experiment is paused: ...", "arm A has 3
@@ -531,8 +546,22 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   `checks.derived_in_prose` (runner 0.4.0 on): the money figures the agent worked out in prose that
   the checks verified by recomputing them. A trial whose report lacks the counts (checks from
   before D61) is `trials_unmeasured`. A measure beside the verdict, never part of it or a gate;
-  the comparison page shows it as a tile next to the pass rate and costs. Empty while
-  `incomplete`.
+  the comparison page shows it with each arm's behaviour. Empty while `incomplete`.
+- **How each arm behaved (D64).** Once `complete`, `behaviour` is `{rules_version, arms, paired}`
+  (`CompareBehaviour`); null while `incomplete`. Each of `arms` (A, then B) covers the arm's done
+  trials, a reused arm A's included, and an A/A run's arms by repeat: `trials`; `tool_calls`
+  (`total`, `per_trial`) and `by_tool` (`{tool, calls, per_trial, errors, trials}`, most called
+  first), counted from the execute_tool spans with Hermes's `mcp__finance__` removed;
+  `required_tools`, per tool a task wants (its `required_tools` and the tool of each required
+  `tool_called` check), `{tool, trials, called, share}` over the trials of the tasks that want it;
+  `tool_errors` (`total`, `per_trial`, `trials` with at least one); `steps` (model calls from
+  LiteLLM's records, D17: `trials_measured`, `per_trial`, and `step_limit`, the trials that ended
+  `step_limit`); `end_states` (`{end_state, trials}`, most first); and `causes` (`trials` with a
+  cause, and `by_cause`: `{cause, primary, contributing}` per cause, in rule order). `paired` has
+  `tool_calls` and `steps` per trial as `BehaviourStat` (`{metric, tasks, a, b, diff, relative,
+  trials}`): B minus A per task with the same task bootstrap as `costs`, seeded
+  `<experiment id>:behaviour:<metric>`, over tasks with a value in both arms, and no verdict; empty
+  for a pilot of one config. None of it changes the verdict: it explains the pass rate.
 - **Statistics (SP6: D10, D41, D42, D43, D44, D50; `CompareStats` in `contract.ts`).** `stats` is
   null, with `stats_note` saying why, for a pilot of one config, while any done trial's grading is
   queued or running ("Grading is still running for 4 of 4 finished trials; ..."), or when no task
@@ -560,9 +589,11 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
     `no_critical_checks` ("no check is marked critical"), `no_decided_trials`, `rose` (interval
     above 0) or `did_not_rise`; `blocks_better` when it turns a better into `held_back`;
   - `regressions` (D10): every task where B dropped (`diff` below 0) or a check's own pass rate
-    fell, critical first, with `graders` (id, required, severity, per-arm counts) and
+    fell, critical first, with `graders` (id, required, severity, per-arm counts),
     `failed_trials` (arm B first, at most 10 per arm, each with the required checks it failed and
-    an optional `cause` reserved for the failure-cause step, not filled yet);
+    its `cause`, D64) and `causes_grew` (D64: `{cause, a, b}` for each primary cause that was more
+    common on the task's trials in B than in A, most grown first; causes are filled after the
+    cached statistics, so a new label shows without a regrade);
   - `costs`: `cost_usd` (LiteLLM's recorded cost of the agent's calls; `made_up_prices` on a fake
     model), `tokens` (input plus output) and `wall_s` (the trial's run time), each the same task
     bootstrap over tasks with a value in both arms, as `diff` and `relative` (percent), no
@@ -586,7 +617,9 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   exactly as the run grid (`grading` on `GET /experiments/:id/trials`) and the comparison count
   it: `pass`, `fail` or `incomplete` from the latest finished grading job (`done` or
   `no_graders`), `no_graders`, `waiting`, `grading_failed`, or empty for a trial that is not
-  done. Since 5 Nov `grades_passed`, `grades_total` and `grades_json` (CSV) and `grades` (JSON)
+  done. `cause` (D64) is the trial's failure cause: in the CSV its kind, `cause_reason` and
+  `causes_contributing` (the contributing kinds, `;`-separated), empty for a trial with none; in the
+  JSON the whole `TrialCause` or null. Since 5 Nov `grades_passed`, `grades_total` and `grades_json` (CSV) and `grades` (JSON)
   cover only that current grading's grades, so a regraded trial is not counted twice; the JSON
   adds `grading_job_id` and `grade_history`, every stored grade version. Both carry the name the
   screens show (since 5 Nov, QA round 3): `experiment_title` is the second CSV column and a
@@ -612,10 +645,10 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 
 - `GET /trials/:id` returns `{id, experiment_id, probe, task, config, repeat_index, attempt, status,
   label, end_state, result, runner_report, usage, timing, files: [{path, bytes, sha256}],
-  grades, grading}`. A probe trial (D33) has `probe: true` and `experiment_id: null`. `grades` are
+  grades, grading, problems, cause}`. A probe trial (D33) has `probe: true` and `experiment_id: null`. `grades` are
   those of the trial's latest finished grading job (see Grading), each `{id, grader_id,
   grader_version, kind, type, required, verdict, score, reason, evidence, judge_model, run_index,
-  created_at}`; `grading` is `{current, pending}`: the job those grades came from (`job_id,
+  created_at}`; `cause` is the failure cause its row has (D64), null for a probe; `grading` is `{current, pending}`: the job those grades came from (`job_id,
   status, reason, grader_source, source_note, task_sha256, framework_version, passed, outcome,
   error, queued_at, graded_at`), and a newer job still queued, claimed or failed. Both are null
   before the first grading.

@@ -99,7 +99,7 @@ Every requirement in the brief, and the sub-project that answers for it.
 | Clear when a difference is just noise | SP6, SP7 | Verdict, A/A test |
 | Cost, latency and tokens next to quality | SP6, SP7 | Comparison view |
 | Full trajectory: messages, tool calls and results, memory reads and writes, skills, grader reasoning, score | SP3, SP7 | Trial view |
-| Failure analysis (stretch) | Parking lot | Categories over traces |
+| Failure analysis (stretch) | SP6, SP7 (D64) | A cause per failed trial, behaviour per arm, causes on the regression list |
 | TypeScript API and UI, one-command run, keys via `.env` | SP0 | Clean-clone test |
 | 20+ tasks, mixed graders, some that separate configs | SP4 | `tasks/` |
 | Results persisted and exportable | SP2 | Export test |

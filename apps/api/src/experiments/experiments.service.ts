@@ -30,6 +30,8 @@ import { badRequest, conflict, notFound } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { hashCanonical, normalizeSha } from '../common/hashing';
 import { type AnalysisResult, STATS_METHOD_VERSION, type TaskInput, type TrialInput, analyse } from '../stats/analysis';
+import { type BehaviourTrial, behaviourOf, withRegressionCauses } from '../causes/behaviour';
+import { causesFor, loadTrialFacts } from '../causes/trial-facts';
 import { newId } from '../common/ids';
 import { CatalogueService, type StoredPrompt, type StoredTask, taskView } from '../catalogue/catalogue.service';
 import { CONFIG_SELECT, type ConfigRow, configView } from '../configs/configs.service';
@@ -897,7 +899,9 @@ export class ExperimentsService {
       where.push(`(t.task_sha256 = $${params.length} OR k.id = $${params.length})`);
     }
     const rows = await this.db.query<TrialSummaryRow>(`${TRIAL_SUMMARY_SELECT} WHERE ${where.join(' AND ')} ORDER BY t.seq, t.attempt`, params);
-    return rows.map(trialRowSummary);
+    // D64: the causes are read for the rows that can have one only (failed, or not answered).
+    const causes = await causesFor(this.db, rows.filter(mayHaveCause).map((t) => t.id));
+    return rows.map((t) => ({ ...trialRowSummary(t), cause: causes.get(t.id) ?? null }));
   }
 
   /** Why no comparison can be offered yet (D37, D32), or null when every arm is complete. */
@@ -922,11 +926,35 @@ export class ExperimentsService {
     const r = await this.row(id);
     const arms = await this.arms(r);
     const reason = this.incompleteReason(r, arms);
-    if (reason) return { experiment_id: id, status: 'incomplete', reason, arms, rows: [], stats: null, stats_note: null, prose_figures: [] };
+    if (reason) return { experiment_id: id, status: 'incomplete', reason, arms, rows: [], stats: null, stats_note: null, prose_figures: [], behaviour: null };
     const rows = await this.compareRows(r, arms);
     const { stats, note } = await this.statsOf(r, arms);
     const prose_figures = await this.proseFigures(r, arms);
-    return { experiment_id: id, status: 'complete', reason: null, arms, rows, stats, stats_note: note, prose_figures };
+    const trials = await this.behaviourTrials(r);
+    const behaviour = behaviourOf(r.id, arms.length >= 2 ? ['A', 'B'] : ['A'], r.task_sha256s, trials);
+    // D64: each regression's failed trials get their cause, and the causes that grew from A to B.
+    const withCauses = stats ? { ...stats, regressions: withRegressionCauses(stats.regressions, trials) } : null;
+    return { experiment_id: id, status: 'complete', reason: null, arms, rows, stats: withCauses, stats_note: note, prose_figures, behaviour };
+  }
+
+  /**
+   * D64: every done trial of the comparison (a reused arm A's included), with the arm it counts
+   * in, its tool calls and its failure cause. Not cached: a cause reads Rishi's labels, which
+   * change without a regrade.
+   */
+  private async behaviourTrials(r: ExperimentRow): Promise<BehaviourTrial[]> {
+    const ids = await this.db.query<{ id: string }>(
+      `SELECT t.id FROM trials t
+       WHERE t.status = 'done'
+         AND (t.experiment_id = $1 OR t.id IN (SELECT unnest(reused_trial_ids) FROM experiment_arms WHERE experiment_id = $1))`,
+      [r.id],
+    );
+    const facts = await loadTrialFacts(this.db, ids.map((x) => x.id));
+    return facts.flatMap((f): BehaviourTrial[] => {
+      const arm = armIndex(r, f.config_hash, f.repeat_index);
+      if (arm !== 0 && arm !== 1) return [];
+      return [{ trial_id: f.id, arm: arm === 0 ? 'A' : 'B', task: f.task_sha256, end_state: f.end_state, model_calls: f.model_calls, wanted: f.wanted, calls: f.calls, cause: f.cause }];
+    });
   }
 
   /**
@@ -1247,7 +1275,13 @@ export function trialRowSummary(r: TrialSummaryRow): TrialRowSummary {
     finished_at: iso(r.finished_at),
     passed: grading === 'pass' || grading === 'fail' ? r.graded_passed : null,
     grading,
+    cause: null,
   };
+}
+
+/** D64: a row that can have a failure cause (causes.ts needsCause decides): done, and failed or not answered. */
+export function mayHaveCause(r: Pick<TrialSummaryRow, 'status' | 'end_state' | 'graded_status' | 'graded_outcome'>): boolean {
+  return r.status === 'done' && ((r.graded_status === 'done' && r.graded_outcome === 'fail') || (r.end_state !== null && r.end_state !== 'answered'));
 }
 
 /** A git commit hash as `git rev-parse` prints it, short or full. */

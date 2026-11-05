@@ -225,8 +225,9 @@ describe('analyse: the regression list (D10)', () => {
       ['B', 'dropped-b4'],
       ['A', 'dropped-a4'],
     ]);
-    expect(drop.failed_trials[0]).toEqual({ trial_id: 'dropped-b1', arm: 'B', failed_graders: ['emi'] });
-    expect('cause' in drop.failed_trials[0]).toBe(false);
+    // The cause is filled after the statistics (D64, causes/behaviour.ts), which leave room for it.
+    expect(drop.failed_trials[0]).toEqual({ trial_id: 'dropped-b1', arm: 'B', failed_graders: ['emi'], cause: null });
+    expect(drop.causes_grew).toEqual([]);
   });
 
   it('lists a task left out of the aggregate when one of its checks fell', () => {

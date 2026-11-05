@@ -282,6 +282,49 @@ the method as built (D10 revised: a task bootstrap, the sign-flip test, D42's ve
   comparison (it is the environment, the same for both arms), though it is in the experiment's
   spend. Trials from before D31 carry prompt caching in their cost (Cost comparisons, above).
 
+## Failure causes and behaviour (D64, 5 Nov)
+
+The causes are rules over what each trial recorded (`docs/design.md`, "Failure causes and behaviour
+per arm"; A45). They point at where to look, and a trial's page is still the evidence. What they
+cannot tell apart:
+
+- **A substitute from a step on the way.** Any tool the task does not want counts as "another
+  tool called in its place", so an agent that read the client's profile and then stopped before
+  the calculator is *wrong tool*, not *gave up early*. The rules know no tool families (data
+  readers, calculators, arithmetic); adding them would tie the platform to the finance toolset.
+- **Which failure came first.** Precedence picks one primary cause; the trace's order is not
+  read. A tool error that did not matter (on a tool the answer never needed) can be the primary
+  cause of a trial whose real fault is a wrong figure, which is then contributing. Both show.
+- **Made-up arguments are only what a check can see.** They come from a `tool_called` check with
+  `args` (the arguments its task names), or from the runner's provenance tracing of arithmetic
+  calls. A finance tool called with an invented input that no check names is not flagged; its
+  answer may still fail as a wrong answer or an unsupported figure.
+- **Malformed tool calls and other agent errors are `other`**, with the harness's words quoted.
+  ADK's fourth malformed call in a row and LangGraph's malformed-only reply end `agent_error`;
+  Hermes repairs malformed arguments silently and runs a call it cannot repair with `{}`, which
+  shows only as a tool error (the reason says so). So "hallucinated tool arguments" in the
+  brief's sense is split across *made-up arguments*, *tool error* and *other*, by harness.
+- **Recovery from tool errors is not comparable across harnesses.** Each shows the model a
+  different error, or none (`docs/harness-guide.md`, 8.1); *tool error* counts errors never followed by a
+  successful call of the same tool, which measures the harness as much as the model.
+- **A wrong answer can be the check's fault.** *Wrong answer* means a required number, regex or
+  unit-test check failed with the right tools called; a too-strict regex (D63's OTP case) reads
+  the same as a real error. A unit test can check behaviour too (`no-repeated-calls`), and is
+  still counted here.
+- **Judge vs label needs a label.** It only appears on trials Rishi labelled, against the judge's
+  verdict on the same criterion; a deterministic check that disagrees with his overall judgement
+  is not detected. Every judge check in the current task set is optional, so it never decides an
+  outcome and is never the primary cause there. The comparison page hides it while held-out items
+  remain to label, as it hides the other disagreements.
+- **A judge failure with no label is `other`**, since the judge is not a deterministic check
+  (*wrong answer* is), and an optional check never fails a trial on its own.
+- **Steps are LiteLLM's count of the agent's calls.** Hermes's summary call at the step limit is
+  in it (Hermes's own count leaves it out), so a Hermes step-limit trial shows one or two calls
+  more than its limit. A trial with no LiteLLM record is left out of steps, not counted as zero.
+- **Tool calls are counted from the execute_tool spans.** LangGraph, ADK and the Agents SDK run a
+  reply's calls concurrently, so "after it" in *tool error* is by span start, not the model's
+  order; ADK's synthetic `adk_handle_model_error` call is counted as a tool call.
+
 ## To check before submission
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted

@@ -231,8 +231,7 @@ Decided (D10 as revised 5 Nov, D41, D42, D43, D44, D50; the proposal is `docs/pr
 - **The regression list (D10).** Every task where B dropped (d(t) < 0), or where any check's own
   pass rate fell from A to B, whether or not it is beyond noise: counts, interval, flag, and the
   checks that got worse (pass rate in each arm, severity), critical first, with links to B's failed
-  trials. Each failed trial has room for a cause (wrong tool, made-up arguments, gave up early, ran
-  out of steps, grader disagrees with the human label: the brief's stretch item 7), not filled yet.
+  trials, each failed trial's cause, and the causes that grew from A to B on that task (D64, below).
 - **Cost, tokens and time next to quality** (proposal section 8). The same task bootstrap on each
   task's mean cost per trial (LiteLLM's recorded cost of the agent's calls; the simulated client's
   cost is the environment's and left out), tokens (input plus output) and time, as a difference
@@ -286,3 +285,54 @@ Choice of N (open: the headline experiment's N and K are Rishi's, in `docs/exper
   20 gives 52%.
 - The pre-run estimate of the smallest difference a planned N and K can detect (proposal section
   6) is not built; the table above stands in for it.
+
+### Failure causes and behaviour per arm (D64)
+
+Decided (D64, Rishi, 5 Nov; the rules' details are A45 in `docs/assumptions.md`):
+
+- **Every trial that failed, or ended other than `answered`, gets one primary cause and the other
+  causes that also apply**, each with one plain sentence quoting the evidence ("calculate_emi was
+  never called; amortization_schedule was"). They answer the brief's stretch item 7: a regression
+  points to a cause. They explain the pass rate and never change the verdict.
+- **Rule-based, from what each trial already recorded, and free.** No model reads a trial to
+  name its cause and nothing is regraded: the rules read the end state and the harness's stop
+  reason (`result.json`), the `execute_tool` spans, the current grading's grades (each grader's
+  reason and evidence, which quote the runner's `checks.json` for provenance and required tools),
+  the grader specs of that grading, the spec's limits and `required_tools`, and Rishi's labels. A
+  cause is computed on each read (`apps/api/src/causes/`), not stored, so a new label or a regrade
+  shows at once, and the same trial always gets the same cause under the same `rules_version`.
+  Free and repeatable mattered more than nuance: a judge model naming causes would cost per
+  trial, vary between runs, and itself need validating against labels.
+- **How each cause is decided, in the order the rules are tried** (the first match is primary):
+  1. *Ran out of steps*: the end state is `step_limit`, `token_limit` or `timeout`.
+  2. *Other, an error*: the end state is `agent_error` or `harness_error` (an agent outcome by the
+     runner's label), with the harness's own stop reason quoted.
+  3. *Judge vs label*: on a criterion Rishi labelled, the judge's verdict differs from his label;
+     primary only when every failed required check is a judge check whose "no" criteria his
+     labels pass, otherwise contributing.
+  4. *Wrong tool*: a tool the task wants (its `required_tools`, or the tool of a required
+     `tool_called` check) was never called and another tool was; or a `tool_not_called` check
+     failed.
+  5. *Gave up early*: it answered, a wanted tool was never called, and no other tool was called in
+     its place (no tool at all, or only some of the wanted ones).
+  6. *Made-up arguments*: a `tool_called` check failed because its tool was called but never with
+     the arguments the check wants (the grade says "but 0 matched" and quotes the calls), or a
+     provenance check failed on a figure that came from an arithmetic call the runner's checks
+     rejected because an input had no source.
+  7. *Tool error*: a tool returned an error and was never called successfully after it.
+  8. *Unsupported figure*: the provenance check failed; the figures it quotes are named.
+  9. *Wrong answer*: a required check on the answer (`number`, `regex_present`, `regex_absent`,
+     `unit_test`) failed while every wanted tool was called.
+  10. *Other*: none of the above; the failed checks are named with the first one's reason.
+- **Harness-specific signals are said, not flattened** (the grading guide's "Opaque Failure
+  Mapping"). The reasons keep what differs by harness: Hermes answers at the step limit with a
+  summary, the others stop without one; the own loop sends a cut-off reply again at double the cap
+  before it ends `token_limit`; each harness passes a tool error back to the model its own way
+  (Hermes as `{"error": ...}`, pausing the tools after three in a row, and runs a call it cannot
+  repair with no arguments); LangGraph and ADK end `agent_error` on malformed calls; and the
+  harness's own stop reason is quoted.
+- **How each arm behaved**, on the comparison beside the pass rate: tool calls per trial in all
+  and per tool, the share of trials that called each tool the task wants, tool errors per trial,
+  steps (model calls, D17) per trial and step-limit hits, end states, figures written without a
+  tool (D61) and the causes. Tool calls and steps per trial get B minus A per task with the costs'
+  task bootstrap and no verdict, as costs do.

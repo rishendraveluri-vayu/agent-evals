@@ -282,6 +282,7 @@ const trialRow = (expId, id, slot, orderIndex, attempt, status, label, passed, i
     finished_at: finished ? at(minutesAgo) : null,
     passed: status === 'done' ? passed : null,
     grading: status === 'done' ? (passed === true ? 'pass' : passed === false ? 'fail' : 'waiting') : null,
+    cause: null,
   };
 };
 /** The API lists trial rows in plan order: repeat, task, config, then attempt. */
@@ -600,16 +601,16 @@ const heldoutTaskStats = [
 ].map(([id, d, lo, hi, beyond, p]) => taskStat(heldoutRows, task[id], I(d, lo, hi), beyond, p));
 /** A task's failed trials in the held-out run, arm B first, as the regression list gives them. */
 const failedOf = (taskId, graders) => ['B', 'A'].flatMap((arm) =>
-  heldoutTrials.filter((t) => t.task_id === taskId && t.arm === arm && t.passed === false).slice(0, 10).map((t) => ({ trial_id: t.id, arm, failed_graders: graders })));
+  heldoutTrials.filter((t) => t.task_id === taskId && t.arm === arm && t.passed === false).slice(0, 10).map((t) => ({ trial_id: t.id, arm, failed_graders: graders, cause: t.cause })));
 const regression = (id, graders) => {
   const st = heldoutTaskStats.find((x) => x.task_id === id);
-  return { task: st.task, task_id: id, a: st.a, b: st.b, diff: st.diff, beyond_noise: st.beyond_noise, critical: graders.some((g) => g.severity === 'critical'), graders, failed_trials: failedOf(id, graders.filter((g) => g.required).map((g) => g.grader_id)) };
+  return { task: st.task, task_id: id, a: st.a, b: st.b, diff: st.diff, beyond_noise: st.beyond_noise, critical: graders.some((g) => g.severity === 'critical'), graders, failed_trials: failedOf(id, graders.filter((g) => g.required).map((g) => g.grader_id)), causes_grew: [] };
 };
 const AA = { experiment_id: 'exp_aa', name: 'A/A calibration: Hermes, Haiku 5.5, prompt v1', config_hash: cfgV1.hash, finished_at: at(1570), diff: I(1, -7, 9), verdict: 'equivalent' };
 
 const byId = Object.fromEntries(experiments.map((e) => [e.id, e]));
-const complete = (id, rows, stats, note = null) => ({ experiment_id: id, status: 'complete', reason: null, arms: byId[id].arms, rows, stats, stats_note: stats ? null : note });
-const incomplete = (id, reason) => ({ experiment_id: id, status: 'incomplete', reason, arms: byId[id].arms, rows: [], stats: null, stats_note: null });
+const complete = (id, rows, stats, note = null) => ({ experiment_id: id, status: 'complete', reason: null, arms: byId[id].arms, rows, stats, stats_note: stats ? null : note, prose_figures: [], behaviour: null });
+const incomplete = (id, reason) => ({ experiment_id: id, status: 'incomplete', reason, arms: byId[id].arms, rows: [], stats: null, stats_note: null, prose_figures: [], behaviour: null });
 const queuedOrRunning = (trials, letter) => trials.filter((t) => t.arm === letter && (t.status === 'queued' || t.status === 'running')).length;
 const discoveryDiffs = [20, 20, 0, 20, 20, 0, 0, 20];
 const discoveryRows = fixedRows(discovery.slice(0, 8), [cfgV1, cfgV2], [[3, 2, 4, 1, 3, 2, 5, 2], [4, 3, 4, 2, 4, 2, 5, 3]]);
@@ -788,6 +789,7 @@ const trial = {
     pending: null,
   },
   problems: [],
+  cause: null,
 };
 
 /** checks.json's number-provenance check, in the shape the provenance grader reads first
