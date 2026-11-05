@@ -302,6 +302,8 @@ function createExperiment(body: CreateExperimentRequest): ExperimentDetail {
     paused_at: null,
     paused_reason: null,
     order_seed: body.order_seed ?? 1,
+    // As the API resolves it (the Run screen always sends `enabled`).
+    futility: { enabled: body.futility?.enabled ?? true, after: body.futility?.after ?? 3, min_passed: body.futility?.min_passed ?? 1 },
     parent_experiment_id: body.parent_experiment_id ?? null,
     baseline: null,
     actual: null,
