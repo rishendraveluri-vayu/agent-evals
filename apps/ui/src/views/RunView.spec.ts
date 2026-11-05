@@ -8,6 +8,7 @@ import experimentTrials from '../fixtures/experiment-trials.json';
 import harnessesJson from '../fixtures/harnesses.json';
 import { ApiError } from '../api/errors';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
+import { currentHash } from '../router';
 import { routeFetch, settle, useFixtures } from '../test/helpers';
 import RunView from './RunView.vue';
 
@@ -530,6 +531,64 @@ describe('RunView on fake models only (QA major 1)', () => {
   });
 });
 
+describe('RunView futility check: off by default when every model is fake, on for a paid run (A41)', () => {
+  useFixtures();
+  const box = (w: VueWrapper) => w.get('[data-test="futility-box"]').element as HTMLInputElement;
+
+  it('starts unticked on fake models, says why, and records what the box shows', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, fakeA, fakeB]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'prompt.sha256', a: fakeA.prompt.sha256, b: fakeB.prompt.sha256 }]);
+    const create = vi.spyOn(api, 'createExperiment');
+    const w = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    expect(box(w).checked).toBe(false);
+    expect(w.get('[data-test="futility"]').text()).toContain('Off to start with here: every model is fake, so the run spends nothing.');
+    await w.get('[data-test="start"]').trigger('click');
+    await settle();
+    expect(create.mock.calls[0][0].futility).toEqual({ enabled: false });
+  });
+
+  it('can be ticked by hand on fake models, and stays ticked', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, fakeA, fakeB]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'prompt.sha256', a: fakeA.prompt.sha256, b: fakeB.prompt.sha256 }]);
+    const create = vi.spyOn(api, 'createExperiment');
+    const w = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    await w.get('[data-test="futility-box"]').setValue(true);
+    await settle();
+    expect(box(w).checked).toBe(true);
+    await w.get('[data-test="start"]').trigger('click');
+    await settle();
+    expect(create.mock.calls[0][0].futility).toEqual({ enabled: true });
+  });
+
+  it('turns on when a real model joins the run, here as the simulated client', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, fakeA, fakeB]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'prompt.sha256', a: fakeA.prompt.sha256, b: fakeB.prompt.sha256 }]);
+    const w = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    expect(box(w).checked).toBe(false);
+    await w.get('[data-test="sim-model"]').setValue('gemini-3.8-flash');
+    await settle();
+    expect(box(w).checked).toBe(true);
+    expect(w.get('[data-test="futility"]').text()).toContain('On to start with: this run calls a real model.');
+  });
+
+  it('starts ticked on a paid run, and can be unticked by hand', async () => {
+    const create = vi.spyOn(api, 'createExperiment');
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    expect(box(w).checked).toBe(true);
+    await w.get('[data-test="futility-box"]').setValue(false);
+    await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
+    await settle();
+    await w.get('[data-test="start"]').trigger('click');
+    await w.get('[data-test="confirm-paid-start"]').trigger('click');
+    await settle();
+    expect(create.mock.calls[0][0].futility).toEqual({ enabled: false });
+  });
+});
+
 describe('RunView asks before a paid run (QA major 6)', () => {
   useFixtures();
 
@@ -708,6 +767,25 @@ describe('RunView drafts: N, refusals and the name (QA major 12)', () => {
     await settle();
     expect(w.get('[data-test="action-error"]').text()).toBe('Arm A and arm B are the same agent. Pick a different agent for one of them.');
     expect(w.text()).not.toContain('config_hashes');
+  });
+
+  it('replaces the setup address with the run’s own page once it starts, so a refresh or Back never offers Start again', async () => {
+    const created = { ...(details as unknown as Record<string, ExperimentDetail>).exp_heldout, id: 'e_started', status: 'created' as const };
+    vi.spyOn(api, 'createExperiment').mockResolvedValue(created);
+    vi.spyOn(api, 'startExperiment').mockResolvedValue({ ...created, status: 'running' });
+    window.location.hash = `#/run?a=${encodeURIComponent(cfgV1.hash)}&b=${encodeURIComponent(cfgV2.hash)}`;
+    const entries = window.history.length;
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
+    await settle();
+    await w.get('[data-test="start"]').trigger('click');
+    await w.get('[data-test="confirm-paid-start"]').trigger('click');
+    await settle();
+    expect(window.location.hash).toBe('#/experiments/e_started/run');
+    expect(currentHash.value).toBe('#/experiments/e_started/run');
+    // Replaced, not added: Back goes to wherever the setup was opened from.
+    expect(window.history.length).toBe(entries);
   });
 
   it('opens the saved run when it was created but did not start, and says why there', async () => {

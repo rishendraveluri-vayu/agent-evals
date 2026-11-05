@@ -11,6 +11,8 @@ stack was started with `-p <name>`, so the check never reaches into another copy
 
 Checks:
 - the UI serves its page, and proxies /api/health to the API with the database up;
+- the API can write the folders it stores things in (runs/, labels/, configs/prompts/), which are
+  mounted from the repo: if not, it says which and how to fix it;
 - LiteLLM routes a fake model to the fake server, both plain and streamed;
 - the request that reached the fake server carried the temperature we sent.
 """
@@ -18,6 +20,7 @@ Checks:
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 
 def _port(name: str, default: str) -> str:
@@ -32,8 +35,20 @@ KEY = os.environ.get("LITELLM_MASTER_KEY", "sk-local-dev-only")
 
 
 def get(url: str) -> tuple[int, bytes]:
-    with urllib.request.urlopen(url, timeout=10) as resp:
-        return resp.status, resp.read()
+    """The status and body, for an error status too (the API's health is 503 with a body)."""
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as err:
+        return err.code, err.read()
+
+
+def parse(body: bytes) -> dict:
+    try:
+        value = json.loads(body)
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def post_json(url: str, body: dict) -> urllib.request.addinfourl:
@@ -58,12 +73,17 @@ def main() -> int:
     results.append(check("ui serves index", status == 200 and b"<div id=\"app\"" in body))
 
     status, body = get(UI + "/api/health")
-    health = json.loads(body)
+    health = parse(body)
     results.append(check("ui proxies api health", status == 200 and health.get("db") == "up",
-                         json.dumps(health)))
+                         f"HTTP {status} {json.dumps(health)}"))
 
     status, body = get(API + "/api/health")
-    results.append(check("api health direct", status == 200, body.decode()))
+    health = parse(body)
+    results.append(check("api health direct", status == 200, f"HTTP {status} {body.decode()}"))
+    # The plain-words problem names each folder the API cannot write and how to fix it.
+    results.append(check("api can write runs/, labels/ and configs/prompts/",
+                         health.get("files") == "writable",
+                         health.get("files_problem") or f"files: {health.get('files')!r}"))
 
     marker = "smoke-" + os.urandom(4).hex()
     with post_json(LITELLM + "/v1/chat/completions", {

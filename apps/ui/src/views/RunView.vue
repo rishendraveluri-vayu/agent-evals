@@ -12,7 +12,7 @@ import { armDifferences, armValue, armsCheck, axisChange, axisFromDiff, budgetCh
 import { changedLineCount, lineChanges, sentenceChanges, type LineChange } from '../lib/diff';
 import { capitalise, clock, minutes, money, plainText, plural, shortHash, wholeMoney } from '../lib/format';
 import { experimentName, infraReason, modelName, splitName } from '../lib/names';
-import { href, navigate } from '../router';
+import { href, navigate, replaceRoute } from '../router';
 import { eventView, pauseCause } from '../lib/runs';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
 import { armPauseHelp, defaultArms, defaultBudget, isEngineTest, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, validateSeed, type ArmDefaults } from '../lib/runSetup';
@@ -75,8 +75,10 @@ interface Setup {
   seed: string;
   /** D44: an A/A calibration run, the same agent on both arms, to measure the setup's own noise. */
   calibration: boolean;
+  /** D32's futility check as ticked by hand; null follows the default (futilityOn). */
+  futility: boolean | null;
 }
-const setup = reactive<Setup>({ a: props.a ?? '', b: props.b ?? '', split: 'held_out', n: 5, simModel: '', budget: '', plan: '', name: '', seed: '', calibration: !!props.calibration });
+const setup = reactive<Setup>({ a: props.a ?? '', b: props.b ?? '', split: 'held_out', n: 5, simModel: '', budget: '', plan: '', name: '', seed: '', calibration: !!props.calibration, futility: null });
 const touched = reactive({ budget: false, name: false, sim: false });
 /** Tasks taken out of the run by hand, by sha256. Engine tests start out of it. */
 const excluded = reactive(new Set<string>());
@@ -137,6 +139,14 @@ const pickable = computed(() => {
 });
 /** No model costs anything real: the estimate is at made-up test prices, and no spending limit is needed. */
 const fakeOnly = computed(() => hashes.value.length > 0 && realModels.value.length === 0);
+/** A41: the futility check protects spend, so it starts off when every model is fake and on for a
+ *  paid run, as the API's own default; ticked by hand, it stays as ticked. */
+const futilityOn = computed({
+  get: () => setup.futility ?? !fakeOnly.value,
+  set: (on: boolean) => {
+    setup.futility = on;
+  },
+});
 const configOf = (h: string) => data.value?.configs.find((c) => c.hash === h);
 const sameConfig = computed(() => hashes.value.length === 2 && hashes.value[0] === hashes.value[1]);
 /** The run is an A/A calibration (D44): the draft's box, or the saved experiment's own flag. */
@@ -387,15 +397,19 @@ async function startNew() {
       plan_commit: setup.plan.trim() || null,
       ...(seedCheck.value.value !== null ? { order_seed: seedCheck.value.value } : {}),
       ...(isCalibration.value ? { calibration: true } : {}),
+      // What the box shows is what the run records, whatever the API's default.
+      futility: { enabled: futilityOn.value },
     });
     createdId = created.id;
     await api.startExperiment(created.id);
-    navigate(href.run(created.id));
+    // The run's own page replaces the setup in the address and in history, so neither a refresh
+    // nor Back offers to start the same trials again.
+    replaceRoute(href.run(created.id));
   } catch (err) {
     if (createdId) {
       // Saved but not started: its own page can start it or discard it, so a retry never makes a second one.
       setRunFlash(createdId, `The run was saved but did not start: ${plainRunError(err)} Start it here, or discard it.`);
-      navigate(href.run(createdId));
+      replaceRoute(href.run(createdId));
     } else {
       actionError.value = plainRunError(err);
     }
@@ -1322,6 +1336,17 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                   data-test="seed-error"
                 >{{ seedCheck.error }}</span>
                 <span class="secondary smaller">A whole number from 0 to 4,294,967,295. The trials run in an order shuffled from it, arms interleaved.</span>
+              </label>
+              <label
+                class="aa-option small"
+                data-test="futility"
+              >
+                <input
+                  v-model="futilityOn"
+                  type="checkbox"
+                  data-test="futility-box"
+                >
+                <span><strong>Futility check</strong>: pauses the run for review if an arm passes none of its first 3 graded trials, so a broken agent stops spending; it never stops on an apparent win. {{ fakeOnly ? 'Off to start with here: every model is fake, so the run spends nothing.' : 'On to start with: this run calls a real model.' }}</span>
               </label>
               <div class="task-pick-wrap">
                 <div class="task-pick-frame">

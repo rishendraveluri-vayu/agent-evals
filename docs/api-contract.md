@@ -425,8 +425,11 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   `paused_reason`; resume or stop after review. None of them looks at the difference between the
   arms: the verdict uses the full planned N, so nothing stops or decides on an apparent win.
   - **Futility**, `futility: {enabled, after, min_passed}` on `POST /experiments` (left out:
-    `{enabled: true, after: 3, min_passed: 1}`; `{"enabled": false}` turns it off; shown resolved
-    as `futility` in the detail). Once per arm: when the arm has `after` graded trials, it pauses
+    `{enabled: true, after: 3, min_passed: 1}`, or `enabled: false` when every model the run calls,
+    each arm's and the simulated client's when a task needs one, is `fake/*`, since the check
+    protects spend and such a run spends nothing (A41, since 5 Nov; the same reading of the run as
+    the fake-only budget rule); `{"enabled": false}` turns it off and any other object turns it
+    on, whatever the models; shown resolved as `futility` in the detail). Once per arm: when the arm has `after` graded trials, it pauses
     the run if fewer than `min_passed` of them passed. **Passed is the grading outcome** (SP4,
     since 4 Nov): a trial whose current grading outcome is `pass` counts as a pass and `fail` as a
     fail; one whose grading is `incomplete`, has not finished, or has no graders is not counted at
@@ -847,6 +850,12 @@ field is left (a key inside a binary file cannot be scrubbed, so it fails the ex
 
 ## UI-only endpoints
 
+- `GET /health` returns `{status: "ok", db: "up"|"down"|"not_configured", files: "writable"|"not_writable", files_problem?}`:
+  200 when the database is up or not configured and the API can write `runs/`, `labels/` and
+  `configs/prompts/`; 503 with the same body when the database is down or one of those folders is
+  not writable (since 5 Nov), with `files_problem` naming each such folder, where the API sees it
+  and how to fix it, in plain words. The container's health check, and so `docker compose up --wait`,
+  fails on the 503; `scripts/smoke.py` checks `files` too.
 - `GET /labels/queue?set=tuning|heldout|final` returns blind items `{item_id, task_summary,
   transcript, tool_calls, criteria, second_look}` with no harness, model, arm, timing, cost or
   grade. Only trials whose agent ran on a real model are items: a `fake/*` model plays a script,

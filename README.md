@@ -10,9 +10,9 @@ cost, tokens and time beside it, down to every trial's trace and grades.
 Five harnesses plug in through one adapter contract: Hermes Agent, LangGraph, Google ADK, the
 OpenAI Agents SDK and a plain tool-calling loop. Every model call goes through a LiteLLM proxy,
 where spend, tokens, latency and settings are recorded. The task set is a personal-finance
-assistant with calculator tools and simulated clients. Today it holds 15 draft tasks (their
-summaries still start "DRAFT") and 2 engine tests that check the platform, not an agent; the
-task set is being finished.
+assistant with calculator tools and simulated clients. It holds 21 tasks, 10 of them held out to
+score the experiment and 11 for tuning, plus 2 engine tests that check the platform, not an
+agent.
 
 > **Status, 5 Nov 2026.** The platform runs end to end: configs, runs with N trials, isolation,
 > retries, traces, deterministic graders, the judge's plumbing, blind labelling, and the
@@ -24,8 +24,9 @@ task set is being finished.
 
 ## Run it
 
-You need Docker with the compose plugin and about 10 GB of free disk. The first build takes a few
-minutes, mostly downloading base images.
+You need Docker with the compose plugin and about 15 GB of free disk (a cold build used about
+9.9 GB in testing). The first build takes about 5 minutes on 4 vCPUs, mostly building the images:
+downloading the base images was about a minute of it.
 
 ```bash
 docker compose up -d --build --wait
@@ -50,9 +51,17 @@ starts, and asks you to confirm.
 
 Stop it with `docker compose down`. `docker compose down -v` also wipes the local database
 (configs, experiments, grades), but not the files the stack writes into the repo folder: trial
-files stay in `./runs/` (delete what is inside it to remove them; one fake run of 150 trials
-left about 22 MB there in testing), your labels in `./labels/`, and prompt versions you saved in
-`configs/prompts/`.
+files stay in `./runs/`, your labels in `./labels/`, and prompt versions you saved in
+`configs/prompts/`. To remove the trial files, delete what is inside `runs/`, not the folder
+itself: `rm -rf runs/*` (one fake run of 150 trials left about 22 MB there in testing). No sudo is
+needed. The API runs as uid 1000; when you are another user, its start-up step gives those three
+folders (the folders only, never what is in them) to uid 1000, keeps your group and makes them
+group-writable, so everything it writes there is yours to delete. If `rm` is refused anyway (a
+folder Docker created because it was missing belongs to root), delete from inside the API:
+`docker compose exec api sh -c 'rm -rf /runs/*'`.
+
+If `docker compose up --wait` stops with the api container unhealthy, `docker compose logs api`
+says why in plain words: the database is down, or a folder above cannot be written, with the fix.
 
 ## Three ways in
 
@@ -125,7 +134,9 @@ up without a restart.
 
 ## Develop and test
 
-None of these call a real model; tests use the fake model server.
+You need Node 22.14 or later, pnpm 10.34.9 (run `corepack enable` once; the first `pnpm` then
+asks to download that version) and [uv](https://docs.astral.sh/uv/) for the Python projects. None
+of these call a real model; tests use the fake model server.
 
 ```bash
 pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build      # apps/api, apps/ui
@@ -137,8 +148,9 @@ docker compose --profile smoke run --rm netcheck                             # w
 ```
 
 **The API's database tests.** Without `TEST_DATABASE_URL`, `pnpm test` skips the API's
-database suites (nine test files) and prints that they were skipped, not passed. To run them,
-start a throwaway Postgres (never the compose one), then stop it:
+database suites: Jest's summary for the API reads `Test Suites: 10 skipped, 30 passed, 30 of 40
+total`, and a warning says they were skipped, not passed. To run them, start a throwaway
+Postgres (never the compose one), then stop it:
 
 ```bash
 docker run --rm -d --name evals-api-test -p 127.0.0.1:55432:5432 -e POSTGRES_PASSWORD=x postgres:17

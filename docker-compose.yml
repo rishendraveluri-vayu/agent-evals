@@ -134,14 +134,16 @@ services:
       # The shipped example experiments, loaded when you open one from the home page.
       EXAMPLES_DIR: /repo/examples
     volumes:
-      # Read-write: the API stores uploaded trial files here. It runs as uid 1000 (node), so
-      # runs/ must be writable by that user on the host, as labels/ already is.
+      # Read-write: the API stores uploaded trial files here. The server runs as uid 1000 (node).
+      # Its start-up step gives runs/, labels/ and configs/prompts/ (those folders only, never
+      # their contents) to that user when it is not their owner, keeping your group and making
+      # them group-writable, so you can still delete what it writes; on a host where you are uid
+      # 1000 nothing changes. Its health check fails, saying which folder, when one stays unwritable.
       - ./runs:/runs
       - ./workers:/repo/workers:ro
       - ./configs:/repo/configs:ro
       # Read-write over the read-only configs/ above: saving a new prompt version on the Config
-      # screen adds its file here (never overwriting one). Like runs/, it must be writable by
-      # uid 1000 on the host.
+      # screen adds its file here (never overwriting one). Handled at start-up like runs/.
       - ./configs/prompts:/repo/configs/prompts
       - ./tasks:/repo/tasks:ro
       - ./services/finance-mcp:/repo/services/finance-mcp:ro

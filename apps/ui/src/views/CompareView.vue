@@ -10,7 +10,7 @@ import JudgePanel from '../components/JudgePanel.vue';
 import LoadState from '../components/LoadState.vue';
 import NotFound from '../components/NotFound.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { agreementWords, armDifferences, armIndexOf, armLetter, armsOf, armState, differingShort, namedByHash, noDiffWords as noDiffFor, excludesZero, intervalText, judgeCaveat, NBSP, passedText, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
+import { agreementWords, armDifferences, armIndexOf, armLetter, armsOf, armState, differingShort, namedByHash, noDiffWords as noDiffFor, excludesZero, noWidth, shownWidth, intervalText, judgeCaveat, NBSP, passedText, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { identParts, money, percent, plainText, plural, seconds, shortHash, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
 import { isFake } from '../lib/models';
@@ -301,9 +301,13 @@ const heroText = computed(() => {
   if (!s || !h) return null;
   const [a, b] = arms.value;
   const unit = (v: number) => (Math.abs(Math.round(v)) === 1 ? 'point' : 'points');
+  // A zero-width interval does not "run" anywhere: say it has no width (D55).
+  const interval = noWidth(s.diff)
+    ? `The ${h.level}% interval has no width: ${signed(s.diff.low)} to ${signed(s.diff.high)}${NBSP}points.`
+    : `The ${h.level}% interval runs from ${signed(s.diff.low)} to ${signed(s.diff.high)}${NBSP}points.`;
   return {
     big: `${signed(s.diff.estimate)}${NBSP}${unit(s.diff.estimate)}`,
-    rest: ` of pass rate: ${a?.short ?? 'A'} ${percent(s.a.rate)}, ${b?.short ?? 'B'} ${percent(s.b.rate)}. The ${h.level}% interval runs from ${signed(s.diff.low)} to ${signed(s.diff.high)}${NBSP}points.`,
+    rest: ` of pass rate: ${a?.short ?? 'A'} ${percent(s.a.rate)}, ${b?.short ?? 'B'} ${percent(s.b.rate)}. ${interval}`,
   };
 });
 
@@ -334,19 +338,35 @@ const why = computed(() => {
   const s = stats.value;
   if (!s) return [];
   const side = s.diff.low > 0 ? 'above' : 'below';
-  const interval = excludesZero(s.diff)
-    ? `The interval stays ${side} zero.`
-    : 'The interval crosses zero, so these trials cannot rule out no difference at all.';
+  const points = (v: number) => `${signed(v)}${NBSP}${Math.abs(Math.round(v)) === 1 ? 'point' : 'points'}`;
+  // D55: an interval with no width (0 to 0 included) neither crosses zero nor stays clear of it in
+  // any useful sense: every task gave the same difference, so there is no spread to show.
+  const interval = noWidth(s.diff)
+    ? `Every task gave the same difference, ${points(s.diff.estimate)}, so no spread can be shown: an interval with no width is not a narrow one.`
+    : excludesZero(s.diff)
+      ? `The interval stays ${side} zero.`
+      : 'The interval crosses zero, so these trials cannot rule out no difference at all.';
   let aa = '';
   if (s.aa) {
     aa = excludesZero(s.aa.diff)
       ? `Check on the method: the latest A/A calibration of this config gave ${pointsWithInterval(s.aa.diff)}, a difference where there is none. Treat this result with caution.`
-      : `Check on the method: the latest A/A calibration of this config gave ${pointsWithInterval(s.aa.diff)}, which includes zero, so the setup did not invent a difference when nothing changed.`;
+      : noWidth(s.aa.diff)
+        ? `Check on the method: the latest A/A calibration of this config gave ${pointsWithInterval(s.aa.diff)}: every task gave the same difference, so it did not invent one, but with no spread it cannot show how much the setup varies.`
+        : `Check on the method: the latest A/A calibration of this config gave ${pointsWithInterval(s.aa.diff)}, which includes zero, so the setup did not invent a difference when nothing changed.`;
   }
   const count = (v: number) => v.toLocaleString('en-US');
   const flips = s.test.exact ? `every one of the ${count(s.test.flips)} ways to flip the tasks' signs` : `${count(s.test.flips)} random sign flips`;
   const method = `Paired by task: each task is compared with itself across the two arms, and the ${Math.round(s.level * 100)}% interval comes from resampling the tasks ${count(s.resamples)} times. The sign-flip test over ${flips} gives p${NBSP}=${NBSP}${s.p_value}.`;
   return [interval, ...(aa ? [aa] : []), method];
+});
+
+/** The aside's heading. An interval clear of zero is unlikely to be noise; one with no width shows
+ *  no spread either way, so there only the paired test's verdict can say (D55). */
+const whyTitle = computed(() => {
+  const s = stats.value;
+  if (!s) return '';
+  const clear = noWidth(s.diff) ? s.pass_rate_verdict === 'better' || s.pass_rate_verdict === 'worse' : excludesZero(s.diff);
+  return clear ? 'Why this is unlikely to be noise' : 'Why this could be noise';
 });
 
 /** The statistics' sentences write a negative number with a hyphen; the page uses a minus sign. */
@@ -569,7 +589,8 @@ const taskSummary = computed(() => {
   const other = total - n;
   if (!other) return first;
   let line = `${first} The other ${other} ${other === 1 ? 'is' : 'are'} within noise.`;
-  const widths = taskRows.value.filter((r) => !r.significant && r.diff).map((r) => Math.round((r.diff?.high ?? 0) - (r.diff?.low ?? 0)));
+  // The width of the bounds as shown ("−79 to +79" is 158 wide), not of the unrounded ones.
+  const widths = taskRows.value.flatMap((r) => (!r.significant && r.diff ? [shownWidth(r.diff)] : []));
   if (widths.length) {
     const lo = Math.min(...widths);
     const hi = Math.max(...widths);
@@ -972,7 +993,7 @@ const worthALook = computed(() => {
             class="why-title"
             data-test="why-title"
           >
-            {{ excludesZero(stats.diff) ? 'Why this is unlikely to be noise' : 'Why this could be noise' }}
+            {{ whyTitle }}
           </h3>
           <p
             v-for="(line, i) in why"

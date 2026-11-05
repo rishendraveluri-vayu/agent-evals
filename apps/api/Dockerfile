@@ -28,7 +28,7 @@ FROM base AS prod-deps
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --prod --filter @agent-evals/api
 
-# ---- runtime: no pnpm, no dev dependencies, no sources, non-root ----
+# ---- runtime: no pnpm, no dev dependencies, no sources; the server runs as node ----
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production \
     PORT=3000
@@ -41,11 +41,16 @@ COPY --from=build /repo/apps/api/dist ./apps/api/dist
 COPY apps/api/package.json ./apps/api/package.json
 # Plain SQL, applied in order at startup (src/database/migrate.ts reads ../../migrations).
 COPY apps/api/migrations ./apps/api/migrations
+# The start-up step: as root, it makes the three folders the API writes (mounted from the host)
+# usable by node, uid 1000, then runs the server as node with setpriv, which the base image has.
+# The server never runs as root. See the script for exactly what it changes, and when.
+COPY --chmod=0755 apps/api/docker-entrypoint.sh /usr/local/bin/api-entrypoint
 WORKDIR /repo/apps/api
-USER node
 EXPOSE 3000
-# Node 22 has fetch built in, so the check needs no curl. Healthy only on HTTP 200,
-# so the container reports unhealthy while a configured database is down (503).
+# Node 22 has fetch built in, so the check needs no curl. Healthy only on HTTP 200, so the
+# container reports unhealthy while a configured database is down or a folder the API writes is
+# not writable (503); the reply's plain words land in `docker inspect`'s health log.
 HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=3 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/health').then(async (r) => { if (!r.ok) console.error(await r.text()); process.exit(r.ok ? 0 : 1); }, (e) => { console.error(String(e)); process.exit(1); })"]
+ENTRYPOINT ["/usr/local/bin/api-entrypoint"]
 CMD ["node", "dist/main.js"]
