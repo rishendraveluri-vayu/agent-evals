@@ -29,6 +29,13 @@
    not count, the reason; an amount whose only match is such a result names it in `rejected`.
    The other tools' results count as before, whatever their inputs.
 
+   **Unit facts and the identity guard (D58).** An input equal to one of UNIT_FACTS (7, 12, 28
+   to 31, 52, 100, 365, 366, a lakh and a crore) needs no source, so `multiply([emi, 12])` and
+   `divide(annual, 365)` count when the other input does; 0 and 1 are never unit facts. A result
+   that only repeats an input with no source never counts, whatever UNIT_FACTS holds: `round(365)`
+   or `add([100, 0])` would otherwise turn a constant into a supported figure. "Repeats" is the
+   amounts' rule again: the result, at the digits it was returned with, matches the input.
+
 2. **Required tool calls** (a grader primitive). A task may list `required_tools` in the spec;
    the check records which of them the agent called and which are missing, from the trace's
    `execute_tool` spans, with harness prefixes such as Hermes's `mcp__finance__` removed.
@@ -95,6 +102,14 @@ ARITHMETIC_TOOLS = frozenset(
 )
 # Arguments that say how a tool works, not a figure it works on (A40): round's decimal places.
 NOT_FIGURES = {"round": frozenset({"places"})}
+# D58: unit facts, which an arithmetic input may be without a source: days in a week (7), months
+# in a year (12), days in a month (28 to 31), weeks in a year (52), a hundred for a percentage
+# (100), days in a year (365, 366), a lakh (1,00,000) and a crore (1,00,00,000). Matched by value,
+# sign ignored (12, 12.0 and -12 alike), and only as an arithmetic input: an amount in a reply
+# still needs a source. Never 0 or 1, the identities that pass a made-up figure through unchanged.
+UNIT_FACTS = frozenset(
+    Decimal(n) for n in (7, 12, 28, 29, 30, 31, 52, 100, 365, 366, 100_000, 10_000_000)
+)
 
 
 @dataclass(frozen=True)
@@ -446,15 +461,40 @@ def _listing(items: list[str]) -> str:
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
+def is_unit_fact(number: Decimal) -> bool:
+    """D58: whether an arithmetic input is a unit fact (UNIT_FACTS), which needs no source."""
+    return number.is_finite() and abs(number) in UNIT_FACTS
+
+
+def _repeated_input(
+    result: list[Decimal], unsourced: list[Decimal]
+) -> tuple[Decimal, Decimal] | None:
+    """D58's identity guard: the first (result number, input) where a number in the call's
+    result is one of its inputs that has no source, by the amounts' rule with the result as the
+    amount (at the digits it was returned with) and the input as the number it may come from:
+    23,120.00 repeats 23120, and round's 23000 repeats 23,120.456. None when no result number
+    repeats one."""
+    for number in result:
+        amount = _input_amount(number)
+        if amount is None:
+            continue
+        for value in unsourced:
+            if value.is_finite() and _match_rank(amount, value) is not None:
+                return number, value
+    return None
+
+
 def trace_arithmetic(
     calls: list[dict[str, Any]], sources: list[Source]
 ) -> tuple[list[dict[str, Any]], set[int]]:
-    """D56: each arithmetic call, in start order, and whether its result counts as a source. It
-    counts when the call returned no error, was given at least one number, and every number it
-    was given matches a source the agent could have read by then: a non-arithmetic tool result
-    or an accepted arithmetic result from an earlier call, the client file, or a user message up
-    to the call's turn (every message, for a call with no turn parent). Returns the calls'
-    records, as checks.json's `arithmetic`, and the positions of the accepted calls."""
+    """D56 and D58: each arithmetic call, in start order, and whether its result counts as a
+    source. It counts when the call returned no error, was given at least one number, every
+    number it was given matches a source the agent could have read by then (a non-arithmetic
+    tool result or an accepted arithmetic result from an earlier call, the client file, or a
+    user message up to the call's turn; every message, for a call with no turn parent) or is a
+    unit fact, and no number in its result only repeats an input that has no source (the
+    identity guard). Returns the calls' records, as checks.json's `arithmetic`, and the positions
+    of the accepted calls."""
     accepted: set[int] = set()
     records: list[dict[str, Any]] = []
     for call in calls:
@@ -474,22 +514,27 @@ def trace_arithmetic(
             return before(s, index) and s.arithmetic and s.call not in accepted
 
         figures, unreadable = call_inputs(call)
-        inputs, missing = [], []
+        inputs, missing, unsourced = [], [], []
         for arg, number in figures:
             amount = _input_amount(number)
             best = _best(amount, sources, supports) if amount else None
+            unit = best is None and is_unit_fact(number)
             inputs.append(
                 {
                     "arg": arg,
                     "value": _number(number) if amount else None,
-                    "supported_by": best[3].kind if best else None,
+                    "supported_by": best[3].kind if best else ("unit" if unit else None),
                     "match": _match(best) if best else None,
                 }
             )
             if best is None:
+                unsourced.append(number)
+            if best is None and not unit:
                 via = _best(amount, sources, unaccepted) if amount else None
                 note = f" ({via[3].where}'s result, itself unsupported)" if via else ""
                 missing.append(_figure(number) + note)
+        result = source_numbers(str(call["result"])) if call["result"] else []
+        repeated = _repeated_input(result, unsourced)
         if call["is_error"]:
             reason = f"{name} returned an error"
         elif unreadable:
@@ -501,6 +546,11 @@ def trace_arithmetic(
             reason = (
                 f"{name}'s {'input' if one else 'inputs'} {_listing(missing)}"
                 f" {'is' if one else 'are'} not supported"
+            )
+        elif repeated:
+            reason = (
+                f"{name}'s result {_figure(repeated[0])} only repeats its input"
+                f" {_figure(repeated[1])}, which has no source"
             )
         else:
             reason = None
