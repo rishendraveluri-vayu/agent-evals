@@ -149,7 +149,10 @@ function sampleHash(text: string): string {
 }
 
 /** What the API refuses for a model (MODEL_REJECTS in apps/api/src/configs/settings.ts). */
-const MODEL_REJECTS: Record<string, { label: string; rejects: SettingName[] }> = { 'claude-haiku-5-5': { label: 'Claude Haiku 5.5', rejects: ['temperature'] } };
+const MODEL_REJECTS: Record<string, { label: string; rejects: SettingName[] }> = {
+  'claude-haiku-5-5': { label: 'Claude Haiku 5.5', rejects: ['temperature'] },
+  'qwen2.5-7b-local': { label: 'Qwen2.5 7B (local Ollama)', rejects: ['parallel_tool_calls'] },
+};
 const PLATFORM_DEFAULTS: Record<SettingName, unknown> = {
   temperature: null,
   max_output_tokens: 8192,

@@ -99,6 +99,22 @@ describe('resolveSettings', () => {
     expect(modelRejects('gemini-3.8-flash', 'temperature')).toBeNull();
   });
 
+  it('never sends parallel_tool_calls to the local Qwen, which LiteLLM refuses it for (D25, 5 Nov)', () => {
+    const QWEN = 'qwen2.5-7b-local';
+    const qwen = resolveSettings({ max_steps: 12 }, NO_MEMORY, 'ownloop', QWEN);
+    expect(qwen.settings.parallel_tool_calls).toBeNull();
+    expect(qwen.settings_sources.parallel_tool_calls).toBe('harness_default');
+    for (const parallel_tool_calls of [false, true]) {
+      const err = errorOf(() => resolveSettings({ parallel_tool_calls }, NO_MEMORY, 'ownloop', QWEN));
+      expect(err.code).toBe('unsupported_setting');
+      expect(err.message).toContain('ollama_chat does not support parameters');
+    }
+    expect(unsupportedReasons(NO_MEMORY, 'ownloop', QWEN).parallel_tool_calls).toBe('Qwen2.5 7B (local Ollama) rejects parallel_tool_calls, so it is not sent and the provider\'s default applies');
+    // Every other model keeps D19's default: off, and sent.
+    expect(resolveSettings({}, NO_MEMORY, 'ownloop', MODEL).settings.parallel_tool_calls).toBe(false);
+    expect(resolveSettings({}, NO_MEMORY, 'ownloop', HAIKU).settings.parallel_tool_calls).toBe(false);
+  });
+
   it('takes a Haiku config that leaves temperature unset, and the same temperature on another model', () => {
     const haiku = resolveSettings({ max_steps: 8 }, HERMES, 'hermes', HAIKU);
     expect(haiku.settings.temperature).toBeNull();

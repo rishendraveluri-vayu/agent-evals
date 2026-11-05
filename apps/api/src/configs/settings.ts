@@ -33,6 +33,13 @@ export const MODEL_REJECTS: Readonly<Record<string, { label: string; rejects: Pa
       temperature: 'the provider answered 400 "`temperature` is deprecated for this model" on 4 Nov (request req_011CghaVC7rWXY8fBDCspAvF)',
     },
   },
+  'qwen2.5-7b-local': {
+    label: 'Qwen2.5 7B (local Ollama)',
+    rejects: {
+      parallel_tool_calls:
+        'LiteLLM answered 400 "ollama_chat does not support parameters: [\'parallel_tool_calls\']" on 5 Nov (trial t_0mw3bp0xibcca9ddea96a2fd8); drop_params stays off, so the field is left out instead',
+    },
+  },
 };
 
 /** Why `model` refuses the setting, or null if it takes it. */
