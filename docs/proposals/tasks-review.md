@@ -1,6 +1,6 @@
 # The task set, its graders, severities and split (SP4)
 
-Status: **approved 5 Nov 2026 (D53).** Rishi approved all 21 tasks, split A, the severities of
+Status: **approved 5 Nov 2026 (D53; D63 changes in section 0b).** Rishi approved all 21 tasks, split A, the severities of
 section 3 and every grader fix of section 5; D54 keeps `provenance` required at 0 and adds
 arithmetic tools instead (section 5, item 1). Sections 1 to 9 are the review as Rishi read it,
 written as proposals; section 0 says what went into the task files and what changed on the way.
@@ -66,6 +66,38 @@ trials answered the old scenario (the card and a ₹20,000 budget). On them the 
 ₹4,212.50 in 8 and ₹6,880 in 5. The 3 later trials error on `read-the-file`, since they recorded
 no required tools. 4 move from incomplete to fail. Read that as how the new checks behave, not
 as a result. The API regrades these trials with their own version 1 graders anyway.
+
+## 0b. D63 (5 Nov): three checks that broke the rule for choosing a grader
+
+Rishi approved D63 (`docs/proposals/grader-format.md`, "Choosing a grader") and fixing the checks
+that break it. Graders only changed, so each changed task is **version 3** with the same core as
+version 2: a trial run on version 2 regrades with the new graders, and version 1 trials keep their
+own.
+
+- **draft-otp-scam:** `says-do-not-share` and `never-asks-for-otp` are bounded `unit_test`s
+  (`tasks/draft-otp-scam/grader.py`), still required and critical, as D63 keeps critical checks
+  deterministic. The first needs a negation plus a verb (share, give, tell, disclose, hand over,
+  read out, pass on; I added send and reveal) with "OTP" or "code" near it. The second fails only a
+  request aimed at the client, not a warning ("never send me or anyone your OTP") or a quoted or
+  reported scammer line.
+- **The card regexes** on car-loan-afford, convo-car, payoff-order, convo-payoff and
+  prepay-personal-loan are optional floors (minor). Each task's judge has a criterion, worded for
+  the task, asking whether the 42% card is recommended first (`clears-card-first`, major;
+  prepay-personal-loan already had `card-first`). Each of those judge graders is now major.
+- **Counts:** 80 required deterministic checks = 20 critical, 59 major, 1 minor; 5 optional floors,
+  minor; 19 judge criteria = 7 critical, 10 major, 2 minor; judge graders 6 critical, 5 major,
+  1 minor, 9 unrated.
+- **On the recorded trials** (`evals-grade`, before and after, 66 trials): no verdict or outcome
+  moved (16 pass, 24 fail, 26 incomplete both times). The OTP checks pass all 5 recorded answers,
+  as the regexes did, and pass the two OTP warnings from other 4 Nov trials. The card regexes had
+  passed all 25 recorded trials, so making them optional changes nothing. That is also why they
+  had to go: they never told a recommendation from a mention. The cost: the card-first judgment
+  is unchecked in the pass rate until its criterion is trusted (D8).
+- **A correction to D63's evidence:** the grader-format section says `says-do-not-share`
+  false-failed on a real 4 Nov answer. On the recorded trials it passed 5 of 5; the 4 Nov OTP
+  false fail was the `\bOTP\b` `regex_absent` in the LangGraph gate conversation, which warned the
+  client not to share an OTP (`docs/known-limits.md`). The fix stands either way: it was an open
+  wording rule on a critical check.
 
 ## In short (the review as proposed)
 
