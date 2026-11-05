@@ -1,0 +1,36 @@
+{
+ "rule": "every sampled trial where the three judges did not all give the same yes/no on every criterion, plus 10 drawn with random.Random(\"D71-phase2-agreed\") from the rest; agreed trials stand for all agreed ones with weight len(agreed)/10 in the estimate",
+ "disagreed": [
+  "t_0mw38a1yn9175c6daf3c71dcc",
+  "t_0mw38a1yn96715beeecf9fcb0",
+  "t_0mw38a1ynb531efaab6605e0f",
+  "t_0mw38a1yndd9543d19425fdc2",
+  "t_0mw38a1yo3e12a664768121c3",
+  "t_0mw38a1yo4e2bdbaca3da960d",
+  "t_0mw38a1yo54166542ec5ed67c",
+  "t_0mw38a1yo55de6bf7a68d8f69",
+  "t_0mw38a1yo59ff2c95e597d4b4",
+  "t_0mw38a1yo6650fdbae27557f9",
+  "t_0mw38a1yo67def66e73352f1f",
+  "t_0mw38a1yo6a7e2cbbf94d52f9",
+  "t_0mw38a1yobecd568e2979a542",
+  "t_0mw38a1yobf076bb6627e77ee",
+  "t_0mw38a1yoe5e340939a9d47f0",
+  "t_0mw38a1yof3d6f4cd5112f4e5",
+  "t_0mw38a1yp8feaf9f4e622d20f"
+ ],
+ "agreed_drawn": [
+  "t_0mw38a1yn5b470624e0c362d2",
+  "t_0mw38a1ynd509bc00d39a1af4",
+  "t_0mw38a1yo039491915da0bc2c",
+  "t_0mw38a1yo4ac87de6f907ed62",
+  "t_0mw38a1yo5e2a851759117cbf",
+  "t_0mw38a1yo87d6175249ef0bcf",
+  "t_0mw38a1yo926540735b49fd0f",
+  "t_0mw38a1yoa9856f351ec62cfe",
+  "t_0mw38a1yod4c056e0670c492c",
+  "t_0mw38a1yoe1f0efb7f0315742"
+ ],
+ "agreed_total": 23,
+ "trials_total": 40
+}
