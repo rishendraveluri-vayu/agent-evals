@@ -543,6 +543,40 @@ describe('CompareView against the API: the check on the method', () => {
     expect(flat.get('[data-test="verdict-sub"]').text()).toBe('Every task gave the same difference, so the interval has no width and cannot say how large a difference could be hiding.');
   });
 
+  it('never says a zero-width interval crosses zero: every task gave the same difference, so no spread can be shown (D55)', async () => {
+    withStats({ verdict: 'no_detectable_difference', pass_rate_verdict: 'no_detectable_difference', diff: { estimate: 0, low: 0, high: 0 }, not_ruled_out_points: null });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('.verdict-text').text()).toBe(`0${nb}points of pass rate: v1 58%, v2 73%. The 95% interval has no width: 0 to 0${nb}points.`);
+    expect(w.findAll('[data-test="why-title"]')[0].text()).toBe('Why this could be noise');
+    expect(w.findAll('[data-test="why-line"]')[0].text()).toBe(`Every task gave the same difference, 0${nb}points, so no spread can be shown: an interval with no width is not a narrow one.`);
+    expect(w.text()).not.toContain('crosses zero');
+    expect(w.text()).not.toContain('runs from 0 to 0');
+  });
+
+  it('heads a zero-width interval by the paired test, since the interval alone shows no spread', async () => {
+    withStats({ verdict: 'better', pass_rate_verdict: 'better', diff: { estimate: 10, low: 10, high: 10 }, not_ruled_out_points: null });
+    const better = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(better.findAll('[data-test="why-title"]')[0].text()).toBe('Why this is unlikely to be noise');
+    expect(better.findAll('[data-test="why-line"]')[0].text()).toBe(`Every task gave the same difference, +10${nb}points, so no spread can be shown: an interval with no width is not a narrow one.`);
+    // Clear of zero, but too few tasks for the test: no verdict, so no claim that it is not noise.
+    withStats({ verdict: 'no_detectable_difference', pass_rate_verdict: 'no_detectable_difference', diff: { estimate: 10, low: 10, high: 10 }, not_ruled_out_points: null, tasks: base.stats!.tasks.slice(0, 4) });
+    const few = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(few.findAll('[data-test="why-title"]')[0].text()).toBe('Why this could be noise');
+    expect(few.text()).not.toContain('stays above zero');
+  });
+
+  it('says what an A/A calibration with no width shows, and what it cannot', async () => {
+    withStats({ aa: { ...base.stats!.aa!, diff: { estimate: 0, low: 0, high: 0 }, verdict: 'no_detectable_difference' } });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.findAll('[data-test="why-line"]')[1].text()).toBe(
+      `Check on the method: the latest A/A calibration of this config gave 0${nb}points (0 to 0): every task gave the same difference, so it did not invent one, but with no spread it cannot show how much the setup varies.`,
+    );
+  });
+
   it('names practical equivalence by its margin', async () => {
     withStats({ verdict: 'equivalent', pass_rate_verdict: 'equivalent', diff: { estimate: 1, low: -6, high: 8 } });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });

@@ -317,6 +317,13 @@ export function excludesZero(i: Interval): boolean {
   return i.low > 0 || i.high < 0;
 }
 
+/** An interval with no width: every task gave the same difference, so it shows no spread, which
+ *  is not the same as a small one (D55: such an interval never gives "practically equivalent"). */
+export function noWidth(i: Interval): boolean {
+  return i.high === i.low;
+}
+
+
 /** The statistics step's method ids, in words. An id not listed here is shown as it is. */
 export const METHOD_NAMES: Record<string, string> = {
   paired_task_bootstrap: 'Paired task bootstrap',
