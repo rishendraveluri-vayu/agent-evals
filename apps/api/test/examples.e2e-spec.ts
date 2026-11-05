@@ -515,7 +515,8 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
       const cal = loaded.find((d) => d.calibration && ab.config_hashes.slice(0, 2).includes(d.config_hashes[0]));
       if (cal) expect((await aaOf(target, ab.id))?.experiment_id).toBe(cal.id);
     }
-  });
+    // Five shipped examples (about 1,000 trials and 30,000 files) take longer than jest's default.
+  }, 600_000);
 
   it('your own comparison never shows a shipped A/A calibration', async () => {
     // test-aa, loaded above, is a shipped A/A of configs.a; an A/B of your own on configs.a has none of its own.

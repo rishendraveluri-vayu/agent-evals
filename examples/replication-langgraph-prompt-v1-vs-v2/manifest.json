@@ -1,0 +1,99 @@
+{
+  "format": "agent-evals-example",
+  "format_version": 1,
+  "name": "replication-langgraph-prompt-v1-vs-v2",
+  "title": "Replication on LangGraph: prompt v1 vs v2 with Claude Haiku 5.5, 10 held-out tasks x 10",
+  "description": "The headline's comparison repeated on a third harness, set out before it ran (docs/experiment.md, Cross-harness replication): the same prompts, model, tools, tasks and N, on LangGraph. v1 passes 55%, v2 72%: +17.0 points (95% interval +5 to +29), sign-flip p = 0.047, better. Same direction as on Hermes and the own loop; one test of three at alpha 0.05, so read it with the other two.",
+  "sample": true,
+  "experiment_id": "e_0mw3cy2930970251621fd47f3",
+  "experiment_name": "Cross-harness: LangGraph, prompt v1 vs v2 on the 10 held-out tasks",
+  "created_at": "2026-11-05T09:43:08.009577+00:00",
+  "finished_at": "2026-11-05T10:19:51.87696+00:00",
+  "exported_at": "2026-11-05T13:46:14Z",
+  "platform_commit": null,
+  "exported_from_commit": "fe774e1d534259de06293066ac4b81a82c25f712",
+  "source": "bundle",
+  "schema_version": "013_label_second_look",
+  "approximations": [],
+  "summary": {
+    "axis": "prompt",
+    "n": 10,
+    "status": "done",
+    "arms": [
+      {
+        "arm": "A",
+        "config_name": "Cross-harness v1: LangGraph, Claude Haiku 5.5, finance-advisor v1, finance v3",
+        "harness": "langgraph",
+        "model": "claude-haiku-5-5"
+      },
+      {
+        "arm": "B",
+        "config_name": "Cross-harness v2: LangGraph, Claude Haiku 5.5, finance-advisor v2, finance v3",
+        "harness": "langgraph",
+        "model": "claude-haiku-5-5"
+      }
+    ],
+    "trials_by_status": {
+      "done": 200
+    },
+    "spend_usd": 2.215768
+  },
+  "counts": {
+    "configs": 2,
+    "tasks": 10,
+    "trials": 200,
+    "spans": 4062,
+    "grades": 1140,
+    "grading_jobs": 200,
+    "events": 0,
+    "files": 5316,
+    "file_bytes": 80853408
+  },
+  "missing_files": [],
+  "scrubbed": {
+    "fields": 0,
+    "texts": 0,
+    "files": []
+  },
+  "secret_check": {
+    "passed": true,
+    "patterns": {
+      "litellm_key": "sk-[A-Za-z0-9_-]{8,}",
+      "bearer_token": "(?i)\\bbearer\\s+[A-Za-z0-9._~+/=-]{8,}"
+    },
+    "fields": [
+      "access_token",
+      "agent_key_token",
+      "api-key",
+      "api_key",
+      "apikey",
+      "authorization",
+      "client_secret",
+      "evals_worker_token",
+      "hashed_token",
+      "key_token",
+      "litellm_master_key",
+      "master_key",
+      "password",
+      "proxy-authorization",
+      "refresh_token",
+      "secret_key",
+      "sim_key_token",
+      "token",
+      "user_api_key",
+      "user_api_key_hash",
+      "worker_token",
+      "x-api-key"
+    ]
+  },
+  "parts": {
+    "rows.json.gz": {
+      "bytes": 1784961,
+      "sha256": "sha256:583af7d3f252abbf591ccfbe22e350eda681da52ef0ec1d24c74f046396358f7"
+    },
+    "files.jsonl.gz": {
+      "bytes": 17126049,
+      "sha256": "sha256:07d64d58aa50930fc2b4c05607a237823cf8e3e69effbea65ae5e5525ca05514"
+    }
+  }
+}

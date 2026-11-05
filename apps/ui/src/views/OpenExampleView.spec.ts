@@ -60,15 +60,29 @@ describe('#/example: the finished example', () => {
     expect(currentHash.value).toBe('#/experiments/exp_heldout');
   });
 
-  it('loads every shipped example it lacks, so the headline can show its A/A calibration, then opens the first', async () => {
+  it('loads the first example and its companions before opening it, and the others after', async () => {
+    const headline: ExampleView = { ...shipped, name: 'headline', experiment_id: 'e_headline', title: 'Headline' };
     const aa: ExampleView = { ...shipped, name: 'headline-zz-aa', experiment_id: 'e_aa', title: 'A/A calibration' };
-    vi.spyOn(api, 'examples').mockResolvedValue([{ ...shipped, loaded: true }, aa]);
-    const load = vi.spyOn(api, 'loadExample').mockResolvedValue({ name: aa.name, experiment_id: aa.experiment_id, created: true });
+    const control: ExampleView = { ...shipped, name: 'positive-control', experiment_id: 'e_control', title: 'Positive control' };
+    const replication: ExampleView = { ...shipped, name: 'replication', experiment_id: 'e_rep', title: 'Replication', loaded: true };
+    vi.spyOn(api, 'examples').mockResolvedValue([headline, aa, control, replication]);
+    const order: string[] = [];
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const load = vi.spyOn(api, 'loadExample').mockImplementation(async (name: string) => {
+      order.push(name);
+      if (name === 'positive-control') await held;
+      return { name, experiment_id: `e_${name}`, created: true };
+    });
     mount(OpenExampleView);
     await settle();
-    expect(load).toHaveBeenCalledTimes(1);
-    expect(load).toHaveBeenCalledWith('headline-zz-aa');
-    expect(currentHash.value).toBe('#/experiments/e_shipped');
+    // The comparison opens once the headline and its A/A companion are in, while the control is
+    // still loading behind it; the replication was already here.
+    expect(currentHash.value).toBe('#/experiments/e_headline');
+    expect(order).toEqual(['headline', 'headline-zz-aa', 'positive-control']);
+    release();
+    await settle();
+    expect(load).toHaveBeenCalledTimes(3);
   });
 
   it('says so when no example ships, and offers the other ways in', async () => {

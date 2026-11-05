@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /**
  * #/example: the front door's "See a finished example". It asks the API which examples ship with
- * the repo, copies every one this database lacks (insert-only; nothing
- * runs and nothing is spent; a second load changes nothing), then opens the first one's comparison. The
- * address is replaced, not kept, so Back from the comparison returns to the front door.
+ * the repo (sorted by name), copies the first one and its companions into this database if they are
+ * missing (insert-only; nothing runs and nothing is spent; a second load changes nothing), opens the
+ * first one's comparison, and copies the rest in the background. A companion is an example whose
+ * name starts with the first one's name: the headline's A/A calibration, whose line its comparison
+ * shows. The address is replaced, not kept, so Back from the comparison returns to the front door.
  */
 import { onMounted, ref } from 'vue';
 import { api } from '../api/client';
@@ -15,6 +17,16 @@ import { href, replaceRoute } from '../router';
 const status = ref<'finding' | 'loading' | 'none' | 'failed'>('finding');
 const example = ref<ExampleView | null>(null);
 const problem = ref<{ text: string; fix: string | null } | null>(null);
+
+/** Copies one example. The machine it was exported from already holds the same run as its own: the
+ *  load is refused (409), and that run is the example, so it counts as loaded. */
+async function load(ex: ExampleView): Promise<void> {
+  try {
+    await api.loadExample(ex.name);
+  } catch (err) {
+    if (!(err instanceof ApiError && err.code === 'example_conflict' && (await hasExperiment(ex.experiment_id)))) throw err;
+  }
+}
 
 async function hasExperiment(id: string): Promise<boolean> {
   try {
@@ -34,22 +46,30 @@ onMounted(async () => {
       status.value = 'none';
       return;
     }
-    // Every shipped example is loaded, not just the one opened: the headline's comparison shows its
+    // The first example and its companions load before its comparison opens: the headline shows its
     // A/A calibration only when the calibration run is in the database too. Loads only insert, so
     // an example already here is skipped.
-    for (const ex of list) {
+    const needed = list.filter((ex) => ex.name === first.name || ex.name.startsWith(`${first.name}-`));
+    for (const ex of needed) {
       if (ex.loaded) continue;
       status.value = 'loading';
       example.value = ex;
-      try {
-        await api.loadExample(ex.name);
-      } catch (err) {
-        // The machine the example was exported from already holds the same run as its own: the
-        // load is refused (409), and that run is the example, so use it.
-        if (!(err instanceof ApiError && err.code === 'example_conflict' && (await hasExperiment(ex.experiment_id)))) throw err;
-      }
+      await load(ex);
     }
     replaceRoute(href.compare(first.experiment_id));
+    // The other examples (the controls and the replications) are copied after the comparison
+    // opens, one at a time, so the first open stays quick; they appear in the experiments list as
+    // each lands. A failure here is not the reader's problem: the next visit tries again.
+    void (async () => {
+      for (const ex of list) {
+        if (ex.loaded || needed.includes(ex)) continue;
+        try {
+          await load(ex);
+        } catch {
+          return;
+        }
+      }
+    })();
   } catch (err) {
     status.value = 'failed';
     const fix = errorFix(err);

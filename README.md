@@ -97,7 +97,9 @@ The home page offers:
    on Hermes with Claude Haiku 5.5, 10 held-out tasks and 10 trials per task and arm (200 trials),
    with its A/A calibration (v1 against itself, another 200). You see the verdict, the difference
    with its interval, each task's pass counts, and every trial's trace (messages, tool calls and
-   results, grader reasoning) and its grades. Nothing runs and nothing is spent.
+   results, grader reasoning) and its grades. Nothing runs and nothing is spent. The other shipped
+   runs are in the experiments list too: the positive control (calculators taken away, which the
+   platform had to catch) and the same comparison on the own loop and on LangGraph.
 2. **Build your own, step by step.** Pick an agent type (each has an "i" that says what it is and
    what it adds to your prompt), a model, the instructions and a few settings. Preview exactly
    what reaches the model, for free. Then evaluate it against a baseline: run it, compare the
@@ -106,9 +108,10 @@ The home page offers:
    model from the full Config screen to see the platform work, not the agent.
 3. **The full platform.** Every experiment, config, task, harness and label, at full detail.
 
-The first door opens `http://127.0.0.1:8080/#/example`. The first time, it copies the examples shipped
-in `examples/` (the experiment and its A/A calibration) into your local database: rows are only
-inserted, the examples are read-only, and nothing runs or is spent. `GET /api/examples` lists the
+The first door opens `http://127.0.0.1:8080/#/example`. The first time, it copies the headline and
+its A/A calibration from `examples/` into your local database (about 13 seconds), opens the
+comparison, and copies the other three shipped runs behind it: rows are only inserted, the examples
+are read-only, and nothing runs or is spent. `GET /api/examples` lists the
 shipped examples; `docs/experiment.md` explains the result and `docs/known-limits.md` what it
 cannot show.
 
