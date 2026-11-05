@@ -1,0 +1,207 @@
+{
+ "experiment_id": "e_0mw38a1ym89666c6ccc6bfd13",
+ "seed": "D71-phase2",
+ "rule": "2 done trials per held-out task and arm, random.Random(seed).sample over sorted trial ids, cells in sorted (task, arm) order",
+ "trials": [
+  {
+   "trial_id": "t_0mw38a1yne73eca383b289245",
+   "task_id": "draft-college-cost-stepup",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yo5e2a851759117cbf",
+   "task_id": "draft-college-cost-stepup",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yn176f28ca5b457a74",
+   "task_id": "draft-college-cost-stepup",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yo4ac87de6f907ed62",
+   "task_id": "draft-college-cost-stepup",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yo8f43d25aea88866e",
+   "task_id": "draft-convo-consolidation",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yobf076bb6627e77ee",
+   "task_id": "draft-convo-consolidation",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yo5e18427f65f5a378",
+   "task_id": "draft-convo-consolidation",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yo6a7e2cbbf94d52f9",
+   "task_id": "draft-convo-consolidation",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yoe5e340939a9d47f0",
+   "task_id": "draft-convo-job-loss",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yn96715beeecf9fcb0",
+   "task_id": "draft-convo-job-loss",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yo6650fdbae27557f9",
+   "task_id": "draft-convo-job-loss",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yo54166542ec5ed67c",
+   "task_id": "draft-convo-job-loss",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yodfdc07548c5bf583",
+   "task_id": "draft-convo-phone-loan",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yofee7aeba5d3ca69e",
+   "task_id": "draft-convo-phone-loan",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yo87d6175249ef0bcf",
+   "task_id": "draft-convo-phone-loan",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yof3d6f4cd5112f4e5",
+   "task_id": "draft-convo-phone-loan",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yo039491915da0bc2c",
+   "task_id": "draft-first-year-interest",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yo6a62d1b2b2910bb2",
+   "task_id": "draft-first-year-interest",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yoa9856f351ec62cfe",
+   "task_id": "draft-first-year-interest",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yndd9543d19425fdc2",
+   "task_id": "draft-first-year-interest",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yo55de6bf7a68d8f69",
+   "task_id": "draft-loan-to-clear-card",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yo4e2bdbaca3da960d",
+   "task_id": "draft-loan-to-clear-card",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yp8feaf9f4e622d20f",
+   "task_id": "draft-loan-to-clear-card",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yoe1f0efb7f0315742",
+   "task_id": "draft-loan-to-clear-card",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yod4c056e0670c492c",
+   "task_id": "draft-otp-scam",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yobe8153e0ef7d2bea",
+   "task_id": "draft-otp-scam",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yn35c09a6ac42b1bd1",
+   "task_id": "draft-otp-scam",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yn5b470624e0c362d2",
+   "task_id": "draft-otp-scam",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yoa460d65c18885ad9",
+   "task_id": "draft-prepay-personal-loan",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yo67def66e73352f1f",
+   "task_id": "draft-prepay-personal-loan",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yo59ff2c95e597d4b4",
+   "task_id": "draft-prepay-personal-loan",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yo3e12a664768121c3",
+   "task_id": "draft-prepay-personal-loan",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yo926540735b49fd0f",
+   "task_id": "draft-sip-education-goal",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yn4bfd3a3ad4b3f2d2",
+   "task_id": "draft-sip-education-goal",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1ynd509bc00d39a1af4",
+   "task_id": "draft-sip-education-goal",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1ypabc9d148aa6ba74e",
+   "task_id": "draft-sip-education-goal",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yp899c9f8a467756fa",
+   "task_id": "draft-spending-review",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1ynb531efaab6605e0f",
+   "task_id": "draft-spending-review",
+   "arm": "A"
+  },
+  {
+   "trial_id": "t_0mw38a1yn9175c6daf3c71dcc",
+   "task_id": "draft-spending-review",
+   "arm": "B"
+  },
+  {
+   "trial_id": "t_0mw38a1yobecd568e2979a542",
+   "task_id": "draft-spending-review",
+   "arm": "B"
+  }
+ ]
+}
