@@ -258,7 +258,7 @@ The order matters because the rubric freezes with the platform:
 - [ ] Run the invariance diff on the two configs
 - [ ] Run the experiment
 - [ ] Export raw results to `experiments/<id>/`
-- [ ] Inspect 2 or 3 trajectories that explain the difference
+- [x] Inspect 2 or 3 trajectories that explain the difference (`docs/experiment.md`, Trajectories)
 - [ ] Record actual spend in `cost.md`
 
 ### SP9 Docs and video (Sat)

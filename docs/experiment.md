@@ -96,9 +96,32 @@ Raw export: `GET /api/experiments/<id>/export?format=csv|json` for both experime
 
 ## Trajectories
 
-Two or three inspected trials that explain the difference.
+Read on 5 Nov from the API (`GET /api/trials/:id`, its `result.json`, `checks.json` and spans, and the `cause` on `GET /api/experiments/e_0mw38a1ym89666c6ccc6bfd13/trials`). Three v1 failures, each paired with a v2 pass of the same task, then one failure that is the grader's fault, not the agent's.
+
+**1. v1 picks the client's budget instead of asking (convo-phone-loan, 2 → 5 of 10).**
+
+- v1 `t_0mw38a1yoc8e25b331ec1b933`, fail. Asked "Can I finish it sooner without a lump sum, just by paying more each month?", it chooses the amount itself: "I modelled paying ₹9,488.62 a month, which is ₹2,000 above the EMI". Grader: "debt_payoff_plan was called 1 time(s), but 0 matched with {'monthly_budget': 10488.62}" (the client's ₹3,000 on top of the EMI), and `months-with-extra` fails with it. Cause: made_up_arguments.
+- v2 `t_0mw38a1yo87d6175249ef0bcf`, pass. It asks first, "Could you share it, along with any amount you could put towards the loan on top of the EMI?"; the client answers "I could probably put around 3,000 more", and v2 runs the plan on ₹10,488.62: "Adding ₹3,000 a month on top of the EMI clears the loan in 12 months instead of 17".
+- On the whole task, `extra-payment-plan` passed in exactly the 13 conversations where ₹3,000 a month came up in the client's messages (v1 5 of 10, v2 8 of 10). In all five v1 trials that failed this check v1 chose the extra itself (₹2,000 in four, ₹1,011 in one); so did v2 in its two (₹2,000). Part of this runs through the simulated client, which reveals the fact unevenly: it did not answer v1's "How much could you put towards the loan each month beyond the EMI?" in `t_0mw38a1yo2bb2711bbfafd20c`.
+
+**2. v1 sums a total in its head, then feeds it to a tool (convo-job-loss, 3 → 4).**
+
+- v1 `t_0mw38a1yof437508492e0e351`, fail: "Monthly essentials from your October records: about **₹56,614**. That covers rent ₹22,000, EMIs and card minimums ₹18,332.50, groceries ₹8,086, …". The ₹8,086.25 is two grocery rows (₹6,840.75 + ₹1,245.50) added without a tool and then passed to `add`. Grader: "₹56,614 (add's input 8,086.25 is not supported) … ₹59,114 (add's inputs 8,086.25, 6,880 and 14,120 are not supported)", 5 of 31 figures. Cause: made_up_arguments. `t_0mw38a1ypa3dc2db42fa2753c` fails the same way.
+- v2 `t_0mw38a1yo6650fdbae27557f9`, pass. It asks for "your typical monthly grocery spend", the client says "Groceries are usually around ₹7,000 a month", and `add([18332.5, 22000, 7000, 4400])`, every input from a tool, the client file or the client, gives "Your ₹60,000 covers one full month at ₹51,732.50 (EMIs and card ₹18,332.50, rent ₹22,000, groceries ₹7,000, medicines at the higher ₹4,400 month)."
+- Only partly fixed: v2 still wrote ₹8,086.25 with no source in 3 of its 6 failures on this task (for example `t_0mw38a1yo54166542ec5ed67c`).
+
+**3. v1 rounds a correct figure in prose (convo-consolidation, 2 → 5).**
+
+- v1 `t_0mw38a1yo7deaf8b8aa0e2c5e`, fail on 1 figure of 48: "Keeping the card and paying minimums costs ₹1,47,428 in total. That's a saving of about ₹16,000." The saving is right (₹1,47,428 − ₹1,31,383 = ₹16,045), but rounded with no tool, so nothing verifies it. Grader: "1 of 48 amount(s) … have no tool result, client-file number or user message behind them: ₹16,000". Cause: unsupported_figure. "About ₹12,000" and "about ₹37,000" sink `t_0mw38a1yoe188e0bac1180f08` (job-loss) the same way.
+- v2 `t_0mw38a1ynef3e074be7a32d88`, pass. It calls `subtract(147428.25, 106905.36)` and writes the result: "The loan costs ₹1,06,905.36 in total, which is ₹40,522.89 less, before any processing fee." This is v2's rule: "Write the number the tool returned … Never write 'about' … before an amount you worked out yourself."
+
+**Across the run** (`GET /api/experiments/e_0mw38a1ym89666c6ccc6bfd13/compare`): figures written without a tool and verified by recomputing them fell from 215 to 98 (2.15 to 0.98 per trial); `add` calls rose from 31 to 91 and `subtract` from 64 to 156; tool calls per trial from 4.82 to 6.43 (+1.61, interval +0.68 to +2.67). Primary causes: made-up arguments 14 → 8, unsupported figure 22 → 17. 16 of v2's 27 failures had a single unsupported amount, against 4 of v1's 36 (counted from each trial's `checks.json`).
+
+**Counter-example: a grader artefact.** v1 `t_0mw38a1ypd590d04a27189624` (convo-consolidation), fail: `multiply([84250, 0.42, 0.0833333333])` = 2,948.75, "about ₹2,949 a month in interest at the current rate", the card's correct monthly interest at 42%. The provenance check accepts a rate that a source holds or that the answer writes as a percentage ("42%"), not the same rate as a fraction, so: "₹2,949 (multiply's inputs 0.42 and 0.0833333333 are not supported)", cause made_up_arguments, which is wrong here. `t_0mw38a1yn5e0697b876ccf21d` makes the same calculation but also writes ₹800 and ₹25,860 with nothing behind them, so it fails either way. Over the run, 5 v1 and 2 v2 failures contain such a figure, and it is the only reason for 1 v1 failure (this one) and 2 v2 failures (`t_0mw38a1yo5e18427f65f5a378`, `t_0mw38a1yoc843064ed31bbba7`), all on convo-consolidation. It costs v2 one more pass than v1, so it does not explain the +9 (`docs/known-limits.md`, Platform checks).
 
 ## Conclusion
+
+Rishi to write.
 
 ## Deviations
 

@@ -160,14 +160,22 @@ Built on 4 Nov, where graders live (follows D1, D2, R10.2 and R14; the SPEC left
 
 Built as a draft, open for Rishi (SP4 **[Rishi designs]**): the grader spec format, its ten types (number, tool_called, tool_not_called, regex_present, regex_absent, end_state, provenance, required_tools, unit_test, and the judge; provenance and required_tools read the runner's `checks.json`) and the outcome rule are in `docs/proposals/grader-format.md`, with the choices listed there.
 
+Decided, the judge's trust bar (D8, 5 Nov): a judge criterion counts in the headline only when, on the held-out labels, kappa >= 0.6 with its 95% interval's lower end >= 0.4, there is no false-pass gap between arms, and test-retest agreement is >= 90%. Below the bar it stays visible in trials and the report. Rubric v1 stayed as committed after the tuning check (D69).
+
 Open:
 
 - D7: which tasks use the judge.
-- D8: the judge threshold, and what happens below it.
 
 The agreement arithmetic is a Python project at the repo root, `stats/` (package `evals_stats`, standard library only, D1); SP6's comparison runs in the API instead (section 6). It reads labels from `labels/` and grades from the API, and calls no model.
 
-Results go in `docs/judge-validation.md`.
+Validated so far (5 Nov):
+
+- **Deterministic graders: by tests and by reading real trials.** `graders/tests` runs every task's graders on a trial that does the task well and on one that shows the failure the task exposes (`test_task_graders.py`), the provenance and required-tools graders on real `checks.json` files from gate runs (`test_gate_checks.py`), and the graders on the real 4 Nov transcripts (`test_real_trials.py`). Reading trials found false fails: two regexes fixed in task version 2 (D53), and one in `draft-mba-loan-missing-info` and the rate-fraction case in provenance kept as findings under the freeze (`docs/known-limits.md`). There is no human-label check of the deterministic graders as a whole.
+- **The judge, on Rishi's tuning labels only** (Gemini 3.8 Flash, rubric `advice.v1`, 33 discovery trials, one rater; `docs/experiment.md`, "The judge against Rishi's tuning labels"). The specific criteria agreed: clears-card-first 12 of 12, keeps-medicines 3 of 3, health-cover 3 of 3 (kappa undefined: his labels were all one value). The overall criterion is lenient: kappa 0.30 (95% interval 0.00 to 0.78), sensitivity 1.00, specificity 0.20, 4 false passes, 3 of them payoff-order trials he failed for assuming what ₹20,000 meant, which `clarifies-ambiguous-amount` caught 3 of 3. So the criteria are scored and reported separately.
+- **Not yet validated:** agreement on the held-out labels, the false-pass gap between arms, and so the trust bar above. Until then no judge criterion counts in the headline: every judge check in the held-out tasks is optional, and the headline run was graded without the judge.
+- Judge retest: see `docs/experiment.md`.
+
+The plan and the label sets are in `docs/judge-validation.md`; results so far are in `docs/experiment.md`.
 
 ## 6. Statistical method and choice of N
 
@@ -277,12 +285,22 @@ Constraints:
   The false-call rate stays under 5% because better and worse also need p < 0.05 from the exact
   test; the percentile interval covers a little under 95% with this few tasks.
 
-Choice of N (open: the headline experiment's N and K are Rishi's, in `docs/experiment.md`):
+Choice of N (decided 5 Nov, Rishi: "Approve both, N=10"; `docs/experiment.md`, "The final runs"):
 
-- **The headline compares the 10 held-out tasks only (D53). At K = 10 to 12 and N = 10, a real +15
-  point improvement is called "better" only about 50 to 55% of the time**; at K = 8, 30%. A "no detectable difference" at that size is weak evidence of no change. In this simulation
-  more tasks help more than more trials: K = 20 lifts power to 85% at N = 10, while N = 5 at K =
-  20 gives 52%.
+- **N = 10 trials per task and arm, on K = 10 held-out tasks (D53)**, so 200 trials per A/B run.
+  K was set by the task split (10 of the 21 tasks held out); N was chosen from the simulation
+  table above and the cost, about $2 per 200 trials of Hermes on Claude Haiku 5.5 (expected
+  $1.95; the headline run cost $2.295 and its A/A calibration $1.959, `docs/cost.md`).
+- **What the table said beforehand. At K = 10 to 12 and N = 10, a real +15 point improvement is
+  called "better" only about 50 to 55% of the time**; at K = 8, 30%. A "no detectable difference"
+  at that size is weak evidence of no change. In this simulation more tasks help more than more
+  trials: K = 20 lifts power to 85% at N = 10, while N = 5 at K = 20 gives 52%.
+- **What happened.** 5 of the 10 held-out tasks tied (4 at 10 of 10 in both arms, 1 at 0 of 10).
+  A tied task gives the sign-flip test nothing, so the effective K was 5 and the smallest
+  reachable p was 2/2^5 = 0.0625: v2 was higher on all five tasks that could differ (+9 points,
+  95% interval +3 to +16) and the verdict was still "no detectable difference" (`docs/experiment.md`,
+  Results). The limit was the number of held-out tasks that are neither at ceiling nor at floor,
+  not N; more such tasks would help more than more trials.
 - The pre-run estimate of the smallest difference a planned N and K can detect (proposal section
   6) is not built; the table above stands in for it.
 
