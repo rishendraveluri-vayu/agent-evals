@@ -14,13 +14,18 @@ assistant with calculator tools and simulated clients. It holds 21 tasks, 10 of 
 score the experiment and 11 for tuning, plus 2 engine tests that check the platform, not an
 agent.
 
-> **Status, 5 Nov 2026.** The platform runs end to end: configs, runs with N trials, isolation,
-> retries, traces, deterministic graders, the judge's plumbing, blind labelling, and the
-> comparison's statistics (verdict, intervals, per-task flags, critical-failure guardrail,
-> regression list, cost and time, and A/A calibration runs; `docs/design.md`, "Statistics").
-> Still being finished: the judge's validation against human labels and the real experiment. A
-> comparison whose trials are still grading says so instead of giving a verdict. The write-up
-> lands in `docs/experiment.md`.
+> **Status, 5 Nov 2026.** The platform runs end to end with its statistics: configs, runs with N
+> trials, isolation, retries, traces, deterministic graders, an LLM judge, blind labelling,
+> failure causes, and the comparison (verdict, 95% intervals, a paired test, per-task flags,
+> critical-failure guardrail, cost and time, A/A calibration; `docs/design.md`, section 6).
+> **The real experiment has run:** on Hermes with Claude Haiku 5.5, prompt v2 passed 73 of 100
+> trials on the 10 held-out tasks against v1's 64, +9 points (95% interval +3 to +16, p = 0.0625),
+> which the rule fixed before the run calls "no detectable difference": 5 of the 10 tasks scored
+> the same in both arms (always passed or always failed), and the 5 left are too few for the test
+> to reach p < 0.05. v1 run against itself as a check gave −4 points (−12 to +3), no difference,
+> as it should. **The judge is so far checked only against the human labels used for tuning,**
+> where its overall verdict was too lenient, so no judge verdict counts in the result. The
+> write-up, with inspected trials: `docs/experiment.md`.
 
 ## Run it
 
