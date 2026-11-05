@@ -74,6 +74,14 @@ The A/A run is the negative control (identical arms: the platform must not call 
 - **Predicted unaffected (7), the specificity controls:** convo-car, convo-distress, convo-job-loss, convo-where-to-start, distress-helpline, mba-loan-missing-info, otp-scam.
 - **The platform passes this validation if:** (1) the verdict is "B passes more than A" (interval above 0 and sign-flip p < 0.05); (2) every task flagged beyond noise is among the 14 predicted, and none of the 7 controls is flagged; (3) the broken arm's failure causes name the missing tools (wrong tool, gave up early, unsupported figure). A miss on any of these is reported as a failure of the platform, not explained away.
 
+## Cross-harness replication (pre-registered 5 Nov, before the runs)
+
+Rishi: "how do agents across hermes and other compare ideally with same v1 and v2 would work". The headline's v1 vs v2 is repeated on two more harnesses, everything else the same: Claude Haiku 5.5, prompts `finance-advisor` v1 and v2 byte for byte, toolset `finance/v3`, the 10 held-out tasks x 10 trials, Haiku as the simulated client, futility off, the same verdict rule (D10, D41 to D43, D50).
+
+- **Own loop** (configs `sha256:a1fd55a2…` v1, `sha256:8257a30b…` v2): 200 trials, estimate $1.26 (to $2.53), cap $3.
+- **LangGraph** (`sha256:dd2a7c71…` v1, `sha256:69ad45a3…` v2): 200 trials, estimate $1.87 (to $3.74), cap $4.
+- **Questions, fixed now:** (1) does v2's effect on pass rate (+9 points on Hermes, not detectable under the rule) have the same direction on each harness; (2) holding the prompt fixed, how do the three harnesses' pass rates on the same tasks compare. Each harness's verdict is read on its own; the across-harness comparison of v1 arms is descriptive (each arm's pass rate with its interval), since those arms were not run as a paired experiment.
+
 ## Invariance check
 
 Checked 5 Nov on the rendered first request of each config (`GET /api/configs/:hash/rendered-prompt`, a free probe on the fake model): **the 19 tools are identical** (same sha256 of the full tool list), and **the system prompts differ only in the prompt change**: v1's "Use your finance tools for every calculation" bullet is replaced by v2's "Every rupee figure you write comes from a tool, exactly", and v2 adds the "Clarify before you assume" and "Explain each key figure in plain words" bullets (4 changed lines; 5,891 against 6,826 characters). The configs' own diff is the prompt only (`GET /api/configs/:a/diff/:b`: prompt sha256 and version; the name is not content).
