@@ -175,7 +175,10 @@ describe('fixtures', () => {
         expect(keys(item)).toEqual(sorted(FIELDS.blind));
       }
     }
-    expect(fixtureResponse('POST', '/labels', { item_id: 'x', set: 'heldout', criterion: 'c', value: 'yes', note: '' })).toEqual({ saved: false, reason: 'sample data' });
+    expect(fixtureResponse('POST', '/labels', { item_id: 'x', set: 'heldout', rater: 'rater-one', criterion: 'c', value: 'yes', note: '' })).toEqual({ saved: false, reason: 'sample data' });
+    // As the API does, a label needs the id of the person giving it.
+    expect(() => fixtureResponse('POST', '/labels', { item_id: 'x', set: 'heldout', criterion: 'c', value: 'yes', note: '' })).toThrow(ApiError);
+    expect(() => fixtureResponse('POST', '/labels', { item_id: 'x', set: 'heldout', rater: 'Rater One', criterion: 'c', value: 'yes', note: '' })).toThrow(ApiError);
   });
 
   it('refuse a setting the harness or the model rejects the way the API does, with a fix, and answer unknown paths with 404', () => {

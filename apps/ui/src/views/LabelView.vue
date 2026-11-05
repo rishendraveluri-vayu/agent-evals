@@ -3,7 +3,9 @@
  * Blind labelling. This screen renders only the fields of a blind item: the task, the
  * conversation, the tool calls and the questions. It never shows a harness, model, arm,
  * timing, cost or grade, and the client strips any such field before it gets here
- * (toBlindItem). Labels are Rishi's own judgments; nothing here fills one in for him.
+ * (toBlindItem). Labels are human judgments, Rishi's and the raters he names (D73); nothing here
+ * fills one in. Each person labels under their own rater id, with their own queue and second
+ * looks, and the screen never shows another rater's labels or says that another rater exists.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { api } from '../api/client';
@@ -14,6 +16,7 @@ import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import { optional, useLoad } from '../lib/async';
 import { mdBlocks } from '../lib/markdown';
+import { raterFrom, rememberRater, storedRater } from '../lib/rater';
 import { href } from '../router';
 
 /** `set`, `experiment` and `items` come from the address (#/labels?set=heldout&items=t_a,t_b): the
@@ -38,9 +41,19 @@ const VALUES: { value: LabelValue; text: string; key: string }[] = [
   { value: 'unsure', text: 'Not sure', key: '3' },
 ];
 
+/** Who is labelling, remembered in this browser. Nothing loads or saves until it is given: the
+ *  queue and its second looks are this person's own. */
+const rater = ref<string | null>(storedRater());
+const editingRater = ref(rater.value === null);
+const raterDraft = ref(rater.value ?? '');
+const raterError = ref<string | null>(null);
+const raterInput = ref<HTMLInputElement | null>(null);
+
 const set = ref<LabelSet>(props.initialSet ?? 'tuning');
 const { data, error, loading, reload } = useLoad(async () => {
-  const entries = await Promise.all(SETS.map(async (s) => [s.set, await optional(api.labelQueue(s.set, props.experiment ?? undefined, props.items ?? undefined), null)] as const));
+  const who = rater.value;
+  if (!who) return null;
+  const entries = await Promise.all(SETS.map(async (s) => [s.set, await optional(api.labelQueue(s.set, props.experiment ?? undefined, props.items ?? undefined, who), null)] as const));
   return Object.fromEntries(entries) as Record<LabelSet, BlindItem[] | null>;
 });
 /** Opens on the first set with something to label, unless the address names one. */
@@ -53,8 +66,10 @@ watch(data, (d, before) => {
 /** Items saved this visit, by set: they leave their queue at once, so every "to go" count is right
  *  without loading the queue again. */
 const savedIds = reactive<Record<LabelSet, string[]>>({ tuning: [], heldout: [], final: [] });
-/** What is still to label in a set: as loaded, less what was saved since. Skipped items stay. */
+/** What is still to label in a set: as loaded, less what was saved since. Skipped items stay.
+ *  Nothing while the id is being changed: the queue loaded is the last id's. */
 const remainingOf = (s: LabelSet) => {
+  if (editingRater.value) return null;
   const q = data.value?.[s];
   return q ? q.filter((i) => !savedIds[s].includes(i.item_id)) : null;
 };
@@ -132,9 +147,41 @@ function choose(criterionIndex: number, value: LabelValue) {
   active.value = criterionIndex;
 }
 
+/** Takes the id as typed (in lower case, without spaces around it). A new id loads that person's
+ *  own queue; this visit's counts start again. */
+async function confirmRater() {
+  const id = raterFrom(raterDraft.value);
+  if (!id) {
+    raterError.value = raterDraft.value.trim()
+      ? 'Use 1 to 40 lower-case letters, digits, dashes or underscores, with no spaces.'
+      : 'Type the id you label under to start.';
+    return;
+  }
+  raterError.value = null;
+  rememberRater(id);
+  editingRater.value = false;
+  if (id === rater.value) return;
+  rater.value = id;
+  await loadMore();
+}
+
+function changeRater() {
+  raterDraft.value = rater.value ?? '';
+  raterError.value = null;
+  editingRater.value = true;
+  void nextTick(() => raterInput.value?.focus());
+}
+
+function keepRater() {
+  raterError.value = null;
+  editingRater.value = false;
+}
+
 async function saveAndNext() {
   const current = item.value;
-  if (!current || !allAnswered.value) return;
+  const who = rater.value;
+  // Every label is saved under the id of the person giving it.
+  if (!current || !who || !allAnswered.value) return;
   saving.value = true;
   saveError.value = null;
   try {
@@ -144,6 +191,7 @@ async function saveAndNext() {
       await api.saveLabel({
         item_id: current.item_id,
         set: set.value,
+        rater: who,
         criterion: c.id,
         value: answers[c.id] as LabelValue,
         note: text,
@@ -190,7 +238,10 @@ function onKey(e: KeyboardEvent) {
   if (active.value < criteria.value.length - 1) active.value += 1;
   else void nextTick(() => noteBox.value?.focus());
 }
-onMounted(() => window.addEventListener('keydown', onKey));
+onMounted(() => {
+  window.addEventListener('keydown', onKey);
+  if (editingRater.value) raterInput.value?.focus();
+});
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 
 const setLabel = (s: LabelSet, name: string) => {
@@ -234,10 +285,29 @@ const blocks = (text: string) => mdBlocks(text);
           data-test="judge-later"
         >The judge's reasons open on the Judge page when this set is done ({{ left }} to go).</span>
         <a
-          v-else-if="!loading"
+          v-else-if="!loading && rater && !editingRater"
           :href="href.judge()"
           data-test="judge-link"
         >See judge agreement</a>
+      </p>
+      <p
+        v-if="rater && !editingRater"
+        class="rater-line small"
+        data-test="rater"
+      >
+        <span>Labelling as <strong
+          class="mono"
+          data-test="rater-id"
+        >{{ rater }}</strong></span>
+        <button
+          type="button"
+          class="btn btn--quiet btn--slim"
+          :disabled="saving"
+          data-test="rater-change"
+          @click="changeRater"
+        >
+          Change
+        </button>
       </p>
     </div>
     <div
@@ -258,6 +328,61 @@ const blocks = (text: string) => mdBlocks(text);
     </div>
   </div>
 
+  <!-- Who is labelling. Asked before anything loads, shown while labelling, and changeable. -->
+  <form
+    v-if="editingRater"
+    class="panel panel--pad rater-form"
+    data-test="rater-form"
+    novalidate
+    @submit.prevent="confirmRater"
+  >
+    <label class="field">
+      <span class="strong">Labelling as</span>
+      <input
+        ref="raterInput"
+        v-model="raterDraft"
+        type="text"
+        autocomplete="off"
+        autocapitalize="none"
+        spellcheck="false"
+        placeholder="Your id, such as your first name"
+        aria-describedby="rater-hint"
+        :aria-invalid="raterError ? 'true' : undefined"
+        data-test="rater-input"
+      >
+      <span
+        id="rater-hint"
+        class="secondary smaller"
+      >Lower-case letters, digits, dashes or underscores, up to 40. Your labels are saved under this id, and the queue shows only what you have not labelled yet. This browser remembers it.</span>
+    </label>
+    <p
+      v-if="raterError"
+      class="error small"
+      role="alert"
+      data-test="rater-error"
+    >
+      {{ raterError }}
+    </p>
+    <div class="rater-buttons">
+      <button
+        type="submit"
+        class="btn"
+        data-test="rater-save"
+      >
+        {{ rater ? 'Label as this id' : 'Start labelling' }}
+      </button>
+      <button
+        v-if="rater"
+        type="button"
+        class="btn btn--quiet"
+        data-test="rater-keep"
+        @click="keepRater"
+      >
+        Keep {{ rater }}
+      </button>
+    </div>
+  </form>
+
   <div
     class="panel blind-note small"
     data-test="blind-note"
@@ -275,6 +400,7 @@ const blocks = (text: string) => mdBlocks(text);
   </div>
 
   <LoadState
+    v-if="rater && !editingRater"
     :loading="loading"
     :error="error"
     what="the labelling queue"
@@ -514,7 +640,7 @@ const blocks = (text: string) => mdBlocks(text);
           <button
             type="button"
             class="btn grow-btn"
-            :disabled="!allAnswered || saving"
+            :disabled="!allAnswered || saving || !rater"
             data-test="save-label"
             @click="saveAndNext"
           >
@@ -542,7 +668,7 @@ const blocks = (text: string) => mdBlocks(text);
             Sample data: nothing is saved in this mode.
           </template>
           <template v-else>
-            Saved to {{ setFile }} with today's date. Synthetic examples live in their own file and never appear here.
+            Saved to {{ setFile }} as {{ rater }}, with today's date. Synthetic examples live in their own file and never appear here.
           </template>
         </p>
       </aside>
@@ -551,6 +677,36 @@ const blocks = (text: string) => mdBlocks(text);
 </template>
 
 <style scoped>
+.rater-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 640px;
+}
+
+.rater-form input {
+  max-width: 320px;
+}
+
+.rater-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rater-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.btn--slim {
+  min-height: 32px;
+  padding: 0 12px;
+}
+
 .blind-note {
   display: flex;
   flex-wrap: wrap;

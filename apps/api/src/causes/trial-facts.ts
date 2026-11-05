@@ -1,5 +1,6 @@
 import type { Json, TrialCause, TrialStatus } from '../contract';
 import type { Db } from '../database/db.service';
+import { FIRST_RATER } from '../labels/raters';
 import { type CauseCall, type CauseGrade, type CauseTrial, causeOf, needsCause, resolveLabels, wantedTools } from './causes';
 
 /**
@@ -143,8 +144,10 @@ export async function loadTrialFacts(db: Query, ids: readonly string[]): Promise
   const wanting = new Set(candidates);
   const gradeIds = rows.filter((r) => wanting.has(r.id)).flatMap((r) => r.grade_ids ?? []);
   const grades = gradeIds.length ? await db.query<GradeRow>(GRADES_SQL, [gradeIds]) : [];
+  // A45 reads Rishi's labels. D73: other raters' labels are not read here, so a cause never
+  // mixes two people's answers (nor one's second look with another's "unsure").
   const labels = candidates.length
-    ? await db.query<LabelRow>('SELECT trial_id, criterion, value, second_look FROM labels WHERE trial_id = ANY($1) ORDER BY labelled_at, id', [candidates])
+    ? await db.query<LabelRow>('SELECT trial_id, criterion, value, second_look FROM labels WHERE trial_id = ANY($1) AND rater = $2 ORDER BY labelled_at, id', [candidates, FIRST_RATER])
     : [];
 
   const group = <T extends { trial_id: string }>(list: T[]): Map<string, T[]> => {

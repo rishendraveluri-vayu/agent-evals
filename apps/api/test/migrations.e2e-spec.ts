@@ -97,6 +97,32 @@ describeWithDb('migrations (real Postgres)', () => {
     ]);
   });
 
+  it('017 gives labels stored before it the rater `rishi`, and every later label must name its own (D73)', async () => {
+    const all = await readMigrations();
+    const upTo16 = path.join(dir, 'upto16');
+    await fs.mkdir(upTo16);
+    for (const m of all.filter((x) => x.version < '017')) await fs.writeFile(path.join(upTo16, `${m.version}.sql`), m.sql);
+    await migrate(pool, upTo16);
+    // A synthetic row in the shape of a label imported before D73.
+    await pool.query(
+      `INSERT INTO labels (trial_id, criterion, value, label_set, note, labelled_at, source, line_sha256)
+       VALUES ('t_old', 'empathy', 'yes', 'tuning', 'synthetic', now(), 'labels/tuning.jsonl', 'synthetic-old-line')`,
+    );
+    expect(await migrate(pool)).toEqual(all.filter((x) => x.version >= '017').map((m) => m.version));
+    expect((await pool.query('SELECT trial_id, rater FROM labels')).rows).toEqual([{ trial_id: 't_old', rater: 'rishi' }]);
+    // No default is left: a label without a rater, or with a malformed one, is refused.
+    const insert = (rater: string | null, sha: string) =>
+      pool.query(
+        `INSERT INTO labels (trial_id, criterion, value, label_set, labelled_at, source, line_sha256${rater === null ? '' : ', rater'})
+         VALUES ('t_new', 'empathy', 'no', 'tuning', now(), 'labels/tuning.jsonl', $1${rater === null ? '' : ', $2'})`,
+        rater === null ? [sha] : [sha, rater],
+      );
+    await expect(insert(null, 'synthetic-no-rater')).rejects.toThrow(/null value in column "rater"/);
+    await expect(insert('Not A Rater', 'synthetic-bad-rater')).rejects.toThrow(/labels_rater_id/);
+    await insert('rater-2', 'synthetic-new-line');
+    expect((await pool.query("SELECT rater FROM labels WHERE trial_id = 't_new'")).rows).toEqual([{ rater: 'rater-2' }]);
+  });
+
   it('runs safely when two processes migrate at once', async () => {
     const other = new Pool({ connectionString: db.url });
     try {

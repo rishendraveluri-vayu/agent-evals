@@ -11,8 +11,8 @@ import { engine } from './support/engine';
  * D64 on the real API and Postgres: each trial's failure cause on the trial rows, the trial page,
  * the comparison's regression list and the export, and each arm's behaviour on the comparison.
  * No model is called: the test plays the worker (tool spans, end states) and the grader (grades
- * with the reasons and evidence evals_graders writes). The tasks, trials and the one label are
- * synthetic, written for this file only; the label goes into the throwaway database, never labels/.
+ * with the reasons and evidence evals_graders writes). The tasks, trials and the two labels are
+ * synthetic, written for this file only; the labels go into the throwaway database, never labels/.
  */
 
 jest.setTimeout(60_000);
@@ -182,11 +182,19 @@ describeWithDb('failure causes and behaviour per arm (D64, e2e, real Postgres)',
       await request(env.http).post(`/api/grader/trials/${job.trial_id}/grades`).set(auth).send({ worker_id: 'g-cause', job_id: job.job_id, attempt: job.attempt, framework_version: 'test-grader-0', grades }).expect(200);
     }
 
-    // One synthetic label (not Rishi's): "clear" is yes on arm B's made-up-arguments trial, where the judge said no.
+    // One synthetic label (not Rishi's, though filed under his rater id, whose labels causes read):
+    // "clear" is yes on arm B's made-up-arguments trial, where the judge said no.
     const madeUp = [...where.entries()].find(([, [arm, task, repeat]]) => arm === 'B' && task === 'cause-emi' && repeat === 1)![0];
     await env.pool.query(
-      `INSERT INTO labels (trial_id, criterion, value, label_set, note, labelled_at, source, line_sha256)
-       VALUES ($1, 'clear', 'yes', 'heldout', 'synthetic test label', now(), 'test (synthetic)', 'synthetic-line-1')`,
+      `INSERT INTO labels (trial_id, criterion, value, label_set, note, labelled_at, source, line_sha256, rater)
+       VALUES ($1, 'clear', 'yes', 'heldout', 'synthetic test label', now(), 'test (synthetic)', 'synthetic-line-1', 'rishi')`,
+      [madeUp],
+    );
+    // D73: another rater's earlier "no" on the same criterion is not read, so it neither replaces
+    // the yes above nor hides the disagreement with the judge.
+    await env.pool.query(
+      `INSERT INTO labels (trial_id, criterion, value, label_set, note, labelled_at, source, line_sha256, rater)
+       VALUES ($1, 'clear', 'no', 'heldout', 'synthetic test label', now() - interval '1 hour', 'test (synthetic)', 'synthetic-line-2', 'second-rater')`,
       [madeUp],
     );
   });

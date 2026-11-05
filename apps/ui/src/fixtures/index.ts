@@ -6,6 +6,7 @@
  * a conflict check answers with the stored result, or says there is none.
  */
 import { ApiError } from '../api/errors';
+import { RATER_ID } from '../api/types';
 import type {
   Compare,
   ConfigDetail,
@@ -459,6 +460,9 @@ function saveLabel(body: CreateLabelRequest) {
   const values = ['yes', 'no', 'unsure'];
   if (!body.item_id || !body.criterion || !values.includes(body.value)) {
     throw new ApiError(400, 'invalid_label', 'A label needs an item, a criterion and yes, no or unsure.');
+  }
+  if (typeof body.rater !== 'string' || !RATER_ID.test(body.rater)) {
+    throw new ApiError(400, 'invalid_rater', 'A label needs the id of the person labelling.');
   }
   // Deliberately not stored: in sample mode nothing is written to labels/.
   return { saved: false, reason: 'sample data' };

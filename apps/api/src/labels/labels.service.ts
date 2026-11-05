@@ -2,13 +2,14 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import type { CreateLabelRequest, JsonObject, LabelCriterion, LabelLine, LabelQueueItem, LabelSet, TaskSplit } from '../contract';
-import { LABEL_SETS } from '../contract';
+import { LABEL_SETS, RATER_ID } from '../contract';
 import { badRequest, notFound } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { sha256Hex } from '../common/hashing';
 import { CatalogueService } from '../catalogue/catalogue.service';
 import { Db } from '../database/db.service';
 import { NOT_EXAMPLE_TRIAL } from '../examples/example-guard';
+import { FIRST_RATER, raterId } from './raters';
 
 type Obj = Record<string, unknown>;
 /** A trial id as the API mints them (`t_` and base36/hex), with room for test fixtures. */
@@ -55,9 +56,10 @@ function labelSet(value: unknown): LabelSet {
 }
 
 /**
- * The blind labelling queue and the label files (SP5). Labels are Rishi's own judgments,
- * entered by him through the UI; this service only appends what he submits to
- * labels/<set>.jsonl, which stays the source, and imports those lines read-only (R14).
+ * The blind labelling queue and the label files (SP5). Labels are human judgments, Rishi's and
+ * the raters he names (D73), entered by each through the UI; this service only appends what they
+ * submit to labels/<set>.jsonl, each line with its rater, which stays the source, and imports
+ * those lines read-only (R14).
  */
 @Injectable()
 export class LabelsService {
@@ -89,7 +91,11 @@ export class LabelsService {
     return path.join(this.config.labelsDir, `${set}.jsonl`);
   }
 
-  /** Imports lines of labels/<set>.jsonl not yet in the table. Lines that do not parse are skipped. */
+  /**
+   * Imports lines of labels/<set>.jsonl not yet in the table. Lines that do not parse are skipped.
+   * A line without a rater was written before D73 and is Rishi's; a line whose rater is not a rater
+   * id is skipped, as any other malformed line is.
+   */
   async importFile(set: LabelSet): Promise<void> {
     let text: string;
     try {
@@ -111,10 +117,15 @@ export class LabelsService {
         this.logger.warn(`labels/${set}.jsonl has a line without trial, criterion, value or date; skipped`);
         continue;
       }
+      const rater = l.rater === undefined ? FIRST_RATER : l.rater;
+      if (typeof rater !== 'string' || !RATER_ID.test(rater)) {
+        this.logger.warn(`labels/${set}.jsonl has a line whose rater is not a rater id; skipped`);
+        continue;
+      }
       await this.db.query(
-        `INSERT INTO labels (trial_id, criterion, value, label_set, note, labelled_at, source, line_sha256, second_look)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (line_sha256) DO NOTHING`,
-        [trial, l.criterion, l.value, set, typeof l.note === 'string' ? l.note : null, l.labelled_at, `labels/${set}.jsonl`, sha256Hex(line), l.second_look === true],
+        `INSERT INTO labels (trial_id, criterion, value, label_set, note, labelled_at, source, line_sha256, second_look, rater)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (line_sha256) DO NOTHING`,
+        [trial, l.criterion, l.value, set, typeof l.note === 'string' ? l.note : null, l.labelled_at, `labels/${set}.jsonl`, sha256Hex(line), l.second_look === true, rater],
       );
     }
   }
@@ -123,9 +134,14 @@ export class LabelsService {
    * Agent-labelled trials of a real model whose task has judge criteria, not yet fully labelled
    * in this set, in a fixed shuffled order (a hash of set and trial id) so arms are mixed.
    * Optionally limited to one experiment. Nothing that tells the arm apart is included.
+   * D73: with a rater, "labelled" means labelled by that rater, so each rater has their own queue
+   * and second looks, and nothing in it depends on another rater's labels except D52's rule that a
+   * trial labelled in one set (by anyone) is offered in no other. Without a rater, any rater's
+   * label counts, as before D73.
    */
-  async queue(setInput: unknown, experimentId?: string, itemsInput?: string): Promise<LabelQueueItem[]> {
+  async queue(setInput: unknown, experimentId?: string, itemsInput?: string, raterInput?: string): Promise<LabelQueueItem[]> {
     const set = labelSet(setInput);
+    const rater = raterInput === undefined ? null : raterId(raterInput);
     // `items` (comma-separated trial ids) limits the queue to a chosen list, such as the trials a
     // judge panel disagreed on (D71). Every other rule still applies: a listed trial outside the
     // set is simply not offered.
@@ -156,13 +172,20 @@ export class LabelsService {
       params.push(items);
       where += ` AND t.id = ANY($${params.length}::text[])`;
     }
-    // seen: criteria with any label in this set; settled: those with a firm answer (yes or no) or a
-    // second-look answer. A criterion seen but not settled was only ever marked "unsure" (D46).
+    // D73: only this rater's labels decide what they have seen and settled.
+    let byRater = '';
+    if (rater) {
+      params.push(rater);
+      byRater = ` AND l.rater = $${params.length}`;
+    }
+    // seen: criteria with any label in this set (by this rater, when one is given); settled: those
+    // with a firm answer (yes or no) or a second-look answer. A criterion seen but not settled was
+    // only ever marked "unsure" (D46).
     const rows = await this.db.query<{ id: string; result: JsonObject; body: JsonObject; summary: string; seen: string[]; settled: string[] }>(
       `SELECT t.id, t.result, k.body, k.summary,
-              coalesce((SELECT array_agg(DISTINCT l.criterion) FROM labels l WHERE l.trial_id = t.id AND l.label_set = $1), '{}') AS seen,
+              coalesce((SELECT array_agg(DISTINCT l.criterion) FROM labels l WHERE l.trial_id = t.id AND l.label_set = $1${byRater}), '{}') AS seen,
               coalesce((SELECT array_agg(DISTINCT l.criterion) FROM labels l
-                        WHERE l.trial_id = t.id AND l.label_set = $1 AND (l.value <> 'unsure' OR l.second_look)), '{}') AS settled
+                        WHERE l.trial_id = t.id AND l.label_set = $1${byRater} AND (l.value <> 'unsure' OR l.second_look)), '{}') AS settled
        FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256
        WHERE ${where}
        ORDER BY md5($1 || ':' || t.id)`,
@@ -197,10 +220,11 @@ export class LabelsService {
     }));
   }
 
-  /** Appends one line to labels/<set>.jsonl, with the date, then imports it. */
+  /** Appends one line to labels/<set>.jsonl, with its rater and the date, then imports it. */
   async create(body: CreateLabelRequest): Promise<LabelLine> {
     if (!isObj(body)) throw badRequest('invalid_label', 'the body must be a JSON object');
     const set = labelSet(body.set);
+    const rater = raterId(body.rater);
     if (typeof body.item_id !== 'string' || !body.item_id) throw badRequest('invalid_label', 'item_id is required');
     if (typeof body.criterion !== 'string' || !body.criterion) throw badRequest('invalid_label', 'criterion is required');
     if (body.value !== 'yes' && body.value !== 'no' && body.value !== 'unsure') throw badRequest('invalid_label', 'value must be yes, no or unsure');
@@ -227,17 +251,20 @@ export class LabelsService {
     if (body.second_look !== undefined && typeof body.second_look !== 'boolean') throw badRequest('invalid_label', 'second_look must be true or false');
     const secondLook = body.second_look === true;
     if (secondLook) {
-      // D46: a second look answers a criterion marked "unsure" in this set, and only once.
+      // D46: a second look answers a criterion marked "unsure" in this set, and only once. D73: by
+      // the same rater, so each rater's second looks are their own.
       const [prior] = await this.db.query<{ unsure: number; settled: number }>(
         `SELECT count(*) FILTER (WHERE value = 'unsure' AND NOT second_look)::int AS unsure,
                 count(*) FILTER (WHERE value <> 'unsure' OR second_look)::int AS settled
-         FROM labels WHERE trial_id = $1 AND criterion = $2 AND label_set = $3`,
-        [trial.id, body.criterion, set],
+         FROM labels WHERE trial_id = $1 AND criterion = $2 AND label_set = $3 AND rater = $4`,
+        [trial.id, body.criterion, set, rater],
       );
       if (!prior.unsure || prior.settled) {
         throw badRequest(
           'not_a_second_look',
-          prior.settled ? `${body.criterion} on ${trial.id} already has a firm or second-look answer in ${set}` : `${body.criterion} on ${trial.id} was not marked unsure in ${set}`,
+          prior.settled
+            ? `${body.criterion} on ${trial.id} already has a firm or second-look answer from ${rater} in ${set}`
+            : `${body.criterion} on ${trial.id} was not marked unsure by ${rater} in ${set}`,
           'Save it as an ordinary label (leave second_look out).',
         );
       }
@@ -246,6 +273,7 @@ export class LabelsService {
       item_id: body.item_id,
       trial_id: trial.id,
       set,
+      rater,
       criterion: body.criterion,
       value: body.value,
       note: typeof body.note === 'string' && body.note.trim() ? body.note : null,
