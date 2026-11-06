@@ -531,6 +531,7 @@ const routes: [string, RegExp, Handler][] = [
   ['GET', /^\/configs\/([^/]+)\/rendered-prompt$/, (m) => renderedPrompt(id1(m))],
   ['POST', /^\/configs\/([^/]+)\/rendered-prompt$/, (m) => renderedPrompt(id1(m))],
   ['GET', /^\/configs\/([^/]+)\/conflict-check$/, (m) => conflictCheck(id1(m), false)],
+  ['GET', /^\/configs\/([^/]+)\/conflict-check\/model$/, (m) => ({ config_hash: findConfig(id1(m)).hash, model: 'claude-sonnet-5-5', why: 'the default checker' })],
   ['POST', /^\/configs\/([^/]+)\/conflict-check$/, (m) => conflictCheck(id1(m), true)],
   ['GET', /^\/configs\/([^/]+)$/, (m) => configDetail(id1(m))],
   ['POST', /^\/experiments\/estimate$/, (_m, _p, body) => estimate(body as EstimateRequest)],

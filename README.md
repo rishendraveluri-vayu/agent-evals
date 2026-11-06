@@ -55,7 +55,9 @@ its trials fail: such a run tests the platform (queueing, retries, traces, gradi
 **With a key** you can run agents on real models. Copy `.env.example` to `.env`, add
 `ANTHROPIC_API_KEY` (Claude) and/or `GEMINI_API_KEY`, then run `docker compose up -d` again. A
 real run costs money: every run shows its trials, models and the most it can cost before it
-starts, and asks you to confirm.
+starts, and asks you to confirm. A Hermes run on a real model first checks your prompt against
+Hermes's own instructions (one call, about $0.02 to $0.03, on Claude Sonnet 5.5 when its key is
+set, otherwise on the agent's own model; D75), and shows what it found on the run page.
 
 Stop it with `docker compose down`. `docker compose down -v` also wipes the local database
 (configs, experiments, grades), but not the files the stack writes into the repo folder: trial

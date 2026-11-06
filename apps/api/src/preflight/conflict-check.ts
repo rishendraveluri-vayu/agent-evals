@@ -9,8 +9,29 @@ import { hashCanonical } from '../common/hashing';
  */
 
 export const CHECK_KIND = 'conflict_check';
-/** D38: pinned. Temperature is not sent and thinking stays at the model's default. */
-export const CHECKER_MODEL = 'claude-sonnet-5-5';
+/**
+ * D38 named Claude Sonnet 5.5. Since 6 Nov (D75) it is the preference, not the only choice: see
+ * chooseCheckerModel. Temperature is not sent and thinking stays at the model's default.
+ */
+export const PREFERRED_CHECKER_MODEL = 'claude-sonnet-5-5';
+
+export interface CheckerChoice {
+  model: string;
+  /** In words, why this model: shown beside the check. */
+  why: string;
+}
+
+/**
+ * Which model runs a config's conflict check (D75, 6 Nov): EVALS_CONFLICT_CHECK_MODEL when set;
+ * else Claude Sonnet 5.5 unless its provider key is known to be missing; else the config's own
+ * model, which any run of that config needs anyway. So a check never needs a key the run does not:
+ * a Gemini-only or keyless (local model) setup can still check, and start, a Hermes run.
+ */
+export function chooseCheckerModel(i: { override: string | null; preferredKeySet: boolean | null; configModel: string }): CheckerChoice {
+  if (i.override) return { model: i.override, why: 'set by EVALS_CONFLICT_CHECK_MODEL' };
+  if (i.preferredKeySet !== false) return { model: PREFERRED_CHECKER_MODEL, why: 'the default checker' };
+  return { model: i.configModel, why: "the agent's own model, since the default checker's key is not set" };
+}
 export const CHECKER_PROMPT_ID = 'conflict-check';
 // Sonnet 5.5 thinks by default and thinking counts toward max_tokens, so leave room for it plus
 // the JSON reply. Worst case about $0.07 a check at the 4 Nov prices, under the $0.10 key budget.

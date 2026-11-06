@@ -4,7 +4,7 @@
  * defaults shown), what the harness or model ignores and why, its lineage (D34), and the pre-run
  * checks: the rendered prompt and the conflict check (D33, D38).
  */
-import { computed, ref, shallowRef } from 'vue';
+import { computed, ref, shallowRef, watch } from 'vue';
 import { api } from '../api/client';
 import { ApiError, errorWithFix } from '../api/errors';
 import { SETTING_NAMES, type ConfigDiffEntry, type ConfigView, type Harness, type ModelView, type RenderedPromptStatus, type SettingName, type SpendView } from '../api/types';
@@ -46,11 +46,23 @@ const { data, error, loading } = useLoad(async () => {
   return { config, configs, harness: harnesses.find((h) => h.name === config.harness) ?? null, spend, models };
 });
 
-/** The model the conflict check calls (D38). */
-const CHECKER_MODEL = 'claude-sonnet-5-5';
 /** "needs ANTHROPIC_API_KEY in .env" for this config's model, when its key is not set. */
 const modelNeedsKey = computed(() => (data.value ? needsKeyWords(data.value.config.model, data.value.models) : ''));
-const checkerKey = computed(() => (data.value ? missingKey(CHECKER_MODEL, data.value.models) : null));
+/** D75: the model the conflict check calls for this config, as the API chooses it. */
+const checkerModel = ref<string | null>(null);
+watch(
+  () => props.configHash,
+  async (hash) => {
+    checkerModel.value = null;
+    try {
+      checkerModel.value = (await api.checkerModel(hash)).model;
+    } catch {
+      // Unknown: the check names the model once it has run.
+    }
+  },
+  { immediate: true },
+);
+const checkerKey = computed(() => (data.value && checkerModel.value ? missingKey(checkerModel.value, data.value.models) : null));
 
 const parent = computed(() => {
   const c = data.value?.config;
@@ -456,6 +468,7 @@ async function refreshSpend() {
           :rendered-status="renderedStatus"
           :allowance="allowance"
           :key-missing="checkerKey"
+          :checker-model="checkerModel"
           @spent="refreshSpend"
         />
       </div>

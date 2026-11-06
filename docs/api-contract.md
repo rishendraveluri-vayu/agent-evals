@@ -257,7 +257,13 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   - **Input.** System message: the highest version of `configs/prompts/conflict-check.v<n>.md`
     (review header stripped). User message: `<harness_text>`, `<task_prompt>` and `<settings>`
     blocks (the config's resolved settings as JSON).
-  - **Call.** `claude-sonnet-5-5` through LiteLLM's `/v1/chat/completions`, with a key the API
+  - **Model (D75, 6 Nov).** `EVALS_CONFLICT_CHECK_MODEL` when set; else `claude-sonnet-5-5` unless
+    the API knows its key is missing (`ANTHROPIC_KEY_SET` empty); else the config's own model, which
+    any run of the config needs anyway. `GET /configs/:hash/conflict-check/model` returns
+    `{config_hash, model, why}` without a call. A stored check of the same input counts whichever
+    model made it (the cache prefers the model this setup would call), so adding a key later does not
+    make a checked config pay again.
+  - **Call.** The chosen model through LiteLLM's `/v1/chat/completions`, with a key the API
     mints for this call (model-limited, budget $0.10) and revokes after. `max_tokens: 6000` (since `3a1d009`; it was 2000);
     temperature is not sent and no thinking setting is sent, so the model's defaults apply
     (D38). Thinking counts towards `max_tokens`, so a long think can cut the reply short; that

@@ -19,7 +19,7 @@ import { eventView, pauseCause } from '../lib/runs';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
 import { armPauseHelp, defaultArms, defaultBudget, isEngineTest, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, validateSeed, type ArmDefaults } from '../lib/runSetup';
 import { FAKE_SIM_MODEL, isFake, simModels } from '../lib/models';
-import { CHECKER_MODEL, ensureConflictChecks, needsConflictCheck } from '../lib/conflictGate';
+import { ensureConflictChecks, needsConflictCheck } from '../lib/conflictGate';
 import { text } from '../trials';
 
 const props = defineProps<{ experimentId?: string; a?: string | null; b?: string | null; calibration?: boolean }>();
@@ -130,8 +130,8 @@ const runModels = computed(() => {
 const realModels = computed(() => [...new Set(runModels.value.map((m) => m.model).filter((m) => !isFake(m)))]);
 /** Every model this run calls whose provider key is not set in .env (GET /models' key_set). */
 const keysMissing = computed(() =>
-  // D75: a Hermes agent on a real model has its prompt checked first, on Claude Sonnet 5.5.
-  [...runModels.value, ...(gatedConfigs.value.length ? [{ role: 'Prompt check', model: CHECKER_MODEL }] : [])].flatMap((m) => {
+  // D75's prompt check needs no other key: without Claude Sonnet 5.5's it runs on the agent's own model.
+  runModels.value.flatMap((m) => {
     const key = missingKey(m.model, data.value?.models ?? []);
     return key ? [{ ...m, key }] : [];
   }),
@@ -1672,7 +1672,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                   v-if="gatedConfigs.length"
                   data-test="confirm-prompt-check"
                 >
-                  First, each Hermes agent's prompt is checked against Hermes's own instructions: one call to {{ modelName(CHECKER_MODEL) }} per agent not checked before (typically $0.02 to $0.03, at most about $0.08), from the prompt-check allowance, not this run's limit. The findings show on the run page and do not stop the run.
+                  First, each Hermes agent's prompt is checked against Hermes's own instructions: one model call per agent not checked before (on {{ modelName('claude-sonnet-5-5') }} when its key is set, otherwise on the agent's own model; typically $0.02 to $0.03, at most about $0.08), from the prompt-check allowance, not this run's limit. The findings show on the run page and do not stop the run.
                 </li>
               </ul>
               <div class="confirm-buttons">

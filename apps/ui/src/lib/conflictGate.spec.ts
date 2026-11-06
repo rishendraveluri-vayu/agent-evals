@@ -62,7 +62,7 @@ describe('D75 conflict gate on the Run screen', () => {
   it('turns checker failures into what to do', async () => {
     const noKey = fakeApi();
     noKey.runConflictCheck.mockRejectedValue(new ApiError(502, 'checker_call_failed', 'litellm: 401 invalid x-api-key'));
-    await expect(ensureConflictChecks([{ hash: 'h1', name: 'A' }], noKey.api, { sleep: noSleep })).rejects.toThrow(/needs an Anthropic key.*The run did not start/);
+    await expect(ensureConflictChecks([{ hash: 'h1', name: 'A' }], noKey.api, { sleep: noSleep })).rejects.toThrow(/refused for want of a provider key.*The run did not start/);
     expect(gateFailure('A', new ApiError(402, 'allowance_exhausted', 'over'))).toContain('EVALS_CONFLICT_CHECK_ALLOWANCE_USD');
     expect(gateFailure('A', new ApiError(502, 'checker_output_invalid', 'bad'))).toContain('could not be read');
   });

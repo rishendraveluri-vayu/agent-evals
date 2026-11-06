@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import request from 'supertest';
 import type { ClaimResponse, ConflictCheckView, RenderedPromptView, SpendView, SystemSpendRow, TrialView } from '../src/contract';
+import { APP_CONFIG, type AppConfig } from '../src/common/app-config';
 import { PreflightService } from '../src/preflight/preflight.service';
 import { REPO, type TestEnv, auth, bootEnv, catalogue, makeConfig, runnerReport } from './support/app';
 import { describeWithDb } from './support/db';
@@ -324,6 +325,40 @@ describeWithDb('pre-run rendered prompt, conflict check and spend (e2e, real Pos
 
     // Leave no queued trial for the tests after this one to claim.
     for (const id of [exp, fake, own]) await request(env.http).post(`/api/experiments/${id}/cancel`).expect(200);
+  });
+
+  it('D75: without an Anthropic key the check runs on the agent\'s own model, and that check opens the gate', async () => {
+    const keys = env.app.get<AppConfig>(APP_CONFIG).providerKeys;
+    const was = { ...keys };
+    Object.assign(keys, { anthropic: false, gemini: true });
+    try {
+      const cfg = await makeConfig(env.http, cat, { name: 'hermes on gemini', harness: 'hermes', model: 'gemini-3.8-flash', settings: { max_steps: 21 } });
+      expect((await request(env.http).get(`/api/configs/${cfg}/conflict-check/model`).expect(200)).body).toEqual({
+        config_hash: cfg,
+        model: 'gemini-3.8-flash',
+        why: "the agent's own model, since the default checker's key is not set",
+      });
+      await render(cfg, 'hermes', hermesSystem());
+      env.stub.chatReply = JSON.stringify(FINDINGS);
+      const calls = env.stub.chatCalls.length;
+      const res = (await check(cfg).expect(200)).body as ConflictCheckView;
+      expect(res.model).toBe('gemini-3.8-flash');
+      expect(env.stub.chatCalls.slice(calls).map((c) => c.body.model)).toEqual(['gemini-3.8-flash']);
+      // With the key back, the stored Gemini check still counts: nothing is paid again, and the run starts.
+      Object.assign(keys, { anthropic: true });
+      expect(((await check(cfg, 'get').expect(200)).body as ConflictCheckView).model).toBe('gemini-3.8-flash');
+      const exp = (
+        await request(env.http)
+          .post('/api/experiments')
+          .send({ name: 'D75 gemini', axis: 'none', config_hashes: [cfg], task_sha256s: [cat.tasks['emi-basic']], n: 1, budget_usd: 5 })
+          .expect(201)
+      ).body as { id: string };
+      await request(env.http).post(`/api/experiments/${exp.id}/start`).expect(200);
+      await request(env.http).post(`/api/experiments/${exp.id}/cancel`).expect(200);
+      expect(env.stub.chatCalls.length).toBe(calls + 1);
+    } finally {
+      Object.assign(keys, was);
+    }
   });
 
   it('refuses with 402 allowance_exhausted when a check could pass the allowance, and makes no call', async () => {

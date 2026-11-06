@@ -2,15 +2,14 @@
  * D75: a run with a Hermes agent on a real model starts only after the prompt conflict check has
  * read that agent's current prompt and settings (the API refuses the start otherwise, 409
  * `conflict_check_required`). The Run screen runs any missing check when you start: first the
- * rendered prompt (a free probe on the fake model), then the check (one paid call to Claude
- * Sonnet 5.5, from the standing conflict-check allowance). An agent checked before costs nothing.
+ * rendered prompt (a free probe on the fake model), then the check (one paid call, on Claude Sonnet
+ * 5.5 when its key is set, otherwise on the agent's own model, from the standing conflict-check
+ * allowance). An agent checked before costs nothing.
  * Findings never stop the run; they are shown on the run page.
  */
 import { ApiError } from '../api/errors';
 import type { ConflictCheckView, RenderedPromptView } from '../api/types';
 import { isFake } from './models';
-
-export const CHECKER_MODEL = 'claude-sonnet-5-5';
 
 export function needsConflictCheck(c: { harness: string; model: string }): boolean {
   return c.harness === 'hermes' && !isFake(c.model);
@@ -36,8 +35,8 @@ const NO_KEY = /\b401\b|x-api-key|api[_ -]?key|authenticat/i;
 /** A failed check in plain words: why the run did not start and what to do. */
 export function gateFailure(name: string, err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.code === 'checker_call_failed' && NO_KEY.test(err.message)) return `The prompt check for ${name} needs an Anthropic key: add ANTHROPIC_API_KEY to .env and restart the stack.`;
-    if (err.code === 'checker_call_failed') return `The prompt check for ${name} could not reach Claude Sonnet 5.5. Try again later.`;
+    if (err.code === 'checker_call_failed' && NO_KEY.test(err.message)) return `The prompt check for ${name} was refused for want of a provider key: add the key to .env and restart the stack.`;
+    if (err.code === 'checker_call_failed') return `The prompt check for ${name} could not reach its model. Try again later.`;
     if (err.code === 'checker_output_invalid') return `The prompt check for ${name} gave a reply that could not be read (the call is counted in the platform's spend). Start again to retry it.`;
     if (err.code === 'allowance_exhausted') return `The prompt check for ${name} would pass the conflict-check allowance: raise EVALS_CONFLICT_CHECK_ALLOWANCE_USD in .env and restart the stack.`;
     return `The prompt check for ${name} failed: ${err.message}${err.fix ? ` ${err.fix}` : ''}`;
@@ -84,7 +83,7 @@ export async function ensureConflictChecks(
         r = await api.renderedPrompt(c.hash);
       }
       if (r.status !== 'ready') throw new Error(`The prompt of ${c.name} could not be rendered${r.error ? `: ${r.error}` : ''}. The run did not start.`);
-      say(`Checking ${c.name}'s prompt against Hermes's own instructions (Claude Sonnet 5.5)…`);
+      say(`Checking ${c.name}'s prompt against Hermes's own instructions…`);
       try {
         done.push(await api.runConflictCheck(c.hash));
       } catch (err) {

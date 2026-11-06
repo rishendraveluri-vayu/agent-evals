@@ -244,6 +244,8 @@ export const api = {
   renderPrompt: (hash: string) => post<RenderedPromptView>(`/configs/${enc(hash)}/rendered-prompt`),
   /** The stored conflict check for the config as it is now, or null when none is stored; makes no call. */
   conflictCheck: (hash: string) => call<ConflictCheckView | null>('GET', `/configs/${enc(hash)}/conflict-check`),
+  /** D75: the model this config's check runs on, and why (Claude Sonnet 5.5 by default, else the agent's own model). Calls nothing. */
+  checkerModel: (hash: string) => call<{ config_hash: string; model: string; why: string }>('GET', `/configs/${enc(hash)}/conflict-check/model`),
   /** A REAL, PAID model call (D38), unless the same input was checked before. Only a person's click
    *  calls this. */
   runConflictCheck: (hash: string) => post<ConflictCheckView>(`/configs/${enc(hash)}/conflict-check`),

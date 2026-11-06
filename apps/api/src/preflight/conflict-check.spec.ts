@@ -1,5 +1,5 @@
 import type { Settings } from '../contract';
-import { CHECKER_MAX_TOKENS, callCost, checkInputSha, checkerInput, parseFindings, replyOf, worstCaseUsd } from './conflict-check';
+import { CHECKER_MAX_TOKENS, callCost, checkInputSha, checkerInput, chooseCheckerModel, parseFindings, replyOf, worstCaseUsd } from './conflict-check';
 
 const SETTINGS: Settings = {
   temperature: null,
@@ -85,5 +85,17 @@ describe('replyOf', () => {
   it('reads the text and finish reason of an OpenAI-format reply', () => {
     expect(replyOf({ choices: [{ message: { content: '{}' }, finish_reason: 'length' }] })).toEqual({ text: '{}', finishReason: 'length' });
     expect(replyOf({})).toEqual({ text: null, finishReason: null });
+  });
+});
+
+describe('chooseCheckerModel (D75: not only Sonnet)', () => {
+  it('takes EVALS_CONFLICT_CHECK_MODEL first, then Sonnet unless its key is known to be missing, then the agent\'s own model', () => {
+    expect(chooseCheckerModel({ override: 'gemini-3.8-flash', preferredKeySet: true, configModel: 'claude-haiku-5-5' }).model).toBe('gemini-3.8-flash');
+    expect(chooseCheckerModel({ override: null, preferredKeySet: true, configModel: 'gemini-3.8-flash' }).model).toBe('claude-sonnet-5-5');
+    // The API was not told (outside compose): keep the default rather than guess.
+    expect(chooseCheckerModel({ override: null, preferredKeySet: null, configModel: 'gemini-3.8-flash' }).model).toBe('claude-sonnet-5-5');
+    const own = chooseCheckerModel({ override: null, preferredKeySet: false, configModel: 'gemini-3.8-flash' });
+    expect(own).toEqual({ model: 'gemini-3.8-flash', why: "the agent's own model, since the default checker's key is not set" });
+    expect(chooseCheckerModel({ override: null, preferredKeySet: false, configModel: 'qwen2.5-7b-local' }).model).toBe('qwen2.5-7b-local');
   });
 });

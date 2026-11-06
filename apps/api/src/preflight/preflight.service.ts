@@ -4,7 +4,7 @@ import type { ConflictCheckView, ConflictFinding, RenderedPrompt, RenderedPrompt
 import { ApiError, conflict } from '../common/api-error';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { newId } from '../common/ids';
-import { CatalogueService, type StoredPrompt } from '../catalogue/catalogue.service';
+import { CatalogueService, type StoredPrompt, keySet } from '../catalogue/catalogue.service';
 import { type ConfigRow, ConfigsService } from '../configs/configs.service';
 import { Db } from '../database/db.service';
 import { LiteLlmClient, type MintedKey } from '../litellm/litellm.client';
@@ -13,13 +13,15 @@ import { FINISHED } from '../trials/status';
 import { locate } from '../trials/trial-files';
 import {
   CHECKER_MAX_TOKENS,
-  CHECKER_MODEL,
   CHECKER_PROMPT_ID,
   CHECK_KEY_BUDGET_USD,
   CHECK_KIND,
   CHECK_TIMEOUT_MS,
   type CallCost,
+  type CheckerChoice,
+  PREFERRED_CHECKER_MODEL,
   callCost,
+  chooseCheckerModel,
   checkInputSha,
   checkerInput,
   parseFindings,
@@ -71,6 +73,8 @@ interface CheckInputs {
   checker: StoredPrompt;
   taskPrompt: string;
   inputSha: string;
+  /** D75: the model a new check would call (chooseCheckerModel). */
+  model: CheckerChoice;
 }
 
 const PROBE_SELECT = 'SELECT id, status, label, end_state, folder, files FROM trials';
@@ -275,15 +279,30 @@ export class PreflightService {
       checker,
       taskPrompt: await this.promptText(cfg.prompt_sha256),
       inputSha: checkInputSha({ renderedSha256: rendered.sha256, promptSha256: cfg.prompt_sha256, settings: cfg.settings }),
+      model: this.checkerChoice(cfg),
     };
   }
 
+  /** D75: the model this config's check runs on, in words too; needs no rendered prompt and calls nothing. */
+  async checkerModel(hashInput: string): Promise<{ config_hash: string; model: string; why: string }> {
+    const cfg = await this.configs.row(hashInput);
+    return { config_hash: cfg.hash, ...this.checkerChoice(cfg) };
+  }
+
+  private checkerChoice(cfg: ConfigRow): CheckerChoice {
+    return chooseCheckerModel({
+      override: this.config.conflictCheckModel,
+      preferredKeySet: keySet(PREFERRED_CHECKER_MODEL, 'anthropic', this.config.providerKeys),
+      configModel: cfg.model,
+    });
+  }
+
   private async cachedCheck(i: CheckInputs): Promise<CheckRow | undefined> {
-    const [r] = await this.db.query<CheckRow>('SELECT * FROM conflict_checks WHERE input_sha256 = $1 AND checker_sha256 = $2 AND model = $3', [
-      i.inputSha,
-      i.checker.sha256,
-      CHECKER_MODEL,
-    ]);
+    // D75: a check of the same input by any model counts; the one this setup would call comes first.
+    const [r] = await this.db.query<CheckRow>(
+      'SELECT * FROM conflict_checks WHERE input_sha256 = $1 AND checker_sha256 = $2 ORDER BY (model = $3) DESC, created_at DESC LIMIT 1',
+      [i.inputSha, i.checker.sha256, i.model.model],
+    );
     return r;
   }
 
@@ -293,13 +312,14 @@ export class PreflightService {
       rendered_sha256: i.rendered.sha256,
       input_sha256: i.inputSha,
       checker: { id: i.checker.id, version: i.checker.version, sha256: i.checker.sha256 },
-      model: CHECKER_MODEL,
+      model: i.model.model,
     };
   }
 
   private async checkView(i: CheckInputs, row: CheckRow, cached: boolean): Promise<ConflictCheckView> {
     return {
       ...this.baseView(i),
+      model: row.model,
       conflicts: row.conflicts,
       notes: row.notes,
       cost_usd: row.spend_id ? await this.spend.cost(row.spend_id) : null,
@@ -313,15 +333,16 @@ export class PreflightService {
 
   /** One paid call: reserve the worst case, call with a minted key, settle from the spend log, store the findings. */
   private async runCheck(i: CheckInputs): Promise<ConflictCheckView> {
-    const price = await this.litellm.findModel(CHECKER_MODEL);
+    const checkerModel = i.model.model;
+    const price = await this.litellm.findModel(checkerModel);
     if (!price || price.inputPerToken === null || price.outputPerToken === null) {
-      throw new ApiError(503, 'checker_model_unavailable', `LiteLLM serves no priced ${CHECKER_MODEL}; see services/litellm/config.yaml`);
+      throw new ApiError(503, 'checker_model_unavailable', `LiteLLM serves no priced ${checkerModel} (${i.model.why}); see services/litellm/config.yaml, or set EVALS_CONFLICT_CHECK_MODEL`);
     }
     const system = i.checker.text;
     const user = checkerInput(i.rendered.harness_text, i.taskPrompt, i.cfg.settings);
     const reservedUsd = worstCaseUsd(system.length + user.length, { inputPerToken: price.inputPerToken, outputPerToken: price.outputPerToken });
     const ref = `config:${i.cfg.hash}`;
-    const { id: spendId } = await this.spend.reserve({ kind: CHECK_KIND, model: CHECKER_MODEL, ref, reservedUsd });
+    const { id: spendId } = await this.spend.reserve({ kind: CHECK_KIND, model: checkerModel, ref, reservedUsd });
 
     let key: MintedKey | null = null;
     let response: Awaited<ReturnType<LiteLlmClient['chat']>> | null = null;
@@ -329,14 +350,14 @@ export class PreflightService {
     try {
       key = await this.litellm.generateSystemKey({
         alias: `system:${CHECK_KIND}:${spendId}`,
-        model: CHECKER_MODEL,
+        model: checkerModel,
         maxBudgetUsd: CHECK_KEY_BUDGET_USD,
         metadata: { kind: CHECK_KIND, spend_id: spendId, ref },
       });
       // D38: temperature not sent, thinking at the model's default; max_tokens covers thinking too.
       response = await this.litellm.chat(
         key.key,
-        { model: CHECKER_MODEL, max_tokens: CHECKER_MAX_TOKENS, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] },
+        { model: checkerModel, max_tokens: CHECKER_MAX_TOKENS, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] },
         CHECK_TIMEOUT_MS,
       );
     } catch (err) {
@@ -351,7 +372,7 @@ export class PreflightService {
       await this.spend.settle(spendId, { ok: false, cost, error: why });
       throw new ApiError(502, code, `${why} (recorded as system spend ${spendId}${cost.costUsd === null ? '' : `, $${cost.costUsd}`})`);
     };
-    if (failure !== null || !response) return fail('checker_call_failed', `the ${CHECKER_MODEL} call failed: ${failure ?? 'no reply'}`);
+    if (failure !== null || !response) return fail('checker_call_failed', `the ${checkerModel} call failed: ${failure ?? 'no reply'}`);
     if (response.status !== 200) return fail('checker_call_failed', `LiteLLM answered ${response.status}: ${response.text.slice(0, 300)}`);
     const reply = replyOf(response.body);
     if (reply.text === null) return fail('checker_output_invalid', `the reply has no text (finish reason ${reply.finishReason ?? 'none'})`);
@@ -364,7 +385,7 @@ export class PreflightService {
     await this.db.query(
       `INSERT INTO conflict_checks (id, input_sha256, rendered_sha256, checker_sha256, checker_version, model, config_hash, conflicts, notes, raw_reply, spend_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (input_sha256, checker_sha256, model) DO NOTHING`,
-      [`cc_${spendId.slice(3)}`, i.inputSha, i.rendered.sha256, i.checker.sha256, i.checker.version, CHECKER_MODEL, i.cfg.hash, JSON.stringify(parsed.findings.conflicts), parsed.findings.notes, reply.text, spendId],
+      [`cc_${spendId.slice(3)}`, i.inputSha, i.rendered.sha256, i.checker.sha256, i.checker.version, checkerModel, i.cfg.hash, JSON.stringify(parsed.findings.conflicts), parsed.findings.notes, reply.text, spendId],
     );
     return this.checkView(i, (await this.cachedCheck(i)) as CheckRow, false);
   }

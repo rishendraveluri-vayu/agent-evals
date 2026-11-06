@@ -29,6 +29,12 @@ export class PreflightController {
     return this.preflight.conflictCheck(hash);
   }
 
+  /** D75: the model this config's check runs on and why; calls nothing. */
+  @Get(':hash/conflict-check/model')
+  model(@Param('hash') hash: string): Promise<{ config_hash: string; model: string; why: string }> {
+    return this.preflight.checkerModel(hash);
+  }
+
   /**
    * The stored result for the config as it is now; 200 `null` before any (not a 404, so a page
    * that asks on every visit logs no error). Never calls a model.

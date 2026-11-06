@@ -36,6 +36,8 @@ export interface AppConfig {
   graderSchemaFile: string;
   /** D38: the standing allowance for pre-run conflict checks, in USD. */
   conflictCheckAllowanceUsd: number;
+  /** D75: the model every conflict check runs on (EVALS_CONFLICT_CHECK_MODEL); null: chosen per config (chooseCheckerModel). */
+  conflictCheckModel: string | null;
   /**
    * Whether each provider's key is set for LiteLLM, by provider: compose passes a flag
    * (`ANTHROPIC_KEY_SET: ${ANTHROPIC_API_KEY:+1}`), never the key, which only LiteLLM holds.
@@ -96,6 +98,7 @@ export function readAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     // RUNS_DIR keeps its SP1 meaning: relative to the working directory.
     runsDir: path.resolve(nonEmpty(env.RUNS_DIR) ?? 'runs'),
     conflictCheckAllowanceUsd: usd('EVALS_CONFLICT_CHECK_ALLOWANCE_USD', env.EVALS_CONFLICT_CHECK_ALLOWANCE_USD, DEFAULT_CONFLICT_CHECK_ALLOWANCE_USD),
+    conflictCheckModel: nonEmpty(env.EVALS_CONFLICT_CHECK_MODEL),
     providerKeys: { anthropic: flag(env[PROVIDER_KEYS.anthropic.flag]), gemini: flag(env[PROVIDER_KEYS.gemini.flag]) },
   };
 }

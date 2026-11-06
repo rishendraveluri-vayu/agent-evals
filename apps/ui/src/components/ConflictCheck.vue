@@ -2,7 +2,7 @@
 /**
  * The pre-run conflict check (D33, D38): where our task prompt and settings contradict the
  * harness's own text. Reading the stored result is free; running a check is a REAL, PAID call to
- * Claude Sonnet 5.5 against a standing allowance, so the button asks first, says what it may
+ * a model (Claude Sonnet 5.5 by default, D75) against a standing allowance, so the button asks first, says what it may
  * cost, and only shows when there is no stored result for the config as it is now.
  */
 import { computed, ref, watch } from 'vue';
@@ -25,6 +25,8 @@ const props = defineProps<{
   allowance: AllowanceView | null;
   /** The .env variable the checker model's key is missing from (GET /models' key_set); null when set or not known. */
   keyMissing?: string | null;
+  /** D75: the model a new check would call (GET /configs/:hash/conflict-check/model); null when not known. */
+  checkerModel?: string | null;
 }>();
 const emit = defineEmits<{ spent: [] }>();
 
@@ -35,6 +37,11 @@ const busy = ref(false);
 /** A run that did not give a check: what to do, in plain words, and the API's own message behind Details. */
 const runError = ref<{ text: string; raw: string | null } | null>(null);
 const renderedReady = computed(() => props.renderedStatus === 'ready');
+/** The checker's name in words: the stored check's model, else the one a new check would call. */
+const checkerName = computed(() => {
+  const model = state.value.kind === 'ready' ? state.value.check.model : props.checkerModel;
+  return model ? modelName(model) : 'the checker model';
+});
 
 let loaded = false;
 async function load() {
@@ -67,10 +74,10 @@ const NO_KEY = /\b401\b|x-api-key|api[_ -]?key|authenticat/i;
 /** A failed run in words. The API's raw message stays behind Details. */
 function failureOf(err: unknown): { text: string; raw: string | null } {
   if (err instanceof ApiError && err.code === 'checker_call_failed' && NO_KEY.test(err.message)) {
-    return { text: 'The prompt check needs an Anthropic key: add ANTHROPIC_API_KEY to .env and restart the stack (docker compose up -d). No check was stored.', raw: err.message };
+    return { text: `The prompt check's model (${checkerName.value}) needs its provider key: add it to .env and restart the stack (docker compose up -d). No check was stored.`, raw: err.message };
   }
   if (err instanceof ApiError && err.code === 'checker_call_failed') {
-    return { text: `The call to ${modelName('claude-sonnet-5-5')} did not go through, so no check was stored. Try again later.`, raw: err.message };
+    return { text: `The call to ${checkerName.value} did not go through, so no check was stored. Try again later.`, raw: err.message };
   }
   if (err instanceof ApiError && err.code === 'checker_output_invalid') {
     return { text: "The checker answered, but its reply could not be read, so no check was stored. The call was made and is counted in the platform's spend.", raw: err.message };
@@ -190,7 +197,7 @@ const who = computed(() => harnessShort(props.harness));
           <AppIcon
             name="alert"
             :size="14"
-          /> This is a real call to {{ modelName('claude-sonnet-5-5') }}, paid from the platform's own allowance, not from any experiment.
+          /> This is a real call to {{ checkerName }}, paid from the platform's own allowance, not from any experiment.
         </p>
         <p class="small">
           It costs up to about {{ worstCase }}: the API reserves that worst case first and settles at the real cost<template v-if="allowanceNow && allowanceNow.calls">
@@ -226,7 +233,7 @@ const who = computed(() => harnessShort(props.harness));
         class="small needs-key"
         data-test="check-needs-key"
       >
-        The check calls {{ modelName('claude-sonnet-5-5') }}, which needs <span class="mono">{{ keyMissing }}</span> in <span class="mono">.env</span>. Add it, then run <span class="mono">docker compose up -d</span> and reload this page.
+        The check calls {{ checkerName }}, which needs <span class="mono">{{ keyMissing }}</span> in <span class="mono">.env</span>. Add it, then run <span class="mono">docker compose up -d</span> and reload this page.
       </p>
     </template>
 

@@ -167,7 +167,7 @@ describe('ConfigPage: the conflict check (D38)', () => {
     await w.get('[data-test="confirm-run-check"]').trigger('click');
     await settle();
     expect(w.get('[data-test="check-error"]').text()).toBe(
-      'The prompt check needs an Anthropic key: add ANTHROPIC_API_KEY to .env and restart the stack (docker compose up -d). No check was stored.',
+      "The prompt check's model (Claude Sonnet 5.5) needs its provider key: add it to .env and restart the stack (docker compose up -d). No check was stored.",
     );
     expect(w.get('[data-test="check-error-details"] pre').text()).toBe(raw);
     // The panel says what happened: tried and failed, not "not checked yet".
