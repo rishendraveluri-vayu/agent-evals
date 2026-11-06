@@ -1,0 +1,86 @@
+{
+ "contract_version": "2",
+ "checks_version": "0.5.0",
+ "trial_id": "rag-synthetic-rag-home-loan-repo-linked-correct",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "₹40 lakh",
+   "value": 4000000,
+   "supported_by": "user",
+   "match": {
+    "value": 4000000,
+    "where": "task:0",
+    "how": "exact",
+    "precision": 100000
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹33,831.98",
+   "value": 33831.98,
+   "supported_by": "tool",
+   "match": {
+    "value": 33831.98,
+    "where": "tool:calculate_emi",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 3
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  }
+ ],
+ "unsupported": 0,
+ "derived_in_prose": 0,
+ "tools_called": [
+  "search_documents",
+  "add",
+  "calculate_emi"
+ ],
+ "required_tools": {
+  "required": [],
+  "called": [],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": [
+  {
+   "call": 2,
+   "tool": "add",
+   "turn": 0,
+   "supported": false,
+   "inputs": [
+    {
+     "arg": "values[0]",
+     "value": 5.5,
+     "supported_by": "tool",
+     "match": {
+      "value": 5.5,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 0.1,
+      "call": 1
+     }
+    },
+    {
+     "arg": "values[1]",
+     "value": 2.65,
+     "supported_by": "tool",
+     "match": {
+      "value": 2.65,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 0.01,
+      "call": 0
+     }
+    }
+   ],
+   "reason": "add was given no sourced amount (a sourced number of 100 or more)"
+  }
+ ]
+}

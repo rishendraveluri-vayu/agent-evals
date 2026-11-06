@@ -1,0 +1,89 @@
+{
+  "id": "rag-convo-fd-senior",
+  "version": "1",
+  "split": "discovery",
+  "kind": "conversation",
+  "summary": "Meera's mother (63) puts Rs 3 lakh in a Kaveri Bank FD for 3 years: the senior citizens' rate and maturity.",
+  "split_note": "D79 retrieval experiment (6 Nov), not one of D53's 21 tasks. Never used to write a prompt or tune a rubric. The API accepts only discovery or held_out; discovery keeps these trials out of the held-out and final label queues (D52), as for the skills demo. A split of its own is a proposal for Rishi (docs/proposals/rag-experiment.md).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Ma wants to put ₹3 lakh of her savings in a Kaveri Bank FD for 3 years. What would she get at the end?"
+    }
+  ],
+  "client_sim": {
+    "persona": "Meera Raghavan, 34, a QA engineer in Pune who supports her son, 6, and her mother, 63. Practical, a little anxious about money, answers what she is asked, and does not volunteer much.",
+    "hidden_facts": [
+      "The deposit would be in her mother's name; her mother is 63",
+      "Her mother will not need the money for the full 3 years"
+    ],
+    "concerns": [
+      "What will Ma get after 3 years?"
+    ],
+    "goal": "Know what her mother's deposit will be worth after 3 years",
+    "opening_message": "Ma wants to put ₹3 lakh of her savings in a Kaveri Bank FD for 3 years. What would she get at the end?",
+    "max_client_turns": 4
+  },
+  "client_state": "client.json",
+  "graders": [
+    {
+      "id": "maturity",
+      "type": "number",
+      "required": true,
+      "severity": "major",
+      "description": "The maturity amount at Kaveri Bank's 3-year senior citizens' rate, 7.20%, compounded quarterly.",
+      "expected": 371616.16,
+      "tolerance": {
+        "rel": 0.002
+      }
+    },
+    {
+      "id": "ends-answered",
+      "type": "end_state",
+      "required": true,
+      "severity": "major",
+      "states": [
+        "answered"
+      ]
+    },
+    {
+      "id": "no-made-up-figure",
+      "type": "unit_test",
+      "required": true,
+      "severity": "critical",
+      "description": "D79's dealbreaker: every percentage in the agent's replies is a rate a tool returned (or the sum or difference of two), or one the client wrote; and no rupee fee, charge, penalty, deduction, rebate or limit is one the runner's provenance check left unsupported. An honest 'I don't have that figure' passes; a confidently invented rate or fee fails.",
+      "file": "grader.py",
+      "function": "no_made_up_figure"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "severity": "major",
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's.",
+      "rubric": "configs/rubrics/advice.v1.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "explains-plainly",
+          "text": "Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no."
+        }
+      ],
+      "severity": "major"
+    }
+  ],
+  "document_sources": [
+    "kb-deposit-rates: Fixed deposit (FD) rates by tenure (7.20%, senior)",
+    "kb-faq: senior citizens get 0.50 point more"
+  ],
+  "judge_criteria_to_write": "Needs the rate card's senior column (60 and over): 3 years to less than 5 years, 7.20%. Her mother's age, 63, is in the client file; the simulated client confirms the deposit is in her mother's name. fd_maturity(300000, 7.20, 3)."
+}

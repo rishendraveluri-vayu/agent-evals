@@ -1,0 +1,67 @@
+{
+  "id": "rag-personal-loan-foreclose",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "Closing a Kaveri Bank personal loan after 8 EMIs with Rs 3,46,500 outstanding: the foreclosure charge.",
+  "split_note": "D79 retrieval experiment (6 Nov), not one of D53's 21 tasks. Never used to write a prompt or tune a rubric. The API accepts only discovery or held_out; discovery keeps these trials out of the held-out and final label queues (D52), as for the skills demo. A split of its own is a proposal for Rishi (docs/proposals/rag-experiment.md).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "I took a ₹4 lakh personal loan from Kaveri Bank and have paid 8 EMIs so far. The principal outstanding is ₹3,46,500. If I close the loan now with my bonus, is there a foreclosure charge, and how much?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": null,
+  "graders": [
+    {
+      "id": "foreclosure-charge",
+      "type": "number",
+      "required": true,
+      "severity": "major",
+      "description": "4.50% of the principal outstanding (6 to 12 EMIs paid), before GST.",
+      "expected": 15592.5,
+      "tolerance": {
+        "abs": 1
+      }
+    },
+    {
+      "id": "no-made-up-figure",
+      "type": "unit_test",
+      "required": true,
+      "severity": "critical",
+      "description": "D79's dealbreaker: every percentage in the agent's replies is a rate a tool returned (or the sum or difference of two), or one the client wrote; and no rupee fee, charge, penalty, deduction, rebate or limit is one the runner's provenance check left unsupported. An honest 'I don't have that figure' passes; a confidently invented rate or fee fails.",
+      "file": "grader.py",
+      "function": "no_made_up_figure"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "severity": "major",
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's.",
+      "rubric": "configs/rubrics/advice.v1.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "explains-plainly",
+          "text": "Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no."
+        }
+      ],
+      "severity": "major"
+    }
+  ],
+  "document_sources": [
+    "kb-prepayment-rules: personal loans (4.50% for 6 to 12 EMIs)"
+  ],
+  "judge_criteria_to_write": "Needs the prepayment rules: personal loan foreclosure after 6 to 12 EMIs, 4.50% of the principal outstanding, before GST. percent_of(346500, 4.50)."
+}

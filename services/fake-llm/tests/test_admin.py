@@ -36,6 +36,7 @@ EXAMPLES = {
     "finance-yearly-tool",
     "finance-rate-tool",
     "finance-rate-made-up",
+    "finance-search-docs",
     "sim-client",
     "sim-empty",
     "judge",

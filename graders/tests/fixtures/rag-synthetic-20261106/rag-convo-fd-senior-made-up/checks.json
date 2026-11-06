@@ -1,0 +1,42 @@
+{
+ "contract_version": "2",
+ "checks_version": "0.5.0",
+ "trial_id": "rag-synthetic-rag-convo-fd-senior-made-up",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "₹3 lakh",
+   "value": 300000,
+   "supported_by": "user",
+   "match": {
+    "value": 300000,
+    "where": "task:0",
+    "how": "exact",
+    "precision": 100000
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹3,74,000",
+   "value": 374000,
+   "supported_by": null,
+   "match": null,
+   "verified_by": null,
+   "derivation": null,
+   "rejected": null
+  }
+ ],
+ "unsupported": 1,
+ "derived_in_prose": 0,
+ "tools_called": [],
+ "required_tools": {
+  "required": [],
+  "called": [],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": []
+}

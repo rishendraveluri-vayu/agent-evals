@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from evals_adapter.gate import NO_CALCULATOR_TOOLS, FakeServer, Gate
+from evals_adapter.gate import FINANCE_V3_TOOLS, NO_CALCULATOR_TOOLS, FakeServer, Gate
 
 HERE = Path(__file__).resolve().parents[1]
 REPO = HERE.parents[1]
@@ -75,6 +75,17 @@ def test_tools(tmp_path, fake):
 def test_tools_without_calculators(tmp_path, fake):
     """D70's finance-no-calculators: only its 11 tools reach the model (`tools.include`)."""
     GATE.test_tools(tmp_path, fake, NO_CALCULATOR_TOOLS, "finance-no-calculators")
+
+
+def test_tools_finance_v3_hides_the_document_search(tmp_path, fake):
+    """D79: finance/v3 (the headline's toolset, arm A) shows its 19 tools; search_documents, on
+    the same server, never reaches the model (`tools.include`)."""
+    GATE.test_tools(tmp_path, fake, FINANCE_V3_TOOLS, "finance")
+
+
+def test_search_documents(tmp_path, fake):
+    """D79: finance-rag's search_documents goes through the harness's tool path and back."""
+    GATE.test_search_documents(tmp_path, fake)
 
 
 def test_timeout(tmp_path, fake):

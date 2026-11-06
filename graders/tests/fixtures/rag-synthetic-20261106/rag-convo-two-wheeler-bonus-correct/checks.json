@@ -1,0 +1,91 @@
+{
+ "contract_version": "2",
+ "checks_version": "0.5.0",
+ "trial_id": "rag-synthetic-rag-convo-two-wheeler-bonus-correct",
+ "amounts": [
+  {
+   "turn": 1,
+   "text": "₹46,800",
+   "value": 46800,
+   "supported_by": "tool",
+   "match": {
+    "value": 46800,
+    "where": "tool:list_debts",
+    "how": "exact",
+    "precision": 1,
+    "call": 0
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 1,
+   "text": "₹1,287",
+   "value": 1287,
+   "supported_by": "tool",
+   "match": {
+    "value": 1287,
+    "where": "tool:percent_of",
+    "how": "exact",
+    "precision": 1,
+    "call": 2
+   },
+   "verified_by": "tool",
+   "derivation": null,
+   "rejected": null
+  }
+ ],
+ "unsupported": 0,
+ "derived_in_prose": 0,
+ "tools_called": [
+  "list_debts",
+  "search_documents",
+  "percent_of"
+ ],
+ "required_tools": {
+  "required": [
+   "list_debts"
+  ],
+  "called": [
+   "list_debts"
+  ],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": [
+  {
+   "call": 2,
+   "tool": "percent_of",
+   "turn": 1,
+   "supported": true,
+   "inputs": [
+    {
+     "arg": "value",
+     "value": 46800,
+     "supported_by": "tool",
+     "match": {
+      "value": 46800,
+      "where": "tool:list_debts",
+      "how": "exact",
+      "precision": 1,
+      "call": 0
+     }
+    },
+    {
+     "arg": "percent",
+     "value": 2.75,
+     "supported_by": "tool",
+     "match": {
+      "value": 2.75,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 0.01,
+      "call": 1
+     }
+    }
+   ],
+   "reason": null
+  }
+ ]
+}

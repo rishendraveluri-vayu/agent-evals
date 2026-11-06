@@ -33,8 +33,9 @@ outputs and final answers exactly, so every tool is deterministic. The same inpu
 | `percent_change` | The change from `from_value` to `to_value`, as a difference and as a percent of `from_value`. |
 | `round` | A number rounded half-up to `places` decimals (default 2; negative places round to tens, thousands, lakhs). |
 | `reference_rates` | Documented Indian market assumptions (FD, savings, PPF, CPI inflation, repo rate, a long-run equity return), each with its value, unit, source and date. |
+| `search_documents` | Keyword search (BM25) over Kaveri Bank's (fictional) dated documents and a cited rates and rules bulletin: the best passages, each with its document id, title, date and section. Only the `finance-rag` toolset allows it (D79). |
 
-All 19 tools are read-only (`readOnlyHint: true`). The full manifest the agents see is in
+All 20 tools are read-only (`readOnlyHint: true`). The full manifest the agents see is in
 `tests/snapshots/tools_manifest.json`, and a test fails on any change to it.
 
 The last seven, the arithmetic tools, were added on 5 Nov (D54, server version 0.3.0), so that
@@ -49,6 +50,19 @@ volunteers (an FD rate, inflation, an equity return) has a documented source and
 invented one still fails the provenance check. Its values are in
 `src/finance_mcp/reference_rates.json` (see below). The platform's check also lets an
 arithmetic input be a unit fact (12 months, 365 days, 100 for a percentage) without a source.
+
+`search_documents` was added on 6 Nov (D79) for the retrieval experiment, at the same server
+version, 0.4.1: `finance/v3`'s hash covers the server version, so a bump would have changed the
+headline's configs, and the nineteen tools `finance/v3` allows are unchanged byte for byte. Only
+the `finance-rag/v1` toolset allows the new tool; every harness filters the server's tools to its
+config's toolset. The documents are the markdown files in `src/finance_mcp/documents/`: Kaveri
+Bank's (fictional) rate card, deposit rules, loan products, prepayment rules, charges, card terms,
+savings rates and FAQ, all invented, and a rates and rules bulletin for November 2026 whose RBI and
+income tax figures were checked against the official source each cites (6 Nov). The library's
+edition is in the tool description, and `tests/test_documents.py` pins the documents' bytes to it,
+so a changed document is a new edition and a new `finance-rag` hash, never an edit in place. The
+search is deterministic (exact Decimal BM25, ties in library order), returns at most 5 passages,
+never echoes the query, and refuses an empty query.
 
 ## Conventions
 

@@ -1,0 +1,51 @@
+{
+ "contract_version": "2",
+ "checks_version": "0.5.0",
+ "trial_id": "rag-synthetic-rag-personal-loan-emi-correct",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "₹3 lakh",
+   "value": 300000,
+   "supported_by": "user",
+   "match": {
+    "value": 300000,
+    "where": "task:0",
+    "how": "exact",
+    "precision": 100000
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹9,942.81",
+   "value": 9942.81,
+   "supported_by": "tool",
+   "match": {
+    "value": 9942.81,
+    "where": "tool:calculate_emi",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 1
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  }
+ ],
+ "unsupported": 0,
+ "derived_in_prose": 0,
+ "tools_called": [
+  "search_documents",
+  "calculate_emi"
+ ],
+ "required_tools": {
+  "required": [],
+  "called": [],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": []
+}

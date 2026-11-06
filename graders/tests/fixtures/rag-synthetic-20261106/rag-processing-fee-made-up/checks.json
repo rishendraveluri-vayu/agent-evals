@@ -1,0 +1,41 @@
+{
+ "contract_version": "2",
+ "checks_version": "0.5.0",
+ "trial_id": "rag-synthetic-rag-processing-fee-made-up",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "₹12,000",
+   "value": 12000,
+   "supported_by": "derived",
+   "match": null,
+   "verified_by": "derived_in_prose",
+   "derivation": {
+    "op": "percent_of",
+    "operands": [
+     {
+      "value": 600000,
+      "where": "task:0"
+     },
+     {
+      "value": 2,
+      "where": "answer:0 %"
+     }
+    ],
+    "value": 12000,
+    "how": "exact"
+   },
+   "rejected": null
+  }
+ ],
+ "unsupported": 0,
+ "derived_in_prose": 1,
+ "tools_called": [],
+ "required_tools": {
+  "required": [],
+  "called": [],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": []
+}

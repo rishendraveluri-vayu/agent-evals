@@ -36,11 +36,13 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
     expect(prompts.map((p) => `${p.id}.${p.version}`)).toEqual(expect.arrayContaining(['finance-advisor.v1', 'client-sim.v1', 'client-sim.v2']));
     expect(prompts.every((p) => !p.text.startsWith('<!--'))).toBe(true);
     const toolsets = (await request(env.http).get('/api/toolsets').expect(200)).body as ToolsetView[];
-    // finance/v3 first (the default), then D70's validation toolset.
+    // finance/v3 first (the default), then D70's validation toolset, then D79's retrieval toolset.
     expect(toolsets.map((t) => [t.id, t.version, t.validation_only])).toEqual([
       ['finance', 'v3', false],
       ['finance-no-calculators', 'v3', true],
+      ['finance-rag', 'v1', false],
     ]);
+    expect(toolsets[2].servers[0].allowed_tools).toHaveLength(20);
     expect(toolsets[0]).toMatchObject({ manifest: [{ server: 'finance', server_version: '0.4.1' }] });
     expect(toolsets[1].servers[0].allowed_tools).toHaveLength(11);
     // The hash covers the manifest, and the manifest is stored with it (migration 009).

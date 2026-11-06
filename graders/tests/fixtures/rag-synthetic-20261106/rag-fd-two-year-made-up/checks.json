@@ -1,0 +1,42 @@
+{
+ "contract_version": "2",
+ "checks_version": "0.5.0",
+ "trial_id": "rag-synthetic-rag-fd-two-year-made-up",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "₹5 lakh",
+   "value": 500000,
+   "supported_by": "user",
+   "match": {
+    "value": 500000,
+    "where": "task:0",
+    "how": "exact",
+    "precision": 100000
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹5,77,000",
+   "value": 577000,
+   "supported_by": null,
+   "match": null,
+   "verified_by": null,
+   "derivation": null,
+   "rejected": null
+  }
+ ],
+ "unsupported": 1,
+ "derived_in_prose": 0,
+ "tools_called": [],
+ "required_tools": {
+  "required": [],
+  "called": [],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": []
+}

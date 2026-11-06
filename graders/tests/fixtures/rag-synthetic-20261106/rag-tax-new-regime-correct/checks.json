@@ -1,0 +1,420 @@
+{
+ "contract_version": "2",
+ "checks_version": "0.5.0",
+ "trial_id": "rag-synthetic-rag-tax-new-regime-correct",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "₹4,00,000",
+   "value": 400000,
+   "supported_by": "tool",
+   "match": {
+    "value": 400000,
+    "where": "tool:search_documents",
+    "how": "exact",
+    "precision": 1,
+    "call": 0
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹4,00,000",
+   "value": 400000,
+   "supported_by": "tool",
+   "match": {
+    "value": 400000,
+    "where": "tool:search_documents",
+    "how": "exact",
+    "precision": 1,
+    "call": 0
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹20,000",
+   "value": 20000,
+   "supported_by": "tool",
+   "match": {
+    "value": 20000,
+    "where": "tool:percent_of",
+    "how": "exact",
+    "precision": 1,
+    "call": 1
+   },
+   "verified_by": "tool",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹8,00,001",
+   "value": 800001,
+   "supported_by": "tool",
+   "match": {
+    "value": 800001,
+    "where": "tool:search_documents",
+    "how": "exact",
+    "precision": 1,
+    "call": 0
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹12,00,000",
+   "value": 1200000,
+   "supported_by": "tool",
+   "match": {
+    "value": 1200000,
+    "where": "tool:search_documents",
+    "how": "exact",
+    "precision": 1,
+    "call": 0
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹40,000",
+   "value": 40000,
+   "supported_by": "tool",
+   "match": {
+    "value": 40000,
+    "where": "tool:percent_of",
+    "how": "exact",
+    "precision": 1,
+    "call": 2
+   },
+   "verified_by": "tool",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹16,00,000",
+   "value": 1600000,
+   "supported_by": "tool",
+   "match": {
+    "value": 1600000,
+    "where": "tool:search_documents",
+    "how": "exact",
+    "precision": 1,
+    "call": 0
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹60,000",
+   "value": 60000,
+   "supported_by": "tool",
+   "match": {
+    "value": 60000,
+    "where": "tool:percent_of",
+    "how": "exact",
+    "precision": 1,
+    "call": 3
+   },
+   "verified_by": "tool",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹2,00,000",
+   "value": 200000,
+   "supported_by": "tool",
+   "match": {
+    "value": 200000,
+    "where": "tool:subtract",
+    "how": "exact",
+    "precision": 1,
+    "call": 4
+   },
+   "verified_by": "tool",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹40,000",
+   "value": 40000,
+   "supported_by": "tool",
+   "match": {
+    "value": 40000,
+    "where": "tool:percent_of",
+    "how": "exact",
+    "precision": 1,
+    "call": 2
+   },
+   "verified_by": "tool",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹1,60,000",
+   "value": 160000,
+   "supported_by": "tool",
+   "match": {
+    "value": 160000,
+    "where": "tool:add",
+    "how": "exact",
+    "precision": 1,
+    "call": 6
+   },
+   "verified_by": "tool",
+   "derivation": null,
+   "rejected": null
+  }
+ ],
+ "unsupported": 0,
+ "derived_in_prose": 0,
+ "tools_called": [
+  "search_documents",
+  "percent_of",
+  "subtract",
+  "add"
+ ],
+ "required_tools": {
+  "required": [],
+  "called": [],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": [
+  {
+   "call": 1,
+   "tool": "percent_of",
+   "turn": 0,
+   "supported": true,
+   "inputs": [
+    {
+     "arg": "value",
+     "value": 400000,
+     "supported_by": "tool",
+     "match": {
+      "value": 400000,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 1,
+      "call": 0
+     }
+    },
+    {
+     "arg": "percent",
+     "value": 5,
+     "supported_by": "tool",
+     "match": {
+      "value": 5,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 1,
+      "call": 0
+     }
+    }
+   ],
+   "reason": null
+  },
+  {
+   "call": 2,
+   "tool": "percent_of",
+   "turn": 0,
+   "supported": true,
+   "inputs": [
+    {
+     "arg": "value",
+     "value": 400000,
+     "supported_by": "tool",
+     "match": {
+      "value": 400000,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 1,
+      "call": 0
+     }
+    },
+    {
+     "arg": "percent",
+     "value": 10,
+     "supported_by": "tool",
+     "match": {
+      "value": 10,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 1,
+      "call": 0
+     }
+    }
+   ],
+   "reason": null
+  },
+  {
+   "call": 3,
+   "tool": "percent_of",
+   "turn": 0,
+   "supported": true,
+   "inputs": [
+    {
+     "arg": "value",
+     "value": 400000,
+     "supported_by": "tool",
+     "match": {
+      "value": 400000,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 1,
+      "call": 0
+     }
+    },
+    {
+     "arg": "percent",
+     "value": 15,
+     "supported_by": "tool",
+     "match": {
+      "value": 15,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 1,
+      "call": 0
+     }
+    }
+   ],
+   "reason": null
+  },
+  {
+   "call": 4,
+   "tool": "subtract",
+   "turn": 0,
+   "supported": true,
+   "inputs": [
+    {
+     "arg": "a",
+     "value": 1800000,
+     "supported_by": "user",
+     "match": {
+      "value": 1800000,
+      "where": "task:0",
+      "how": "exact",
+      "precision": 1
+     }
+    },
+    {
+     "arg": "b",
+     "value": 1600000,
+     "supported_by": "tool",
+     "match": {
+      "value": 1600000,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 1,
+      "call": 0
+     }
+    }
+   ],
+   "reason": null
+  },
+  {
+   "call": 5,
+   "tool": "percent_of",
+   "turn": 0,
+   "supported": true,
+   "inputs": [
+    {
+     "arg": "value",
+     "value": 200000,
+     "supported_by": "tool",
+     "match": {
+      "value": 200000,
+      "where": "tool:subtract",
+      "how": "exact",
+      "precision": 1,
+      "call": 4
+     }
+    },
+    {
+     "arg": "percent",
+     "value": 20,
+     "supported_by": "tool",
+     "match": {
+      "value": 20,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 1,
+      "call": 0
+     }
+    }
+   ],
+   "reason": null
+  },
+  {
+   "call": 6,
+   "tool": "add",
+   "turn": 0,
+   "supported": true,
+   "inputs": [
+    {
+     "arg": "values[0]",
+     "value": 20000,
+     "supported_by": "tool",
+     "match": {
+      "value": 20000,
+      "where": "tool:percent_of",
+      "how": "exact",
+      "precision": 1,
+      "call": 1
+     }
+    },
+    {
+     "arg": "values[1]",
+     "value": 40000,
+     "supported_by": "tool",
+     "match": {
+      "value": 40000,
+      "where": "tool:percent_of",
+      "how": "exact",
+      "precision": 1,
+      "call": 2
+     }
+    },
+    {
+     "arg": "values[2]",
+     "value": 60000,
+     "supported_by": "tool",
+     "match": {
+      "value": 60000,
+      "where": "tool:percent_of",
+      "how": "exact",
+      "precision": 1,
+      "call": 3
+     }
+    },
+    {
+     "arg": "values[3]",
+     "value": 40000,
+     "supported_by": "tool",
+     "match": {
+      "value": 40000,
+      "where": "tool:percent_of",
+      "how": "exact",
+      "precision": 1,
+      "call": 2
+     }
+    }
+   ],
+   "reason": null
+  }
+ ]
+}

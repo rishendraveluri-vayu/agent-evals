@@ -1,0 +1,79 @@
+{
+ "contract_version": "2",
+ "trial_id": "rag-synthetic-rag-convo-card-late-fee-correct",
+ "attempt": 1,
+ "harness": "ownloop",
+ "label": "agent",
+ "end_state": "answered",
+ "adapter": {
+  "exit_code": 0,
+  "signal": null,
+  "result_valid": true,
+  "result_errors": [],
+  "trace_valid": true,
+  "trace_errors": [],
+  "leftover_processes": 0
+ },
+ "proxy_usage": null,
+ "logs": {
+  "stdout": {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "truncated": false
+  },
+  "stderr": {
+   "path": "stderr.log",
+   "bytes": 83,
+   "sha256": "30b3734a4b12f752abb3a0b5ef0d654e2392a4098d74ca48b35fb06edf6bc7d4",
+   "truncated": false
+  }
+ },
+ "files": [
+  {
+   "path": "checks.json",
+   "bytes": 1860,
+   "sha256": "5326b41c88879c15185381dc0a3f40a1428d27e93240d825b1825499b973e3dc"
+  },
+  {
+   "path": "result.json",
+   "bytes": 3932,
+   "sha256": "dcc82c669bdbe5a42ba95c0c63986964b92298d186df15e0bbaf0feb514cf463"
+  },
+  {
+   "path": "sim_replies.jsonl",
+   "bytes": 760,
+   "sha256": "8b633a375a18cbfafbc4889f8d36f8356403b60b6973afd8735eae62af996178"
+  },
+  {
+   "path": "stderr.log",
+   "bytes": 83,
+   "sha256": "30b3734a4b12f752abb3a0b5ef0d654e2392a4098d74ca48b35fb06edf6bc7d4"
+  },
+  {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "path": "trace.jsonl",
+   "bytes": 7680,
+   "sha256": "5bad7db1444415f390688f2463b20420388fe838146264193ebb6e0486b3c70c"
+  }
+ ],
+ "timing": {
+  "started_at": "2026-11-06T07:55:25.377867Z",
+  "ended_at": "2026-11-06T07:55:29.154932Z",
+  "wall_s": 3.777,
+  "safety_net_s": 120.0
+ },
+ "checks": {
+  "path": "checks.json",
+  "valid": true,
+  "errors": [],
+  "unsupported_amounts": 0,
+  "amounts": 5,
+  "derived_in_prose": 0,
+  "missing_tools": []
+ }
+}

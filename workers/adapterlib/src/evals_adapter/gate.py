@@ -59,7 +59,12 @@ CALCULATOR_TOOLS = (
     "inflation_adjusted_value",
     "loan_affordability",
 )
-NO_CALCULATOR_TOOLS = [t for t in ALL_FINANCE_TOOLS if t not in CALCULATOR_TOOLS]
+# D79: the document search, which only the `finance-rag` toolset allows (DOCUMENT_TOOLS in
+# catalogue-files.ts). `finance/v3` is every server tool but it, so the headline's arm shows
+# the model exactly the 19 tools it did before the search was added.
+DOCUMENT_TOOLS = ("search_documents",)
+FINANCE_V3_TOOLS = [t for t in ALL_FINANCE_TOOLS if t not in DOCUMENT_TOOLS]
+NO_CALCULATOR_TOOLS = [t for t in FINANCE_V3_TOOLS if t not in CALCULATOR_TOOLS]
 SIM_PROMPT_FILE = REPO / "configs" / "prompts" / "client-sim.v1.md"
 GATE_SYSTEM_PROMPT = (
     "You are a careful personal-finance assistant for clients in India. [gate test]"
@@ -494,6 +499,27 @@ class Gate:
             assert unwrap_description(description, wrapper) == tool.get("description"), name
             parameters = unwrap_schema_descriptions(sent[name].get("parameters"), wrapper)
             assert parameters == tool["inputSchema"], name
+        return run
+
+    def test_search_documents(self, tmp_path: Path, fake: FakeServer) -> GateRun:
+        """D79: with the `finance-rag` toolset, a `search_documents` call goes through the
+        harness's own tool path to the finance server and its passages come back to the model.
+        The fake script searches for the FD rate card and answers with the 2-year rate."""
+        spec = self.spec(tmp_path / "trial", "finance-search-docs", fake)
+        spec["tools"]["toolset"] = {
+            "id": "finance-rag",
+            "version": "gate",
+            "sha256": _sha(",".join(ALL_FINANCE_TOOLS)),
+        }
+        run = self.run(tmp_path, fake, spec)
+        assert run.result["end_state"] == "answered", run.explain()
+        calls = run.spans_named("execute_tool")
+        assert len(calls) == 1, run.explain()
+        # The model's second request carries the passages the server returned.
+        second = json.dumps(self.agent_requests(run)[1]["body"]["messages"], ensure_ascii=False)
+        assert "kb-deposit-rates" in second, second[-2000:]
+        assert "6.95%" in second
+        assert "6.95%" in (run.result["final_answer"] or "")
         return run
 
     def test_timeout(self, tmp_path: Path, fake: FakeServer, timeout_s: float = 15.0) -> GateRun:

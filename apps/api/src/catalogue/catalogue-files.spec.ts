@@ -6,10 +6,13 @@ import type { Json } from '../contract';
 import {
   ARITHMETIC_TOOLS,
   CALCULATOR_TOOLS,
+  DOCUMENT_TOOLS,
   FINANCE_TOOLS,
   FINANCE_TOOLSET_VERSION,
   GRADER_SCHEMA_FILE,
+  RAG_TOOLSET_VERSION,
   REFERENCE_TOOLS,
+  SERVER_TOOLS,
   type FinanceServerManifest,
   PROMPT_NAME_PART,
   type PublishedTool,
@@ -131,7 +134,10 @@ describe('harness files', () => {
 describe('the built-in toolset', () => {
   it('has exactly the finance server tools from its manifest snapshot', () => {
     const snapshot = JSON.parse(readFileSync(path.join(REPO, 'services/finance-mcp/tests/snapshots/tools_manifest.json'), 'utf8')) as { name: string }[];
-    expect([...FINANCE_TOOLS]).toEqual(snapshot.map((t) => t.name));
+    expect([...SERVER_TOOLS]).toEqual(snapshot.map((t) => t.name));
+    // D79: finance/v3's tools are the server's but the document search, which only finance-rag allows.
+    expect([...FINANCE_TOOLS]).toEqual(SERVER_TOOLS.filter((t) => !(DOCUMENT_TOOLS as readonly string[]).includes(t)));
+    expect(FINANCE_TOOLS).toHaveLength(19);
   });
 
   const server = loadFinanceServer(path.join(REPO, 'services/finance-mcp'));
@@ -150,8 +156,7 @@ describe('the built-in toolset', () => {
   });
 
   it('lists finance-no-calculators after it (D70): the same server and version without the eight calculators, never a default', () => {
-    const [full, broken, ...rest] = builtInToolsets(server);
-    expect(rest).toEqual([]);
+    const [full, broken] = builtInToolsets(server);
     // First listed is what a new config and the builder take, so the validation toolset is second.
     expect(full).toMatchObject({ id: 'finance', validation_only: false });
     expect(broken).toMatchObject({ id: 'finance-no-calculators', version: FINANCE_TOOLSET_VERSION, validation_only: true, servers: [{ name: 'finance' }] });
@@ -172,6 +177,25 @@ describe('the built-in toolset', () => {
     // Its hash covers its own allowed list and manifest, so it is not finance/v3's.
     expect(broken.sha256).toBe(hashCanonical(toolsetContent(broken)));
     expect(broken.sha256).not.toBe(full.sha256);
+  });
+
+  it('lists finance-rag last (D79): finance/v3 plus search_documents, the same server and version, never a default', () => {
+    const [full, , rag, ...rest] = builtInToolsets(server);
+    expect(rest).toEqual([]);
+    expect(rag).toMatchObject({ id: 'finance-rag', version: RAG_TOOLSET_VERSION, validation_only: false, servers: [{ name: 'finance' }] });
+    expect(rag.description).toContain('search_documents (D79');
+    expect(rag.servers[0].allowed_tools).toEqual([...FINANCE_TOOLS, 'search_documents']);
+    expect(rag.manifest[0].server_version).toBe(full.manifest[0].server_version);
+    // finance/v3's nineteen are exactly what finance/v3 shows the model; only the search is added.
+    expect(rag.manifest[0].tools.slice(0, 19)).toEqual(full.manifest[0].tools);
+    const search = rag.manifest[0].tools[19];
+    expect(search.name).toBe('search_documents');
+    expect(search.description).toMatch(/^Keyword search over Kaveri Bank's \(fictional\) document library, edition \d{4}-\d{2}-\d{2}:/);
+    expect(search.input_schema).toMatchObject({ required: ['query'], additionalProperties: false });
+    // finance/v3 does not offer it, so a config on finance/v3 never shows it to the model.
+    expect(full.servers[0].allowed_tools).not.toContain('search_documents');
+    expect(rag.sha256).toBe(hashCanonical(toolsetContent(rag)));
+    expect(new Set(builtInToolsets(server).map((t) => t.sha256)).size).toBe(3);
   });
 
   it("changes its hash when a tool's description, input schema or the server version changes", () => {
@@ -229,9 +253,11 @@ describe('the built-in toolset', () => {
       'finance/v3': 'sha256:8e0508d29b7d8b66b32454c2e884092bbe3b41d45bf27667bd91715eeb987148',
       // D70's positive control (5 Nov): finance/v3 without the eight calculators.
       'finance-no-calculators/v3': 'sha256:34e53515c2a9306abf04b3bc76c768ea4cd62338eaad47622589ef195a7232fd',
+      // D79's retrieval experiment (6 Nov): finance/v3 plus search_documents, library edition 2026-11-06.
+      'finance-rag/v1': 'sha256:e601b355a48fffb12c9e762ca2a670082fb57f437d639fcd156fac2cf6dda5a4',
     };
     const listed = builtInToolsets(server);
-    expect(listed.map((t) => t.version)).toEqual([FINANCE_TOOLSET_VERSION, FINANCE_TOOLSET_VERSION]);
+    expect(listed.map((t) => t.version)).toEqual([FINANCE_TOOLSET_VERSION, FINANCE_TOOLSET_VERSION, RAG_TOOLSET_VERSION]);
     for (const t of listed) expect([`${t.id}/${t.version}`, t.sha256]).toEqual([`${t.id}/${t.version}`, pinned[`${t.id}/${t.version}`]]);
   });
 

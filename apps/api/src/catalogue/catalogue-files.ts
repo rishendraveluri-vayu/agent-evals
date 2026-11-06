@@ -204,8 +204,16 @@ export const ARITHMETIC_TOOLS = ['add', 'subtract', 'multiply', 'divide', 'perce
 export const REFERENCE_TOOLS = ['reference_rates'] as const;
 
 /**
- * Every tool the finance MCP server has, in its order (services/finance-mcp/tests/snapshots/
- * tools_manifest.json). A unit test checks this list against that snapshot.
+ * The document search tool, on the finance server since 6 Nov (D79): keyword search over Kaveri
+ * Bank's (fictional) dated documents and a cited rates and rules bulletin. Only `finance-rag`
+ * allows it, so `finance/v3` and every config recorded on it show the model exactly what they
+ * showed before.
+ */
+export const DOCUMENT_TOOLS = ['search_documents'] as const;
+
+/**
+ * `finance/v3`'s tools, in the server's order: every finance tool but the document search. Before
+ * 6 Nov this was every tool the server had; SERVER_TOOLS is that list now.
  */
 export const FINANCE_TOOLS = [
   'calculate_emi',
@@ -222,6 +230,12 @@ export const FINANCE_TOOLS = [
   ...ARITHMETIC_TOOLS,
   ...REFERENCE_TOOLS,
 ] as const;
+
+/**
+ * Every tool the finance MCP server has, in its order (services/finance-mcp/tests/snapshots/
+ * tools_manifest.json). A unit test checks this list against that snapshot.
+ */
+export const SERVER_TOOLS = [...FINANCE_TOOLS, ...DOCUMENT_TOOLS] as const;
 
 /**
  * The eight calculators, each a loan's, a deposit's or an investment's sum in one call, in the
@@ -255,6 +269,16 @@ export const CALCULATOR_TOOLS = [
  *   changed value is a new server version and so a new toolset version here.
  */
 export const FINANCE_TOOLSET_VERSION = 'v3';
+
+/**
+ * `finance-rag`'s version (D79, 6 Nov): `finance/v3`'s nineteen tools plus `search_documents`, at
+ * the same server version. A new version when the document library's edition changes (it is named
+ * in the tool's description, so in the hash; services/finance-mcp/tests/test_documents.py pins the
+ * documents' bytes to it), or when `finance` gets a new version.
+ *
+ * - `v1` (6 Nov): server 0.4.1, library edition 2026-11-06.
+ */
+export const RAG_TOOLSET_VERSION = 'v1';
 
 /** One tool as the server publishes it: what a model is shown. */
 export interface PublishedTool {
@@ -315,6 +339,12 @@ interface BuiltInToolset {
  *   effect is known in advance, not for comparing agents. Its version follows `finance`'s, since
  *   both are cut from the same server: a new server version is a new version of both, and a new
  *   pinned hash for each.
+ * - `finance-rag` (6 Nov, D79): `finance/v3` plus `search_documents`, for the retrieval
+ *   experiment (arm B). Listed last, so neither default picks it; not `validation_only`, since it
+ *   is a real tool an agent may be given, not a broken one. The server kept version 0.4.1 when the
+ *   tool was added, because `finance/v3`'s hash covers the server version and the headline's
+ *   configs must keep theirs: the 19 tools `finance/v3` allows are byte for byte the same, and the
+ *   new tool reaches only a config that allows it (A53).
  */
 const BUILT_IN_TOOLSETS: BuiltInToolset[] = [
   {
@@ -332,6 +362,14 @@ const BUILT_IN_TOOLSETS: BuiltInToolset[] = [
     validation_only: true,
     allowed: FINANCE_TOOLS.filter((t) => !(CALCULATOR_TOOLS as readonly string[]).includes(t)),
   },
+  {
+    id: 'finance-rag',
+    version: RAG_TOOLSET_VERSION,
+    description:
+      "Finance v3 plus search_documents (D79, the retrieval experiment): keyword search over Kaveri Bank's (fictional) dated rate card, loan sheet, prepayment rules, charges, card terms, savings rates, FAQ and a cited rates and rules bulletin.",
+    validation_only: false,
+    allowed: SERVER_TOOLS,
+  },
 ];
 
 /**
@@ -345,7 +383,7 @@ const BUILT_IN_TOOLSETS: BuiltInToolset[] = [
  */
 export function builtInToolsets(server: FinanceServerManifest): ToolsetView[] {
   const byName = new Map(server.tools.map((t) => [t.name, t]));
-  const missing = FINANCE_TOOLS.filter((n) => !byName.has(n));
+  const missing = SERVER_TOOLS.filter((n) => !byName.has(n));
   if (missing.length) throw new Error(`the finance server's manifest has no ${missing.join(', ')}`);
   return BUILT_IN_TOOLSETS.map(({ id, version, description, validation_only, allowed }) => {
     const manifest = [{ server: 'finance', server_version: server.version, tools: allowed.map((n) => byName.get(n) as PublishedTool) }];

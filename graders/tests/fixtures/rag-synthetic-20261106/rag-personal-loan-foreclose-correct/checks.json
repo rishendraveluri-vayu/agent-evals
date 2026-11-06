@@ -1,0 +1,84 @@
+{
+ "contract_version": "2",
+ "checks_version": "0.5.0",
+ "trial_id": "rag-synthetic-rag-personal-loan-foreclose-correct",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "₹3,46,500",
+   "value": 346500,
+   "supported_by": "user",
+   "match": {
+    "value": 346500,
+    "where": "task:0",
+    "how": "exact",
+    "precision": 1
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹15,592.50",
+   "value": 15592.5,
+   "supported_by": "tool",
+   "match": {
+    "value": 15592.5,
+    "where": "tool:percent_of",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 1
+   },
+   "verified_by": "tool",
+   "derivation": null,
+   "rejected": null
+  }
+ ],
+ "unsupported": 0,
+ "derived_in_prose": 0,
+ "tools_called": [
+  "search_documents",
+  "percent_of"
+ ],
+ "required_tools": {
+  "required": [],
+  "called": [],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": [
+  {
+   "call": 1,
+   "tool": "percent_of",
+   "turn": 0,
+   "supported": true,
+   "inputs": [
+    {
+     "arg": "value",
+     "value": 346500,
+     "supported_by": "user",
+     "match": {
+      "value": 346500,
+      "where": "task:0",
+      "how": "exact",
+      "precision": 1
+     }
+    },
+    {
+     "arg": "percent",
+     "value": 4.5,
+     "supported_by": "tool",
+     "match": {
+      "value": 4.5,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 0.1,
+      "call": 0
+     }
+    }
+   ],
+   "reason": null
+  }
+ ]
+}

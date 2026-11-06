@@ -1,0 +1,146 @@
+{
+ "contract_version": "2",
+ "trial_id": "rag-synthetic-rag-convo-two-wheeler-bonus-correct",
+ "end_state": "answered",
+ "end_detail": {
+  "harness_stop_reason": "stop",
+  "exception_type": null,
+  "exception_message": null,
+  "last_message_excerpt": "Then the foreclosure charge is 2.75% of the ₹46,800 outstanding: ₹1,287, plus GST. Before you do it, though: your credit card at 42% a year costs far more than the two-wheeler loan at 11%, so the bonus saves more on the card."
+ },
+ "final_answer": "Then the foreclosure charge is 2.75% of the ₹46,800 outstanding: ₹1,287, plus GST. Before you do it, though: your credit card at 42% a year costs far more than the two-wheeler loan at 11%, so the bonus saves more on the card.",
+ "conversation": {
+  "agent_turns": 2,
+  "client_turns": 2,
+  "ended_by": "client",
+  "transcript": [
+   {
+    "role": "user",
+    "content": "I'm getting a ₹50,000 bonus this month. I'm thinking of using it to close my two-wheeler loan with Kaveri Bank. Is there any charge for closing it early?",
+    "source": "task"
+   },
+   {
+    "role": "assistant",
+    "content": "Kaveri Bank lets you close a two-wheeler loan once 6 EMIs are paid. The charge is 4.75% of the principal outstanding if you have paid 6 to 12 EMIs, and 2.75% after 13 or more. How many EMIs have you paid?",
+    "source": "agent"
+   },
+   {
+    "role": "user",
+    "content": "I've paid 21 EMIs so far; 15 are left.",
+    "source": "client_sim"
+   },
+   {
+    "role": "assistant",
+    "content": "Then the foreclosure charge is 2.75% of the ₹46,800 outstanding: ₹1,287, plus GST. Before you do it, though: your credit card at 42% a year costs far more than the two-wheeler loan at 11%, so the bonus saves more on the card.",
+    "source": "agent"
+   },
+   {
+    "role": "user",
+    "content": "Thank you, that helps.",
+    "source": "client_sim"
+   }
+  ]
+ },
+ "harness": {
+  "name": "ownloop",
+  "version": "0.1.0 (openai 3.42.1, mcp 2.3.0)",
+  "extra": {
+   "tool_names": [
+    "calculate_emi",
+    "amortization_schedule",
+    "prepayment_impact",
+    "debt_payoff_plan",
+    "sip_future_value",
+    "fd_maturity",
+    "inflation_adjusted_value",
+    "loan_affordability",
+    "get_client_profile",
+    "list_debts",
+    "list_transactions",
+    "add",
+    "subtract",
+    "multiply",
+    "divide",
+    "percent_of",
+    "percent_change",
+    "round",
+    "reference_rates",
+    "search_documents"
+   ]
+  }
+ },
+ "applied_settings": {
+  "temperature": {
+   "value": 0.2,
+   "source": "platform_default"
+  },
+  "max_output_tokens": {
+   "value": 1024,
+   "source": "platform_default"
+  },
+  "max_steps": {
+   "value": 10,
+   "source": "platform_default"
+  },
+  "timeout_s": {
+   "value": 60,
+   "source": "platform_default"
+  },
+  "parallel_tool_calls": {
+   "value": false,
+   "source": "platform_default"
+  },
+  "memory": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "the loop has no memory"
+  },
+  "skills": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "the loop has no skills"
+  },
+  "compression": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "the loop never compresses; the full history is sent"
+  },
+  "top_p": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  },
+  "seed": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  },
+  "tool_choice": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  }
+ },
+ "harness_usage": {
+  "model_calls": 5,
+  "input_tokens": 22189,
+  "output_tokens": 138,
+  "cost_usd": null
+ },
+ "counts": {
+  "model_calls": 5,
+  "tool_calls": 3,
+  "tool_errors": 0,
+  "malformed_tool_calls": 0
+ },
+ "integrity": {
+  "before": {},
+  "after": {}
+ },
+ "timing": {
+  "started_at": "2026-11-06T07:55:19.790830Z",
+  "ended_at": "2026-11-06T07:55:21.231608Z",
+  "wall_s": 1.441
+ },
+ "artifacts": []
+}

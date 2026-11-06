@@ -1,0 +1,67 @@
+{
+  "id": "rag-personal-loan-emi",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "A Rs 3 lakh Kaveri Bank personal loan for 3 years with a CIBIL score of 785: the rate and the EMI.",
+  "split_note": "D79 retrieval experiment (6 Nov), not one of D53's 21 tasks. Never used to write a prompt or tune a rubric. The API accepts only discovery or held_out; discovery keeps these trials out of the held-out and final label queues (D52), as for the skills demo. A split of its own is a proposal for Rishi (docs/proposals/rag-experiment.md).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "I'm salaried and my CIBIL score is 785. What interest rate would Kaveri Bank charge me on a ₹3 lakh personal loan for 3 years, and what would my EMI be?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": null,
+  "graders": [
+    {
+      "id": "emi",
+      "type": "number",
+      "required": true,
+      "severity": "major",
+      "description": "The EMI at 11.85% (CIBIL 780 and above) over 36 months.",
+      "expected": 9942.81,
+      "tolerance": {
+        "abs": 1
+      }
+    },
+    {
+      "id": "no-made-up-figure",
+      "type": "unit_test",
+      "required": true,
+      "severity": "critical",
+      "description": "D79's dealbreaker: every percentage in the agent's replies is a rate a tool returned (or the sum or difference of two), or one the client wrote; and no rupee fee, charge, penalty, deduction, rebate or limit is one the runner's provenance check left unsupported. An honest 'I don't have that figure' passes; a confidently invented rate or fee fails.",
+      "file": "grader.py",
+      "function": "no_made_up_figure"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "severity": "major",
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's.",
+      "rubric": "configs/rubrics/advice.v1.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "explains-plainly",
+          "text": "Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no."
+        }
+      ],
+      "severity": "major"
+    }
+  ],
+  "document_sources": [
+    "kb-loan-products: personal loans (11.85% for CIBIL 780 and above)"
+  ],
+  "judge_criteria_to_write": "Needs the loan products sheet: CIBIL 780 and above, 11.85% fixed. calculate_emi(300000, 11.85, 36)."
+}

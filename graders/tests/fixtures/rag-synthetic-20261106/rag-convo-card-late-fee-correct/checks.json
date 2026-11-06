@@ -1,0 +1,104 @@
+{
+ "contract_version": "2",
+ "checks_version": "0.5.0",
+ "trial_id": "rag-synthetic-rag-convo-card-late-fee-correct",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "₹1,375",
+   "value": 1375,
+   "supported_by": "tool",
+   "match": {
+    "value": 1375,
+    "where": "tool:search_documents",
+    "how": "exact",
+    "precision": 1,
+    "call": 1
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹84,250",
+   "value": 84250,
+   "supported_by": "tool",
+   "match": {
+    "value": 84250,
+    "where": "tool:list_debts",
+    "how": "exact",
+    "precision": 1,
+    "call": 0
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹50,000",
+   "value": 50000,
+   "supported_by": "tool",
+   "match": {
+    "value": 50000,
+    "where": "tool:search_documents",
+    "how": "exact",
+    "precision": 1,
+    "call": 1
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 1,
+   "text": "₹4,212.50",
+   "value": 4212.5,
+   "supported_by": "tool",
+   "match": {
+    "value": 4212.5,
+    "where": "tool:list_debts",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 0
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 1,
+   "text": "₹1,375",
+   "value": 1375,
+   "supported_by": "tool",
+   "match": {
+    "value": 1375,
+    "where": "tool:search_documents",
+    "how": "exact",
+    "precision": 1,
+    "call": 1
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  }
+ ],
+ "unsupported": 0,
+ "derived_in_prose": 0,
+ "tools_called": [
+  "list_debts",
+  "search_documents"
+ ],
+ "required_tools": {
+  "required": [
+   "list_debts"
+  ],
+  "called": [
+   "list_debts"
+  ],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": []
+}

@@ -1,0 +1,116 @@
+{
+ "contract_version": "2",
+ "checks_version": "0.5.0",
+ "trial_id": "rag-synthetic-rag-processing-fee-correct",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "₹2,999",
+   "value": 2999,
+   "supported_by": "tool",
+   "match": {
+    "value": 2999,
+    "where": "tool:search_documents",
+    "how": "exact",
+    "precision": 1,
+    "call": 0
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹17,500",
+   "value": 17500,
+   "supported_by": "tool",
+   "match": {
+    "value": 17500,
+    "where": "tool:search_documents",
+    "how": "exact",
+    "precision": 1,
+    "call": 0
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹6 lakh",
+   "value": 600000,
+   "supported_by": "user",
+   "match": {
+    "value": 600000,
+    "where": "task:0",
+    "how": "exact",
+    "precision": 100000
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹10,500",
+   "value": 10500,
+   "supported_by": "tool",
+   "match": {
+    "value": 10500,
+    "where": "tool:percent_of",
+    "how": "exact",
+    "precision": 1,
+    "call": 1
+   },
+   "verified_by": "tool",
+   "derivation": null,
+   "rejected": null
+  }
+ ],
+ "unsupported": 0,
+ "derived_in_prose": 0,
+ "tools_called": [
+  "search_documents",
+  "percent_of"
+ ],
+ "required_tools": {
+  "required": [],
+  "called": [],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": [
+  {
+   "call": 1,
+   "tool": "percent_of",
+   "turn": 0,
+   "supported": true,
+   "inputs": [
+    {
+     "arg": "value",
+     "value": 600000,
+     "supported_by": "user",
+     "match": {
+      "value": 600000,
+      "where": "task:0",
+      "how": "exact",
+      "precision": 1
+     }
+    },
+    {
+     "arg": "percent",
+     "value": 1.75,
+     "supported_by": "tool",
+     "match": {
+      "value": 1.75,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 0.01,
+      "call": 0
+     }
+    }
+   ],
+   "reason": null
+  }
+ ]
+}

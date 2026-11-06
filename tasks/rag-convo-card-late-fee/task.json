@@ -1,0 +1,99 @@
+{
+  "id": "rag-convo-card-late-fee",
+  "version": "1",
+  "split": "discovery",
+  "kind": "conversation",
+  "summary": "Meera may not pay her Kaveri Bank card in full after her mother's hospital bills: the late fee, and paying the minimum to avoid it.",
+  "split_note": "D79 retrieval experiment (6 Nov), not one of D53's 21 tasks. Never used to write a prompt or tune a rubric. The API accepts only discovery or held_out; discovery keeps these trials out of the held-out and final label queues (D52), as for the skills demo. A split of its own is a proposal for Rishi (docs/proposals/rag-experiment.md).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Ma's hospital bills came this month and I don't think I can pay my Kaveri Bank credit card bill in full. What happens if I pay late?"
+    }
+  ],
+  "client_sim": {
+    "persona": "Meera Raghavan, 34, a QA engineer in Pune who supports her son, 6, and her mother, 63. Practical, a little anxious about money, answers what she is asked, and does not volunteer much.",
+    "hidden_facts": [
+      "She can pay the minimum amount due this month, but not the full balance",
+      "Her card's due date is in 10 days"
+    ],
+    "concerns": [
+      "What happens if I pay the card late?",
+      "How do I avoid the extra charges?"
+    ],
+    "goal": "Know what paying late would cost and what she can do to avoid it this month",
+    "opening_message": "Ma's hospital bills came this month and I don't think I can pay my Kaveri Bank credit card bill in full. What happens if I pay late?",
+    "max_client_turns": 4
+  },
+  "client_state": "client.json",
+  "required_tools": [
+    "list_debts"
+  ],
+  "graders": [
+    {
+      "id": "late-fee",
+      "type": "number",
+      "required": true,
+      "severity": "major",
+      "description": "The late payment fee for a total amount due above Rs 50,000 (hers is Rs 84,250).",
+      "expected": 1375.0,
+      "tolerance": {
+        "abs": 1
+      }
+    },
+    {
+      "id": "ends-answered",
+      "type": "end_state",
+      "required": true,
+      "severity": "major",
+      "states": [
+        "answered"
+      ]
+    },
+    {
+      "id": "read-the-file",
+      "type": "required_tools",
+      "required": true,
+      "severity": "major"
+    },
+    {
+      "id": "no-made-up-figure",
+      "type": "unit_test",
+      "required": true,
+      "severity": "critical",
+      "description": "D79's dealbreaker: every percentage in the agent's replies is a rate a tool returned (or the sum or difference of two), or one the client wrote; and no rupee fee, charge, penalty, deduction, rebate or limit is one the runner's provenance check left unsupported. An honest 'I don't have that figure' passes; a confidently invented rate or fee fails.",
+      "file": "grader.py",
+      "function": "no_made_up_figure"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "severity": "major",
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's.",
+      "rubric": "configs/rubrics/advice.v1.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "explains-plainly",
+          "text": "Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no."
+        }
+      ],
+      "severity": "major"
+    }
+  ],
+  "document_sources": [
+    "kb-charges: credit card charges (Rs 1,375 above Rs 50,000)",
+    "kb-card-terms: minimum amount due avoids the late fee"
+  ],
+  "judge_criteria_to_write": "Needs the schedule of charges (late fee Rs 1,375 above Rs 50,000) and the card terms (paying the minimum amount due avoids the fee; interest 3.50% a month), and her file (card balance Rs 84,250, minimum Rs 4,212.50). Hardship: care first; the simulated client can pay the minimum but not the full bill."
+}
