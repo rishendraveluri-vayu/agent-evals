@@ -25,7 +25,8 @@ describe('the Config screen offers fake models, labelled as fake', () => {
     const w = mount(ConfigView);
     await settle();
     const groups = w.findAll('[data-test="model-select"] optgroup');
-    expect(groups.map((g) => g.attributes('label'))).toEqual(['Real models: each call costs money', 'Fake models: scripted replies, free']);
+    // A hosted model's calls cost money; the local one's do not (destructive review U1).
+    expect(groups.map((g) => g.attributes('label'))).toEqual(["Real models: a hosted model's calls cost money", 'Fake models: scripted replies, free']);
     const fake = groups[1].findAll('option').map((o) => o.text());
     expect(fake[0]).toBe('Fake model finance-emi: one EMI tool call, then an answer that uses it');
     expect(fake.every((t) => t.startsWith('Fake model '))).toBe(true);
