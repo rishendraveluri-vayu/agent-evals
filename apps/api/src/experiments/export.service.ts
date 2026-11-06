@@ -132,13 +132,22 @@ export const CSV_COLUMNS = [
   'folder',
 ] as const;
 
+/**
+ * E12 (6 Nov review): text a spreadsheet would run as a formula (it starts with =, +, -, @, a tab
+ * or a carriage return) gets a leading apostrophe, so a config name, a task id or an error message
+ * is shown, never run. Numbers, booleans and dates are written as they are, never changed.
+ */
+const FORMULA_START = /^[=+\-@\t\r]/;
+
 export function csvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
   const text =
     value instanceof Date
       ? value.toISOString()
       : typeof value === 'string'
-        ? value
+        ? FORMULA_START.test(value)
+          ? `'${value}`
+          : value
         : typeof value === 'number' || typeof value === 'boolean'
           ? String(value)
           : JSON.stringify(value);
