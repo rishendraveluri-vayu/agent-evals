@@ -110,7 +110,7 @@ describe('ConfigView in fixture mode', () => {
     expect(w.get('[data-test="save-config"]').attributes('aria-describedby')).toBe('save-blocked');
     await w.get('#setting-max_steps').setValue('1000000');
     await settle();
-    expect(w.get('[data-test="problem-max_steps"]').text()).toContain('more is almost always a typo');
+    expect(w.get('[data-test="problem-max_steps"]').text()).toBe('Max steps must be a whole number from 1 to 200.');
     await w.get('#setting-max_steps').setValue('12');
     await w.get('#setting-max_output_tokens').setValue('99999999999');
     await w.get('#setting-timeout_s').setValue('86400000');

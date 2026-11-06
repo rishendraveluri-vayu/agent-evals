@@ -192,7 +192,7 @@ describe('Build an agent, in fixture mode', () => {
     await setNumber(view, 'max_steps', '0');
     expect(view.get('[data-test="problem-max_steps"]').text()).toBe('Max steps must be a whole number from 1 to 200.');
     await setNumber(view, 'max_steps', '1000000');
-    expect(view.get('[data-test="problem-max_steps"]').text()).toBe('Max steps must be a whole number from 1 to 200: more is almost always a typo, and a runaway trial costs money.');
+    expect(view.get('[data-test="problem-max_steps"]').text()).toBe('Max steps must be a whole number from 1 to 200.');
     await setNumber(view, 'max_steps', '200');
     expect(view.find('[data-test="problem-max_steps"]').exists()).toBe(false);
     await setNumber(view, 'max_output_tokens', '99999999999');

@@ -4,9 +4,9 @@
  *
  * The lower bounds and types are the API's own (settingProblem in apps/api/src/configs/settings.ts):
  * temperature a number from 0 to 2, max output tokens and max steps whole numbers of at least 1,
- * timeout a number above 0. The API sets no upper bound on the last three; the UI adds one, and says
- * so in the reason, because a value past it is almost always a typo and a runaway trial costs money.
- * A name has no length limit in the API either; the UI caps it at NAME_MAX.
+ * timeout a number above 0. Since the destructive review (6 Nov) the API also caps max steps at 200
+ * and the timeout at 3,600 s, as the UI does; max output tokens has no API cap, so the UI's is its
+ * own and its reason says why. A name is capped at NAME_MAX (120) by both.
  */
 import type { SettingName } from '../api/types';
 import { settingLabel } from './names';
@@ -28,8 +28,8 @@ interface Limit {
 export const SETTING_LIMITS: Record<NumberSetting, Limit> = {
   temperature: { integer: false, min: 0, aboveMin: false, max: 2, apiMax: true, words: 'a number from 0 to 2' },
   max_output_tokens: { integer: true, min: 1, aboveMin: false, max: 64_000, apiMax: false, words: 'a whole number from 1 to 64,000' },
-  max_steps: { integer: true, min: 1, aboveMin: false, max: 200, apiMax: false, words: 'a whole number from 1 to 200' },
-  timeout_s: { integer: false, min: 0, aboveMin: true, max: 3_600, apiMax: false, words: 'a number of seconds above 0 and at most 3,600 (one hour)' },
+  max_steps: { integer: true, min: 1, aboveMin: false, max: 200, apiMax: true, words: 'a whole number from 1 to 200' },
+  timeout_s: { integer: false, min: 0, aboveMin: true, max: 3_600, apiMax: true, words: 'a number of seconds above 0 and at most 3,600 (one hour)' },
 };
 
 /** The longest name a config or an agent may have here. */

@@ -713,6 +713,15 @@ const caveat = computed(() => {
   return judgeCaveat({ differing: taskRows.value.filter((r) => r.significant).map((r) => taskOf(r.key)), isJudged, judge: s.judge, toGo: d.queue.length, alsoGraded: alsoGradedBy });
 });
 
+/** When a required LLM judge decided the outcome of some trials in the tasks that differ (review S12). */
+const judgeDecided = computed(() => {
+  const r = stats.value?.rests_on_judge;
+  if (!r || !r.tasks.length) return null;
+  const names = r.tasks.map((t) => t.task_id).join(', ');
+  if (r.all) return `every task that differs between the arms (${names}) had at least one outcome decided by the LLM judge, so this verdict rests on the judge.`;
+  return `${r.tasks.length} of the ${r.differing} tasks that differ (${names}) had at least one outcome decided by the LLM judge.`;
+});
+
 /** On a phone the column heads are hidden, so the shared axis says what its intervals are. */
 const axisCaption = computed(() => {
   const level = stats.value ? Math.round(stats.value.level * 100) : 95;
@@ -968,6 +977,28 @@ const worthALook = computed(() => {
                 :size="14"
               />
               <span><strong class="caveat-lead">Critical checks:</strong> {{ critical.text }}</span>
+            </p>
+            <p
+              v-if="stats.unequal_decided"
+              class="caveat caveat--alarm"
+              data-test="unequal-decided"
+            >
+              <AppIcon
+                name="alert"
+                :size="14"
+              />
+              <span><strong class="caveat-lead">Uneven trial counts:</strong> {{ stats.unequal_decided.text }}</span>
+            </p>
+            <p
+              v-if="judgeDecided"
+              class="caveat"
+              data-test="judge-decided"
+            >
+              <AppIcon
+                name="alert"
+                :size="14"
+              />
+              <span><strong class="caveat-lead">Decided by the judge:</strong> {{ judgeDecided }}</span>
             </p>
             <p
               v-if="caveat"

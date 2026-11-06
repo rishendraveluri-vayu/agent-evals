@@ -194,9 +194,14 @@ export function splitCheck(tasks: TaskView[], all: TaskView[]): Check {
   return { ok: true, title: `${tasks.length} ${split} tasks`, detail: 'Discovery tasks are for finding problems; confirm a change on the held-out tasks.' };
 }
 
+/** The API's ceiling on one run's spending limit (MAX_BUDGET_USD in apps/api/src/experiments/experiments.service.ts). */
+export const BUDGET_MAX_USD = 1000;
+
 export function budgetCheck(budget: number | undefined, estimate: Estimate | null): Check {
   if (!estimate) return { ok: false, title: 'No estimate yet', detail: 'The cost estimate has not come back.' };
   if (!budget || budget <= 0) return { ok: false, title: 'No spending limit set', detail: 'Set the LiteLLM budget for the whole experiment.' };
+  // The API refuses a limit above $1,000 (MAX_BUDGET_USD): past it, a typo is likelier than a plan.
+  if (budget > BUDGET_MAX_USD) return { ok: false, title: 'The spending limit is too high', detail: `It is ${wholeMoney(budget)}; the platform takes at most ${wholeMoney(BUDGET_MAX_USD)} for one run.` };
   if (budget < estimate.cost_usd.high) {
     return { ok: false, title: 'The spending limit is below the likely cost', detail: `It is ${wholeMoney(budget)}, but the run may cost up to ${money(estimate.cost_usd.high)}, so it could stop part-way.` };
   }

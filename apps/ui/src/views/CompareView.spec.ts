@@ -278,6 +278,45 @@ describe('CompareView against the API: trials stopped on infra failures', () => 
   });
 });
 
+describe('CompareView against the API: caveats from the statistics (review S6, S12)', () => {
+  it('says when trial counts are uneven between arms, and when the judge decided outcomes in the tasks that differ', async () => {
+    const base = compares.exp_heldout as unknown as { stats: Record<string, unknown> };
+    const task = { task: 'sha256:x', task_id: 'debt-hardship-03', a: 10, b: 3 };
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': {
+        ...base,
+        stats: {
+          ...base.stats,
+          unequal_decided: { ratio: 2, tasks: [task], text: 'One task has more than twice as many decided trials in one arm as in the other (debt-hardship-03: 10 against 3).' },
+          rests_on_judge: { differing: 4, tasks: [{ ...task, a: 2, b: 1 }], all: false },
+        },
+      },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as unknown as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="unequal-decided"]').text()).toBe('Uneven trial counts: One task has more than twice as many decided trials in one arm as in the other (debt-hardship-03: 10 against 3).');
+    expect(w.get('[data-test="judge-decided"]').text()).toBe('Decided by the judge: 1 of the 4 tasks that differ (debt-hardship-03) had at least one outcome decided by the LLM judge.');
+  });
+
+  it('shows neither when the statistics have none (every shipped run)', async () => {
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': compares.exp_heldout,
+      '/api/experiments/exp_heldout/trials': (experimentTrials as unknown as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.find('[data-test="unequal-decided"]').exists()).toBe(false);
+    expect(w.find('[data-test="judge-decided"]').exists()).toBe(false);
+  });
+});
+
 describe('CompareView against the API: figures written without a tool (D61)', () => {
   const route = (prose: unknown) =>
     routeFetch({
