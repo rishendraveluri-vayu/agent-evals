@@ -1,0 +1,8 @@
+# D79: the document search through a harness's tool path. Searches Kaveri Bank's (fictional)
+# document library for the FD rate card, then answers with the 2-year general rate it holds.
+description: Calls search_documents for the FD rate card, then answers with the 2-year rate.
+steps:
+  - tool_calls:
+      - name: search_documents
+        arguments: {query: "fixed deposit rate 2 years"}
+  - text: "Kaveri Bank's rate card gives 6.95% a year for a 2-year fixed deposit (general public)."

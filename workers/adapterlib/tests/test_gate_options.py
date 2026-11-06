@@ -55,13 +55,18 @@ def test_a_declared_end_state_accepts_only_a_labelled_unanswered_end(monkeypatch
         _check(monkeypatch, tmp_path, recovered=False, malformed_ends_in="harness_error")
 
 
-def test_the_gate_tool_test_expects_toolset_v3s_19_tools():
+def test_the_gate_tool_test_expects_the_servers_20_tools_and_v3s_19():
     """Every harness's gate test_tools compares what reaches the model with the finance server's
-    manifest snapshot, so since D58 it expects 19 tools, reference_rates last (toolset v3)."""
-    from evals_adapter.gate import ALL_FINANCE_TOOLS
+    manifest snapshot: since D79 20 tools, search_documents last (toolset finance-rag); without
+    it, finance/v3's 19, reference_rates last (D58)."""
+    from evals_adapter.gate import ALL_FINANCE_TOOLS, DOCUMENT_TOOLS, FINANCE_V3_TOOLS
 
-    assert len(ALL_FINANCE_TOOLS) == 19
-    assert ALL_FINANCE_TOOLS[11:] == [
+    assert len(ALL_FINANCE_TOOLS) == 20
+    assert ALL_FINANCE_TOOLS[-1] == "search_documents"
+    assert DOCUMENT_TOOLS == ("search_documents",)
+    assert ALL_FINANCE_TOOLS == [*FINANCE_V3_TOOLS, "search_documents"]
+    assert len(FINANCE_V3_TOOLS) == 19
+    assert FINANCE_V3_TOOLS[11:] == [
         "add",
         "subtract",
         "multiply",
