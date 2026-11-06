@@ -89,8 +89,11 @@ function disagreementsOf(j: JudgeTrust) {
     .map((set) => ({ set, count: all.filter((d) => d.set === set).length, toGo: toGo[set] }))
     .filter((h) => h.count > 0 && h.toGo > 0);
   const closed = new Set(held.map((h) => h.set));
-  const pairs = j.criteria.reduce((sum, c) => sum + (c.heldout?.n ?? 0) + (c.tuning?.n ?? 0), 0);
-  return { all, shown: all.filter((d) => !closed.has(d.set)), held, pairs, capped: j.criteria.some((c) => c.disagreements.length >= 50) };
+  // From the figures, not the list (which the API caps): labelled outputs, and how many it got wrong.
+  const figures = j.criteria.flatMap((c) => [c.heldout, c.tuning]).filter((f): f is AgreementFigures => f !== null);
+  const pairs = figures.reduce((sum, f) => sum + f.n, 0);
+  const counted = figures.reduce((sum, f) => sum + f.fp + f.fn, 0);
+  return { all, shown: all.filter((d) => !closed.has(d.set)), held, agrees: pairs > 0 && counted === 0, capped: j.criteria.some((c) => c.disagreements.length >= 50) };
 }
 
 const judges = computed(() =>
@@ -405,7 +408,7 @@ const statuses = computed<{ status: JudgeTrustStatus; text: string }[]>(() => {
         </p>
       </details>
       <p
-        v-else-if="j.disagreements.pairs"
+        v-else-if="j.disagreements.agrees"
         class="secondary small"
         data-test="no-disagreements"
       >

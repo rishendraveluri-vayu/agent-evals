@@ -588,7 +588,7 @@ const gradeTrust = computed(() =>
     return { judge, criteria };
   }),
 );
-const answerWord = (v: string | null) => (v === 'yes' ? 'Yes' : v === 'no' ? 'No' : 'No answer');
+const answerWord = (v: string | null) => (v === 'yes' ? 'answered yes' : v === 'no' ? 'answered no' : 'no answer');
 const sourceWords = (source: string | null, tool: string | null) =>
   ({ tool_result: `${tool ?? 'a tool'}'s result`, span: `${tool ?? 'a tool'} call`, result: 'result.json', checks: 'the number check' })[source ?? ''] ?? source ?? 'the trial';
 
@@ -1196,12 +1196,11 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                   class="small"
                   data-test="grade-trust-criterion"
                 >
-                  <span class="mono">{{ c.criterion }}</span>
-                  <span
+                  <span><span class="mono">{{ c.criterion }}</span><span
                     v-if="!hiddenReasons"
                     class="secondary"
                     data-test="grade-trust-answer"
-                  >{{ answerWord(c.verdict) }}</span>
+                  >, {{ answerWord(c.verdict) }}</span></span>
                   <TrustBadge
                     v-if="c.trust"
                     :status="c.trust.status"

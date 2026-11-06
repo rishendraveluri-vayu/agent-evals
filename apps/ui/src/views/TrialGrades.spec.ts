@@ -323,11 +323,11 @@ describe('TrialView judge trust', () => {
       await settle();
       const tax = judgeOf(w, 'fd-tax').get('[data-test="grade-trust"]');
       const rows = tax.findAll('[data-test="grade-trust-criterion"]');
-      expect(rows.map((r) => [r.get('.mono').text(), r.get('[data-test="grade-trust-answer"]').text(), r.get('[data-test="trust-label"]').text()])).toEqual([['fd-tax', 'No', 'Trusted']]);
+      expect(rows.map((r) => [r.get('.mono').text(), r.get('[data-test="grade-trust-answer"]').text(), r.get('[data-test="trust-label"]').text()])).toEqual([['fd-tax', ', answered no', 'Trusted']]);
       expect(tax.get('[data-test="trust-badge"]').attributes('title')).toBe('Meets the trust bar on 30 held-out labels: its verdicts on this question can be relied on.');
       expect(tax.get('[data-test="grade-trust-link"]').attributes('href')).toBe('#/labels/judge');
       const horizon = judgeOf(w, 'horizon').get('[data-test="grade-trust"]');
-      expect(horizon.get('[data-test="grade-trust-answer"]').text()).toBe('Yes');
+      expect(horizon.get('[data-test="grade-trust-answer"]').text()).toBe(', answered yes');
       expect(horizon.get('[data-test="trust-label"]').text()).toBe('Too few labels');
       // A code-graded check has no judge, so no trust line.
       expect(judgeOf(w, 'fd-maturity').find('[data-test="grade-trust"]').exists()).toBe(false);

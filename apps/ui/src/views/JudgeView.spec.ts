@@ -1,6 +1,6 @@
 import { mount, type VueWrapper } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
-import type { JudgeTrustResponse } from '../api/types';
+import type { AgreementFigures, JudgeTrustResponse } from '../api/types';
 import experiments from '../fixtures/experiments.json';
 import trustJson from '../fixtures/judge-trust.json';
 import tasks from '../fixtures/tasks.json';
@@ -134,13 +134,13 @@ describe('JudgeView in fixture mode', () => {
     const list = haiku.get('[data-test="disagreements"]');
     expect(list.element.tagName).toBe('DETAILS');
     expect(list.attributes('open')).toBeUndefined();
-    expect(list.get('summary').text()).toContain('7 outputs');
+    expect(list.get('summary').text()).toContain('16 outputs');
     // The sample's held-out set has 3 outputs to go; its tuning set none.
     expect(list.get('[data-test="disagreements-held"]').text()).toBe(
-      "5 on held-out labels open when the held-out set is done (3 to go), so the judge's reasons cannot steer the labels still to come.",
+      "12 on held-out labels open when the held-out set is done (3 to go), so the judge's reasons cannot steer the labels still to come.",
     );
     const shown = list.findAll('[data-test="disagreement"]');
-    expect(shown).toHaveLength(2);
+    expect(shown).toHaveLength(4);
     expect(shown.every((d) => d.get('.dis-head').text().endsWith('Tuning label'))).toBe(true);
     expect(list.text()).not.toContain('Lectures her about the EMI');
   });
@@ -164,8 +164,9 @@ describe('JudgeView against the API', () => {
     const haiku = judgeNamed(w, 'Claude Haiku 5.5, rubric advice.v4');
     expect(haiku.find('[data-test="disagreements-held"]').exists()).toBe(false);
     const shown = haiku.findAll('[data-test="disagreement"]');
-    expect(shown).toHaveLength(7);
-    expect(shown.map((d) => d.get('.dis-head').text().replace(/^.*· /, ''))).toEqual(['Held-out label', 'Held-out label', 'Held-out label', 'Held-out label', 'Held-out label', 'Tuning label', 'Tuning label']);
+    // Every one the figures count: 12 held-out and 4 tuning, held-out first.
+    expect(shown).toHaveLength(16);
+    expect(shown.map((d) => d.get('.dis-head').text().replace(/^.*· /, ''))).toEqual([...Array<string>(12).fill('Held-out label'), ...Array<string>(4).fill('Tuning label')]);
     const first = shown[0];
     expect(first.get('a').attributes('href')).toBe('#/trials/tr_debt-regret-04_b_1');
     expect(first.get('.dis-head').text()).toBe('debt-regret-04 · overall · Held-out label');
@@ -181,9 +182,9 @@ describe('JudgeView against the API', () => {
     await settle();
     const haiku = judgeNamed(w, 'Claude Haiku 5.5, rubric advice.v4');
     expect(haiku.get('[data-test="disagreements-held"]').text()).toBe(
-      "2 on tuning labels open when the tuning set is done (1 to go), so the judge's reasons cannot steer the labels still to come.",
+      "4 on tuning labels open when the tuning set is done (1 to go), so the judge's reasons cannot steer the labels still to come.",
     );
-    expect(haiku.findAll('[data-test="disagreement"]')).toHaveLength(5);
+    expect(haiku.findAll('[data-test="disagreement"]')).toHaveLength(12);
   });
 
   it('says so when no judge has graded anything, and still says what the badges mean', async () => {
@@ -194,9 +195,10 @@ describe('JudgeView against the API', () => {
     expect(w.findAll('[data-test="legend-row"]')).toHaveLength(5);
   });
 
-  it('says a judge agrees on everything labelled when it has pairs and no disagreements, and nothing when it has no pairs', async () => {
+  it('says a judge agrees on everything labelled when its figures count no disagreement, and nothing when it has no labels', async () => {
     const [haiku] = trust.judges;
-    const agreeing = { ...haiku, criteria: haiku.criteria.map((c) => ({ ...c, disagreements: [] })) };
+    const clean = (f: AgreementFigures | null) => f && { ...f, tp: f.tp + f.fn, tn: f.tn + f.fp, fp: 0, fn: 0 };
+    const agreeing = { ...haiku, criteria: haiku.criteria.map((c) => ({ ...c, heldout: clean(c.heldout), tuning: clean(c.tuning), disagreements: [] })) };
     const { w } = mountWith({ ...trust, judges: [agreeing, trust.judges[3]] });
     await settle();
     const [first, unlabelled] = w.findAll('[data-test="judge"]');

@@ -228,6 +228,14 @@ describe('the judge trust fixture', () => {
           expect(keys(d)).toEqual(sorted(FIELDS.disagreement));
           expect(d.human).not.toBe(d.judge);
         }
+        // Every disagreement the tables count is listed (the API lists up to 50), held-out first.
+        for (const set of ['heldout', 'tuning'] as const) {
+          const f = c[set];
+          const listed = c.disagreements.filter((d) => d.set === set);
+          expect(listed.filter((d) => d.human === 'no').length, `${c.criterion} ${set}`).toBe(f?.fp ?? 0);
+          expect(listed.filter((d) => d.human === 'yes').length, `${c.criterion} ${set}`).toBe(f?.fn ?? 0);
+        }
+        expect(c.disagreements.map((d) => d.set)).toEqual([...c.disagreements.map((d) => d.set)].sort());
       }
     }
   });

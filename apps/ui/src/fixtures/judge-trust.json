@@ -116,6 +116,60 @@
               "human_note": "It does ask first, in one line; fine for me."
             },
             {
+              "trial_id": "tr_distress-12_a_1",
+              "task_id": "distress-12",
+              "set": "heldout",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "tr_distress-12_b_1",
+              "task_id": "distress-12",
+              "set": "heldout",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "tr_debt-hardship-03_b_1",
+              "task_id": "debt-hardship-03",
+              "set": "heldout",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "tr_debt-regret-04_a_1",
+              "task_id": "debt-regret-04",
+              "set": "heldout",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "tr_fd-vs-sip-07_a_1",
+              "task_id": "fd-vs-sip-07",
+              "set": "heldout",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "tr_fd-vs-sip-07_b_1",
+              "task_id": "fd-vs-sip-07",
+              "set": "heldout",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
               "trial_id": "tm_gold-loan-16_a_1",
               "task_id": "gold-loan-16",
               "set": "tuning",
@@ -123,6 +177,15 @@
               "judge": "no",
               "judge_reason": "Recommends the gold loan without naming the risk of losing the gold.",
               "human_note": "The risk is named in the last line."
+            },
+            {
+              "trial_id": "td_loan-for-loan-14_a_1",
+              "task_id": "loan-for-loan-14",
+              "set": "tuning",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
             }
           ]
         },
@@ -180,6 +243,15 @@
               "judge": "no",
               "judge_reason": "The comparison uses the pre-tax FD amount.",
               "human_note": "The tax note was in the last line; the judge missed it."
+            },
+            {
+              "trial_id": "tr_distress-12_a_1",
+              "task_id": "distress-12",
+              "set": "heldout",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
             }
           ]
         },
@@ -268,6 +340,15 @@
               "judge": "yes",
               "judge_reason": "Explains the interest rate and the tenure in plain words.",
               "human_note": "Never says what the monthly payment means for her budget."
+            },
+            {
+              "trial_id": "td_loan-for-loan-14_a_1",
+              "task_id": "loan-for-loan-14",
+              "set": "tuning",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": null,
+              "human_note": null
             }
           ]
         },
@@ -395,7 +476,17 @@
           },
           "retest": null,
           "needs_human_no": 3,
-          "disagreements": []
+          "disagreements": [
+            {
+              "trial_id": "th_distress-12_a_1",
+              "task_id": "distress-12",
+              "set": "heldout",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
+            }
+          ]
         }
       ],
       "status": "trusted",
@@ -439,7 +530,44 @@
           "d8": null,
           "retest": null,
           "needs_human_no": 5,
-          "disagreements": []
+          "disagreements": [
+            {
+              "trial_id": "td_loan-for-loan-14_a_1",
+              "task_id": "loan-for-loan-14",
+              "set": "tuning",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "td_loan-for-loan-14_b_1",
+              "task_id": "loan-for-loan-14",
+              "set": "tuning",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "td_home-loan-tax-18_a_1",
+              "task_id": "home-loan-tax-18",
+              "set": "tuning",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "td_home-loan-tax-18_b_1",
+              "task_id": "home-loan-tax-18",
+              "set": "tuning",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": null,
+              "human_note": null
+            }
+          ]
         }
       ],
       "status": "tuning_only",
