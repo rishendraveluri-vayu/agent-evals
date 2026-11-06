@@ -30,6 +30,18 @@ describe('the verdict rule (D42, D43)', () => {
     expect(passRateVerdict(diff, p, 20)).toBe(verdict);
   });
 
+  it('checks the margin and the sign on the unrounded interval, allowing only floating-point noise', () => {
+    // 10.004 shows as 10.00 but lies outside the +/-10 margin.
+    expect(passRateVerdict({ estimate: 2, low: -3, high: 10.004 }, 0.5, 10)).toBe('no_detectable_difference');
+    expect(passRateVerdict({ estimate: -2, low: -10.004, high: 3 }, 0.5, 10)).toBe('no_detectable_difference');
+    // A sum that is exactly 10 on paper and 10.000000000000002 in floating point is inside it.
+    expect(passRateVerdict({ estimate: 2, low: -3, high: 0.1 * 3 * (100 / 3) }, 0.5, 10)).toBe('equivalent');
+    expect(passRateVerdict({ estimate: 5, low: 1e-14, high: 9 }, 0.01, 10)).toBe('equivalent');
+    expect(passRateVerdict({ estimate: 5, low: 0.004, high: 9 }, 0.01, 10)).toBe('better');
+    // Width below the noise is no width (D55).
+    expect(passRateVerdict({ estimate: 0, low: 0, high: 1e-13 }, 1, 10)).toBe('no_detectable_difference');
+  });
+
   it('gives no verdict but no detectable difference with fewer than 6 tasks', () => {
     expect(passRateVerdict({ estimate: 1, low: -2, high: 3 }, 0.9, 5)).toBe('no_detectable_difference');
     expect(passRateVerdict({ estimate: 30, low: 20, high: 40 }, 0.01, 5)).toBe('no_detectable_difference');

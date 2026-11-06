@@ -155,14 +155,18 @@ function whyExcluded(a: StatsArmCounts, b: StatsArmCounts): string {
   return !a.graded ? side(a, 'A') : side(b, 'B');
 }
 
-/** D42 and D43, in the order the proposal gives: better or worse first, then equivalence. */
+/**
+ * D42 and D43, in the order the proposal gives: better or worse first, then equivalence. `diff` is
+ * the unrounded interval in points: a high of 10.004 is outside the +/-10 margin although it shows
+ * as 10.00. EPS_POINTS only absorbs floating-point noise (a sum that is exactly 10 on paper).
+ */
 export function passRateVerdict(diff: StatsInterval, p: number, tasks: number, alpha = ALPHA, margin = MARGIN_POINTS): PassRateVerdict {
   if (tasks < MIN_TASKS_FOR_VERDICT) return 'no_detectable_difference';
-  if (diff.low > 0 && p < alpha) return 'better';
-  if (diff.high < 0 && p < alpha) return 'worse';
+  if (diff.low > EPS_POINTS && p < alpha) return 'better';
+  if (diff.high < -EPS_POINTS && p < alpha) return 'worse';
   // D55: a zero-width interval (every task gave the same difference) shows no spread, not a small
   // one, so it cannot support "practically equivalent".
-  if (diff.high > diff.low && diff.low >= -margin && diff.high <= margin) return 'equivalent';
+  if (diff.high - diff.low > EPS_POINTS && diff.low >= -margin - EPS_POINTS && diff.high <= margin + EPS_POINTS) return 'equivalent';
   return 'no_detectable_difference';
 }
 
@@ -401,9 +405,11 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
   const meanDiff = diffs.reduce((s, d) => s + d, 0) / k;
   const samples: TaskSample[] = eligible.map((e) => ({ a: binaryArm(e.a.passed, e.a.graded), b: binaryArm(e.b.passed, e.b.graded) }));
   const draws = bootstrapTasks(samples, seededStream(`${input.seed}:pass_rate`), opts);
-  const diff = interval(meanDiff, percentileInterval(draws.diff, LEVEL), 100, 2);
+  // The rules read the unrounded interval; the response shows it rounded to 2 places.
+  const rawDiff = scaled(meanDiff, percentileInterval(draws.diff, LEVEL), 100);
+  const diff = rounded(rawDiff, 2);
   const test = signFlipTest(diffs, seededStream(`${input.seed}:sign_flip`), { exactMaxTasks: options.exactMaxTasks, flips: options.flips });
-  const prVerdict = passRateVerdict(diff, test.p, k);
+  const prVerdict = passRateVerdict(rawDiff, test.p, k);
 
   // Per task: Newcombe's interval and Fisher's exact test; Benjamini-Hochberg flags (D41).
   const fisher = eligible.map((e) => fisherExact(e.b.passed, e.b.graded - e.b.passed, e.a.passed, e.a.graded - e.a.passed));
