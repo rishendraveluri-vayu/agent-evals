@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { mount, type VueWrapper } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api/client';
@@ -1494,5 +1497,20 @@ describe('RunView, fresh-clone QA round 3', () => {
     expect(row.findAll('td.arm-cells')).toHaveLength(2);
     expect(row.findAll('td.arm-cells')[0].findAll('[data-state]').length).toBe((details as unknown as Record<string, ExperimentDetail>).exp_harness.n);
     expect(w.findAll('[data-test="run-grid"] thead th.arm-col')).toHaveLength(2);
+  });
+});
+
+describe('RunView keeps a long unbroken config name inside the page', () => {
+  // Checked in a browser at 390 px and 1,440 px with a 90-character one-word name: the page was
+  // 1,079 px wide on a phone before these rules, and fits after. jsdom does no layout, so this
+  // guards the rules themselves.
+  // A path, not new URL(..., import.meta.url), which Vite turns into an asset address.
+  const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'RunView.vue'), 'utf8');
+  const style = source.slice(source.indexOf('<style'));
+
+  it('lets the arm names wrap anywhere in the cards and the arm lines, and the pickers fit their column', () => {
+    expect(style).toMatch(/\.arm-card,\s*\.arm-card-head > \.arm,\s*\.arm > span:last-child \{\s*min-width: 0;\s*overflow-wrap: anywhere;\s*\}/);
+    expect(style).toMatch(/\.arm-card-head > \.arm-status \{\s*flex: none;\s*\}/);
+    expect(style).toMatch(/\.setup-grid select \{[^}]*max-width: 100%;[^}]*min-width: 0;/);
   });
 });

@@ -2615,6 +2615,26 @@ onBeforeUnmount(() => taskObserver?.disconnect());
   gap: 8px;
 }
 
+/* A config name with no spaces in it (90 characters of one word) wraps inside its card, its line
+   or its picker, never past the page's edge: the arm cards, the arm lines beside the plan and the
+   progress, and the setup's pickers. */
+.arm-card,
+.arm-card-head > .arm,
+.arm > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.arm-card-head > .arm-status {
+  flex: none;
+}
+
+.setup-grid select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .arm-status[data-status='paused'] {
   border-color: var(--ink);
   color: var(--ink);
