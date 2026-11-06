@@ -64,7 +64,7 @@ def test_the_gate_tool_test_expects_the_servers_20_tools_and_v3s_19():
     assert len(ALL_FINANCE_TOOLS) == 20
     assert ALL_FINANCE_TOOLS[-1] == "search_documents"
     assert DOCUMENT_TOOLS == ("search_documents",)
-    assert ALL_FINANCE_TOOLS == [*FINANCE_V3_TOOLS, "search_documents"]
+    assert [*FINANCE_V3_TOOLS, "search_documents"] == ALL_FINANCE_TOOLS
     assert len(FINANCE_V3_TOOLS) == 19
     assert FINANCE_V3_TOOLS[11:] == [
         "add",
