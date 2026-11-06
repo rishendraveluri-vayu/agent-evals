@@ -27,8 +27,12 @@ CLIENT = ROOT / "services" / "finance-mcp" / "examples" / "client.example.json"
 EMI_TOL = {"abs": 1}  # rupees; the model may round to the rupee
 BIG_TOL = {"rel": 0.002}  # totals and corpora, which models often round to the hundred
 # G1 (6 Nov review): a month count counts only next to what it counts ("28 months", "**12** months",
-# "a 46-month", "month 28"), not anywhere ("18% ÷ 12" passed a 12-month check in 5 shipped trials).
-MONTHS = {"after": r"months?\b|mos?\b|EMIs?\b|instal?l?ments?\b", "before": r"\bmonths?"}
+# "a 46-month", "month 28", "31 months down to 23", a table row "| Months to debt-free | 31 | 23 |"),
+# not anywhere ("18% ÷ 12" passed a 12-month check in 5 shipped trials).
+MONTHS = {
+    "after": r"months?\b|mos?\b|EMIs?\b|instal?l?ments?\b",
+    "before": r"\bmonths?(?:\s+(?:down\s+|drops?\s+|falls?\s+)?to)?|\bmonths?\b[^\n|]*\|(?:[^\n|]*\|)*?",
+}
 
 
 def num(x: object) -> float:

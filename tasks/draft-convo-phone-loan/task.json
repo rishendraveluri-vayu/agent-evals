@@ -72,7 +72,7 @@
       },
       "context": {
         "after": "months?\\b|mos?\\b|EMIs?\\b|instal?l?ments?\\b",
-        "before": "\\bmonths?"
+        "before": "\\bmonths?(?:\\s+(?:down\\s+|drops?\\s+|falls?\\s+)?to)?|\\bmonths?\\b[^\\n|]*\\|(?:[^\\n|]*\\|)*?"
       }
     },
     {

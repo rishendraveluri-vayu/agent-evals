@@ -541,16 +541,28 @@ def test_a_month_count_counts_only_next_to_a_month_word(tmp_path, task_id, grade
     spec = next(g for g in graders if g["id"] == grader_id)
     assert spec["context"] == {
         "after": r"months?\b|mos?\b|EMIs?\b|instal?l?ments?\b",
-        "before": r"\bmonths?",
+        "before": r"\bmonths?(?:\s+(?:down\s+|drops?\s+|falls?\s+)?to)?"
+        r"|\bmonths?\b[^\n|]*\|(?:[^\n|]*\|)*?",
     }
     n = months if months is not None else int(spec["expected"])
-    for i, said in enumerate(
-        [f"You'd be debt-free in **{n} months**.", f"That is a {n}-month plan.", f"Month {n}."]
-    ):
+    said_ok = [
+        f"You'd be debt-free in **{n} months**.",
+        f"That is a {n}-month plan.",
+        f"Month {n}.",
+        # Shipped answers the first context missed (all in trials that failed anyway):
+        f"- Debt-free: 31 months down to {n}, which is **8 months sooner**.",
+        f"| Months to debt-free | 31 | {n} |",
+    ]
+    for i, said in enumerate(said_ok):
         assert verdict(task_id, make_trial(tmp_path / f"ok{i}", said), grader_id) == "pass", said
-    for i, said in enumerate(
-        [f"Interest is 18% ÷ {n} = 1.5% a month.", f"Your reference is {n}.", f"{n}% of it."]
-    ):
+    said_no = [
+        f"Interest is 18% ÷ {n} = 1.5% a month.",
+        f"Your reference is {n}.",
+        f"{n}% of it.",
+        # Known cost: a bare cell under a "Months" column header on an earlier line.
+        f"| Extra | Months |\n| --- | --- |\n| ₹3,000 | {n} |",
+    ]
+    for i, said in enumerate(said_no):
         assert verdict(task_id, make_trial(tmp_path / f"no{i}", said), grader_id) == "fail", said
 
 
