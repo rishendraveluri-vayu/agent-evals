@@ -493,6 +493,42 @@ describe('Build an agent keeps its choices across a link away and Back (destruct
   });
 });
 
+describe('Build an agent while LiteLLM is down (destructive review U8)', () => {
+  it('still shows every step when only the models fail, says why in words, and lists them on Try again', async () => {
+    const litellm = new ApiError(502, 'litellm_unavailable', 'LiteLLM, the proxy every model call goes through, is not answering', 'Start it with docker compose up -d litellm, then try again.');
+    const models = vi.spyOn(api, 'models').mockRejectedValueOnce(litellm);
+    const view = await open();
+    expect(view.find('[data-test="load-error"]').exists()).toBe(false);
+    expect(view.findAll('fieldset.step')).toHaveLength(5);
+    const problem = view.get('[data-test="models-problem"]');
+    expect(problem.text()).toContain('The models could not be listed, so none can be picked yet: LiteLLM, the proxy every model call goes through, is not answering. Start it with docker compose up -d litellm');
+    expect(view.find('[data-test="no-models"]').exists()).toBe(false);
+    expect(view.find('[data-test="model-radio"]').exists()).toBe(false);
+    expect(view.get('[data-test="save-blocked"]').text()).toBe('The models could not be listed: try again in step 2 once they answer.');
+    // The other steps work meanwhile.
+    await pickHarness(view, 'ownloop');
+    expect(view.get('[data-test="harness-ownloop"]').classes()).toContain('tile--on');
+    await view.get('[data-test="models-retry"]').trigger('click');
+    await settle();
+    expect(models).toHaveBeenCalledTimes(2);
+    expect(view.find('[data-test="models-problem"]').exists()).toBe(false);
+    expect((view.get('[data-test="model-claude-haiku-5-5"] input').element as HTMLInputElement).checked).toBe(true);
+    expect(view.get('[data-test="harness-ownloop"]').classes()).toContain('tile--on');
+    expect(view.find('[data-test="save-blocked"]').exists()).toBe(false);
+  });
+
+  it('offers to try again when the whole page fails to load', async () => {
+    const harnesses = vi.spyOn(api, 'harnesses').mockRejectedValueOnce(new ApiError(502, 'http_502', 'The API is not answering (HTTP 502): check that the stack is running (docker compose ps), then try again'));
+    const view = await open();
+    expect(view.get('[data-test="load-error"]').text()).toContain('The API is not answering (HTTP 502)');
+    await view.get('[data-test="load-retry"]').trigger('click');
+    await settle();
+    expect(harnesses).toHaveBeenCalledTimes(2);
+    expect(view.find('[data-test="load-error"]').exists()).toBe(false);
+    expect(view.get('[data-test="harness-hermes"]').classes()).toContain('tile--on');
+  });
+});
+
 describe('Build an agent during a slow save (destructive review U13)', () => {
   it('locks every choice until the save answers, so the saved panel names what was sent', async () => {
     let answer: (c: never) => void = () => undefined;

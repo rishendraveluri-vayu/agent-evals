@@ -45,6 +45,24 @@ import type {
 
 type Method = 'GET' | 'POST' | 'DELETE';
 
+/** What to check when the platform does not answer: every service runs in compose. */
+export const STACK_HINT = 'check that the stack is running (docker compose ps), then try again';
+
+/**
+ * Outages in plain words, never "POST /configs failed with HTTP 502" or "Unexpected token '<'":
+ * a failed reply that did not come from the API itself (a proxy's error page when the API is
+ * down), and the API saying LiteLLM did not answer.
+ */
+export function notTheApi(status: number): ApiError {
+  const what = status === 502 || status === 503 || status === 504 ? 'The API is not answering' : 'The API is not answering as expected';
+  return new ApiError(status, `http_${status}`, `${what} (HTTP ${status}): ${STACK_HINT}`);
+}
+
+export function litellmDown(status: number, code: string): ApiError | null {
+  if (code !== 'litellm_unavailable' && code !== 'litellm_error') return null;
+  return new ApiError(status, code, 'LiteLLM, the proxy every model call goes through, is not answering', 'Check that it is running (docker compose ps), start it with docker compose up -d litellm, then try again.');
+}
+
 async function call<T>(method: Method, path: string, body?: unknown): Promise<T> {
   if (isFixtureMode()) {
     const { fixtureResponse } = await import('../fixtures');
@@ -57,28 +75,29 @@ async function call<T>(method: Method, path: string, body?: unknown): Promise<T>
       headers: body === undefined ? { accept: 'application/json' } : { accept: 'application/json', 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-  } catch (err) {
-    throw new ApiError(0, 'unreachable', `The API could not be reached (${err instanceof Error ? err.message : String(err)})`);
+  } catch {
+    throw new ApiError(0, 'unreachable', `The API could not be reached: ${STACK_HINT}`);
   }
   if (!response.ok) {
-    let code = `http_${response.status}`;
-    let message = `${method} ${path} failed with HTTP ${response.status}`;
-    let fix: string | null = null;
+    let parsed: unknown = null;
     try {
-      const parsed: unknown = await response.json();
-      if (isErrorBody(parsed)) {
-        code = parsed.error;
-        message = parsed.message;
-        fix = typeof parsed.fix === 'string' && parsed.fix ? parsed.fix : null;
-      }
+      parsed = await response.json();
     } catch {
-      // Not JSON, such as a proxy error page: keep the HTTP status as the message.
+      // Not JSON, such as a proxy's error page: the API itself did not answer.
     }
-    throw new ApiError(response.status, code, message, fix);
+    if (!isErrorBody(parsed)) throw notTheApi(response.status);
+    const fix = typeof parsed.fix === 'string' && parsed.fix ? parsed.fix : null;
+    throw litellmDown(response.status, parsed.error) ?? new ApiError(response.status, parsed.error, parsed.message, fix);
   }
   if (response.status === 204) return null as T;
   const text = await response.text();
-  return (text ? JSON.parse(text) : null) as T;
+  if (!text) return null as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // A web page where data was expected (a server that is not the API answered the address).
+    throw new ApiError(response.status, 'not_json', `The API is not answering: the reply was a web page, not data. ${STACK_HINT[0].toUpperCase()}${STACK_HINT.slice(1)}`);
+  }
 }
 
 const enc = encodeURIComponent;

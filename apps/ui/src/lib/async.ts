@@ -1,5 +1,5 @@
 import { ref, shallowRef, type Ref, type ShallowRef } from 'vue';
-import { errorText } from '../api/errors';
+import { errorWithFix } from '../api/errors';
 
 export interface Loaded<T> {
   data: ShallowRef<T | null>;
@@ -19,13 +19,24 @@ export function useLoad<T>(load: () => Promise<T>): Loaded<T> {
       data.value = await load();
       error.value = null;
     } catch (err) {
-      error.value = errorText(err);
+      // The API's fix, when it gave one, rides along: what to do is part of the error.
+      error.value = errorWithFix(err);
     } finally {
       loading.value = false;
     }
   };
   void reload();
   return { data, error, loading, reload };
+}
+
+/** A part of a screen's load that may fail on its own (GET /models while LiteLLM is down): its
+ *  value, or the fallback and the failure in words, so the rest of the screen still shows. */
+export async function partial<T>(promise: Promise<T>, fallback: T): Promise<{ value: T; problem: string | null }> {
+  try {
+    return { value: await promise, problem: null };
+  } catch (err) {
+    return { value: fallback, problem: errorWithFix(err) };
+  }
 }
 
 /** Swallows a failed optional load: the screen shows what it has without it. */

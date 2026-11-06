@@ -37,7 +37,7 @@ interface Loaded {
 const updatedAt = (e: ExperimentSummary, detail?: ExperimentDetail | null) => detail?.finished_at ?? detail?.started_at ?? e.created_at;
 const twoArms = (e: ExperimentSummary) => e.config_hashes.length === 2;
 
-const { data, error, loading } = useLoad<Loaded>(async () => {
+const { data, error, loading, reload } = useLoad<Loaded>(async () => {
   const [experiments, configs, harnesses, queue, tuning, examples] = await Promise.all([
     api.experiments(),
     api.configs(),
@@ -371,6 +371,7 @@ const rows = computed<Row[]>(() => {
   <LoadState
     :loading="loading"
     :error="error"
+    :retry="reload"
     what="the experiments"
   >
     <div class="lead-row">

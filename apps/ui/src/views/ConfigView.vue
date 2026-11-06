@@ -5,7 +5,7 @@ import { ApiError, errorText, errorWithFix } from '../api/errors';
 import { SETTING_NAMES, type ConfigDiffEntry, type ConfigView, type ConfigWarning, type CreatedPrompt, type Harness, type JsonObject, type ModelView, type PromptView, type SeedSkill, type SettingName, type ToolsetView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
-import { optional, useLoad } from '../lib/async';
+import { optional, partial, useLoad } from '../lib/async';
 import { coverageText } from '../lib/capabilities';
 import { changedLineCount, lineChanges, sentenceChanges } from '../lib/diff';
 import { mdBlocks } from '../lib/markdown';
@@ -25,15 +25,30 @@ const props = defineProps<{ fork?: string | null }>();
 interface Loaded {
   harnesses: Harness[];
   models: ModelView[];
+  /** Why GET /models failed (LiteLLM down, say), in words; null when it answered. The page still
+   *  shows, with the fake models, and the model field says so with a way to try again. */
+  modelsProblem: string | null;
   prompts: PromptView[];
   toolsets: ToolsetView[];
   configs: ConfigView[];
 }
 
-const { data, error, loading } = useLoad<Loaded>(async () => {
-  const [harnesses, models, prompts, toolsets, configs] = await Promise.all([api.harnesses(), api.models(), api.prompts(), api.toolsets(), api.configs()]);
-  return { harnesses, models, prompts, toolsets, configs };
+const { data, error, loading, reload } = useLoad<Loaded>(async () => {
+  const [harnesses, models, prompts, toolsets, configs] = await Promise.all([api.harnesses(), partial(api.models(), [] as ModelView[]), api.prompts(), api.toolsets(), api.configs()]);
+  return { harnesses, models: models.value, modelsProblem: models.problem, prompts, toolsets, configs };
 });
+
+/** Asks for the real models again, after GET /models failed; the form stays as it is. */
+const modelsRetrying = ref(false);
+async function retryModels() {
+  modelsRetrying.value = true;
+  try {
+    const models = await partial(api.models(), [] as ModelView[]);
+    if (data.value) data.value = { ...data.value, models: models.value, modelsProblem: models.problem };
+  } finally {
+    modelsRetrying.value = false;
+  }
+}
 
 const numbers: Partial<Record<SettingName, string>> = {};
 const toggles: Partial<Record<SettingName, boolean>> = {};
@@ -591,6 +606,7 @@ watch(
   <LoadState
     :loading="loading"
     :error="error"
+    :retry="reload"
     what="the harnesses, models and prompts"
   >
     <div
@@ -674,6 +690,18 @@ watch(
                 >{{ modelName(m.name) }}: {{ m.does }}</option>
               </optgroup>
             </select>
+            <span
+              v-if="data.modelsProblem"
+              class="smaller models-problem"
+              role="alert"
+              data-test="models-problem"
+            ><span>The real models could not be listed, so only the fake ones can be picked: {{ plainText(data.modelsProblem) }}</span> <button
+              type="button"
+              class="link-button"
+              :disabled="modelsRetrying"
+              data-test="models-retry"
+              @click.prevent="retryModels"
+            >Try again</button></span>
             <span
               v-if="isFake(form.model)"
               class="secondary smaller"
@@ -1600,6 +1628,13 @@ watch(
   display: block;
   margin: 6px 0 0;
   color: var(--ink);
+}
+
+.models-problem {
+  display: block;
+  margin: 6px 0 0;
+  color: var(--error);
+  overflow-wrap: anywhere;
 }
 
 .refusal strong {

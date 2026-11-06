@@ -673,6 +673,24 @@ describe('ConfigView, fresh-clone QA round 3', () => {
   });
 });
 
+describe('ConfigView while LiteLLM is down (destructive review U8)', () => {
+  it('still shows the form, on a fake model, when only the real models fail, and lists them on Try again', async () => {
+    const litellm = new ApiError(502, 'litellm_unavailable', 'LiteLLM, the proxy every model call goes through, is not answering', 'Start it with docker compose up -d litellm, then try again.');
+    vi.spyOn(api, 'configs').mockResolvedValue([]);
+    const models = vi.spyOn(api, 'models').mockRejectedValueOnce(litellm);
+    const w = mount(ConfigView);
+    await settle();
+    expect(w.find('[data-test="load-error"]').exists()).toBe(false);
+    expect(w.get('[data-test="models-problem"]').text()).toContain('The real models could not be listed, so only the fake ones can be picked: LiteLLM, the proxy every model call goes through, is not answering.');
+    expect((w.get('[data-test="model-select"]').element as HTMLSelectElement).value).toBe('fake/finance-emi');
+    await w.get('[data-test="models-retry"]').trigger('click');
+    await settle();
+    expect(models).toHaveBeenCalledTimes(2);
+    expect(w.find('[data-test="models-problem"]').exists()).toBe(false);
+    expect(w.findAll('[data-test="model-select"] option').map((o) => o.text())).toContain('Claude Haiku 5.5');
+  });
+});
+
 describe('ConfigView during a slow save (destructive review U13)', () => {
   it('locks the form, the name and the comparison until the save answers', async () => {
     let answer: (c: Config) => void = () => undefined;

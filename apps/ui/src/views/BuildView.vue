@@ -13,7 +13,7 @@ import type { ConfigView, CreatedPrompt, Harness, Json, ModelView, PromptView, S
 import AppIcon from '../components/AppIcon.vue';
 import InfoTip from '../components/InfoTip.vue';
 import LoadState from '../components/LoadState.vue';
-import { useLoad } from '../lib/async';
+import { partial, useLoad } from '../lib/async';
 import { autoConfigName, axisChange, axisPhrase, changeWords, type NameContent } from '../lib/checks';
 import { baselineFor, missingKey } from '../lib/runSetup';
 import { plainText, shortHash, shortRef } from '../lib/format';
@@ -29,15 +29,31 @@ import { href } from '../router';
 interface Loaded {
   harnesses: Harness[];
   models: ModelView[];
+  /** Why GET /models failed (LiteLLM down, say), in words; null when it answered. The rest of the
+   *  page still shows, and the model step says so with a way to try again. */
+  modelsProblem: string | null;
   prompts: PromptView[];
   toolsets: ToolsetView[];
   configs: ConfigView[];
 }
 
-const { data, error, loading } = useLoad<Loaded>(async () => {
-  const [harnesses, models, prompts, toolsets, configs] = await Promise.all([api.harnesses(), api.models(), api.prompts(), api.toolsets(), api.configs()]);
-  return { harnesses, models, prompts, toolsets, configs };
+const { data, error, loading, reload } = useLoad<Loaded>(async () => {
+  const [harnesses, models, prompts, toolsets, configs] = await Promise.all([api.harnesses(), partial(api.models(), [] as ModelView[]), api.prompts(), api.toolsets(), api.configs()]);
+  return { harnesses, models: models.value, modelsProblem: models.problem, prompts, toolsets, configs };
 });
+
+/** Asks for the models again, after GET /models failed; the rest of the form stays as it is. */
+const modelsRetrying = ref(false);
+async function retryModels() {
+  modelsRetrying.value = true;
+  try {
+    const models = await partial(api.models(), [] as ModelView[]);
+    if (data.value) data.value = { ...data.value, models: models.value, modelsProblem: models.problem };
+    if (!form.model) form.model = defaultRealModel(realModels.value);
+  } finally {
+    modelsRetrying.value = false;
+  }
+}
 
 /** The common settings. Temperature, skills, compression and seeds are on the full Config screen. */
 type Shown = 'max_steps' | 'max_output_tokens' | 'timeout_s' | 'parallel_tool_calls' | 'memory';
@@ -217,7 +233,7 @@ const problems = computed<Partial<Record<Shown, string>>>(() => {
 /** Why the agent cannot be saved yet, in words; null when it can. */
 const blocked = computed<string | null>(() => {
   if (!harness.value) return 'Pick an agent type (step 1).';
-  if (!model.value) return 'Pick a model (step 2).';
+  if (!model.value) return data.value?.modelsProblem ? 'The models could not be listed: try again in step 2 once they answer.' : 'Pick a model (step 2).';
   if (promptMode.value === 'write') return 'Save your prompt first, or go back to a saved one (step 3).';
   if (!prompt.value) return 'Pick a prompt (step 3).';
   if (!toolset.value) return 'The API lists no toolset.';
@@ -413,6 +429,7 @@ watch(kept, (value) => {
   <LoadState
     :loading="loading"
     :error="error"
+    :retry="reload"
     what="the agent types, models and prompts"
   >
     <form
@@ -532,8 +549,25 @@ watch(kept, (value) => {
             >needs {{ missingKey(m.name, realModels) }} in .env</span>
           </label>
         </div>
+        <div
+          v-if="data.modelsProblem"
+          class="models-problem small"
+          role="alert"
+          data-test="models-problem"
+        >
+          <span>The models could not be listed, so none can be picked yet: {{ plainText(data.modelsProblem) }} The other steps work meanwhile.</span>
+          <button
+            type="button"
+            class="btn btn--quiet"
+            :disabled="modelsRetrying"
+            data-test="models-retry"
+            @click="retryModels"
+          >
+            Try again
+          </button>
+        </div>
         <p
-          v-if="noKeys"
+          v-else-if="noKeys"
           class="small no-keys"
           role="note"
           data-test="no-keys"
@@ -1093,6 +1127,22 @@ watch(kept, (value) => {
 .needs-key {
   font-weight: 600;
   color: var(--ink);
+}
+
+.models-problem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 12px 0 0;
+  max-width: 72ch;
+  color: var(--error);
+}
+
+.models-problem > span {
+  flex: 1 1 260px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .no-keys {
