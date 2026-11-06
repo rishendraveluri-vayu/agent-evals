@@ -34,7 +34,7 @@ describe('LabelView in fixture mode', () => {
     await settle();
     const note = w.get('[data-test="blind-note"]').text();
     expect(note).toContain("Hidden from you: the harness, the model, the arm, the timing, the cost and the judge's verdict.");
-    expect(note).toContain("Trial pages still show the arm and the judge's pass or fail, so label a task before opening its trials.");
+    expect(note).toContain("Trial pages show the arm, the judge's verdicts and its reasons, so label a task before opening its trials.");
   });
 
   it('marks the question 1, 2 and 3 answer with a band, not an underline', async () => {
