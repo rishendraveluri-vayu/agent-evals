@@ -419,6 +419,17 @@ cannot tell apart:
 - **On a CPU-only machine it is slow.** 210 s for one model call and 324 s for two (3,471 and 7,183 input tokens), on 6 CPUs with no GPU. These configs set `timeout_s` to 1,800; the platform default of 300 s would have stopped the 324-second trial. A conversation with ten or more calls would take most of an hour, so its timeout must be raised further.
 - **One setting differs from every other model's configs.** Qwen refuses `parallel_tool_calls` through LiteLLM's Ollama route, so its configs leave it out (D25 table) and nothing forces one tool call per turn, while the Claude and Gemini configs send `false` (D19).
 
+## After the destructive review (6 Nov)
+
+What the fixes leave, or chose (`docs/destructive-review.md`):
+- **An adapter that crashes before its first model call is now an infra failure** (`infra:provider_error`) and is re-run once: the runner cannot tell it from LiteLLM being unreachable, and the connection-error case relies on matching the adapter's error text. Blaming the agent for an outage was the worse error.
+- **An outage longer than the 60 s lease still loses the attempt**: heartbeats fail, the sweep abandons it, and it is re-run once. Shorter outages no longer do.
+- **A NUL character in a report is replaced** (U+FFFD) in the database copy, with a problem noted on the trial; the stored files keep the original bytes, so the two differ there.
+- **Uneven decided counts bias the paired test.** With one arm deciding many fewer trials of a task than the other (10 against 2 or 3), the sign-flip test leans towards that arm (false "better" 5 to 7% in simulation). The comparison now names such tasks; it does not correct for them.
+- **Undefined intervals.** A judge-agreement interval with more than 5% of its resamples undefined is reported as undefined; with few human "no" labels most criteria will read that way, and cannot pass D8.
+- **The Run screen cannot check that Ollama is up** for a local-model run (the API has no signal for it); it warns instead.
+- **Limits the API now enforces:** a run's spending limit at most $1,000; `max_steps` 1 to 200; `timeout_s` at most 3,600; config names at most 120 characters. Raising one is a one-line change in the API and the UI.
+
 ## To check before submission
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted

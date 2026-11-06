@@ -648,8 +648,12 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   - `critical` (D10): each grader's `severity` is read from the grader specs of the grading that
     produced the trial's grades (the task file it graded with). Per task with a required critical
     check, the share of decided trials where one failed, compared like the pass rate. `status` is
-    `no_critical_checks` ("no check is marked critical"), `no_decided_trials`, `rose` (interval
-    above 0) or `did_not_rise`; `blocks_better` when it turns a better into `held_back`;
+    `no_critical_checks` ("no check is marked critical"), `no_decided_trials`, `rose` or
+    `did_not_rise`; since 6 Nov `rose` needs the interval above 0, the exact sign-flip `p_value`
+    below 0.05 over the tasks' critical-failure differences, and at least 6 such tasks that differ
+    (`differing`), as "worse" does; `blocks_better` when it turns a better into `held_back`.
+    `equivalent` likewise needs at least 6 tasks with a nonzero difference, and the verdicts read
+    the unrounded interval;
   - `regressions` (D10): every task where B dropped (`diff` below 0) or a check's own pass rate
     fell, critical first, with `graders` (id, required, severity, per-arm counts),
     `failed_trials` (arm B first, at most 10 per arm, each with the required checks it failed and
@@ -671,7 +675,15 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
     is passed over. Your own
     experiment reads only your own calibrations, and a shipped example only shipped ones (since
     5 Nov, so the headline example shows the A/A shipped beside it); `calibration`, on a calibration run: `{as_expected, text}`, whether it came
-    out with no difference found;
+    out with no difference found (since 6 Nov `as_expected` is false when its interval excludes 0);
+  - `unequal_decided` (6 Nov): `{ratio, tasks: [{task, task_id, a, b}], text}` naming tasks where
+    one arm has more than `ratio` (2) times as many decided trials as the other, or null;
+  - `rests_on_judge` (6 Nov): `{differing, tasks: [{task, task_id, a, b}], all}`, the tasks with a
+    nonzero difference whose outcome a required judge decided in `a` and `b` trials, `all` when
+    that is every such task; null when none (today, all judges being optional);
+  - `costs[].missing` (6 Nov): per arm, trials left out for having no value (tokens no longer read
+    a missing count as 0); per-task rows count a grading that failed or found no graders as
+    `incomplete`;
   - `judge`: SP5's agreement, null until SP5 reports it.
   `seed` is the experiment id, so the same data always gives the same numbers; results are cached
   by the trials and their current grading jobs, so a regrade recomputes them.
@@ -988,6 +1000,34 @@ field is left (a key inside a binary file cannot be scrubbed, so it fails the ex
   grading job is queued for its trials. Its trials are left out of `GET /spend`'s `trials_usd`,
   the estimate's history and the labelling queue. Every read works on it as on any experiment
   (detail, trials, compare, export, trial view, spans, files).
+
+## Limits and hostile input (destructive review, 6 Nov)
+
+What the API refuses or rewrites since the review's fixes (`docs/destructive-review.md`, E1 to E12):
+- **Values:** `POST /experiments` takes `budget_usd` above 0 and at most 1000, and no NUL in `name`
+  or `axis`. `POST /configs` takes a name of at most 120 characters with no NUL, `max_steps` from 1
+  to 200 and `timeout_s` above 0 and at most 3600 (the 400 says "Set max_steps to an integer from 1
+  to 200, or leave it unset for the default."). Any value the database cannot store is a 400
+  `invalid_value`, not a 500.
+- **Queries:** a repeated `status` on `GET /experiments/:id/trials` is a list; a repeated `config`
+  or `task` is 400 `invalid_filter`; a repeated `experiment` or `items` on `GET /labels/queue` is
+  400 `invalid_query`.
+- **Worker protocol:** a claim for a harness with no folder under `workers/` is 400
+  `unknown_harness`; `worker_id` is 1 to 200 characters without NUL; a worker counts as live only
+  after a claim that gets a trial, or a heartbeat (a 204 records nothing); a heartbeat's `attempt`
+  must be 1 or 2 (400 `invalid_heartbeat`). In a report, a NUL in any string or key becomes U+FFFD
+  and the trial's `problems` say how many (the stored files keep their bytes); numbers are taken
+  only when finite and at least 0, otherwise stored as null and named in `problems`; counts are
+  clamped to 2,147,483,647; a span kind or status outside its range gets the default.
+- **Run state:** every route that changes an experiment's trials locks the experiment row first and
+  reads its status from it (lock order in `apps/api/src/worker/run-state.ts`).
+- **Labels:** `POST /labels` refuses a trial the queue would not offer (a fake model's, a probe, a
+  shipped example's, one without an agent result) with 400 `not_labellable`, and a trial labelled in
+  another set with 400 `wrong_set`.
+- **Export:** a `reuse_baseline` experiment's export lists the reused arm-A trials first, each with
+  its own (the parent's) `experiment_id` and a `reused_from` field (JSON) and last column (CSV)
+  naming the parent; text cells starting with `=`, `+`, `-`, `@`, a tab or a carriage return get a
+  leading `'` so a spreadsheet does not run them; numbers, booleans and dates are never changed.
 
 ## UI-only endpoints
 

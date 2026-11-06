@@ -156,6 +156,16 @@ Added for abandoned attempts' spend (review G3, 5 Nov; migration `015_abandoned_
 
 Storage: experiment trials, their spans, grading jobs, grades, labels and events live in Postgres; each trial's files (result, trace, checks, proxy logs) are stored by the API under `runs/<experiment>/<trial>/attempt-<n>/`, uploaded by the worker with a sha256 per file. A folder store (`FileTrialStore`) remains only for gate and smoke runs recorded outside an experiment.
 
+- **Concurrency and outages (destructive review, 6 Nov).** Every transaction that changes an
+  experiment's trials (a worker's report, the lease sweep, start, pause, resume, stop, discard, arm
+  pause and resume) first locks the experiment row (`lockExperiment`, `apps/api/src/worker/run-state.ts`,
+  which states the lock order) and reads the status from it, so two last reports cannot leave a run
+  "running", Stop cannot leave a queued trial behind, and reports and controls no longer deadlock. The
+  sweep runs one transaction per experiment. At the end of a trial the worker reads its LiteLLM calls
+  with the same back-off and 600 s deadline as its uploads and report, so a short API, LiteLLM or
+  Postgres outage no longer throws a finished trial away. A worker counts as live for the time estimate
+  only once it has claimed a trial or sent a heartbeat; a claim for a harness with no folder is refused.
+
 ## 4. How runs are isolated and reproduced
 
 Constraints:
@@ -373,6 +383,27 @@ Choice of N (decided 5 Nov, Rishi: "Approve both, N=10"; `docs/experiment.md`, "
   might be 9 of 10 at N = 10, so the pilot overstates the ceiling a little.)
 - The pre-run estimate of the smallest difference a planned N and K can detect (proposal section
   6) is not built; the table above stands in for it.
+- **Tightened after the destructive review (6 Nov), without moving any shipped result** (pinned by
+  `apps/api/src/stats/shipped-examples.spec.ts`; `docs/destructive-review.md` S1 to S12):
+  - The critical-failure guardrail says "rose" only as "worse" would: the interval above zero, the
+    exact sign-flip test p < 0.05 on the per-task critical-failure differences, and at least 6 tasks
+    whose critical-failure rates differ (D50's floor). Before, the interval alone decided, so one extra
+    failure on one task could hold back a real "better".
+  - "Practically equivalent" needs at least 6 tasks with a nonzero difference (D55 extended), and the
+    verdict rules read the unrounded interval.
+  - An A/A calibration is "as it should be" only when its interval includes zero; an A/A whose tasks
+    all tie gets D55's no-width sentence.
+  - `unequal_decided` names any task where one arm has more than twice as many decided trials as the
+    other (the sign-flip test leans towards the arm with fewer then); `rests_on_judge` lists tasks
+    whose outcome a required judge decided (none today, all judges being optional).
+  - A trial whose grading failed, or that has no graders, counts as incomplete in the per-task rows
+    as in the statistics; token means leave out trials without a token count instead of reading 0.
+- **Judge agreement (`stats/`, D8), after the same review.** The false-pass gap is the signed
+  difference between arms (B minus A) with its bootstrap interval, which must include zero; before it
+  was the absolute gap, whose interval almost never could. A bootstrap interval with more than 5% of
+  resamples undefined (say kappa on one negative label) is reported as undefined, not as a narrow
+  interval, and a criterion with fewer than 5 human "no" labels cannot pass D8 (both thresholds are
+  proposals for Rishi). `d8_check` applies D8 in code; test-retest is not wired in, so it says so.
 
 ### Failure causes and behaviour per arm (D64)
 

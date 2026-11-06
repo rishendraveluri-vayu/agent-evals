@@ -190,6 +190,7 @@ Rishi to write.
 
 Anything changed after the plan was committed, and why.
 
+- **Statistics rules tightened after the results (6 Nov, destructive review), no result changed.** The critical-failure guardrail now needs the paired test and the 6-task floor, as "better" and "worse" do, not the interval alone (S1); "practically equivalent" needs 6 tasks with a nonzero difference (S7); the verdict rules read unrounded intervals. The judge-agreement check (D8) now tests the signed false-pass gap between arms, and reports an interval as undefined when most resamples have no value (S2, S3); no held-out label existed when this changed. Every shipped verdict, interval, p-value and sentence recomputes exactly as before (`apps/api/src/stats/shipped-examples.spec.ts`).
 - **N did not come from a pilot.** The plan says N comes "from the pilot"; no separate pilot ran, and N = 10 was set from the simulated power table and the cost before the run (`docs/design.md` section 6, which also reads the discovery run as the pilot it effectively was).
 
 - **The conflict check ran after the results (6 Nov), not before the run.** The check of our prompt and settings against Hermes's own instructions (D33, D38) ran on 4 Nov on an earlier v1 config only; neither headline config had been checked when the runs started. Both were checked after the results, on Rishi's request ($0.053 on Claude Sonnet 5.5, `docs/cost.md`, System calls). It changes nothing in the analysis or the verdict; what it found is below, under "Conflict check against Hermes's own instructions".

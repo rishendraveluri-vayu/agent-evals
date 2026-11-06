@@ -113,7 +113,8 @@ the 2x2 table, Cohen's kappa, sensitivity, specificity, false passes and false f
 percentile bootstrap intervals; the same per arm and the false-pass gap between arms with its
 interval; the Rogan-Gladen corrected rate with a joint bootstrap; test-retest stability and
 Rishi's self-agreement. Each formula is pinned by a hand-worked synthetic example. No threshold
-from §4 is in the code, and "not sure" labels need `--human-unsure exclude|no` every time
+from §4 was in the code at first; since 6 Nov `d8_check` applies D8 (`docs/judge-validation.md`,
+top), and "not sure" labels need `--human-unsure exclude|no` every time
 (decision 3). Test-retest needs every regrade's judge answers; `GET /trials/:id` shows only the
 current grading, so that read is still to build.
 
