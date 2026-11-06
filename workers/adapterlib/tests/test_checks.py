@@ -599,6 +599,29 @@ def test_an_arithmetic_result_needs_readable_arguments_given_numbers_and_no_erro
         assert out["amounts"][0]["rejected"]["reason"] == reason
 
 
+def test_a_tools_error_message_is_not_a_source():
+    """Destructive review G11 (6 Nov): an error that echoes the call's arguments sourced the
+    figure the agent made up. The amount says what it matched and why that does not count."""
+    error = (
+        '{"error": "Error executing tool get_client_profile: unknown argument(s) ₹50,000;'
+        ' it takes no arguments"}'
+    )
+    spans = [
+        turn_span(T, 0),
+        span("get_client_profile", T, error, True, 1, {"₹50,000": True}),
+        span("subtract", T, '{"difference":40000}', start=2, args={"a": 50000, "b": 10000}),
+    ]
+    out = checks_for(["Clearing the card first saves you about ₹50,000 more."], spans)
+    (row,) = out["amounts"]
+    assert row["supported_by"] is None
+    assert row["rejected"]["where"] == "tool:get_client_profile"
+    assert row["rejected"]["reason"] == "get_client_profile returned an error"
+    assert out["arithmetic"][0]["inputs"][0]["supported_by"] is None  # nor an input's source
+    # The same text as a successful result is a source.
+    ok = [turn_span(T, 0), span("get_client_profile", T, '{"note": "₹50,000"}', start=1)]
+    assert checks_for(["About ₹50,000 more."], ok)["amounts"][0]["supported_by"] == "tool"
+
+
 def test_a_finance_tools_result_counts_whatever_it_was_given():
     """D56 changes only the arithmetic tools: calculate_emi's result is a source even when its
     principal was made up (docs/known-limits.md, Platform checks)."""

@@ -34,7 +34,7 @@
             "oneOf": [{"type": "null"}, {"$ref": "#/$defs/derivation"}]
           },
           "rejected": {
-            "description": "D56: null unless the amount has no source and matched an arithmetic result that does not count: the best such match, and the call's reason from `arithmetic`.",
+            "description": "D56: null unless the amount has no source and matched an arithmetic result that does not count, or (6 Nov, review G11) a tool call that returned an error, which is never a source: the best such match, and the reason (the call's from `arithmetic`, or '<tool> returned an error').",
             "oneOf": [{"type": "null"}, {"$ref": "#/$defs/rejected"}]
           }
         }

@@ -327,6 +327,10 @@ class Source:
     call: int | None = None  # a tool source: the call's position among the trial's tool calls
     arithmetic: bool = False  # an arithmetic tool's result, a source only if its call is (D56)
     rates: list[Decimal] = field(default_factory=list)  # D61: its rates and percentages
+    # G11 (6 Nov review): a call that returned an error is never a source. Its message can echo
+    # the call's own arguments ("unknown argument(s) ₹50,000"), which would source a made-up
+    # figure. It is kept only so an amount that matches it says why it does not count.
+    error: bool = False
 
 
 def _attrs(span: dict[str, Any]) -> dict[str, Any]:
@@ -402,6 +406,7 @@ def gather_sources(
                     call=call["index"],
                     arithmetic=call["name"] in ARITHMETIC_TOOLS,
                     rates=source_rates(str(call["result"])),
+                    error=bool(call["is_error"]),
                 )
             )
     for name, text in sorted(client_files.items()):
@@ -726,7 +731,7 @@ def trace_arithmetic(
 
         def supports(s: Source, index: int = index, turn: int = turn) -> bool:
             if s.kind == "tool":
-                return before(s, index) and (not s.arithmetic or s.call in accepted)
+                return before(s, index) and not s.error and (not s.arithmetic or s.call in accepted)
             return s.kind == "client" or turn == -1 or s.turn <= turn
 
         def unaccepted(s: Source, index: int = index) -> bool:
@@ -847,6 +852,8 @@ def provenance(
     records = {r["call"]: r for r in arithmetic or []}
 
     def counts(source: Source) -> bool:
+        if source.error:
+            return False
         return not source.arithmetic or bool(records.get(source.call, {}).get("supported"))
 
     answer: list[tuple[Decimal, str]] = []  # verified figures: (value, where written)
@@ -895,7 +902,10 @@ def provenance(
                 row = _row(turn, amount, None, None, None, None)
                 rejected = _best(amount, sources, lambda s, t=turn: s.turn <= t and not counts(s))
                 if rejected is not None:
-                    reason = records.get(rejected[3].call, {}).get("reason") or "not supported"
+                    source = rejected[3]
+                    reason = records.get(source.call, {}).get("reason") or (
+                        f"{source.where} returned an error" if source.error else "not supported"
+                    )
                     row["rejected"] = {**_match(rejected), "reason": reason}
                 done[i] = row
             rows.append(done[i])
