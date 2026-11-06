@@ -172,7 +172,8 @@ function disagreementsOf(items: readonly JudgedItem[]): JudgeCriterionTrust['dis
 }
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
-const f2 = (v: number): string => v.toFixed(2);
+/** Two decimals; a value that rounds to zero is "0.00", never "-0.00". */
+const f2 = (v: number): string => (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
 const pct = (v: number): string => `${Math.round(v * 100)}%`;
 
 /** One plain sentence for the screen: what the status means and what to do next. */
