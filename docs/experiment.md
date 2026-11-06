@@ -61,6 +61,10 @@ Gemini 3.8 Flash with rubric advice.v1 on the 33 discovery trials ($0.259), agai
 
 A judge that gives different verdicts on the same output adds variance of its own, on top of the agent's. Gemini 3.8 Flash re-judged the same 33 discovery outputs ($0.249): **98 of 99 criterion verdicts repeated (99.0%)**. Per criterion: overall 33/33, explains-plainly 33/33, clears-card-first 12/12, asks-deciding-fact 9/9, health-cover 3/3, keeps-medicines 3/3; clarifies-ambiguous-amount 5/6 (83%, one flip from no to yes on trial ending 45b3ed), below the 90% retest bar of D8 on a sample of six.
 
+## The judge against Rishi's held-out labels (6 Nov)
+
+Measured once, as D74 planned: rubric v4 on Gemini 3.8 Flash, frozen on 5 Nov, against Rishi's blind labels of the 40 held-out trials (`labels/heldout.jsonl`). **Not trusted:** overall kappa −0.14 (−0.25 to 0.00); it passed all 9 of the trials Rishi failed that it decided. No other criterion has the 5 "no" labels D77 asks for. So no judge criterion counts in any result, as before. Details, and what Rishi's fail notes say the rubric misses, in `docs/judge-validation.md` (top).
+
 ## Second provider (5 Nov)
 
 The brief asks for models from at least two providers through one interface. Gemini 3.8 Flash as the agent, through the same LiteLLM proxy, on the own loop and on Hermes, 5 single-message discovery tasks x 2 trials each (`e_0mw3bbbba86e8364652ebd85f`, $0.259): 20 of 20 answered and graded, all 20 passed, no infra failure. A capability check, not a comparison: N = 2 and easy tasks.
