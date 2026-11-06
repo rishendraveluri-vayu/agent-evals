@@ -34,7 +34,7 @@ from evals_stats.agreement import (
     report,
     weighted_table,
 )
-from evals_stats.agreement_cli import read_rater_labels
+from evals_stats.agreement_cli import read_rater_labels, warn_undated
 
 MAJORITY = "majority"
 
@@ -48,9 +48,12 @@ def read_panel(path: Path) -> list[dict[str, Any]]:
 
 
 def verdicts(rows: Iterable[dict[str, Any]]) -> dict[tuple[str, str], dict[str, str]]:
-    """(trial, criterion) -> {model: verdict}. A later row for the same key replaces an earlier one
-    (a re-run after an error); a row with no criterion (a failed call) counts as `error` on every
-    criterion its trial has from the other judges."""
+    """(trial, criterion) -> {model: verdict}, with every judge of the panel. A later row for the
+    same key replaces an earlier one (a re-run after an error); a row with no criterion (a failed
+    call) counts as `error` on every criterion its trial has from the other judges; a judge that
+    answered the trial but left a criterion out is `missing` on it. So the majority is always
+    over the whole panel: one judge's answer is never a majority of one."""
+    rows = list(rows)
     out: dict[tuple[str, str], dict[str, str]] = defaultdict(dict)
     failed: dict[str, set[str]] = defaultdict(set)
     for r in rows:
@@ -58,9 +61,12 @@ def verdicts(rows: Iterable[dict[str, Any]]) -> dict[tuple[str, str], dict[str, 
             failed[r["trial_id"]].add(r["model"])
             continue
         out[(r["trial_id"], r["criterion"])][r["model"]] = str(r.get("verdict"))
+    panel = models_of(rows)
     for (trial, _criterion), by_model in out.items():
         for model in failed.get(trial, ()):
             by_model.setdefault(model, "error")
+        for model in panel:
+            by_model.setdefault(model, "missing")
     return dict(out)
 
 
@@ -218,9 +224,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--weights", type=Path, help="judge-panel/phase2-to-label.json (D71 phase 2)")
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
+    undated: list[int] = []
     labels_by_rater = {
-        r: labels for r, (labels, _relabels) in read_rater_labels(args.labels).items()
+        r: labels for r, (labels, _relabels) in read_rater_labels(args.labels, undated).items()
     }
+    warn_undated(args.labels, undated, "evals-panel")
     weights = read_weights(args.weights) if args.weights else None
     out = summary(read_panel(args.panel), labels_by_rater, args.human_unsure, weights=weights)
     if args.json:

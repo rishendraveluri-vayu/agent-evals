@@ -675,8 +675,10 @@ export interface CompareRow {
   passed: number;
   /** Done trials with an outcome, pass or fail, from their latest finished grading. */
   graded: number;
-  /** Done trials whose latest grading finished without an outcome: a required grader errored, was
-   *  not applicable or did not run (the judge, unapproved). Counted apart, never as a pass or fail. */
+  /** Done trials with no outcome once grading settled (TrialGradingState `incomplete`, `no_graders`
+   *  or `grading_failed`): a required grader errored, was not applicable or did not run (the judge,
+   *  unapproved), the task has no graders, or grading gave up. Counted apart, never as a pass or
+   *  fail, as the statistics count them. `trials - graded - incomplete` are still waiting for a grade. */
   incomplete: number;
   /** Agent-labelled (gradable) trials. */
   trials: number;
@@ -852,7 +854,8 @@ export interface StatsInterval {
 /**
  * The verdict on B against A (D42, D10). `better`: interval above 0 and p < 0.05. `worse`:
  * interval below 0 and p < 0.05. `equivalent`: the whole interval inside +/- the margin (10
- * points). `no_detectable_difference`: anything else. `held_back`: the pass rate alone says
+ * points), with some width (D55) and at least 6 tasks that passed at different rates (S7).
+ * `no_detectable_difference`: anything else. `held_back`: the pass rate alone says
  * better, but critical failures rose beyond noise, so B is not called better (the guardrail).
  */
 export type CompareVerdict = 'better' | 'worse' | 'equivalent' | 'no_detectable_difference' | 'held_back';
@@ -897,11 +900,12 @@ export interface CriticalGuardrail {
   /**
    * `no_critical_checks`: no required check in these tasks is marked critical, so nothing is
    * claimed about safety. `no_decided_trials`: there are such checks, but no task with one has a
-   * decided trial in both arms. `rose`: B's critical-failure rate is higher and its interval lies
-   * above 0. `did_not_rise`: otherwise.
+   * decided trial in both arms. `rose`: by the rule `better` follows (D10, D50, D43): its interval
+   * lies above 0, the paired sign-flip test on the per-task differences gives p < 0.05, and at
+   * least 6 of its tasks had different critical-failure rates in the two arms. `did_not_rise`: otherwise.
    */
   status: 'no_critical_checks' | 'no_decided_trials' | 'rose' | 'did_not_rise';
-  /** The required critical checks, as `task_id/grader_id`. */
+  /** The required critical checks in every task, as `task_id/grader_id`, including tasks left out of its aggregate; `text` counts only those on the tasks it compared. */
   checks: string[];
   /** Tasks in its aggregate: those with a critical check and a decided trial in both arms. */
   tasks: number;
@@ -910,6 +914,10 @@ export interface CriticalGuardrail {
   b: { rate: number; failed: number; graded: number } | null;
   /** B minus A in points, the same task bootstrap as the pass rate. */
   diff: StatsInterval | null;
+  /** The paired sign-flip test on the per-task differences in critical-failure rate, two-sided; null when nothing was compared. */
+  p_value?: number | null;
+  /** Tasks in its aggregate whose arms had different critical-failure rates: only they move the paired test (`rose` needs 6, D50). */
+  differing?: number;
   /** True when the pass rate alone says better and this blocks it (verdict `held_back`). */
   blocks_better: boolean;
   text: string;
@@ -967,6 +975,8 @@ export interface CostStat {
   relative: StatsInterval | null;
   /** Trials with a value, per arm. */
   trials: { a: number; b: number };
+  /** Trials with no recorded value, per arm (tokens: input or output not recorded), left out rather than counted as 0. */
+  missing?: { a: number; b: number };
   /** wall_s: trials left out because LiteLLM retried one of their model calls, whose backoff waits would inflate the time. */
   left_out_retried?: { a: number; b: number };
   /** wall_s: trials kept whose record does not say whether a call was retried (recorded before 4 Nov, or no LiteLLM record). */
@@ -1069,10 +1079,27 @@ export interface CompareStats {
   costs: CostStat[];
   /** D44, on an ordinary A/B: the latest A/A calibration of either config; null when there is none. */
   aa: AaCalibration | null;
-  /** D44, on a calibration run itself: whether it came out as it should (no difference found). */
+  /** D44, on a calibration run itself: whether it came out as it should (no difference found, and an interval that holds 0; a zero-width interval at 0 is as expected but its text says it cannot show the noise). */
   calibration: { as_expected: boolean; text: string } | null;
-  /** SP5's judge agreement on held-out labels, for the caveat when the verdict rests on the judge; null until SP5 reports it. */
+  /** SP5's judge agreement on held-out labels, for the caveat when the verdict rests on the judge; null until SP5 reports it to the API (always null today: no held-out labels exist). Which tasks rest on the judge is `rests_on_judge`. */
   judge: { kappa: number; low: number; high: number; bar: number; tasks: number } | null;
+  /**
+   * S6: the tasks in the aggregate where one arm has more than `ratio` (2) times as many decided
+   * trials as the other, in the experiment's order, with a caveat sentence to show beside the
+   * verdict: the sign-flip test weighs each task alike, and a rate from few trials can tilt it.
+   * Null when no task is that uneven.
+   */
+  unequal_decided: { ratio: number; tasks: { task: Sha256; task_id: string; a: number; b: number }[]; text: string } | null;
+  /**
+   * S12: what the "rests on the judge" caveat needs, independent of `judge` (the agreement figures).
+   * `differing`: tasks in the aggregate whose arms passed at different rates (a nonzero difference,
+   * not only those flagged beyond noise). `tasks`: those of them, in the experiment's order, where a
+   * required judge decided at least one decided trial's outcome (its pass was needed for a pass, or
+   * it was the only failing required check of a fail), with how many such trials per arm. `all`:
+   * every differing task is among them, so the verdict rests on the judge. Null when no differing
+   * task has such a trial (today every judge criterion is optional).
+   */
+  rests_on_judge: { differing: number; tasks: { task: Sha256; task_id: string; a: number; b: number }[]; all: boolean } | null;
 }
 
 // ---- Trials --------------------------------------------------------------------------

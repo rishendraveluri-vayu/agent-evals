@@ -193,6 +193,31 @@ def test_a_second_look_replaces_an_unsure_and_is_not_a_relabel(tmp_path):
     assert relabels == []
 
 
+def test_a_label_line_without_labelled_at_is_left_out_and_reported(tmp_path, capsys):
+    """It sorted first: an undated line became the first label (a later dated one a relabel), and
+    an undated second look came before the "unsure" it answers and was dropped silently."""
+    from evals_stats import agreement_cli
+    from evals_stats.agreement_cli import read_rater_labels
+
+    lines = [
+        {"trial_id": "t1", "criterion": "c", "value": "yes", "labelled_at": "2026-11-05T09:00Z"},
+        {"trial_id": "t1", "criterion": "c", "value": "no"},
+        {"trial_id": "t2", "criterion": "c", "value": "unsure", "labelled_at": "2026-11-05T09:00Z"},
+        {"trial_id": "t2", "criterion": "c", "value": "yes", "second_look": True},
+    ]
+    f = tmp_path / "tuning.jsonl"
+    f.write_text("".join(json.dumps(x) + "\n" for x in lines))
+    undated: list[int] = []
+    by_rater = read_rater_labels(f, undated)
+    assert by_rater["rishi"] == ({("t1", "c"): "yes", ("t2", "c"): "unsure"}, [])
+    assert undated == [2, 4]
+    assert read_labels(f) == by_rater["rishi"]
+    agreement_cli.warn_undated(f, undated, "evals-agreement")
+    err = capsys.readouterr().err
+    assert "2 label line(s) in" in err and "have no labelled_at and are left out" in err
+    assert err.rstrip().endswith("(line 2, 4)")
+
+
 def test_judge_verdicts_come_from_the_judge_grades_criterion_items():
     trial = {
         "grades": [
@@ -248,8 +273,173 @@ def test_d73_majority_and_raters_against_each_other():
     b = {("t1", "c"): "yes", ("t2", "c"): "yes", ("t3", "c"): "unsure"}
     assert human_majority({"a": a, "b": b}, "exclude") == {
         ("t1", "c"): "yes",
-        ("t2", "c"): "unsure",  # a tie is left out
+        ("t2", "c"): "tie",  # a tie is left out
         ("t3", "c"): "yes",  # b unsure, a's firm answer decides
     }
     [pair] = between_raters({"a": a, "b": b}, "exclude")
     assert pair["raters"] == ["a", "b"] and pair["n"] == 2 and pair["agreement"] == 0.5
+
+
+def test_d73_a_firm_tie_is_left_out_under_either_unsure_policy():
+    """S11: under --human-unsure no, the tie came back as "unsure" and so counted as a human no:
+    a judge's yes on it read as a false pass."""
+    from evals_stats.agreement import human_majority
+
+    labels = {"rishi": {("t1", "c"): "yes"}, "asha": {("t1", "c"): "no"}}
+    for policy in ("exclude", "no"):
+        majority = human_majority(labels, policy)
+        assert majority == {("t1", "c"): "tie"}
+        assert human_value("tie", policy) is None
+        [r] = report([Pair("t1", "c", majority[("t1", "c")], "yes", "A")], policy, resamples=10)
+        assert r.table.n == 0 and r.table.fp == 0 and r.human_left_out == 1
+    # Nobody firm: "unsure", which the policy decides (here: two unsure raters, so a no).
+    both_unsure = {"rishi": {("t1", "c"): "unsure"}, "asha": {("t1", "c"): "unsure"}}
+    assert human_majority(both_unsure, "exclude") == {("t1", "c"): "unsure"}
+    assert human_majority(both_unsure, "no") == {("t1", "c"): "no"}
+
+
+# ---- the destructive review, 6 Nov (S2, S3): synthetic verdicts only ------------------------
+
+
+def test_the_false_pass_gap_is_signed_b_minus_a():
+    # arm A: false-pass rate 5/10; arm B: 1/10. B - A = -0.4; the old max - min said +0.4.
+    ps = pairs_for(10, 5, 0, 5, arm="A") + pairs_for(10, 1, 0, 9, arm="B")
+    [r] = report(ps, "exclude", resamples=300)
+    assert r.false_pass_gap == pytest.approx(-0.4)
+    [g] = r.false_pass_gaps
+    assert g.arms == ("A", "B") and g.interval.high < 0
+    assert r.no_false_pass_gap is False
+    assert "the false-pass rate differs between arms" in "; ".join(r.d8["reasons"])
+
+
+def test_an_unbiased_judge_passes_the_gap_check_about_95_times_in_100():
+    """The reviewer's simulation (gap_sim.py): the same false-pass rate in both arms. The unsigned
+    gap's interval held 0 in 1.5% of runs at 20 "no" labels per arm and 0% at 40."""
+    import random
+
+    rng = random.Random(1)
+    held, signs = 0, set()
+    runs = 40
+    for run in range(runs):
+        ps = [
+            Pair(f"{arm}{i}", "c", "no", "yes" if rng.random() < 0.3 else "no", arm)
+            for arm in ("A", "B")
+            for i in range(20)
+        ]
+        [r] = report(ps, "exclude", resamples=300, seed=run)
+        held += r.no_false_pass_gap is True
+        if r.false_pass_gap:
+            signs.add(r.false_pass_gap > 0)
+    assert held / runs >= 0.85
+    assert signs == {True, False}
+
+
+def test_one_arm_has_no_gap_to_check():
+    [r] = report(pairs_for(10, 1, 1, 10, arm="A"), "exclude", resamples=100)
+    assert r.false_pass_gaps == [] and r.false_pass_gap is None and r.no_false_pass_gap is None
+    assert "the false-pass gap between arms could not be measured" in r.d8["reasons"]
+
+
+def test_three_arms_check_every_pair():
+    ps = (
+        pairs_for(10, 1, 0, 9, arm="A")
+        + pairs_for(10, 1, 0, 9, arm="B")
+        + pairs_for(10, 8, 0, 2, arm="C")
+    )
+    [r] = report(ps, "exclude", resamples=300)
+    assert [g.arms for g in r.false_pass_gaps] == [("A", "B"), ("A", "C"), ("B", "C")]
+    assert r.false_pass_gap is None  # only given for two arms
+    assert r.no_false_pass_gap is False
+
+
+def test_an_interval_from_too_many_undefined_resamples_is_undefined():
+    # One human "no", and the judge agrees on all 30: kappa 1, but about a third of the resamples
+    # leave the one "no" out, where kappa is undefined. Dropping them silently gave [1, 1].
+    ps = [
+        Pair(f"t{i}", "c", "no" if i == 0 else "yes", "no" if i == 0 else "yes") for i in range(30)
+    ]
+    [r] = report(ps, "exclude", resamples=2000)
+    assert r.table.tn == 1 and r.table.tp == 29
+    assert r.table.kappa == pytest.approx(1.0)
+    k = r.intervals["kappa"]
+    assert k.low is None and k.high is None and k.drawn == 2000
+    assert 0.3 < k.undefined_share < 0.42
+    assert k.as_dict()["undefined_share"] == k.undefined_share
+    reasons = r.d8["reasons"]
+    assert reasons[0] == '1 human "no" labels, fewer than 5'
+    assert any(x.startswith("kappa's interval is undefined (") for x in reasons)
+    assert r.d8["trusted"] is False
+
+
+def test_an_interval_with_a_few_undefined_resamples_stays_and_says_how_many():
+    from evals_stats.agreement import MAX_UNDEFINED_SHARE
+
+    values = list(range(100))
+    # Undefined when the resample's first item is 0..2: about 3% of resamples.
+    iv = bootstrap(values, lambda s: None if s[0] < 3 else sum(s) / len(s), resamples=1000)
+    assert iv.low is not None and 0 < iv.undefined_share <= MAX_UNDEFINED_SHARE
+    iv = bootstrap(values, lambda s: None if s[0] < 10 else 1.0, resamples=1000)
+    assert iv.low is None and iv.undefined_share > MAX_UNDEFINED_SHARE
+
+
+def test_the_corrected_rate_interval_counts_its_undefined_resamples():
+    # The reviewer's rg.py: 28 agreed passes, 1 agreed fail, 4 false passes. A resample without the
+    # one agreed fail has specificity 0, a judge no better than chance: no corrected rate.
+    labelled = [Pair(f"y{i}", "c", "yes", "yes") for i in range(28)] + [Pair("n0", "c", "no", "no")]
+    labelled += [Pair(f"n{i}", "c", "no", "yes") for i in range(1, 5)]
+    out = corrected_rate([True] * 90 + [False] * 10, labelled, "exclude", resamples=2000)
+    iv = out["interval"]
+    assert iv["low"] is None and iv["drawn"] == 2000 and iv["undefined_share"] > 0.3
+
+
+def test_d8_trusts_a_good_judge_only_with_test_retest_measured():
+    from evals_stats.agreement import d8_check
+
+    ps = pairs_for(20, 1, 1, 18, arm="A") + pairs_for(20, 1, 1, 18, arm="B")
+    [r] = report(ps, "exclude", resamples=500, retest={"c": 0.95})
+    assert r.table.kappa > 0.85 and r.intervals["kappa"].low > 0.6
+    assert r.d8 == {"trusted": True, "reasons": []}
+    assert d8_check(r) == {"trusted": False, "reasons": ["test-retest agreement is not measured"]}
+    assert d8_check(r, 0.85)["reasons"] == ["test-retest agreement 85% is below 90%"]
+
+
+def test_d8_needs_five_human_no_labels():
+    from evals_stats.agreement import MIN_HUMAN_NO
+
+    assert MIN_HUMAN_NO == 5
+    ps = pairs_for(30, 0, 1, 2, arm="A") + pairs_for(30, 0, 1, 2, arm="B")
+    [r] = report(ps, "exclude", resamples=300, retest={"c": 1.0})
+    assert r.table.fp + r.table.tn == 4
+    assert r.d8["reasons"][0] == '4 human "no" labels, fewer than 5'
+    assert r.as_dict()["human_no"] == 4
+
+
+def test_the_cli_prints_the_signed_gap_undefined_intervals_and_d8(tmp_path, monkeypatch, capsys):
+    from evals_stats import agreement_cli
+
+    # Synthetic: 12 trials per arm, the judge passes one of each arm's 4 human "no"s.
+    trials, lines = {}, []
+    for arm in ("A", "B"):
+        for i in range(12):
+            tid = f"{arm}{i}"
+            human = "no" if i < 4 else "yes"
+            judge = "yes" if i == 0 or human == "yes" else "no"
+            trials[tid] = {
+                "config": {"name": f"arm {arm}", "hash": f"sha256:{arm * 8}"},
+                "task": {"id": "t"},
+                "grades": [{"type": "judge", "evidence": [{"criterion": "c", "verdict": judge}]}],
+            }
+            lines.append({"trial_id": tid, "criterion": "c", "value": human, "labelled_at": "T"})
+    (tmp_path / "heldout.jsonl").write_text("".join(json.dumps(x) + "\n" for x in lines))
+    monkeypatch.setattr(agreement_cli, "get", lambda _api, path: trials[path.split("/")[-1]])
+    args = ["--set", "heldout", "--human-unsure", "exclude", "--labels", str(tmp_path)]
+    assert agreement_cli.main([*args, "--resamples", "300"]) == 0
+    out = capsys.readouterr().out
+    assert "False-pass gap: arm B (BBBBBBBB) minus arm A (AAAAAAAA)." in out
+    assert "| 0.00 (" in out  # both arms pass 1 of 4: a signed gap of 0
+    # 8 human "no" labels and a kappa interval of about 0.5 to 1: only the retest is missing.
+    assert "- c: not trusted: test-retest agreement is not measured\n" in out
+    assert agreement_cli.main([*args, "--resamples", "300", "--json"]) == 0
+    [c] = json.loads(capsys.readouterr().out)["criteria"]
+    assert c["false_pass_gap"] == 0 and c["false_pass_gaps"][0]["includes_zero"] is True
+    assert c["d8"]["trusted"] is False

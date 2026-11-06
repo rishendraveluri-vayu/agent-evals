@@ -41,6 +41,20 @@ def test_majority_needs_more_than_half():
     assert majority({"a": "no", "b": "no", "c": "unsure"}) == "no"
 
 
+def test_a_criterion_one_judge_answered_has_no_majority_of_one():
+    # m2 and m3 left criterion c out of their answers: m1's yes alone is not "two of three".
+    rows = [
+        row("t", "m1", "c", "yes"),
+        row("t", "m1", "d", "yes"),
+        row("t", "m2", "d", "no"),
+        row("t", "m3", "d", "no"),
+    ]
+    table = verdicts(rows)
+    assert table[("t", "c")] == {"m1": "yes", "m2": "missing", "m3": "missing"}
+    assert majority(table[("t", "c")]) == "undecided"
+    assert majority(table[("t", "d")]) == "no"
+
+
 def test_a_failed_call_is_an_error_verdict_not_a_missing_judge():
     table = verdicts(ROWS)
     assert table[("t3", "overall")] == {"a": "yes", "b": "error", "c": "no"}

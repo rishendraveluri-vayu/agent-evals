@@ -30,6 +30,18 @@ describe('the verdict rule (D42, D43)', () => {
     expect(passRateVerdict(diff, p, 20)).toBe(verdict);
   });
 
+  it('checks the margin and the sign on the unrounded interval, allowing only floating-point noise', () => {
+    // 10.004 shows as 10.00 but lies outside the +/-10 margin.
+    expect(passRateVerdict({ estimate: 2, low: -3, high: 10.004 }, 0.5, 10)).toBe('no_detectable_difference');
+    expect(passRateVerdict({ estimate: -2, low: -10.004, high: 3 }, 0.5, 10)).toBe('no_detectable_difference');
+    // A sum that is exactly 10 on paper and 10.000000000000002 in floating point is inside it.
+    expect(passRateVerdict({ estimate: 2, low: -3, high: 0.1 * 3 * (100 / 3) }, 0.5, 10)).toBe('equivalent');
+    expect(passRateVerdict({ estimate: 5, low: 1e-14, high: 9 }, 0.01, 10)).toBe('equivalent');
+    expect(passRateVerdict({ estimate: 5, low: 0.004, high: 9 }, 0.01, 10)).toBe('better');
+    // Width below the noise is no width (D55).
+    expect(passRateVerdict({ estimate: 0, low: 0, high: 1e-13 }, 1, 10)).toBe('no_detectable_difference');
+  });
+
   it('gives no verdict but no detectable difference with fewer than 6 tasks', () => {
     expect(passRateVerdict({ estimate: 1, low: -2, high: 3 }, 0.9, 5)).toBe('no_detectable_difference');
     expect(passRateVerdict({ estimate: 30, low: 20, high: 40 }, 0.01, 5)).toBe('no_detectable_difference');
@@ -44,6 +56,31 @@ describe('the verdict rule (D42, D43)', () => {
     expect(s?.diff).toEqual({ estimate: 0, low: 0, high: 0 });
     expect(s?.verdict).toBe('no_detectable_difference');
     expect(s?.verdict_text).toContain('Every task gave the same difference');
+  });
+
+  it('needs at least 6 tasks that differ for "practically equivalent" (S7)', () => {
+    expect(passRateVerdict({ estimate: 1, low: -2, high: 3 }, 0.9, 20, 5)).toBe('no_detectable_difference');
+    expect(passRateVerdict({ estimate: 1, low: -2, high: 3 }, 0.9, 20, 6)).toBe('equivalent');
+    // The knife-edge the review found: six tasks tied at 10 of 10 give no verdict (D55); one trial
+    // fewer in one arm used to make it "practically equivalent".
+    const tied = Array.from({ length: 6 }, (_, i) => task(`t${i}`, 10, 10, 10, 10));
+    const bumped = analyse({ seed: 'e_knife', tasks: [...tied.slice(0, 5), task('t5', 9, 10, 10, 10)] }, fast).stats!;
+    expect(bumped.diff.high - bumped.diff.low).toBeGreaterThan(0);
+    expect(bumped.diff.low).toBeGreaterThanOrEqual(-10);
+    expect(bumped.diff.high).toBeLessThanOrEqual(10);
+    expect(bumped.verdict).toBe('no_detectable_difference');
+    expect(bumped.verdict_text).toContain(
+      'Only 1 of the 6 tasks passed at different rates in the two arms, and only those count in the paired test: over 1 its smallest possible p is 1, so it could not reach p < 0.05 however large the difference. Its interval lies inside the +/-10-point margin, but "practically equivalent" also needs at least 6 tasks that passed at different rates: with fewer, one trial can move the interval into or out of the margin.',
+    );
+    // Five tasks a little better, five tied at the ceiling: the interval is inside the margin and above 0.
+    const five = analyse({ seed: 'e_five_up', tasks: [...Array.from({ length: 5 }, (_, i) => task(`d${i}`, 8, 10, 9, 10)), ...Array.from({ length: 5 }, (_, i) => task(`c${i}`, 10, 10, 10, 10))] }, fast).stats!;
+    expect(five.diff.low).toBeGreaterThan(0);
+    expect(five.verdict).toBe('no_detectable_difference');
+    expect(five.verdict_text).toContain('"practically equivalent" also needs at least 6 tasks');
+    // Six that differ, both ways, inside the margin: equivalent, and no such sentence.
+    const six = analyse({ seed: 'e_six_eq', tasks: [...[9, 9, 9, 10, 10, 10].map((b, i) => task(`s${i}`, b === 9 ? 10 : 9, 10, b, 10)), ...Array.from({ length: 30 }, (_, i) => task(`c${i}`, 5, 10, 5, 10))] }, fast).stats!;
+    expect(six.verdict).toBe('equivalent');
+    expect(six.verdict_text).not.toContain('also needs');
   });
 
   it('says when too few tasks differ for the paired test to reach p < 0.05, though there are enough tasks', () => {
@@ -150,6 +187,26 @@ describe('analyse: incomplete trials and one-arm-empty tasks', () => {
     expect(s?.diff.estimate).toBe(25);
   });
 
+  it('adds a caveat when a task has more than twice as many decided trials in one arm as in the other (S6)', () => {
+    const uneven = task('uneven', 5, 10, 2, 3);
+    uneven.trials.push(...Array.from({ length: 7 }, (_, i) => trial(`uneven-bi${i}`, 'B', 'incomplete')));
+    const exactlyTwice = task('twice', 5, 10, 3, 5);
+    const s = analyse({ seed: 'e_uneven', tasks: [uneven, exactlyTwice, ...Array.from({ length: 6 }, (_, i) => task(`t${i}`, 5, 10, 6, 10))] }, fast).stats!;
+    expect(s.unequal_decided).toEqual({
+      ratio: 2,
+      tasks: [{ task: 'sha256:uneven', task_id: 'uneven', a: 10, b: 3 }],
+      text: "On 1 of the 8 tasks one arm has more than twice as many decided trials as the other (uneven: 10 in A, 3 in B). The paired test weighs each task's difference alike, and a rate from few trials is coarse, so that task can tilt it: read the verdict with care.",
+    });
+    expect(analyse({ seed: 'e_even', tasks: [exactlyTwice, task('t', 5, 10, 6, 10)] }, fast).stats!.unequal_decided).toBeNull();
+  });
+
+  it('names at most 5 uneven tasks in the caveat', () => {
+    const s = analyse({ seed: 'e_uneven7', tasks: Array.from({ length: 7 }, (_, i) => task(`u${i}`, 1, 2, 5, 10)) }, fast).stats!;
+    expect(s.unequal_decided?.tasks).toHaveLength(7);
+    expect(s.unequal_decided?.text).toContain('(u0: 2 in A, 10 in B; u1: 2 in A, 10 in B; u2: 2 in A, 10 in B; u3: 2 in A, 10 in B; u4: 2 in A, 10 in B; and 2 more). ');
+    expect(s.unequal_decided?.text).toContain('so those tasks can tilt it');
+  });
+
   it('gives no statistics, with a note, when no task has a decided trial in both arms', () => {
     const r = analyse({ seed: 'e_0', tasks: [{ task: 'sha256:x', task_id: 'x', trials: [trial('x-a', 'A', 'pass'), trial('x-b', 'B', 'incomplete')] }] });
     expect(r.stats).toBeNull();
@@ -191,6 +248,51 @@ describe('analyse: the critical-failure guardrail (D10)', () => {
     expect(s?.critical.text).toContain('so B is not called better although its pass rate rose');
   });
 
+  /** A task whose arm A passes 2 of 10 and arm B 8 of 10, with a required critical check that fails on `critA` of A's failures and `critB` of B's. */
+  const withCritical = (id: string, critA: number, critB: number) =>
+    task(id, 2, 10, 8, 10, (arm, i, pass) => ({ grades: [grade('safety', !pass && i - (arm === 'A' ? 2 : 8) < (arm === 'A' ? critA : critB) ? 'fail' : 'pass', 'critical')] }));
+  const plain = (id: string) => task(id, 2, 10, 8, 10);
+
+  it('needs the paired test as well as the interval: one extra critical failure on one task does not hold back a clear gain (S1)', () => {
+    const s = analyse({ seed: 'e_one_crit', tasks: [withCritical('t0', 0, 1), ...Array.from({ length: 9 }, (_, i) => plain(`t${i + 1}`))] }).stats!;
+    expect(s.pass_rate_verdict).toBe('better');
+    expect(s.verdict).toBe('better');
+    // One task in the guardrail's aggregate: its interval is +10 to +10, above 0, with no spread at all.
+    expect(s.critical).toMatchObject({ status: 'did_not_rise', tasks: 1, differing: 1, p_value: 1, blocks_better: false, diff: { estimate: 10, low: 10, high: 10 } });
+    expect(s.critical.text).toBe(
+      'Critical failures: +10.0 points (95% interval +10.0 to +10.0) over 1 task with 1 critical check. Their interval lies above 0, but only 1 of the 1 task had different critical-failure rates in the two arms, too few for the paired test to reach p < 0.05, so this is not a rise beyond noise.',
+    );
+  });
+
+  it('holds back nothing when 4 of 10 tasks have one extra critical failure each: below the 6-task floor (S1, D50)', () => {
+    const s = analyse({ seed: 'e_four_crit', tasks: Array.from({ length: 10 }, (_, i) => withCritical(`t${i}`, 0, i < 4 ? 1 : 0)) }).stats!;
+    expect(s.verdict).toBe('better');
+    expect(s.critical).toMatchObject({ status: 'did_not_rise', tasks: 10, differing: 4, p_value: 0.125 });
+    expect(s.critical.diff!.low).toBeGreaterThan(0);
+    expect(s.critical.text).toContain('only 4 of the 10 tasks had different critical-failure rates in the two arms, too few for the paired test to reach p < 0.05');
+  });
+
+  it('calls a rise on 6 tasks that all rose a rise, and holds back better; on 5 it cannot (S1, D50)', () => {
+    const six = analyse({ seed: 'e_six_crit', tasks: [...Array.from({ length: 6 }, (_, i) => withCritical(`r${i}`, 0, 2)), ...Array.from({ length: 4 }, (_, i) => withCritical(`s${i}`, 0, 0))] }).stats!;
+    expect(six.critical).toMatchObject({ status: 'rose', differing: 6, p_value: 0.03125, blocks_better: true });
+    expect(six.verdict).toBe('held_back');
+    expect(six.critical.text).toContain('They rose beyond noise (p = 0.03125 by the paired sign-flip test), so B is not called better although its pass rate rose.');
+    const five = analyse({ seed: 'e_five_crit', tasks: [...Array.from({ length: 5 }, (_, i) => withCritical(`r${i}`, 0, 2)), ...Array.from({ length: 5 }, (_, i) => withCritical(`s${i}`, 0, 0))] }).stats!;
+    expect(five.critical).toMatchObject({ status: 'did_not_rise', differing: 5, p_value: 0.0625, blocks_better: false });
+    expect(five.verdict).toBe('better');
+  });
+
+  it('says the paired test is why, when enough tasks differ but it does not reach p < 0.05', () => {
+    // 6 tasks rose by 10 points, 1 fell by 10, 3 tied: a resampled mean is rarely 0 or below, so
+    // the interval lies above 0; but 16 of the 128 sign patterns of the 7 that differ are as far
+    // from 0 as what was seen (p = 0.125).
+    const tasks = [...Array.from({ length: 6 }, (_, i) => withCritical(`up${i}`, 0, 1)), withCritical('down', 1, 0), ...Array.from({ length: 3 }, (_, i) => withCritical(`z${i}`, 0, 0))];
+    const s = analyse({ seed: 'e_mixed_crit', tasks }).stats!;
+    expect(s.critical).toMatchObject({ status: 'did_not_rise', differing: 7, p_value: 0.125 });
+    expect(s.critical.diff!.low).toBeGreaterThan(0);
+    expect(s.critical.text).toContain('Their interval lies above 0, but the paired sign-flip test gives p = 0.125, so this is not a rise beyond noise.');
+  });
+
   it('lets B be better when the critical failures did not rise', () => {
     const fine = (id: string) => task(id, 3, 10, 7, 10, (_a, _i, pass) => ({ grades: [grade('safety', 'pass', 'critical'), grade('tone', pass ? 'pass' : 'fail', 'major')] }));
     const s = analyse({ seed: 'e_fine', tasks: Array.from({ length: 10 }, (_, i) => fine(`f${i}`)) }).stats;
@@ -208,6 +310,8 @@ describe('analyse: the critical-failure guardrail (D10)', () => {
       a: null,
       b: null,
       diff: null,
+      p_value: null,
+      differing: 0,
       blocks_better: false,
       text: 'No check is marked critical in these tasks, so this comparison says nothing about critical failures.',
     });
@@ -219,10 +323,52 @@ describe('analyse: the critical-failure guardrail (D10)', () => {
     expect(s?.critical.status).toBe('no_critical_checks');
   });
 
+  it("counts in its sentence only the critical checks on the tasks it compared, not those on tasks it left out (S10)", () => {
+    const grades = [grade('c1', 'pass', 'critical'), grade('c2', 'pass', 'critical')];
+    const twoChecks = (id: string, undecided: 'A' | null) => task(id, 5, 10, 5, 10, (a) => (a === undecided ? { outcome: 'incomplete', grades } : { grades }));
+    // Two tasks with two critical checks each are compared; two more have no decided trial in arm A.
+    const tasks = [twoChecks('t0', null), twoChecks('t1', null), ...Array.from({ length: 4 }, (_, i) => task(`p${i}`, 5, 10, 5, 10)), twoChecks('x1', 'A'), twoChecks('x2', 'A')];
+    const s = analyse({ seed: 'e_s10', tasks }, fast).stats!;
+    expect(s.excluded_tasks.map((t) => t.task_id)).toEqual(['x1', 'x2']);
+    expect(s.critical.checks).toEqual(['t0/c1', 't0/c2', 't1/c1', 't1/c2', 'x1/c1', 'x1/c2', 'x2/c1', 'x2/c2']);
+    expect(s.critical.text).toBe('Critical failures: 0.0 points (95% interval 0.0 to 0.0) over 2 tasks with 4 critical checks. No rise beyond noise.');
+  });
+
   it('says when the tasks with a critical check have no decided trial in both arms', () => {
     const crit: TaskInput = { task: 'sha256:c', task_id: 'c', trials: [trial('c-a', 'A', 'fail', { grades: [grade('safety', 'fail', 'critical')] }), trial('c-b', 'B', 'incomplete')] };
     const s = analyse({ seed: 'e_nodec', tasks: [crit, task('t', 1, 3, 2, 3)] }, fast).stats;
     expect(s?.critical).toMatchObject({ status: 'no_decided_trials', checks: ['c/safety'], diff: null, blocks_better: false });
+  });
+});
+
+describe('analyse: which tasks rest on the judge (S12)', () => {
+  const judge = (verdict: string, required = true): GradeInput => ({ grader_id: 'advice', required, verdict, severity: 'major', kind: 'judge' });
+  const exact = (verdict: string): GradeInput => ({ grader_id: 'emi', required: true, verdict, severity: 'major', kind: 'exact' });
+  /** Passes need both; a fail is the judge's alone (`judgeFails`) or the exact check's too. */
+  const judged = (id: string, pa: number, pb: number, judgeFails = true, required = true) =>
+    task(id, pa, 10, pb, 10, (_arm, _i, pass) => ({ grades: pass ? [exact('pass'), judge('pass', required)] : judgeFails ? [exact('pass'), judge('fail', required)] : [exact('fail'), judge('fail', required)] }));
+  const plainTask = (id: string, pa: number, pb: number) => task(id, pa, 10, pb, 10, (_arm, _i, pass) => ({ grades: [exact(pass ? 'pass' : 'fail')] }));
+
+  it('lists the differing tasks where a required judge decided an outcome, and says when all of them do', () => {
+    const tasks = [judged('j1', 3, 6), judged('j2', 5, 5), plainTask('p1', 2, 7), plainTask('p2', 4, 4), plainTask('p3', 4, 4), plainTask('p4', 4, 4)];
+    const s = analyse({ seed: 'e_judge', tasks }, fast).stats!;
+    // j2 ties, so it does not count; p1 differs without the judge.
+    expect(s.rests_on_judge).toEqual({ differing: 2, tasks: [{ task: 'sha256:j1', task_id: 'j1', a: 10, b: 10 }], all: false });
+    expect(s.judge).toBeNull();
+    const all = analyse({ seed: 'e_judge_all', tasks: [judged('j1', 3, 6), judged('j3', 6, 3), ...Array.from({ length: 4 }, (_, i) => plainTask(`p${i}`, 4, 4))] }, fast).stats!;
+    expect(all.rests_on_judge).toMatchObject({ differing: 2, all: true });
+    expect(all.rests_on_judge?.tasks.map((t) => t.task_id)).toEqual(['j1', 'j3']);
+  });
+
+  it("counts a judge's fail only when no other required check failed, and its pass always", () => {
+    // Every fail also fails the exact check, so only the passes needed the judge.
+    const s = analyse({ seed: 'e_judge_fail', tasks: [judged('j', 3, 6, false), ...Array.from({ length: 5 }, (_, i) => plainTask(`p${i}`, 4, 4))] }, fast).stats!;
+    expect(s.rests_on_judge?.tasks).toEqual([{ task: 'sha256:j', task_id: 'j', a: 3, b: 6 }]);
+  });
+
+  it('is null when the judge is optional, as every judge criterion is today', () => {
+    const s = analyse({ seed: 'e_judge_opt', tasks: [judged('j', 3, 6, true, false), ...Array.from({ length: 5 }, (_, i) => plainTask(`p${i}`, 4, 5))] }, fast).stats!;
+    expect(s.rests_on_judge).toBeNull();
   });
 });
 
@@ -293,6 +439,14 @@ describe('analyse: cost, tokens and time (proposal section 8)', () => {
     expect(wall).toMatchObject({ trials: { a: 2, b: 2 }, retries_unknown: { a: 2, b: 0 } });
   });
 
+  it('leaves a trial with no recorded value out of a metric, never as 0, and counts it', () => {
+    const t = task('m', 2, 4, 2, 4, (arm, i) => ({ tokens: arm === 'B' && i === 0 ? null : 1000, cost_usd: 0.01, wall_s: arm === 'A' && i < 2 ? null : 10 }));
+    const by = Object.fromEntries((analyse({ seed: 'e_missing', tasks: [t] }, fast).stats?.costs ?? []).map((c) => [c.metric, c]));
+    expect(by.tokens).toMatchObject({ a: 1000, b: 1000, trials: { a: 4, b: 3 }, missing: { a: 0, b: 1 } });
+    expect(by.wall_s).toMatchObject({ trials: { a: 2, b: 4 }, missing: { a: 2, b: 0 } });
+    expect(by.cost_usd.missing).toEqual({ a: 0, b: 0 });
+  });
+
   it('leaves a metric out when no task has a value in both arms', () => {
     expect(analyse({ seed: 'e_nocost', tasks: [task('n', 1, 2, 1, 2)] }, fast).stats?.costs).toEqual([]);
   });
@@ -314,6 +468,37 @@ describe('analyse: an A/A calibration run (D44)', () => {
     expect(s?.calibration?.as_expected).toBe(false);
     expect(s?.calibration?.text).toContain('the claim order or the arms sharing workers');
     expect(s?.calibration?.text).toContain('10 tasks were flagged beyond noise; in an A/A run every such flag is a false one.');
+  });
+
+  it('does not say "as it should" when the interval leaves out 0, though the paired test cannot call it (S4)', () => {
+    // The 5 Nov headline's per-task counts, run as an A/A: +9 points, interval above 0, p = 0.0625.
+    const tasks = [
+      task('a', 9, 10, 10, 10),
+      task('b', 2, 10, 5, 10),
+      task('c', 3, 10, 4, 10),
+      task('d', 2, 10, 5, 10),
+      task('e', 10, 10, 10, 10),
+      task('f', 8, 10, 9, 10),
+      task('g', 10, 10, 10, 10),
+      task('h', 10, 10, 10, 10),
+      task('i', 10, 10, 10, 10),
+      task('j', 0, 10, 0, 10),
+    ];
+    const s = analyse({ seed: 'e_aa_shape', tasks, calibration: true }).stats!;
+    expect(s.verdict).toBe('no_detectable_difference');
+    expect(s.diff.low).toBeGreaterThan(0);
+    expect(s.calibration?.as_expected).toBe(false);
+    expect(s.calibration?.text).toMatch(/^This A\/A run's interval leaves out 0 \(\+9\.0 points, 95% interval \+\d+\.\d to \+\d+\.\d, p = 0\.0625\): the paired test does not call it a difference/);
+    expect(s.calibration?.text).toContain('needs a look before any A/B result on it is trusted.');
+  });
+
+  it("says a zero-width A/A interval cannot show the setup's noise, rather than call 0 points its noise (S4, D55)", () => {
+    const s = analyse({ seed: 'e_aa_tied', tasks: Array.from({ length: 10 }, (_, i) => task(`t${i}`, 10, 10, 10, 10)), calibration: true }, fast).stats!;
+    expect(s.diff).toEqual({ estimate: 0, low: 0, high: 0 });
+    expect(s.calibration).toEqual({
+      as_expected: true,
+      text: "This A/A run found no difference, but it cannot show this setup's noise: every task gave the same difference (0.0 points), so its interval has no width. Tasks that pass and fail in both arms, or more trials, are needed to measure it.",
+    });
   });
 
   it('is null on an ordinary run', () => {

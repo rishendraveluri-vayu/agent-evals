@@ -2,6 +2,7 @@ import type {
   CompareStats,
   CostStat,
   CriticalGuardrail,
+  GradeKind,
   GraderSeverity,
   PassRateVerdict,
   Regression,
@@ -25,7 +26,7 @@ import { seededStream } from './random';
  */
 
 /** Bump when a change here can move a number, so cached results are not reused across it. */
-export const STATS_METHOD_VERSION = 'sp6-2';
+export const STATS_METHOD_VERSION = 'sp6-3';
 export const RESAMPLES = 10_000;
 export const LEVEL = 0.95;
 export const ALPHA = 0.05;
@@ -39,10 +40,24 @@ export const MARGIN_POINTS = 10;
  * Proposed 5 Nov, for Rishi to confirm (docs/known-limits.md, "Statistics").
  */
 export const MIN_TASKS_FOR_VERDICT = 6;
+/**
+ * S6: a task whose arms' decided-trial counts differ by more than this factor gets a caveat. The
+ * sign-flip test weighs each task's difference alike and assumes it is as likely positive as
+ * negative under "no change"; a rate from a handful of trials is coarse (0, 50 or 100% from 2),
+ * so such tasks can tilt it (docs/known-limits.md, "Statistics").
+ */
+export const UNEQUAL_DECIDED_RATIO = 2;
+/** At most this many tasks are named in that caveat's sentence. */
+const UNEQUAL_NAMED = 5;
 /** At most this many failed trials per arm in each regression entry. */
 export const FAILED_TRIALS_PER_ARM = 10;
 
 export type Outcome = 'pass' | 'fail' | 'incomplete';
+
+/** Below this, in points, a difference or an interval's width is floating-point noise (sums of task means that cancel exactly on paper). */
+export const EPS_POINTS = 1e-9;
+/** The same for one task's difference of two rates (proportions). */
+const EPS_RATE = 1e-12;
 
 /** One grader's verdict on one trial, from the trial's current grading. */
 export interface GradeInput {
@@ -50,6 +65,8 @@ export interface GradeInput {
   required: boolean;
   verdict: string | null;
   severity: GraderSeverity | null;
+  /** The grade's kind (`judge` for the LLM judge); absent reads as not a judge. */
+  kind?: GradeKind;
 }
 
 /** One done trial (an agent outcome); infra failures never reach the statistics. */
@@ -109,9 +126,22 @@ const sig = (v: number): number => Number(v.toPrecision(4));
 const pts = (v: number): string => `${v > 0 ? '+' : ''}${round(v, 1).toFixed(1)}`;
 const pValueText = (p: number): string => (p < 0.001 ? 'p < 0.001' : `p = ${sig(p)}`);
 
-function interval(estimate: number, lowHigh: [number, number], scale: number, places: number): StatsInterval {
-  return { estimate: round(estimate * scale, places), low: round(lowHigh[0] * scale, places), high: round(lowHigh[1] * scale, places) };
+/** An estimate and its interval in the unit shown (points for rates), not rounded: what the rules read. */
+function scaled(estimate: number, lowHigh: [number, number], scale: number): StatsInterval {
+  return { estimate: estimate * scale, low: lowHigh[0] * scale, high: lowHigh[1] * scale };
 }
+
+/** As shown and stored. */
+function rounded(i: StatsInterval, places: number): StatsInterval {
+  return { estimate: round(i.estimate, places), low: round(i.low, places), high: round(i.high, places) };
+}
+
+function interval(estimate: number, lowHigh: [number, number], scale: number, places: number): StatsInterval {
+  return rounded(scaled(estimate, lowHigh, scale), places);
+}
+
+/** Tasks whose two arms differ: only they move the sign-flip test (a zero difference flips to itself). */
+const countDiffering = (diffs: number[]): number => diffs.filter((d) => Math.abs(d) > EPS_RATE).length;
 
 function counts(trials: TrialInput[], arm: 'A' | 'B'): StatsArmCounts {
   let passed = 0;
@@ -137,16 +167,25 @@ function whyExcluded(a: StatsArmCounts, b: StatsArmCounts): string {
   return !a.graded ? side(a, 'A') : side(b, 'B');
 }
 
-/** D42 and D43, in the order the proposal gives: better or worse first, then equivalence. */
-export function passRateVerdict(diff: StatsInterval, p: number, tasks: number, alpha = ALPHA, margin = MARGIN_POINTS): PassRateVerdict {
+/**
+ * D42 and D43, in the order the proposal gives: better or worse first, then equivalence. `diff` is
+ * the unrounded interval in points: a high of 10.004 is outside the +/-10 margin although it shows
+ * as 10.00. EPS_POINTS only absorbs floating-point noise (a sum that is exactly 10 on paper).
+ * `differing`: the tasks whose arms passed at different rates (all of them when not given).
+ */
+export function passRateVerdict(diff: StatsInterval, p: number, tasks: number, differing = tasks, alpha = ALPHA, margin = MARGIN_POINTS): PassRateVerdict {
   if (tasks < MIN_TASKS_FOR_VERDICT) return 'no_detectable_difference';
-  if (diff.low > 0 && p < alpha) return 'better';
-  if (diff.high < 0 && p < alpha) return 'worse';
+  if (diff.low > EPS_POINTS && p < alpha) return 'better';
+  if (diff.high < -EPS_POINTS && p < alpha) return 'worse';
   // D55: a zero-width interval (every task gave the same difference) shows no spread, not a small
-  // one, so it cannot support "practically equivalent".
-  if (diff.high > diff.low && diff.low >= -margin && diff.high <= margin) return 'equivalent';
+  // one, so it cannot support "practically equivalent". S7: nor can an interval whose width comes
+  // from fewer than MIN_TASKS_FOR_VERDICT tasks that differ, the rest tied at a ceiling or floor:
+  // one trial more or less on one of them moves it into or out of the margin.
+  if (differing >= MIN_TASKS_FOR_VERDICT && diff.high - diff.low > EPS_POINTS && insideMargin(diff, margin)) return 'equivalent';
   return 'no_detectable_difference';
 }
+
+const insideMargin = (diff: StatsInterval, margin = MARGIN_POINTS): boolean => diff.low >= -margin - EPS_POINTS && diff.high <= margin + EPS_POINTS;
 
 const SEVERITY_RANK: Record<string, number> = { critical: 0, major: 1, minor: 2 };
 const severityRank = (s: GraderSeverity | null): number => (s === null ? 3 : SEVERITY_RANK[s]);
@@ -155,19 +194,36 @@ function criticalFailed(t: TrialInput): boolean {
   return t.grades.some((g) => g.required && g.severity === 'critical' && g.verdict === 'fail');
 }
 
-function guardrail(input: AnalysisInput, eligible: Set<string>, rand: () => number, opts: Required<Pick<AnalysisOptions, 'resamples' | 'levels'>>): Omit<CriticalGuardrail, 'blocks_better' | 'text'> {
+/** The guardrail before the verdict reads it, and whether its unrounded interval lies above 0 (for its sentence). */
+interface GuardrailResult {
+  g: Omit<CriticalGuardrail, 'blocks_better' | 'text'>;
+  aboveZero: boolean;
+  /** The critical checks on the tasks in its aggregate: what its sentence counts (S10). */
+  usedChecks: number;
+}
+
+/**
+ * D10's guardrail, by the rule "better" follows (D50, D43): critical failures rose only when the
+ * task bootstrap interval of B - A lies above 0, the paired sign-flip test on the per-task
+ * differences gives p < 0.05, and at least MIN_TASKS_FOR_VERDICT tasks with a critical check had
+ * different critical-failure rates in the two arms. The interval alone fired on one extra failure
+ * on one task (destructive review S1).
+ */
+function guardrail(input: AnalysisInput, eligible: Set<string>, opts: Required<Pick<AnalysisOptions, 'resamples' | 'levels'>> & Pick<AnalysisOptions, 'exactMaxTasks' | 'flips'>): GuardrailResult {
   const checks: string[] = [];
-  const withChecks: TaskInput[] = [];
+  const withChecks: { t: TaskInput; checks: number }[] = [];
   for (const t of input.tasks) {
     const ids = new Set<string>();
     for (const tr of t.trials) for (const g of tr.grades) if (g.required && g.severity === 'critical') ids.add(g.grader_id);
     if (!ids.size) continue;
     checks.push(...[...ids].sort().map((id) => `${t.task_id}/${id}`));
-    withChecks.push(t);
+    withChecks.push({ t, checks: ids.size });
   }
-  if (!checks.length) return { status: 'no_critical_checks', checks, tasks: 0, a: null, b: null, diff: null };
-  const used = withChecks.filter((t) => eligible.has(t.task));
-  if (!used.length) return { status: 'no_decided_trials', checks, tasks: 0, a: null, b: null, diff: null };
+  const none = { tasks: 0, a: null, b: null, diff: null, p_value: null, differing: 0 };
+  if (!checks.length) return { g: { status: 'no_critical_checks', checks, ...none }, aboveZero: false, usedChecks: 0 };
+  const usedWith = withChecks.filter((x) => eligible.has(x.t.task));
+  if (!usedWith.length) return { g: { status: 'no_decided_trials', checks, ...none }, aboveZero: false, usedChecks: 0 };
+  const used = usedWith.map((x) => x.t);
   const per = used.map((t) => {
     const arm = (letter: 'A' | 'B') => {
       const decided = t.trials.filter((x) => x.arm === letter && x.outcome !== 'incomplete');
@@ -176,31 +232,49 @@ function guardrail(input: AnalysisInput, eligible: Set<string>, rand: () => numb
     return { a: arm('A'), b: arm('B') };
   });
   const samples: TaskSample[] = per.map((p) => ({ a: binaryArm(p.a.failed, p.a.graded), b: binaryArm(p.b.failed, p.b.graded) }));
-  const draws = bootstrapTasks(samples, rand, opts);
+  const draws = bootstrapTasks(samples, seededStream(`${input.seed}:critical`), opts);
   const k = per.length;
+  const diffs = per.map((p) => p.b.failed / p.b.graded - p.a.failed / p.a.graded);
   const meanA = per.reduce((s, p) => s + p.a.failed / p.a.graded, 0) / k;
   const meanB = per.reduce((s, p) => s + p.b.failed / p.b.graded, 0) / k;
-  const diff = interval(meanB - meanA, percentileInterval(draws.diff, LEVEL), 100, 2);
+  const raw = scaled(meanB - meanA, percentileInterval(draws.diff, LEVEL), 100);
+  const test = signFlipTest(diffs, seededStream(`${input.seed}:critical_sign_flip`), { exactMaxTasks: opts.exactMaxTasks, flips: opts.flips });
+  const differing = countDiffering(diffs);
+  const aboveZero = raw.low > EPS_POINTS;
   const sum = (arm: 'a' | 'b') => per.reduce((acc, p) => ({ failed: acc.failed + p[arm].failed, graded: acc.graded + p[arm].graded }), { failed: 0, graded: 0 });
   return {
-    status: diff.low > 0 ? 'rose' : 'did_not_rise',
-    checks,
-    tasks: k,
-    a: { rate: round(meanA, 4), ...sum('a') },
-    b: { rate: round(meanB, 4), ...sum('b') },
-    diff,
+    g: {
+      status: aboveZero && test.p < ALPHA && differing >= MIN_TASKS_FOR_VERDICT ? 'rose' : 'did_not_rise',
+      checks,
+      tasks: k,
+      a: { rate: round(meanA, 4), ...sum('a') },
+      b: { rate: round(meanB, 4), ...sum('b') },
+      diff: rounded(raw, 2),
+      p_value: sig(test.p),
+      differing,
+    },
+    aboveZero,
+    usedChecks: usedWith.reduce((s, x) => s + x.checks, 0),
   };
 }
 
-function guardrailText(g: Omit<CriticalGuardrail, 'text'>): string {
+function guardrailText(g: Omit<CriticalGuardrail, 'text'>, aboveZero: boolean, usedChecks: number): string {
   if (g.status === 'no_critical_checks') return 'No check is marked critical in these tasks, so this comparison says nothing about critical failures.';
+  const count = (n: number) => `${n} critical ${n === 1 ? 'check' : 'checks'}`;
   const n = g.checks.length;
-  const checks = `${n} critical ${n === 1 ? 'check' : 'checks'}`;
-  if (g.status === 'no_decided_trials' || !g.diff) return `There ${n === 1 ? 'is' : 'are'} ${checks}, but no task with one has a decided trial in both arms, so critical failures could not be compared.`;
-  const what = `Critical failures: ${pts(g.diff.estimate)} points (95% interval ${pts(g.diff.low)} to ${pts(g.diff.high)}) over ${g.tasks} ${g.tasks === 1 ? 'task' : 'tasks'} with ${checks}.`;
-  if (g.blocks_better) return `${what} They rose beyond noise, so B is not called better although its pass rate rose.`;
-  if (g.status === 'rose') return `${what} They rose beyond noise.`;
-  return `${what} No rise beyond noise.`;
+  if (g.status === 'no_decided_trials' || !g.diff) return `There ${n === 1 ? 'is' : 'are'} ${count(n)}, but no task with one has a decided trial in both arms, so critical failures could not be compared.`;
+  // Only the checks on the tasks it compared: a task left out of the aggregate adds none (S10).
+  const what = `Critical failures: ${pts(g.diff.estimate)} points (95% interval ${pts(g.diff.low)} to ${pts(g.diff.high)}) over ${g.tasks} ${g.tasks === 1 ? 'task' : 'tasks'} with ${count(usedChecks)}.`;
+  const p = g.p_value === null || g.p_value === undefined ? '' : ` (${pValueText(g.p_value)} by the paired sign-flip test)`;
+  if (g.blocks_better) return `${what} They rose beyond noise${p}, so B is not called better although its pass rate rose.`;
+  if (g.status === 'rose') return `${what} They rose beyond noise${p}.`;
+  if (!aboveZero) return `${what} No rise beyond noise.`;
+  const differing = g.differing ?? 0;
+  const why =
+    differing < MIN_TASKS_FOR_VERDICT
+      ? `only ${differing} of the ${g.tasks} ${g.tasks === 1 ? 'task' : 'tasks'} had different critical-failure rates in the two arms, too few for the paired test to reach p < 0.05`
+      : `the paired sign-flip test gives ${pValueText(g.p_value ?? 1)}`;
+  return `${what} Their interval lies above 0, but ${why}, so this is not a rise beyond noise.`;
 }
 
 function regressionsOf(input: AnalysisInput, perTask: Map<string, StatsTask>): Regression[] {
@@ -254,13 +328,16 @@ function regressionsOf(input: AnalysisInput, perTask: Map<string, StatsTask>): R
   return out.map((e) => e.r);
 }
 
-const COST_METRICS: { metric: CostStat['metric']; places: number; value: (t: TrialInput) => number | null }[] = [
-  { metric: 'cost_usd', places: 6, value: (t) => t.cost_usd },
-  { metric: 'tokens', places: 1, value: (t) => t.tokens },
+/** `recorded`: the trial's own value, before a rule leaves it out; `value`: what the comparison uses. */
+const COST_METRICS: { metric: CostStat['metric']; places: number; recorded: (t: TrialInput) => number | null; value: (t: TrialInput) => number | null }[] = [
+  { metric: 'cost_usd', places: 6, recorded: (t) => t.cost_usd, value: (t) => t.cost_usd },
+  { metric: 'tokens', places: 1, recorded: (t) => t.tokens, value: (t) => t.tokens },
   // Retry backoff skews latency: a trial whose model call LiteLLM retried waited out the
   // backoff, so its time says more about the provider's rate limits than about the agent.
-  { metric: 'wall_s', places: 2, value: (t) => (t.retried === true ? null : t.wall_s) },
+  { metric: 'wall_s', places: 2, recorded: (t) => t.wall_s, value: (t) => (t.retried === true ? null : t.wall_s) },
 ];
+
+const hasValue = (v: number | null): v is number => typeof v === 'number' && Number.isFinite(v);
 
 function costsOf(input: AnalysisInput, opts: Required<Pick<AnalysisOptions, 'resamples' | 'levels'>>): CostStat[] {
   const out: CostStat[] = [];
@@ -268,7 +345,7 @@ function costsOf(input: AnalysisInput, opts: Required<Pick<AnalysisOptions, 'res
     const samples: TaskSample[] = [];
     const trials = { a: 0, b: 0 };
     for (const t of input.tasks) {
-      const vals = (arm: 'A' | 'B') => t.trials.filter((x) => x.arm === arm).map(m.value).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+      const vals = (arm: 'A' | 'B') => t.trials.filter((x) => x.arm === arm).map(m.value).filter(hasValue);
       const a = vals('A');
       const b = vals('B');
       if (!a.length || !b.length) continue;
@@ -277,6 +354,9 @@ function costsOf(input: AnalysisInput, opts: Required<Pick<AnalysisOptions, 'res
       samples.push({ a: valuesArm(a), b: valuesArm(b) });
     }
     if (!samples.length) continue;
+    // Never counted as 0: a trial with no recorded value is left out, and counted.
+    const missing = { a: 0, b: 0 };
+    for (const t of input.tasks) for (const x of t.trials) if (!hasValue(m.recorded(x))) missing[x.arm === 'A' ? 'a' : 'b'] += 1;
     const draws = bootstrapTasks(samples, seededStream(`${input.seed}:${m.metric}`), opts);
     const meanA = samples.reduce((s, x) => s + x.a.mean, 0) / samples.length;
     const meanB = samples.reduce((s, x) => s + x.b.mean, 0) / samples.length;
@@ -288,6 +368,7 @@ function costsOf(input: AnalysisInput, opts: Required<Pick<AnalysisOptions, 'res
       diff: interval(meanB - meanA, percentileInterval(draws.diff, LEVEL), 1, m.places),
       relative: meanA !== 0 && draws.relative.length ? interval(meanB / meanA - 1, percentileInterval(draws.relative, LEVEL), 100, 2) : null,
       trials,
+      missing,
     };
     if (m.metric === 'wall_s') {
       const all = input.tasks.flatMap((t) => t.trials).filter((x) => typeof x.wall_s === 'number');
@@ -305,7 +386,7 @@ function costsOf(input: AnalysisInput, opts: Required<Pick<AnalysisOptions, 'res
  * `differing` counts the tasks whose arms passed at different rates: only they move the sign-flip
  * test, so over fewer than MIN_TASKS_FOR_VERDICT of them it cannot reach p < 0.05 whatever k is.
  */
-function verdictText(v: PassRateVerdict | 'held_back', diff: StatsInterval, p: number, k: number, differing: number, notRuledOut: number | null): string {
+function verdictText(v: PassRateVerdict | 'held_back', diff: StatsInterval, p: number, k: number, differing: number, notRuledOut: number | null, marginOnly: boolean): string {
   const numbers = `${pts(diff.estimate)} points (95% interval ${pts(diff.low)} to ${pts(diff.high)}), ${pValueText(p)} by the paired sign-flip test over ${k} ${k === 1 ? 'task' : 'tasks'}`;
   if (v === 'held_back') return `Not called better: the pass rate alone says B is better (${numbers}), but its critical failures rose beyond noise.`;
   if (v === 'better') return `B passes more than A: ${numbers}.`;
@@ -317,10 +398,60 @@ function verdictText(v: PassRateVerdict | 'held_back', diff: StatsInterval, p: n
       : differing > 0 && differing < MIN_TASKS_FOR_VERDICT
         ? ` Only ${differing} of the ${k} tasks passed at different rates in the two arms, and only those count in the paired test: over ${differing} its smallest possible p is ${2 / 2 ** differing}, so it could not reach p < 0.05 however large the difference.`
         : '';
+  // S7: inside the margin, but its width rests on too few tasks for "practically equivalent".
+  const margin = marginOnly
+    ? ` Its interval lies inside the +/-${MARGIN_POINTS}-point margin, but "practically equivalent" also needs at least ${MIN_TASKS_FOR_VERDICT} tasks that passed at different rates: with fewer, one trial can move the interval into or out of the margin.`
+    : '';
   // Every task gave the same difference: the task bootstrap has no spread to show, so it cannot say
   // how large a difference could be hiding (docs/known-limits.md, "Statistics").
   const hiding = notRuledOut === null ? ' Every task gave the same difference, so the interval has no width and cannot say how large a difference could be hiding.' : ` Differences as large as ${notRuledOut} points are not ruled out.`;
-  return `No detectable difference: ${numbers}.${hiding}${few}`;
+  return `No detectable difference: ${numbers}.${hiding}${few}${margin}`;
+}
+
+/** S6's caveat: the tasks in the aggregate whose arms have very unequal decided counts; null when none. */
+function unequalDecided(eligible: { t: TaskInput; a: StatsArmCounts; b: StatsArmCounts }[]): CompareStats['unequal_decided'] {
+  const uneven = eligible.filter((e) => Math.max(e.a.graded, e.b.graded) > UNEQUAL_DECIDED_RATIO * Math.min(e.a.graded, e.b.graded));
+  if (!uneven.length) return null;
+  const tasks = uneven.map((e) => ({ task: e.t.task, task_id: e.t.task_id, a: e.a.graded, b: e.b.graded }));
+  const named = tasks.slice(0, UNEQUAL_NAMED).map((t) => `${t.task_id}: ${t.a} in A, ${t.b} in B`);
+  const more = tasks.length > UNEQUAL_NAMED ? `; and ${tasks.length - UNEQUAL_NAMED} more` : '';
+  const n = tasks.length;
+  return {
+    ratio: UNEQUAL_DECIDED_RATIO,
+    tasks,
+    text:
+      `On ${n} of the ${eligible.length} tasks one arm has more than twice as many decided trials as the other (${named.join('; ')}${more}). ` +
+      `The paired test weighs each task's difference alike, and a rate from few trials is coarse, so ${n === 1 ? 'that task' : 'those tasks'} can tilt it: read the verdict with care.`,
+  };
+}
+
+/**
+ * A required judge decided this decided trial's outcome: its pass was needed for a pass, or a fail
+ * had no failing required check but the judge's.
+ */
+function judgeDecided(t: TrialInput): boolean {
+  const required = t.grades.filter((g) => g.required);
+  if (!required.some((g) => g.kind === 'judge')) return false;
+  if (t.outcome === 'pass') return true;
+  if (t.outcome !== 'fail') return false;
+  const failing = required.filter((g) => g.verdict === 'fail');
+  return failing.length > 0 && failing.every((g) => g.kind === 'judge');
+}
+
+/**
+ * S12: the tasks in the aggregate with a nonzero difference, and those of them where a required
+ * judge decided at least one trial's outcome in either arm; null when there are none of the latter
+ * (today every judge criterion is optional, so this is null on every shipped result).
+ */
+function restsOnJudge(eligible: { t: TaskInput }[], diffs: number[]): CompareStats['rests_on_judge'] {
+  const differing = eligible.filter((_, i) => Math.abs(diffs[i]) > EPS_RATE);
+  const tasks = differing.flatMap((e) => {
+    const decided = e.t.trials.filter((x) => x.outcome !== 'incomplete' && judgeDecided(x));
+    if (!decided.length) return [];
+    return [{ task: e.t.task, task_id: e.t.task_id, a: decided.filter((x) => x.arm === 'A').length, b: decided.filter((x) => x.arm === 'B').length }];
+  });
+  if (!tasks.length) return null;
+  return { differing: differing.length, tasks, all: tasks.length === differing.length };
 }
 
 /**
@@ -348,9 +479,12 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
   const meanDiff = diffs.reduce((s, d) => s + d, 0) / k;
   const samples: TaskSample[] = eligible.map((e) => ({ a: binaryArm(e.a.passed, e.a.graded), b: binaryArm(e.b.passed, e.b.graded) }));
   const draws = bootstrapTasks(samples, seededStream(`${input.seed}:pass_rate`), opts);
-  const diff = interval(meanDiff, percentileInterval(draws.diff, LEVEL), 100, 2);
+  // The rules read the unrounded interval; the response shows it rounded to 2 places.
+  const rawDiff = scaled(meanDiff, percentileInterval(draws.diff, LEVEL), 100);
+  const diff = rounded(rawDiff, 2);
   const test = signFlipTest(diffs, seededStream(`${input.seed}:sign_flip`), { exactMaxTasks: options.exactMaxTasks, flips: options.flips });
-  const prVerdict = passRateVerdict(diff, test.p, k);
+  const differing = countDiffering(diffs);
+  const prVerdict = passRateVerdict(rawDiff, test.p, k, differing);
 
   // Per task: Newcombe's interval and Fisher's exact test; Benjamini-Hochberg flags (D41).
   const fisher = eligible.map((e) => fisherExact(e.b.passed, e.b.graded - e.b.passed, e.a.passed, e.a.graded - e.a.passed));
@@ -371,13 +505,14 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
   const perTask = new Map(tasks.map((t) => [t.task, t]));
 
   // D10's guardrail: B is not called better while its critical failures rose beyond noise.
-  const g = guardrail(input, new Set(eligible.map((e) => e.t.task)), seededStream(`${input.seed}:critical`), opts);
+  const { g, aboveZero, usedChecks } = guardrail(input, new Set(eligible.map((e) => e.t.task)), { ...opts, exactMaxTasks: options.exactMaxTasks, flips: options.flips });
   const blocks = prVerdict === 'better' && g.status === 'rose';
-  const critical: CriticalGuardrail = { ...g, blocks_better: blocks, text: guardrailText({ ...g, blocks_better: blocks }) };
+  const critical: CriticalGuardrail = { ...g, blocks_better: blocks, text: guardrailText({ ...g, blocks_better: blocks }, aboveZero, usedChecks) };
   const verdict = blocks ? 'held_back' : prVerdict;
 
   const notRuledOut = prVerdict === 'no_detectable_difference' && diff.high > diff.low ? round(Math.max(Math.abs(diff.low), Math.abs(diff.high)), 1) : null;
-  const text = verdictText(verdict, diff, test.p, k, diffs.filter((d) => d !== 0).length, notRuledOut);
+  const marginOnly = prVerdict === 'no_detectable_difference' && k >= MIN_TASKS_FOR_VERDICT && differing > 0 && differing < MIN_TASKS_FOR_VERDICT && rawDiff.high - rawDiff.low > EPS_POINTS && insideMargin(rawDiff);
+  const text = verdictText(verdict, diff, test.p, k, differing, notRuledOut, marginOnly);
 
   const pooled = (arm: 'a' | 'b') =>
     eligible.reduce((acc, e) => ({ passed: acc.passed + e[arm].passed, graded: acc.graded + e[arm].graded, incomplete: acc.incomplete + e[arm].incomplete }), { passed: 0, graded: 0, incomplete: 0 });
@@ -388,10 +523,24 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
     const flagged = tasks.filter((t) => t.beyond_noise).length;
     const flags = flagged ? ` ${flagged} ${flagged === 1 ? 'task was' : 'tasks were'} flagged beyond noise; in an A/A run every such flag is a false one.` : '';
     const width = round(diff.high - diff.low, 1);
-    calibration =
-      verdict === 'no_detectable_difference' || verdict === 'equivalent'
-        ? { as_expected: true, text: `As it should, this A/A run found no detectable difference: the same config on both arms gave ${pts(diff.estimate)} points (95% interval ${pts(diff.low)} to ${pts(diff.high)}). Its interval, ${width} points wide, is this setup's own noise at this N and task count.${flags}` }
-        : { as_expected: false, text: `This A/A run found a difference where there should be none (${pts(diff.estimate)} points, 95% interval ${pts(diff.low)} to ${pts(diff.high)}, ${pValueText(test.p)}). The setup's noise, or a side-by-side effect such as the claim order or the arms sharing workers, needs a look before any A/B result on it is trusted.${flags}` };
+    const numbers = `${pts(diff.estimate)} points, 95% interval ${pts(diff.low)} to ${pts(diff.high)}, ${pValueText(test.p)}`;
+    const look = 'The setup\'s noise, or a side-by-side effect such as the claim order or the arms sharing workers, needs a look before any A/B result on it is trusted.';
+    // S4: keyed on the interval as well as the verdict. An interval that leaves out 0 is what an
+    // A/A run should give in only about 5 of 100 runs, even when the paired test cannot call it.
+    const leavesOutZero = rawDiff.low > EPS_POINTS || rawDiff.high < -EPS_POINTS;
+    if (verdict !== 'no_detectable_difference' && verdict !== 'equivalent') calibration = { as_expected: false, text: `This A/A run found a difference where there should be none (${numbers}). ${look}${flags}` };
+    else if (leavesOutZero)
+      calibration = {
+        as_expected: false,
+        text: `This A/A run's interval leaves out 0 (${numbers}): the paired test does not call it a difference, but with one config on both arms the interval should hold 0 in about 95 of 100 runs. ${look}${flags}`,
+      };
+    // D55: every task gave the same difference (0 here), so the interval has no width: it shows no spread, not a small one.
+    else if (rawDiff.high - rawDiff.low <= EPS_POINTS)
+      calibration = {
+        as_expected: true,
+        text: `This A/A run found no difference, but it cannot show this setup's noise: every task gave the same difference (${pts(diff.estimate)} points), so its interval has no width. Tasks that pass and fail in both arms, or more trials, are needed to measure it.${flags}`,
+      };
+    else calibration = { as_expected: true, text: `As it should, this A/A run found no detectable difference: the same config on both arms gave ${pts(diff.estimate)} points (95% interval ${pts(diff.low)} to ${pts(diff.high)}). Its interval, ${width} points wide, is this setup's own noise at this N and task count.${flags}` };
   }
 
   const stats: CompareStats = {
@@ -421,6 +570,8 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
     aa: null,
     calibration,
     judge: null,
+    unequal_decided: unequalDecided(eligible),
+    rests_on_judge: restsOnJudge(eligible, diffs),
   };
   return { stats, note: null };
 }
