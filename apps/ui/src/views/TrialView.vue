@@ -3,12 +3,13 @@ import { computed, ref } from 'vue';
 import { api, bareToolName, type AnyTrial } from '../api/client';
 import { ApiError } from '../api/errors';
 import { isFixtureMode } from '../api/mode';
-import type { BlindItem, ExperimentDetail, TrialRowSummary, JudgeAgreement, PromptView, TrialResult, VersionRef } from '../api/types';
+import type { BlindItem, ExperimentDetail, TrialRowSummary, JudgeAgreement, JudgeCriterionTrust, JudgeTrust, PromptView, TrialResult, VersionRef } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import NotFound from '../components/NotFound.vue';
 import ReplyText from '../components/ReplyText.vue';
 import SpanTimeline from '../components/SpanTimeline.vue';
+import TrustBadge from '../components/TrustBadge.vue';
 import { armIndexOf, armLetter, armsOf, namedByHash } from '../lib/arms';
 import { gradeView, markAmounts, outcomeOf, provenanceOf, type AmountCheck, type GradeView, type ProvenanceView } from '../lib/grading';
 import { optional, useLoad } from '../lib/async';
@@ -16,6 +17,7 @@ import { causeView, sentence } from '../lib/causes';
 import { capitalise, count, harnessVersion, money, plainText, seconds, shortVersion } from '../lib/format';
 import { inlineParts, inlineStyles, type InlinePart } from '../lib/markdown';
 import { endStateName, experimentName, graderName, harnessName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
+import { judgeFor, rubricOf } from '../lib/trust';
 import { href } from '../router';
 import { text, timelineRows, type SpanView } from '../trials';
 
@@ -35,6 +37,8 @@ interface Loaded {
   queue: BlindItem[];
   /** The number-provenance check from the trial's checks.json, when it has one. */
   checks: ProvenanceView | null;
+  /** How far to trust the judges of this trial's experiment (D83); null when unknown. */
+  trust: JudgeTrust[] | null;
 }
 
 /** The address names a trial that does not exist (a mistyped or stale link). */
@@ -57,13 +61,15 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
   ]);
   const experimentId = any.kind === 'experiment' ? any.trial.experiment_id : null;
   const hasChecks = any.kind === 'experiment' && any.trial.files.some((f) => f.path === 'checks.json');
-  const [experiment, siblings, prompts, checks] = await Promise.all([
+  const hasJudge = any.kind === 'experiment' && any.trial.grades.some((g) => g.kind === 'judge' || !!g.judge_model);
+  const [experiment, siblings, prompts, checks, trust] = await Promise.all([
     experimentId ? optional(api.experiment(experimentId), null) : Promise.resolve(null),
     experimentId ? optional(api.experimentTrials(experimentId), [] as TrialRowSummary[]) : Promise.resolve([] as TrialRowSummary[]),
     any.kind === 'experiment' ? optional(api.prompts(), [] as PromptView[]) : Promise.resolve([] as PromptView[]),
     hasChecks ? optional(api.trialJson(props.trialId, 'checks.json').then(provenanceOf), null) : Promise.resolve(null),
+    experimentId && hasJudge ? optional(api.judgeTrust(experimentId).then((r) => r.judges), null) : Promise.resolve(null),
   ]);
-  return { any, spans, experiment, siblings, prompts, judge, queue, checks };
+  return { any, spans, experiment, siblings, prompts, judge, queue, checks, trust };
 });
 
 const EMPTY_RESULT: TrialResult = {};
@@ -559,6 +565,30 @@ const notJudged = (g: GradeView) => isJudge(g) && g.rawVerdict === 'not_implemen
 /** Where to approve judging, or to regrade once it is: the comparison page's judge panel. */
 const judgePanelHref = computed(() => (data.value?.experiment && !isExample.value ? href.compareJudge(data.value.experiment.id) : null));
 const verdictWord = (g: GradeView) => g.verdictWord;
+
+/** The rubric a judge check used: as its grade records it, else from its task's grader spec. */
+function rubricOfGrade(g: GradeView): string | null {
+  if (g.rubric) return g.rubric;
+  const task = data.value?.experiment?.tasks.find((t) => t.sha256 === vm.value?.task);
+  const spec = task?.graders.find((x) => typeof x === 'object' && x !== null && !Array.isArray(x) && x.id === g.graderId);
+  return spec ? rubricOf(spec) : null;
+}
+
+/** How far to trust the judge behind each judge check (D83), matched by its model and rubric: per
+ *  criterion it answered, or, for a check it never answered (not judged, a failed call), the
+ *  judge's own status. A check not judged takes the model approved for the experiment, if any. */
+const gradeTrust = computed(() =>
+  (vm.value?.grades ?? []).map((g) => {
+    const judges = data.value?.trust;
+    if (!judges || !isJudge(g)) return null;
+    const model = g.judgeModel ?? (notJudged(g) ? (data.value?.experiment?.judge?.model ?? null) : null);
+    const judge = judgeFor(judges, model, rubricOfGrade(g));
+    if (!judge) return null;
+    const criteria = g.criteria.map((c) => ({ ...c, trust: judge.criteria.find((x) => x.criterion === c.criterion) ?? (null as JudgeCriterionTrust | null) }));
+    return { judge, criteria };
+  }),
+);
+const answerWord = (v: string | null) => (v === 'yes' ? 'Yes' : v === 'no' ? 'No' : 'No answer');
 const sourceWords = (source: string | null, tool: string | null) =>
   ({ tool_result: `${tool ?? 'a tool'}'s result`, span: `${tool ?? 'a tool'} call`, result: 'result.json', checks: 'the number check' })[source ?? ''] ?? source ?? 'the trial';
 
@@ -1151,6 +1181,52 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                 <code class="mono evidence-quote">{{ ev.quote }}</code>
               </div>
             </template>
+            <div
+              v-if="gradeTrust[gi]"
+              class="grade-trust"
+              data-test="grade-trust"
+            >
+              <ul
+                v-if="gradeTrust[gi]?.criteria.length"
+                class="trust-criteria"
+              >
+                <li
+                  v-for="c in gradeTrust[gi]?.criteria"
+                  :key="c.criterion"
+                  class="small"
+                  data-test="grade-trust-criterion"
+                >
+                  <span class="mono">{{ c.criterion }}</span>
+                  <span
+                    v-if="!hiddenReasons"
+                    class="secondary"
+                    data-test="grade-trust-answer"
+                  >{{ answerWord(c.verdict) }}</span>
+                  <TrustBadge
+                    v-if="c.trust"
+                    :status="c.trust.status"
+                    :summary="c.trust.summary"
+                  />
+                  <span
+                    v-else
+                    class="secondary smaller"
+                  >Not measured</span>
+                </li>
+              </ul>
+              <p
+                v-else
+                class="small trust-line"
+                data-test="grade-trust-line"
+              >
+                <TrustBadge :status="gradeTrust[gi]?.judge.status ?? 'uncalibrated'" />
+                <span>{{ plainText(gradeTrust[gi]?.judge.summary ?? '') }}</span>
+              </p>
+              <a
+                :href="href.judge()"
+                class="smaller"
+                data-test="grade-trust-link"
+              >How far to trust this judge</a>
+            </div>
             <p
               v-if="disputeOf(g)"
               class="small dispute"
@@ -1632,6 +1708,33 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
    quotes and rationale. */
 .hidden-reasons {
   color: var(--ink-2);
+}
+
+/* How far to trust the judge behind a judge check (D83): one line per question it answered. */
+.grade-trust {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.trust-criteria {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trust-criteria li,
+.trust-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
 }
 
 .applied-table {
