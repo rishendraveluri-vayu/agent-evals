@@ -34,7 +34,7 @@ from evals_stats.agreement import (
     report,
     weighted_table,
 )
-from evals_stats.agreement_cli import read_rater_labels
+from evals_stats.agreement_cli import read_rater_labels, warn_undated
 
 MAJORITY = "majority"
 
@@ -224,9 +224,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--weights", type=Path, help="judge-panel/phase2-to-label.json (D71 phase 2)")
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
+    undated: list[int] = []
     labels_by_rater = {
-        r: labels for r, (labels, _relabels) in read_rater_labels(args.labels).items()
+        r: labels for r, (labels, _relabels) in read_rater_labels(args.labels, undated).items()
     }
+    warn_undated(args.labels, undated, "evals-panel")
     weights = read_weights(args.weights) if args.weights else None
     out = summary(read_panel(args.panel), labels_by_rater, args.human_unsure, weights=weights)
     if args.json:

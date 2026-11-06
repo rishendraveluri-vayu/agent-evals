@@ -39,19 +39,36 @@ def rater_of(row: dict[str, Any]) -> str:
     return r if isinstance(r, str) and r else RISHI
 
 
+def dated(row: Any) -> bool:
+    """A label line the order can place: it says when it was labelled. The API skips a line
+    without `labelled_at` too, so both read the same labels."""
+    return (
+        isinstance(row, dict)
+        and isinstance(row.get("labelled_at"), str)
+        and bool(row["labelled_at"])
+    )
+
+
 def read_rater_labels(
-    path: Path,
+    path: Path, undated: list[int] | None = None
 ) -> dict[str, tuple[dict[tuple[str, str], str], list[tuple[str, str, str]]]]:
     """D73: `read_labels` for every rater in the file, as {rater: (labels, relabels)}. A relabel is
-    the same rater answering the same criterion again; another rater's answer never is one."""
+    the same rater answering the same criterion again; another rater's answer never is one. A line
+    with no `labelled_at` is left out, and its line number added to `undated` for the caller to
+    report: sorted first, it used to become the first label, or a second look that was dropped."""
     rows: list[dict[str, Any]] = []
     if path.is_file():
-        for line in path.read_text(encoding="utf-8").splitlines():
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if line.strip():
                 try:
-                    rows.append(json.loads(line))
+                    row = json.loads(line)
                 except ValueError:
                     continue
+                if not dated(row):
+                    if undated is not None:
+                        undated.append(n)
+                    continue
+                rows.append(row)
     by_rater: dict[str, list[dict[str, Any]]] = {}
     for r in rows:
         by_rater.setdefault(rater_of(r), []).append(r)
@@ -77,8 +94,8 @@ def _first_labels(
     first: dict[tuple[str, str], str] = {}
     relabels: list[tuple[str, str, str]] = []
     second: set[tuple[str, str]] = set()
-    rows = list(rows)
-    rows.sort(key=lambda r: str(r.get("labelled_at", "")))
+    rows = [r for r in rows if dated(r)]
+    rows.sort(key=lambda r: r["labelled_at"])
     for r in rows:
         trial = r.get("trial_id") or r.get("item_id")
         crit, value = r.get("criterion"), r.get("value")
@@ -95,6 +112,16 @@ def _first_labels(
         else:
             first[key] = value
     return first, relabels
+
+
+def warn_undated(path: Path, undated: list[int], prog: str) -> None:
+    if undated:
+        lines = ", ".join(str(n) for n in undated[:10]) + (" ..." if len(undated) > 10 else "")
+        print(
+            f"{prog}: {len(undated)} label line(s) in {path} have no labelled_at and are left out, "
+            f"as the API leaves them out (line {lines})",
+            file=sys.stderr,
+        )
 
 
 def judge_verdicts(trial: dict[str, Any]) -> dict[str, str]:
@@ -162,7 +189,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
-    by_rater = read_rater_labels(args.labels / f"{args.set}.jsonl")
+    undated: list[int] = []
+    by_rater = read_rater_labels(args.labels / f"{args.set}.jsonl", undated)
+    warn_undated(args.labels / f"{args.set}.jsonl", undated, "evals-agreement")
     if args.rater == "humans":
         labels = human_majority({r: lab for r, (lab, _) in by_rater.items()}, args.human_unsure)
         relabels: list[tuple[str, str, str]] = []

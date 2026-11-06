@@ -193,6 +193,31 @@ def test_a_second_look_replaces_an_unsure_and_is_not_a_relabel(tmp_path):
     assert relabels == []
 
 
+def test_a_label_line_without_labelled_at_is_left_out_and_reported(tmp_path, capsys):
+    """It sorted first: an undated line became the first label (a later dated one a relabel), and
+    an undated second look came before the "unsure" it answers and was dropped silently."""
+    from evals_stats import agreement_cli
+    from evals_stats.agreement_cli import read_rater_labels
+
+    lines = [
+        {"trial_id": "t1", "criterion": "c", "value": "yes", "labelled_at": "2026-11-05T09:00Z"},
+        {"trial_id": "t1", "criterion": "c", "value": "no"},
+        {"trial_id": "t2", "criterion": "c", "value": "unsure", "labelled_at": "2026-11-05T09:00Z"},
+        {"trial_id": "t2", "criterion": "c", "value": "yes", "second_look": True},
+    ]
+    f = tmp_path / "tuning.jsonl"
+    f.write_text("".join(json.dumps(x) + "\n" for x in lines))
+    undated: list[int] = []
+    by_rater = read_rater_labels(f, undated)
+    assert by_rater["rishi"] == ({("t1", "c"): "yes", ("t2", "c"): "unsure"}, [])
+    assert undated == [2, 4]
+    assert read_labels(f) == by_rater["rishi"]
+    agreement_cli.warn_undated(f, undated, "evals-agreement")
+    err = capsys.readouterr().err
+    assert "2 label line(s) in" in err and "have no labelled_at and are left out" in err
+    assert err.rstrip().endswith("(line 2, 4)")
+
+
 def test_judge_verdicts_come_from_the_judge_grades_criterion_items():
     trial = {
         "grades": [
