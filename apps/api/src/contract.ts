@@ -1075,7 +1075,7 @@ export interface CompareStats {
   costs: CostStat[];
   /** D44, on an ordinary A/B: the latest A/A calibration of either config; null when there is none. */
   aa: AaCalibration | null;
-  /** D44, on a calibration run itself: whether it came out as it should (no difference found). */
+  /** D44, on a calibration run itself: whether it came out as it should (no difference found, and an interval that holds 0; a zero-width interval at 0 is as expected but its text says it cannot show the noise). */
   calibration: { as_expected: boolean; text: string } | null;
   /** SP5's judge agreement on held-out labels, for the caveat when the verdict rests on the judge; null until SP5 reports it. */
   judge: { kappa: number; low: number; high: number; bar: number; tasks: number } | null;

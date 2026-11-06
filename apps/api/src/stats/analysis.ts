@@ -458,10 +458,24 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
     const flagged = tasks.filter((t) => t.beyond_noise).length;
     const flags = flagged ? ` ${flagged} ${flagged === 1 ? 'task was' : 'tasks were'} flagged beyond noise; in an A/A run every such flag is a false one.` : '';
     const width = round(diff.high - diff.low, 1);
-    calibration =
-      verdict === 'no_detectable_difference' || verdict === 'equivalent'
-        ? { as_expected: true, text: `As it should, this A/A run found no detectable difference: the same config on both arms gave ${pts(diff.estimate)} points (95% interval ${pts(diff.low)} to ${pts(diff.high)}). Its interval, ${width} points wide, is this setup's own noise at this N and task count.${flags}` }
-        : { as_expected: false, text: `This A/A run found a difference where there should be none (${pts(diff.estimate)} points, 95% interval ${pts(diff.low)} to ${pts(diff.high)}, ${pValueText(test.p)}). The setup's noise, or a side-by-side effect such as the claim order or the arms sharing workers, needs a look before any A/B result on it is trusted.${flags}` };
+    const numbers = `${pts(diff.estimate)} points, 95% interval ${pts(diff.low)} to ${pts(diff.high)}, ${pValueText(test.p)}`;
+    const look = 'The setup\'s noise, or a side-by-side effect such as the claim order or the arms sharing workers, needs a look before any A/B result on it is trusted.';
+    // S4: keyed on the interval as well as the verdict. An interval that leaves out 0 is what an
+    // A/A run should give in only about 5 of 100 runs, even when the paired test cannot call it.
+    const leavesOutZero = rawDiff.low > EPS_POINTS || rawDiff.high < -EPS_POINTS;
+    if (verdict !== 'no_detectable_difference' && verdict !== 'equivalent') calibration = { as_expected: false, text: `This A/A run found a difference where there should be none (${numbers}). ${look}${flags}` };
+    else if (leavesOutZero)
+      calibration = {
+        as_expected: false,
+        text: `This A/A run's interval leaves out 0 (${numbers}): the paired test does not call it a difference, but with one config on both arms the interval should hold 0 in about 95 of 100 runs. ${look}${flags}`,
+      };
+    // D55: every task gave the same difference (0 here), so the interval has no width: it shows no spread, not a small one.
+    else if (rawDiff.high - rawDiff.low <= EPS_POINTS)
+      calibration = {
+        as_expected: true,
+        text: `This A/A run found no difference, but it cannot show this setup's noise: every task gave the same difference (${pts(diff.estimate)} points), so its interval has no width. Tasks that pass and fail in both arms, or more trials, are needed to measure it.${flags}`,
+      };
+    else calibration = { as_expected: true, text: `As it should, this A/A run found no detectable difference: the same config on both arms gave ${pts(diff.estimate)} points (95% interval ${pts(diff.low)} to ${pts(diff.high)}). Its interval, ${width} points wide, is this setup's own noise at this N and task count.${flags}` };
   }
 
   const stats: CompareStats = {

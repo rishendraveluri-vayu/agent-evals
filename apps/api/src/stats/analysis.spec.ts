@@ -411,6 +411,37 @@ describe('analyse: an A/A calibration run (D44)', () => {
     expect(s?.calibration?.text).toContain('10 tasks were flagged beyond noise; in an A/A run every such flag is a false one.');
   });
 
+  it('does not say "as it should" when the interval leaves out 0, though the paired test cannot call it (S4)', () => {
+    // The 5 Nov headline's per-task counts, run as an A/A: +9 points, interval above 0, p = 0.0625.
+    const tasks = [
+      task('a', 9, 10, 10, 10),
+      task('b', 2, 10, 5, 10),
+      task('c', 3, 10, 4, 10),
+      task('d', 2, 10, 5, 10),
+      task('e', 10, 10, 10, 10),
+      task('f', 8, 10, 9, 10),
+      task('g', 10, 10, 10, 10),
+      task('h', 10, 10, 10, 10),
+      task('i', 10, 10, 10, 10),
+      task('j', 0, 10, 0, 10),
+    ];
+    const s = analyse({ seed: 'e_aa_shape', tasks, calibration: true }).stats!;
+    expect(s.verdict).toBe('no_detectable_difference');
+    expect(s.diff.low).toBeGreaterThan(0);
+    expect(s.calibration?.as_expected).toBe(false);
+    expect(s.calibration?.text).toMatch(/^This A\/A run's interval leaves out 0 \(\+9\.0 points, 95% interval \+\d+\.\d to \+\d+\.\d, p = 0\.0625\): the paired test does not call it a difference/);
+    expect(s.calibration?.text).toContain('needs a look before any A/B result on it is trusted.');
+  });
+
+  it("says a zero-width A/A interval cannot show the setup's noise, rather than call 0 points its noise (S4, D55)", () => {
+    const s = analyse({ seed: 'e_aa_tied', tasks: Array.from({ length: 10 }, (_, i) => task(`t${i}`, 10, 10, 10, 10)), calibration: true }, fast).stats!;
+    expect(s.diff).toEqual({ estimate: 0, low: 0, high: 0 });
+    expect(s.calibration).toEqual({
+      as_expected: true,
+      text: "This A/A run found no difference, but it cannot show this setup's noise: every task gave the same difference (0.0 points), so its interval has no width. Tasks that pass and fail in both arms, or more trials, are needed to measure it.",
+    });
+  });
+
   it('is null on an ordinary run', () => {
     expect(analyse({ seed: 'e_ab', tasks: [task('t', 1, 2, 1, 2)] }, fast).stats?.calibration).toBeNull();
   });
