@@ -132,6 +132,8 @@ class FakeWorkerApi:
     - `upload_faults`, `report_faults`: one entry per request, in order. "drop" stores it, then
       closes the connection without an answer (the API stored it but the worker never heard);
       an int is answered as that status without storing; "lose" (uploads) loses the claim.
+    - `calls_faults`: the same for GET .../calls: "drop" closes the connection unanswered, an int
+      is answered as that status (an API, LiteLLM or Postgres outage, E2).
     - a report must name exactly what was uploaded; with `strict_files` (the default) anything
       else is a 400, otherwise it is accepted and listed in `problems`, as the real API does.
     - `sim_cache`: simulator replies by cache key, filled from each accepted report's uploaded
@@ -151,6 +153,7 @@ class FakeWorkerApi:
         self.calls: Callable[[str, str], list[dict[str, Any]]] = lambda trial_id, role: []
         self.report_faults: list[str | int] = []
         self.upload_faults: list[str | int] = []
+        self.calls_faults: list[str | int] = []
         self.max_file_bytes = MAX_FILE_BYTES
         self.strict_files = True
         self.files: dict[tuple[str, int], dict[str, bytes]] = {}
@@ -293,6 +296,13 @@ class FakeWorkerApi:
             if lost:
                 self._record("calls", trial_id, {"role": role}, 409)
                 return 409, {"error": "claim_lost", "message": "lease lapsed"}
+            with self._lock:
+                fault = self.calls_faults.pop(0) if self.calls_faults else None
+            if fault is not None:
+                self._record("calls", trial_id, {"role": role}, fault)
+                if fault == "drop":
+                    return "drop"
+                return fault, {"error": "scripted", "message": "scripted failure"}
             rows = self.calls(trial_id, role)
             self._record("calls", trial_id, {"role": role}, 200)
             return 200, rows

@@ -415,7 +415,10 @@ def test_a_second_trial_of_the_same_conversation_reuses_the_simulator_replies(tm
 
 def test_api_proxy_client_maps_keys_and_reads_calls_through_the_api(tmp_path, api):
     client = ApiProxyClient(
-        ApiClient(api.url, FAKE_WORKER_TOKEN), "t_1", {"model": "sk-a", "sim": None}, retry_s=0
+        ApiClient(api.url, FAKE_WORKER_TOKEN),
+        "t_1",
+        {"model": "sk-a", "sim": None},
+        backoff=lambda n: 0,
     )
     agent = client.create_key("t_1", "agent", 0.5, ["fake/x"])
     assert (agent.key, agent.token) == ("sk-a", "agent")
@@ -438,6 +441,43 @@ def test_api_proxy_client_maps_keys_and_reads_calls_through_the_api(tmp_path, ap
     stopped = ApiProxyClient(ApiClient(api.url, FAKE_WORKER_TOKEN), "t_1", {}, control)
     with pytest.raises(TrialStopped):
         stopped.call_records("agent")
+
+
+def test_a_finished_trial_survives_an_api_outage_while_its_calls_are_read(tmp_path, api):
+    """E2: the API (or LiteLLM, or Postgres behind it) is down when the trial ends. Reading the
+    trial's calls is retried with the uploads' back-off until it answers, so the finished trial is
+    reported once, not thrown away and re-run (three tries 1 s apart gave up after 2 s)."""
+    api.calls = lambda trial_id, role: rows_in_turn(tmp_path / "trial", n=1, spends=[0.0003])
+    api.calls_faults = [503, "drop", 502, 503, 500, "drop", 503, 504]
+    api.claims.append(make_claim(worker_spec(harness_options=QUICK)))
+    worker = Worker(config(tmp_path, api))
+    worker.serve(exit_on_idle=True)
+    assert worker.outcomes == [("t_test_0001", 1, "reported")]
+    statuses = [r["status"] for r in api.requests("calls")]
+    assert statuses[:8] == [503, "drop", 502, 503, 500, "drop", 503, 504]
+    assert statuses[8:] and set(statuses[8:]) == {200}
+    (body,) = api.reports()
+    usage = body["runner_report"]["proxy_usage"]
+    assert usage["model_calls"] == 1 and usage["cost_usd"] == 0.0003, usage
+    assert body["runner_report"]["label"] == "agent"
+
+
+def test_reading_calls_gives_up_at_its_deadline_and_never_retries_a_refusal(api):
+    """E2: the back-off has a deadline (WorkerConfig.report_retry_s in the worker); a refusal
+    that repeating will not change (404 no_key) is not retried."""
+    client = ApiProxyClient(
+        ApiClient(api.url, FAKE_WORKER_TOKEN), "t_1", {"model": "sk-a"}, deadline_s=0.3
+    )
+    client.backoff = lambda n: 0.05
+    api.calls_faults = [503] * 1000
+    started = time.monotonic()
+    with pytest.raises(ProxyError, match="could not read the agent calls for t_1: gave up"):
+        client.call_records("agent", min_wait_s=0, settle_s=0)
+    assert 0.3 <= time.monotonic() - started < 5
+    assert len(api.requests("calls")) > 3
+    api.calls_faults = [404]
+    with pytest.raises(ProxyError, match="HTTP 404"):
+        client.call_records("agent", min_wait_s=0, settle_s=0)
 
 
 def test_api_client_errors(tmp_path):
