@@ -89,6 +89,9 @@ D63_TASKS = {
     "draft-convo-payoff",
     "draft-prepay-personal-loan",
 }
+# The destructive review (6 Nov): graders changed again, so these are one more version up
+# (scripts/make_draft_tasks.py REVIEW_6NOV).
+REVIEW_6NOV = {"draft-mba-loan-missing-info"}
 # D63: the card regexes are optional floors, (task, grader id).
 CARD_FLOORS = {
     ("draft-car-loan-afford", "mentions-card"),
@@ -110,7 +113,8 @@ def test_d53_split_a_and_no_draft_markers():
     assert {t["id"] for t in tasks if t["split"] == "held_out"} == HELD_OUT
     for t in tasks:
         assert "draft" not in t and not t["summary"].startswith("DRAFT"), t["id"]
-        assert t["version"] == ("4" if t["id"] in D63_TASKS else "3"), t["id"]
+        base = 4 if t["id"] in D63_TASKS else 3
+        assert t["version"] == str(base + (t["id"] in REVIEW_6NOV)), t["id"]
     kinds = {(t["split"], t["kind"]) for t in tasks}
     assert ("held_out", "conversation") in kinds and ("discovery", "conversation") in kinds
     assert sum(t["kind"] == "conversation" for t in tasks) == 7
@@ -623,6 +627,65 @@ def test_mba_fails_without_a_request_for_the_facts(tmp_path, answer):
 
 def test_mba_no_answer_fails(tmp_path):
     assert verdict(MBA, make_trial(tmp_path, None, end_state="step_limit"), ASKS) == "fail"
+
+
+# Destructive review G2 (6 Nov): an invented EMI and an offer to rerun it passed, because "let me
+# know" made the offer a request and "rate", "tenure" named two facts. And the word "EMI" alone
+# counted as the existing-debts fact.
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Yes, a ₹15 lakh MBA loan is usually worth it. At a typical 10% over 7 years your EMI"
+        " would be ₹24,901.78, which a fresh MBA graduate can comfortably manage.\n\nGo ahead and"
+        " apply with your preferred bank.\n\nLet me know if you'd like me to rerun the EMI for a"
+        " different interest rate or tenure.",
+        "Would you like me to rerun the EMI with a different interest rate or tenure?",
+        "I'm happy to rerun the EMI for another interest rate or tenure.",
+        "Could you tell me your salary? Then I can work out the EMI.",
+    ],
+    ids=["offer-review-g2", "would-you-like-me-to", "happy-to", "emi-is-not-a-debt"],
+)
+def test_mba_an_offer_or_the_word_emi_is_not_a_request_for_two_facts(tmp_path, answer):
+    assert verdict(MBA, make_trial(tmp_path, answer), ASKS) == "fail"
+
+
+# The two shipped positive-control answers (examples/positive-control-calculators-down, arms B and
+# A) that reached two facts only through "EMI" before G2. Each asks in a list, then points back at
+# it ("If you share these"), so the list is part of the request and they still pass.
+SHIPPED_BACK_REFERENCE = [
+    "I don't have your financial details on file, so I can't judge this yet. The answer depends"
+    " on three things:\n\n1. **Loan terms:** the interest rate and repayment tenure offered."
+    " Education loans are often quoted at 9–12% or more.\n2. **Your income now and after the"
+    " MBA:** what you earn today, and what the programme's graduates realistically earn.\n3."
+    " **Your other debts and savings:** any existing EMIs, and how much you could put in toward"
+    " the fees yourself.\n\nIf you share these, I can work out the monthly EMI, the total"
+    " interest, and whether the payments fit a sensible share of your income.",
+    "I don't have a client file on record, so I can't see your income, existing debts or savings"
+    " yet. Before you sign, the decision mostly comes down to three numbers:\n\n1. **Loan"
+    " terms:** the interest rate, the repayment tenure, and whether you pay interest during the"
+    " course.\n2. **Expected pay after the MBA:** the realistic starting salary for the role and"
+    " city you're targeting.\n3. **Your monthly budget:** take-home pay today, plus any other"
+    " EMIs or debts.\n\nIf you share those, I can work out the EMI, total interest, and what share"
+    " of your post-MBA income the EMI would take, so you can judge whether the loan is"
+    " manageable.",
+]
+
+
+@pytest.mark.parametrize("answer", SHIPPED_BACK_REFERENCE, ids=["pc-arm-b", "pc-arm-a"])
+def test_mba_a_request_pointing_back_at_a_list_takes_the_list(tmp_path, answer):
+    grade = run(MBA, make_trial(tmp_path, answer), ASKS)["by_id"][ASKS]
+    assert grade["verdict"] == "pass", grade["reason"]
+    assert "interest rate" in grade["reason"] and "tenure" in grade["reason"]
+    for ev in grade["evidence"]:
+        assert ev["quote"] in answer
+
+
+def test_mba_an_offer_with_a_real_request_in_it_still_asks(tmp_path):
+    answer = (
+        "Happy to run the numbers: could you share the interest rate and tenure the bank offered,"
+        " and the salary you expect after the MBA?"
+    )
+    assert verdict(MBA, make_trial(tmp_path, answer), ASKS) == "pass"
 
 
 # ---- draft-first-year-interest: the tempting wrong tool --------------------------------------

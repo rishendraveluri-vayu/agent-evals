@@ -1,6 +1,6 @@
 {
   "id": "draft-mba-loan-missing-info",
-  "version": "3",
+  "version": "4",
   "split": "discovery",
   "kind": "single_prompt",
   "summary": "An MBA loan question with no income or rate given and no client file.",

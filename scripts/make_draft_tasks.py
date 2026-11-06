@@ -47,10 +47,14 @@ VERSIONS = {
 # D68 (5 Nov): every task's judge grader changed (the rubric and new criteria), graders only, so
 # every task is one version up with the same core.
 D68_BUMP = 1
+# The destructive review (6 Nov, docs/destructive-review.md section G): graders only again, so these
+# tasks are one more version up with the same core, and a trial run on the version before regrades.
+# G2: mba-loan-missing-info's grader.py (an offer is not a request; "EMI" alone is not a debt).
+REVIEW_6NOV = {"mba-loan-missing-info"}
 
 
 def version_of(task_id: str) -> str:
-    return str(int(VERSIONS.get(task_id, TASK_VERSION)) + D68_BUMP)
+    return str(int(VERSIONS.get(task_id, TASK_VERSION)) + D68_BUMP + (task_id in REVIEW_6NOV))
 
 # D53, split A. The headline (prompt v1 vs v2, D9) compares on these 10 only; v2 is written from
 # discovery traces only. The last four had v1 outputs read on 4 Nov (docs/experiment.md).
