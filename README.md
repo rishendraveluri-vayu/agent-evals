@@ -1,237 +1,240 @@
-# agent-evals
+# Agent Evals
 
-A platform that runs an AI agent (a harness plus a model) on a set of tasks, many times each, built
-to answer one question with evidence: **did the agent get better, worse or stay the same after a
-change, and how sure are we?** Each comparison gives a verdict (better, worse, practically
-equivalent, or no detectable difference) with a 95% interval over the tasks and a paired test, per
-task results flagged after a multiple-comparison correction, a guardrail on critical checks, and
-cost, tokens and time beside it, down to every trial's trace and grades.
+Runs two versions of an agent on the same tasks, many times each, and tells you whether the change
+made it better, worse or no different, and how sure that is. Deterministic checks first, an LLM
+judge for what code can't decide, calibrated against my own hand labels. Every trial's full trace
+is one click away.
 
-Five harnesses plug in through one adapter contract: Hermes Agent, LangGraph, Google ADK, the
-OpenAI Agents SDK and a plain tool-calling loop. Every model call goes through a LiteLLM proxy,
-where spend, tokens, latency and settings are recorded. The task set is a personal-finance
-assistant with calculator tools and simulated clients. It holds 21 tasks, 10 of them held out to
-score the experiment and 11 for discovery (where the first prompt's failures were found and the
-judge was tuned), plus 2 engine tests that check the platform, not an
-agent, and 1 skills demo (`tasks/demo-skill-card-transfer`, whose answer only a seeded skill
-holds).
+Video walkthrough (10 min): _link to add_
 
-**Read this first.**
+```mermaid
+flowchart LR
+    A["Agent A<br/>harness, model, prompt,<br/>tools, settings"] --> R
+    B["Agent B<br/>same, one thing changed"] --> R
+    T["Tasks<br/>questions with known answers"] --> R
+    R["Run<br/>every task, N times,<br/>both agents"] --> G["Grade<br/>code checks<br/>(+ LLM judge)"]
+    G --> C["Compare<br/>verdict, interval,<br/>per task, cost"]
+```
 
-1. **Run it:** `docker compose up -d --build --wait`, open http://127.0.0.1:8080 and choose "See
-   a finished example". No key is needed and nothing is spent.
-2. **The result:** prompt v1 vs v2 on Hermes with Claude Haiku 5.5, +9 points (+3 to +16),
-   p = 0.0625, so "no detectable difference" under the rule set before the run; the platform's own
-   checks (an A/A run and a positive control) behave as they should. Details below, under Results
-   so far, and in `docs/experiment.md`.
-3. **What to trust least:** the six limits at the top of `docs/known-limits.md`.
-4. **Who wrote it:** Claude Code, an AI coding agent, wrote almost all of the code; I designed it,
-   made the decisions and managed the build. The last section of this file says exactly what I did.
-
-## Run it
-
-You need Docker with the compose plugin and about 15 GB of free disk (a cold build used about
-9.9 GB in testing). The first build takes about 5 minutes on 4 vCPUs, mostly building the images:
-downloading the base images was about a minute of it.
+## Try it
 
 ```bash
 docker compose up -d --build --wait
 ```
 
-Then open **http://127.0.0.1:8080**. Every port binds to localhost only. If a port is taken, set
-`UI_PORT`, `API_PORT` or `LITELLM_PORT`, for example `API_PORT=3001 docker compose up -d --build --wait`,
-and pass the same variables to every later `docker compose` command and to the checks under
-Develop and test. A second checkout on the same machine also needs its own compose project, ports
-and image tag (`docker compose -p review`, `EVALS_IMAGE_TAG=review` in its `.env`), or its build
-replaces the first one's images.
+Open http://127.0.0.1:8080 and click **See a finished example**. No key needed, nothing spent.
 
-**Without a key** you can build, save and preview an agent (see what reaches the model; for Hermes on Gemini, the text Hermes adds for that model name is missing from the free preview),
-and open the finished example, which is read-only: nothing in it runs again. You can also run
-agents on **fake models** (`fake/...`), which the full platform's Config screen offers: a scripted
-local server answers at made-up prices, so a run needs no key and spends nothing. A fake model
-makes the same scripted calls whatever the task (one always works out the same EMI), so most of
-its trials fail: such a run tests the platform (queueing, retries, traces, grading), not an agent.
-A run on fake models defaults to 2 trials per task and arm, so it finishes in a few minutes.
+You get a real 400-trial experiment: the verdict, each task's results, and every trial's trace
+(messages, tool calls, and what the grader decided and why). First build takes about 5 minutes and
+needs about 15 GB of disk.
 
-**With a key** you can run agents on real models. Copy `.env.example` to `.env`, add
-`ANTHROPIC_API_KEY` (Claude) and/or `GEMINI_API_KEY`, then run `docker compose up -d` again. If a
-Claude key came with my submission email, it goes in `ANTHROPIC_API_KEY`; it is capped at $10 of
-usage and is revoked after the review. A
-real run costs money: every run shows its trials, models and the most it can cost before it
-starts, and asks you to confirm. A Hermes run on a real model first checks your prompt against
-Hermes's own instructions (one call, about $0.02 to $0.03, on Claude Sonnet 5.5 when its key is
-set, otherwise on the agent's own model; D75), and shows what it found on the run page.
+## Results
 
-Stop it with `docker compose down`. `docker compose down -v` also wipes the local database
-(configs, experiments, grades), but not the files the stack writes into the repo folder: trial
-files stay in `./runs/`, your labels in `./labels/`, and prompt versions you saved in
-`configs/prompts/`. To remove the trial files, delete what is inside `runs/`, not the folder
-itself: `rm -rf runs/*` (one fake run of 150 trials left about 22 MB there in testing; opening all
-eight shipped examples writes about 514 MB: 68 to 81 MB for each of the seven runs, 4 MB for the skills demo). No sudo is
-needed. The API runs as uid 1000; when you are another user, its start-up step gives those three
-folders (the folders only, never what is in them) to uid 1000, keeps your group and makes them
-group-writable, so everything it writes there is yours to delete. If `rm` is refused anyway (a
-folder Docker created because it was missing belongs to root), delete from inside the API:
-`docker compose exec api sh -c 'rm -rf /runs/*'`.
+All on Hermes Agent with Claude Haiku 5.5. Each plan and its predictions were committed before the
+run. Anything I changed after is listed as a deviation in
+[`docs/experiment.md`](docs/experiment.md).
 
-If `docker compose up --wait` stops with the api container unhealthy, `docker compose logs api`
-says why in plain words: the database is down, or a folder above cannot be written, with the fix.
-
-## Results so far (5 Nov)
-
-The platform runs end to end with its statistics: configs, runs with N
-trials, isolation, retries, traces, deterministic graders, an LLM judge, blind labelling,
-failure causes, and the comparison (verdict, 95% intervals, a paired test, per-task flags,
-critical-failure guardrail, cost and time, A/A calibration; `docs/design.md`, section 6).
-**The real experiment has run:** on Hermes with Claude Haiku 5.5, prompt v2 passed 73 of 100
-trials on the 10 held-out tasks against v1's 64, +9 points (95% interval +3 to +16, nominal: at 10
-tasks the method covers about 91%, `docs/design.md` section 6; p = 0.0625),
-which the rule fixed before the run calls "no detectable difference": 5 of the 10 tasks scored
-the same in both arms (always passed or always failed), and the 5 left are too few for the test
-to reach p < 0.05. v1 run against itself as a check gave −4 points (−12 to +3), no difference,
-as it should. Nearly all of the +9 is one check, that every rupee figure comes from a tool
-(the rule v2 adds); set aside, the arms pass 95 and 97 of 100 (`docs/known-limits.md`).
-**The platform passes its own test:** with the calculator tools broken on purpose (a positive
-control set out before the run), it found +44.8 points (+23.8 to +65.7, p = 0.0011), flagged 7
-tasks, all among those predicted and none of the 7 controls, and named "wrong tool" as the
-cause in 68 of 83 failures. Those 14 predicted tasks require the removed tools in their graders,
-so this shows the pipeline and the statistics catch a known break and point at the right tasks,
-not how sensitive the tasks are to a subtle change in behaviour. The same v1 vs v2 on two more
-harnesses, same tasks and model: own loop +8 (−4 to +23),
-LangGraph +17 (+5 to +29, p = 0.047, "better", one of three tests). **The LLM judge counts for nothing yet.** Its
-rubric was tuned on my labels (overall kappa 0.30 at first, 0.63 on a dev set after it learned my
-principles, D74), and the frozen version is measured once against my blind labels of 40 held-out
-trials; until it passes, no judge verdict counts in any result (`docs/judge-validation.md`). The write-up, with inspected trials: `docs/experiment.md`.
-
-## Three ways in
-
-The home page offers:
-
-1. **See a finished example.** The real experiment, shipped with the repo: prompt v1 against v2
-   on Hermes with Claude Haiku 5.5, 10 held-out tasks and 10 trials per task and arm (200 trials),
-   with its A/A calibration (v1 against itself, another 200). You see the verdict, the difference
-   with its interval, each task's pass counts, and every trial's trace (messages, tool calls and
-   results, grader reasoning) and its grades. Nothing runs and nothing is spent. The other shipped
-   runs are in the experiments list too: the positive control (calculators taken away, which the
-   platform had to catch), the same comparison on the own loop and on LangGraph, and a small
-   skills demo (Hermes with and without a seeded skill), whose trial pages show the skill being
-   loaded.
-2. **Build your own, step by step.** Pick an agent type (each has an "i" that says what it is and
-   what it adds to your prompt), a model, the instructions and a few settings. Preview exactly
-   what reaches the model, for free. Then evaluate it against a baseline: run it, compare the
-   results, and open a failed trial to see why it failed. Running it on a real model needs a
-   provider key (see Run it); without one you can build, save and preview it, and run on a fake
-   model from the full Config screen to see the platform work, not the agent.
-3. **The full platform.** Every experiment, config, task, harness and label, at full detail.
-
-The first door opens `http://127.0.0.1:8080/#/example`. The first time, it copies the headline and
-its A/A calibration from `examples/` into your local database, opens the comparison (about 17
-seconds from the click to the verdict on a fresh clone, 6 Nov), and copies the other shipped
-runs behind it while the tab stays open (the five large ones were in about 37 seconds): rows are only
-inserted, the examples are read-only, and nothing runs or is spent. If the tab closes first, opening
-the first door again copies the rest. `GET /api/examples` lists the
-shipped examples; `docs/experiment.md` explains the result and `docs/known-limits.md` what it
-cannot show.
-
-## What runs where
-
-| Service | What it does | Port (localhost) |
+| Change | Result | What it means |
 | --- | --- | --- |
-| `ui` | Vue 3 UI, served by nginx; proxies `/api` to the API | 8080 |
-| `api` | NestJS control plane: the database, the trial queue, run controls, grading jobs | 3000 |
-| `litellm` | Model proxy: every model call, a key and budget per trial, no response cache | 4000 |
-| `worker-*` | One per harness (Hermes, own loop, LangGraph, ADK, Agents SDK): claim a trial, run it in a fresh folder, upload the results | none |
-| `grader` | Grades finished trials as its own step, so a grader fix never re-runs a trial | none |
-| `fake-llm` | Scripted OpenAI-compatible model server for tests and CI | internal only |
-| `postgres` | Platform database, plus LiteLLM's own | internal only |
+| Planted one bad prompt line: "answer from your own knowledge to keep replies fast" | Fixed prompt +28 points (+9 to +49), p = 0.047 | Caught. 3 tasks flagged, all ones I predicted |
+| Removed the calculator tools | +45 points with them (+24 to +66), p = 0.001 | Caught |
+| Added a document search tool (a bank's current rates, this year's tax slabs) | +56 points with it (+34 to +77), p = 0.002 | A real gain. Without it the agent made up a rate or fee in 42 of 100 trials |
+| Nothing: the same agent on both sides | −4 points (−12 to +3) | No false alarm |
+| My actual prompt fix, v1 to v2 | +9 points (+3 to +16), p = 0.0625 | Not enough tasks to call it |
 
-Workers run on an internal network that reaches only the API, LiteLLM and the fake model server,
-with a read-only root filesystem and one writable trial folder (`docs/design.md`, isolation).
+The last row is the one that matters. v2 is probably better. But 4 of the 10 tasks always passed
+and 1 always failed, in both versions, so only 5 tasks could show a difference. With 5, the test
+can't get under p = 0.05 however big the gap. The fix is more tasks in the middle, not more trials.
 
-## Add a harness
+Every run together cost about $35 in model calls ([`docs/cost.md`](docs/cost.md)).
 
-One folder under `workers/` (an adapter, a capabilities file, a Dockerfile and the gate tests) and
-one service block in `docker-compose.yml`. The platform core runs it unchanged; a display name, the
-Build screen's card text and a CI job for its gate tests are optional extras.
+## How the verdict works
+
+The task is the unit, not the trial. Ten trials of one task aren't ten independent data points: an
+easy task passes whatever the prompt says. So each task is compared with itself across the two
+agents, and the stats run over tasks.
+
+```mermaid
+flowchart TD
+    S["Pass rate per task,<br/>agent A and agent B"] --> D["B minus A, per task"]
+    D --> I{"95% interval<br/>clear of zero?"}
+    I -- no --> N["No detectable difference"]
+    I -- yes --> P{"Paired test p < 0.05?<br/>(needs 6+ tasks<br/>that differ)"}
+    P -- no --> N
+    P -- yes --> K{"Critical failures<br/>went up?"}
+    K -- yes --> H["Not called better:<br/>held back"]
+    K -- no --> V["B is better<br/>(or worse)"]
+```
+
+The interval comes from resampling tasks, the paired test is a sign-flip test, and per-task flags get a
+multiple-comparison correction. Details in [`docs/design.md`](docs/design.md), section 6.
+
+## How it works
+
+```mermaid
+flowchart LR
+    UI["UI<br/>Vue 3"] -->|"/api"| API["API<br/>NestJS"]
+    API --- DB[("Postgres")]
+    W["Workers<br/>one per harness"] -->|"claim a trial,<br/>report results"| API
+    GR["Grader"] -->|"claim a grading job"| API
+    W -->|"every model call"| L["LiteLLM proxy<br/>a key and budget<br/>per trial"]
+    L --> M["Claude, Gemini,<br/>local Qwen"]
+    W -->|"tool calls"| F["Finance tools<br/>(MCP server)"]
+```
+
+- Five harnesses behind one adapter contract: Hermes Agent (pinned commit), LangGraph, Google ADK,
+  the OpenAI Agents SDK, and a plain tool-calling loop as the baseline.
+- Every model call goes through LiteLLM. Each trial gets its own key and budget, and spend, tokens
+  and latency come from LiteLLM's records, not estimates. Response cache is off, so repeated trials
+  are real samples.
+- Each trial runs in a fresh folder on a network that only reaches the API, LiteLLM and the fake
+  model server. If a worker dies mid-trial, the trial is re-run and its spend still counts.
+- Grading is its own step. A grader fix means a regrade, not a re-run.
+- An LLM judge grades what code can't, like whether the advice fits this client. It's calibrated on
+  my hand labels: tuned on about 30 discovery trials I labelled, then checked once against 40
+  held-out trials I labelled blind. A judge criterion counts in a verdict once it agrees with me
+  well enough (kappa at least 0.6, and no lean towards either version). The current judge didn't:
+  on the 40 held-out trials it passed all 9 answers I failed. So it's shown on every trial page and
+  doesn't count yet. Details: [`docs/judge-validation.md`](docs/judge-validation.md).
+- The tasks are a personal-finance assistant for clients in India: calculator tools, client files,
+  and a simulated client for the multi-turn ones. 31 tasks: 10 held out for scoring, 11 for
+  discovery (where v1's failures were found), 10 for retrieval.
+
+## Running it for real
+
+Without a key you can open the examples, build and save an agent, preview exactly what reaches the
+model, and run on fake models (`fake/...`). A fake run tests the platform, not an agent. It makes
+the same scripted calls whatever the task, so most of its trials fail. That's expected.
+
+With a key:
+
+1. Copy `.env.example` to `.env`.
+2. Add `ANTHROPIC_API_KEY` and/or `GEMINI_API_KEY`. If a Claude key came with my submission email,
+   it goes in `ANTHROPIC_API_KEY`. It's capped at $10 and revoked after the review.
+3. Run `docker compose up -d` again.
+
+Every run shows its trials, models and worst-case cost before it starts, and asks you to confirm.
+A Hermes run first checks your prompt against Hermes's own instructions (one call, about 3 cents)
+and shows what clashes.
+
+Stop it with `docker compose down`. Add `-v` to wipe the database too.
+
+<details>
+<summary>Ports taken, a second checkout, disk and cleanup</summary>
+
+- Port taken: set `UI_PORT`, `API_PORT` or `LITELLM_PORT`, e.g.
+  `API_PORT=3001 docker compose up -d --build --wait`. Use the same variables for every later
+  `docker compose` command and for the checks under Tests.
+- A second checkout on the same machine needs its own project name, ports and image tag
+  (`docker compose -p review`, `EVALS_IMAGE_TAG=review` in its `.env`). Otherwise its build
+  replaces the first one's images.
+- Disk: a cold build used about 9.9 GB in testing. Opening all eight shipped examples writes about
+  514 MB of trial files into `runs/`.
+- `down -v` doesn't touch files on disk: trial files in `./runs/`, labels in `./labels/`, prompt
+  versions you saved in `configs/prompts/`. Clear trial files with `rm -rf runs/*` (not the folder
+  itself). No sudo needed, the API makes those folders group-writable. If `rm` is still refused (a
+  folder Docker created as root), run `docker compose exec api sh -c 'rm -rf /runs/*'`.
+- API container unhealthy: `docker compose logs api` says why (database down, or a folder it can't
+  write) and how to fix it.
+
+</details>
+
+## Extending it
+
+### A harness
+
+One folder under `workers/` and one service block in `docker-compose.yml`. You write two methods,
+`setup(ctx)` and `run_turn(ctx, history, max_steps)`; the shared library does the rest. Nothing in
+the platform core changes.
+
+<details>
+<summary>Steps</summary>
 
 ```bash
-make new-harness NAME=crewai      # scaffold workers/crewai/, Dockerfile included, and print its compose service
-make probe-harness NAME=crewai    # measure what actually reaches the model, against the fake server
+make new-harness NAME=crewai      # scaffold workers/crewai/ and print its compose service
+make probe-harness NAME=crewai    # see what actually reaches the model, against the fake server
 make test-harness NAME=crewai     # the contract's gate tests
 ```
 
-You write two required methods on the shared adapter library: `setup(ctx)`, which maps our
-settings to the harness's own, and `run_turn(ctx, history, max_steps)`, one agent turn; `version`,
-`collect` and `teardown` are optional. Most frameworks also need one small class that hooks their
-tool calls into the library's spans. The library does the rest (the spec, the timeout, the tools,
-the conversation with the simulated client, the result and the trace). The five adapters here are
-304 to 421 lines each.
+`setup(ctx)` maps our settings to the harness's own; `run_turn` is one agent turn. The shared
+library handles the spec, timeout, tools, simulated client, result and trace. The five adapters here
+are 300 to 420 lines each. Contract: [`docs/adapter-contract.md`](docs/adapter-contract.md). How
+each harness was wrapped: [`docs/harness-guide.md`](docs/harness-guide.md).
 
-The contract is `docs/adapter-contract.md`; how each existing harness was wrapped is in
-`docs/harness-guide.md`.
+</details>
 
-## Add a model
+### A model
 
-One entry in `services/litellm/config.yaml` with its provider route, the key's variable name and
-its prices (per input, output and cached token). A provider that is new here also needs its key
-passed to LiteLLM: add the variable to the `litellm` service's `environment` in
-`docker-compose.yml` and its name to `.env.example`. If a real run shows the model refusing a
-setting (a 400), list it in `MODEL_REJECTS` (`apps/api/src/configs/settings.ts`) so configs for
-that model leave it out; that table holds Haiku 5.5's `temperature` and the local Qwen's
-`parallel_tool_calls`. For the UI to say when a new provider's key is missing, also add it to
-`PROVIDER_KEYS` (`apps/api/src/common/app-config.ts`) and its flag in compose; without that the
-model still runs, and its key shows as unknown. The local open-weight model (`qwen2.5-7b-local`,
-the `local-model` compose profile) needs no key and costs nothing; the Build and Config screens
-never pick it by default, and the Run screen can warn but not check that Ollama is up. Then check
-it:
+One entry in `services/litellm/config.yaml`: provider route, key variable, prices. A local
+open-weight model (Qwen 2.5 7B through Ollama) is already registered.
+
+<details>
+<summary>Steps</summary>
+
+1. Add one entry to `services/litellm/config.yaml`: provider route, the key's variable name, prices.
+2. A new provider also needs its key passed to LiteLLM: add the variable to the `litellm` service
+   in `docker-compose.yml` and its name to `.env.example`. For the UI to warn when it's missing,
+   add it to `PROVIDER_KEYS` in `apps/api/src/common/app-config.ts`.
+3. If the model refuses a setting (a 400 on a real run), add it to `MODEL_REJECTS` in
+   `apps/api/src/configs/settings.ts`, like Haiku 5.5's `temperature`.
+4. Check it:
 
 ```bash
 uv run --no-project --with pyyaml==6.0.3 python scripts/check_litellm_config.py   # no cache, prices set
 docker compose restart litellm
 ```
 
-An open-weight model runs locally the same way: `qwen2.5-7b-local` is already registered, served by
-an optional Ollama service. Start it with `docker compose --profile local-model up -d ollama`, pull
-the model once with `docker compose exec ollama ollama pull qwen2.5:7b` (about 4.7 GB), and pick it
-in a config. It costs nothing, but on a CPU-only machine each model call takes minutes.
+A local open-weight model is already registered: `qwen2.5-7b-local`, through Ollama. Start it with
+`docker compose --profile local-model up -d ollama`, pull it once with
+`docker compose exec ollama ollama pull qwen2.5:7b` (about 4.7 GB), and pick it in a config. Free,
+but slow on a CPU: minutes per call.
 
-## Add a task
+</details>
 
-One folder `tasks/<id>/` with a `task.json`: the messages (or a simulated client), the client's
-data file if it has one, and its graders (exact numbers from a tool, tool called or not, text
-present or absent, end state, number provenance, a Python unit test, or the LLM judge with a
-rubric). `tasks/demo-skill-card-transfer/task.json` is a short hand-written example; the field list
-is in `docs/api-contract.md` (Task file) and the graders in `docs/proposals/grader-format.md`. The
-API picks a new task up without a restart. The 21 task folders keep the `draft-` prefix from their
-first review so their recorded trials stay linked; `scripts/make_draft_tasks.py` writes those and
-overwrites hand edits, so give a hand-written task another name.
+### A task
 
-## Develop and test
+One folder `tasks/<id>/` with a `task.json`: the messages (or a simulated client), the client's data
+file if there is one, and the graders. The API picks it up without a restart.
 
-You need Node 22.14 or later, pnpm 10.34.9 (run `corepack enable` once; the first `pnpm` then
-asks to download that version) and [uv](https://docs.astral.sh/uv/) for the Python projects. None
-of these call a real model; tests use the fake model server.
+<details>
+<summary>Graders and examples</summary>
+
+Graders can check an exact number from a tool, whether a tool was called, text present or absent,
+the end state, where every number came from, a Python unit test, or ask the LLM judge with a rubric.
+
+- Short hand-written example: `tasks/demo-skill-card-transfer/task.json`.
+- Fields: [`docs/api-contract.md`](docs/api-contract.md) (Task file). Graders:
+  [`docs/proposals/grader-format.md`](docs/proposals/grader-format.md).
+- Don't name a hand-written task `draft-*`. `scripts/make_draft_tasks.py` writes those folders and
+  overwrites hand edits.
+
+</details>
+
+## Tests
+
+You need Node 22.14+, pnpm 10.34.9 (`corepack enable` once) and [uv](https://docs.astral.sh/uv/).
+No test calls a real model. They all use the fake model server.
 
 ```bash
-pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build      # apps/api, apps/ui
-cd graders && uv sync --locked && uv run pytest -q                           # graders and the judge
-cd stats && uv sync --locked && uv run pytest -q                             # judge agreement maths
-cd workers/adapterlib && uv sync --locked && uv run pytest -q                # contract, runner
-cd services/finance-mcp && uv sync --locked && uv run pytest -q              # the finance tools
-cd services/fake-llm && uv sync --locked && uv run pytest -q                 # the fake model server
-make test-harness NAME=ownloop       # one harness's gate tests (syncs the fake and finance servers first)
-scripts/setup_hermes.sh && make test-harness NAME=hermes   # Hermes needs its pinned checkout first
-python3 scripts/smoke.py                                                     # the running stack, end to end
-docker compose --profile smoke run --rm netcheck                             # worker isolation
-python3 scripts/sp3_kill_test.py --n 2       # crash recovery: kills a worker mid-run, checks every trial ran once
-(cd workers/adapterlib && EVALS_IMAGE_TESTS=1 uv run pytest -q tests/test_images.py)   # isolation between trials, on the built worker images (about 3 min)
+pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build   # API and UI
+cd graders && uv sync --locked && uv run pytest -q                        # graders and the judge
+cd stats && uv sync --locked && uv run pytest -q                          # judge agreement maths
+cd workers/adapterlib && uv sync --locked && uv run pytest -q             # contract, runner
+cd services/finance-mcp && uv sync --locked && uv run pytest -q           # the finance tools
+cd services/fake-llm && uv sync --locked && uv run pytest -q              # the fake model server
+make test-harness NAME=ownloop                                            # one harness's gate tests
+scripts/setup_hermes.sh && make test-harness NAME=hermes                  # Hermes needs its pinned checkout first
+python3 scripts/smoke.py                                                  # the running stack, end to end
+docker compose --profile smoke run --rm netcheck                          # worker isolation
+python3 scripts/sp3_kill_test.py --n 2                                    # kill a worker mid-run, every trial still runs once
 ```
 
-**The API's database tests.** Without `TEST_DATABASE_URL`, `pnpm test` skips the API's
-database suites: Jest's summary for the API reads `Test Suites: 16 skipped, 38 passed, 38 of 54
-total` (6 Nov); the skipped count is the only sign, since Jest prints its warning only when one suite
-file runs alone. CI runs them against Postgres. To run them here, start a throwaway
-Postgres (never the compose one), then stop it:
+<details>
+<summary>The API's database tests, and a stack on other ports</summary>
+
+Without `TEST_DATABASE_URL`, `pnpm test` skips the API's database suites. The only sign is the
+skipped count in Jest's summary (`16 skipped, 38 passed`). CI runs them against Postgres. Locally,
+use a throwaway Postgres, never the compose one:
 
 ```bash
 docker run --rm -d --name evals-api-test -p 127.0.0.1:55432:5432 -e POSTGRES_PASSWORD=x postgres:17
@@ -239,55 +242,70 @@ TEST_DATABASE_URL=postgresql://postgres:x@127.0.0.1:55432/postgres pnpm test
 docker stop evals-api-test
 ```
 
-**A stack on other ports or under another project name.** The checks need the same settings as
-the stack: `API_PORT=3001 python3 scripts/smoke.py` (and `UI_PORT`, `LITELLM_PORT` if you changed
-them), and `API_PORT=3001 docker compose --profile smoke run --rm netcheck`, because compose
-otherwise recreates the API on its default port. If you started it with `-p <name>` or
-`COMPOSE_PROJECT_NAME=<name>`, use the same for both: smoke.py reads `COMPOSE_PROJECT_NAME`.
+A stack on other ports needs the same settings for the checks:
+`API_PORT=3001 python3 scripts/smoke.py` and
+`API_PORT=3001 docker compose --profile smoke run --rm netcheck` (otherwise compose recreates the
+API on its default port). With `-p <name>` or `COMPOSE_PROJECT_NAME`, use the same for both.
 
-`CLAUDE.md` lists every command, including the per-harness gate tests.
+Isolation between trials, on the built images (about 3 minutes):
+`cd workers/adapterlib && EVALS_IMAGE_TESTS=1 uv run pytest -q tests/test_images.py`.
 
-## Docs
+</details>
 
-The brief's deliverables, and where each one is:
+[`CLAUDE.md`](CLAUDE.md) has every command.
 
-| Deliverable | Where |
+## What I'd trust least
+
+Full list: [`docs/known-limits.md`](docs/known-limits.md). The ones that matter:
+
+- 10 held-out tasks decide the headline, and half of them couldn't separate the two prompts.
+- The judge failed its held-out check (kappa −0.14, needed 0.6). My fails were about things the
+  rubric never asks for, like tax on the gains or asking about an emergency fund, so it passed them.
+  Verdicts rest on the code checks. The next rubric comes from those notes, and it needs a fresh
+  set of blind labels to be measured.
+- One strict check carries most of the headline's failures: every rupee figure has to come from a
+  tool. A correct number rounded in prose still fails it.
+- Conversations use a simulated client (Claude Haiku playing the customer). Those results describe
+  that simulator, not real people.
+
+## Where things are
+
+| What | Where |
 | --- | --- |
-| Code, tests, setup, add a task, harness or model | This README; CI in `.github/workflows/ci.yml` |
-| Design: architecture, adapter interfaces, data model, isolation and reproduction, graders and their validation, statistics and the choice of N | `docs/design.md` (sections 1 to 6), with the adapter contract in `docs/adapter-contract.md` |
-| Known limits | `docs/known-limits.md` (the six that matter most are at the top) |
-| Cost: formula, actual spend, how to reduce it | `docs/cost.md` |
-| The real experiment: hypothesis, setup and N, results with intervals, trajectories, conclusion | `docs/experiment.md` |
-| Judge validation | `docs/judge-validation.md`, labels in `labels/tuning.jsonl` |
-| Every assumption | `docs/assumptions.md` |
-
-Also: `docs/decisions.md` (each decision with its options and reasons), `docs/harness-guide.md`
-(how each harness behaves and how it is wrapped), `docs/hermes-notes.md` (Hermes, measured and
-read from the code). `docs/proposals/`, `docs/research/` and `docs/premortem/` are the working
-papers behind the decisions.
+| Design: architecture, adapters, data model, isolation, graders, stats, choice of N | [`docs/design.md`](docs/design.md) |
+| The experiment: hypothesis, setup, results, trajectories, conclusion | [`docs/experiment.md`](docs/experiment.md) |
+| Cost formula and every dollar spent | [`docs/cost.md`](docs/cost.md) |
+| Known limits | [`docs/known-limits.md`](docs/known-limits.md) |
+| Judge validation | [`docs/judge-validation.md`](docs/judge-validation.md) |
+| Every decision, with the options and why | [`docs/decisions.md`](docs/decisions.md) |
+| Every assumption | [`docs/assumptions.md`](docs/assumptions.md) |
+| How each harness behaves and is wrapped | [`docs/harness-guide.md`](docs/harness-guide.md), [`docs/hermes-notes.md`](docs/hermes-notes.md) |
+| CI | `.github/workflows/ci.yml` |
 
 ## How this was built
 
-To be plain about it: Claude Code, an AI coding agent, wrote almost all of the code, the tests and
-most of these documents. I did not write the code by hand. My part was the design, the decisions,
-managing the build and reviewing what came back. If the role calls for someone who writes most of
-their code themselves, you should know that this repository was not made that way.
+Claude Code wrote almost all of the code, the tests and most of the docs. I didn't write the code
+by hand. I designed it, made every decision, ran the build and reviewed what came back. If the role
+needs someone who writes most of their own code, you should know this repo wasn't built that way.
 
 What I did:
 
-- **Designed it and made every decision.** Each one is in `docs/decisions.md`, with the options I
-  weighed and why I chose as I did. Where the docs quote "Rishi", that is my ruling, recorded at
-  the time.
-- **Set the rules the agent worked under,** in `CLAUDE.md`: no real model calls in tests, every
-  paid run approved by me with its cost stated first, never tune the judge on held-out labels,
-  never drop a failed trial, and design calls left to me.
-- **Owned the experiment:** the hypothesis and analysis plan, committed before the runs; the task
-  set, its split and severities (drafted with the agent, reviewed and approved by me, D53); and
-  the conclusion.
-- **Made the human judgments:** the judge labels in `labels/` are mine, written blind in the
-  labelling screen; nothing there was written or inferred by the agent.
-- **Approved every paid run;** `docs/cost.md` logs each one with its approval and cost.
+- Every decision, with the options I weighed, is in [`docs/decisions.md`](docs/decisions.md).
+  Where the docs quote "Rishi", that's my call at the time.
+- I set the rules the agent worked under, in [`CLAUDE.md`](CLAUDE.md): no real model calls in tests,
+  no paid run without my OK and its cost stated first, never tune the judge on held-out labels,
+  never drop a failed trial, design calls stay with me.
+- I owned the experiments: hypotheses and plans committed before each run, the task set and its
+  split (drafted with the agent, approved by me), and the conclusions.
+- The labels in `labels/` are mine, written blind. The agent never wrote or guessed one.
+- Every paid run is in [`docs/cost.md`](docs/cost.md) with my approval. Late on I gave a standing OK
+  for anything under $5.
 
-How I checked the agent's work: the A/A run and the positive control, clean-clone tests on a fresh
-machine, CI on every push, and independent reviews of the repository against the brief by other AI
-agents, whose findings were checked against the code and fixed here.
+How I checked it:
+
+- the A/A run and the two planted breaks above
+- clean-clone runs on a fresh machine
+- a soak test: about 1,000 real trials across all five harnesses, killing workers and stopping the
+  API, database and proxy mid-run. It found two real bugs, both fixed.
+- CI on every push
+- other AI agents reviewing the repo against the brief, with every finding checked against the code
