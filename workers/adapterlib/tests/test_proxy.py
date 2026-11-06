@@ -244,6 +244,26 @@ def test_a_row_that_lands_within_the_quiet_period_is_kept_and_none_is_read_befor
     assert reads[0][1] >= 0.85
 
 
+def test_a_read_held_up_by_an_outage_does_not_use_up_the_wait():
+    """On the fixsoak stack (6 Nov) two trials that ended 4 s before Postgres stopped had all 15
+    calls logged but were flagged incomplete: their reads sat retrying through the outage until
+    the 30 s were gone, before the 1.5 s of no change could be seen."""
+    client = ProxyClient("http://unused", "sk-unused")
+    reads = {"n": 0}
+
+    def request(method, path, body=None):
+        reads["n"] += 1
+        if reads["n"] == 1:
+            time.sleep(0.5)  # the worker retrying while the API or LiteLLM is down
+        return [row(i, "a", "b") for i in range(15)]
+
+    client._request = request
+    rows, complete = client.read_calls(
+        [("agent", 15)], quiet_s=0.1, settle_s=0.2, max_wait_s=0.3, slow_read_s=0.3
+    )
+    assert complete and len(rows["agent"]) == 15
+
+
 def test_a_log_still_changing_when_the_wait_runs_out_is_not_complete():
     client = ProxyClient("http://unused", "sk-unused")
     stub(client, lambda tok, t: [row(i, "a", "b") for i in range(int(t * 10))])

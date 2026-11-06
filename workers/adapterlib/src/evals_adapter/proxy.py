@@ -114,6 +114,7 @@ class ProxyClient:
         settle_s: float = 1.5,
         max_wait_s: float = 30.0,
         poll_s: float = 0.3,
+        slow_read_s: float = 2.0,
     ) -> tuple[dict[str, list[dict]], bool]:
         """Every logged call for each key, oldest first, and whether the log is shown complete.
 
@@ -123,22 +124,32 @@ class ProxyClient:
         floor, `quiet_s` has passed since `since` (when the adapter exited: no call can start
         after it, and LiteLLM's last batch is written within SPEND_LOG_QUIET_S), and no key's
         count has changed for `settle_s`. The wait also covers calls nobody counted, such as
-        Hermes's summary call at its step limit. If `max_wait_s` runs out first, the records
-        are returned with complete=False and the trial is flagged, never trusted. No read before
-        `since + quiet_s - settle_s` could show anything, so the first one waits until then."""
+        Hermes's summary call at its step limit. If `max_wait_s` of waiting runs out first, the
+        records are returned with complete=False and the trial is flagged, never trusted. No read
+        before `since + quiet_s - settle_s` could show anything, so the first one waits until then.
+
+        A read slower than `slow_read_s` was held up retrying (the worker reads through the API,
+        and retries while the API, LiteLLM or Postgres is down, up to its own deadline), so its
+        time does not use up `max_wait_s`: otherwise every trial that ended just before an outage
+        was flagged although its log was whole (seen on the fixsoak stack, 6 Nov)."""
         start = time.time()
         since = start if since is None else since
         not_before = since + quiet_s
         first = not_before - settle_s
+        waited = 0.0
         if first > start:
             time.sleep(min(first - start, max_wait_s))
+            waited = time.time() - start
         last: dict[str, int] | None = None
         stable_since = time.time()
         rows: dict[str, list[dict]] = {}
         complete = False
         while True:
+            began = time.time()
             rows = {token: self._spend_rows(token) for token, _ in wants}
             now = time.time()
+            if now - began < slow_read_s:
+                waited += now - began
             counts = {token: len(r) for token, r in rows.items()}
             if counts != last:
                 last, stable_since = counts, now
@@ -146,9 +157,10 @@ class ProxyClient:
             if enough and now >= not_before and now - stable_since >= settle_s:
                 complete = True
                 break
-            if now - start > max_wait_s:
+            if waited > max_wait_s:
                 break
             time.sleep(poll_s)
+            waited += poll_s
         order = lambda r: (r.get("startTime") or "", r.get("request_id") or "")  # noqa: E731
         return {token: sorted(r, key=order) for token, r in rows.items()}, complete
 

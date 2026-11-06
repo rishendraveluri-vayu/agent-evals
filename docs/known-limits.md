@@ -90,6 +90,7 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
   - A row LiteLLM writes later than that, as when its database is down, is caught only if the trial is known to have made the call; the soak's LangGraph and ADK trials that ended during the LiteLLM and Postgres stops were flagged, while a call nobody counted and written that late would still be missed and the record marked complete.
   - A simulator call that failed is not in the floor (it may or may not have a row), nor is a harness's own hidden retry; the quiet period is what covers them.
   - The 7 s rests on LiteLLM's flush rule at the pin and `proxy_batch_write_at: 1`; a test checks the config value, not the LiteLLM code.
+  - Reads held up for more than 2 s (retrying through an outage) do not count against the 30 s, so a read can last until the worker's own 600 s deadline for its calls; past it the trial is not reported and its lease lapses, as before.
 - LiteLLM cuts long strings out of the bodies it stores in the spend log (about 2,000 characters by default, with a note naming `MAX_STRING_LENGTH_PROMPT_IN_DB`). It cut the task prompt out of Hermes's system prompt on 3 Nov. Compose now sets the limit to 2,000,000 characters, and the merge flags any body that still carries the note (`evals.request.truncated`), which fails the proxy gate.
 - The proxy merge puts a model call under the agent turn whose time window holds its start. The clocks are the adapter's and LiteLLM's container clocks; skew between them larger than the gap between turns would misplace a call.
 
