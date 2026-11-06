@@ -1675,9 +1675,16 @@ watch(
   margin: 8px 0 0;
   padding: 0;
   display: grid;
+  /* One column as wide as the box: a long name with no spaces wraps, never sizes the column. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   max-height: 360px;
   overflow-y: auto;
+}
+
+.saved-list li {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .config-split {
