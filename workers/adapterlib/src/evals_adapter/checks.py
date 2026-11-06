@@ -146,6 +146,10 @@ COUNTED = (
     r"months?|years?|yrs?|weeks?|days?|quarters?|people|persons?|members?|children|kids|"
     r"instal?l?ments?|EMIs?|payments?|times|visits?|sessions?"
 )
+# A counted word right after a number ("46 months", "12 more EMIs"): the number is a count.
+COUNT_AFTER = re.compile(
+    rf"[ \t-]*(?:more[ \t]+|extra[ \t]+|fewer[ \t]+|less[ \t]+)?(?:{COUNTED})\b", re.IGNORECASE
+)
 CURRENCY_BEFORE = re.compile(r"(?:₹|\bRs\.?|\bINR)[ \t]*$", re.IGNORECASE)
 COUNT_TEXT = re.compile(
     rf"(?<![\w.,])(?P<n>\d+|{'|'.join(NUMBER_WORDS)})[ \t-]*(?:more[ \t]+|extra[ \t]+)?"
@@ -224,7 +228,13 @@ def money_amounts(text: str) -> list[Amount]:
         parts = _grouped(raw)
         marked = bool(m.group("cur") or m.group("post"))
         percent = text[m.end() : m.end() + 1] == "%"
-        in_range = last_end is not None and RANGE_GAP.match(text[last_end : m.start()])
+        # G9 (6 Nov review): "₹5.96 lakh – 46 months sooner" is a figure and a count, not a range:
+        # the second end of a range is money only when no counted word follows it.
+        in_range = (
+            last_end is not None
+            and RANGE_GAP.match(text[last_end : m.start()])
+            and not COUNT_AFTER.match(text, m.end())
+        )
         is_money = marked or (
             not percent
             and (

@@ -103,6 +103,22 @@ def test_ranges_short_units_and_negatives():
     assert texts("₹500 last month, 12 l of milk") == ["₹500"]
 
 
+def test_a_count_after_a_dash_is_not_the_end_of_a_range():
+    """Destructive review G9 (6 Nov): "₹5.96 lakh – 46 months sooner" read 46 as ₹46 lakh, an
+    unsupported figure in a correct answer."""
+    assert texts("- Interest saved: ₹5.96 lakh – 46 months sooner") == ["₹5.96 lakh"]
+    assert texts("₹18,332.50 - 24 EMIs left") == ["₹18,332.50"]
+    assert texts("₹9,000 to 12 more months") == ["₹9,000"]
+    # A real range still is one.
+    assert texts("₹8,000–9,000 a month") == ["₹8,000", "9,000"]
+    assert values("₹2–3 lakh, ₹4 lakh - 5 lakh") == [
+        Decimal(200000),
+        Decimal(300000),
+        Decimal(400000),
+        Decimal(500000),
+    ]
+
+
 def test_source_numbers_scale_words_split_json_lists_and_skip_dates_and_ids():
     text = (
         '{"total_balance":441050.00,"total_balance_words":"4.41 lakh","ids":[1,2,3],'
