@@ -115,6 +115,16 @@ export function needsKeyWords(model: string | null | undefined, models: ModelVie
 
 export const MAX_N = 1000;
 
+/** Trials per task and arm a run starts with: 5 for a run that calls a real model, 2 when every
+ *  model is fake, where the run only tries the platform out and measures nothing (the 10 held-out
+ *  tasks on two arms are 40 trials at 2, against 100 at 5). A number typed by hand is kept. */
+export const DEFAULT_N = 5;
+export const FAKE_DEFAULT_N = 2;
+
+export function defaultN(everyModelFake: boolean): number {
+  return everyModelFake ? FAKE_DEFAULT_N : DEFAULT_N;
+}
+
 /** Trials per task and arm: a whole number from 1 to 1,000 (the API's own limit), or why not. */
 export function validateN(raw: number | string | null | undefined): { value: number | null; error: string | null } {
   const text = typeof raw === 'number' ? (Number.isNaN(raw) ? '' : String(raw)) : (raw ?? '').trim();

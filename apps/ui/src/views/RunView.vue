@@ -17,7 +17,7 @@ import { experimentName, infraReason, modelName, splitName } from '../lib/names'
 import { href, navigate, replaceRoute } from '../router';
 import { eventView, pauseCause } from '../lib/runs';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
-import { armPauseHelp, defaultArms, defaultBudget, isEngineTest, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, validateSeed, type ArmDefaults } from '../lib/runSetup';
+import { armPauseHelp, defaultArms, defaultBudget, defaultN, DEFAULT_N, isEngineTest, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, validateSeed, type ArmDefaults } from '../lib/runSetup';
 import { FAKE_SIM_MODEL, isFake, simModels } from '../lib/models';
 import { CHECKER_MODEL, ensureConflictChecks, needsConflictCheck } from '../lib/conflictGate';
 import { text } from '../trials';
@@ -81,8 +81,8 @@ interface Setup {
   /** D32's futility check as ticked by hand; null follows the default (futilityOn). */
   futility: boolean | null;
 }
-const setup = reactive<Setup>({ a: props.a ?? '', b: props.b ?? '', split: 'held_out', n: 5, simModel: '', budget: '', plan: '', name: '', seed: '', calibration: !!props.calibration, futility: null });
-const touched = reactive({ budget: false, name: false, sim: false });
+const setup = reactive<Setup>({ a: props.a ?? '', b: props.b ?? '', split: 'held_out', n: DEFAULT_N, simModel: '', budget: '', plan: '', name: '', seed: '', calibration: !!props.calibration, futility: null });
+const touched = reactive({ budget: false, name: false, sim: false, n: false });
 /** Tasks taken out of the run by hand, by sha256. Engine tests start out of it. */
 const excluded = reactive(new Set<string>());
 /** Why the arms could not both be filled in: one config only (a pilot), or none. */
@@ -151,6 +151,15 @@ const futilityOn = computed({
     setup.futility = on;
   },
 });
+// A run on fake models only starts at fewer trials (lib/runSetup.ts defaultN); a number typed by
+// hand stays as typed. Before the configs load, nothing is known about the models.
+watch(
+  () => (data.value ? fakeOnly.value : null),
+  (fake) => {
+    if (draft && !touched.n && fake !== null) setup.n = defaultN(fake);
+  },
+  { immediate: true },
+);
 const configOf = (h: string) => data.value?.configs.find((c) => c.hash === h);
 /** D75: this run's Hermes agents on a real model, whose prompt is checked against Hermes's own
  *  instructions before the run starts (the API refuses the start without that check). */
@@ -1556,7 +1565,10 @@ onBeforeUnmount(() => taskObserver?.disconnect());
           <template v-if="draft">
             <div class="n-field">
               <label class="row-field">
-                <span><span class="block strong">Trials per task and arm</span><span class="secondary smaller block">More trials, narrower intervals</span></span>
+                <span><span class="block strong">Trials per task and arm</span><span
+                  class="secondary smaller block"
+                  data-test="n-hint"
+                >{{ fakeOnly && !touched.n ? 'Fewer to start with here: every model is fake, so a short run tries the platform out' : 'More trials, narrower intervals' }}</span></span>
                 <input
                   v-model="setup.n"
                   type="number"
@@ -1567,6 +1579,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                   :aria-invalid="nCheck.error ? 'true' : undefined"
                   :aria-describedby="nCheck.error ? 'n-error' : undefined"
                   data-test="n-input"
+                  @input="touched.n = true"
                 >
               </label>
               <p

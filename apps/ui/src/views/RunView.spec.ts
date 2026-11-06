@@ -535,6 +535,9 @@ describe('RunView on fake models only (QA major 1)', () => {
     const create = vi.spyOn(api, 'createExperiment');
     const w = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
     await settle();
+    // A fake-only run starts at 2 trials; 5 by hand makes the larger estimate this test reads.
+    await w.get('[data-test="n-input"]').setValue('5');
+    await settle();
     expect(w.find('[data-test="budget-input"]').exists()).toBe(false);
     expect(checkTexts(w)).toContain('No spending limit needed: every model here is fakeCheck passed.Fake models spend nothing real; the estimate is at made-up test prices.');
     expect(checkTexts(w).some((c) => c.includes('spending limit is below'))).toBe(false);
@@ -553,6 +556,59 @@ describe('RunView on fake models only (QA major 1)', () => {
     // High end $27.00: rounding to the nearest $10 offered $20, below it; rounding up offers $30.
     expect((w.get('[data-test="budget-input"]').element as HTMLInputElement).value).toBe('30');
     expect(checkTexts(w)).toContain('The spending limit covers the likely costCheck passed.$30 against at most $27.00.');
+  });
+});
+
+describe('RunView starts a fake-only run at 2 trials (the README’s fake path)', () => {
+  useFixtures();
+  const nValue = (w: VueWrapper) => (w.get('[data-test="n-input"]').element as HTMLInputElement).value;
+
+  it('starts at 2 when every model is fake, and says why, so the run takes minutes', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, fakeA, fakeB]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'prompt.sha256', a: fakeA.prompt.sha256, b: fakeB.prompt.sha256 }]);
+    const create = vi.spyOn(api, 'createExperiment');
+    const w = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    expect(nValue(w)).toBe('2');
+    expect(w.get('[data-test="n-hint"]').text()).toBe('Fewer to start with here: every model is fake, so a short run tries the platform out');
+    expect(w.get('[data-test="plan"]').text()).toContain('12 tasks × 2 arms × 2 trials');
+    await w.get('[data-test="start"]').trigger('click');
+    await settle();
+    expect(create.mock.calls[0][0].n).toBe(2);
+  });
+
+  it('goes back to 5 when a real model joins the run, here as the simulated client', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, fakeA, fakeB]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'prompt.sha256', a: fakeA.prompt.sha256, b: fakeB.prompt.sha256 }]);
+    const w = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    expect(nValue(w)).toBe('2');
+    await w.get('[data-test="sim-model"]').setValue('gemini-3.8-flash');
+    await settle();
+    expect(nValue(w)).toBe('5');
+    expect(w.get('[data-test="n-hint"]').text()).toBe('More trials, narrower intervals');
+  });
+
+  it('keeps a number typed by hand whatever the models', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, fakeA, fakeB]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'prompt.sha256', a: fakeA.prompt.sha256, b: fakeB.prompt.sha256 }]);
+    const w = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    await w.get('[data-test="n-input"]').setValue('7');
+    await settle();
+    await w.get('[data-test="sim-model"]').setValue('gemini-3.8-flash');
+    await settle();
+    expect(nValue(w)).toBe('7');
+    await w.get('[data-test="sim-model"]').setValue('fake/sim-client');
+    await settle();
+    expect(nValue(w)).toBe('7');
+  });
+
+  it('starts a paid run at 5', async () => {
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    expect(nValue(w)).toBe('5');
+    expect(w.get('[data-test="n-hint"]').text()).toBe('More trials, narrower intervals');
   });
 });
 

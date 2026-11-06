@@ -3,7 +3,7 @@ import { ApiError } from '../api/errors';
 import type { ArmView, ConfigView, TaskView } from '../api/types';
 import configsJson from '../fixtures/configs.json';
 import { armsCheck, diffWords, keysCheck, planCheck } from './checks';
-import { armPauseHelp, baselineFor, defaultArms, defaultBudget, localDiff, missingKey, needsKeyWords, oneThingApart, plainRunError, providerOf, taskSetWords, validateN } from './runSetup';
+import { armPauseHelp, baselineFor, defaultArms, defaultBudget, defaultN, localDiff, missingKey, needsKeyWords, oneThingApart, plainRunError, providerOf, taskSetWords, validateN } from './runSetup';
 
 const configs = configsJson as unknown as ConfigView[];
 // The fixtures, oldest first: v1 on Hermes (2 Nov), v2 on Hermes (3 Nov, forked from v1: the
@@ -168,6 +168,14 @@ describe('validateN', () => {
     expect(validateN(2.5).error).toBe('Trials per task and arm must be a whole number, with no fraction.');
     expect(validateN('abc').error).toBe('Trials per task and arm must be a whole number from 1 to 1,000.');
     expect(validateN(Number.NaN).value).toBeNull();
+  });
+});
+
+describe('defaultN', () => {
+  it('starts a run on fake models only at 2 trials per task and arm, and any other at 5', () => {
+    expect(defaultN(true)).toBe(2);
+    expect(defaultN(false)).toBe(5);
+    expect(validateN(defaultN(true)).error).toBeNull();
   });
 });
 
