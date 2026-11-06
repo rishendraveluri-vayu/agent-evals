@@ -547,6 +547,25 @@ const metrics = computed<Metric[]>(() => {
  *  larger arm's value for the rest. */
 const barShare = (v: number, max: number) => `${Math.max(0, Math.min(100, (v / (max || 1)) * 100))}%`;
 
+/** Under cost, tokens and time, once the statistics give them intervals: they get no verdict and
+ *  no paired test, and a task bootstrap over few tasks covers a little less than it says. On an
+ *  A/A run (one config on both arms) an interval of theirs that stays clear of zero is the setup's
+ *  own noise, never a finding. Null until the statistics report costs. */
+const costsNote = computed(() => {
+  const s = stats.value;
+  const costs = s?.costs ?? [];
+  if (!s || !costs.length) return null;
+  const level = Math.round(s.level * 100);
+  const tasks = Math.max(...costs.map((c) => c.tasks));
+  const general = `Cost, tokens and time get an interval but no verdict: only the pass rate is tested. With ${plural(tasks, 'task')}, a ${level}% interval here holds the true difference a little less often than ${level}% of the time.`;
+  const words: Record<string, string> = { cost_usd: 'cost', tokens: 'token', wall_s: 'time' };
+  const clear = costs.filter((c) => !noWidth(c.diff) && excludesZero(c.diff)).map((c) => words[c.metric]).filter(Boolean);
+  const calibration = !!s.calibration || !!data.value?.detail.calibration;
+  const which = clear.length > 1 ? `the ${clear.slice(0, -1).join(', ')} and ${clear[clear.length - 1]} intervals clear of zero here are` : `the ${clear[0]} interval clear of zero here is`;
+  const aa = calibration && clear.length ? `Both arms ran the same config, so ${which} the setup's own noise (such as which arm's trials were claimed first, or how loaded the machine was) or chance, not a finding.` : '';
+  return { general, aa };
+});
+
 interface TaskRow {
   key: string;
   name: string;
@@ -1203,6 +1222,24 @@ const worthALook = computed(() => {
             </div>
           </div>
         </div>
+        <p
+          v-if="costsNote"
+          class="secondary small"
+          data-test="costs-note"
+        >
+          {{ costsNote.general }}
+        </p>
+        <p
+          v-if="costsNote?.aa"
+          class="caveat"
+          data-test="costs-aa-note"
+        >
+          <AppIcon
+            name="info"
+            :size="14"
+          />
+          <span><strong class="caveat-lead">A/A run:</strong> {{ costsNote.aa }}</span>
+        </p>
       </section>
 
       <BehaviourPanel

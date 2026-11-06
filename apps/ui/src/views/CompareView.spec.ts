@@ -911,6 +911,38 @@ describe('CompareView against the API: the check on the method', () => {
     expect(w2.get('[data-test="regression"]').get('.regression-tag--critical').text()).toBe('critical check got worse');
   });
 
+  it('says under cost, tokens and time that they get an interval but no verdict, and that it covers a little less than it says (S5)', async () => {
+    withStats({});
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="costs-note"]').text()).toBe(
+      'Cost, tokens and time get an interval but no verdict: only the pass rate is tested. With 12 tasks, a 95% interval here holds the true difference a little less often than 95% of the time.',
+    );
+    // An A/B run: a cost interval clear of zero is not called setup noise.
+    expect(w.find('[data-test="costs-aa-note"]').exists()).toBe(false);
+  });
+
+  it('calls a time or cost interval clear of zero on an A/A run setup noise, not a finding (S5)', async () => {
+    const wall = { ...base.stats!.costs.find((c) => c.metric === 'wall_s')!, diff: { estimate: 1.51, low: 0.37, high: 2.82 } };
+    const cost = { ...base.stats!.costs.find((c) => c.metric === 'cost_usd')!, diff: { estimate: 0, low: -0.002, high: 0.002 } };
+    withStats({ calibration: { as_expected: true, text: 'This A/A run found no difference, as it should.' }, aa: null, costs: [cost, wall] });
+    let w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="costs-aa-note"]').text()).toBe(
+      "A/A run: Both arms ran the same config, so the time interval clear of zero here is the setup's own noise (such as which arm's trials were claimed first, or how loaded the machine was) or chance, not a finding.",
+    );
+    withStats({ calibration: { as_expected: true, text: 'This A/A run found no difference, as it should.' }, aa: null, costs: [{ ...cost, diff: { estimate: 0.01, low: 0.002, high: 0.02 } }, wall] });
+    w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="costs-aa-note"]').text()).toContain('so the cost and time intervals clear of zero here are the setup');
+    // With every interval across zero there is nothing to explain away.
+    withStats({ calibration: { as_expected: true, text: 'This A/A run found no difference, as it should.' }, aa: null, costs: [cost] });
+    w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.find('[data-test="costs-aa-note"]').exists()).toBe(false);
+    expect(w.find('[data-test="costs-note"]').exists()).toBe(true);
+  });
+
   it('writes the token difference in thousands, as each arm’s tokens are (U14)', async () => {
     const tokens = { ...base.stats!.costs.find((c) => c.metric === 'tokens')!, a: 55700, b: 79300, diff: { estimate: 23572, low: -1250, high: 48100 }, relative: null };
     withStats({ costs: [tokens] });
