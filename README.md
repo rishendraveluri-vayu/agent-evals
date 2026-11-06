@@ -64,7 +64,7 @@ Stop it with `docker compose down`. `docker compose down -v` also wipes the loca
 files stay in `./runs/`, your labels in `./labels/`, and prompt versions you saved in
 `configs/prompts/`. To remove the trial files, delete what is inside `runs/`, not the folder
 itself: `rm -rf runs/*` (one fake run of 150 trials left about 22 MB there in testing; opening all
-five shipped examples writes about 373 MB, 69 to 81 MB each). No sudo is
+six shipped examples writes about 374 MB: 69 to 81 MB for each of the five runs, 4 MB for the skills demo). No sudo is
 needed. The API runs as uid 1000; when you are another user, its start-up step gives those three
 folders (the folders only, never what is in them) to uid 1000, keeps your group and makes them
 group-writable, so everything it writes there is yours to delete. If `rm` is refused anyway (a
@@ -105,7 +105,9 @@ The home page offers:
    with its interval, each task's pass counts, and every trial's trace (messages, tool calls and
    results, grader reasoning) and its grades. Nothing runs and nothing is spent. The other shipped
    runs are in the experiments list too: the positive control (calculators taken away, which the
-   platform had to catch) and the same comparison on the own loop and on LangGraph.
+   platform had to catch), the same comparison on the own loop and on LangGraph, and a small
+   skills demo (Hermes with and without a seeded skill), whose trial pages show the skill being
+   loaded.
 2. **Build your own, step by step.** Pick an agent type (each has an "i" that says what it is and
    what it adds to your prompt), a model, the instructions and a few settings. Preview exactly
    what reaches the model, for free. Then evaluate it against a baseline: run it, compare the
@@ -116,8 +118,8 @@ The home page offers:
 
 The first door opens `http://127.0.0.1:8080/#/example`. The first time, it copies the headline and
 its A/A calibration from `examples/` into your local database, opens the comparison (about 17
-seconds from the click to the verdict on a fresh clone, 6 Nov), and copies the other three shipped
-runs behind it while the tab stays open (all five were in about 37 seconds): rows are only
+seconds from the click to the verdict on a fresh clone, 6 Nov), and copies the other shipped
+runs behind it while the tab stays open (the five large ones were in about 37 seconds): rows are only
 inserted, the examples are read-only, and nothing runs or is spent. If the tab closes first, opening
 the first door again copies the rest. `GET /api/examples` lists the
 shipped examples; `docs/experiment.md` explains the result and `docs/known-limits.md` what it
