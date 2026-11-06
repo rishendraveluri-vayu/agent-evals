@@ -138,6 +138,18 @@ Experiment `e_0mw3cb6519603428c4ce9bcad`, $2.299, 210 of 210 trials, no infra fa
 
 With the A/A run (identical arms, "no detectable difference"), both controls behave as they should: the platform calls a known large effect and points at the right tasks, and calls no effect when there is none.
 
+## Validation results: the prompt-axis positive control (6 Nov)
+
+Experiment `e_0mw4mta9bbe283aef553ba013`, $2.050, 200 of 200 trials, no infra failure, 45 minutes on three Hermes workers. Against the criteria committed before the run (`b795726`; the spending limit raised to $10 in `a3170fc`, before the start):
+
+1. **Verdict: pass, narrowly.** "B passes more than A": +28.0 points (95% interval +9 to +49), sign-flip p = 0.0469 over 10 tasks; the dealbreaker passed 49 of 100, the fixed prompt 77 of 100. Seven tasks differed, enough for p to fall below 0.05 (six is the floor). Critical failures did not rise: 0 of 80 graded critical results in A, 1 of 80 in B, over the 8 tasks that have critical checks.
+2. **Flags: pass.** Three tasks are flagged beyond noise (Benjamini-Hochberg q < 0.05), all among the 9 predicted: convo-consolidation (0 to 8 of 10), loan-to-clear-card (1 to 9) and prepay-personal-loan (4 to 10). The control, otp-scam, passed 10 of 10 in both arms.
+3. **Causes: pass.** In the dealbreaker arm the primary cause is "figure with no source" in 45 of its 51 failed trials (made-up tool arguments in the other 6). It made 2.7 tool calls a trial against 6.6 (+3.9, interval +1.9 to +6.1) and took 4.9 steps against 8.8.
+
+**Smaller than predicted, and the conflict check had said why.** Of the 8 predicted tasks with room to fall, three did not fall: college-cost-stepup (10 of 10 in A, 9 in B), first-year-interest and sip-education-goal (10 of 10 in both). These three are single messages with every input in the question, and Hermes still called the calculators on them despite the edit. The pre-run conflict check (D75) had made this its main finding, rated medium: Hermes's own instructions tell the agent to back its results with real tool output, against "answer from your own knowledge". The four tasks that did fall need the client's records (`list_debts` and the file) before any sum. That is a reading of the task list, not checked trace by trace.
+
+**What a failure looks like.** The dealbreaker's failures are rarely wild numbers. In a typical loan-to-clear-card trial (`t_0mw4mta9d6d45d4e960b37c03`) the agent calls `calculate_emi` for the new loan's EMI, then writes "Left unpaid, that costs roughly ₹35,000 a year in interest". That figure is close to 42% of ₹84,250 (₹35,385), but no tool produced it, so the provenance check fails the trial. The fixed prompt forbids exactly that ("Never write 'about', 'roughly' or 'around' before an amount you worked out yourself").
+
 ## Cross-harness replication results (5 Nov)
 
 Same prompts, model, tools, tasks and N on each harness:
