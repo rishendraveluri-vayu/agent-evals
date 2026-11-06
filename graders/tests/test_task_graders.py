@@ -91,7 +91,13 @@ D63_TASKS = {
 }
 # The destructive review (6 Nov): graders changed again, so these are one more version up
 # (scripts/make_draft_tasks.py REVIEW_6NOV).
-REVIEW_6NOV = {"draft-mba-loan-missing-info"}
+REVIEW_6NOV = {
+    "draft-mba-loan-missing-info",
+    "draft-prepay-bonus",
+    "draft-payoff-order",
+    "draft-spending-review",
+    "draft-convo-phone-loan",
+}
 # D63: the card regexes are optional floors, (task, grader id).
 CARD_FLOORS = {
     ("draft-car-loan-afford", "mentions-card"),
@@ -517,6 +523,42 @@ def test_prepay_bonus_month_count_in_any_phrasing(tmp_path):
     assert (
         verdict("draft-prepay-bonus", make_trial(tmp_path / "b", wrong), "months-saved") == "fail"
     )
+
+
+# Destructive review G1 (6 Nov): each month count needs a month word next to it.
+MONTH_GRADERS = [
+    ("draft-prepay-bonus", "months-saved", 46),
+    ("draft-payoff-order", "debt-free-months", 28),
+    ("draft-spending-review", "debt-free-months", None),
+    ("draft-convo-phone-loan", "months-with-extra", 12),
+]
+
+
+@pytest.mark.parametrize(("task_id", "grader_id", "months"), MONTH_GRADERS)
+def test_a_month_count_counts_only_next_to_a_month_word(tmp_path, task_id, grader_id, months):
+    graders, _ = task(task_id)
+    spec = next(g for g in graders if g["id"] == grader_id)
+    assert spec["context"] == {
+        "after": r"months?\b|mos?\b|EMIs?\b|instal?l?ments?\b",
+        "before": r"\bmonths?",
+    }
+    n = months if months is not None else int(spec["expected"])
+    for i, said in enumerate(
+        [f"You'd be debt-free in **{n} months**.", f"That is a {n}-month plan.", f"Month {n}."]
+    ):
+        assert verdict(task_id, make_trial(tmp_path / f"ok{i}", said), grader_id) == "pass", said
+    for i, said in enumerate(
+        [f"Interest is 18% ÷ {n} = 1.5% a month.", f"Your reference is {n}.", f"{n}% of it."]
+    ):
+        assert verdict(task_id, make_trial(tmp_path / f"no{i}", said), grader_id) == "fail", said
+
+
+def test_phone_loan_rate_divided_by_12_is_not_the_month_count(tmp_path):
+    """The five shipped trials that passed months-with-extra on '18% ÷ 12' (e.g. the headline's
+    "Interest accrues at 18% ÷ 12 = 1.5% on the opening balance each month.")."""
+    said = "- Interest accrues at 18% ÷ 12 = 1.5% on the opening balance each month."
+    g = run(PHONE, make_trial(tmp_path, said), "months-with-extra")["by_id"]["months-with-extra"]
+    assert g["verdict"] == "fail" and "18% ÷ 12" in g["reason"]
 
 
 # ---- draft-convo-where-to-start (D53): the real worry is her mother's medical costs -----------

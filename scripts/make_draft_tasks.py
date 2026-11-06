@@ -26,6 +26,9 @@ TASKS = ROOT / "tasks"
 CLIENT = ROOT / "services" / "finance-mcp" / "examples" / "client.example.json"
 EMI_TOL = {"abs": 1}  # rupees; the model may round to the rupee
 BIG_TOL = {"rel": 0.002}  # totals and corpora, which models often round to the hundred
+# G1 (6 Nov review): a month count counts only next to what it counts ("28 months", "**12** months",
+# "a 46-month", "month 28"), not anywhere ("18% ÷ 12" passed a 12-month check in 5 shipped trials).
+MONTHS = {"after": r"months?\b|mos?\b|EMIs?\b|instal?l?ments?\b", "before": r"\bmonths?"}
 
 
 def num(x: object) -> float:
@@ -50,7 +53,11 @@ D68_BUMP = 1
 # The destructive review (6 Nov, docs/destructive-review.md section G): graders only again, so these
 # tasks are one more version up with the same core, and a trial run on the version before regrades.
 # G2: mba-loan-missing-info's grader.py (an offer is not a request; "EMI" alone is not a debt).
-REVIEW_6NOV = {"mba-loan-missing-info"}
+# G1: the month-count number graders of prepay-bonus, payoff-order, spending-review and
+# convo-phone-loan take a context (MONTHS).
+REVIEW_6NOV = {
+    "mba-loan-missing-info", "prepay-bonus", "payoff-order", "spending-review", "convo-phone-loan",
+}
 
 
 def version_of(task_id: str) -> str:
@@ -291,7 +298,7 @@ def main() -> None:
             {"id": "interest-saved", "type": "number", "required": True, "expected": num(pre["interest_saved"]), "tolerance": BIG_TOL},
             # D53: a number with match "any", not a regex on "46 months", which missed other phrasings.
             {"id": "months-saved", "type": "number", "required": True, "target": "final_answer",
-             "expected": int(pre["months_saved"]), "match": "any", "tolerance": {"abs": 0}},
+             "expected": int(pre["months_saved"]), "match": "any", "tolerance": {"abs": 0}, "context": MONTHS},
             provenance(),
         ],
         client=False,
@@ -369,7 +376,7 @@ def main() -> None:
             # D53: a number with match "any". The regex on "28 months" failed a Hermes answer that
             # said "cleared in month 28, which is when you're debt-free" (4 Nov label batch).
             {"id": "debt-free-months", "type": "number", "required": True, "target": "final_answer",
-             "expected": int(plan["months_to_debt_free"]), "match": "any", "tolerance": {"abs": 0}},
+             "expected": int(plan["months_to_debt_free"]), "match": "any", "tolerance": {"abs": 0}, "context": MONTHS},
             provenance(),
         ],
         client=True,
@@ -687,7 +694,7 @@ def new_tasks_5nov(meera_debts: list[dict]) -> None:
             {"id": "read-the-file", "type": "required_tools", "required": True},
             {"id": "payoff-with-extra", "type": "tool_called", "required": True, "tool": "debt_payoff_plan",
              "args": {"monthly_budget": 23332.5}, "tolerance": {"abs": 1}},
-            {"id": "debt-free-months", "type": "number", "required": True, "expected": extra["months_to_debt_free"], "match": "any", "tolerance": {"abs": 0}},
+            {"id": "debt-free-months", "type": "number", "required": True, "expected": extra["months_to_debt_free"], "match": "any", "tolerance": {"abs": 0}, "context": MONTHS},
             {"id": "groceries-total", "type": "number", "required": True, "expected": num(groceries), "tolerance": BIG_TOL},
             {"id": "dining-total", "type": "number", "required": True, "expected": num(dining), "tolerance": BIG_TOL},
             {"id": "no-repeated-calls", "type": "unit_test", "required": True,
@@ -765,7 +772,7 @@ def new_tasks_5nov(meera_debts: list[dict]) -> None:
             {"id": "extra-payment-plan", "type": "tool_called", "required": True, "tool": "debt_payoff_plan",
              "args": {"monthly_budget": round(emi + 3000, 2)}, "tolerance": {"abs": 15}},
             {"id": "months-with-extra", "type": "number", "required": True, "target": "agent_messages",
-             "expected": faster["months_to_debt_free"], "match": "any", "tolerance": {"abs": 0}},
+             "expected": faster["months_to_debt_free"], "match": "any", "tolerance": {"abs": 0}, "context": MONTHS},
             {"id": "ends-answered", "type": "end_state", "required": True, "states": ["answered"]},
             provenance(),
         ],

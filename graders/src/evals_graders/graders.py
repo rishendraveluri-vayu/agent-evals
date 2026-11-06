@@ -209,7 +209,48 @@ def _cut_short(ctx: Context, expected: Any) -> bool:
     return bool(unread) and all(c.truncated for c in unread)
 
 
+# What may sit between a number and its context words: spaces, markdown emphasis, a hyphen or a
+# dash ("**28** months", "a 28-month plan"), and before it a colon ("month: 28").
+CONTEXT_GAP = r"[\s*_~\-–]*"
+CONTEXT_BEFORE_CHARS = 80  # how far back a `before` pattern may start
+
+
+def context_patterns(context: Any) -> tuple[re.Pattern[str] | None, re.Pattern[str] | None]:
+    """(after, before) for a number grader's `context` ({after?, before?}), case-insensitive. The
+    after pattern must start right after the number, the before pattern end right before it,
+    across CONTEXT_GAP only."""
+    if not isinstance(context, dict):
+        return None, None
+    after, before = context.get("after"), context.get("before")
+    return (
+        re.compile(CONTEXT_GAP + f"(?:{after})", re.IGNORECASE) if after else None,
+        re.compile(f"(?:{before})" + r"[\s*_~:\-–]*\Z", re.IGNORECASE) if before else None,
+    )
+
+
+def _in_context(
+    text: str, start: int, end: int, after: re.Pattern[str] | None, before: re.Pattern[str] | None
+) -> bool:
+    if after is None and before is None:
+        return True
+    if after is not None and after.match(text, end):
+        return True
+    return before is not None and bool(
+        before.search(text, max(0, start - CONTEXT_BEFORE_CHARS), start)
+    )
+
+
+def _context_words(context: dict[str, Any]) -> str:
+    parts = [f"followed by /{context['after']}/"] if context.get("after") else []
+    if context.get("before"):
+        parts.append(f"after /{context['before']}/")
+    return " or ".join(parts)
+
+
 def grade_number(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
+    """The expected number (a constant, or a tool's result) in the agent's text, within tolerance.
+    With `context`, a number counts only with the words it needs next to it (G1, 6 Nov: a month
+    count of 12 passed on "18% ÷ 12"); a number in tolerance without them is named in the reason."""
     expected, why = _expected_values(ctx, spec["expected"])
     if not expected:
         verdict = "error" if _cut_short(ctx, spec["expected"]) else "fail"
@@ -219,11 +260,20 @@ def grade_number(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
     if not pieces:
         return _grade("fail", "the agent gave no final answer to find a number in")
     match = spec.get("match", "amount")
+    context = spec.get("context")
+    after, before = context_patterns(context)
     best: tuple[float, str, float] | None = None  # (distance, found text, expected)
+    out_of_context: list[dict[str, Any]] = []  # in tolerance, but without the context words
+    missed = 0
     for value, tool_ev in expected:
         for text, src in pieces:
             for f in find(text, match):
-                if within(f.value, value, tolerance):
+                close = within(f.value, value, tolerance)
+                if close and not _in_context(text, f.start, f.end, after, before):
+                    missed += 1
+                    if len(out_of_context) < 5:
+                        out_of_context.append(_quote(text, f.start, f.end, src))
+                elif close:
                     ev = [_quote(text, f.start, f.end, src)]
                     if tool_ev:
                         ev.append(tool_ev)
@@ -239,6 +289,14 @@ def grade_number(ctx: Context, spec: dict[str, Any]) -> dict[str, Any]:
     kind = "rupee amount" if match == "amount" else "number"
     shown = ", ".join(fmt_inr(v) if match == "amount" else _n(v) for v, _ in expected)
     tool_ev_list = [ev for _, ev in expected if ev]
+    if out_of_context:
+        quotes = "; ".join(repr(e["quote"]) for e in out_of_context[:3])
+        return _grade(
+            "fail",
+            f"{missed} {kind}(s) within {_tol(tolerance)} of {shown}, but none"
+            f" {_context_words(context)}: {quotes}",
+            out_of_context + tool_ev_list,
+        )
     if best is None:
         return _grade(
             "fail",

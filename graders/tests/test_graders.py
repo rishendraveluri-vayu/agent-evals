@@ -178,6 +178,48 @@ def test_number_any_match_reads_plain_numbers(tmp_path):
     assert one(out, {**spec, "match": "any"})["verdict"] == "pass"
 
 
+MONTHS = {"after": r"months?\b|mos?\b|EMIs?\b", "before": r"\bmonths?"}
+
+
+def test_number_context_needs_the_words_next_to_the_number(tmp_path):
+    """Destructive review G1 (6 Nov): convo-phone-loan's 12-month check passed on "18% ÷ 12" in 5
+    shipped trials. With a context, the number counts only with the words it needs next to it."""
+    spec = {"id": "m", "type": "number", "expected": 12, "match": "any", "context": MONTHS}
+    for answer in (
+        "The loan clears in 12 months instead of 17.",
+        "The loan clears in **12** months.",
+        "A 12-month plan clears it.",
+        "It is cleared in month 12.",
+        "It is cleared in month: **12**.",
+        "That is 12 EMIs.",
+    ):
+        g = one(make_trial(tmp_path / str(hash(answer)), answer), spec)
+        assert g["verdict"] == "pass", answer
+    rate = "Interest accrues at 18% ÷ 12 = 1.5% a month, so pay ₹3,000 more."
+    g = one(make_trial(tmp_path / "rate", rate), spec)
+    assert g["verdict"] == "fail"
+    assert "but none followed by /months?" in g["reason"] and "18% ÷ 12" in g["reason"]
+    assert g["evidence"][0]["quote"] == rate
+    # Without a context the old rule stands: any 12 passes.
+    bare = {k: v for k, v in spec.items() if k != "context"}
+    assert one(make_trial(tmp_path / "bare", rate), bare)["verdict"] == "pass"
+    # The context is searched for each number, so a later "12 months" still passes.
+    later = rate + " That clears it in 12 months."
+    g = one(make_trial(tmp_path / "later", later), spec)
+    assert g["verdict"] == "pass" and g["evidence"][0]["quote"].endswith("in 12 months.")
+
+
+def test_number_context_is_part_of_the_spec_and_checked(tmp_path):
+    out = make_trial(tmp_path, "12 months")
+    spec = {"id": "m", "type": "number", "expected": 12, "match": "any"}
+    with_context = {**spec, "context": MONTHS}
+    assert one(out, spec)["grader_version"] != one(out, with_context)["grader_version"]
+    bad = one(out, {**spec, "context": {"after": "("}})
+    assert bad["verdict"] == "error" and "context.after" in bad["reason"]
+    assert one(out, {**spec, "context": {}})["verdict"] == "error"
+    assert one(out, {**spec, "context": {"near": "months"}})["verdict"] == "error"
+
+
 def test_number_with_no_final_answer_fails(tmp_path):
     out = make_trial(tmp_path, None, end_state="step_limit")
     assert one(out, {"id": "emi", "type": "number", "expected": 8997})["verdict"] == "fail"
