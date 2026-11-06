@@ -54,7 +54,9 @@ its trials fail: such a run tests the platform (queueing, retries, traces, gradi
 A run on fake models defaults to 2 trials per task and arm, so it finishes in a few minutes.
 
 **With a key** you can run agents on real models. Copy `.env.example` to `.env`, add
-`ANTHROPIC_API_KEY` (Claude) and/or `GEMINI_API_KEY`, then run `docker compose up -d` again. A
+`ANTHROPIC_API_KEY` (Claude) and/or `GEMINI_API_KEY`, then run `docker compose up -d` again. If a
+Claude key came with my submission email, it goes in `ANTHROPIC_API_KEY`; it is capped at $10 of
+usage and is revoked after the review. A
 real run costs money: every run shows its trials, models and the most it can cost before it
 starts, and asks you to confirm. A Hermes run on a real model first checks your prompt against
 Hermes's own instructions (one call, about $0.02 to $0.03, on Claude Sonnet 5.5 when its key is
