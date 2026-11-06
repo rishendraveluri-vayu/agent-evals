@@ -973,6 +973,8 @@ export interface CostStat {
   relative: StatsInterval | null;
   /** Trials with a value, per arm. */
   trials: { a: number; b: number };
+  /** Trials with no recorded value, per arm (tokens: input or output not recorded), left out rather than counted as 0. */
+  missing?: { a: number; b: number };
   /** wall_s: trials left out because LiteLLM retried one of their model calls, whose backoff waits would inflate the time. */
   left_out_retried?: { a: number; b: number };
   /** wall_s: trials kept whose record does not say whether a call was retried (recorded before 4 Nov, or no LiteLLM record). */

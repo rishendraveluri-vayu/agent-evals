@@ -439,6 +439,14 @@ describe('analyse: cost, tokens and time (proposal section 8)', () => {
     expect(wall).toMatchObject({ trials: { a: 2, b: 2 }, retries_unknown: { a: 2, b: 0 } });
   });
 
+  it('leaves a trial with no recorded value out of a metric, never as 0, and counts it', () => {
+    const t = task('m', 2, 4, 2, 4, (arm, i) => ({ tokens: arm === 'B' && i === 0 ? null : 1000, cost_usd: 0.01, wall_s: arm === 'A' && i < 2 ? null : 10 }));
+    const by = Object.fromEntries((analyse({ seed: 'e_missing', tasks: [t] }, fast).stats?.costs ?? []).map((c) => [c.metric, c]));
+    expect(by.tokens).toMatchObject({ a: 1000, b: 1000, trials: { a: 4, b: 3 }, missing: { a: 0, b: 1 } });
+    expect(by.wall_s).toMatchObject({ trials: { a: 2, b: 4 }, missing: { a: 2, b: 0 } });
+    expect(by.cost_usd.missing).toEqual({ a: 0, b: 0 });
+  });
+
   it('leaves a metric out when no task has a value in both arms', () => {
     expect(analyse({ seed: 'e_nocost', tasks: [task('n', 1, 2, 1, 2)] }, fast).stats?.costs).toEqual([]);
   });

@@ -328,13 +328,16 @@ function regressionsOf(input: AnalysisInput, perTask: Map<string, StatsTask>): R
   return out.map((e) => e.r);
 }
 
-const COST_METRICS: { metric: CostStat['metric']; places: number; value: (t: TrialInput) => number | null }[] = [
-  { metric: 'cost_usd', places: 6, value: (t) => t.cost_usd },
-  { metric: 'tokens', places: 1, value: (t) => t.tokens },
+/** `recorded`: the trial's own value, before a rule leaves it out; `value`: what the comparison uses. */
+const COST_METRICS: { metric: CostStat['metric']; places: number; recorded: (t: TrialInput) => number | null; value: (t: TrialInput) => number | null }[] = [
+  { metric: 'cost_usd', places: 6, recorded: (t) => t.cost_usd, value: (t) => t.cost_usd },
+  { metric: 'tokens', places: 1, recorded: (t) => t.tokens, value: (t) => t.tokens },
   // Retry backoff skews latency: a trial whose model call LiteLLM retried waited out the
   // backoff, so its time says more about the provider's rate limits than about the agent.
-  { metric: 'wall_s', places: 2, value: (t) => (t.retried === true ? null : t.wall_s) },
+  { metric: 'wall_s', places: 2, recorded: (t) => t.wall_s, value: (t) => (t.retried === true ? null : t.wall_s) },
 ];
+
+const hasValue = (v: number | null): v is number => typeof v === 'number' && Number.isFinite(v);
 
 function costsOf(input: AnalysisInput, opts: Required<Pick<AnalysisOptions, 'resamples' | 'levels'>>): CostStat[] {
   const out: CostStat[] = [];
@@ -342,7 +345,7 @@ function costsOf(input: AnalysisInput, opts: Required<Pick<AnalysisOptions, 'res
     const samples: TaskSample[] = [];
     const trials = { a: 0, b: 0 };
     for (const t of input.tasks) {
-      const vals = (arm: 'A' | 'B') => t.trials.filter((x) => x.arm === arm).map(m.value).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+      const vals = (arm: 'A' | 'B') => t.trials.filter((x) => x.arm === arm).map(m.value).filter(hasValue);
       const a = vals('A');
       const b = vals('B');
       if (!a.length || !b.length) continue;
@@ -351,6 +354,9 @@ function costsOf(input: AnalysisInput, opts: Required<Pick<AnalysisOptions, 'res
       samples.push({ a: valuesArm(a), b: valuesArm(b) });
     }
     if (!samples.length) continue;
+    // Never counted as 0: a trial with no recorded value is left out, and counted.
+    const missing = { a: 0, b: 0 };
+    for (const t of input.tasks) for (const x of t.trials) if (!hasValue(m.recorded(x))) missing[x.arm === 'A' ? 'a' : 'b'] += 1;
     const draws = bootstrapTasks(samples, seededStream(`${input.seed}:${m.metric}`), opts);
     const meanA = samples.reduce((s, x) => s + x.a.mean, 0) / samples.length;
     const meanB = samples.reduce((s, x) => s + x.b.mean, 0) / samples.length;
@@ -362,6 +368,7 @@ function costsOf(input: AnalysisInput, opts: Required<Pick<AnalysisOptions, 'res
       diff: interval(meanB - meanA, percentileInterval(draws.diff, LEVEL), 1, m.places),
       relative: meanA !== 0 && draws.relative.length ? interval(meanB / meanA - 1, percentileInterval(draws.relative, LEVEL), 100, 2) : null,
       trials,
+      missing,
     };
     if (m.metric === 'wall_s') {
       const all = input.tasks.flatMap((t) => t.trials).filter((x) => typeof x.wall_s === 'number');
