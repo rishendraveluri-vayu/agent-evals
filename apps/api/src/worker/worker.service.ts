@@ -16,7 +16,7 @@ import { FINISHED, HELD, LEASE_S, PAUSES_ARM, SWEEP_INTERVAL_MS, shouldRequeue, 
 import { MAX_FILE_BYTES, checkFiles, locate, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
 import { configErrorFix, configErrorReason, parseReport, spanRows, spendLogUsage, usageOf } from './report';
 import { applyRunRules } from '../experiments/rules';
-import { TRIAL_IN_ARM, pauseArm } from '../experiments/run-state';
+import { TRIAL_IN_ARM, lockExperiment, pauseArm } from '../experiments/run-state';
 import { SIM_REPLIES_FILE, type SimReplyRow, type SimScope, parseSimReplies, simScope } from './sim-cache';
 import { clientSummary } from './client-summary';
 import { CLIENT_STATE_FILE, SIM_MAX_OUTPUT_TOKENS, buildSpec } from './spec-builder';
@@ -95,7 +95,8 @@ async function requeue(q: Queryable, trialId: string, attempt: number, experimen
 
 /**
  * The worker protocol (D2): claim, heartbeat, report, and the lease sweep. Every status change
- * happens here, in a transaction, with the trial row locked.
+ * happens here, in a transaction, with the trial row locked; a report and the sweep lock the
+ * experiment row before it (the lock order in run-state.ts, E3 to E5).
  */
 @Injectable()
 export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
@@ -382,6 +383,9 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     const usage = usageOf(body.runner_report, body.result, spans);
 
     const outcome = await this.db.tx(async (client) => {
+      // Lock order (run-state.ts): the experiment row first, then the trial. A trial never changes
+      // experiment, so the id read above is the one to lock. A probe has no experiment (D33).
+      const exp = trial.experiment_id === null ? null : await lockExperiment<Pick<ExperimentRow, 'status'>>(client, trial.experiment_id);
       const locked = (await one<TrialRow>(client, 'SELECT * FROM trials WHERE id = $1 FOR UPDATE', [id])) as TrialRow;
       if (locked.reported_at) return null; // a concurrent duplicate won the race
       if (!HELD.includes(locked.status) || locked.worker_id !== body.worker_id) {
@@ -437,11 +441,10 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
       let requeued: string | null = null;
       // A probe (no experiment) is never re-queued and pauses nothing: POST rendered-prompt probes again.
       const experimentId = locked.experiment_id;
-      if (experimentId === null) return { stored, requeued, simStored };
-      if (status === 'infra_failed') {
-        const exp = (await one<{ status: ExperimentRow['status'] }>(client, 'SELECT status FROM experiments WHERE id = $1', [experimentId]))!;
-        requeued = await requeue(client, id, locked.attempt, exp.status, label);
-      }
+      if (experimentId === null || !exp) return { stored, requeued, simStored };
+      // E4: the status is the locked row's, so a Stop that committed first is seen here (no
+      // re-queue), and one that comes after sees this new attempt and cancels it.
+      if (status === 'infra_failed') requeued = await requeue(client, id, locked.attempt, exp.status, label);
       if (label === PAUSES_ARM) {
         // D26, amended by D37: the setup is wrong (a key, the model, a refused setting), so every
         // later trial of this config would fail the same way. Its arm stops claiming until someone
@@ -524,33 +527,40 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
    * spend from LiteLLM first (G3). Returns what it changed.
    */
   async sweep(): Promise<{ abandoned: string[]; requeued: string[] }> {
-    const changed = await this.db.tx(async (client) => {
-      const { rows } = await client.query<{ id: string; experiment_id: string | null; attempt: number; status: ExperimentRow['status'] | null }>(
-        `WITH lapsed AS (
-           UPDATE trials SET status = 'abandoned', finished_at = now()
+    const lapsed = `t.status IN ('claimed', 'running') AND t.heartbeat_at < now() - make_interval(secs => $1::double precision)
+       -- SP7: a shipped example's rows are never changed, whatever state it was shipped in.
+       AND ${NOT_EXAMPLE_TRIAL('t')}`;
+    // Which experiments have a lapsed lease (null: a probe's). Each is then handled in its own
+    // transaction, in the lock order (run-state.ts): the experiment row first, then its trials.
+    const owners = await this.db.query<{ experiment_id: string | null }>(`SELECT DISTINCT t.experiment_id FROM trials t WHERE ${lapsed}`, [LEASE_S]);
+    const changed = { abandoned: [] as string[], requeued: [] as string[] };
+    for (const { experiment_id: experimentId } of owners) {
+      const done = await this.db.tx(async (client) => {
+        const exp = experimentId === null ? null : await lockExperiment<Pick<ExperimentRow, 'status'>>(client, experimentId);
+        const { rows } = await client.query<{ id: string; attempt: number }>(
+          `UPDATE trials SET status = 'abandoned', finished_at = now()
            WHERE id IN (
              SELECT t.id FROM trials t
-             WHERE t.status IN ('claimed', 'running') AND t.heartbeat_at < now() - make_interval(secs => $1::double precision)
-               -- SP7: a shipped example's rows are never changed, whatever state it was shipped in.
-               AND ${NOT_EXAMPLE_TRIAL('t')}
+             WHERE ${lapsed} AND (CASE WHEN $2::text IS NULL THEN t.experiment_id IS NULL ELSE t.experiment_id = $2 END)
              FOR UPDATE OF t SKIP LOCKED)
-           RETURNING id, experiment_id, attempt)
-         SELECT l.id, l.experiment_id, l.attempt, e.status FROM lapsed l LEFT JOIN experiments e ON e.id = l.experiment_id`,
-        [LEASE_S],
-      );
-      const requeued: string[] = [];
-      for (const r of rows) {
+           RETURNING id, attempt`,
+          [LEASE_S, experimentId],
+        );
+        const requeued: string[] = [];
         // A lapsed probe (no experiment) is not re-queued; POST rendered-prompt probes again.
-        const next = r.status === null ? null : await requeue(client, r.id, r.attempt, r.status, null);
-        if (next) requeued.push(next);
-      }
-      for (const exp of new Set(rows.map((r) => r.experiment_id))) {
-        if (exp === null) continue; // a probe
-        await finishIfDone(client, exp);
-        await applyRunRules(client, exp); // D32: an abandoned attempt counts for the infra guard
-      }
-      return { abandoned: rows.map((r) => r.id), requeued };
-    });
+        if (exp && experimentId !== null && rows.length) {
+          for (const r of rows) {
+            const next = await requeue(client, r.id, r.attempt, exp.status, null);
+            if (next) requeued.push(next);
+          }
+          await finishIfDone(client, experimentId);
+          await applyRunRules(client, experimentId); // D32: an abandoned attempt counts for the infra guard
+        }
+        return { abandoned: rows.map((r) => r.id), requeued };
+      });
+      changed.abandoned.push(...done.abandoned);
+      changed.requeued.push(...done.requeued);
+    }
     if (changed.abandoned.length) this.logger.warn(`abandoned lapsed trials: ${changed.abandoned.join(', ')}`);
     const pending = await this.db.query<{ id: string; status: TrialStatus; agent_key_token: string; sim_key_token: string | null }>(
       `SELECT id, status, agent_key_token, sim_key_token FROM trials

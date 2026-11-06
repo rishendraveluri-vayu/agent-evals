@@ -54,7 +54,7 @@ import { type CellInput, type History, LIVE_WORKER_S, type Price, estimate, isFa
 import { claimOrder, isSeed, newSeed } from './order';
 import { type BaselineOutcome, decideBaseline } from './baseline';
 import { estimatePerTrial, projectedSpend, resolveFutility } from './rules';
-import { type ArmRow, addEvent, pauseArm, pauseExperiment } from './run-state';
+import { type ArmRow, addEvent, lockExperiment, pauseArm, pauseExperiment } from './run-state';
 
 /** D35: arm A and arm B, or one config for a pilot. */
 export const MAX_ARMS = 2;
@@ -124,7 +124,11 @@ export function experimentTitle(r: Pick<ExperimentRow, 'name' | 'example_name' |
   return r.example_name !== null && r.example_title ? r.example_title : r.name;
 }
 
-/** Marks a running experiment done once none of its trials is queued or held. */
+/**
+ * Marks a running experiment done once none of its trials is queued or held. The caller holds the
+ * experiment row (lockExperiment, the lock order in run-state.ts), so a trial another transaction
+ * is finishing at the same moment is either committed and seen here or waits for this one (E3).
+ */
 export async function finishIfDone(q: Queryable, experimentId: string): Promise<void> {
   await q.query(
     `UPDATE experiments SET status = 'done', finished_at = now()
@@ -533,6 +537,7 @@ export class ExperimentsService {
     if (exp.status === 'paused') return this.resume(id);
     if (exp.status === 'created') await this.requireConflictChecks(exp);
     await this.db.tx(async (client) => {
+      await lockExperiment(client, id); // the lock order in run-state.ts (E3 to E5)
       if (planCommit !== null) await client.query(`UPDATE experiments SET plan_commit = $2 WHERE id = $1 AND status = 'created'`, [id, planCommit]);
       await client.query(`UPDATE experiments SET status = 'running', started_at = coalesce(started_at, now()) WHERE id = $1 AND status = 'created'`, [id]);
       await finishIfDone(client, id);
@@ -569,8 +574,8 @@ export class ExperimentsService {
   async discard(id: string): Promise<ExperimentDetail> {
     assertNotExample(await this.row(id), 'be discarded');
     await this.db.tx(async (client) => {
-      const { rows } = await client.query<{ status: ExperimentStatus; started_at: Date | null }>('SELECT status, started_at FROM experiments WHERE id = $1 FOR UPDATE', [id]);
-      const exp = rows[0];
+      // The lock order in run-state.ts (E3 to E5): the experiment row first.
+      const exp = (await lockExperiment<{ status: ExperimentStatus; started_at: Date | null }>(client, id))!;
       const { rows: ran } = await client.query<{ n: number }>(`SELECT count(*)::int AS n FROM trials WHERE experiment_id = $1 AND status <> 'queued'`, [id]);
       if (exp.status === 'done' || exp.status === 'cancelled') {
         throw conflict('experiment_finished', `experiment ${id} is ${exp.status}, so there is nothing to discard`, 'Leave it as it is; its trials are kept either way.');
@@ -595,7 +600,10 @@ export class ExperimentsService {
     assertNotExample(exp, 'be paused');
     if (exp.status === 'created') throw conflict('experiment_not_started', `experiment ${id} has not started`, 'Start it, or stop it; there is nothing to pause yet.');
     if (exp.status === 'done' || exp.status === 'cancelled') throw conflict('experiment_finished', `experiment ${id} is ${exp.status}`);
-    await this.db.tx((client) => pauseExperiment(client, id, 'paused', 'paused by hand: new claims stop; trials already running finish'));
+    await this.db.tx(async (client) => {
+      await lockExperiment(client, id); // the lock order in run-state.ts (E3 to E5)
+      await pauseExperiment(client, id, 'paused', 'paused by hand: new claims stop; trials already running finish');
+    });
     return this.get(id);
   }
 
@@ -606,6 +614,7 @@ export class ExperimentsService {
     if (exp.status === 'created') throw conflict('experiment_not_started', `experiment ${id} has not started`, `POST /experiments/${id}/start to start it.`);
     if (exp.status === 'done' || exp.status === 'cancelled') throw conflict('experiment_finished', `experiment ${id} is ${exp.status} and cannot resume`);
     await this.db.tx(async (client) => {
+      await lockExperiment(client, id); // the lock order in run-state.ts (E3 to E5)
       const { rowCount } = await client.query(`UPDATE experiments SET status = 'running', resumed_at = now() WHERE id = $1 AND status = 'paused'`, [id]);
       if (rowCount) await addEvent(client, { experimentId: id, kind: 'resumed', detail: 'claims resumed' });
       // A pause can come with the last trial: then there is nothing left to claim.
@@ -620,6 +629,10 @@ export class ExperimentsService {
     assertNotExample(exp, 'be stopped');
     if (exp.status === 'done') throw conflict('experiment_finished', `experiment ${id} is already done`);
     await this.db.tx(async (client) => {
+      // The lock order in run-state.ts: with the row locked, an infra report's re-queue is either
+      // already committed (and its queued attempt is cancelled here) or sees the stop (E4).
+      const locked = (await lockExperiment<{ status: ExperimentStatus }>(client, id))!;
+      if (locked.status === 'done') throw conflict('experiment_finished', `experiment ${id} is already done`);
       await client.query(`UPDATE experiments SET status = 'cancelled', cancelled_at = now() WHERE id = $1 AND status IN ('created', 'running', 'paused')`, [id]);
       await client.query(`UPDATE trials SET status = 'cancelled', finished_at = now() WHERE experiment_id = $1 AND status = 'queued'`, [id]);
     });
@@ -646,8 +659,9 @@ export class ExperimentsService {
     const exp = await this.row(id);
     assertNotExample(exp, 'have an arm paused');
     if (exp.status === 'done' || exp.status === 'cancelled') throw conflict('experiment_finished', `experiment ${id} is ${exp.status}`);
-    await this.db.tx((client) =>
-      pauseArm(
+    await this.db.tx(async (client) => {
+      await lockExperiment(client, id); // the lock order in run-state.ts (E3 to E5)
+      await pauseArm(
         client,
         id,
         arm.config_hash,
@@ -656,8 +670,8 @@ export class ExperimentsService {
         `POST /experiments/${id}/arms/${exp.calibration ? arm.arm : arm.config_hash}/resume to continue it.`,
         null,
         arm.arm,
-      ),
-    );
+      );
+    });
     return this.get(id);
   }
 
@@ -666,6 +680,7 @@ export class ExperimentsService {
     const arm = await this.armRow(id, configHash);
     assertNotExample(await this.row(id), 'have an arm resumed');
     await this.db.tx(async (client) => {
+      await lockExperiment(client, id); // the lock order in run-state.ts (E3 to E5)
       const { rowCount } = await client.query(
         `UPDATE experiment_arms SET paused_at = NULL, paused_reason = NULL, paused_fix = NULL, resumed_at = now()
          WHERE experiment_id = $1 AND arm = $2 AND paused_at IS NOT NULL`,

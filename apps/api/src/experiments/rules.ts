@@ -84,7 +84,8 @@ export function estimatePerTrial(e: Estimate | null, config: string): number {
 /**
  * D32's futility check for one experiment, inside the caller's transaction: once per arm, when the
  * arm has `after` graded trials (outcome pass or fail), it pauses the run if fewer than
- * `min_passed` of them passed. Locks the experiment row; does nothing unless it is running.
+ * `min_passed` of them passed. Locks the experiment row (a no-op for a caller that took it first,
+ * the lock order in run-state.ts); does nothing unless it is running.
  * Returns true if it paused the run. Called after every trial report and every grades report.
  */
 export async function applyFutility(q: Queryable, experimentId: string): Promise<boolean> {
@@ -128,7 +129,8 @@ const usd = (x: number): string => `$${x.toFixed(4)}`;
 
 /**
  * Runs the three checks for one experiment, inside the caller's transaction, after a report or a
- * lapse has changed its trials (a grades report runs the futility check alone: applyFutility). Locks the experiment row so two reports never both pause it.
+ * lapse has changed its trials (a grades report runs the futility check alone: applyFutility). Locks the experiment row so two reports never both pause it;
+ * a trial report and the lease sweep have already locked it first (the lock order in run-state.ts, E3 to E5).
  * Does nothing unless the experiment is running. Returns the kind of pause, if one happened.
  */
 export async function applyRunRules(q: Queryable, experimentId: string): Promise<string | null> {
