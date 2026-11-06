@@ -693,7 +693,9 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   by the trials and their current grading jobs, so a regrade recomputes them.
 - `GET /experiments/:id/export?format=json|csv` streams every trial row (infra failures,
   abandoned and cancelled rows included) joined with its config, task, grades and spend. An
-  abandoned row carries the spend the lease sweep read for it (G3); `spend_unknown` (a CSV column
+  abandoned row carries the spend the lease sweep read for it (G3) and, never having reported,
+  no `label` (empty in the CSV, null in the JSON): abandoned attempts are found by their `status`
+  (`abandoned`), a column of both formats, and no label value stands for them; `spend_unknown` (a CSV column
   after `sim_cost_usd`, and in the JSON's `spend`) is true when LiteLLM could not give it, so its
   empty cost is unknown, not zero. `served_model` (a CSV column after `model`, and in the JSON
   rows; since 5 Nov) is the model id the provider said it served for the agent's calls
@@ -742,6 +744,13 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   `runner_report.proxy_usage` is stored as the runner wrote it; since D16 it carries `attempts`
   (LiteLLM's tries at the provider) and `retried_calls` beside `model_calls` (the harness's
   requests). The API does not index those two yet.
+  `usage` is `{model_calls, input_tokens, output_tokens, cost_usd, sim_cost_usd, complete}` from
+  the trial's stored columns: a reported trial's from its runner report, an abandoned attempt's
+  from what the lease sweep read in LiteLLM for its keys (G3; `complete` null, since that read is
+  not checked for completeness; since the soak test, 6 Nov, it was null before). `usage` is null
+  only when nothing was recorded: no report and no spend read (a queued trial, or an abandoned
+  one whose spend LiteLLM could not give, `spend_unknown`). An abandoned attempt never reported,
+  so its `label` is null and its `runner_report` too: find it by `status: abandoned`.
 - `GET /trials/:id/spans` returns contract v2 spans in time order.
 - `GET /trials/:id/files/*path` streams one stored file (path traversal refused).
 - The existing folder-based `/trials` endpoints (`FileTrialStore`) stay for runs recorded

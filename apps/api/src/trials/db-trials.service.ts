@@ -121,8 +121,11 @@ export class DbTrialsService {
       spec: r.spec,
       result: r.result,
       runner_report: r.runner_report,
+      // An abandoned attempt has no runner report, but the lease sweep stores what LiteLLM logged
+      // for its keys (G3); it was shown as null although its spend counts everywhere else (soak
+      // test, 6 Nov). `complete` stays null there: the sweep's read is not checked for completeness.
       usage:
-        r.runner_report === null
+        r.runner_report === null && [r.cost_usd, r.sim_cost_usd, r.input_tokens, r.output_tokens, r.model_calls].every((v) => v === null)
           ? null
           : {
               model_calls: r.model_calls,

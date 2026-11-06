@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import request from 'supertest';
-import type { ClaimResponse, SpendView } from '../src/contract';
+import type { ClaimResponse, SpendView, TrialView } from '../src/contract';
 import { MIGRATIONS_DIR } from '../src/database/migrate';
 import { type TestEnv, bootEnv, catalogue, makeConfig } from './support/app';
 import { describeWithDb } from './support/db';
@@ -140,9 +140,19 @@ describeWithDb('spend of an abandoned attempt (G3, e2e, real Postgres)', () => {
     expect(detail.spend_usd).toBeCloseTo(0.015, 8);
     // Spent, but not a reported trial: no cost per trial until one reports.
     expect(detail.actual).toMatchObject({ spend_usd: 0.015, cost_per_trial_usd: null });
-    expect(await csvRow(expId, c.trial_id)).toMatchObject({ status: 'abandoned', cost_usd: '0.012', sim_cost_usd: '0.003', spend_unknown: 'false' });
-    const json = JSON.parse((await request(env.http).get(`/api/experiments/${expId}/export?format=json`).expect(200)).text) as { trials: { id: string; spend: Record<string, unknown> }[] };
-    expect(json.trials.find((t) => t.id === c.trial_id)?.spend).toMatchObject({ cost_usd: 0.012, sim_cost_usd: 0.003, spend_unknown: false });
+    // It never reported, so it has no label (empty in the CSV, null in the JSON): it is found by its
+    // status, which both exports carry.
+    expect(await csvRow(expId, c.trial_id)).toMatchObject({ status: 'abandoned', label: '', cost_usd: '0.012', sim_cost_usd: '0.003', spend_unknown: 'false' });
+    const json = JSON.parse((await request(env.http).get(`/api/experiments/${expId}/export?format=json`).expect(200)).text) as {
+      trials: { id: string; status: string; label: string | null; spend: Record<string, unknown> }[];
+    };
+    const exported = json.trials.find((t) => t.id === c.trial_id);
+    expect(exported).toMatchObject({ status: 'abandoned', label: null });
+    expect(exported?.spend).toMatchObject({ cost_usd: 0.012, sim_cost_usd: 0.003, spend_unknown: false });
+    // Soak test (6 Nov): the trial view showed usage null for it, though its spend is stored and counted.
+    const view = (await request(env.http).get(`/api/trials/${c.trial_id}`).expect(200)).body as TrialView;
+    expect(view).toMatchObject({ status: 'abandoned', label: null, runner_report: null });
+    expect(view.usage).toEqual({ model_calls: 2, input_tokens: 1000, output_tokens: 100, cost_usd: 0.012, sim_cost_usd: 0.003, complete: null });
 
     // The re-queued attempt reports; the arm's spend over its one reported trial includes the crash.
     const second = (await e.claim('w-2'))!;
@@ -169,6 +179,8 @@ describeWithDb('spend of an abandoned attempt (G3, e2e, real Postgres)', () => {
     expect(down.trials_spend_unknown).toBe(before.trials_spend_unknown + 1);
     expect(down.trials_usd).toBeCloseTo(before.trials_usd, 8);
     expect(await csvRow(expId, c.trial_id)).toMatchObject({ cost_usd: '', spend_unknown: 'true' });
+    // Nothing recorded yet, so the trial view has no usage to show (not a zero one).
+    expect(((await request(env.http).get(`/api/trials/${c.trial_id}`).expect(200)).body as TrialView).usage).toBeNull();
 
     // LiteLLM is back: the keys are still live, so the next sweep reads the spend, then revokes them.
     env.stub.failSpendLogs = null;
