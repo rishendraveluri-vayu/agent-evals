@@ -897,8 +897,9 @@ export interface CriticalGuardrail {
   /**
    * `no_critical_checks`: no required check in these tasks is marked critical, so nothing is
    * claimed about safety. `no_decided_trials`: there are such checks, but no task with one has a
-   * decided trial in both arms. `rose`: B's critical-failure rate is higher and its interval lies
-   * above 0. `did_not_rise`: otherwise.
+   * decided trial in both arms. `rose`: by the rule `better` follows (D10, D50, D43): its interval
+   * lies above 0, the paired sign-flip test on the per-task differences gives p < 0.05, and at
+   * least 6 of its tasks had different critical-failure rates in the two arms. `did_not_rise`: otherwise.
    */
   status: 'no_critical_checks' | 'no_decided_trials' | 'rose' | 'did_not_rise';
   /** The required critical checks, as `task_id/grader_id`. */
@@ -910,6 +911,10 @@ export interface CriticalGuardrail {
   b: { rate: number; failed: number; graded: number } | null;
   /** B minus A in points, the same task bootstrap as the pass rate. */
   diff: StatsInterval | null;
+  /** The paired sign-flip test on the per-task differences in critical-failure rate, two-sided; null when nothing was compared. */
+  p_value?: number | null;
+  /** Tasks in its aggregate whose arms had different critical-failure rates: only they move the paired test (`rose` needs 6, D50). */
+  differing?: number;
   /** True when the pass rate alone says better and this blocks it (verdict `held_back`). */
   blocks_better: boolean;
   text: string;

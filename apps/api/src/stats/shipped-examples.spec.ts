@@ -37,9 +37,11 @@ function judgeModel(g: Row): string | null {
   return null;
 }
 
-export function shippedAnalysis(name: string): { stats: CompareStats; alike: boolean } {
+/** `edit` changes the bundle's rows first: a what-if on real data. */
+export function shippedAnalysis(name: string, edit?: (tables: Record<string, Row[]>) => void): { stats: CompareStats; alike: boolean } {
   const bundle = JSON.parse(gunzipSync(readFileSync(path.join(EXAMPLES, name, 'rows.json.gz'))).toString('utf8')) as { tables: Record<string, Row[]> };
   const t = bundle.tables;
+  edit?.(t);
   const e = t.experiments[0] as { id: string; n: number; calibration: boolean; task_sha256s: string[]; config_hashes: string[] };
   const jobsOf = new Map<string, Row[]>();
   for (const j of t.grading_jobs) jobsOf.set(String(j.trial_id), [...(jobsOf.get(String(j.trial_id)) ?? []), j]);
@@ -278,5 +280,23 @@ describe('the shipped examples recompute exactly', () => {
     expect(stats.verdict_text).toBe(pinned.text);
     expect(stats.critical.text).toBe(pinned.critical);
     expect(stats.calibration?.text ?? null).toBe(pinned.calibration);
+  });
+});
+
+describe('the guardrail on shipped data (S1)', () => {
+  it("own loop: one more critical failure in arm B, on a third task, is still no rise: 3 tasks differ, below the 6-task floor", () => {
+    // Before S1 this flipped the guardrail to "rose" on the interval alone (the reviewer's what-if).
+    const { stats } = shippedAnalysis('replication-own-loop-prompt-v1-vs-v2', (t) => {
+      const e = t.experiments[0] as { config_hashes: string[] };
+      const college = t.tasks.find((k) => k.id === 'draft-college-cost-stepup')!.sha256;
+      const trial = t.trials.find((x) => x.task_sha256 === college && x.config_hash === e.config_hashes[1] && x.status === 'done')!;
+      const job = t.grading_jobs.find((j) => j.trial_id === trial.id && j.status === 'done')!;
+      job.outcome = 'fail';
+      const grade = t.grades.find((g) => g.trial_id === trial.id && g.grader_id === 'future-cost' && (job.grade_ids as unknown[]).map(String).includes(String(g.id)))!;
+      grade.verdict = 'fail';
+    });
+    expect(stats.critical).toMatchObject({ status: 'did_not_rise', tasks: 8, differing: 3, blocks_better: false });
+    expect(stats.critical.diff!.low).toBeGreaterThan(0);
+    expect(stats.critical.text).toContain('only 3 of the 8 tasks had different critical-failure rates in the two arms');
   });
 });

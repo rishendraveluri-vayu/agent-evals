@@ -191,6 +191,51 @@ describe('analyse: the critical-failure guardrail (D10)', () => {
     expect(s?.critical.text).toContain('so B is not called better although its pass rate rose');
   });
 
+  /** A task whose arm A passes 2 of 10 and arm B 8 of 10, with a required critical check that fails on `critA` of A's failures and `critB` of B's. */
+  const withCritical = (id: string, critA: number, critB: number) =>
+    task(id, 2, 10, 8, 10, (arm, i, pass) => ({ grades: [grade('safety', !pass && i - (arm === 'A' ? 2 : 8) < (arm === 'A' ? critA : critB) ? 'fail' : 'pass', 'critical')] }));
+  const plain = (id: string) => task(id, 2, 10, 8, 10);
+
+  it('needs the paired test as well as the interval: one extra critical failure on one task does not hold back a clear gain (S1)', () => {
+    const s = analyse({ seed: 'e_one_crit', tasks: [withCritical('t0', 0, 1), ...Array.from({ length: 9 }, (_, i) => plain(`t${i + 1}`))] }).stats!;
+    expect(s.pass_rate_verdict).toBe('better');
+    expect(s.verdict).toBe('better');
+    // One task in the guardrail's aggregate: its interval is +10 to +10, above 0, with no spread at all.
+    expect(s.critical).toMatchObject({ status: 'did_not_rise', tasks: 1, differing: 1, p_value: 1, blocks_better: false, diff: { estimate: 10, low: 10, high: 10 } });
+    expect(s.critical.text).toBe(
+      'Critical failures: +10.0 points (95% interval +10.0 to +10.0) over 1 task with 1 critical check. Their interval lies above 0, but only 1 of the 1 task had different critical-failure rates in the two arms, too few for the paired test to reach p < 0.05, so this is not a rise beyond noise.',
+    );
+  });
+
+  it('holds back nothing when 4 of 10 tasks have one extra critical failure each: below the 6-task floor (S1, D50)', () => {
+    const s = analyse({ seed: 'e_four_crit', tasks: Array.from({ length: 10 }, (_, i) => withCritical(`t${i}`, 0, i < 4 ? 1 : 0)) }).stats!;
+    expect(s.verdict).toBe('better');
+    expect(s.critical).toMatchObject({ status: 'did_not_rise', tasks: 10, differing: 4, p_value: 0.125 });
+    expect(s.critical.diff!.low).toBeGreaterThan(0);
+    expect(s.critical.text).toContain('only 4 of the 10 tasks had different critical-failure rates in the two arms, too few for the paired test to reach p < 0.05');
+  });
+
+  it('calls a rise on 6 tasks that all rose a rise, and holds back better; on 5 it cannot (S1, D50)', () => {
+    const six = analyse({ seed: 'e_six_crit', tasks: [...Array.from({ length: 6 }, (_, i) => withCritical(`r${i}`, 0, 2)), ...Array.from({ length: 4 }, (_, i) => withCritical(`s${i}`, 0, 0))] }).stats!;
+    expect(six.critical).toMatchObject({ status: 'rose', differing: 6, p_value: 0.03125, blocks_better: true });
+    expect(six.verdict).toBe('held_back');
+    expect(six.critical.text).toContain('They rose beyond noise (p = 0.03125 by the paired sign-flip test), so B is not called better although its pass rate rose.');
+    const five = analyse({ seed: 'e_five_crit', tasks: [...Array.from({ length: 5 }, (_, i) => withCritical(`r${i}`, 0, 2)), ...Array.from({ length: 5 }, (_, i) => withCritical(`s${i}`, 0, 0))] }).stats!;
+    expect(five.critical).toMatchObject({ status: 'did_not_rise', differing: 5, p_value: 0.0625, blocks_better: false });
+    expect(five.verdict).toBe('better');
+  });
+
+  it('says the paired test is why, when enough tasks differ but it does not reach p < 0.05', () => {
+    // 6 tasks rose by 10 points, 1 fell by 10, 3 tied: a resampled mean is rarely 0 or below, so
+    // the interval lies above 0; but 16 of the 128 sign patterns of the 7 that differ are as far
+    // from 0 as what was seen (p = 0.125).
+    const tasks = [...Array.from({ length: 6 }, (_, i) => withCritical(`up${i}`, 0, 1)), withCritical('down', 1, 0), ...Array.from({ length: 3 }, (_, i) => withCritical(`z${i}`, 0, 0))];
+    const s = analyse({ seed: 'e_mixed_crit', tasks }).stats!;
+    expect(s.critical).toMatchObject({ status: 'did_not_rise', differing: 7, p_value: 0.125 });
+    expect(s.critical.diff!.low).toBeGreaterThan(0);
+    expect(s.critical.text).toContain('Their interval lies above 0, but the paired sign-flip test gives p = 0.125, so this is not a rise beyond noise.');
+  });
+
   it('lets B be better when the critical failures did not rise', () => {
     const fine = (id: string) => task(id, 3, 10, 7, 10, (_a, _i, pass) => ({ grades: [grade('safety', 'pass', 'critical'), grade('tone', pass ? 'pass' : 'fail', 'major')] }));
     const s = analyse({ seed: 'e_fine', tasks: Array.from({ length: 10 }, (_, i) => fine(`f${i}`)) }).stats;
@@ -208,6 +253,8 @@ describe('analyse: the critical-failure guardrail (D10)', () => {
       a: null,
       b: null,
       diff: null,
+      p_value: null,
+      differing: 0,
       blocks_better: false,
       text: 'No check is marked critical in these tasks, so this comparison says nothing about critical failures.',
     });
