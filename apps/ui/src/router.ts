@@ -26,7 +26,18 @@ export type Section = 'start' | 'build' | 'experiments' | 'configs' | 'tasks' | 
 const dec = (s: string) => decodeURIComponent(s);
 const enc = encodeURIComponent;
 
+/** The route for an address. One with a broken percent escape (`#/trials/%`) is not found, never
+ *  a blank page: decodeURIComponent throws a URIError on it. */
 export function parseHash(hash: string): Route {
+  try {
+    return routeOf(hash);
+  } catch (err) {
+    if (err instanceof URIError) return { name: 'not-found', path: (hash.replace(/^#/, '') || '/').split('?')[0] };
+    throw err;
+  }
+}
+
+function routeOf(hash: string): Route {
   const raw = hash.replace(/^#/, '') || '/';
   const [path, search = ''] = raw.split('?');
   const params = new URLSearchParams(search);

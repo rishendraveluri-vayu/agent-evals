@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App.vue';
-import { currentHash } from './router';
+import { currentHash, parseHash } from './router';
 import { jsonReply, settle, useFixtures } from './test/helpers';
 
 function open(hash: string) {
@@ -113,6 +113,17 @@ describe('App in fixture mode', () => {
     open('#/nowhere');
     await settle();
     expect(wrapper.get('main h1').text()).toBe('Page not found');
+  });
+
+  it('shows Page not found, with the header, for an address with a broken percent escape (destructive review U10)', async () => {
+    expect(parseHash('#/trials/%')).toEqual({ name: 'not-found', path: '/trials/%' });
+    expect(parseHash('#/experiments/%E0%A4%A/run?x=1')).toEqual({ name: 'not-found', path: '/experiments/%E0%A4%A/run' });
+    expect(parseHash('#/trials/t%201')).toEqual({ name: 'trial', id: 't 1' });
+    open('#/trials/%');
+    const wrapper = mount(App);
+    await settle();
+    expect(wrapper.get('main h1').text()).toBe('Page not found');
+    expect(wrapper.find('nav[aria-label="Main"]').exists()).toBe(true);
   });
 
   it('opens on the front door, with the guided builder and the full platform each in the nav', async () => {
