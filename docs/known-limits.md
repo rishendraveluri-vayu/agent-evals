@@ -8,7 +8,7 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
    (4 always passed, 1 always failed). Over the 5 left, the paired test cannot go below
    p = 0.0625, so the headline could not be called "better" whatever its size. More tasks between
    the ceiling and the floor would settle it; more trials would not (Statistics, below).
-2. **The judge decides nothing yet.** Rubric v1 agreed with Rishi at kappa 0.30 overall on 33
+2. **The judge is calibrated on a small set of my labels, and counts only once it clears the bar.** Rubric v1 agreed with Rishi at kappa 0.30 overall on 33
    tuning labels (too lenient, specificity 0.20); the frozen rubric v4 on Gemini 3.8 Flash reached
    0.63 on a 29-trial dev set (interval −0.05 to 1.00) and is measured once on 40 held-out trials
    when Rishi's blind labels are in. Until a judge passes D8, every judge criterion is optional and
