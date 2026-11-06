@@ -310,6 +310,46 @@ describe('RunView against the API, with one slot re-queued and one that gave up'
   });
 });
 
+describe('RunView keeps reading a stopped run until its last trial is in', () => {
+  const base = (details as unknown as Record<string, ExperimentDetail>).exp_harness;
+  const rows = (experimentTrials as Record<string, TrialRowSummary[]>).exp_harness;
+  const runningRow = rows.find((t) => t.status === 'running' || t.status === 'claimed')!;
+  const stopped = (running: number): ExperimentDetail => ({ ...base, status: 'cancelled', counts: { ...base.counts, queued: 0, running } });
+  const trialsWith = (status: string) => rows.map((t) => (t.id === runningRow.id ? { ...t, status } : t.status === 'running' || t.status === 'claimed' ? { ...t, status: 'done' } : t.status === 'queued' ? { ...t, status: 'cancelled' } : t));
+  const reads = (calls: { url: string }[]) => calls.filter((c) => c.url === '/api/experiments/exp_harness').length;
+
+  it('polls after Stop while a trial still runs, and stops polling once it has reported', async () => {
+    const every = vi.spyOn(globalThis, 'setInterval');
+    const clear = vi.spyOn(globalThis, 'clearInterval');
+    const routes: Record<string, unknown> = { '/api/experiments/exp_harness': stopped(1), '/api/experiments/exp_harness/trials': trialsWith('running'), '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] };
+    const { calls } = routeFetch(routes);
+    const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    expect(w.get('[data-test="run-title"]').text()).toMatch(/^Run stopped: /);
+    const poll = every.mock.calls.find((c) => c[1] === 5000);
+    expect(poll).toBeDefined();
+    // The last trial reports: the next read finds nothing running, and the polling ends.
+    routes['/api/experiments/exp_harness'] = stopped(0);
+    routes['/api/experiments/exp_harness/trials'] = trialsWith('done');
+    const before = reads(calls);
+    poll![0]();
+    await settle();
+    expect(reads(calls)).toBe(before + 1);
+    const id = every.mock.results[every.mock.calls.indexOf(poll!)].value as unknown;
+    expect(clear).toHaveBeenCalledWith(id);
+    w.unmount();
+  });
+
+  it('does not poll a stopped run with nothing left running', async () => {
+    const every = vi.spyOn(globalThis, 'setInterval');
+    routeFetch({ '/api/experiments/exp_harness': stopped(0), '/api/experiments/exp_harness/trials': trialsWith('done'), '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] });
+    const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    expect(every.mock.calls.some((c) => c[1] === 5000)).toBe(false);
+    w.unmount();
+  });
+});
+
 describe('RunView against the API, with no simulated client', () => {
   it('leaves the simulated client line out', async () => {
     const detail = { ...(details as unknown as Record<string, ExperimentDetail>).exp_harness, sim_model: null };

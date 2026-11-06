@@ -881,15 +881,20 @@ const spend = computed(() => {
   return { spent: e.spend_usd, expected, cap, w: x(e.spend_usd) - 2, ex: expected !== null ? x(expected) : null, cx: cap !== null ? x(cap) : null };
 });
 
+/** The run can still change: it is running or paused, or it was stopped while a trial had
+ *  already started (Stop keeps it running to the end, so it still reports). */
+const live = computed(() => {
+  const e = data.value?.experiment;
+  if (!e) return false;
+  if (e.status === 'running' || e.status === 'paused' || e.counts.running > 0) return true;
+  return (data.value?.trials ?? []).some((t) => t.status === 'running' || t.status === 'claimed');
+});
 let timer: ReturnType<typeof setInterval> | null = null;
-watch(
-  () => data.value?.experiment?.status,
-  (status) => {
-    if (timer) clearInterval(timer);
-    timer = null;
-    if ((status === 'running' || status === 'paused') && !fixtures) timer = setInterval(() => void reload(), 5000);
-  },
-);
+watch(live, (on) => {
+  if (timer) clearInterval(timer);
+  timer = null;
+  if (on && !fixtures) timer = setInterval(() => void reload(), 5000);
+});
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer);
 });
