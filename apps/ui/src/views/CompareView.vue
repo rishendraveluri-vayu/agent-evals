@@ -376,9 +376,13 @@ const why = computed(() => {
   // D55: an interval with no width (0 to 0 included) neither crosses zero nor stays clear of it in
   // any useful sense: every task gave the same difference, so there is no spread to show.
   const alpha = Number((1 - s.level).toFixed(2));
+  // Practical equivalence rests on the margin, not on zero: an interval inside it may still stay
+  // clear of zero, but the difference it shows is too small to matter.
   const interval = noWidth(s.diff)
     ? `Every task gave the same difference, ${points(s.diff.estimate)}, so no spread can be shown: an interval with no width is not a narrow one.`
-    : excludesZero(s.diff)
+    : s.verdict === 'equivalent'
+      ? `The whole interval, ${signed(s.diff.low)} to ${signed(s.diff.high)}${NBSP}points, lies inside the ±${s.margin_points}-point margin set before the run${excludesZero(s.diff) ? `. It stays ${side} zero, but a difference that small is not one that matters.` : '.'}`
+      : excludesZero(s.diff)
       ? notCalled(s)
         ? `The interval stays ${side} zero, but the verdict rests on the paired sign-flip test, and it gives p${NBSP}=${NBSP}${s.p_value}, not below ${alpha}.`
         : `The interval stays ${side} zero.`
@@ -406,10 +410,12 @@ function notCalled(s: NonNullable<typeof stats.value>): boolean {
 
 /** The aside's heading. An interval clear of zero is unlikely to be noise; one with no width shows
  *  no spread either way, so there only the paired test's verdict can say (D55). When the interval
- *  is clear but the test is not, the heading says why it is not called better (or worse). */
+ *  is clear but the test is not, the heading says why it is not called better (or worse). A
+ *  practically equivalent result is headed by that, whatever side of zero its interval lies on. */
 const whyTitle = computed(() => {
   const s = stats.value;
   if (!s) return '';
+  if (s.verdict === 'equivalent') return 'Why this counts as practically equivalent';
   if (notCalled(s)) return s.diff.low > 0 ? 'Why this is not called better' : 'Why this is not called worse';
   const clear = noWidth(s.diff) ? s.pass_rate_verdict === 'better' || s.pass_rate_verdict === 'worse' : excludesZero(s.diff);
   return clear ? 'Why this is unlikely to be noise' : 'Why this could be noise';

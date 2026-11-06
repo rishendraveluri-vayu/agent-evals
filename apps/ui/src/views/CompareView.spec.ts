@@ -856,6 +856,21 @@ describe('CompareView against the API: the check on the method', () => {
     await settle();
     expect(w.get('[data-test="verdict-title"]').text()).toBe('Practically equivalent');
     expect(w.get('[data-test="verdict-sub"]').text()).toBe('The whole interval lies inside the ±10-point margin set before the run, so any difference is too small to matter.');
+    expect(w.findAll('[data-test="why-title"]')[0].text()).toBe('Why this counts as practically equivalent');
+    expect(w.findAll('[data-test="why-line"]')[0].text()).toBe(`The whole interval, −6 to +8${nb}points, lies inside the ±10-point margin set before the run.`);
+  });
+
+  it('never heads a practically equivalent result "unlikely to be noise", even when its interval stays clear of zero (S8)', async () => {
+    withStats({ verdict: 'equivalent', pass_rate_verdict: 'equivalent', diff: { estimate: 3, low: 1, high: 6 } });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="verdict-title"]').text()).toBe('Practically equivalent');
+    const titles = w.findAll('[data-test="why-title"]').map((h) => h.text());
+    expect(titles[0]).toBe('Why this counts as practically equivalent');
+    expect(titles).not.toContain('Why this is unlikely to be noise');
+    expect(w.findAll('[data-test="why-line"]')[0].text()).toBe(
+      `The whole interval, +1 to +6${nb}points, lies inside the ±10-point margin set before the run. It stays above zero, but a difference that small is not one that matters.`,
+    );
   });
 
   it('shows the critical-failure guardrail beside the verdict, and holds back a better B when critical failures rose', async () => {
