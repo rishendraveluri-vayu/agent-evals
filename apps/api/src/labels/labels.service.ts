@@ -139,13 +139,21 @@ export class LabelsService {
    * trial labelled in one set (by anyone) is offered in no other. Without a rater, any rater's
    * label counts, as before D73.
    */
-  async queue(setInput: unknown, experimentInput?: unknown, itemsInput?: unknown, raterInput?: string): Promise<LabelQueueItem[]> {
+  async queue(setInput: unknown, experimentInput?: unknown, itemsInput?: unknown, raterInput?: string, calibrateInput?: unknown): Promise<LabelQueueItem[]> {
     const set = labelSet(setInput);
     // E9: a repeated query parameter arrives as a list (`items` twice was a 500).
-    for (const [name, v] of [['experiment', experimentInput], ['items', itemsInput]] as const) {
+    for (const [name, v] of [['experiment', experimentInput], ['items', itemsInput], ['calibrate', calibrateInput]] as const) {
       if (v !== undefined && typeof v !== 'string') throw badRequest('invalid_query', `give ${name} once`, `Send one ${name} parameter${name === 'items' ? ', with the trial ids comma-separated' : ''}.`);
     }
     const experimentId = experimentInput as string | undefined;
+    // D83: `calibrate=1` orders one experiment's items by the judge's current verdict, pass and fail in turn.
+    if (calibrateInput !== undefined && !['', '0', '1', 'false', 'true'].includes(calibrateInput as string)) {
+      throw badRequest('invalid_query', 'calibrate must be 1 or 0', 'Send calibrate=1 to alternate the judge’s passes and fails, or leave it out.');
+    }
+    const calibrate = calibrateInput === '1' || calibrateInput === 'true';
+    if (calibrate && !experimentId) {
+      throw badRequest('invalid_query', 'calibrate needs an experiment', 'Add experiment=<id>: calibrating orders one experiment’s items by its judge’s verdicts.');
+    }
     const rater = raterInput === undefined ? null : raterId(raterInput);
     // `items` (comma-separated trial ids) limits the queue to a chosen list, such as the trials a
     // judge panel disagreed on (D71). Every other rule still applies: a listed trial outside the
@@ -209,7 +217,34 @@ export class LabelsService {
       if (!criteria.length) continue;
       list.push({ item_id: r.id, task_summary: r.summary, transcript: transcriptOf(r.result), tool_calls: await this.toolCalls(r.id), criteria, second_look: secondLook });
     }
-    return [...fresh, ...again];
+    return [...(calibrate ? await this.byJudgeVerdict(fresh) : fresh), ...again];
+  }
+
+  /**
+   * D83: the fresh items reordered so the judge's current `overall` verdicts alternate, pass then
+   * fail, each kept in the queue's own order, then the items it gave no yes or no on. A rater who
+   * labels from the top sees both kinds early, so the judge's false passes and false fails both
+   * get labels. The verdict is only used to order: the items stay blind.
+   */
+  private async byJudgeVerdict(items: LabelQueueItem[]): Promise<LabelQueueItem[]> {
+    if (!items.length) return items;
+    const rows = await this.db.query<{ trial_id: string; verdict: string | null }>(
+      `SELECT g.trial_id,
+              (SELECT e ->> 'verdict' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(g.evidence) = 'array' THEN g.evidence ELSE '[]'::jsonb END) e
+               WHERE jsonb_typeof(e) = 'object' AND e ->> 'criterion' = 'overall' AND e ->> 'verdict' IN ('yes', 'no') LIMIT 1) AS verdict
+       FROM current_grades g WHERE g.kind = 'judge' AND g.trial_id = ANY($1::text[]) ORDER BY g.id`,
+      [items.map((i) => i.item_id)],
+    );
+    const verdict = new Map<string, string>();
+    for (const r of rows) if (r.verdict && !verdict.has(r.trial_id)) verdict.set(r.trial_id, r.verdict);
+    const pass = items.filter((i) => verdict.get(i.item_id) === 'yes');
+    const fail = items.filter((i) => verdict.get(i.item_id) === 'no');
+    const out: LabelQueueItem[] = [];
+    for (let i = 0; i < Math.max(pass.length, fail.length); i += 1) {
+      if (i < pass.length) out.push(pass[i]);
+      if (i < fail.length) out.push(fail[i]);
+    }
+    return [...out, ...items.filter((i) => !verdict.has(i.item_id))];
   }
 
   private async toolCalls(trialId: string): Promise<LabelQueueItem['tool_calls']> {

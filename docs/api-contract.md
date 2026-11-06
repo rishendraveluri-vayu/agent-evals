@@ -1025,8 +1025,8 @@ What the API refuses or rewrites since the review's fixes (`docs/destructive-rev
   unknown `set` is a 400 `invalid_query`; an arm of a stopped run cannot be resumed (409
   `experiment_finished`; a done run's arm can, as D37 needs).
 - **Queries:** a repeated `status` on `GET /experiments/:id/trials` is a list; a repeated `config`
-  or `task` is 400 `invalid_filter`; a repeated `experiment` or `items` on `GET /labels/queue`, or a
-  repeated `experiment` on `GET /judge/trust` (D83), is 400 `invalid_query`.
+  or `task` is 400 `invalid_filter`; a repeated `experiment`, `items` or `calibrate` (D83) on
+  `GET /labels/queue`, or a repeated `experiment` on `GET /judge/trust`, is 400 `invalid_query`.
 - **Worker protocol:** a claim for a harness with no folder under `workers/` is 400
   `unknown_harness`; `worker_id` is 1 to 200 characters without NUL; a worker counts as live once a
   claim has given it a trial, and then its heartbeats and its empty claims (204) keep it live; an
@@ -1158,9 +1158,12 @@ no model and never changes a grade or a verdict.
   a grade or a verdict: a judge criterion counts only when its task makes it required (D8, D63).
   The result is cached until a label, a finished grading job or an experiment's arms change.
 - **Calibrating.** `GET /labels/queue?set=&experiment=<id>&calibrate=1` orders that experiment's
-  unlabelled items so the judge's current `overall` verdicts alternate, pass then fail, then the
-  items it has no verdict on; the blind item never carries the verdict. Without `experiment`,
-  `calibrate` is a 400 `invalid_query`.
+  fresh items so the judge's current `overall` verdicts alternate, pass then fail, each kind in
+  the queue's own order, then the items it has no yes or no on; second looks (D46) still come
+  last. The verdict is the first `overall` yes or no among the trial's current judge grades. It is
+  used only to order: the blind item never carries it. `calibrate` takes `1` or `true` (on), `0`,
+  `false` or empty (off); anything else, a repeated `calibrate`, or `calibrate` without
+  `experiment` is a 400 `invalid_query`.
 - **The comparison's `stats.judge`** is filled from the held-out figures of the `overall` criterion
   of the experiment's judge (the one with the most current grades on its trials): `{kappa, low,
   high, bar, tasks}`, `bar` being D8's 0.6 and `tasks` the held-out tasks with pairs; null without

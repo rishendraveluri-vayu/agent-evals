@@ -1,14 +1,14 @@
 import { promises as fs, readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import request from 'supertest';
-import type { CompareResponse, GraderClaimResponse, JudgeTrust, JudgeTrustResponse } from '../src/contract';
+import type { CompareResponse, GraderClaimResponse, JudgeTrust, JudgeTrustResponse, LabelQueueItem } from '../src/contract';
 import { graderVersion } from '../src/grading/grading-core';
 import { REPO, type TestEnv, auth, bootEnv, catalogue, makeConfig } from './support/app';
 import { describeWithDb } from './support/db';
 import { engine } from './support/engine';
 
 /**
- * D83 on the real API and Postgres: GET /judge/trust and the
+ * D83 on the real API and Postgres: GET /judge/trust, the calibrating label queue and the
  * comparison's `stats.judge`. LiteLLM is stubbed, the agent's report and the judge's grades are
  * played by the test (no model is called), and every label is SYNTHETIC, written into this test's
  * own temporary labels folder, never the repo's labels/.
@@ -320,6 +320,30 @@ describeWithDb('judge trust (D83, e2e, real Postgres)', () => {
     const cmp = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as CompareResponse;
     expect(cmp.status).toBe('complete');
     expect(cmp.stats!.judge).toEqual({ kappa: c.heldout!.kappa, low: k.low, high: k.high, bar: 0.6, tasks: 2 });
+  });
+
+  it('orders an experiment’s queue by the judge’s verdict to calibrate it, pass then fail, and keeps the items blind', async () => {
+    const exp = await run([A], ['trust-tune'], 6);
+    const verdictOf = new Map(exp.trials.map((x) => [x.id, x.repeat < 3 ? 'yes' : x.repeat < 5 ? 'no' : null]));
+    // The judge passes three, fails two, and its call fails on the sixth (no verdict).
+    await judge('fake/judge-cal', (id) => {
+      const v = verdictOf.get(id);
+      return v ? { overall: v, plain: 'yes' } : null;
+    });
+    const plain = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as LabelQueueItem[];
+    const queue = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}&calibrate=1`).expect(200)).body as LabelQueueItem[];
+    expect(queue.map((i) => i.item_id).sort()).toEqual(plain.map((i) => i.item_id).sort());
+    expect(queue.map((i) => verdictOf.get(i.item_id) ?? 'none')).toEqual(['yes', 'no', 'yes', 'no', 'yes', 'none']);
+    // Blind: nothing of the judge is in an item.
+    for (const item of queue) expect(Object.keys(item).sort()).toEqual(['criteria', 'item_id', 'second_look', 'task_summary', 'tool_calls', 'transcript']);
+    expect(JSON.stringify(queue)).not.toMatch(/judge says|fake\/judge|verdict|claude-haiku|trust arm/);
+
+    const noExperiment = await request(env.http).get('/api/labels/queue?set=tuning&calibrate=1').expect(400);
+    expect(noExperiment.body).toMatchObject({ error: 'invalid_query', message: 'calibrate needs an experiment' });
+    expect((await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}&calibrate=maybe`).expect(400)).body).toMatchObject({ error: 'invalid_query' });
+    expect((await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}&calibrate=1&calibrate=1`).expect(400)).body).toMatchObject({ error: 'invalid_query' });
+    // calibrate=0 is the ordinary queue.
+    expect(((await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}&calibrate=0`).expect(200)).body as LabelQueueItem[]).map((i) => i.item_id)).toEqual(plain.map((i) => i.item_id));
   });
 
   it('leaves the comparison’s stats.judge null without held-out labels on its judge', async () => {
