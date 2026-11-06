@@ -48,6 +48,7 @@ import { conflictGateError, needsConflictCheck } from './conflict-gate';
 import { Db, type Queryable } from '../database/db.service';
 import { NOT_EXAMPLE_TRIAL, assertNotExample } from '../examples/example-guard';
 import { JudgeService } from '../judge/judge.service';
+import { JudgeTrustService } from '../judge/trust.service';
 import { LiteLlmClient } from '../litellm/litellm.client';
 import { SIM_MAX_OUTPUT_TOKENS, simTemperature } from '../worker/spec-builder';
 import { type CellInput, type History, LIVE_WORKER_S, type Price, estimate, isFakeModel } from './estimate';
@@ -165,6 +166,7 @@ export class ExperimentsService {
     private readonly litellm: LiteLlmClient,
     private readonly judge: JudgeService,
     private readonly preflight: PreflightService,
+    private readonly trust: JudgeTrustService,
   ) {}
 
   // ---- planning ----
@@ -1220,8 +1222,12 @@ export class ExperimentsService {
       if (this.statsCache.size >= 200) this.statsCache.delete(this.statsCache.keys().next().value as string);
       this.statsCache.set(key, result);
     }
-    if (!result.stats || !withAa || r.calibration) return result;
-    return { ...result, stats: { ...result.stats, aa: await this.latestCalibration(r) } };
+    if (!result.stats || !withAa) return result;
+    // D83: the judge's held-out agreement, read live (labels change without a regrade), so it sits
+    // outside the cache. It is shown beside the verdict and never changes it.
+    const judge = await this.trust.forComparison(r.id);
+    if (r.calibration) return { ...result, stats: { ...result.stats, judge } };
+    return { ...result, stats: { ...result.stats, aa: await this.latestCalibration(r), judge } };
   }
 
   /**
