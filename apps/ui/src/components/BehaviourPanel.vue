@@ -85,7 +85,8 @@ const tiles = computed<Tile[]>(() => {
   out.push({
     name: 'Tool errors per trial',
     delta: delta(null, (x) => x.tool_errors.per_trial),
-    note: arms.value.map((x) => `${x.arm}: ${plural(x.tool_errors.total, 'error')} in ${plural(x.tool_errors.trials, 'trial')}`).join('; '),
+    // `trials` counts the trials with an error, so an arm with none has no tool errors, not "0 errors in 0 trials".
+    note: arms.value.map((x) => `${x.arm}: ${x.tool_errors.total ? `${plural(x.tool_errors.total, 'error')} in ${plural(x.tool_errors.trials, 'trial')}` : 'no tool errors'}`).join('; '),
     values: errVals,
     max: Math.max(0, ...errVals.map((v) => v.value)),
   });

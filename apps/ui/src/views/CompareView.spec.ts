@@ -358,7 +358,8 @@ describe('CompareView: how the arms behaved (D64)', () => {
     expect(calls).toContain('A 1.5');
     expect(calls).toContain('B 1.8');
     expect(steps).toContain('Stopped at the step limit: A 1 of 60, B 0 of 60');
-    expect(errors).toContain('A: 0 errors in 0 trials; B: 1 error in 1 trial');
+    expect(errors).toContain('A: no tool errors; B: 1 error in 1 trial');
+    expect(errors).not.toContain('0 errors in 0 trials');
   });
 
   it('lists tools as rows with both arms per trial side by side, marking the differences', async () => {
