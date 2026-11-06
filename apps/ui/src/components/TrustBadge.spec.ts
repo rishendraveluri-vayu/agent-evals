@@ -18,7 +18,7 @@ describe('TrustBadge', () => {
     const w = mount(TrustBadge, { props: { status } });
     expect(w.get('[data-test="trust-label"]').text()).toBe(words);
     expect(w.get('[data-test="trust-badge"]').attributes('data-status')).toBe(status);
-    expect(w.classes()).toContain(`trust--${status}`);
+    expect(w.classes()).toContain(`trust-badge--${status}`);
     expect(trustLabel(status)).toBe(words);
   });
 
@@ -40,7 +40,7 @@ describe('TrustBadge', () => {
 
   it('never takes the pass green or fail red: trust is about the judge, not an outcome', () => {
     expect(trustSource).not.toMatch(/--(pass|fail)(-soft)?\b/);
-    expect(trustSource).toMatch(/\.trust--not_trusted \{[^}]*var\(--warning\)/);
+    expect(trustSource).toMatch(/\.trust-badge--not_trusted \{[^}]*var\(--warning\)/);
   });
 });
 

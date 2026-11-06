@@ -21,8 +21,8 @@ const icon = computed<'check' | 'alert' | null>(() => (props.status === 'trusted
 
 <template>
   <span
-    class="trust"
-    :class="`trust--${status}`"
+    class="trust-badge"
+    :class="`trust-badge--${status}`"
     :data-status="status"
     :title="summaryText || undefined"
     data-test="trust-badge"
@@ -37,7 +37,7 @@ const icon = computed<'check' | 'alert' | null>(() => (props.status === 'trusted
 </template>
 
 <style scoped>
-.trust {
+.trust-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -53,19 +53,19 @@ const icon = computed<'check' | 'alert' | null>(() => (props.status === 'trusted
 }
 
 /* Nothing measured yet: the quietest, an outline in grey. */
-.trust--uncalibrated {
+.trust-badge--uncalibrated {
   background: var(--surface);
   border-color: var(--rule-strong);
   color: var(--ink-2);
 }
 
-.trust--trusted {
+.trust-badge--trusted {
   background: var(--surface);
   border-color: var(--ink);
   font-weight: 600;
 }
 
-.trust--not_trusted {
+.trust-badge--not_trusted {
   background: var(--surface);
   border-color: var(--warning);
   color: var(--warning);

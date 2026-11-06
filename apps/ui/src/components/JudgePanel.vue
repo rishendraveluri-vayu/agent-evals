@@ -504,7 +504,7 @@ async function revoke() {
 
     <section
       v-if="trust"
-      class="trust"
+      class="trust-section"
       aria-labelledby="judge-trust-title"
       data-test="judge-trust"
     >
@@ -664,7 +664,7 @@ async function revoke() {
   margin-top: 8px;
 }
 
-.trust {
+.trust-section {
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--rule-soft);
@@ -698,7 +698,7 @@ async function revoke() {
 .trust-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   gap: 4px 10px;
 }
 
