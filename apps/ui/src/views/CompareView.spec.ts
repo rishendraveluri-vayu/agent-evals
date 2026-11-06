@@ -77,10 +77,10 @@ describe('CompareView in fixture mode', () => {
     await settle();
     const items = w.findAll('[data-test="infra-list"] li');
     expect(items).toHaveLength(2);
-    expect(items[0].text()).toBe('B · debt-hardship-03 · attempt 1 · infra failure: provider error · re-run passed');
+    expect(items[0].text()).toBe('B · debt-hardship-03 · attempt 1 · infra failure: LiteLLM or provider error · re-run passed');
     // The cause never splits across lines.
     expect(items[0].get('.secondary').classes()).toContain('nowrap');
-    expect(items[0].get('.secondary').text()).toBe('infra failure: provider error');
+    expect(items[0].get('.secondary').text()).toBe('infra failure: LiteLLM or provider error');
     expect(items[0].find('.visually-hidden').exists()).toBe(false);
     expect(items[0].get('.dot').classes()).toContain('dot--b');
     expect(items[0].get('a').attributes('href')).toBe('#/trials/tr_debt-hardship-03_b_2');
@@ -271,7 +271,7 @@ describe('CompareView against the API: trials stopped on infra failures', () => 
     const items = w.findAll('[data-test="infra-list"] li').map((li) => li.text());
     expect(items).toEqual([
       'B · debt-hardship-03 · attempt 1 · infra failure: its worker stopped sending heartbeats · re-run passed',
-      'B · fd-vs-sip-07 · attempt 1 · infra failure: provider error · not re-run',
+      'B · fd-vs-sip-07 · attempt 1 · infra failure: LiteLLM or provider error · not re-run',
     ]);
     // Not every stop was re-run, so the verdict box does not say they were.
     expect(w.get('[data-test="verdict"]').text()).toContain('2 trials stopped on infra failures are listed, not dropped.');

@@ -153,6 +153,33 @@ def test_spend_rows_from_the_api_become_chat_spans(tmp_path, api):
     assert stored == body["spans"]
 
 
+def test_litellms_team_404_during_a_database_outage_is_reported_as_a_provider_error(tmp_path, api):
+    """Soak test (6 Nov): during a 10 s Postgres stop LiteLLM refused a running trial's call with
+    404 "Team doesn't exist in db", which the runner labelled infra:config_error, so the API
+    paused the arm and never re-ran the slot. LiteLLM's own message on the failed call's row is
+    read, so even a harness that reports only "HTTP 404" is labelled infra:provider_error."""
+    row_404 = (
+        "404: {'error': \"Team doesn't exist in db. Team=a735382c-092f-4d84-a22a-9516e8910aa4. "
+        'Create team via `/team/new` call."}'
+    )
+
+    def calls(trial_id: str, role: str) -> list[dict]:
+        ok, failed = rows_in_turn(tmp_path / "trial", n=2)
+        failed.update(status="failure", spend=0.0)
+        failed["metadata"] = {"error_information": {"error_code": "404", "error_message": row_404}}
+        return [ok, failed]
+
+    api.calls = calls
+    script = {"turns": [{"raise": "HTTP 404", "model_calls": 2}]}
+    api.claims.append(make_claim(worker_spec(harness_options=script)))
+    Worker(config(tmp_path, api)).serve(exit_on_idle=True)
+    (body,) = api.reports()
+    report = body["runner_report"]
+    assert report["end_state"] == "harness_error"
+    assert report["proxy_usage"]["last_status"] == "404"
+    assert report["label"] == "infra:provider_error"
+
+
 def test_idle_204_backs_off_with_jitter_and_resets_after_a_claim(tmp_path, api):
     delays: list[float] = []
     api.claims += [204, 204, 204, 500, make_claim(worker_spec(harness_options=QUICK)), 204]

@@ -198,3 +198,11 @@ Two agents, each on a fresh clone with its own stack and no keys, re-ran the rev
   - the background copy of the other examples needs the tab open (README says so, and opening the first door again finishes it);
   - the Run screen cannot check Ollama.
 - **Graders and statistics:** the reviewers' crafted scenarios and simulations are regression tests in the suites, which pass. All 1,010 shipped trials recompute to the same outcomes, and all six shipped comparisons to the same verdicts.
+
+# Soak test findings (6 Nov, at ac089f8)
+
+A real-model soak ran 988 trials across the five harnesses on its own stack, with injected faults: two worker kills mid-trial, a pause and resume, two API restarts, a 10 s LiteLLM stop and a 10 s Postgres stop. Fixed on branch `fix/soak-findings`, each with a test that fails on the old code; fake models only.
+
+| Finding | Status |
+| --- | --- |
+| 1. A 10 s Postgres stop lost trials for good and paused arms with the wrong fix text. LiteLLM answered running trials with 404 "Team doesn't exist in db" (its `get_team_object` turns any failed read into that 404); the runner took 401/403/404 for `infra:config_error`, never re-queued, which paused experiment 3's arm B and both arms of experiment 4 and left two slots with no done attempt. | fixed: LiteLLM's database-fault answers are `infra:provider_error`, re-queued once (`runner.LITELLM_DB_FAULT`, read in LiteLLM's own message for the failed call and in the adapter's error); real setup errors stay config errors. The UI calls `infra:provider_error` "LiteLLM or provider error". |

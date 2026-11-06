@@ -172,6 +172,17 @@ def call_status(row: dict) -> str:
     return str(info.get("error_code") or "unknown")
 
 
+def call_error(row: dict | None) -> str | None:
+    """LiteLLM's error message for a failed call (`error_information.error_message`), or None
+    for a success or a row without one. LiteLLM's own words, whichever harness made the call:
+    the soak test's 404 row says `404: {'error': "Team doesn't exist in db. ..."}`."""
+    if not row or row.get("status") == "success":
+        return None
+    info = (row.get("metadata") or {}).get("error_information") or {}
+    message = info.get("error_message")
+    return str(message)[:2000] if message else None
+
+
 # LiteLLM's note inside a stored string it has cut short (v1.99.4).
 TRUNCATION_NOTE = "MAX_STRING_LENGTH_PROMPT_IN_DB"
 

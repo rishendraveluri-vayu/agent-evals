@@ -251,3 +251,117 @@ def test_a_litellm_code_that_is_not_an_http_status_is_a_provider_error():
     assert provider_label("unknown", result, proxy_seen=True) == "infra:provider_error"
     assert provider_label("budget_exceeded", result, proxy_seen=True) == "infra:budget_net"
     assert provider_label("400", result, proxy_seen=True) is None
+
+
+# Soak test, 6 Nov (Postgres stopped for 10 s, LiteLLM v1.99.4): the exact errors of the trials
+# labelled infra:config_error, which paused experiment 3's arm B and both arms of experiment 4.
+# The own loop's, the Agents SDK's (which quotes the apostrophe escaped), and the message LiteLLM
+# kept on the failed call's spend-log row (the span's status message).
+TEAM_404_OWNLOOP = (
+    "Error code: 404 - {'error': \"Team doesn't exist in db. Team=a735382c-092f-4d84-a22a-"
+    '9516e8910aa4. Create team via `/team/new` call."}'
+)
+TEAM_404_AGENTS_SDK = (
+    "Error code: 404 - {'error': {'message': '{\\'error\\': \"Team doesn\\'t exist in db. "
+    "Team=098af058-6cfc-4521-b41f-e9ab36d55313. Create team via `/team/new` call.\"}', "
+    "'type': 'auth_error', 'param': 'None', 'code': '404'}}"
+)
+TEAM_404_ROW = (
+    "404: {'error': \"Team doesn't exist in db. Team=a735382c-092f-4d84-a22a-9516e8910aa4. "
+    'Create team via `/team/new` call."}'
+)
+# The simulator's refusal in the same window (experiment 4): LiteLLM's 503 for its database.
+NO_DB_503 = (
+    'simulator call failed: HTTP 503: {"error":{"message":"Service Unavailable, the '
+    'authentication database is temporarily unreachable. Please retry shortly.","type":'
+    '"no_db_connection","param":"None","code":"503"}}'
+)
+
+
+def not_found(message: str | None) -> dict:
+    checked = harness_error(message, "model call failed: NotFoundError")
+    checked["result"]["end_detail"]["exception_type"] = "NotFoundError"
+    return checked
+
+
+@pytest.mark.parametrize("message", [TEAM_404_OWNLOOP, TEAM_404_AGENTS_SDK])
+def test_litellms_team_404_from_a_database_fault_is_a_provider_error(message):
+    """The API creates each trial's team before the trial, so "Team doesn't exist in db" is
+    LiteLLM failing to read its database: infra:provider_error, re-queued once, never a config
+    error that pauses the arm (the soak test's experiments 3 and 4)."""
+    usage = {"last_status": "404", "model_calls": 8, "complete": True}
+    assert label(OK, not_found(message), usage) == "infra:provider_error"
+    assert label(OK, not_found(message), usage, last_error=TEAM_404_ROW) == "infra:provider_error"
+
+
+def test_litellms_own_record_of_the_fault_is_enough_whatever_the_harness_said():
+    """A harness that reports only "HTTP 404" (no body): LiteLLM's message on the failed call's
+    spend-log row says it was its database."""
+    usage = {"last_status": "404"}
+    assert label(OK, not_found("HTTP 404"), usage, last_error=TEAM_404_ROW) == (
+        "infra:provider_error"
+    )
+    assert label(OK, not_found("HTTP 404"), usage) == "infra:config_error"
+
+
+@pytest.mark.parametrize(
+    ("status", "message"),
+    [
+        # LiteLLM's 401 fallback for a database error it does not classify, in Prisma's words
+        ("401", "Authentication Error, Can't reach database server at `postgres:5432`"),
+        # prisma_client is None: LiteLLM has no database at all
+        ("400", "No connected db."),
+        ("401", "Authentication Error, No DB Connected. See - https://docs.litellm.ai/docs/"),
+        # the API minted the key before the trial
+        ("401", "Authentication Error: invalid user key - user key does not exist in db"),
+        ("503", NO_DB_503),
+    ],
+)
+def test_any_litellm_answer_that_its_database_is_unavailable_is_a_provider_error(status, message):
+    assert label(OK, not_found(message), {"last_status": status}) == "infra:provider_error"
+
+
+def test_a_database_fault_after_a_logged_success_is_still_a_provider_error():
+    """The failed call's row may not be in LiteLLM's log yet (or ever, with its database down):
+    the last logged call is then a 200, and the adapter's error is the only witness."""
+    assert label(OK, not_found(TEAM_404_OWNLOOP), {"last_status": "200"}) == (
+        "infra:provider_error"
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "message"),
+    [
+        # a provider 404 for a model it does not have: a real setup problem
+        (
+            "404",
+            'Error code: 404 - litellm.NotFoundError: AnthropicException - {"type":"error",'
+            '"error":{"type":"not_found_error","message":"model: claude-haiku-9"}}',
+        ),
+        ("401", "Authentication Error, Invalid proxy server token passed."),
+        ("401", "AuthenticationError: AnthropicException - invalid x-api-key"),
+        ("403", "key not allowed to access model. This key can only access models=['fake/x']"),
+        ("400", UNSCOPED_KEY),
+    ],
+)
+def test_real_misconfiguration_stays_a_config_error(status, message):
+    assert label(OK, not_found(message), {"last_status": status}) == "infra:config_error"
+
+
+def test_a_database_fault_does_not_hide_a_budget_stop_or_relabel_without_litellms_record():
+    usage = {"last_status": "budget_exceeded"}
+    assert label(OK, not_found(TEAM_404_OWNLOOP), usage) == "infra:budget_net"
+    assert label(OK, not_found(TEAM_404_OWNLOOP), None) == "agent"
+
+
+def test_call_error_reads_litellms_message_for_a_failed_row_only():
+    from evals_adapter.proxy import call_error
+
+    failed = {
+        "status": "failure",
+        "metadata": {"error_information": {"error_code": "404", "error_message": TEAM_404_ROW}},
+    }
+    assert call_error(failed) == TEAM_404_ROW
+    assert call_error({"status": "success", "metadata": {}}) is None
+    assert call_error({"status": "failure", "metadata": {}}) is None
+    assert call_error(None) is None

@@ -435,6 +435,11 @@ What the fixes leave, or chose (`docs/destructive-review.md`):
 - **The Run screen cannot check that Ollama is up** for a local-model run (the API has no signal for it); it warns instead.
 - **Limits the API now enforces:** a run's spending limit at most $100 (D77; every real run so far cost under $5); `max_steps` 1 to 200; `timeout_s` at most 3,600; `max_output_tokens` at most 64,000; config names at most 120 characters. Raising one is a one-line change in the API and the UI.
 
+## After the soak test (6 Nov)
+
+A real-model soak of 988 trials over five harnesses at `ac089f8`, with injected faults (`docs/destructive-review.md`, "Soak test findings"). What the fixes leave:
+- **LiteLLM's database faults are recognised by their wording.** A 401, 403 or 404 is `infra:config_error` unless LiteLLM's message (or the adapter's error) says LiteLLM could not use its own database, in one of the v1.99.4 wordings listed in `docs/adapter-contract.md` section 7; then it is `infra:provider_error`, re-run once. A later LiteLLM that words a database fault differently would be taken for a setup error again: the arm pauses and its fix text points at the config. A team or key deleted by hand during a run reads as a database fault: the slot is re-run once and, failing again, ends with no trial, still infra and never the agent's.
+
 ## To check before submission
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted
