@@ -226,7 +226,7 @@ python3 scripts/sp3_kill_test.py --n 2       # crash recovery: kills a worker mi
 ```
 
 **The API's database tests.** Without `TEST_DATABASE_URL`, `pnpm test` skips the API's
-database suites: Jest's summary for the API reads `Test Suites: 14 skipped, 36 passed, 36 of 50
+database suites: Jest's summary for the API reads `Test Suites: 16 skipped, 38 passed, 38 of 54
 total` (6 Nov); the skipped count is the only sign, since Jest prints its warning only when one suite
 file runs alone. CI runs them against Postgres. To run them here, start a throwaway
 Postgres (never the compose one), then stop it:
