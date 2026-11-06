@@ -3,17 +3,17 @@
   "format_version": 1,
   "name": "headline-prompt-v1-vs-v2",
   "title": "Prompt v1 vs v2 on Hermes with Claude Haiku 5.5: 10 held-out tasks x 10 trials",
-  "description": "The real experiment of 5 Nov: one harness (Hermes Agent, pinned), one model (Claude Haiku 5.5), the same tools and settings; only the system prompt differs. v1 is the agent as it was; v2 adds the fixes found in v1's traces on the discovery tasks (every rupee figure exactly from a tool, clarify before assuming, explain figures plainly). 200 trials on the 10 held-out tasks, graded by deterministic checks only (no judge counts yet). Result: v2 passes 73 of 100, v1 64 of 100, +9.0 points (95% interval +3 to +16), sign-flip p = 0.0625: no detectable difference under the rule set before the run, because only 5 tasks could differ. Its A/A calibration (v1 against itself) came out -4 points (-12 to +3). See docs/experiment.md.",
+  "description": "The real experiment of 5 Nov: one harness (Hermes Agent, pinned), one model (Claude Haiku 5.5), the same tools and settings; only the system prompt differs. v1 is the agent as it was; v2 adds the fixes found in v1's traces on the discovery tasks (every rupee figure exactly from a tool, clarify before assuming, explain figures plainly). 200 trials on the 10 held-out tasks, graded by deterministic checks. Result: v2 passes 73 of 100, v1 64 of 100, +9.0 points (95% interval +3 to +16), sign-flip p = 0.0625: no detectable difference under the rule set before the run, because only 5 tasks could differ. Its A/A calibration (v1 against itself) came out -4 points (-12 to +3). On 6 Nov (D83) its trials were regraded with the LLM judge, Gemini 3.8 Flash with rubric v4: the judge's verdicts are shown on every trial with how far to trust them, but they count in nothing (the judge failed the trust bar on the held-out labels). See docs/experiment.md and docs/judge-validation.md.",
   "sample": true,
   "experiment_id": "e_0mw38a1ym89666c6ccc6bfd13",
   "experiment_name": "Headline: prompt v1 vs v2 on the 10 held-out tasks",
   "created_at": "2026-11-05T07:32:29.425984+00:00",
   "finished_at": "2026-11-05T08:05:59.351505+00:00",
-  "exported_at": "2026-11-05T09:44:19Z",
+  "exported_at": "2026-11-06T16:13:41Z",
   "platform_commit": null,
-  "exported_from_commit": "a2280c34bbdac93a805f1a2a6116bd23ee2c2795",
+  "exported_from_commit": "ad0f0264e0c7e1600d12ec1cd8b92dd1e672c2c5",
   "source": "bundle",
-  "schema_version": "013_label_second_look",
+  "schema_version": "017_label_rater",
   "approximations": [],
   "summary": {
     "axis": "prompt",
@@ -43,8 +43,8 @@
     "tasks": 10,
     "trials": 200,
     "spans": 3752,
-    "grades": 1140,
-    "grading_jobs": 200,
+    "grades": 2280,
+    "grading_jobs": 400,
     "events": 0,
     "files": 6012,
     "file_bytes": 79085884
@@ -88,8 +88,8 @@
   },
   "parts": {
     "rows.json.gz": {
-      "bytes": 1722799,
-      "sha256": "sha256:2ed95fcea6b76417e3e8a9f7cc4262581a67d9e0095d525bddc660f171006c0e"
+      "bytes": 2124373,
+      "sha256": "sha256:d3f9ed3c4837a1cdec6150568d99f0e97c01fe29dfbca03cfe8cfd6a550e81f9"
     },
     "files.jsonl.gz": {
       "bytes": 18817708,
