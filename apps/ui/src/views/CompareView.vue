@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { api } from '../api/client';
 import { ApiError } from '../api/errors';
 import { isFixtureMode } from '../api/mode';
-import type { BlindItem, Compare, CompareRow, ExperimentDetail, TrialRowSummary, Interval, JudgeAgreement, TaskView } from '../api/types';
+import type { BlindItem, Compare, CompareRow, ExperimentDetail, TrialRowSummary, Interval, JudgeAgreement, JudgeTrust, TaskView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import BehaviourPanel from '../components/BehaviourPanel.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
@@ -18,6 +18,7 @@ import { identParts, money, percent, plainText, plural, seconds, shortHash, shor
 import { isFake } from '../lib/models';
 import { alsoGradedBy, experimentName, gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
+import { labelSetFor } from '../lib/trust';
 import { href } from '../router';
 
 /** `panel`: `judge` opens the page at its judge panel (the trial page links there). */
@@ -42,16 +43,23 @@ interface Loaded {
   judge: JudgeAgreement | null;
   /** Held-out items still to label: while any remain, the judge's agreement is provisional. */
   queue: BlindItem[];
+  /** How far to trust this experiment's judges (D83), or null when it could not be read. */
+  trust: JudgeTrust[] | null;
 }
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
   // A shipped example has no judge panel and its trials are never in the label queue, so its page
-  // does not fetch the held-out queue (every held-out output, a large reply) or the agreement.
+  // does not fetch the held-out queue (every held-out output, a large reply), the agreement or the
+  // judges' trust.
   const detailP = experimentOrMissing(props.experimentId);
-  const blindP = detailP.then(async (d): Promise<{ judge: JudgeAgreement | null; queue: BlindItem[] }> => {
-    if (d.example) return { judge: null, queue: [] };
-    const [judge, queue] = await Promise.all([optional(api.judgeAgreement('heldout'), null), optional(api.labelQueue('heldout'), [] as BlindItem[])]);
-    return { judge, queue };
+  const blindP = detailP.then(async (d): Promise<{ judge: JudgeAgreement | null; queue: BlindItem[]; trust: JudgeTrust[] | null }> => {
+    if (d.example) return { judge: null, queue: [], trust: null };
+    const [judge, queue, trust] = await Promise.all([
+      optional(api.judgeAgreement('heldout'), null),
+      optional(api.labelQueue('heldout'), [] as BlindItem[]),
+      optional(api.judgeTrust(d.id).then((r) => r.judges), null),
+    ]);
+    return { judge, queue, trust };
   });
   const [detail, compare, trials, blind] = await Promise.all([
     detailP,
@@ -98,6 +106,10 @@ const judged = computed(() => {
   const reused = a?.reused_from && d.detail.tasks.length ? Math.round((a.reused_trials * tasks.length) / d.detail.tasks.length) : 0;
   return { tasks: tasks.length, trials: own + reused };
 });
+
+/** Where to label this experiment's outputs to calibrate its judge (D83): its held-out set when it
+ *  ran held-out tasks, else tuning. */
+const calibrateHref = computed(() => (data.value ? href.labels({ set: labelSetFor(data.value.detail.tasks), experiment: data.value.detail.id, calibrate: true }) : ''));
 
 /** After an approval, a revoke or a regrade: the experiment again (its judge and spend), and its
  *  trials, without reloading the page around the panel. */
@@ -1209,6 +1221,8 @@ const worthALook = computed(() => {
         :judged-trials="judged.trials"
         :judged-tasks="judged.tasks"
         :fake-arms="fakeArms"
+        :trust="data.trust"
+        :calibrate-href="calibrateHref"
         @changed="refreshJudge"
       />
 
