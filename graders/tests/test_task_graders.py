@@ -982,6 +982,19 @@ def test_job_loss_parts_of_the_debt_payments_count(tmp_path):
     assert verdict(JOB, out, "runway-figures") == "pass"
 
 
+def test_job_loss_a_60000_digit_reply_is_graded_not_timed_out(tmp_path):
+    """Destructive review G6 (6 Nov): a reply ending in 60,000 ones and "x1" made the shared
+    money reader quadratic, so runway-figures hit its 10 s timeout: an `error`, and the trial
+    `incomplete` instead of failed. Now it is graded, and fails on what the reply lacks."""
+    out = make_trial(
+        tmp_path,
+        "Keep paying the minimums for now.\n\nRef " + "1" * 60_000 + "x1",
+        earlier=["That sounds really stressful, Meera."],
+    )
+    g = run(JOB, out, "runway-figures")["by_id"]["runway-figures"]
+    assert g["verdict"] == "fail", g["reason"]
+
+
 def test_job_loss_numbers_first_and_no_fund(tmp_path):
     out = make_trial(
         tmp_path,
