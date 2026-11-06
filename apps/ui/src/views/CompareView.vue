@@ -451,7 +451,9 @@ const regressions = computed(() => {
       key: r.task,
       name: r.task_id,
       critical: r.critical,
-      beyond: r.beyond_noise,
+      // The list also holds tasks where only a check got worse: B may have passed more there, and
+      // such a task holding up beyond noise is a rise, so the tag shows only on a drop.
+      beyond: r.beyond_noise && !!r.diff && r.diff.estimate < 0,
       counts: `A ${passedText({ ...r.a, trials: r.a.graded + r.a.incomplete })}, B ${passedText({ ...r.b, trials: r.b.graded + r.b.incomplete })}`,
       diff: r.diff ? `${signed(r.diff.estimate)} (${intervalText(r.diff)})` : 'not in the comparison: an arm has no decided trial',
       graders: r.graders.map((g) => ({ id: g.grader_id, words: `${rate(g.a)} in A, ${rate(g.b)} in B`, severity: sev(g.severity), critical: g.severity === 'critical', optional: !g.required })),

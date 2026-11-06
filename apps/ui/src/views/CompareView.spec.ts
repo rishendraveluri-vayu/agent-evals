@@ -910,6 +910,20 @@ describe('CompareView against the API: the check on the method', () => {
     expect(w2.get('[data-test="regression"]').get('.regression-tag--critical').text()).toBe('critical check got worse');
   });
 
+  it('tags a task in "Where B dropped" beyond noise only when B dropped there, never where a check fell but B rose (S9)', async () => {
+    const [drop, other] = base.stats!.regressions;
+    const fell = { ...drop, beyond_noise: true, diff: { estimate: -60, low: -100, high: -20 } };
+    // Only a check got worse here; the task as a whole went up in B, beyond noise.
+    const rose = { ...other, beyond_noise: true, diff: { estimate: 60, low: 20, high: 100 } };
+    withStats({ regressions: [fell, rose] });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const items = w.findAll('[data-test="regression"]');
+    const tags = items.map((i) => i.findAll('.regression-tag').map((t) => t.text()));
+    expect(tags).toEqual([['beyond noise'], []]);
+    expect(items[1].text()).toContain('+60 (+20 to +100)');
+  });
+
   it('lists tasks left out of the comparison, with why', async () => {
     withStats({ excluded_tasks: [{ task: 'sha256:x', task_id: 'gold-loan-16', a: { passed: 0, graded: 0, incomplete: 5 }, b: { passed: 2, graded: 5, incomplete: 0 }, why: 'arm A has no decided trial (5 without an outcome)' }] });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
