@@ -333,6 +333,16 @@ SETUP_400 = re.compile(
     re.IGNORECASE,
 )
 CONFIG_STATUSES = ("401", "403", "404")
+# E1 (6 Nov review): the harness could not reach LiteLLM at all, so the call that failed was never
+# logged. The client libraries' words for it (openai/httpx, LiteLLM's SDK, urllib, aiohttp).
+UNREACHABLE = re.compile(
+    r"APIConnectionError|ConnectError|ConnectionError|ConnectTimeout"
+    r"|connection (error|refused|reset|aborted)|failed to establish a new connection"
+    r"|name or service not known|temporary failure in name resolution|network is unreachable"
+    r"|no route to host|remote ?disconnected|server disconnected|cannot connect to host"
+    r"|errno 111",
+    re.IGNORECASE,
+)
 
 
 def _error_text(result: dict[str, Any]) -> str:
@@ -341,7 +351,16 @@ def _error_text(result: dict[str, Any]) -> str:
     return " ".join(str(p) for p in parts if p)
 
 
-def provider_label(last_status: str | None, result: dict[str, Any]) -> str | None:
+def _unreachable(result: dict[str, Any]) -> bool:
+    """Whether the adapter's error says LiteLLM could not be reached (E1)."""
+    detail = result.get("end_detail") or {}
+    text = " ".join(str(detail.get(k) or "") for k in ("exception_type", "harness_stop_reason"))
+    return bool(UNREACHABLE.search(f"{text} {detail.get('exception_message') or ''}"))
+
+
+def provider_label(
+    last_status: str | None, result: dict[str, Any], proxy_seen: bool = False
+) -> str | None:
     """D26: the infra label for a `harness_error`, from LiteLLM's last status for the agent key
     and the error the adapter reported, or None when the ending stays the agent's outcome.
 
@@ -354,9 +373,18 @@ def provider_label(last_status: str | None, result: dict[str, Any]) -> str | Non
       unknown model, a rejected or unsupported parameter) is infra:config_error; any other 400
       stays the agent's.
     By the time a status reaches here LiteLLM has already retried it (D16).
+
+    E1: when the trial ran through LiteLLM (`proxy_seen`, its record was read) and LiteLLM logged
+    no call at all (`last_status` None), no request of the agent's reached the model, so the
+    harness error is the platform's: infra:provider_error, re-queued once like the others. The
+    same when the last logged call succeeded but the adapter's error says LiteLLM could not be
+    reached: the failing call never got there to be logged. Without a LiteLLM record (a direct
+    run against the fake) nothing is relabelled.
     """
     if last_status is None:
-        return None
+        return "infra:provider_error" if proxy_seen else None
+    if last_status == "200" and proxy_seen and _unreachable(result):
+        return "infra:provider_error"
     if last_status == "budget_exceeded":
         return "infra:budget_net"
     if last_status in ("408", "429") or last_status.startswith("5"):
@@ -397,7 +425,9 @@ def label(
             return "infra:budget_net"
         return "infra:sim_error"
     if result["end_state"] == "harness_error":
-        infra = provider_label((proxy_usage or {}).get("last_status"), result)
+        infra = provider_label(
+            (proxy_usage or {}).get("last_status"), result, proxy_seen=proxy_usage is not None
+        )
         if infra is not None:
             return infra
     return "agent"
