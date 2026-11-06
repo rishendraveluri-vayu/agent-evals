@@ -56,7 +56,8 @@ export function judgeFor(judges: readonly JudgeTrust[], model: string | null, ru
 
 /** "0.52", "−0.12", or "not defined". */
 export function kappaWords(k: number | null): string {
-  return k === null ? 'not defined' : minus(k.toFixed(2));
+  // A value that rounds to zero reads "0.00", never "−0.00".
+  return k === null ? 'not defined' : minus((Math.abs(k) < 0.005 ? 0 : k).toFixed(2));
 }
 
 /** "0.31 to 0.71", or null when the interval is undefined. */

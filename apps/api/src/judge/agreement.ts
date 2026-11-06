@@ -158,6 +158,9 @@ const pct = (v: number): string => `${Math.round(v * 100)}%`;
  * `gapHoldsZero`: true when the gap's interval holds 0, false when it leaves 0 out, null when it
  * could not be measured (one arm, no human "no" in an arm, or the interval undefined).
  */
+/** Two decimals; a value that rounds to zero is "0.00", never "-0.00". */
+const two = (v: number): string => (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
+
 export function d8Check(
   t: Table,
   kappaInterval: { low: number | null; undefined_share: number | null } | null,
@@ -169,11 +172,11 @@ export function d8Check(
   if (humanNo < MIN_HUMAN_NO) reasons.push(`${humanNo} human "no" labels, fewer than ${MIN_HUMAN_NO}`);
   const k = kappaOf(t);
   if (k === null) reasons.push('kappa is undefined');
-  else if (k < D8_KAPPA) reasons.push(`kappa ${k.toFixed(2)} is below ${D8_KAPPA}`);
+  else if (k < D8_KAPPA) reasons.push(`kappa ${two(k)} is below ${D8_KAPPA}`);
   if (kappaInterval === null || kappaInterval.low === null) {
     const share = kappaInterval?.undefined_share ?? null;
     reasons.push(`kappa's interval is undefined${share ? ` (${pct(share)} of resamples undefined)` : ''}`);
-  } else if (kappaInterval.low < D8_KAPPA_LOW) reasons.push(`kappa's interval reaches ${kappaInterval.low.toFixed(2)}, below ${D8_KAPPA_LOW}`);
+  } else if (kappaInterval.low < D8_KAPPA_LOW) reasons.push(`kappa's interval reaches ${two(kappaInterval.low)}, below ${D8_KAPPA_LOW}`);
   if (gapHoldsZero === null) reasons.push('the false-pass gap between arms could not be measured');
   else if (!gapHoldsZero) reasons.push("the false-pass rate differs between arms (a gap's interval leaves out 0)");
   if (retestShare === null) reasons.push('test-retest agreement is not measured');
