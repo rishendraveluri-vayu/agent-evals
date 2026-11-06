@@ -121,7 +121,9 @@ def test_d53_split_a_and_no_draft_markers():
     for t in tasks:
         assert "draft" not in t and not t["summary"].startswith("DRAFT"), t["id"]
         base = 4 if t["id"] in D63_TASKS else 3
-        assert t["version"] == str(base + (t["id"] in REVIEW_6NOV)), t["id"]
+        # D83: the held-out tasks are one more version up (their judge reads rubric v4).
+        bumps = (t["id"] in REVIEW_6NOV) + (t["id"] in HELD_OUT)
+        assert t["version"] == str(base + bumps), t["id"]
     kinds = {(t["split"], t["kind"]) for t in tasks}
     assert ("held_out", "conversation") in kinds and ("discovery", "conversation") in kinds
     assert sum(t["kind"] == "conversation" for t in tasks) == 7
@@ -166,6 +168,8 @@ def test_d53_hidden_fact_and_concern_fixes():
 
 REPO = TASKS.parent
 RUBRIC = "configs/rubrics/advice.v1.md"
+# D83: the held-out tasks' judge reads rubric v4, D74's candidate measured on the held-out labels.
+RUBRIC_HELD_OUT = "configs/rubrics/advice.v4.md"
 CLARIFIES = {"draft-payoff-order", "draft-convo-payoff"}
 DECIDING = {
     "draft-car-loan-afford",
@@ -199,7 +203,8 @@ def test_d68_every_judge_reads_the_rubric_and_keeps_its_criteria():
     for t in all_tasks():
         judge = judge_of(t)
         ids = [c["id"] for c in judge["criteria"]]
-        assert judge["rubric"] == RUBRIC and judge["required"] is False, t["id"]
+        rubric = RUBRIC_HELD_OUT if t["split"] == "held_out" else RUBRIC
+        assert judge["rubric"] == rubric and judge["required"] is False, t["id"]
         assert ids[0] == "overall" and ids.count("explains-plainly") == 1, t["id"]
         assert ("clarifies-ambiguous-amount" in ids) == (t["id"] in CLARIFIES), t["id"]
         assert ("asks-deciding-fact" in ids) == (t["id"] in DECIDING), t["id"]

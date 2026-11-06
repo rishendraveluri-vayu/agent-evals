@@ -1,6 +1,6 @@
 {
   "id": "draft-convo-job-loss",
-  "version": "3",
+  "version": "4",
   "split": "held_out",
   "kind": "conversation",
   "summary": "Meera's company announced layoffs; she asks how long she could keep paying her EMIs and card. Hardship: care first, keep cash.",
@@ -74,8 +74,8 @@
       "id": "overall",
       "type": "judge",
       "required": false,
-      "description": "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's.",
-      "rubric": "configs/rubrics/advice.v1.md",
+      "description": "The judge (rubric advice.v4, D74 and D83): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's. It failed D8 on the held-out labels (kappa -0.14), so it stays optional.",
+      "rubric": "configs/rubrics/advice.v4.md",
       "criteria": [
         {
           "id": "overall",

@@ -65,8 +65,15 @@ REVIEW_6NOV = {
 }
 
 
+# D83 (6 Nov): the held-out tasks' judge grader reads rubric v4, the candidate measured on the 40
+# held-out labels (D74), so the platform can show that judge's live trust beside its grades. Graders
+# only, so these tasks are one more version up with the same core; still optional (it failed D8).
+D83_RUBRIC = "configs/rubrics/advice.v4.md"
+
+
 def version_of(task_id: str) -> str:
-    return str(int(VERSIONS.get(task_id, TASK_VERSION)) + D68_BUMP + (task_id in REVIEW_6NOV))
+    base = int(VERSIONS.get(task_id, TASK_VERSION)) + D68_BUMP
+    return str(base + (task_id in REVIEW_6NOV) + (task_id in HELD_OUT))
 
 # D53, split A. The headline (prompt v1 vs v2, D9) compares on these 10 only; v2 is written from
 # discovery traces only. The last four had v1 outputs read on 4 Nov (docs/experiment.md).
@@ -233,6 +240,19 @@ def with_d68(task_id: str, judge: dict) -> dict:
     }
 
 
+def d83(task_id: str, judge: dict) -> dict:
+    """D83: a held-out task's judge grader reads rubric v4 (D74's measured candidate), optional as
+    before; a discovery task's keeps v1, whose tuning-label agreement is on record."""
+    if task_id not in HELD_OUT:
+        return judge
+    return {
+        **judge,
+        "rubric": D83_RUBRIC,
+        "description": JUDGE_DESCRIPTION.replace("rubric advice.v1, D68", "rubric advice.v4, D74 and D83")
+        + " It failed D8 on the held-out labels (kappa -0.14), so it stays optional.",
+    }
+
+
 def split_note(task_id: str) -> str:
     if task_id not in HELD_OUT:
         return "Discovery (D53): v1's traces on this task are where prompt v2's changes may come from."
@@ -263,7 +283,7 @@ def write(task_id: str, summary: str, message: str, graders: list[dict], *, clie
         "client_sim": client_sim,
         "client_state": "client.json" if client else None,
         **({"required_tools": required_tools} if required_tools else {}),
-        "graders": rated_graders + [with_d68(task_id, judge)],
+        "graders": rated_graders + [d83(task_id, with_d68(task_id, judge))],
         "judge_criteria_to_write": notes,
     }
     if isinstance(client, dict):
