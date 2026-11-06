@@ -49,12 +49,16 @@ export function armsOf(experiment: Pick<ExperimentSummary, 'axis' | 'config_hash
   // finance v3 and finance-no-calculators v3 do not both read "Tools v3".
   const toolsetIds = new Set(experiment.config_hashes.map((h) => configs.find((c) => c.hash === h)?.toolset.id));
   const toolsetWords = (t: ConfigView['toolset']) => (toolsetIds.size > 1 ? `${t.id} ${t.version}` : t.version);
+  // Prompts likewise: D78's finance-advisor-skip-tools v1 against finance-advisor v2 must not read
+  // "Prompt v1" and "Prompt v2", which is the headline's pair.
+  const promptIds = new Set(experiment.config_hashes.map((h) => configs.find((c) => c.hash === h)?.prompt.id));
+  const promptWords = (p: ConfigView['prompt']) => (promptIds.size > 1 ? `${p.id} ${p.version}` : p.version);
   const arms = experiment.config_hashes.map((hash, i) => {
     const config = configs.find((c) => c.hash === hash);
     const byHash = { label: `Config ${shortHash(hash)}`, short: shortHash(hash) };
     let names = byHash;
     if (config && !sameTwice) {
-      const byPrompt = { label: `Prompt ${config.prompt.version}`, short: config.prompt.version };
+      const byPrompt = { label: `Prompt ${promptWords(config.prompt)}`, short: promptWords(config.prompt) };
       if (experiment.config_hashes.length === 1 || axis === 'prompt') names = byPrompt;
       else if (axis === 'harness') names = { label: harnessName(config.harness), short: harnessShort(config.harness) };
       else if (axis === 'model') names = { label: modelName(config.model), short: modelName(config.model) };

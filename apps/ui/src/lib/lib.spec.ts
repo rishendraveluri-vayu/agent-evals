@@ -331,6 +331,12 @@ describe('arms', () => {
     const full = config({ toolset: { id: 'finance', version: 'v3', sha256: 'sha256:v3' } });
     const broken = config({ hash: 'sha256:7f3a9c2bbbb', toolset: { id: 'finance-no-calculators', version: 'v3', sha256: 'sha256:nc' } });
     expect(armsOf({ axis: 'tools', config_hashes: [broken.hash, full.hash] }, [broken, full]).map((x) => x.label)).toEqual(['Tools finance-no-calculators v3', 'Tools finance v3']);
+    // D78: two prompts with different ids are named by id too, so the planted defect's v1 never reads as the headline's v1.
+    const v2 = config({ prompt: { id: 'finance-advisor', version: 'v2', sha256: 'sha256:p2' } });
+    const skip = config({ hash: 'sha256:7f3a9c2bbbb', prompt: { id: 'finance-advisor-skip-tools', version: 'v1', sha256: 'sha256:st' } });
+    const named = armsOf({ axis: 'prompt', config_hashes: [skip.hash, v2.hash] }, [skip, v2]);
+    expect(named.map((x) => x.label)).toEqual(['Prompt finance-advisor-skip-tools v1', 'Prompt finance-advisor v2']);
+    expect(named.map((x) => x.short)).toEqual(['finance-advisor-skip-tools v1', 'finance-advisor v2']);
     // One harness at two versions: both "Hermes Agent" by the axis, so the version tells them apart.
     const pinned = config({ hash: 'sha256:7f3a9c2bbbb', harness_ref: '6112c2adb9e11f69734a29be9d2696f345ffa06a' });
     expect(armsOf({ axis: 'harness', config_hashes: [a.hash, pinned.hash] }, [a, pinned]).map((x) => x.label)).toEqual(['Hermes Agent x', 'Hermes Agent 6112c2a']);
