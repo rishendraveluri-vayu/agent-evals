@@ -85,7 +85,7 @@ describe('the Run screen runs fake configs for free', () => {
     expect(pick.get('legend').text()).toBe('11 of 12 tasks in the run');
     const last = estimate.mock.calls.at(-1)?.[0];
     expect(last?.task_sha256s).toHaveLength(11);
-    expect(w.get('[data-test="plan"]').text()).toContain('11 tasks × 2 arms × 5 trials');
+    expect(w.get('[data-test="plan"]').text()).toContain('11 tasks × 2 arms × 2 trials');
   });
 
   it('creates and starts the experiment with the seed, no plan commit and the fake simulator, then opens its run page', async () => {
@@ -114,6 +114,6 @@ describe('the Run screen runs fake configs for free', () => {
     const w = mountDraft('');
     await settle();
     expect((w.get('[data-test="arm-b"]').element as HTMLSelectElement).value).toBe('');
-    expect(w.get('[data-test="plan"]').text()).toContain('12 tasks × 1 arm × 5 trials');
+    expect(w.get('[data-test="plan"]').text()).toContain('12 tasks × 1 arm × 2 trials');
   });
 });
