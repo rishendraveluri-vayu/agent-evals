@@ -76,11 +76,13 @@ describe('App header against the API', () => {
     api(() => Promise.reject(new TypeError('Failed to fetch')));
     const first = mount(App);
     await settle();
-    expect(first.get('[data-test="health-unreachable"]').text()).toContain('API unreachable (Failed to fetch)');
+    expect(first.get('[data-test="health-unreachable"]').text()).toBe('API unreachable');
+    // The browser's own words stay out of the header (they were "signal timed out"), behind its tooltip.
+    expect(first.get('[data-test="health-unreachable"]').attributes('title')).toBe('Why: Failed to fetch');
     api(() => Promise.resolve(new Response('<html>Bad Gateway</html>', { status: 502 })));
     const second = mount(App);
     await settle();
-    expect(second.get('[data-test="health-unreachable"]').text()).toContain('HTTP 502');
+    expect(second.get('[data-test="health-unreachable"]').attributes('title')).toBe('Why: HTTP 502');
   });
 });
 

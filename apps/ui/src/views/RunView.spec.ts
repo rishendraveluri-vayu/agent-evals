@@ -151,7 +151,8 @@ describe('RunView, a running experiment in fixture mode', () => {
     expect(actions.text()).toContain('Pause stops new claims; running trials finish. Stop cancels the waiting trials for good; running ones finish and are kept.');
     expect(w.get('[data-test="plan-facts"]').text()).toContain('Claim order shuffled from seed 2024, arms interleaved.');
     expect(w.get('[data-test="plan-facts"]').text()).toContain('Futility check on: pauses for review if an arm passes fewer than 1 of its first 3 graded trials');
-    expect(w.get('[data-test="actual"]').text()).toMatch(/^So far: 62 trials finished, \$[0-9.]+ a trial, \d+ s a trial, projected \$21\.80\.$/);
+    // 62 attempts ended: 60 done and 2 infra failures, named apart (review re-check, 6 Nov).
+    expect(w.get('[data-test="actual"]').text()).toMatch(/^So far: 60 trials done and 2 attempts stopped on infra, \$[0-9.]+ a trial, \d+ s a trial, projected \$21\.80\.$/);
     const before = (first: string, then: string) => !!(w.get(first).element.compareDocumentPosition(w.get(then).element) & Node.DOCUMENT_POSITION_FOLLOWING);
     expect(before('[data-test="run-grid"]', '[data-test="plan"]')).toBe(true);
     expect(before('[data-test="plan"]', '[data-test="checks-details"]')).toBe(true);
@@ -824,6 +825,23 @@ describe('RunView asks before a paid run (QA major 6)', () => {
     await settle();
     expect(create).toHaveBeenCalledTimes(1);
     expect(create.mock.calls[0][0]).toMatchObject({ n: 5, budget_usd: 30, plan_commit: '3e1a9f0' });
+  });
+});
+
+describe('RunView asks for the estimate again after a failure (review re-check, 6 Nov)', () => {
+  useFixtures();
+
+  it('offers Try again when the estimate failed, and gets it on the second try', async () => {
+    const real = api.estimate.bind(api);
+    const est = vi.spyOn(api, 'estimate').mockRejectedValueOnce(new ApiError(502, 'litellm_unavailable', 'LiteLLM is not answering')).mockImplementation(real);
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    expect(w.find('[data-test="estimate-retry"]').exists()).toBe(true);
+    await w.get('[data-test="estimate-retry"]').trigger('click');
+    await settle();
+    expect(est).toHaveBeenCalledTimes(2);
+    expect(w.find('[data-test="estimate-retry"]').exists()).toBe(false);
+    w.unmount();
   });
 });
 

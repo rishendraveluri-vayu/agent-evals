@@ -282,11 +282,12 @@ onMounted(async () => {
           v-else-if="health.kind === 'unreachable'"
           class="health health--down"
           role="alert"
+          :title="`Why: ${health.reason}`"
           data-test="health-unreachable"
         ><AppIcon
           name="alert"
           :size="16"
-        />API unreachable ({{ health.reason }})</span>
+        />API unreachable</span>
         <span
           v-else
           class="health"
@@ -437,6 +438,7 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .health--down {

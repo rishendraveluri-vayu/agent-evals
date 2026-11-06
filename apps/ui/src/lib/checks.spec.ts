@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ConfigView } from '../api/types';
 import configsJson from '../fixtures/configs.json';
-import { armDifferences, armValue, armsCheck, autoConfigName, axisChange, changeWords, changesWords, localDiff, runAutoName } from './checks';
+import { armDifferences, armValue, armsCheck, autoConfigName, axisChange, axisFromDiff, changeWords, changesWords, localDiff, runAutoName } from './checks';
 
 const configs = configsJson as unknown as ConfigView[];
 // The fixtures, oldest first: v1 on Hermes, v2 on Hermes (the prompt), the own loop (the harness),
@@ -129,5 +129,27 @@ describe('a config’s auto-name tells it from its relatives (QA round 3, M1)', 
     expect(name.length).toBeLessThanOrEqual(120);
     expect(name).toContain('max steps 40');
     expect(name).not.toContain('timeout');
+  });
+});
+
+describe('a model change that leaves a refused setting unset (review re-check, 6 Nov)', () => {
+  it('counts as one change, the model', () => {
+    const diff = [
+      { path: 'model', a: 'claude-haiku-5-5', b: 'qwen2.5-7b-local' },
+      { path: 'settings.parallel_tool_calls', a: false, b: null },
+    ];
+    expect(axisFromDiff(diff, false)).toBe('model');
+    const check = armsCheck(diff, false);
+    expect(check.ok).toBe(true);
+    expect(check.detail).toContain('a setting only one of the two models takes, left unset for the other');
+  });
+
+  it('still refuses a model change plus a setting both arms set differently', () => {
+    const diff = [
+      { path: 'model', a: 'claude-haiku-5-5', b: 'gemini-3.8-flash' },
+      { path: 'settings.max_steps', a: 10, b: 12 },
+    ];
+    expect(axisFromDiff(diff, false)).toBeNull();
+    expect(armsCheck(diff, false).ok).toBe(false);
   });
 });

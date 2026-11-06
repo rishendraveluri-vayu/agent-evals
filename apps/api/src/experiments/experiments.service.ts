@@ -915,7 +915,8 @@ export class ExperimentsService {
     for (const s of stored) {
       events.push({ at: s.at.toISOString(), kind: s.kind, trial_id: s.trial_id, attempt: s.attempt, arm: armOf(s.config_hash), config_hash: s.config_hash, detail: s.detail });
     }
-    add(r.created_at, 'created', `${r.config_hashes.length} configs x ${r.task_sha256s.length} tasks x N=${r.n}`);
+    const many = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+    add(r.created_at, 'created', `${many(r.config_hashes.length, 'config')} x ${many(r.task_sha256s.length, 'task')} x N=${r.n}`);
     add(r.started_at, 'started', 'trials can be claimed');
     // A discarded experiment (never started) has its own stored event; it was not stopped mid-run.
     if (!stored.some((s) => s.kind === 'discarded')) add(r.cancelled_at, 'cancelled', 'stopped: queued trials cancelled; claimed ones finish');

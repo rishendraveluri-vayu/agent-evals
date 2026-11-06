@@ -273,9 +273,20 @@ const estimateKey = computed(() => {
 });
 /** Each estimate request is numbered, so an answer to an older one (a slow network) is dropped. */
 let estimateSeq = 0;
+/** Bumped to ask for the estimate again after a failure (the button, or by itself 10 s later). */
+const estimateTry = ref(0);
+let estimateRetryTimer: ReturnType<typeof setTimeout> | null = null;
+function retryEstimate() {
+  if (estimateRetryTimer) clearTimeout(estimateRetryTimer);
+  estimateRetryTimer = null;
+  estimateTry.value += 1;
+}
+onBeforeUnmount(() => {
+  if (estimateRetryTimer) clearTimeout(estimateRetryTimer);
+});
 watch(
-  estimateKey,
-  async (key) => {
+  () => [estimateKey.value, estimateTry.value] as const,
+  async ([key]) => {
     const mine = ++estimateSeq;
     draftEstimate.value = null;
     estimateError.value = null;
@@ -288,6 +299,9 @@ watch(
     } catch (err) {
       if (mine !== estimateSeq) return;
       estimateError.value = plainRunError(err);
+      // A platform part that was down (LiteLLM, the API) may be back soon: ask again once by itself.
+      if (estimateRetryTimer) clearTimeout(estimateRetryTimer);
+      estimateRetryTimer = setTimeout(retryEstimate, 10_000);
     }
   },
   { immediate: true },
@@ -883,7 +897,12 @@ const actualNote = computed(() => {
   if (!a) return '';
   const per = a.cost_per_trial_usd !== null ? `${money(a.cost_per_trial_usd)} a trial` : '';
   const wall = a.wall_s_per_trial !== null ? `${Math.round(a.wall_s_per_trial)} s a trial` : '';
-  return [`${plural(a.finished_trials, 'trial')} finished`, per, wall, `projected ${money(a.projected_spend_usd)}`].filter(Boolean).join(', ');
+  // finished_trials counts every attempt that ended, an infra failure's too; name those apart, so
+  // "9 finished" does not sit under "8 of 8 done" (review re-check, 6 Nov).
+  const done = data.value?.experiment?.counts.done ?? a.finished_trials;
+  const stopped = Math.max(0, a.finished_trials - done);
+  const ended = stopped ? `${plural(done, 'trial')} done and ${plural(stopped, 'attempt')} stopped on infra` : `${plural(a.finished_trials, 'trial')} finished`;
+  return [ended, per, wall, `projected ${money(a.projected_spend_usd)}`].filter(Boolean).join(', ');
 });
 
 const spend = computed(() => {
@@ -1194,6 +1213,15 @@ onBeforeUnmount(() => taskObserver?.disconnect());
             class="stat-note"
             data-test="cost-note"
           >{{ costNote }}</span>
+          <button
+            v-if="draft && estimateError && !estimate"
+            type="button"
+            class="btn btn--quiet estimate-retry"
+            data-test="estimate-retry"
+            @click="retryEstimate"
+          >
+            Try again
+          </button>
         </div>
         <div>
           <span class="stat-label">Estimated time</span>
@@ -2580,6 +2608,12 @@ onBeforeUnmount(() => taskObserver?.disconnect());
 
 .prompt-checks {
   margin-bottom: 24px;
+}
+
+.estimate-retry {
+  margin-top: 6px;
+  padding: 4px 10px;
+  font-size: 13px;
 }
 
 .prompt-checks > p {

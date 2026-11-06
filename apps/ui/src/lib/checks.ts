@@ -59,6 +59,7 @@ export function axisFromDiff(diff: ConfigDiffEntry[], sameConfig: boolean): stri
   if (sameConfig) return 'none';
   const content = contentDiff(diff);
   const harnessChanges = content.some((d) => d.path === 'harness');
+  const modelChanges = content.some((d) => d.path === 'model');
   const areas = new Set(
     content.map((d) => {
       const [head, sub] = d.path.split('.');
@@ -66,6 +67,9 @@ export function axisFromDiff(diff: ConfigDiffEntry[], sameConfig: boolean): stri
       if (head === 'harness' || head === 'harness_ref' || head === 'adapter_version' || head === 'capabilities_sha256') return 'harness';
       // A setting only one of the two harnesses supports is part of changing the harness.
       if (harnessChanges && (head === 'harness_options' || (head === 'settings' && (d.a === null || d.a === undefined || d.b === null || d.b === undefined)))) return 'harness';
+      // Likewise a setting only one of the two models takes (one refuses it, so it is left unset):
+      // Claude Haiku 5.5 against the local Qwen, which refuses parallel_tool_calls (review re-check, 6 Nov).
+      if (!harnessChanges && modelChanges && head === 'settings' && (d.a === null || d.a === undefined || d.b === null || d.b === undefined)) return 'model';
       if (head === 'settings' && sub) return sub;
       if (head === 'toolset') return 'tools';
       if (head === 'harness_options') return 'harness options';
@@ -94,7 +98,12 @@ export function armsCheck(fullDiff: ConfigDiffEntry[], sameConfig: boolean, conf
   const axis = axisFromDiff(diff, false);
   if (axis) {
     const one = configs ? axisChange(configs[0], configs[1]) : null;
-    const harnessToo = axis === 'harness' && diff.some((d) => d.path !== 'harness') ? ', with any setting only one of the two takes, which comes with the harness' : '';
+    const harnessToo =
+      axis === 'harness' && diff.some((d) => d.path !== 'harness')
+        ? ', with any setting only one of the two takes, which comes with the harness'
+        : axis === 'model' && diff.some((d) => d.path !== 'model')
+          ? ', with a setting only one of the two models takes, left unset for the other, which comes with the model'
+          : '';
     const what = one ? changeWords(one) : capitalise(diffWords(diff));
     return {
       ok: true,

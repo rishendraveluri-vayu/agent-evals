@@ -671,7 +671,7 @@ const taskSummary = computed(() => {
   if (!d || !stats.value) return '';
   const total = taskRows.value.length;
   const n = differing.value;
-  const first = `${n} ${n === 1 ? 'task differs' : 'tasks differ'} ${correctionWords.value ? `after ${correctionWords.value} for ${total} comparisons` : 'before any correction for many comparisons'}.`;
+  const first = `${n} ${n === 1 ? 'task differs' : 'tasks differ'} ${correctionWords.value ? `after ${correctionWords.value} for ${plural(total, 'comparison')}` : 'before any correction for many comparisons'}.`;
   const other = total - n;
   if (!other) return first;
   let line = `${first} The other ${other} ${other === 1 ? 'is' : 'are'} within noise.`;
@@ -725,7 +725,7 @@ const judgeDecided = computed(() => {
 /** On a phone the column heads are hidden, so the shared axis says what its intervals are. */
 const axisCaption = computed(() => {
   const level = stats.value ? Math.round(stats.value.level * 100) : 95;
-  const verdicts = correctionWords.value ? `verdicts after ${correctionWords.value} for ${taskRows.value.length} tasks.` : 'verdicts not corrected either.';
+  const verdicts = correctionWords.value ? `verdicts after ${correctionWords.value} for ${plural(taskRows.value.length, 'task')}.` : 'verdicts not corrected either.';
   return `B minus A, in points. ${level}% intervals, not corrected; ${verdicts}`;
 });
 
