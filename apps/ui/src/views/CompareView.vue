@@ -486,6 +486,12 @@ function median(values: number[]): number | null {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 const mean = (values: number[]) => (values.length ? values.reduce((x, y) => x + y, 0) / values.length : null);
+/** A token difference in the arms' own format: "+23.6k" beside "79.3k", "−420" below a thousand. */
+function signedThousands(v: number): string {
+  const shown = thousands(Math.abs(v));
+  if (shown === '0') return '0';
+  return v > 0 ? `+${shown}` : `−${shown}`;
+}
 
 const metrics = computed<Metric[]>(() => {
   const d = data.value;
@@ -512,7 +518,7 @@ const metrics = computed<Metric[]>(() => {
         const note = left ? `; ${plural(left, 'trial')} left out: a model call was retried, and its wait would skew the time` : '';
         out.push({ name: 'Time per trial', delta: `${signed(c.diff.estimate, 1)} s`, interval: `${rel(c.relative, `interval ${signed(c.diff.low, 1)} to ${signed(c.diff.high, 1)} s`)}${note}`, a: c.a, b: c.b, aText: seconds(c.a), bText: seconds(c.b), max: Math.max(c.a, c.b) });
       }
-      if (c.metric === 'tokens') out.push({ name: 'Tokens per trial', delta: signed(c.diff.estimate), interval: rel(c.relative, `interval ${signed(c.diff.low)} to ${signed(c.diff.high)}`), a: c.a, b: c.b, aText: thousands(c.a), bText: thousands(c.b), max: Math.max(c.a, c.b) });
+      if (c.metric === 'tokens') out.push({ name: 'Tokens per trial', delta: signedThousands(c.diff.estimate), interval: rel(c.relative, `interval ${signedThousands(c.diff.low)} to ${signedThousands(c.diff.high)}`), a: c.a, b: c.b, aText: thousands(c.a), bText: thousands(c.b), max: Math.max(c.a, c.b) });
     }
     return out;
   }
@@ -524,7 +530,7 @@ const metrics = computed<Metric[]>(() => {
   const pairs: [string, (x: TrialRowSummary) => number | null | undefined, 'mean' | 'median', (v: number) => string, (v: number) => string][] = [
     ['Cost per trial', (x) => x.cost_usd, 'mean', money, signedMoney],
     ['Time per trial, median', (x) => x.wall_s, 'median', (v) => seconds(v), (v) => `${signed(v, 1)} s`],
-    ['Tokens per trial', (x) => (x.input_tokens ?? 0) + (x.output_tokens ?? 0) || null, 'mean', thousands, (v) => signed(v)],
+    ['Tokens per trial', (x) => (x.input_tokens ?? 0) + (x.output_tokens ?? 0) || null, 'mean', thousands, signedThousands],
   ];
   for (const [name, pick, how, fmt, fmtDelta] of pairs) {
     const va = ta.map(pick).filter((v): v is number => typeof v === 'number');

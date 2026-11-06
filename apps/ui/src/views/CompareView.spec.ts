@@ -910,6 +910,18 @@ describe('CompareView against the API: the check on the method', () => {
     expect(w2.get('[data-test="regression"]').get('.regression-tag--critical').text()).toBe('critical check got worse');
   });
 
+  it('writes the token difference in thousands, as each arm’s tokens are (U14)', async () => {
+    const tokens = { ...base.stats!.costs.find((c) => c.metric === 'tokens')!, a: 55700, b: 79300, diff: { estimate: 23572, low: -1250, high: 48100 }, relative: null };
+    withStats({ costs: [tokens] });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const tile = w.findAll('.metrics > div').find((t) => t.text().startsWith('Tokens per trial'))!;
+    expect(tile.get('.metric-delta').text()).toBe('+23.6k');
+    expect(tile.text()).toContain('interval −1.3k to +48.1k');
+    expect(tile.text()).toContain('B 79.3k');
+    expect(tile.text()).not.toContain('23572');
+  });
+
   it('tags a task in "Where B dropped" beyond noise only when B dropped there, never where a check fell but B rose (S9)', async () => {
     const [drop, other] = base.stats!.regressions;
     const fell = { ...drop, beyond_noise: true, diff: { estimate: -60, low: -100, high: -20 } };
