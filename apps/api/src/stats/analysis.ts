@@ -159,16 +159,21 @@ function whyExcluded(a: StatsArmCounts, b: StatsArmCounts): string {
  * D42 and D43, in the order the proposal gives: better or worse first, then equivalence. `diff` is
  * the unrounded interval in points: a high of 10.004 is outside the +/-10 margin although it shows
  * as 10.00. EPS_POINTS only absorbs floating-point noise (a sum that is exactly 10 on paper).
+ * `differing`: the tasks whose arms passed at different rates (all of them when not given).
  */
-export function passRateVerdict(diff: StatsInterval, p: number, tasks: number, alpha = ALPHA, margin = MARGIN_POINTS): PassRateVerdict {
+export function passRateVerdict(diff: StatsInterval, p: number, tasks: number, differing = tasks, alpha = ALPHA, margin = MARGIN_POINTS): PassRateVerdict {
   if (tasks < MIN_TASKS_FOR_VERDICT) return 'no_detectable_difference';
   if (diff.low > EPS_POINTS && p < alpha) return 'better';
   if (diff.high < -EPS_POINTS && p < alpha) return 'worse';
   // D55: a zero-width interval (every task gave the same difference) shows no spread, not a small
-  // one, so it cannot support "practically equivalent".
-  if (diff.high - diff.low > EPS_POINTS && diff.low >= -margin - EPS_POINTS && diff.high <= margin + EPS_POINTS) return 'equivalent';
+  // one, so it cannot support "practically equivalent". S7: nor can an interval whose width comes
+  // from fewer than MIN_TASKS_FOR_VERDICT tasks that differ, the rest tied at a ceiling or floor:
+  // one trial more or less on one of them moves it into or out of the margin.
+  if (differing >= MIN_TASKS_FOR_VERDICT && diff.high - diff.low > EPS_POINTS && insideMargin(diff, margin)) return 'equivalent';
   return 'no_detectable_difference';
 }
+
+const insideMargin = (diff: StatsInterval, margin = MARGIN_POINTS): boolean => diff.low >= -margin - EPS_POINTS && diff.high <= margin + EPS_POINTS;
 
 const SEVERITY_RANK: Record<string, number> = { critical: 0, major: 1, minor: 2 };
 const severityRank = (s: GraderSeverity | null): number => (s === null ? 3 : SEVERITY_RANK[s]);
@@ -362,7 +367,7 @@ function costsOf(input: AnalysisInput, opts: Required<Pick<AnalysisOptions, 'res
  * `differing` counts the tasks whose arms passed at different rates: only they move the sign-flip
  * test, so over fewer than MIN_TASKS_FOR_VERDICT of them it cannot reach p < 0.05 whatever k is.
  */
-function verdictText(v: PassRateVerdict | 'held_back', diff: StatsInterval, p: number, k: number, differing: number, notRuledOut: number | null): string {
+function verdictText(v: PassRateVerdict | 'held_back', diff: StatsInterval, p: number, k: number, differing: number, notRuledOut: number | null, marginOnly: boolean): string {
   const numbers = `${pts(diff.estimate)} points (95% interval ${pts(diff.low)} to ${pts(diff.high)}), ${pValueText(p)} by the paired sign-flip test over ${k} ${k === 1 ? 'task' : 'tasks'}`;
   if (v === 'held_back') return `Not called better: the pass rate alone says B is better (${numbers}), but its critical failures rose beyond noise.`;
   if (v === 'better') return `B passes more than A: ${numbers}.`;
@@ -374,10 +379,14 @@ function verdictText(v: PassRateVerdict | 'held_back', diff: StatsInterval, p: n
       : differing > 0 && differing < MIN_TASKS_FOR_VERDICT
         ? ` Only ${differing} of the ${k} tasks passed at different rates in the two arms, and only those count in the paired test: over ${differing} its smallest possible p is ${2 / 2 ** differing}, so it could not reach p < 0.05 however large the difference.`
         : '';
+  // S7: inside the margin, but its width rests on too few tasks for "practically equivalent".
+  const margin = marginOnly
+    ? ` Its interval lies inside the +/-${MARGIN_POINTS}-point margin, but "practically equivalent" also needs at least ${MIN_TASKS_FOR_VERDICT} tasks that passed at different rates: with fewer, one trial can move the interval into or out of the margin.`
+    : '';
   // Every task gave the same difference: the task bootstrap has no spread to show, so it cannot say
   // how large a difference could be hiding (docs/known-limits.md, "Statistics").
   const hiding = notRuledOut === null ? ' Every task gave the same difference, so the interval has no width and cannot say how large a difference could be hiding.' : ` Differences as large as ${notRuledOut} points are not ruled out.`;
-  return `No detectable difference: ${numbers}.${hiding}${few}`;
+  return `No detectable difference: ${numbers}.${hiding}${few}${margin}`;
 }
 
 /**
@@ -409,7 +418,8 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
   const rawDiff = scaled(meanDiff, percentileInterval(draws.diff, LEVEL), 100);
   const diff = rounded(rawDiff, 2);
   const test = signFlipTest(diffs, seededStream(`${input.seed}:sign_flip`), { exactMaxTasks: options.exactMaxTasks, flips: options.flips });
-  const prVerdict = passRateVerdict(rawDiff, test.p, k);
+  const differing = countDiffering(diffs);
+  const prVerdict = passRateVerdict(rawDiff, test.p, k, differing);
 
   // Per task: Newcombe's interval and Fisher's exact test; Benjamini-Hochberg flags (D41).
   const fisher = eligible.map((e) => fisherExact(e.b.passed, e.b.graded - e.b.passed, e.a.passed, e.a.graded - e.a.passed));
@@ -436,7 +446,8 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
   const verdict = blocks ? 'held_back' : prVerdict;
 
   const notRuledOut = prVerdict === 'no_detectable_difference' && diff.high > diff.low ? round(Math.max(Math.abs(diff.low), Math.abs(diff.high)), 1) : null;
-  const text = verdictText(verdict, diff, test.p, k, diffs.filter((d) => d !== 0).length, notRuledOut);
+  const marginOnly = prVerdict === 'no_detectable_difference' && k >= MIN_TASKS_FOR_VERDICT && differing > 0 && differing < MIN_TASKS_FOR_VERDICT && rawDiff.high - rawDiff.low > EPS_POINTS && insideMargin(rawDiff);
+  const text = verdictText(verdict, diff, test.p, k, differing, notRuledOut, marginOnly);
 
   const pooled = (arm: 'a' | 'b') =>
     eligible.reduce((acc, e) => ({ passed: acc.passed + e[arm].passed, graded: acc.graded + e[arm].graded, incomplete: acc.incomplete + e[arm].incomplete }), { passed: 0, graded: 0, incomplete: 0 });

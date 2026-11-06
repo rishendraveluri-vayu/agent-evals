@@ -852,7 +852,8 @@ export interface StatsInterval {
 /**
  * The verdict on B against A (D42, D10). `better`: interval above 0 and p < 0.05. `worse`:
  * interval below 0 and p < 0.05. `equivalent`: the whole interval inside +/- the margin (10
- * points). `no_detectable_difference`: anything else. `held_back`: the pass rate alone says
+ * points), with some width (D55) and at least 6 tasks that passed at different rates (S7).
+ * `no_detectable_difference`: anything else. `held_back`: the pass rate alone says
  * better, but critical failures rose beyond noise, so B is not called better (the guardrail).
  */
 export type CompareVerdict = 'better' | 'worse' | 'equivalent' | 'no_detectable_difference' | 'held_back';

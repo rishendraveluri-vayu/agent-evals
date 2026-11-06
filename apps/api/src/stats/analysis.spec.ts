@@ -58,6 +58,31 @@ describe('the verdict rule (D42, D43)', () => {
     expect(s?.verdict_text).toContain('Every task gave the same difference');
   });
 
+  it('needs at least 6 tasks that differ for "practically equivalent" (S7)', () => {
+    expect(passRateVerdict({ estimate: 1, low: -2, high: 3 }, 0.9, 20, 5)).toBe('no_detectable_difference');
+    expect(passRateVerdict({ estimate: 1, low: -2, high: 3 }, 0.9, 20, 6)).toBe('equivalent');
+    // The knife-edge the review found: six tasks tied at 10 of 10 give no verdict (D55); one trial
+    // fewer in one arm used to make it "practically equivalent".
+    const tied = Array.from({ length: 6 }, (_, i) => task(`t${i}`, 10, 10, 10, 10));
+    const bumped = analyse({ seed: 'e_knife', tasks: [...tied.slice(0, 5), task('t5', 9, 10, 10, 10)] }, fast).stats!;
+    expect(bumped.diff.high - bumped.diff.low).toBeGreaterThan(0);
+    expect(bumped.diff.low).toBeGreaterThanOrEqual(-10);
+    expect(bumped.diff.high).toBeLessThanOrEqual(10);
+    expect(bumped.verdict).toBe('no_detectable_difference');
+    expect(bumped.verdict_text).toContain(
+      'Only 1 of the 6 tasks passed at different rates in the two arms, and only those count in the paired test: over 1 its smallest possible p is 1, so it could not reach p < 0.05 however large the difference. Its interval lies inside the +/-10-point margin, but "practically equivalent" also needs at least 6 tasks that passed at different rates: with fewer, one trial can move the interval into or out of the margin.',
+    );
+    // Five tasks a little better, five tied at the ceiling: the interval is inside the margin and above 0.
+    const five = analyse({ seed: 'e_five_up', tasks: [...Array.from({ length: 5 }, (_, i) => task(`d${i}`, 8, 10, 9, 10)), ...Array.from({ length: 5 }, (_, i) => task(`c${i}`, 10, 10, 10, 10))] }, fast).stats!;
+    expect(five.diff.low).toBeGreaterThan(0);
+    expect(five.verdict).toBe('no_detectable_difference');
+    expect(five.verdict_text).toContain('"practically equivalent" also needs at least 6 tasks');
+    // Six that differ, both ways, inside the margin: equivalent, and no such sentence.
+    const six = analyse({ seed: 'e_six_eq', tasks: [...[9, 9, 9, 10, 10, 10].map((b, i) => task(`s${i}`, b === 9 ? 10 : 9, 10, b, 10)), ...Array.from({ length: 30 }, (_, i) => task(`c${i}`, 5, 10, 5, 10))] }, fast).stats!;
+    expect(six.verdict).toBe('equivalent');
+    expect(six.verdict_text).not.toContain('also needs');
+  });
+
   it('says when too few tasks differ for the paired test to reach p < 0.05, though there are enough tasks', () => {
     // The 5 Nov headline's shape: 10 tasks, 5 tied (at the ceiling or the floor), 5 better in B.
     const tasks = [
