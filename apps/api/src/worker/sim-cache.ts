@@ -1,4 +1,5 @@
 import { normalizeSha } from '../common/hashing';
+import { withoutNul } from './report';
 
 /**
  * The simulated client's reply cache (D22). Replies are keyed by evals_adapter.sim.cache_key,
@@ -80,9 +81,14 @@ export function parseSimReplies(text: string, model: string): { rows: SimReplyRo
       problems.push(`${SIM_REPLIES_FILE} line ${i + 1} has an empty reply; not cached`);
       return;
     }
+    if (row.reply.includes('\u0000')) {
+      // E7: Postgres cannot store it, and a changed reply would not replay what this trial saw.
+      problems.push(`${SIM_REPLIES_FILE} line ${i + 1} has a NUL character in its reply; not cached`);
+      return;
+    }
     if (seen.has(row.key)) return;
     seen.add(row.key);
-    rows.push({ key: row.key, reply: row.reply, usage: row.usage ?? null });
+    rows.push({ key: row.key, reply: row.reply, usage: withoutNul(row.usage ?? null).value ?? null });
   });
   return { rows, problems };
 }

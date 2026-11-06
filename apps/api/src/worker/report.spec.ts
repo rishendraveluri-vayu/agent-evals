@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { ApiError } from '../common/api-error';
 import type { JsonObject } from '../contract';
-import { configErrorFix, configErrorReason, parseReport, reportedSha, spanRows, spendLogUsage, usageOf } from './report';
+import { configErrorFix, configErrorReason, parseReport, reportedSha, spanRows, spendLogUsage, usageOf, withoutNul } from './report';
 
 const EXAMPLES = path.resolve(__dirname, '../../../../contract/v2/examples');
 const exampleSpans = readFileSync(path.join(EXAMPLES, 'trace.jsonl'), 'utf8')
@@ -138,5 +138,24 @@ describe("an abandoned attempt's spend from LiteLLM's spend log (G3)", () => {
 
   it('skips rows that are not objects and fields that are not numbers', () => {
     expect(spendLogUsage(['x', null, { spend: 'n/a', prompt_tokens: 'many' }, { spend: 0.5, prompt_tokens: 7 }], null)).toMatchObject({ cost_usd: 0.5, input_tokens: 7, model_calls: 2 });
+  });
+});
+
+describe('withoutNul (E7)', () => {
+  it('replaces every NUL in strings and keys with U+FFFD, deep, and counts them', () => {
+    const sent = { a: 'x\u0000y\u0000', list: ['ok', { 'k\u0000': 'v' }], n: 3, t: true, z: null };
+    const { value, replaced } = withoutNul(sent);
+    expect(replaced).toBe(3);
+    expect(value).toEqual({ a: 'x\uFFFDy\uFFFD', list: ['ok', { 'k\uFFFD': 'v' }], n: 3, t: true, z: null });
+    expect(JSON.stringify(value)).not.toContain('\\u0000');
+    expect(sent.a).toBe('x\u0000y\u0000'); // a copy: the input is not changed
+  });
+
+  it('leaves a body without NUL equal, and keeps a "__proto__" key a plain key', () => {
+    const body = JSON.parse('{"__proto__": {"polluted": true}, "b": [1, "two"]}') as Record<string, unknown>;
+    const { value, replaced } = withoutNul(body);
+    expect(replaced).toBe(0);
+    expect(Object.keys(value as object)).toEqual(['__proto__', 'b']);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 });

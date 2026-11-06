@@ -14,7 +14,7 @@ import { type ExperimentRow, finishIfDone, isSimTask } from '../experiments/expe
 import { LiteLlmClient, LiteLlmHttpError, type MintedKey } from '../litellm/litellm.client';
 import { FINISHED, HELD, LEASE_S, PAUSES_ARM, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
 import { MAX_FILE_BYTES, checkFiles, locate, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
-import { configErrorFix, configErrorReason, parseReport, spanRows, spendLogUsage, usageOf } from './report';
+import { configErrorFix, configErrorReason, parseReport, spanRows, spendLogUsage, usageOf, withoutNul } from './report';
 import { applyRunRules } from '../experiments/rules';
 import { TRIAL_IN_ARM, lockExperiment, pauseArm } from '../experiments/run-state';
 import { SIM_REPLIES_FILE, type SimReplyRow, type SimScope, parseSimReplies, simScope } from './sim-cache';
@@ -359,7 +359,9 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
   // ---- report ----
 
   async report(id: string, raw: unknown): Promise<ReportResponse> {
-    const body = parseReport(raw);
+    // E7: no NUL reaches Postgres (it cannot store one); the trial says how many were replaced.
+    const sent = withoutNul(raw);
+    const body = parseReport(sent.value);
     const [trial] = await this.db.query<TrialRow>('SELECT * FROM trials WHERE id = $1', [id]);
     if (!trial) throw notFound('unknown_trial', `no trial ${id}`);
     if (body.attempt !== trial.attempt) {
@@ -375,6 +377,9 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     const folder = folderOf(trial);
     const files = await checkFiles(this.config.runsDir, folder, body.files);
     const { rows: spans, problems } = spanRows(body.spans);
+    if (sent.replaced) {
+      problems.push(`the report had ${sent.replaced} NUL character${sent.replaced === 1 ? '' : 's'}, stored as U+FFFD (the database cannot hold NUL); the uploaded files keep them`);
+    }
     const bad = files.filter((f) => !f.ok);
     if (bad.length) problems.push(`${bad.length} of ${files.length} files not uploaded or different from what the API stored under ${folder}`);
     const sim = await this.simReplies(trial, folder, files, problems);
@@ -411,7 +416,8 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
           usage.proxy_complete,
           usage.wall_s,
           JSON.stringify(files),
-          JSON.stringify(problems),
+          // A file's own text quoted in a problem (sim_replies.jsonl) can carry a NUL too.
+          JSON.stringify(withoutNul(problems).value),
           folder,
         ],
       );

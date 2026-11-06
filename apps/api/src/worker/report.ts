@@ -20,6 +20,31 @@ export function reportedSha(raw: string): string {
   return normalizeSha(raw) ?? raw.trim().toLowerCase();
 }
 
+/**
+ * E7 (6 Nov review): Postgres text and jsonb cannot hold U+0000, so a report carrying one failed
+ * with a 500 on every retry and the finished trial was lost. Every NUL in a string or an object key
+ * becomes U+FFFD (the replacement character) before anything is stored, and `replaced` says how
+ * many, for the trial's problems. The uploaded files keep the bytes as the worker sent them.
+ */
+export function withoutNul(value: unknown): { value: unknown; replaced: number } {
+  let replaced = 0;
+  const clean = (v: unknown): unknown => {
+    if (typeof v === 'string') {
+      if (!v.includes('\u0000')) return v;
+      const parts = v.split('\u0000');
+      replaced += parts.length - 1;
+      return parts.join('\uFFFD');
+    }
+    if (Array.isArray(v)) return v.map(clean);
+    if (!isObj(v)) return v;
+    const out: Obj = {};
+    // defineProperty, so a key such as "__proto__" stays a plain key of the copy.
+    for (const [k, x] of Object.entries(v)) Object.defineProperty(out, clean(k) as string, { value: clean(x), enumerable: true, writable: true, configurable: true });
+    return out;
+  };
+  return { value: clean(value), replaced };
+}
+
 /** The body's shape. A bad span or file is not a reason to refuse a whole trial's report. */
 export function parseReport(body: unknown): ReportRequest {
   if (!isObj(body)) throw badRequest('invalid_report', 'the body must be a JSON object');
