@@ -7,6 +7,7 @@ import CompareView from '../views/CompareView.vue';
 import ExperimentsView from '../views/ExperimentsView.vue';
 import AppHeader from './AppHeader.vue';
 import IntervalStrip from './IntervalStrip.vue';
+import LoadState from './LoadState.vue';
 import SpanTimeline from './SpanTimeline.vue';
 import VerdictTag from './VerdictTag.vue';
 import type { SpanView } from '../trials';
@@ -281,5 +282,23 @@ describe('AppHeader on a phone', () => {
     // The theme button keeps its name when it shows only its icon.
     expect(w.get('[data-test="theme-toggle"]').attributes('aria-label')).toBe('Dark theme');
     expect(w.get('[data-test="theme-toggle"]').attributes('title')).toBe('Dark theme');
+  });
+});
+
+describe('LoadState (destructive review U8)', () => {
+  it('offers to try again after a failed load, with the screen’s own reload', async () => {
+    const retry = vi.fn(() => Promise.resolve());
+    const w = mount(LoadState, { props: { loading: false, error: 'The API is not answering (HTTP 502): check that the stack is running (docker compose ps), then try again', what: 'the experiments', retry } });
+    expect(w.get('[role="alert"]').text()).toBe('Could not load the experiments: The API is not answering (HTTP 502): check that the stack is running (docker compose ps), then try again');
+    await w.get('[data-test="load-retry"]').trigger('click');
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows no retry while loading or once loaded', () => {
+    const loading = mount(LoadState, { props: { loading: true, error: null, what: 'the experiments' } });
+    expect(loading.find('[data-test="load-retry"]').exists()).toBe(false);
+    const done = mount(LoadState, { props: { loading: false, error: null, what: 'x' }, slots: { default: '<p data-test="body">ok</p>' } });
+    expect(done.find('[data-test="load-retry"]').exists()).toBe(false);
+    expect(done.find('[data-test="body"]').exists()).toBe(true);
   });
 });

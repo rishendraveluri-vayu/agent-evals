@@ -106,4 +106,35 @@ describe('#/example: the finished example', () => {
     expect(box.text()).toContain('docker compose down -v');
     expect(currentHash.value).toBe('');
   });
+
+  it('never pulls a reader back to the comparison after they went elsewhere while it loaded (destructive review U3)', async () => {
+    vi.spyOn(api, 'examples').mockResolvedValue([shipped]);
+    let finish: (v: { name: string; experiment_id: string; created: boolean }) => void = () => {};
+    vi.spyOn(api, 'loadExample').mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    window.location.hash = '#/example';
+    currentHash.value = '#/example';
+    const w = mount(OpenExampleView);
+    await settle();
+    // The reader opens the guided builder while the copy is on its way: App.vue swaps the page.
+    window.location.hash = '#/build';
+    currentHash.value = '#/build';
+    w.unmount();
+    finish({ name: shipped.name, experiment_id: shipped.experiment_id, created: true });
+    await settle();
+    expect(currentHash.value).toBe('#/build');
+    expect(window.location.hash).toBe('#/build');
+  });
+
+  it('stays put when the address changed under it, even before the page is swapped', async () => {
+    vi.spyOn(api, 'examples').mockResolvedValue([shipped]);
+    let finish: (v: { name: string; experiment_id: string; created: boolean }) => void = () => {};
+    vi.spyOn(api, 'loadExample').mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const w = mount(OpenExampleView);
+    await settle();
+    currentHash.value = '#/configs';
+    finish({ name: shipped.name, experiment_id: shipped.experiment_id, created: true });
+    await settle();
+    expect(currentHash.value).toBe('#/configs');
+    w.unmount();
+  });
 });

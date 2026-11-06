@@ -212,20 +212,31 @@ function armOfTrial(t: TrialRowSummary): ArmKey {
   return armLetter(armIndexOf(t, d.detail)).toLowerCase();
 }
 
-/** The attempt that re-ran an infra-stopped trial: same task, config and repeat, one attempt on. */
+/** The attempt that re-ran an infra-stopped trial: same task, config and repeat, one attempt on.
+ *  An attempt abandoned for want of heartbeats is re-run too, so the next attempt is looked for
+ *  first, whatever stopped this one. With none, the run is either still going (it may come) or
+ *  over (the re-run cap was reached, or the run was stopped). */
 function rerunWords(t: TrialRowSummary): string {
-  if (t.status === 'abandoned') return 'gave up, not re-run';
   const next = data.value?.trials.find((x) => x.task_sha256 === t.task_sha256 && x.config_hash === t.config_hash && x.repeat_index === t.repeat_index && x.attempt === t.attempt + 1);
-  if (!next || next.status === 'queued' || next.status === 'claimed' || next.status === 'running') return 'not re-run yet';
+  if (!next) {
+    const status = data.value?.detail.status;
+    return status === 'running' || status === 'paused' || status === 'created' ? 'not re-run yet' : 'not re-run';
+  }
+  if (next.status === 'queued' || next.status === 'claimed' || next.status === 'running') return 'not re-run yet';
   if (next.status === 'infra_failed' || next.status === 'abandoned') return 're-run also an infra failure';
+  if (next.status === 'cancelled') return 're-run cancelled';
   if (next.passed === true) return 're-run passed';
   if (next.passed === false) return 're-run failed';
   return 're-run not graded yet';
 }
 
+/** Why an attempt stopped on infra: its runner label, or, for an attempt that was abandoned (it
+ *  has no label), that its worker went quiet. */
+const infraCause = (t: Pick<TrialRowSummary, 'status' | 'label'>) => infraReason(t.label) || (t.status === 'abandoned' ? 'its worker stopped sending heartbeats' : '');
+
 const infraRows = computed(() =>
   infraTrials.value.map((t) => {
-    const reason = infraReason(t.label);
+    const reason = infraCause(t);
     return { trial: t, arm: armOfTrial(t), task: taskName(t.task_sha256), cause: `infra failure${reason ? `: ${reason}` : ''}`, rerun: rerunWords(t) };
   }),
 );
@@ -293,7 +304,7 @@ const hero = computed(() => {
   const [a, b] = arms.value;
   const name = a && b && a.short !== b.short ? `${b.short} minus ${a.short}` : 'B minus A';
   // Arm colour only when the result holds up; a result with no clear difference is grey.
-  const rows: StripRow[] = [{ estimate: s.diff.estimate, low: s.diff.low, high: s.diff.high, tone: verdictTone(s.verdict), label: `${name}, ${s.tasks.length} tasks` }];
+  const rows: StripRow[] = [{ estimate: s.diff.estimate, low: s.diff.low, high: s.diff.high, tone: verdictTone(s.verdict), label: `${name}, ${plural(s.tasks.length, 'task')}` }];
   const aa: StripRow[] = s.aa ? [{ estimate: s.aa.diff.estimate, low: s.aa.diff.low, high: s.aa.diff.high, tone: 'neutral', size: 'sm', label: 'A/A calibration, same config twice' }] : [];
   return {
     level,
@@ -365,9 +376,13 @@ const why = computed(() => {
   // D55: an interval with no width (0 to 0 included) neither crosses zero nor stays clear of it in
   // any useful sense: every task gave the same difference, so there is no spread to show.
   const alpha = Number((1 - s.level).toFixed(2));
+  // Practical equivalence rests on the margin, not on zero: an interval inside it may still stay
+  // clear of zero, but the difference it shows is too small to matter.
   const interval = noWidth(s.diff)
     ? `Every task gave the same difference, ${points(s.diff.estimate)}, so no spread can be shown: an interval with no width is not a narrow one.`
-    : excludesZero(s.diff)
+    : s.verdict === 'equivalent'
+      ? `The whole interval, ${signed(s.diff.low)} to ${signed(s.diff.high)}${NBSP}points, lies inside the ±${s.margin_points}-point margin set before the run${excludesZero(s.diff) ? `. It stays ${side} zero, but a difference that small is not one that matters.` : '.'}`
+      : excludesZero(s.diff)
       ? notCalled(s)
         ? `The interval stays ${side} zero, but the verdict rests on the paired sign-flip test, and it gives p${NBSP}=${NBSP}${s.p_value}, not below ${alpha}.`
         : `The interval stays ${side} zero.`
@@ -395,10 +410,12 @@ function notCalled(s: NonNullable<typeof stats.value>): boolean {
 
 /** The aside's heading. An interval clear of zero is unlikely to be noise; one with no width shows
  *  no spread either way, so there only the paired test's verdict can say (D55). When the interval
- *  is clear but the test is not, the heading says why it is not called better (or worse). */
+ *  is clear but the test is not, the heading says why it is not called better (or worse). A
+ *  practically equivalent result is headed by that, whatever side of zero its interval lies on. */
 const whyTitle = computed(() => {
   const s = stats.value;
   if (!s) return '';
+  if (s.verdict === 'equivalent') return 'Why this counts as practically equivalent';
   if (notCalled(s)) return s.diff.low > 0 ? 'Why this is not called better' : 'Why this is not called worse';
   const clear = noWidth(s.diff) ? s.pass_rate_verdict === 'better' || s.pass_rate_verdict === 'worse' : excludesZero(s.diff);
   return clear ? 'Why this is unlikely to be noise' : 'Why this could be noise';
@@ -434,7 +451,9 @@ const regressions = computed(() => {
       key: r.task,
       name: r.task_id,
       critical: r.critical,
-      beyond: r.beyond_noise,
+      // The list also holds tasks where only a check got worse: B may have passed more there, and
+      // such a task holding up beyond noise is a rise, so the tag shows only on a drop.
+      beyond: r.beyond_noise && !!r.diff && r.diff.estimate < 0,
       counts: `A ${passedText({ ...r.a, trials: r.a.graded + r.a.incomplete })}, B ${passedText({ ...r.b, trials: r.b.graded + r.b.incomplete })}`,
       diff: r.diff ? `${signed(r.diff.estimate)} (${intervalText(r.diff)})` : 'not in the comparison: an arm has no decided trial',
       graders: r.graders.map((g) => ({ id: g.grader_id, words: `${rate(g.a)} in A, ${rate(g.b)} in B`, severity: sev(g.severity), critical: g.severity === 'critical', optional: !g.required })),
@@ -467,6 +486,12 @@ function median(values: number[]): number | null {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 const mean = (values: number[]) => (values.length ? values.reduce((x, y) => x + y, 0) / values.length : null);
+/** A token difference in the arms' own format: "+23.6k" beside "79.3k", "−420" below a thousand. */
+function signedThousands(v: number): string {
+  const shown = thousands(Math.abs(v));
+  if (shown === '0') return '0';
+  return v > 0 ? `+${shown}` : `−${shown}`;
+}
 
 const metrics = computed<Metric[]>(() => {
   const d = data.value;
@@ -493,7 +518,7 @@ const metrics = computed<Metric[]>(() => {
         const note = left ? `; ${plural(left, 'trial')} left out: a model call was retried, and its wait would skew the time` : '';
         out.push({ name: 'Time per trial', delta: `${signed(c.diff.estimate, 1)} s`, interval: `${rel(c.relative, `interval ${signed(c.diff.low, 1)} to ${signed(c.diff.high, 1)} s`)}${note}`, a: c.a, b: c.b, aText: seconds(c.a), bText: seconds(c.b), max: Math.max(c.a, c.b) });
       }
-      if (c.metric === 'tokens') out.push({ name: 'Tokens per trial', delta: signed(c.diff.estimate), interval: rel(c.relative, `interval ${signed(c.diff.low)} to ${signed(c.diff.high)}`), a: c.a, b: c.b, aText: thousands(c.a), bText: thousands(c.b), max: Math.max(c.a, c.b) });
+      if (c.metric === 'tokens') out.push({ name: 'Tokens per trial', delta: signedThousands(c.diff.estimate), interval: rel(c.relative, `interval ${signedThousands(c.diff.low)} to ${signedThousands(c.diff.high)}`), a: c.a, b: c.b, aText: thousands(c.a), bText: thousands(c.b), max: Math.max(c.a, c.b) });
     }
     return out;
   }
@@ -505,7 +530,7 @@ const metrics = computed<Metric[]>(() => {
   const pairs: [string, (x: TrialRowSummary) => number | null | undefined, 'mean' | 'median', (v: number) => string, (v: number) => string][] = [
     ['Cost per trial', (x) => x.cost_usd, 'mean', money, signedMoney],
     ['Time per trial, median', (x) => x.wall_s, 'median', (v) => seconds(v), (v) => `${signed(v, 1)} s`],
-    ['Tokens per trial', (x) => (x.input_tokens ?? 0) + (x.output_tokens ?? 0) || null, 'mean', thousands, (v) => signed(v)],
+    ['Tokens per trial', (x) => (x.input_tokens ?? 0) + (x.output_tokens ?? 0) || null, 'mean', thousands, signedThousands],
   ];
   for (const [name, pick, how, fmt, fmtDelta] of pairs) {
     const va = ta.map(pick).filter((v): v is number => typeof v === 'number');
@@ -521,6 +546,25 @@ const metrics = computed<Metric[]>(() => {
 /** A bar's share of its rail: the rail runs from 0 to 100% for pass rate, and from 0 to the
  *  larger arm's value for the rest. */
 const barShare = (v: number, max: number) => `${Math.max(0, Math.min(100, (v / (max || 1)) * 100))}%`;
+
+/** Under cost, tokens and time, once the statistics give them intervals: they get no verdict and
+ *  no paired test, and a task bootstrap over few tasks covers a little less than it says. On an
+ *  A/A run (one config on both arms) an interval of theirs that stays clear of zero is the setup's
+ *  own noise, never a finding. Null until the statistics report costs. */
+const costsNote = computed(() => {
+  const s = stats.value;
+  const costs = s?.costs ?? [];
+  if (!s || !costs.length) return null;
+  const level = Math.round(s.level * 100);
+  const tasks = Math.max(...costs.map((c) => c.tasks));
+  const general = `Cost, tokens and time get an interval but no verdict: only the pass rate is tested. With ${plural(tasks, 'task')}, a ${level}% interval here holds the true difference a little less often than ${level}% of the time.`;
+  const words: Record<string, string> = { cost_usd: 'cost', tokens: 'token', wall_s: 'time' };
+  const clear = costs.filter((c) => !noWidth(c.diff) && excludesZero(c.diff)).map((c) => words[c.metric]).filter(Boolean);
+  const calibration = !!s.calibration || !!data.value?.detail.calibration;
+  const which = clear.length > 1 ? `the ${clear.slice(0, -1).join(', ')} and ${clear[clear.length - 1]} intervals clear of zero here are` : `the ${clear[0]} interval clear of zero here is`;
+  const aa = calibration && clear.length ? `Both arms ran the same config, so ${which} the setup's own noise (such as which arm's trials were claimed first, or how loaded the machine was) or chance, not a finding.` : '';
+  return { general, aa };
+});
 
 interface TaskRow {
   key: string;
@@ -816,7 +860,7 @@ const worthALook = computed(() => {
                 class="nowrap"
                 data-test="sim-client"
               >simulated client {{ simClient }}</span> ·
-            </template><span class="nowrap">{{ totalTrials(data.detail) }} trials</span><template v-if="commits.plan">
+            </template><span class="nowrap">{{ plural(totalTrials(data.detail), 'trial') }}</span><template v-if="commits.plan">
               · <a
                 :href="href.run(data.detail.id)"
                 class="secondary nowrap"
@@ -1178,6 +1222,24 @@ const worthALook = computed(() => {
             </div>
           </div>
         </div>
+        <p
+          v-if="costsNote"
+          class="secondary small"
+          data-test="costs-note"
+        >
+          {{ costsNote.general }}
+        </p>
+        <p
+          v-if="costsNote?.aa"
+          class="caveat"
+          data-test="costs-aa-note"
+        >
+          <AppIcon
+            name="info"
+            :size="14"
+          />
+          <span><strong class="caveat-lead">A/A run:</strong> {{ costsNote.aa }}</span>
+        </p>
       </section>
 
       <BehaviourPanel

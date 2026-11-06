@@ -134,7 +134,7 @@ describe('Build an agent, in fixture mode', () => {
     expect(create).toHaveBeenCalledTimes(1);
     const body = create.mock.calls[0][0];
     expect(body.harness).toBe('ownloop');
-    expect(body.settings).toEqual({ parallel_tool_calls: false });
+    expect(body.settings).toEqual({});
   });
 
   it('saves through POST /configs with the choices, and only the settings it set', async () => {
@@ -429,5 +429,201 @@ describe('Build an agent, fresh-clone QA round 3', () => {
     expect(view.get('[data-test="reason-memory"]').text()).toBe(
       'Google ADK does not support memory. The Runner gets no memory service, so nothing is stored or recalled. ADK has memory services; the adapter does not wire them yet.',
     );
+  });
+});
+
+describe('Build an agent keeps its choices across a link away and Back (destructive review U4)', () => {
+  it('finds every choice and an unsaved prompt draft as they were after the page is left and opened again', async () => {
+    let view = await open();
+    await pickHarness(view, 'langgraph');
+    await view.get('[data-test="model-gemini-3.8-flash"] input').setValue(true);
+    await view.get('[data-test="prompt-select"]').setValue(V1.sha256);
+    await setNumber(view, 'max_steps', '9');
+    await view.get('#build-parallel_tool_calls').setValue(true);
+    await view.get('[data-test="agent-name"]').setValue('Kept by hand');
+    await view.get('[data-test="agent-name"]').trigger('input');
+    await view.get('[data-test="prompt-mode-write"]').trigger('click');
+    await settle();
+    await view.get('[data-test="prompt-draft"]').setValue(`${V1.text}\nA line of my own.`);
+    await settle();
+    // The i's link to the Harnesses page, then Back: the page is made again from nothing.
+    view.unmount();
+    view = await open();
+    expect(view.get('[data-test="harness-langgraph"]').classes()).toContain('tile--on');
+    expect((view.get('[data-test="model-gemini-3.8-flash"] input').element as HTMLInputElement).checked).toBe(true);
+    expect((view.get('#build-max_steps').element as HTMLInputElement).value).toBe('9');
+    expect((view.get('#build-parallel_tool_calls').element as HTMLInputElement).checked).toBe(true);
+    expect((view.get('[data-test="agent-name"]').element as HTMLInputElement).value).toBe('Kept by hand');
+    expect((view.get('[data-test="prompt-draft"]').element as HTMLTextAreaElement).value).toBe(`${V1.text}\nA line of my own.`);
+    expect(view.get('[data-test="prompt-editor"]').text()).toContain(`Your prompt, from ${V1.id} v1`);
+  });
+
+  it('keeps the saved panel too, so Back from the preview still offers what comes next', async () => {
+    let view = await open();
+    await pickHarness(view, 'ownloop');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(view.find('[data-test="next-steps"]').exists()).toBe(true);
+    const status = view.get('[data-test="saved-status"]').text();
+    view.unmount();
+    view = await open();
+    expect(view.get('[data-test="harness-ownloop"]').classes()).toContain('tile--on');
+    expect(view.get('[data-test="saved-status"]').text()).toBe(status);
+  });
+
+  it('starts fresh, without an error, when storage holds something unreadable or is blocked', async () => {
+    window.sessionStorage.setItem('agent-evals-build', '{not json');
+    let view = await open();
+    expect(view.get('[data-test="harness-hermes"]').classes()).toContain('tile--on');
+    view.unmount();
+    window.sessionStorage.setItem('agent-evals-build', JSON.stringify({ harness: 'gone', model: 42, prompt: 'sha256:gone', numbers: [], toggles: null }));
+    view = await open();
+    expect(view.get('[data-test="harness-hermes"]').classes()).toContain('tile--on');
+    expect((view.get('[data-test="model-claude-haiku-5-5"] input').element as HTMLInputElement).checked).toBe(true);
+    view.unmount();
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    view = await open();
+    await pickHarness(view, 'adk');
+    expect(view.get('[data-test="harness-adk"]').classes()).toContain('tile--on');
+  });
+});
+
+describe('Build an agent while LiteLLM is down (destructive review U8)', () => {
+  it('still shows every step when only the models fail, says why in words, and lists them on Try again', async () => {
+    const litellm = new ApiError(502, 'litellm_unavailable', 'LiteLLM, the proxy every model call goes through, is not answering', 'Start it with docker compose up -d litellm, then try again.');
+    const models = vi.spyOn(api, 'models').mockRejectedValueOnce(litellm);
+    const view = await open();
+    expect(view.find('[data-test="load-error"]').exists()).toBe(false);
+    expect(view.findAll('fieldset.step')).toHaveLength(5);
+    const problem = view.get('[data-test="models-problem"]');
+    expect(problem.text()).toContain('The models could not be listed, so none can be picked yet: LiteLLM, the proxy every model call goes through, is not answering. Start it with docker compose up -d litellm');
+    expect(view.find('[data-test="no-models"]').exists()).toBe(false);
+    expect(view.find('[data-test="model-radio"]').exists()).toBe(false);
+    expect(view.get('[data-test="save-blocked"]').text()).toBe('The models could not be listed: try again in step 2 once they answer.');
+    // The other steps work meanwhile.
+    await pickHarness(view, 'ownloop');
+    expect(view.get('[data-test="harness-ownloop"]').classes()).toContain('tile--on');
+    await view.get('[data-test="models-retry"]').trigger('click');
+    await settle();
+    expect(models).toHaveBeenCalledTimes(2);
+    expect(view.find('[data-test="models-problem"]').exists()).toBe(false);
+    expect((view.get('[data-test="model-claude-haiku-5-5"] input').element as HTMLInputElement).checked).toBe(true);
+    expect(view.get('[data-test="harness-ownloop"]').classes()).toContain('tile--on');
+    expect(view.find('[data-test="save-blocked"]').exists()).toBe(false);
+  });
+
+  it('offers to try again when the whole page fails to load', async () => {
+    const harnesses = vi.spyOn(api, 'harnesses').mockRejectedValueOnce(new ApiError(502, 'http_502', 'The API is not answering (HTTP 502): check that the stack is running (docker compose ps), then try again'));
+    const view = await open();
+    expect(view.get('[data-test="load-error"]').text()).toContain('The API is not answering (HTTP 502)');
+    await view.get('[data-test="load-retry"]').trigger('click');
+    await settle();
+    expect(harnesses).toHaveBeenCalledTimes(2);
+    expect(view.find('[data-test="load-error"]').exists()).toBe(false);
+    expect(view.get('[data-test="harness-hermes"]').classes()).toContain('tile--on');
+  });
+});
+
+describe('Build an agent during a slow save (destructive review U13)', () => {
+  it('locks every choice until the save answers, so the saved panel names what was sent', async () => {
+    let answer: (c: never) => void = () => undefined;
+    const pending = new Promise<never>((resolve) => {
+      answer = resolve;
+    });
+    const create = vi.spyOn(api, 'createConfig').mockReturnValue(pending);
+    const view = await open();
+    await pickHarness(view, 'ownloop');
+    await view.get('[data-test="agent-name"]').setValue('Slow one');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    const steps = view.findAll('fieldset.step');
+    expect(steps).toHaveLength(5);
+    for (const step of steps) expect(step.attributes('disabled')).toBeDefined();
+    expect(view.get('[data-test="model-gemini-3.8-flash"] input').element.matches(':disabled')).toBe(true);
+    expect(view.get('[data-test="agent-name"]').element.matches(':disabled')).toBe(true);
+    // A second press while it is on its way sends nothing more.
+    await view.get('form').trigger('submit');
+    expect(create).toHaveBeenCalledTimes(1);
+    answer({ ...OWN_LOOP, name: 'Slow one' } as never);
+    await settle();
+    for (const step of view.findAll('fieldset.step')) expect(step.attributes('disabled')).toBeUndefined();
+    expect(view.get('[data-test="saved-status"]').text()).toContain('Slow one');
+  });
+});
+
+describe('Build an agent on a fresh database with no key (destructive review U1)', () => {
+  const KEYLESS = [
+    { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false },
+    { name: 'claude-sonnet-5-5', provider: 'anthropic', input_per_mtok: 1, output_per_mtok: 5, key_set: false },
+    { name: 'gemini-3.8-flash', provider: 'gemini', input_per_mtok: 0.75, output_per_mtok: 3.75, key_set: false },
+    { name: 'qwen2.5-7b-local', provider: 'ollama_chat', input_per_mtok: 0, output_per_mtok: 0, key_set: null },
+  ];
+
+  function freshKeyless() {
+    vi.spyOn(api, 'models').mockResolvedValue(KEYLESS);
+    vi.spyOn(api, 'configs').mockResolvedValue([]);
+  }
+
+  it('starts on a hosted model, not the local one whose key_set is null, and saves without parallel tool calls', async () => {
+    freshKeyless();
+    const create = vi.spyOn(api, 'createConfig');
+    const view = await open();
+    expect((view.get('[data-test="model-claude-haiku-5-5"] input').element as HTMLInputElement).checked).toBe(true);
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][0].model).toBe('claude-haiku-5-5');
+    expect(create.mock.calls[0][0].settings).not.toHaveProperty('parallel_tool_calls');
+    expect(view.find('[data-test="save-error"]').exists()).toBe(false);
+  });
+
+  it('says the local model is free and needs no key, never that it costs money, and saves it without parallel tool calls', async () => {
+    freshKeyless();
+    const create = vi.spyOn(api, 'createConfig');
+    const view = await open();
+    expect(view.get('[data-test="model-qwen2.5-7b-local"]').text()).toContain('Free: runs on this machine, needs no key');
+    expect(view.find('[data-test="model-qwen2.5-7b-local"] [data-test="needs-key"]').exists()).toBe(false);
+    await view.get('[data-test="model-qwen2.5-7b-local"] input').setValue(true);
+    await settle();
+    const note = view.get('[data-test="model-cost-note"]').text();
+    expect(note).toContain('it costs nothing per token and needs no key');
+    expect(note).toContain('docker compose --profile local-model up -d ollama');
+    expect(note).not.toContain('costs money');
+    expect(note).not.toContain('API key');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(create.mock.calls[0][0].model).toBe('qwen2.5-7b-local');
+    expect(create.mock.calls[0][0].settings).not.toHaveProperty('parallel_tool_calls');
+  });
+
+  it('sends parallel tool calls only when ticked, and greys it out after the model refuses it', async () => {
+    freshKeyless();
+    const refusal = new ApiError(
+      400,
+      'unsupported_setting',
+      'Qwen2.5 7B (local Ollama) (qwen2.5-7b-local) refuses parallel_tool_calls: LiteLLM answered 400. Leave parallel_tool_calls unset for qwen2.5-7b-local',
+      'Qwen2.5 7B (local Ollama) rejects parallel_tool_calls: leave it unset, or pick a model that takes it.',
+    );
+    const create = vi.spyOn(api, 'createConfig').mockRejectedValueOnce(refusal);
+    const view = await open();
+    await view.get('[data-test="model-qwen2.5-7b-local"] input').setValue(true);
+    await view.get('#build-parallel_tool_calls').setValue(true);
+    await settle();
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(create.mock.calls[0][0].settings).toEqual({ parallel_tool_calls: true, memory: { enabled: false } });
+    expect(view.get('[data-test="save-error"]').text()).toContain('leave it unset, or pick a model that takes it');
+    // Learnt: the setting is now greyed out with the model's reason, and the next save leaves it out.
+    expect(view.get('#build-parallel_tool_calls').attributes('disabled')).toBeDefined();
+    expect(view.get('[data-test="reason-parallel_tool_calls"]').text()).toContain('rejects parallel_tool_calls');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1][0].settings).toEqual({ memory: { enabled: false } });
   });
 });

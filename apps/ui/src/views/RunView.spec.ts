@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { mount, type VueWrapper } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api/client';
@@ -310,6 +313,46 @@ describe('RunView against the API, with one slot re-queued and one that gave up'
   });
 });
 
+describe('RunView keeps reading a stopped run until its last trial is in', () => {
+  const base = (details as unknown as Record<string, ExperimentDetail>).exp_harness;
+  const rows = (experimentTrials as Record<string, TrialRowSummary[]>).exp_harness;
+  const runningRow = rows.find((t) => t.status === 'running' || t.status === 'claimed')!;
+  const stopped = (running: number): ExperimentDetail => ({ ...base, status: 'cancelled', counts: { ...base.counts, queued: 0, running } });
+  const trialsWith = (status: string) => rows.map((t) => (t.id === runningRow.id ? { ...t, status } : t.status === 'running' || t.status === 'claimed' ? { ...t, status: 'done' } : t.status === 'queued' ? { ...t, status: 'cancelled' } : t));
+  const reads = (calls: { url: string }[]) => calls.filter((c) => c.url === '/api/experiments/exp_harness').length;
+
+  it('polls after Stop while a trial still runs, and stops polling once it has reported', async () => {
+    const every = vi.spyOn(globalThis, 'setInterval');
+    const clear = vi.spyOn(globalThis, 'clearInterval');
+    const routes: Record<string, unknown> = { '/api/experiments/exp_harness': stopped(1), '/api/experiments/exp_harness/trials': trialsWith('running'), '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] };
+    const { calls } = routeFetch(routes);
+    const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    expect(w.get('[data-test="run-title"]').text()).toMatch(/^Run stopped: /);
+    const poll = every.mock.calls.find((c) => c[1] === 5000);
+    expect(poll).toBeDefined();
+    // The last trial reports: the next read finds nothing running, and the polling ends.
+    routes['/api/experiments/exp_harness'] = stopped(0);
+    routes['/api/experiments/exp_harness/trials'] = trialsWith('done');
+    const before = reads(calls);
+    poll![0]();
+    await settle();
+    expect(reads(calls)).toBe(before + 1);
+    const id = every.mock.results[every.mock.calls.indexOf(poll!)].value as unknown;
+    expect(clear).toHaveBeenCalledWith(id);
+    w.unmount();
+  });
+
+  it('does not poll a stopped run with nothing left running', async () => {
+    const every = vi.spyOn(globalThis, 'setInterval');
+    routeFetch({ '/api/experiments/exp_harness': stopped(0), '/api/experiments/exp_harness/trials': trialsWith('done'), '/api/harnesses': [], '/api/prompts': [], '/api/tasks': [] });
+    const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    expect(every.mock.calls.some((c) => c[1] === 5000)).toBe(false);
+    w.unmount();
+  });
+});
+
 describe('RunView against the API, with no simulated client', () => {
   it('leaves the simulated client line out', async () => {
     const detail = { ...(details as unknown as Record<string, ExperimentDetail>).exp_harness, sim_model: null };
@@ -517,6 +560,36 @@ describe('RunView arm defaults (QA blocker 3)', () => {
     expect(armB.value).not.toBe(cfgV1.hash);
   });
 
+  it('asks which agent to calibrate when an A/A link names none, instead of picking one (U14)', async () => {
+    const estimate = vi.spyOn(api, 'estimate');
+    const w = mount(RunView, { props: { a: null, b: null, calibration: true } });
+    await settle();
+    const armA = w.get('[data-test="arm-a"]').element as HTMLSelectElement;
+    expect(armA.value).toBe('');
+    expect(armA.selectedOptions[0]?.text).toBe('Pick the agent to calibrate');
+    expect(selectValue(w, '[data-test="arm-b"]')).toBe('');
+    expect(w.get('[data-test="aa-pick"]').text()).toBe('Which agent should this A/A calibration measure? Pick it for arm A; it runs on both arms.');
+    expect(checkTexts(w)).toEqual(['No agent picked for arm ACheck failed.Pick the agent to calibrate above: an A/A calibration runs it on both arms.']);
+    expect(w.get('[data-test="start"]').attributes('disabled')).toBeDefined();
+    expect(estimate).not.toHaveBeenCalled();
+    await w.get('[data-test="arm-a"]').setValue(cfgV1.hash);
+    await settle();
+    expect(selectValue(w, '[data-test="arm-b"]')).toBe(cfgV1.hash);
+    expect(w.find('[data-test="aa-pick"]').exists()).toBe(false);
+    expect(armA.querySelector('option[value=""]')).toBeNull();
+    expect(estimate).toHaveBeenLastCalledWith(expect.objectContaining({ config_hashes: [cfgV1.hash, cfgV1.hash], calibration: true }));
+  });
+
+  it('keeps arm B empty when the calibration box is unticked before an agent is picked', async () => {
+    const w = mount(RunView, { props: { a: null, b: null, calibration: true } });
+    await settle();
+    await w.get('[data-test="calibration-box"]').setValue(false);
+    await settle();
+    expect(selectValue(w, '[data-test="arm-a"]')).toBe('');
+    expect(selectValue(w, '[data-test="arm-b"]')).toBe('');
+    expect(checkTexts(w)).toEqual(['No agent picked for arm ACheck failed.Pick an agent for arm A above.']);
+  });
+
   it('starts with the box ticked when the link asks for a calibration', async () => {
     const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV1.hash, calibration: true } });
     await settle();
@@ -534,6 +607,9 @@ describe('RunView on fake models only (QA major 1)', () => {
     vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'prompt.sha256', a: fakeA.prompt.sha256, b: fakeB.prompt.sha256 }]);
     const create = vi.spyOn(api, 'createExperiment');
     const w = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    // A fake-only run starts at 2 trials; 5 by hand makes the larger estimate this test reads.
+    await w.get('[data-test="n-input"]').setValue('5');
     await settle();
     expect(w.find('[data-test="budget-input"]').exists()).toBe(false);
     expect(checkTexts(w)).toContain('No spending limit needed: every model here is fakeCheck passed.Fake models spend nothing real; the estimate is at made-up test prices.');
@@ -553,6 +629,108 @@ describe('RunView on fake models only (QA major 1)', () => {
     // High end $27.00: rounding to the nearest $10 offered $20, below it; rounding up offers $30.
     expect((w.get('[data-test="budget-input"]').element as HTMLInputElement).value).toBe('30');
     expect(checkTexts(w)).toContain('The spending limit covers the likely costCheck passed.$30 against at most $27.00.');
+  });
+});
+
+describe('RunView starts a fake-only run at 2 trials (the README’s fake path)', () => {
+  useFixtures();
+  const nValue = (w: VueWrapper) => (w.get('[data-test="n-input"]').element as HTMLInputElement).value;
+
+  it('starts at 2 when every model is fake, and says why, so the run takes minutes', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, fakeA, fakeB]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'prompt.sha256', a: fakeA.prompt.sha256, b: fakeB.prompt.sha256 }]);
+    const create = vi.spyOn(api, 'createExperiment');
+    const w = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    expect(nValue(w)).toBe('2');
+    expect(w.get('[data-test="n-hint"]').text()).toBe('Fewer to start with here: every model is fake, so a short run tries the platform out');
+    expect(w.get('[data-test="plan"]').text()).toContain('12 tasks × 2 arms × 2 trials');
+    await w.get('[data-test="start"]').trigger('click');
+    await settle();
+    expect(create.mock.calls[0][0].n).toBe(2);
+  });
+
+  it('goes back to 5 when a real model joins the run, here as the simulated client', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, fakeA, fakeB]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'prompt.sha256', a: fakeA.prompt.sha256, b: fakeB.prompt.sha256 }]);
+    const w = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    expect(nValue(w)).toBe('2');
+    await w.get('[data-test="sim-model"]').setValue('gemini-3.8-flash');
+    await settle();
+    expect(nValue(w)).toBe('5');
+    expect(w.get('[data-test="n-hint"]').text()).toBe('More trials, narrower intervals');
+  });
+
+  it('keeps a number typed by hand whatever the models', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, fakeA, fakeB]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'prompt.sha256', a: fakeA.prompt.sha256, b: fakeB.prompt.sha256 }]);
+    const w = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    await w.get('[data-test="n-input"]').setValue('7');
+    await settle();
+    await w.get('[data-test="sim-model"]').setValue('gemini-3.8-flash');
+    await settle();
+    expect(nValue(w)).toBe('7');
+    await w.get('[data-test="sim-model"]').setValue('fake/sim-client');
+    await settle();
+    expect(nValue(w)).toBe('7');
+  });
+
+  it('starts a paid run at 5', async () => {
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    expect(nValue(w)).toBe('5');
+    expect(w.get('[data-test="n-hint"]').text()).toBe('More trials, narrower intervals');
+  });
+});
+
+describe('RunView warns that the local model runs only while Ollama is up', () => {
+  useFixtures();
+  const qwen: ConfigView = { ...fixtureConfigs[2], hash: `sha256:9e${'0'.repeat(61)}3`, name: 'Own loop, Qwen local', model: 'qwen2.5-7b-local' };
+  const models = [
+    { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: true },
+    { name: 'qwen2.5-7b-local', provider: 'ollama_chat', input_per_mtok: 0, output_per_mtok: 0, key_set: null },
+  ];
+
+  it('says by Start how to bring Ollama up, without blocking Start, and never calls the run paid', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, qwen]);
+    vi.spyOn(api, 'models').mockResolvedValue(models);
+    const w = mount(RunView, { props: { a: qwen.hash, b: '' } });
+    await settle();
+    await w.get('[data-test="sim-model"]').setValue('qwen2.5-7b-local');
+    await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
+    await settle();
+    const note = w.get('[data-test="local-model-warning"]');
+    expect(note.attributes('role')).toBe('note');
+    expect(note.text()).toBe(
+      'Qwen2.5 7b Local runs on this machine through Ollama, and this page cannot tell whether Ollama is up. Start it first with docker compose --profile local-model up -d ollama and pull the model once (the README, Add a model, has both steps); if it is not running, every trial on it fails. It costs nothing per token, but on a CPU one call can take minutes.',
+    );
+    // A warning, not a check: Start stays on.
+    expect(w.get('[data-test="start"]').attributes('disabled')).toBeUndefined();
+    await w.get('[data-test="start"]').trigger('click');
+    await settle();
+    expect(w.get('[data-test="confirm-paid"] #paid-title').text()).toBe('This run calls a local model: free per token, but slow on a CPU.');
+  });
+
+  it('keeps the paid wording when a model that costs money is in the run too', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, qwen]);
+    vi.spyOn(api, 'models').mockResolvedValue(models);
+    const w = mount(RunView, { props: { a: qwen.hash, b: '' } });
+    await settle();
+    await w.get('[data-test="sim-model"]').setValue('claude-haiku-5-5');
+    await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
+    await settle();
+    expect(w.find('[data-test="local-model-warning"]').exists()).toBe(true);
+    await w.get('[data-test="start"]').trigger('click');
+    await settle();
+    expect(w.get('[data-test="confirm-paid"] #paid-title').text()).toBe('This run calls real models and costs real money.');
+  });
+
+  it('says nothing about Ollama for a run on hosted models', async () => {
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    expect(w.find('[data-test="local-model-warning"]').exists()).toBe(false);
   });
 });
 
@@ -765,6 +943,21 @@ describe('RunView, an experiment created but never started (QA major 7)', () => 
     expect(window.location.hash).toBe('#/experiments');
   });
 
+  it('leaves you where you went when you left the page while it was being discarded', async () => {
+    routeFetch(routes(orphan));
+    let release: (e: ExperimentDetail) => void = () => undefined;
+    vi.spyOn(api, 'discardExperiment').mockImplementation(() => new Promise<ExperimentDetail>((resolve) => (release = resolve)));
+    const w = mount(RunView, { props: { experimentId: 'e_orphan' } });
+    await settle();
+    await w.get('[data-test="discard-ask"]').trigger('click');
+    await w.get('[data-test="discard-confirm"]').trigger('click');
+    window.location.hash = '#/build';
+    w.unmount();
+    release({ ...orphan, status: 'cancelled' });
+    await settle();
+    expect(window.location.hash).toBe('#/build');
+  });
+
   it('says why when the draft saved it but could not start it', async () => {
     setRunFlash('e_orphan', 'The run was saved but did not start: The platform could not be reached. Check that it is running, then try again. Start it here, or discard it.');
     routeFetch(routes(orphan));
@@ -854,6 +1047,49 @@ describe('RunView drafts: N, refusals and the name (QA major 12)', () => {
     expect(currentHash.value).toBe('#/experiments/e_started/run');
     // Replaced, not added: Back goes to wherever the setup was opened from.
     expect(window.history.length).toBe(entries);
+  });
+
+  it('never pulls you back to the run once you have left the page while it was starting', async () => {
+    const created = { ...(details as unknown as Record<string, ExperimentDetail>).exp_heldout, id: 'e_left', status: 'created' as const };
+    let release: (e: ExperimentDetail) => void = () => undefined;
+    vi.spyOn(api, 'createExperiment').mockImplementation(() => new Promise<ExperimentDetail>((resolve) => (release = resolve)));
+    const start = vi.spyOn(api, 'startExperiment').mockResolvedValue({ ...created, status: 'running' });
+    window.location.hash = `#/run?a=${encodeURIComponent(cfgV1.hash)}&b=${encodeURIComponent(cfgV2.hash)}`;
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
+    await settle();
+    await w.get('[data-test="start"]').trigger('click');
+    await w.get('[data-test="confirm-paid-start"]').trigger('click');
+    await settle();
+    // The person opens Build while the run is being made; the setup page goes.
+    window.location.hash = '#/build';
+    w.unmount();
+    release(created);
+    await settle();
+    expect(start).toHaveBeenCalledWith('e_left');
+    expect(window.location.hash).toBe('#/build');
+  });
+
+  it('stays put when the address changed while the run was starting, even on the same page', async () => {
+    const created = { ...(details as unknown as Record<string, ExperimentDetail>).exp_heldout, id: 'e_moved', status: 'created' as const };
+    let release: (e: ExperimentDetail) => void = () => undefined;
+    vi.spyOn(api, 'createExperiment').mockImplementation(() => new Promise<ExperimentDetail>((resolve) => (release = resolve)));
+    vi.spyOn(api, 'startExperiment').mockRejectedValue(new ApiError(0, 'unreachable', 'The API could not be reached (Failed to fetch)'));
+    window.location.hash = `#/run?a=${encodeURIComponent(cfgV1.hash)}&b=${encodeURIComponent(cfgV2.hash)}`;
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
+    await settle();
+    await w.get('[data-test="start"]').trigger('click');
+    await w.get('[data-test="confirm-paid-start"]').trigger('click');
+    await settle();
+    window.location.hash = '#/experiments';
+    release(created);
+    await settle();
+    expect(window.location.hash).toBe('#/experiments');
+    // The saved run still says why it did not start, once it is opened.
+    expect(takeRunFlash('e_moved')).toContain('The run was saved but did not start');
   });
 
   it('opens the saved run when it was created but did not start, and says why there', async () => {
@@ -1261,5 +1497,20 @@ describe('RunView, fresh-clone QA round 3', () => {
     expect(row.findAll('td.arm-cells')).toHaveLength(2);
     expect(row.findAll('td.arm-cells')[0].findAll('[data-state]').length).toBe((details as unknown as Record<string, ExperimentDetail>).exp_harness.n);
     expect(w.findAll('[data-test="run-grid"] thead th.arm-col')).toHaveLength(2);
+  });
+});
+
+describe('RunView keeps a long unbroken config name inside the page', () => {
+  // Checked in a browser at 390 px and 1,440 px with a 90-character one-word name: the page was
+  // 1,079 px wide on a phone before these rules, and fits after. jsdom does no layout, so this
+  // guards the rules themselves.
+  // A path, not new URL(..., import.meta.url), which Vite turns into an asset address.
+  const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'RunView.vue'), 'utf8');
+  const style = source.slice(source.indexOf('<style'));
+
+  it('lets the arm names wrap anywhere in the cards and the arm lines, and the pickers fit their column', () => {
+    expect(style).toMatch(/\.arm-card,\s*\.arm-card-head > \.arm,\s*\.arm > span:last-child \{\s*min-width: 0;\s*overflow-wrap: anywhere;\s*\}/);
+    expect(style).toMatch(/\.arm-card-head > \.arm-status \{\s*flex: none;\s*\}/);
+    expect(style).toMatch(/\.setup-grid select \{[^}]*max-width: 100%;[^}]*min-width: 0;/);
   });
 });

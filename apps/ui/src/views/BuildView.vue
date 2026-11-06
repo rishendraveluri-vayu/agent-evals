@@ -6,37 +6,54 @@
  * (POST /prompts, POST /configs) and offers only real models; the full screen keeps every setting
  * and the scripted test models.
  */
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 import { api } from '../api/client';
-import { errorWithFix } from '../api/errors';
+import { ApiError, errorWithFix } from '../api/errors';
 import type { ConfigView, CreatedPrompt, Harness, Json, ModelView, PromptView, SettingName, ToolsetView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import InfoTip from '../components/InfoTip.vue';
 import LoadState from '../components/LoadState.vue';
-import { useLoad } from '../lib/async';
+import { partial, useLoad } from '../lib/async';
 import { autoConfigName, axisChange, axisPhrase, changeWords, type NameContent } from '../lib/checks';
 import { baselineFor, missingKey } from '../lib/runSetup';
 import { plainText, shortHash, shortRef } from '../lib/format';
 import { harnessFacts, harnessTagline, memoryLine } from '../lib/harnessInfo';
 import { mdBlocks } from '../lib/markdown';
-import { isFake } from '../lib/models';
+import { defaultRealModel, isFake, isLocal, LOCAL_MODEL_COMMAND } from '../lib/models';
 import { harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
 import { NAME_MAX, settingProblem } from '../lib/limits';
+import { asRecord, readDraft, writeDraft } from '../lib/sessionDraft';
 import { ignoredReasons } from '../lib/settings';
 import { href } from '../router';
 
 interface Loaded {
   harnesses: Harness[];
   models: ModelView[];
+  /** Why GET /models failed (LiteLLM down, say), in words; null when it answered. The rest of the
+   *  page still shows, and the model step says so with a way to try again. */
+  modelsProblem: string | null;
   prompts: PromptView[];
   toolsets: ToolsetView[];
   configs: ConfigView[];
 }
 
-const { data, error, loading } = useLoad<Loaded>(async () => {
-  const [harnesses, models, prompts, toolsets, configs] = await Promise.all([api.harnesses(), api.models(), api.prompts(), api.toolsets(), api.configs()]);
-  return { harnesses, models, prompts, toolsets, configs };
+const { data, error, loading, reload } = useLoad<Loaded>(async () => {
+  const [harnesses, models, prompts, toolsets, configs] = await Promise.all([api.harnesses(), partial(api.models(), [] as ModelView[]), api.prompts(), api.toolsets(), api.configs()]);
+  return { harnesses, models: models.value, modelsProblem: models.problem, prompts, toolsets, configs };
 });
+
+/** Asks for the models again, after GET /models failed; the rest of the form stays as it is. */
+const modelsRetrying = ref(false);
+async function retryModels() {
+  modelsRetrying.value = true;
+  try {
+    const models = await partial(api.models(), [] as ModelView[]);
+    if (data.value) data.value = { ...data.value, models: models.value, modelsProblem: models.problem };
+    if (!form.model) form.model = defaultRealModel(realModels.value);
+  } finally {
+    modelsRetrying.value = false;
+  }
+}
 
 /** The common settings. Temperature, skills, compression and seeds are on the full Config screen. */
 type Shown = 'max_steps' | 'max_output_tokens' | 'timeout_s' | 'parallel_tool_calls' | 'memory';
@@ -67,9 +84,11 @@ const realModels = computed(() => (data.value?.models ?? []).filter((m) => !isFa
 watch(data, (d) => {
   if (!d || form.harness) return;
   form.harness = d.harnesses[0]?.name ?? '';
-  // A model that can run (its key is set) first.
-  form.model = (realModels.value.find((m) => !missingKey(m.name, realModels.value)) ?? realModels.value[0])?.name ?? '';
+  // A hosted model that can run (its key is set) first, else the first hosted one (saving is free
+  // without its key); never the local one by default, which runs only once Ollama is up.
+  form.model = defaultRealModel(realModels.value);
   form.prompt = taskPrompts.value[0]?.sha256 ?? '';
+  restoreKept(d);
 });
 
 const harness = computed(() => data.value?.harnesses.find((h) => h.name === form.harness) ?? null);
@@ -82,8 +101,10 @@ const promptBlocks = computed(() => (prompt.value ? mdBlocks(prompt.value.text) 
 const toolCount = computed(() => toolset.value?.servers.reduce((n, s) => n + s.allowed_tools.length, 0) ?? 0);
 
 const perMillion = (v: number | null) => (v === null ? 'not priced' : `$${v.toFixed(2)}`);
-const priceLine = (m: ModelView) =>
-  m.input_per_mtok === null && m.output_per_mtok === null ? 'Not priced in the LiteLLM config' : `${perMillion(m.input_per_mtok)} in, ${perMillion(m.output_per_mtok)} out per million tokens`;
+const priceLine = (m: ModelView) => {
+  if (isLocal(m)) return 'Free: runs on this machine, needs no key';
+  return m.input_per_mtok === null && m.output_per_mtok === null ? 'Not priced in the LiteLLM config' : `${perMillion(m.input_per_mtok)} in, ${perMillion(m.output_per_mtok)} out per million tokens`;
+};
 const keyName = (m: ModelView | null) => (m?.provider ? PROVIDER_KEYS[m.provider] : undefined);
 
 function versionLine(h: Harness): string {
@@ -93,9 +114,14 @@ function versionLine(h: Harness): string {
 // ---------------------------------------------------------------- settings
 
 const supported = (name: Shown) => harness.value?.capabilities.settings[name]?.supported ?? false;
+/** A model's refusals learnt from a 400 this visit, by model: on a fresh database no saved agent
+ *  says yet that the model refuses a setting. */
+const learnt = reactive<Record<string, Partial<Record<SettingName, string>>>>({});
 /** Why a setting cannot be used with this agent type and model, in words; empty when it can. */
 const ignored = computed<Partial<Record<SettingName, string>>>(() =>
-  harness.value ? ignoredReasons(harnessName(harness.value.name), harness.value.capabilities.settings, form.model, data.value?.configs ?? []) : {},
+  harness.value
+    ? { ...ignoredReasons(harnessName(harness.value.name), harness.value.capabilities.settings, form.model, data.value?.configs ?? []), ...(learnt[form.model] ?? {}) }
+    : {},
 );
 const usable = (name: Shown) => supported(name) && !ignored.value[name];
 
@@ -115,13 +141,17 @@ function settingInfo(name: Shown): string {
   }
 }
 
-/** What the form sets. A number left empty is unset (the API's default applies); a toggle is
+/** What the form sets. A number left empty is unset (the API's default applies); parallel tool
+ *  calls is sent only when turned on (off is the API's default, so the agent is the same, and a
+ *  model that refuses the setting, such as the local Qwen, refuses it even as false); memory is
  *  sent when the agent type takes it; a setting it cannot take is never sent. */
 const settings = computed(() => {
   const out: Partial<Record<SettingName, Json>> = {};
   for (const name of SHOWN) {
     if (!usable(name)) continue;
-    if (name === 'parallel_tool_calls') out[name] = form.toggles[name] === true;
+    if (name === 'parallel_tool_calls') {
+      if (form.toggles[name] === true) out[name] = true;
+    }
     else if (name === 'memory') out[name] = { enabled: form.toggles[name] === true };
     else {
       const raw = form.numbers[name]?.trim();
@@ -203,7 +233,7 @@ const problems = computed<Partial<Record<Shown, string>>>(() => {
 /** Why the agent cannot be saved yet, in words; null when it can. */
 const blocked = computed<string | null>(() => {
   if (!harness.value) return 'Pick an agent type (step 1).';
-  if (!model.value) return 'Pick a model (step 2).';
+  if (!model.value) return data.value?.modelsProblem ? 'The models could not be listed: try again in step 2 once they answer.' : 'Pick a model (step 2).';
   if (promptMode.value === 'write') return 'Save your prompt first, or go back to a saved one (step 3).';
   if (!prompt.value) return 'Pick a prompt (step 3).';
   if (!toolset.value) return 'The API lists no toolset.';
@@ -216,37 +246,51 @@ const blocked = computed<string | null>(() => {
 const saving = ref(false);
 const saveError = ref<string | null>(null);
 const saved = ref<{ config: ConfigView; existed: boolean } | null>(null);
+/** A save of the agent or of a prompt is on its way: every step is locked until it answers, so
+ *  the saved panel always describes what was sent, never a choice changed in the meantime. */
+const busy = computed(() => saving.value || promptSaving.value);
 
 async function save() {
   const d = data.value;
-  if (blocked.value || !d || !toolset.value) return;
+  if (busy.value || blocked.value || !d || !toolset.value) return;
   saving.value = true;
   saveError.value = null;
+  // What is sent, read once.
+  const name = form.name.trim();
+  const model = form.model;
   try {
     const known = new Set(d.configs.map((c) => c.hash));
     const config = await api.createConfig({
-      name: form.name.trim(),
+      name,
       harness: form.harness,
-      model: form.model,
+      model,
       prompt_sha256: form.prompt,
       toolset_sha256: toolset.value.sha256,
       settings: settings.value,
     });
-    data.value = { ...d, configs: await api.configs() };
+    const configs = await api.configs();
+    data.value = { ...(data.value ?? d), configs };
     // The API returns the stored agent when this content exists already, under the name it was
     // first saved with; the name typed here is not used.
-    saved.value = { config, existed: known.has(config.hash) || config.name !== form.name.trim() };
+    saved.value = { config, existed: known.has(config.hash) || config.name !== name };
   } catch (err) {
     saveError.value = plainText(errorWithFix(err));
+    // A model's refusal holds for every agent on that model: grey the setting from now on, so the
+    // next save leaves it out (the full Config screen does the same).
+    if (err instanceof ApiError && err.code === 'unsupported_setting' && err.message.includes(model)) {
+      const named = SHOWN.find((n) => new RegExp(`\\b${n}\\b`).test(err.message));
+      if (named && supported(named)) learnt[model] = { ...(learnt[model] ?? {}), [named]: plainText(err.fix ?? err.message) };
+    }
   } finally {
     saving.value = false;
   }
 }
 
 // Any change after saving is a different agent: the saved panel goes until it is saved again.
-// The source is a string, so reloading the configs after a save (same choices) is no change.
+// The source is the choices themselves, as a string, so reloading the configs after a save, or
+// learning a model's refusal from one (whose error should stay in view), is no change.
 watch(
-  () => JSON.stringify([form.harness, form.model, form.prompt, settings.value]),
+  () => JSON.stringify([form.harness, form.model, form.prompt, form.numbers, form.toggles]),
   () => {
     saved.value = null;
     saveError.value = null;
@@ -293,7 +337,77 @@ const keyMissing = computed(() => missingKey(form.model, data.value?.models ?? [
  *  profile) does not count as runnable. A keyless reviewer is pointed at the free route. */
 const noKeys = computed(() => realModels.value.length > 0 && !realModels.value.some((m) => m.key_set === true));
 /** The local open-weight model, when LiteLLM lists it: it needs no key, only its compose profile. */
-const localModel = computed(() => realModels.value.find((m) => m.key_set === null && m.name.endsWith('-local')) ?? null);
+const localModel = computed(() => realModels.value.find((m) => isLocal(m)) ?? null);
+
+// ---------------------------------------------------------------- kept across navigation
+
+/** This tab's choices, a prompt being written included, so a link away (the i's Harnesses page,
+ *  the preview) and Back find the form as it was. */
+const KEEP_KEY = 'agent-evals-build';
+
+/** Puts back what this tab last had, choice by choice: one that no longer exists (a prompt or a
+ *  model gone from the lists) keeps its default. */
+function restoreKept(d: Loaded): void {
+  const kept = asRecord(readDraft(KEEP_KEY));
+  if (!kept) return;
+  const text = (k: string) => {
+    const v = kept[k];
+    return typeof v === 'string' ? v : null;
+  };
+  const keptHarness = text('harness');
+  if (keptHarness && d.harnesses.some((h) => h.name === keptHarness)) form.harness = keptHarness;
+  const keptModel = text('model');
+  if (keptModel && realModels.value.some((m) => m.name === keptModel)) form.model = keptModel;
+  const keptPrompt = text('prompt');
+  if (keptPrompt && taskPrompts.value.some((p) => p.sha256 === keptPrompt)) form.prompt = keptPrompt;
+  const numbersKept = asRecord(kept.numbers) ?? {};
+  for (const name of NUMBER_SETTINGS) {
+    const v = numbersKept[name];
+    if (typeof v === 'string') form.numbers[name] = v;
+  }
+  const togglesKept = asRecord(kept.toggles) ?? {};
+  for (const name of TOGGLE_SETTINGS) {
+    const v = togglesKept[name];
+    if (typeof v === 'boolean') form.toggles[name] = v;
+  }
+  const keptName = text('name');
+  if (kept.nameTouched === true && keptName !== null) {
+    nameTouched.value = true;
+    form.name = keptName;
+  }
+  const base = d.prompts.find((p) => p.sha256 === text('draftBase'));
+  if (kept.promptMode === 'write' && base) {
+    draftBase.value = base;
+    draft.value = text('draft') ?? base.text;
+    promptMode.value = 'write';
+  }
+  const savedHash = text('saved');
+  const config = savedHash ? d.configs.find((c) => c.hash === savedHash) : undefined;
+  // After the choices above settle: setting them clears the saved panel (a change is a new agent).
+  if (config) {
+    void nextTick(() => {
+      saved.value = { config, existed: kept.savedExisted === true };
+    });
+  }
+}
+
+const kept = computed(() => ({
+  harness: form.harness,
+  model: form.model,
+  prompt: form.prompt,
+  name: form.name,
+  nameTouched: nameTouched.value,
+  numbers: { ...form.numbers },
+  toggles: { ...form.toggles },
+  promptMode: promptMode.value,
+  draft: draft.value,
+  draftBase: draftBase.value?.sha256 ?? null,
+  saved: saved.value?.config.hash ?? null,
+  savedExisted: saved.value?.existed ?? false,
+}));
+watch(kept, (value) => {
+  if (data.value && form.harness) writeDraft(KEEP_KEY, value);
+});
 </script>
 
 <template>
@@ -315,6 +429,7 @@ const localModel = computed(() => realModels.value.find((m) => m.key_set === nul
   <LoadState
     :loading="loading"
     :error="error"
+    :retry="reload"
     what="the agent types, models and prompts"
   >
     <form
@@ -325,7 +440,10 @@ const localModel = computed(() => realModels.value.find((m) => m.key_set === nul
       @submit.prevent="save"
     >
       <!-- 1. Agent type -->
-      <fieldset class="step">
+      <fieldset
+        class="step"
+        :disabled="busy"
+      >
         <legend class="step-title">
           <span
             class="step-n"
@@ -392,7 +510,10 @@ const localModel = computed(() => realModels.value.find((m) => m.key_set === nul
       </fieldset>
 
       <!-- 2. Model -->
-      <fieldset class="step">
+      <fieldset
+        class="step"
+        :disabled="busy"
+      >
         <legend class="step-title">
           <span
             class="step-n"
@@ -428,8 +549,25 @@ const localModel = computed(() => realModels.value.find((m) => m.key_set === nul
             >needs {{ missingKey(m.name, realModels) }} in .env</span>
           </label>
         </div>
+        <div
+          v-if="data.modelsProblem"
+          class="models-problem small"
+          role="alert"
+          data-test="models-problem"
+        >
+          <span>The models could not be listed, so none can be picked yet: {{ plainText(data.modelsProblem) }} The other steps work meanwhile.</span>
+          <button
+            type="button"
+            class="btn btn--quiet"
+            :disabled="modelsRetrying"
+            data-test="models-retry"
+            @click="retryModels"
+          >
+            Try again
+          </button>
+        </div>
         <p
-          v-if="noKeys"
+          v-else-if="noKeys"
           class="small no-keys"
           role="note"
           data-test="no-keys"
@@ -455,13 +593,20 @@ const localModel = computed(() => realModels.value.find((m) => m.key_set === nul
             name="alert"
             :size="16"
           />
-          <span v-if="keyMissing"><span class="mono">{{ keyMissing }}</span> is not set in <span class="mono">.env</span>, so this model cannot run yet. Saving is free and works anyway; before a run, add the key, then run <span class="mono">docker compose up -d</span>. A run calls a real model, so it costs money: the Run screen shows the trials, models and cost before anything starts.</span>
+          <span
+            v-if="isLocal(model)"
+            data-test="local-model-note"
+          >{{ modelName(model.name) }} runs on this machine, through Ollama: it costs nothing per token and needs no key. It answers only once its compose profile is up (<span class="mono">{{ LOCAL_MODEL_COMMAND }}</span>, then pull the model once; see the README, Add a model), and slowly on a CPU, so it suits a smoke check, not an experiment. Saving costs nothing; the Run screen shows the trials and models before anything starts.</span>
+          <span v-else-if="keyMissing"><span class="mono">{{ keyMissing }}</span> is not set in <span class="mono">.env</span>, so this model cannot run yet. Saving is free and works anyway; before a run, add the key, then run <span class="mono">docker compose up -d</span>. A run calls a real model, so it costs money: the Run screen shows the trials, models and cost before anything starts.</span>
           <span v-else>Running this agent calls a real model, so it costs money and needs <template v-if="keyName(model)">the provider's key, <span class="mono">{{ keyName(model) }}</span>,</template><template v-else>the provider's API key</template> in <span class="mono">.env</span>. Saving costs nothing; the Run screen shows the trials, models and cost before anything starts.</span>
         </p>
       </fieldset>
 
       <!-- 3. Instructions -->
-      <fieldset class="step">
+      <fieldset
+        class="step"
+        :disabled="busy"
+      >
         <legend class="step-title">
           <span
             class="step-n"
@@ -596,7 +741,10 @@ const localModel = computed(() => realModels.value.find((m) => m.key_set === nul
       </fieldset>
 
       <!-- 4. Settings -->
-      <fieldset class="step">
+      <fieldset
+        class="step"
+        :disabled="busy"
+      >
         <legend class="step-title">
           <span
             class="step-n"
@@ -671,7 +819,10 @@ const localModel = computed(() => realModels.value.find((m) => m.key_set === nul
       </fieldset>
 
       <!-- 5. Save -->
-      <fieldset class="step">
+      <fieldset
+        class="step"
+        :disabled="busy"
+      >
         <legend class="step-title">
           <span
             class="step-n"
@@ -976,6 +1127,22 @@ const localModel = computed(() => realModels.value.find((m) => m.key_set === nul
 .needs-key {
   font-weight: 600;
   color: var(--ink);
+}
+
+.models-problem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 12px 0 0;
+  max-width: 72ch;
+  color: var(--error);
+}
+
+.models-problem > span {
+  flex: 1 1 260px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .no-keys {

@@ -3,7 +3,7 @@ import { ApiError } from '../api/errors';
 import type { ArmView, ConfigView, TaskView } from '../api/types';
 import configsJson from '../fixtures/configs.json';
 import { armsCheck, diffWords, keysCheck, planCheck } from './checks';
-import { armPauseHelp, baselineFor, defaultArms, defaultBudget, localDiff, missingKey, needsKeyWords, oneThingApart, plainRunError, providerOf, taskSetWords, validateN } from './runSetup';
+import { armPauseHelp, baselineFor, defaultArms, defaultBudget, defaultN, isLocalModel, localDiff, missingKey, needsKeyWords, oneThingApart, plainRunError, providerOf, taskSetWords, validateN } from './runSetup';
 
 const configs = configsJson as unknown as ConfigView[];
 // The fixtures, oldest first: v1 on Hermes (2 Nov), v2 on Hermes (3 Nov, forked from v1: the
@@ -168,6 +168,32 @@ describe('validateN', () => {
     expect(validateN(2.5).error).toBe('Trials per task and arm must be a whole number, with no fraction.');
     expect(validateN('abc').error).toBe('Trials per task and arm must be a whole number from 1 to 1,000.');
     expect(validateN(Number.NaN).value).toBeNull();
+  });
+});
+
+describe('defaultN', () => {
+  it('starts a run on fake models only at 2 trials per task and arm, and any other at 5', () => {
+    expect(defaultN(true)).toBe(2);
+    expect(defaultN(false)).toBe(5);
+    expect(validateN(defaultN(true)).error).toBeNull();
+  });
+});
+
+describe('isLocalModel', () => {
+  const models = [
+    { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: true },
+    { name: 'qwen2.5-7b-local', provider: 'ollama_chat', input_per_mtok: 0, output_per_mtok: 0, key_set: null },
+    { name: 'llama-small', provider: 'ollama', input_per_mtok: 0, output_per_mtok: 0, key_set: null },
+  ];
+
+  it('knows the Ollama model by its name or its provider, and nothing else', () => {
+    expect(isLocalModel('qwen2.5-7b-local', models)).toBe(true);
+    expect(isLocalModel('qwen2.5-7b-local')).toBe(true);
+    expect(isLocalModel('llama-small', models)).toBe(true);
+    expect(isLocalModel('claude-haiku-5-5', models)).toBe(false);
+    expect(isLocalModel('fake/finance-emi', models)).toBe(false);
+    expect(isLocalModel('', models)).toBe(false);
+    expect(isLocalModel(null, models)).toBe(false);
   });
 });
 

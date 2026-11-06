@@ -195,6 +195,14 @@ textarea {
   resize: vertical;
 }
 
+/* A select is as wide as its longest option ("finance-no-calculators v3 (validation only)"):
+   never wider than its box, and free to shrink in a row, so a phone never scrolls sideways. */
+select {
+  max-width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
 input[type='checkbox'],
 input[type='radio'] {
   width: 18px;

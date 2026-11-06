@@ -302,6 +302,49 @@ describe('TrialView against the API: the outcome in words, and the simulated cli
   });
 });
 
+describe('TrialView against the API: an attempt stopped on infra (U6)', () => {
+  type Row = { id: string; status: string; label: string | null };
+  const heldout = (details as unknown as Record<string, Record<string, unknown>>).exp_heldout;
+  const rows = (experimentTrials as unknown as Record<string, Row[]>).exp_heldout;
+  // The second repeat of fd-vs-sip-07 in arm B, attempt 1, abandoned: its worker went quiet.
+  const abandoned = { ...trial, id: 'tr_fd-vs-sip-07_b_2', repeat_index: 1, attempt: 1, status: 'abandoned', label: null, end_state: null, grades: [], cause: null };
+  function mountWith(siblings: Row[], status = 'done') {
+    routeFetch({
+      '/api/trials/tr_fd-vs-sip-07_b_2': abandoned,
+      '/api/trials/tr_fd-vs-sip-07_b_2/spans': [],
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+      '/api/experiments/exp_heldout': { ...heldout, status },
+      '/api/experiments/exp_heldout/trials': siblings,
+      '/api/prompts': prompts,
+    });
+    return mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_2' } });
+  }
+  const marked = rows.map((t) => (t.id === 'tr_fd-vs-sip-07_b_2' ? { ...t, status: 'abandoned', label: null } : t));
+
+  it('counts an abandoned attempt as an infra failure, never "not graded yet", and names the re-run that passed', async () => {
+    const w = mountWith(marked);
+    await settle();
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Infra failure: its worker stopped sending heartbeats, not graded');
+    const facts = w.get('[data-test="trial-facts"]').text();
+    expect(facts).toContain('Counted asInfra failureIts worker stopped sending heartbeats; re-run as attempt 2, which passed');
+    expect(facts).not.toContain('Not an infra failure');
+    expect(w.text()).toContain('Infra failures are not graded: they say nothing about the agent.');
+    expect(w.text()).not.toContain('Not graded yet');
+  });
+
+  it('says it was not re-run when a finished run has no next attempt, and not yet while the run goes on', async () => {
+    const without = marked.filter((t) => t.id !== 'tr_fd-vs-sip-07_b_2_attempt2');
+    let w = mountWith(without);
+    await settle();
+    expect(w.get('[data-test="trial-facts"]').text()).toContain('Its worker stopped sending heartbeats; not re-run');
+    expect(w.get('[data-test="trial-facts"]').text()).not.toContain('not re-run yet');
+    w = mountWith(without, 'running');
+    await settle();
+    expect(w.get('[data-test="trial-facts"]').text()).toContain('Its worker stopped sending heartbeats; not re-run yet');
+  });
+});
+
 describe('TrialView against the API: the failure cause (D64)', () => {
   const heldout = (details as Record<string, unknown>).exp_heldout;
   function mountWith(cause: unknown, labels: unknown = queue.heldout, over: Record<string, unknown> = {}) {

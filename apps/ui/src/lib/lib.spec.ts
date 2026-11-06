@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeSpan, toBlindItem } from '../api/client';
 import type { ConfigView, Estimate, TaskView } from '../api/types';
-import { agreementWords, armDifferences, armIndexOf, armsOf, armState, axisWords, checksToGo, differenceText, headline, judgeCaveat, methodName, noDiffWords, passedText, pointsWithInterval, setupOf, timeLeft, verdictTitle, verdictWords } from './arms';
+import { agreementWords, armDifferences, armIndexOf, armsOf, armState, axisWords, checksToGo, differenceText, fakeOnly, headline, judgeCaveat, methodName, noDiffWords, passedText, pickLatest, pointsWithInterval, setupOf, timeLeft, verdictTitle, verdictWords } from './arms';
 import { coverage, coverageText } from './capabilities';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, splitCheck } from './checks';
 import { sentenceChanges } from './diff';
-import { harnessVersion, identParts, money, plainText, relative, shortHash, shortVersion, signed, splitIdents, wholeMoney, wilson } from './format';
+import { harnessVersion, identParts, money, plainText, relative, shortHash, shortVersion, signed, signedMoney, splitIdents, wholeMoney, wilson } from './format';
 import { mdBlocks } from './markdown';
+import { defaultRealModel, isFree, isLocal, runnableHosted } from './models';
 import { alsoGradedBy, isJudged as taskIsJudged, modelName } from './names';
 import { domainFor, ticksFor, verdictTone } from './scale';
 
@@ -71,6 +72,22 @@ describe('format', () => {
     expect(money(0.0021)).toBe('$0.0021');
     expect(wholeMoney(150)).toBe('$150');
     expect(shortHash('sha256:7f3a9c2deadbeef')).toBe('7f3a9c2');
+  });
+
+  it('shows money below $1 to three significant figures, so two arms side by side show their difference (destructive review U5)', () => {
+    // The headline's cost per trial: A and B beside "+30%" read $0.0094 and $0.0122, not $0.0094 and $0.01.
+    expect([money(0.0094), money(0.01223)]).toEqual(['$0.0094', '$0.0122']);
+    expect(money(0.18)).toBe('$0.18');
+    expect(money(0.5)).toBe('$0.50');
+    expect(money(0.123456)).toBe('$0.123');
+    expect(money(0.0532)).toBe('$0.0532');
+    expect(money(0.99999)).toBe('$1.00');
+    expect(money(1.234)).toBe('$1.23');
+    expect(money(12.8)).toBe('$12.80');
+    expect(money(0)).toBe('$0');
+    expect(money(null)).toBe('–');
+    expect(signedMoney(0.0028)).toBe('+$0.0028');
+    expect(signedMoney(-0.0028)).toBe('−$0.0028');
   });
 
   it('gives relative times in words', () => {
@@ -230,6 +247,52 @@ describe('arms', () => {
     expect(verdictWords('held_back')).toBe('Not called better');
     expect(axisWords({ axis: 'none', config_hashes: [configs[0].hash, configs[0].hash], calibration: true })).toBe('nothing: an A/A calibration (same config twice)');
     expect(armsOf({ axis: 'none', config_hashes: [configs[0].hash, configs[0].hash] }, configs).map((a) => a.label)).toEqual(['Config 3b81e04', 'Config 3b81e04']);
+  });
+
+  it('names the harness, the model and the shipped example in a headline read away from its comparison (destructive review U2)', () => {
+    const lg = [config({ harness: 'langgraph' }), config({ harness: 'langgraph', hash: 'sha256:7f3a9c2bbbb', prompt: { id: 'finance-advisor', version: 'v2', sha256: 'sha256:p2' } })];
+    const arms = armsOf({ axis: 'prompt', config_hashes: lg.map((c) => c.hash) }, lg);
+    const tasks = [taskOf('a', 'held_out')];
+    expect(headline({ verdict: 'better' }, arms, tasks, { axis: 'prompt', example: 'replication-langgraph-prompt-v1-vs-v2' })).toBe(
+      'Prompt v2 beats v1 on the held-out tasks, with LangGraph and Claude Haiku 5.5 (shipped example: a replication)',
+    );
+    expect(headline({ verdict: 'no_detectable_difference' }, arms, tasks, { axis: 'prompt', example: 'headline-prompt-v1-vs-v2' })).toBe(
+      'No detectable difference between Prompt v1 and v2 on the held-out tasks, with LangGraph and Claude Haiku 5.5 (shipped example)',
+    );
+    expect(headline({ verdict: 'held_back' }, arms, tasks, { axis: 'prompt', example: 'positive-control-calculators-down' })).toBe(
+      'Prompt v2 is not called better than v1 on the held-out tasks, with LangGraph and Claude Haiku 5.5: critical failures rose (shipped example: a positive control)',
+    );
+    // Your own run: the setup, and no example words.
+    expect(headline({ verdict: 'worse' }, arms, tasks, { axis: 'prompt' })).toBe('Prompt v2 does worse than v1 on the held-out tasks, with LangGraph and Claude Haiku 5.5');
+    // The axis itself is left out of what the arms share.
+    const models = [config({}), config({ hash: 'sha256:c58e2d1cccc', model: 'gemini-3.8-flash' })];
+    const byModel = armsOf({ axis: 'model', config_hashes: models.map((c) => c.hash) }, models);
+    expect(headline({ verdict: 'better' }, byModel, tasks, { axis: 'model' })).toBe('Gemini 3.8 Flash beats Claude Haiku 5.5 on the held-out tasks, with Hermes Agent');
+    const harnesses = [config({ harness: 'ownloop' }), config({ hash: 'sha256:a91c4d0dddd' })];
+    const byHarness = armsOf({ axis: 'harness', config_hashes: harnesses.map((c) => c.hash) }, harnesses);
+    expect(headline({ verdict: 'better' }, byHarness, tasks, { axis: 'harness' })).toBe('Hermes Agent beats Own loop on the held-out tasks, with Claude Haiku 5.5');
+  });
+
+  it('leads with the shipped headline unless a run of your own is newer, and never with a run on fake models only (destructive review U2)', () => {
+    const real = [config({}), config({ hash: 'sha256:7f3a9c2bbbb', prompt: { id: 'finance-advisor', version: 'v2', sha256: 'sha256:p2' } })];
+    const fake = real.map((c, i) => ({ ...c, hash: `sha256:fa${i}`, model: 'fake/finance-emi' }));
+    const configs = [...real, ...fake];
+    const exp = (id: string, created: string, hashes = real.map((c) => c.hash)) => ({ id, created_at: created, config_hashes: hashes }) as unknown as Parameters<typeof pickLatest>[0][number];
+    const shipped: Record<string, string> = { rep: 'replication-langgraph-prompt-v1-vs-v2', ctl: 'positive-control-calculators-down', head: 'headline-prompt-v1-vs-v2' };
+    const name = (e: { id: string }) => shipped[e.id] ?? null;
+    const all = () => true;
+    // The five shipped results, newest first: the replications and the control were made after the headline.
+    const examples = [exp('rep', '2026-11-05T09:43:08Z'), exp('ctl', '2026-11-05T09:25:19Z'), exp('head', '2026-11-05T07:32:29Z')];
+    expect(pickLatest(examples, configs, name, all)?.id).toBe('head');
+    // A run of your own on fake models, newer: still the headline.
+    expect(pickLatest([exp('mine-fake', '2026-11-06T10:00:00Z', fake.map((c) => c.hash)), ...examples], configs, name, all)?.id).toBe('head');
+    // A run of your own on a real model, newer: yours.
+    expect(pickLatest([exp('mine', '2026-11-06T10:00:00Z'), ...examples], configs, name, all)?.id).toBe('mine');
+    // Only results the page can show count; without the headline, the newest real one.
+    expect(pickLatest(examples, configs, name, (e) => e.id !== 'head')?.id).toBe('rep');
+    expect(pickLatest([exp('mine-fake', '2026-11-06T10:00:00Z', fake.map((c) => c.hash))], configs, name, all)).toBeNull();
+    expect(fakeOnly({ config_hashes: [fake[0].hash, real[0].hash] }, configs)).toBe(false);
+    expect(fakeOnly({ config_hashes: ['sha256:unknown'] }, configs)).toBe(false);
   });
 
   it('says what two configs differ in, with both values, and nothing for a name or a source', () => {
@@ -496,5 +559,37 @@ describe('armIndexOf (G8: one rule, the calibration flag, as the API armIndex)',
   it('reads it from the repeat in an A/A calibration run: arm B is n to 2n - 1', () => {
     const e = { config_hashes: ['ha', 'ha'], n: 3, calibration: true };
     expect([0, 2, 3, 5].map((r) => armIndexOf(t('ha', r), e))).toEqual([0, 0, 1, 1]);
+  });
+});
+
+describe('models: the default and the local one (destructive review U1)', () => {
+  const m = (name: string, provider: string | null, key_set: boolean | null, price = 1) => ({ name, provider, input_per_mtok: price, output_per_mtok: price, key_set });
+  const haiku = m('claude-haiku-5-5', 'anthropic', false);
+  const gemini = m('gemini-3.8-flash', 'gemini', true);
+  const unknown = m('claude-sonnet-5-5', 'anthropic', null);
+  const qwen = m('qwen2.5-7b-local', 'ollama_chat', null, 0);
+
+  it('knows the local model by its name or its Ollama provider, and calls it free', () => {
+    expect(isLocal(qwen)).toBe(true);
+    expect(isLocal('qwen2.5-7b-local')).toBe(true);
+    expect(isLocal(m('llama-3', 'ollama', null))).toBe(true);
+    expect(isLocal(haiku)).toBe(false);
+    expect(isLocal(null)).toBe(false);
+    expect(isFree(qwen)).toBe(true);
+    expect(isFree(haiku)).toBe(false);
+  });
+
+  it('counts a hosted model as runnable when its key is set, then when it is unknown; never the local one', () => {
+    expect(runnableHosted([qwen, haiku, unknown, gemini]).map((x) => x.name)).toEqual(['gemini-3.8-flash', 'claude-sonnet-5-5']);
+    expect(runnableHosted([qwen, haiku])).toEqual([]);
+  });
+
+  it('starts a new agent on a model with its key set, else the first hosted one, and on the local one only when it is the only one', () => {
+    expect(defaultRealModel([qwen, haiku, gemini])).toBe('gemini-3.8-flash');
+    expect(defaultRealModel([qwen, haiku])).toBe('claude-haiku-5-5');
+    expect(defaultRealModel([haiku, qwen])).toBe('claude-haiku-5-5');
+    expect(defaultRealModel([qwen])).toBe('qwen2.5-7b-local');
+    expect(defaultRealModel([m('fake/finance-emi', null, null), haiku])).toBe('claude-haiku-5-5');
+    expect(defaultRealModel([])).toBe('');
   });
 });

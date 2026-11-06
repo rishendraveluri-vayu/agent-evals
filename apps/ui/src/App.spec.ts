@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App.vue';
-import { currentHash } from './router';
+import { currentHash, parseHash } from './router';
 import { jsonReply, settle, useFixtures } from './test/helpers';
 
 function open(hash: string) {
@@ -92,12 +92,12 @@ describe('App in fixture mode', () => {
     await settle();
     expect(wrapper.get('[data-test="sample-data"]').text()).toBe('Sample data');
     expect(wrapper.get('[data-test="spend-trials"]').text()).toBe('$55.88');
-    expect(wrapper.get('[data-test="spend-platform"]').text()).toBe('$0.02');
+    expect(wrapper.get('[data-test="spend-platform"]').text()).toBe('$0.0183');
     expect(wrapper.get('[data-test="spend"]').text()).toContain('of $150');
     // A phone names each figure on screen, not only in a tooltip (QA round 3, minor 15).
-    expect(wrapper.get('[data-test="spend-compact"]').text()).toBe('Trials $55.88Platform $0.02Checks $0.02 of $2');
+    expect(wrapper.get('[data-test="spend-compact"]').text()).toBe('Trials $55.88Platform $0.0183Checks $0.0183 of $2');
     const meter = wrapper.get('[data-test="allowance"] [role="img"]');
-    expect(meter.attributes('aria-label')).toBe('Conflict checks: $0.02 of $2 used, $1.98 left, 1 call');
+    expect(meter.attributes('aria-label')).toBe('Conflict checks: $0.0183 of $2 used, $1.98 left, 1 call');
   });
 
   it('routes by hash and marks the current section', async () => {
@@ -113,6 +113,17 @@ describe('App in fixture mode', () => {
     open('#/nowhere');
     await settle();
     expect(wrapper.get('main h1').text()).toBe('Page not found');
+  });
+
+  it('shows Page not found, with the header, for an address with a broken percent escape (destructive review U10)', async () => {
+    expect(parseHash('#/trials/%')).toEqual({ name: 'not-found', path: '/trials/%' });
+    expect(parseHash('#/experiments/%E0%A4%A/run?x=1')).toEqual({ name: 'not-found', path: '/experiments/%E0%A4%A/run' });
+    expect(parseHash('#/trials/t%201')).toEqual({ name: 'trial', id: 't 1' });
+    open('#/trials/%');
+    const wrapper = mount(App);
+    await settle();
+    expect(wrapper.get('main h1').text()).toBe('Page not found');
+    expect(wrapper.find('nav[aria-label="Main"]').exists()).toBe(true);
   });
 
   it('opens on the front door, with the guided builder and the full platform each in the nav', async () => {

@@ -17,7 +17,7 @@ import { experimentName, infraReason, modelName, splitName } from '../lib/names'
 import { href, navigate, replaceRoute } from '../router';
 import { eventView, pauseCause } from '../lib/runs';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
-import { armPauseHelp, defaultArms, defaultBudget, isEngineTest, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, validateSeed, type ArmDefaults } from '../lib/runSetup';
+import { armPauseHelp, defaultArms, defaultBudget, defaultN, DEFAULT_N, isEngineTest, isLocalModel, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, validateSeed, type ArmDefaults } from '../lib/runSetup';
 import { FAKE_SIM_MODEL, isFake, simModels } from '../lib/models';
 import { ensureConflictChecks, needsConflictCheck } from '../lib/conflictGate';
 import { text } from '../trials';
@@ -81,8 +81,8 @@ interface Setup {
   /** D32's futility check as ticked by hand; null follows the default (futilityOn). */
   futility: boolean | null;
 }
-const setup = reactive<Setup>({ a: props.a ?? '', b: props.b ?? '', split: 'held_out', n: 5, simModel: '', budget: '', plan: '', name: '', seed: '', calibration: !!props.calibration, futility: null });
-const touched = reactive({ budget: false, name: false, sim: false });
+const setup = reactive<Setup>({ a: props.a ?? '', b: props.b ?? '', split: 'held_out', n: DEFAULT_N, simModel: '', budget: '', plan: '', name: '', seed: '', calibration: !!props.calibration, futility: null });
+const touched = reactive({ budget: false, name: false, sim: false, n: false });
 /** Tasks taken out of the run by hand, by sha256. Engine tests start out of it. */
 const excluded = reactive(new Set<string>());
 /** Why the arms could not both be filled in: one config only (a pilot), or none. */
@@ -93,9 +93,11 @@ watch(data, (d) => {
   // A missing arm is the newest other config, the same harness first; never the config on the
   // other arm, and never an A/A run (lib/runSetup.ts).
   const arms = defaultArms(d.configs, props.a, props.b);
-  setup.a = arms.a;
+  // An A/A link that names no agent picks none for you: arm A's picker asks which to calibrate.
+  const pickFirst = setup.calibration && !props.a;
+  setup.a = pickFirst ? '' : arms.a;
   // D44: a calibration runs arm A's agent on arm B too.
-  setup.b = setup.calibration && arms.a ? arms.a : arms.b;
+  setup.b = setup.calibration ? setup.a : arms.b;
   armNote.value = setup.calibration ? null : arms.note;
   setup.simModel = defaultSim.value;
   if (!d.allTasks.some((t) => t.split === setup.split)) setup.split = 'all';
@@ -128,6 +130,12 @@ const runModels = computed(() => {
 });
 /** What this run calls that costs money, for the start panel. */
 const realModels = computed(() => [...new Set(runModels.value.map((m) => m.model).filter((m) => !isFake(m)))]);
+/** The local open-weight model among them: free per token and keyless, but it answers only while
+ *  its Ollama container is up, which the API has no way to tell this page. Said by Start. */
+const localModels = computed(() => realModels.value.filter((m) => isLocalModel(m, data.value?.models ?? [])));
+const localNames = computed(() => localModels.value.map((m) => modelName(m)).join(' and '));
+/** The models that cost money per token: every real one except the local one. */
+const paidModels = computed(() => realModels.value.filter((m) => !localModels.value.includes(m)));
 /** Every model this run calls whose provider key is not set in .env (GET /models' key_set). */
 const keysMissing = computed(() =>
   // D75's prompt check needs no other key: without Claude Sonnet 5.5's it runs on the agent's own model.
@@ -151,6 +159,15 @@ const futilityOn = computed({
     setup.futility = on;
   },
 });
+// A run on fake models only starts at fewer trials (lib/runSetup.ts defaultN); a number typed by
+// hand stays as typed. Before the configs load, nothing is known about the models.
+watch(
+  () => (data.value ? fakeOnly.value : null),
+  (fake) => {
+    if (draft && !touched.n && fake !== null) setup.n = defaultN(fake);
+  },
+  { immediate: true },
+);
 const configOf = (h: string) => data.value?.configs.find((c) => c.hash === h);
 /** D75: this run's Hermes agents on a real model, whose prompt is checked against Hermes's own
  *  instructions before the run starts (the API refuses the start without that check). */
@@ -194,7 +211,8 @@ watch(
   ([on, a], before) => {
     if (!draft || !data.value) return;
     if (on) setup.b = a;
-    else if (before?.[0] && setup.b === a) setup.b = defaultArms(data.value.configs, a, undefined).b;
+    // With no agent on arm A yet, arm B stays empty too: nothing is picked for you.
+    else if (before?.[0] && setup.b === a) setup.b = a ? defaultArms(data.value.configs, a, undefined).b : '';
   },
 );
 /** Arms whose config id is not a saved agent here (a mistyped or stale link): said plainly, and
@@ -301,9 +319,21 @@ const planCommit = computed(() => (draft ? setup.plan : (data.value?.experiment?
 /** An unstarted experiment without a plan commit can be given one before it starts. */
 const needsPlanField = computed(() => !draft && !started.value && !allFake.value && !data.value?.experiment?.plan_commit);
 
+/** A draft with no agent on arm A while agents of your own exist (an A/A link that named none). */
+const noArmPicked = computed(() => draft && !setup.a && pickable.value.own.length > 0);
+
 const checks = computed<Check[]>(() => {
   const d = data.value;
   if (!d) return [];
+  if (noArmPicked.value) {
+    return [
+      {
+        ok: false,
+        title: 'No agent picked for arm A',
+        detail: isCalibration.value ? 'Pick the agent to calibrate above: an A/A calibration runs it on both arms.' : 'Pick an agent for arm A above.',
+      },
+    ];
+  }
   const unknown = unknownArms.value;
   if (unknown.length) {
     // Nothing is known about an agent that is not saved here, so nothing else is checked or claimed.
@@ -415,8 +445,17 @@ function confirmedStart() {
   void (draft ? startNew() : startCreated());
 }
 
+/** False once this page is left: a start that finishes later never pulls you back to it. */
+let alive = true;
+onBeforeUnmount(() => {
+  alive = false;
+});
+
 async function startNew() {
   if (!canStart.value || n.value === null) return;
+  // Where the start was asked from: it opens the run's page only if you are still here.
+  const from = window.location.hash;
+  const stillHere = () => alive && window.location.hash === from;
   busy.value = true;
   actionError.value = null;
   // D75: check the Hermes prompts first, so a check that fails leaves nothing half-made.
@@ -443,13 +482,14 @@ async function startNew() {
     createdId = created.id;
     await api.startExperiment(created.id);
     // The run's own page replaces the setup in the address and in history, so neither a refresh
-    // nor Back offers to start the same trials again.
-    replaceRoute(href.run(created.id));
+    // nor Back offers to start the same trials again. Left meanwhile, you stay where you went; the
+    // run is listed on Experiments.
+    if (stillHere()) replaceRoute(href.run(created.id));
   } catch (err) {
     if (createdId) {
       // Saved but not started: its own page can start it or discard it, so a retry never makes a second one.
       setRunFlash(createdId, `The run was saved but did not start: ${plainRunError(err)} Start it here, or discard it.`);
-      replaceRoute(href.run(createdId));
+      if (stillHere()) replaceRoute(href.run(createdId));
     } else {
       actionError.value = plainRunError(err);
     }
@@ -507,7 +547,8 @@ async function discard() {
   actionError.value = null;
   try {
     await api.discardExperiment(id);
-    navigate(href.experiments());
+    // Left meanwhile, you stay where you went.
+    if (alive) navigate(href.experiments());
   } catch (err) {
     actionError.value = plainRunError(err);
   } finally {
@@ -855,15 +896,20 @@ const spend = computed(() => {
   return { spent: e.spend_usd, expected, cap, w: x(e.spend_usd) - 2, ex: expected !== null ? x(expected) : null, cx: cap !== null ? x(cap) : null };
 });
 
+/** The run can still change: it is running or paused, or it was stopped while a trial had
+ *  already started (Stop keeps it running to the end, so it still reports). */
+const live = computed(() => {
+  const e = data.value?.experiment;
+  if (!e) return false;
+  if (e.status === 'running' || e.status === 'paused' || e.counts.running > 0) return true;
+  return (data.value?.trials ?? []).some((t) => t.status === 'running' || t.status === 'claimed');
+});
 let timer: ReturnType<typeof setInterval> | null = null;
-watch(
-  () => data.value?.experiment?.status,
-  (status) => {
-    if (timer) clearInterval(timer);
-    timer = null;
-    if ((status === 'running' || status === 'paused') && !fixtures) timer = setInterval(() => void reload(), 5000);
-  },
-);
+watch(live, (on) => {
+  if (timer) clearInterval(timer);
+  timer = null;
+  if (on && !fixtures) timer = setInterval(() => void reload(), 5000);
+});
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer);
 });
@@ -936,7 +982,7 @@ const planNote = computed(() => {
 const startLabel = computed(() => {
   const fresh = !!draftEstimate.value && draftEstimate.value.trials === plannedTrials.value;
   const count = draft ? (fresh ? plannedTrials.value : null) : (estimate.value?.trials ?? null);
-  return count ? `Start ${count} trials` : 'Start';
+  return count ? `Start ${plural(count, 'trial')}` : 'Start';
 });
 
 /** The paid-run confirmation's facts (D38's pattern): trials, models, the most it can cost, the limit. */
@@ -1209,6 +1255,13 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                   data-test="arm-a"
                 >
                   <option
+                    v-if="!setup.a"
+                    value=""
+                    disabled
+                  >
+                    {{ setup.calibration ? 'Pick the agent to calibrate' : 'Pick an agent' }}
+                  </option>
+                  <option
                     v-for="c in pickable.own"
                     :key="c.hash"
                     :value="c.hash"
@@ -1273,6 +1326,13 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                   {{ ui ? ' ' : '' }}No saved agent with the id <span class="mono">{{ u.hash }}</span>, so arm {{ u.letter }} is empty.
                 </template>
                 The link may be mistyped, or from another database. Pick a saved agent above; <a :href="href.config()">Configs</a> lists every one.
+              </p>
+              <p
+                v-if="noArmPicked && setup.calibration"
+                class="arm-note small"
+                data-test="aa-pick"
+              >
+                Which agent should this A/A calibration measure? Pick it for arm A; it runs on both arms.
               </p>
               <label
                 class="aa-option small"
@@ -1556,7 +1616,10 @@ onBeforeUnmount(() => taskObserver?.disconnect());
           <template v-if="draft">
             <div class="n-field">
               <label class="row-field">
-                <span><span class="block strong">Trials per task and arm</span><span class="secondary smaller block">More trials, narrower intervals</span></span>
+                <span><span class="block strong">Trials per task and arm</span><span
+                  class="secondary smaller block"
+                  data-test="n-hint"
+                >{{ fakeOnly && !touched.n ? 'Fewer to start with here: every model is fake, so a short run tries the platform out' : 'More trials, narrower intervals' }}</span></span>
                 <input
                   v-model="setup.n"
                   type="number"
@@ -1567,6 +1630,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                   :aria-invalid="nCheck.error ? 'true' : undefined"
                   :aria-describedby="nCheck.error ? 'n-error' : undefined"
                   data-test="n-input"
+                  @input="touched.n = true"
                 >
               </label>
               <p
@@ -1638,6 +1702,18 @@ onBeforeUnmount(() => taskObserver?.disconnect());
             {{ actionError }}
           </p>
           <template v-if="draft || data.experiment">
+            <p
+              v-if="localModels.length && !started"
+              class="local-note small"
+              role="note"
+              data-test="local-model-warning"
+            >
+              <AppIcon
+                name="alert"
+                :size="14"
+              />
+              <span>{{ localNames }} runs on this machine through Ollama, and this page cannot tell whether Ollama is up. Start it first with <span class="mono">docker compose --profile local-model up -d ollama</span> and pull the model once (the README, Add a model, has both steps); if it is not running, every trial on it fails. It costs nothing per token, but on a CPU one call can take minutes.</span>
+            </p>
             <div
               v-if="confirmPaid"
               class="confirm"
@@ -1652,11 +1728,11 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                 <AppIcon
                   name="alert"
                   :size="14"
-                /> This run calls real models and costs real money.
+                /> {{ paidModels.length ? 'This run calls real models and costs real money.' : 'This run calls a local model: free per token, but slow on a CPU.' }}
               </p>
               <ul class="small confirm-facts">
                 <li v-if="paidFacts.trials">
-                  {{ paidFacts.trials }} trials
+                  {{ plural(paidFacts.trials, 'trial') }}
                 </li>
                 <li
                   v-for="m in paidFacts.models"
@@ -2369,6 +2445,24 @@ onBeforeUnmount(() => taskObserver?.disconnect());
   margin: 4px 0 0;
 }
 
+/* The local model's note by Start: a warning, never a block. */
+.local-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 4px solid var(--ink);
+  background: var(--surface-muted);
+  border-radius: 6px;
+}
+
+.local-note > :deep(svg),
+.local-note > svg {
+  flex: none;
+  margin-top: 3px;
+}
+
 /* The paid-run confirmation, as the conflict check asks before its paid call. */
 .confirm {
   padding: 12px 14px;
@@ -2519,6 +2613,26 @@ onBeforeUnmount(() => taskObserver?.disconnect());
   justify-content: space-between;
   align-items: flex-start;
   gap: 8px;
+}
+
+/* A config name with no spaces in it (90 characters of one word) wraps inside its card, its line
+   or its picker, never past the page's edge: the arm cards, the arm lines beside the plan and the
+   progress, and the setup's pickers. */
+.arm-card,
+.arm-card-head > .arm,
+.arm > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.arm-card-head > .arm-status {
+  flex: none;
+}
+
+.setup-grid select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .arm-status[data-status='paused'] {

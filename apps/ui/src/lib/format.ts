@@ -39,12 +39,23 @@ export function wilson(k: number, n: number): { low: number; high: number } {
   return { low: Math.max(0, centre - half), high: Math.min(1, centre + half) };
 }
 
-/** $18.40, $0.18, $0.0021 */
+/**
+ * $18.40, $0.18, $0.0094, $0.0122: cents from $1 up; below $1, three significant figures (with at
+ * least the cents, and no trailing zeros past them), so two small amounts side by side always show
+ * the difference between them: $0.0094 beside $0.0122, never $0.0094 beside $0.01.
+ */
 export function money(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '–';
   if (value === 0) return '$0';
-  if (Math.abs(value) < 0.01) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(2)}`;
+  const abs = Math.abs(value);
+  if (abs >= 1) return `$${value.toFixed(2)}`;
+  const digits = Math.max(2, 2 - Math.floor(Math.log10(abs)));
+  const fixed = value.toFixed(Math.min(digits, 20));
+  // Rounding can carry up to $1.00: then it reads as cents, like any amount from $1.
+  if (Math.abs(Number(fixed)) >= 1) return `$${Number(fixed).toFixed(2)}`;
+  const [whole, frac = ''] = fixed.split('.');
+  const trimmed = frac.length > 2 ? frac.replace(/0+$/, '').padEnd(2, '0') : frac;
+  return `$${whole}.${trimmed}`;
 }
 
 /** A limit or budget: $150, $40, or $12.50 when it has cents. */

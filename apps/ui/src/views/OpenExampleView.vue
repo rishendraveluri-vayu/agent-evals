@@ -7,16 +7,26 @@
  * name starts with the first one's name: the headline's A/A calibration, whose line its comparison
  * shows. The address is replaced, not kept, so Back from the comparison returns to the front door.
  */
-import { onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { api } from '../api/client';
 import { ApiError, errorFix, errorText } from '../api/errors';
 import type { ExampleView } from '../api/types';
 import { plainText } from '../lib/format';
-import { href, replaceRoute } from '../router';
+import { currentHash, href, replaceRoute } from '../router';
 
 const status = ref<'finding' | 'loading' | 'none' | 'failed'>('finding');
 const example = ref<ExampleView | null>(null);
 const problem = ref<{ text: string; fix: string | null } | null>(null);
+
+/** The comparison opens only while this page is still the one shown: a reader who went elsewhere
+ *  while the example was copied (the first copy can take half a minute) is never pulled back, and
+ *  whatever they had open, a half-built agent say, stays. The copying itself carries on. */
+let alive = true;
+onBeforeUnmount(() => {
+  alive = false;
+});
+const startedAt = currentHash.value;
+const stillHere = () => alive && currentHash.value === startedAt;
 
 /** Copies one example. The machine it was exported from already holds the same run as its own: the
  *  load is refused (409), and that run is the example, so it counts as loaded. */
@@ -56,7 +66,7 @@ onMounted(async () => {
       example.value = ex;
       await load(ex);
     }
-    replaceRoute(href.compare(first.experiment_id));
+    if (stillHere()) replaceRoute(href.compare(first.experiment_id));
     // The other examples (the controls and the replications) are copied after the comparison
     // opens, one at a time, so the first open stays quick; they appear in the experiments list as
     // each lands. A failure here is not the reader's problem: the next visit tries again.

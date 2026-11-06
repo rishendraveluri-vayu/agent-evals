@@ -5,14 +5,14 @@ import { ApiError, errorText, errorWithFix } from '../api/errors';
 import { SETTING_NAMES, type ConfigDiffEntry, type ConfigView, type ConfigWarning, type CreatedPrompt, type Harness, type JsonObject, type ModelView, type PromptView, type SeedSkill, type SettingName, type ToolsetView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
-import { optional, useLoad } from '../lib/async';
+import { optional, partial, useLoad } from '../lib/async';
 import { coverageText } from '../lib/capabilities';
 import { changedLineCount, lineChanges, sentenceChanges } from '../lib/diff';
 import { mdBlocks } from '../lib/markdown';
 import { harnessVersion, plainText, shortHash, shortRef, splitIdents } from '../lib/format';
 import { autoConfigName, contentDiff, PLATFORM_DEFAULTS } from '../lib/checks';
 import { BOOLEAN_SETTINGS, harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
-import { agentModels, FAKE_EMI_MODEL, fakeDoes, isFake } from '../lib/models';
+import { agentModels, FAKE_EMI_MODEL, fakeDoes, isFake, isLocal, LOCAL_MODEL_COMMAND, runnableHosted } from '../lib/models';
 import { NAME_MAX, settingProblem } from '../lib/limits';
 import { missingKey, needsKeyWords, ownConfigs } from '../lib/runSetup';
 import { ignoredReasons, toggleValue } from '../lib/settings';
@@ -25,15 +25,30 @@ const props = defineProps<{ fork?: string | null }>();
 interface Loaded {
   harnesses: Harness[];
   models: ModelView[];
+  /** Why GET /models failed (LiteLLM down, say), in words; null when it answered. The page still
+   *  shows, with the fake models, and the model field says so with a way to try again. */
+  modelsProblem: string | null;
   prompts: PromptView[];
   toolsets: ToolsetView[];
   configs: ConfigView[];
 }
 
-const { data, error, loading } = useLoad<Loaded>(async () => {
-  const [harnesses, models, prompts, toolsets, configs] = await Promise.all([api.harnesses(), api.models(), api.prompts(), api.toolsets(), api.configs()]);
-  return { harnesses, models, prompts, toolsets, configs };
+const { data, error, loading, reload } = useLoad<Loaded>(async () => {
+  const [harnesses, models, prompts, toolsets, configs] = await Promise.all([api.harnesses(), partial(api.models(), [] as ModelView[]), api.prompts(), api.toolsets(), api.configs()]);
+  return { harnesses, models: models.value, modelsProblem: models.problem, prompts, toolsets, configs };
 });
+
+/** Asks for the real models again, after GET /models failed; the form stays as it is. */
+const modelsRetrying = ref(false);
+async function retryModels() {
+  modelsRetrying.value = true;
+  try {
+    const models = await partial(api.models(), [] as ModelView[]);
+    if (data.value) data.value = { ...data.value, models: models.value, modelsProblem: models.problem };
+  } finally {
+    modelsRetrying.value = false;
+  }
+}
 
 const numbers: Partial<Record<SettingName, string>> = {};
 const toggles: Partial<Record<SettingName, boolean>> = {};
@@ -95,9 +110,10 @@ watch(data, (d) => {
   baseHash.value = base?.hash ?? '';
   fromExample.value = base?.example_only ? base : null;
   form.harness = base?.harness ?? d.harnesses[0]?.name ?? '';
-  // With no config to start from: a real model whose key is not known to be missing, else the
-  // first fake one, which needs no key and spends nothing.
-  const runnable = d.models.find((m) => !missingKey(m.name, d.models));
+  // With no config to start from: a hosted model whose key is set (or not known to be missing),
+  // else the first fake one, which needs no key and spends nothing. Never the local model by
+  // default: it needs no key, but it answers only once its Ollama service is up.
+  const runnable = runnableHosted(d.models)[0];
   form.model = base?.model ?? runnable?.name ?? agentModels([]).fake[0]?.name ?? '';
   // Your newest config on a model whose key is not set (one saved in the builder without a key)
   // would start a new config on a model that cannot run: start on the first model with a key, else
@@ -155,13 +171,17 @@ const ignored = computed<Partial<Record<SettingName, string>>>(() => ({
 }));
 const isIgnored = (name: SettingName) => !!ignored.value[name];
 
-/** The settings the form sets: numbers left empty are unset; toggles are always set. A setting
- *  the harness or the model ignores is never sent. */
+/** The settings the form sets: numbers left empty are unset; parallel tool calls only when on
+ *  (off is the API's default, so the config is the same, and a model that refuses the setting,
+ *  such as the local Qwen, refuses it even as false); memory, skills and compression always. A
+ *  setting the harness or the model ignores is never sent. */
 const settings = computed(() => {
   const out: Partial<Record<SettingName, number | boolean | { enabled: boolean }>> = {};
   for (const name of SETTING_NAMES) {
     if (!supported(name) || isIgnored(name)) continue;
-    if (name === 'parallel_tool_calls') out[name] = form.toggles[name] === true;
+    if (name === 'parallel_tool_calls') {
+      if (form.toggles[name] === true) out[name] = true;
+    }
     else if (BOOLEAN_SETTINGS.includes(name)) out[name] = { enabled: form.toggles[name] === true };
     else {
       const raw = form.numbers[name]?.trim();
@@ -484,12 +504,14 @@ const refusalFor = (field: string) => (refusal.value?.field === field ? refusal.
 async function save(thenRun: boolean) {
   const d0 = data.value;
   // Save is off with its reason shown under it (invalid); Enter in a field ends here too.
-  if (invalid.value || !d0) return;
+  if (saving.value || invalid.value || !d0) return;
+  // The form is locked while saving, so what was sent is what the page says was saved.
   saving.value = true;
   refusal.value = null;
+  const name = form.name.trim();
   try {
     const config = await api.createConfig({
-      name: form.name.trim(),
+      name,
       harness: form.harness,
       model: form.model,
       prompt_sha256: form.prompt,
@@ -501,7 +523,7 @@ async function save(thenRun: boolean) {
     });
     // The API returns the stored config when this content exists already, under the name it was
     // first saved with; the name typed here is not used.
-    existed.value = d0.configs.some((c) => c.hash === config.hash) || config.name !== form.name.trim();
+    existed.value = d0.configs.some((c) => c.hash === config.hash) || config.name !== name;
     saved.value = config;
     // The saved list (and its count) shows the new config at once.
     if (!d0.configs.some((c) => c.hash === config.hash) && data.value) data.value = { ...data.value, configs: [...data.value.configs, config] };
@@ -584,6 +606,7 @@ watch(
   <LoadState
     :loading="loading"
     :error="error"
+    :retry="reload"
     what="the harnesses, models and prompts"
   >
     <div
@@ -595,7 +618,10 @@ watch(
         novalidate
         @submit.prevent="save(false)"
       >
-        <fieldset class="block-set">
+        <fieldset
+          class="block-set"
+          :disabled="saving"
+        >
           <legend class="legend">
             Harness
           </legend>
@@ -635,7 +661,10 @@ watch(
           </p>
         </fieldset>
 
-        <fieldset class="block-set pair">
+        <fieldset
+          class="block-set pair"
+          :disabled="saving"
+        >
           <legend class="visually-hidden">
             Model and prompt
           </legend>
@@ -646,12 +675,12 @@ watch(
               v-model="form.model"
               data-test="model-select"
             >
-              <optgroup label="Real models: each call costs money">
+              <optgroup label="Real models: a hosted model's calls cost money">
                 <option
                   v-for="m in modelGroups.real"
                   :key="m.name"
                   :value="m.name"
-                >{{ modelName(m.name) }}{{ needsKeyWords(m.name, data.models) ? ` (${needsKeyWords(m.name, data.models)})` : '' }}</option>
+                >{{ modelName(m.name) }}{{ isLocal(m) ? ' (local, free)' : needsKeyWords(m.name, data.models) ? ` (${needsKeyWords(m.name, data.models)})` : '' }}</option>
               </optgroup>
               <optgroup label="Fake models: scripted replies, free">
                 <option
@@ -662,10 +691,27 @@ watch(
               </optgroup>
             </select>
             <span
+              v-if="data.modelsProblem"
+              class="smaller models-problem"
+              role="alert"
+              data-test="models-problem"
+            ><span>The real models could not be listed, so only the fake ones can be picked: {{ plainText(data.modelsProblem) }}</span> <button
+              type="button"
+              class="link-button"
+              :disabled="modelsRetrying"
+              data-test="models-retry"
+              @click.prevent="retryModels"
+            >Try again</button></span>
+            <span
               v-if="isFake(form.model)"
               class="secondary smaller"
               data-test="fake-model-note"
             >Fake: the fake LLM server plays a script ({{ fakeDoes(form.model) }}). No real model and no real spend; LiteLLM still counts made-up prices, so budgets and spend work as they would.</span>
+            <span
+              v-else-if="model && isLocal(model)"
+              class="secondary smaller"
+              data-test="local-model-note"
+            >Runs on this machine, through Ollama: free per token, and it needs no key. It answers only once its compose profile is up ({{ LOCAL_MODEL_COMMAND }}, then pull the model once; see the README, Add a model), and slowly on a CPU.</span>
             <span
               v-else-if="model"
               class="secondary smaller"
@@ -851,7 +897,10 @@ watch(
           </div>
         </fieldset>
 
-        <fieldset class="block-set">
+        <fieldset
+          class="block-set"
+          :disabled="saving"
+        >
           <legend class="legend">
             Tools
           </legend>
@@ -917,7 +966,10 @@ watch(
           </ul>
         </fieldset>
 
-        <fieldset class="block-set">
+        <fieldset
+          class="block-set"
+          :disabled="saving"
+        >
           <legend class="legend">
             Settings
           </legend>
@@ -1282,6 +1334,7 @@ watch(
               type="text"
               :maxlength="NAME_MAX"
               data-test="config-name"
+              :disabled="saving"
               @input="nameTouched = true"
             >
             <span class="secondary smaller">A label for lists: up to {{ NAME_MAX }} characters. It is not part of the config's identity.</span>
@@ -1311,6 +1364,7 @@ watch(
               <select
                 v-model="baseHash"
                 data-test="base-select"
+                :disabled="saving"
               >
                 <option
                   v-if="!base"
@@ -1576,6 +1630,13 @@ watch(
   color: var(--ink);
 }
 
+.models-problem {
+  display: block;
+  margin: 6px 0 0;
+  color: var(--error);
+  overflow-wrap: anywhere;
+}
+
 .refusal strong {
   color: var(--ink);
 }
@@ -1614,9 +1675,16 @@ watch(
   margin: 8px 0 0;
   padding: 0;
   display: grid;
+  /* One column as wide as the box: a long name with no spaces wraps, never sizes the column. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   max-height: 360px;
   overflow-y: auto;
+}
+
+.saved-list li {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .config-split {

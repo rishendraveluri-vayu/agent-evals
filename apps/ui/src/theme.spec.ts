@@ -286,4 +286,17 @@ describe('focus', () => {
     expect(css).toMatch(/h1\[tabindex='-1'\]:focus,\s*h2\[tabindex='-1'\]:focus \{\s*outline: none;/);
     expect(css).toMatch(/:focus-visible \{\s*outline: 2px solid var\(--focus\);/);
   });
+
+  // jsdom lays nothing out, so the width checks themselves are Playwright's (390 and 1440 px).
+  it('never lets a select widen a phone page past its edge (destructive review U11)', () => {
+    expect(css).toMatch(/\nselect \{\s*max-width: 100%;\s*min-width: 0;/);
+  });
+
+  it('wraps long names with no spaces in headings, text and the saved-configs list (destructive review U12)', () => {
+    expect(css).toMatch(/h1,\s*h2,\s*h3 \{[^}]*overflow-wrap: anywhere;/);
+    expect(css).toMatch(/body \{[^}]*overflow-wrap: break-word;/);
+    const config = readFileSync(new URL('./views/ConfigView.vue', import.meta.url), 'utf8');
+    expect(config).toMatch(/\.saved-list ul \{[^}]*grid-template-columns: minmax\(0, 1fr\);/);
+    expect(config).toMatch(/\.saved-list li \{\s*min-width: 0;\s*overflow-wrap: anywhere;/);
+  });
 });

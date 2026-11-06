@@ -25,7 +25,8 @@ describe('the Config screen offers fake models, labelled as fake', () => {
     const w = mount(ConfigView);
     await settle();
     const groups = w.findAll('[data-test="model-select"] optgroup');
-    expect(groups.map((g) => g.attributes('label'))).toEqual(['Real models: each call costs money', 'Fake models: scripted replies, free']);
+    // A hosted model's calls cost money; the local one's do not (destructive review U1).
+    expect(groups.map((g) => g.attributes('label'))).toEqual(["Real models: a hosted model's calls cost money", 'Fake models: scripted replies, free']);
     const fake = groups[1].findAll('option').map((o) => o.text());
     expect(fake[0]).toBe('Fake model finance-emi: one EMI tool call, then an answer that uses it');
     expect(fake.every((t) => t.startsWith('Fake model '))).toBe(true);
@@ -84,7 +85,7 @@ describe('the Run screen runs fake configs for free', () => {
     expect(pick.get('legend').text()).toBe('11 of 12 tasks in the run');
     const last = estimate.mock.calls.at(-1)?.[0];
     expect(last?.task_sha256s).toHaveLength(11);
-    expect(w.get('[data-test="plan"]').text()).toContain('11 tasks × 2 arms × 5 trials');
+    expect(w.get('[data-test="plan"]').text()).toContain('11 tasks × 2 arms × 2 trials');
   });
 
   it('creates and starts the experiment with the seed, no plan commit and the fake simulator, then opens its run page', async () => {
@@ -113,6 +114,6 @@ describe('the Run screen runs fake configs for free', () => {
     const w = mountDraft('');
     await settle();
     expect((w.get('[data-test="arm-b"]').element as HTMLSelectElement).value).toBe('');
-    expect(w.get('[data-test="plan"]').text()).toContain('12 tasks × 1 arm × 5 trials');
+    expect(w.get('[data-test="plan"]').text()).toContain('12 tasks × 1 arm × 2 trials');
   });
 });

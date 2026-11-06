@@ -95,10 +95,49 @@ watch(
   () => void showCurrent(),
 );
 
+/** The health badge asks again every 10 s while the tab is in view, so it says when the API goes
+ *  down and when it is back; a hidden tab asks nothing until it is shown again, then asks at once.
+ *  When the API answers again after being unreachable, the spend is read again too. */
+const HEALTH_EVERY_MS = 10_000;
+let healthTimer: ReturnType<typeof setTimeout> | null = null;
+let checking = false;
+let unmounted = false;
+function stopHealth() {
+  if (healthTimer) clearTimeout(healthTimer);
+  healthTimer = null;
+}
+function nextHealth() {
+  stopHealth();
+  if (unmounted || document.hidden) return;
+  healthTimer = setTimeout(() => {
+    healthTimer = null;
+    void checkHealth();
+  }, HEALTH_EVERY_MS);
+}
+async function checkHealth() {
+  if (checking || unmounted) return;
+  checking = true;
+  const before = health.value;
+  try {
+    health.value = await fetchHealth();
+  } finally {
+    checking = false;
+  }
+  if (before?.kind === 'unreachable' && health.value.kind === 'ok') void loadSpend();
+  nextHealth();
+}
+const onVisibility = () => {
+  if (document.hidden) stopHealth();
+  else if (!healthTimer) void checkHealth();
+};
+
 let resizes: ResizeObserver | null = null;
 onBeforeUnmount(() => {
+  unmounted = true;
+  stopHealth();
   resizes?.disconnect();
   window.removeEventListener('evals:spend-changed', onSpendChanged);
+  document.removeEventListener('visibilitychange', onVisibility);
 });
 
 onMounted(async () => {
@@ -118,7 +157,8 @@ onMounted(async () => {
     budget.value = meta.total_budget_usd;
   } else {
     if (Number.isFinite(envBudget) && envBudget > 0) budget.value = envBudget;
-    void fetchHealth().then((h) => (health.value = h));
+    document.addEventListener('visibilitychange', onVisibility);
+    void checkHealth();
   }
   window.addEventListener('evals:spend-changed', onSpendChanged);
   await loadSpend();

@@ -6,7 +6,7 @@
 import { ApiError, errorText, errorWithFix } from '../api/errors';
 import type { ArmView, ConfigView, ModelView, TaskView } from '../api/types';
 import { axisFromDiff, localDiff } from './checks';
-import { isFake } from './models';
+import { isFake, isLocal } from './models';
 import { modelName, splitName } from './names';
 
 // ---------------------------------------------------------------------------------------- arms
@@ -105,6 +105,14 @@ export function missingKey(model: string | null | undefined, models: ModelView[]
   return PROVIDERS[providerOf(model, models) ?? '']?.key ?? "the provider's API key";
 }
 
+/** The open-weight model served by a local Ollama container (LiteLLM's `qwen2.5-7b-local`): free
+ *  per token and keyless, but it answers only while the local-model compose profile is up. */
+export function isLocalModel(model: string | null | undefined, models: ModelView[] = []): boolean {
+  if (!model || isFake(model)) return false;
+  // One rule for the whole UI (lib/models.ts): by its name, or by its Ollama provider when listed.
+  return isLocal(models.find((m) => m.name === model) ?? model);
+}
+
 /** "needs ANTHROPIC_API_KEY in .env", for a model whose key is not set; '' otherwise. */
 export function needsKeyWords(model: string | null | undefined, models: ModelView[]): string {
   const key = missingKey(model, models);
@@ -114,6 +122,16 @@ export function needsKeyWords(model: string | null | undefined, models: ModelVie
 // ---------------------------------------------------------------------------------------- N
 
 export const MAX_N = 1000;
+
+/** Trials per task and arm a run starts with: 5 for a run that calls a real model, 2 when every
+ *  model is fake, where the run only tries the platform out and measures nothing (the 10 held-out
+ *  tasks on two arms are 40 trials at 2, against 100 at 5). A number typed by hand is kept. */
+export const DEFAULT_N = 5;
+export const FAKE_DEFAULT_N = 2;
+
+export function defaultN(everyModelFake: boolean): number {
+  return everyModelFake ? FAKE_DEFAULT_N : DEFAULT_N;
+}
 
 /** Trials per task and arm: a whole number from 1 to 1,000 (the API's own limit), or why not. */
 export function validateN(raw: number | string | null | undefined): { value: number | null; error: string | null } {

@@ -250,6 +250,34 @@ describe('CompareView in fixture mode', () => {
   });
 });
 
+describe('CompareView against the API: trials stopped on infra failures', () => {
+  it('says an abandoned attempt was re-run when its next attempt ran, and why it stopped (U6)', async () => {
+    type Row = { id: string; status: string; label: string | null; attempt: number; passed: boolean | null };
+    const rows = (experimentTrials as unknown as Record<string, Row[]>).exp_heldout;
+    // The first attempt went quiet (abandoned, no label) and its re-run passed; the second stop
+    // has no re-run, on a run that is over.
+    const trials = rows
+      .map((t) => (t.id === 'tr_debt-hardship-03_b_2' ? { ...t, status: 'abandoned', label: null } : t))
+      .filter((t) => t.id !== 'tr_fd-vs-sip-07_b_2_attempt2');
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': compares.exp_heldout,
+      '/api/experiments/exp_heldout/trials': trials,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const items = w.findAll('[data-test="infra-list"] li').map((li) => li.text());
+    expect(items).toEqual([
+      'B · debt-hardship-03 · attempt 1 · infra failure: its worker stopped sending heartbeats · re-run passed',
+      'B · fd-vs-sip-07 · attempt 1 · infra failure: provider error · not re-run',
+    ]);
+    // Not every stop was re-run, so the verdict box does not say they were.
+    expect(w.get('[data-test="verdict"]').text()).toContain('2 trials stopped on infra failures are listed, not dropped.');
+  });
+});
+
 describe('CompareView against the API: figures written without a tool (D61)', () => {
   const route = (prose: unknown) =>
     routeFetch({
@@ -330,7 +358,8 @@ describe('CompareView: how the arms behaved (D64)', () => {
     expect(calls).toContain('A 1.5');
     expect(calls).toContain('B 1.8');
     expect(steps).toContain('Stopped at the step limit: A 1 of 60, B 0 of 60');
-    expect(errors).toContain('A: 0 errors in 0 trials; B: 1 error in 1 trial');
+    expect(errors).toContain('A: no tool errors; B: 1 error in 1 trial');
+    expect(errors).not.toContain('0 errors in 0 trials');
   });
 
   it('lists tools as rows with both arms per trial side by side, marking the differences', async () => {
@@ -828,6 +857,21 @@ describe('CompareView against the API: the check on the method', () => {
     await settle();
     expect(w.get('[data-test="verdict-title"]').text()).toBe('Practically equivalent');
     expect(w.get('[data-test="verdict-sub"]').text()).toBe('The whole interval lies inside the ±10-point margin set before the run, so any difference is too small to matter.');
+    expect(w.findAll('[data-test="why-title"]')[0].text()).toBe('Why this counts as practically equivalent');
+    expect(w.findAll('[data-test="why-line"]')[0].text()).toBe(`The whole interval, −6 to +8${nb}points, lies inside the ±10-point margin set before the run.`);
+  });
+
+  it('never heads a practically equivalent result "unlikely to be noise", even when its interval stays clear of zero (S8)', async () => {
+    withStats({ verdict: 'equivalent', pass_rate_verdict: 'equivalent', diff: { estimate: 3, low: 1, high: 6 } });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="verdict-title"]').text()).toBe('Practically equivalent');
+    const titles = w.findAll('[data-test="why-title"]').map((h) => h.text());
+    expect(titles[0]).toBe('Why this counts as practically equivalent');
+    expect(titles).not.toContain('Why this is unlikely to be noise');
+    expect(w.findAll('[data-test="why-line"]')[0].text()).toBe(
+      `The whole interval, +1 to +6${nb}points, lies inside the ±10-point margin set before the run. It stays above zero, but a difference that small is not one that matters.`,
+    );
   });
 
   it('shows the critical-failure guardrail beside the verdict, and holds back a better B when critical failures rose', async () => {
@@ -865,6 +909,64 @@ describe('CompareView against the API: the check on the method', () => {
     const w2 = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     expect(w2.get('[data-test="regression"]').get('.regression-tag--critical').text()).toBe('critical check got worse');
+  });
+
+  it('says under cost, tokens and time that they get an interval but no verdict, and that it covers a little less than it says (S5)', async () => {
+    withStats({});
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="costs-note"]').text()).toBe(
+      'Cost, tokens and time get an interval but no verdict: only the pass rate is tested. With 12 tasks, a 95% interval here holds the true difference a little less often than 95% of the time.',
+    );
+    // An A/B run: a cost interval clear of zero is not called setup noise.
+    expect(w.find('[data-test="costs-aa-note"]').exists()).toBe(false);
+  });
+
+  it('calls a time or cost interval clear of zero on an A/A run setup noise, not a finding (S5)', async () => {
+    const wall = { ...base.stats!.costs.find((c) => c.metric === 'wall_s')!, diff: { estimate: 1.51, low: 0.37, high: 2.82 } };
+    const cost = { ...base.stats!.costs.find((c) => c.metric === 'cost_usd')!, diff: { estimate: 0, low: -0.002, high: 0.002 } };
+    withStats({ calibration: { as_expected: true, text: 'This A/A run found no difference, as it should.' }, aa: null, costs: [cost, wall] });
+    let w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="costs-aa-note"]').text()).toBe(
+      "A/A run: Both arms ran the same config, so the time interval clear of zero here is the setup's own noise (such as which arm's trials were claimed first, or how loaded the machine was) or chance, not a finding.",
+    );
+    withStats({ calibration: { as_expected: true, text: 'This A/A run found no difference, as it should.' }, aa: null, costs: [{ ...cost, diff: { estimate: 0.01, low: 0.002, high: 0.02 } }, wall] });
+    w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="costs-aa-note"]').text()).toContain('so the cost and time intervals clear of zero here are the setup');
+    // With every interval across zero there is nothing to explain away.
+    withStats({ calibration: { as_expected: true, text: 'This A/A run found no difference, as it should.' }, aa: null, costs: [cost] });
+    w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.find('[data-test="costs-aa-note"]').exists()).toBe(false);
+    expect(w.find('[data-test="costs-note"]').exists()).toBe(true);
+  });
+
+  it('writes the token difference in thousands, as each arm’s tokens are (U14)', async () => {
+    const tokens = { ...base.stats!.costs.find((c) => c.metric === 'tokens')!, a: 55700, b: 79300, diff: { estimate: 23572, low: -1250, high: 48100 }, relative: null };
+    withStats({ costs: [tokens] });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const tile = w.findAll('.metrics > div').find((t) => t.text().startsWith('Tokens per trial'))!;
+    expect(tile.get('.metric-delta').text()).toBe('+23.6k');
+    expect(tile.text()).toContain('interval −1.3k to +48.1k');
+    expect(tile.text()).toContain('B 79.3k');
+    expect(tile.text()).not.toContain('23572');
+  });
+
+  it('tags a task in "Where B dropped" beyond noise only when B dropped there, never where a check fell but B rose (S9)', async () => {
+    const [drop, other] = base.stats!.regressions;
+    const fell = { ...drop, beyond_noise: true, diff: { estimate: -60, low: -100, high: -20 } };
+    // Only a check got worse here; the task as a whole went up in B, beyond noise.
+    const rose = { ...other, beyond_noise: true, diff: { estimate: 60, low: 20, high: 100 } };
+    withStats({ regressions: [fell, rose] });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const items = w.findAll('[data-test="regression"]');
+    const tags = items.map((i) => i.findAll('.regression-tag').map((t) => t.text()));
+    expect(tags).toEqual([['beyond noise'], []]);
+    expect(items[1].text()).toContain('+60 (+20 to +100)');
   });
 
   it('lists tasks left out of the comparison, with why', async () => {
