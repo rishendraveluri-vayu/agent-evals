@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { api } from '../api/client';
-import type { Compare, ConfigView, ExperimentSummary, ExperimentDetail, TrialRowSummary, Harness } from '../api/types';
+import type { Compare, ConfigView, ExampleView, ExperimentSummary, ExperimentDetail, TrialRowSummary, Harness } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { armsOf, axisWords, checksToGo, doneCount, headline, intervalText, judgeCaveat, NBSP, pointsWithInterval, setupOf, timeLeft, totalTrials, verdictWords, type Verdict } from '../lib/arms';
+import { armsOf, axisWords, checksToGo, doneCount, headline, HEADLINE_EXAMPLE, intervalText, judgeCaveat, NBSP, pickLatest, pointsWithInterval, setupOf, timeLeft, totalTrials, verdictWords, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { capitalise, identParts, minutes, money, percent, plainText, plural, relative, signed } from '../lib/format';
 import { isFake } from '../lib/models';
@@ -19,6 +19,8 @@ interface Loaded {
   experiments: ExperimentSummary[];
   configs: ConfigView[];
   harnesses: Harness[];
+  /** GET /examples: which experiments are shipped examples, by id. */
+  examples: ExampleView[];
   heldoutToGo: number | null;
   /** Tuning outputs still to label (open coding before any rubric). */
   tuningToGo: number;
@@ -36,20 +38,28 @@ const updatedAt = (e: ExperimentSummary, detail?: ExperimentDetail | null) => de
 const twoArms = (e: ExperimentSummary) => e.config_hashes.length === 2;
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
-  const [experiments, configs, harnesses, queue, tuning] = await Promise.all([
+  const [experiments, configs, harnesses, queue, tuning, examples] = await Promise.all([
     api.experiments(),
     api.configs(),
     optional(api.harnesses(), [] as Harness[]),
     optional(api.labelQueue('heldout'), null),
     optional(api.labelQueue('tuning'), []),
+    optional(api.examples(), [] as ExampleView[]),
   ]);
   const finished = experiments.filter((e) => e.status === 'done' && twoArms(e));
   const compares = new Map(await Promise.all(finished.map(async (e) => [e.id, await optional(api.compare(e.id), null)] as const)));
-  // The list is newest first (by when each was made). The latest result is the newest finished
-  // A/B with statistics; while the statistics step is not built, the newest finished A/B whose
-  // comparison is complete, read as counts.
+  // The list is newest first (by when each was made). The latest result is a finished A/B with
+  // statistics, else one whose comparison is complete, read as counts: your own newest on a real
+  // model, unless the shipped headline example is here and nothing of yours is newer (lib/arms.ts
+  // pickLatest). A run on fake models only never leads.
+  const shippedName = (e: ExperimentSummary) => shippedOf(e, examples);
+  // The front door's example (OpenExampleView opens the first by name): the headline's.
+  const pinned = examples[0]?.name ?? HEADLINE_EXAMPLE;
   const ab = finished.filter((e) => !e.calibration && e.config_hashes[0] !== e.config_hashes[1]);
-  const latestId = (ab.find((e) => compares.get(e.id)?.stats) ?? ab.find((e) => compares.get(e.id)?.status === 'complete'))?.id;
+  const latestId = (
+    pickLatest(ab, configs, shippedName, (e) => !!compares.get(e.id)?.stats, pinned) ??
+    pickLatest(ab, configs, shippedName, (e) => compares.get(e.id)?.status === 'complete', pinned)
+  )?.id;
   const latest = latestId ? await optional(api.experiment(latestId), null) : null;
   const trials = latestId ? await optional(api.experimentTrials(latestId, { status: 'done' }), [] as TrialRowSummary[]) : [];
   // Step 4 opens a failure of arm B on the task where B did worst: the most telling one to read.
@@ -60,8 +70,14 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
   const live = new Map(
     (await Promise.all(liveIds.map(async (id) => [id, await optional(api.experiment(id), null)] as const))).filter((x): x is readonly [string, ExperimentDetail] => x[1] !== null),
   );
-  return { experiments, configs, harnesses, heldoutToGo: queue ? queue.length : null, tuningToGo: tuning.length, heldoutChecksToGo: checksToGo(queue ?? []), compares, latest, latestFailed, live };
+  return { experiments, configs, harnesses, examples, heldoutToGo: queue ? queue.length : null, tuningToGo: tuning.length, heldoutChecksToGo: checksToGo(queue ?? []), compares, latest, latestFailed, live };
 });
+
+/** Which shipped example an experiment is: its `example` field once loaded, or, on the machine it
+ *  was exported from (where the load is refused and the run is its own), its id in GET /examples. */
+function shippedOf(e: Pick<ExperimentSummary, 'id' | 'example'>, examples: ExampleView[]): string | null {
+  return e.example?.name ?? examples.find((x) => x.experiment_id === e.id)?.name ?? null;
+}
 
 const show = ref<'all' | 'running' | 'done'>('all');
 
@@ -88,7 +104,8 @@ const latestResult = computed(() => {
   return {
     experiment: latest,
     stats,
-    title: headline(stats, arms, latest.tasks),
+    // Read away from its comparison, the sentence names the harness and model, and the example.
+    title: headline(stats, arms, latest.tasks, { axis: latest.axis, example: shippedOf(latest, d.examples) }),
     big: `${signed(stats.diff.estimate)}${NBSP}${Math.abs(Math.round(stats.diff.estimate)) === 1 ? 'point' : 'points'}`,
     // Each arm's rate by name: "X to Y" is kept for intervals.
     rates: arms.length === 2 ? `pass rate: ${arms[0].short} ${percent(stats.a.rate)}, ${arms[1].short} ${percent(stats.b.rate)}` : `pass rate: A ${percent(stats.a.rate)}, B ${percent(stats.b.rate)}`,

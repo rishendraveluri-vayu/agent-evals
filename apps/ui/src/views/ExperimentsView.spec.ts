@@ -183,3 +183,57 @@ describe('ExperimentsView against the API: a finished A/B still grading', () => 
     expect(text).not.toContain('No verdict or interval');
   });
 });
+
+describe('ExperimentsView with the shipped examples loaded (destructive review U2)', () => {
+  const done = (experiments as { id: string }[]).find((e) => e.id === 'exp_heldout') as Record<string, unknown>;
+  const detail = (details as Record<string, Record<string, unknown>>).exp_heldout;
+  const compare = compares.exp_heldout as unknown as { stats: Record<string, unknown> };
+  const ref = (name: string, title: string) => ({ name, title, loaded_at: '2026-11-06T08:00:00.000Z' });
+  const HEADLINE = ref('headline-prompt-v1-vs-v2', 'Prompt v1 vs v2 on Hermes with Claude Haiku 5.5');
+  const REPLICATION = ref('replication-langgraph-prompt-v1-vs-v2', 'Replication on LangGraph');
+  const example = (e: { name: string }) => ({ name: e.name, title: e.name, description: '', experiment_id: `e_${e.name}`, loaded: true, created_at: '2026-11-05T07:00:00.000Z', counts: {} });
+
+  /** The replication was made after the headline, so it is the newest finished A/B in the list. */
+  function mountShipped(own: Record<string, unknown>[] = [], moreConfigs: Record<string, unknown>[] = []) {
+    const rep = { ...done, id: 'e_rep', created_at: '2026-11-05T09:43:08.000Z', example: REPLICATION };
+    const head = { ...done, id: 'e_head', created_at: '2026-11-05T07:32:29.000Z', example: HEADLINE };
+    routeFetch({
+      '/api/experiments': [...own, rep, head],
+      '/api/configs': [...configs, ...moreConfigs],
+      '/api/harnesses': [],
+      '/api/labels/queue?set=heldout': [],
+      '/api/labels/queue?set=tuning': [],
+      '/api/examples': [example(HEADLINE), example(REPLICATION)],
+      '/api/experiments/e_rep/compare': { ...compare, stats: { ...compare.stats, verdict: 'better' } },
+      '/api/experiments/e_head/compare': { ...compare, stats: { ...compare.stats, verdict: 'no_detectable_difference' } },
+      '/api/experiments/e_mine/compare': { ...compare, stats: { ...compare.stats, verdict: 'worse' } },
+      '/api/experiments/e_rep': { ...detail, ...rep },
+      '/api/experiments/e_head': { ...detail, ...head },
+      '/api/experiments/e_mine': { ...detail, id: 'e_mine', example: null },
+    });
+    return mount(ExperimentsView);
+  }
+
+  it('leads with the shipped headline, naming its harness and model, not the newer replication', async () => {
+    const w = mountShipped();
+    await settle();
+    const title = w.get('[data-test="latest-result"] h2').text();
+    expect(title).toBe('No detectable difference between Prompt v1 and v2 on the held-out tasks, with Hermes Agent and Claude Haiku 5.5 (shipped example)');
+    expect(w.get('[data-test="latest-result"] a').attributes('href')).toBe('#/experiments/e_head');
+  });
+
+  it('leads with a newer run of your own on a real model, and never with one on fake models only', async () => {
+    const mine = { ...done, id: 'e_mine', created_at: '2026-11-06T10:00:00.000Z', example: null };
+    let w = mountShipped([mine]);
+    await settle();
+    expect(w.get('[data-test="latest-result"] h2').text()).toBe('Prompt v2 does worse than v1 on the held-out tasks, with Hermes Agent and Claude Haiku 5.5');
+    w.unmount();
+    // The same run of yours on fake models: its pass rates test the platform, so the headline leads.
+    const fakeHashes = ['sha256:fa1', 'sha256:fa2'];
+    const fakeConfigs = fakeHashes.map((hash, i) => ({ ...(configs[i] as object), hash, model: 'fake/finance-emi' }));
+    w = mountShipped([{ ...mine, config_hashes: fakeHashes }], fakeConfigs);
+    await settle();
+    expect(w.get('[data-test="latest-result"] a').attributes('href')).toBe('#/experiments/e_head');
+    w.unmount();
+  });
+});

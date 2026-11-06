@@ -3,6 +3,7 @@
  *  A and B only. */
 import { SETTING_NAMES, type CompareRow, type CompareStats, type ConfigView, type ExperimentCounts, type ExperimentSummary, type Interval, type SettingName, type TaskView, type TrialRowSummary } from '../api/types';
 import { harnessVersion, plural, shortHash, signed } from './format';
+import { isFake } from './models';
 import { harnessName, harnessShort, modelName, settingLabel, splitName } from './names';
 import { settingValue } from './settings';
 
@@ -277,16 +278,73 @@ export function sharedSplit(tasks: TaskView[]): string | null {
   return splits.size === 1 ? splitName([...splits][0]) : null;
 }
 
-/** "Prompt v2 beats v1 on the held-out tasks". One sentence per verdict (D42, D10's guardrail). */
-export function headline(stats: Pick<CompareStats, 'verdict'>, arms: Arm[], tasks: TaskView[]): string {
+/** What both arms ran on, for a headline read away from its comparison: "LangGraph and Claude
+ *  Haiku 5.5" (the harness and model, less whichever one the arms differ in); '' when unknown. */
+export function sharedSetupWords(axis: string, arms: Arm[]): string {
+  const c = arms[0]?.config;
+  if (!c) return '';
+  if (axis === 'harness') return modelName(c.model);
+  if (axis === 'model') return harnessName(c.harness);
+  return `${harnessName(c.harness)} and ${modelName(c.model)}`;
+}
+
+/** The shipped example the README and the front door lead with (examples/<name>). */
+export const HEADLINE_EXAMPLE = 'headline-prompt-v1-vs-v2';
+
+/** " (shipped example: a replication)": what a shipped example is, by its folder name. */
+function exampleWords(name: string | null | undefined): string {
+  if (!name) return '';
+  if (name.startsWith('replication')) return ' (shipped example: a replication)';
+  if (name.startsWith('positive-control')) return ' (shipped example: a positive control)';
+  return ' (shipped example)';
+}
+
+/**
+ * "Prompt v2 beats v1 on the held-out tasks". One sentence per verdict (D42, D10's guardrail).
+ * Given where it ran (`context`), the sentence also names the harness and model both arms share
+ * and, for a shipped example, which one it is, so it reads true away from its comparison: "Prompt
+ * v2 beats v1 on the held-out tasks, with LangGraph and Claude Haiku 5.5 (shipped example: a
+ * replication)".
+ */
+export function headline(stats: Pick<CompareStats, 'verdict'>, arms: Arm[], tasks: TaskView[], context?: { axis: string; example?: string | null }): string {
   const [a, b] = arms;
   const split = sharedSplit(tasks);
-  const where = split ? ` on the ${split} tasks` : '';
-  if (stats.verdict === 'better') return `${b.label} beats ${a.short}${where}`;
-  if (stats.verdict === 'worse') return `${b.label} does worse than ${a.short}${where}`;
-  if (stats.verdict === 'equivalent') return `${b.label} and ${a.short} are practically equivalent${where}`;
-  if (stats.verdict === 'held_back') return `${b.label} is not called better than ${a.short}${where}: critical failures rose`;
-  return `No detectable difference between ${a.label} and ${b.short}${where}`;
+  const setup = context ? sharedSetupWords(context.axis, arms) : '';
+  const where = `${split ? ` on the ${split} tasks` : ''}${setup ? `, with ${setup}` : ''}`;
+  const ex = exampleWords(context?.example);
+  if (stats.verdict === 'better') return `${b.label} beats ${a.short}${where}${ex}`;
+  if (stats.verdict === 'worse') return `${b.label} does worse than ${a.short}${where}${ex}`;
+  if (stats.verdict === 'equivalent') return `${b.label} and ${a.short} are practically equivalent${where}${ex}`;
+  if (stats.verdict === 'held_back') return `${b.label} is not called better than ${a.short}${where}: critical failures rose${ex}`;
+  return `No detectable difference between ${a.label} and ${b.short}${where}${ex}`;
+}
+
+/** Every arm of the experiment runs a fake model (or its config is unknown and the rest are fake). */
+export function fakeOnly(e: Pick<ExperimentSummary, 'config_hashes'>, configs: ConfigView[]): boolean {
+  const models = e.config_hashes.map((h) => configs.find((c) => c.hash === h)?.model);
+  return models.some((m) => m !== undefined) && models.every((m) => m === undefined || isFake(m));
+}
+
+/**
+ * The finished A/B the Experiments page leads with, from `finished` (newest first) that `ready`
+ * accepts. The shipped headline example (`pinned`: the one the front door opens, the first in GET
+ * /examples) leads while it is here, unless a run of your own is newer; without it, the newest run.
+ * A run on fake models only never leads: its pass rates test the platform, not an agent. `shipped`
+ * names the shipped example an experiment is (its `example` field, or its id in GET /examples on
+ * the machine the example was exported from, where the run is its own); null for your own.
+ */
+export function pickLatest(
+  finished: ExperimentSummary[],
+  configs: ConfigView[],
+  shipped: (e: ExperimentSummary) => string | null,
+  ready: (e: ExperimentSummary) => boolean,
+  pinned: string = HEADLINE_EXAMPLE,
+): ExperimentSummary | null {
+  const real = finished.filter((e) => ready(e) && !fakeOnly(e, configs));
+  const headline = real.find((e) => shipped(e) === pinned);
+  const own = real.find((e) => !shipped(e));
+  if (headline) return own && Date.parse(own.created_at) > Date.parse(headline.created_at) ? own : headline;
+  return real[0] ?? null;
 }
 
 /** "v2 beats v1": the same verbs as headline(), with each arm's short name. */
