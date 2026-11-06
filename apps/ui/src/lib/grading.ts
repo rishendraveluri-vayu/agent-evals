@@ -169,6 +169,8 @@ function sourceOf(by: string, match: Json): string {
   if (by === 'tool') return where?.startsWith('tool:') ? `${where.slice(5)}'s result` : 'a tool result';
   if (by === 'client') return 'the client file';
   if (by === 'user') return where?.startsWith('client_sim:') ? "the simulated client's message" : "the client's message";
+  // Since checks 0.5.0 (review G3) the simulated client's words are their own kind.
+  if (by === 'client_sim') return "the simulated client's message";
   return by;
 }
 

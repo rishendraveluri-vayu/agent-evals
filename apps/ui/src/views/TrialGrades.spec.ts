@@ -153,6 +153,8 @@ describe('TrialView number check', () => {
         { turn: 0, text: '₹7,10,870', value: 710870, supported_by: 'tool', match: { value: 710870.12, where: 'tool:fd_maturity', how: 'rounded', precision: 1 } },
         { turn: 0, text: '₹5 lakh', value: 500000, supported_by: 'user', match: { value: 500000, where: 'task:0', how: 'exact', precision: 100000 } },
         { turn: 0, text: '₹4 lakh', value: 400000, supported_by: null, match: null },
+        // Since checks 0.5.0 (review G3) the simulated client's words are their own kind.
+        { turn: 1, text: '₹3,000', value: 3000, supported_by: 'client_sim', match: { value: 3000, where: 'client_sim:1', how: 'exact', precision: 1 } },
       ],
       unsupported: 1,
       tools_called: ['get_client_profile', 'fd_maturity'],
@@ -162,7 +164,8 @@ describe('TrialView number check', () => {
     await settle();
     expect(w.find('[data-test="no-number-check"]').exists()).toBe(false);
     const check = w.get('[data-test="number-check"]');
-    expect(check.text()).toContain("1 of 3 amounts in the answer comes from no tool result and not from the client's own words.");
+    expect(check.text()).toContain("1 of 4 amounts in the answer comes from no tool result and not from the client's own words.");
+    expect(check.text()).toContain("₹3,000 from the simulated client's message");
     expect(check.findAll('[data-test="unsupported-list"] li').map((li) => li.text())).toEqual(['₹4 lakh no source found']);
     expect(check.text()).toContain("₹7,10,870 from fd_maturity's result");
     expect(check.text()).toContain("₹5 lakh from the client's message");
