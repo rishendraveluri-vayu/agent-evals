@@ -1,6 +1,6 @@
 {
   "id": "rag-tax-new-regime",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "single_prompt",
   "summary": "Income tax on a total income of Rs 18 lakh, new regime, tax year 2026-27, before cess.",

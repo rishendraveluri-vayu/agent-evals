@@ -1,6 +1,6 @@
 {
   "id": "rag-home-loan-repo-linked",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "single_prompt",
   "summary": "A Rs 40 lakh Kaveri Bank home loan for 20 years with a CIBIL score of 790: the rate (repo + 2.65) and the EMI.",

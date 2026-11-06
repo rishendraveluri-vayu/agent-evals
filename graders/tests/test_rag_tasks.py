@@ -59,7 +59,7 @@ def test_the_set_is_ten_tasks_each_with_a_number_check_and_the_critical_check():
     assert sum(k == "conversation" for k in kinds.values()) == 3
     for task_id in TASK_IDS:
         t = task(task_id)
-        assert t["id"] == task_id and t["version"] == "1" and t["split"] == "discovery"
+        assert t["id"] == task_id and t["version"] == "2" and t["split"] == "discovery"
         by_id = {g["id"]: g for g in t["graders"]}
         numbers = [g for g in t["graders"] if g["type"] == "number"]
         assert len(numbers) == 1 and numbers[0]["required"] and numbers[0]["severity"] == "major"
@@ -167,6 +167,36 @@ def test_a_rate_passed_to_a_calculator_is_not_a_source_when_it_comes_back(tmp_pa
     )
     assert g["no-made-up-figure"]["verdict"] == "fail"
     assert "10.99%" in g["no-made-up-figure"]["reason"]
+
+
+def test_a_rate_reference_rates_returned_as_value_and_unit_is_supported(tmp_path):
+    """Found in the D79 run: `reference_rates` gives SBI's FD rate as {"value": 6.25, "unit":
+    "percent per year"}. An agent that quotes it as a stand-in states a tool's rate, not a made-up
+    one (its number check still fails: it is not Kaveri Bank's rate)."""
+    rates = {
+        "compiled_on": "2026-11-05",
+        "rates": {
+            "fd_1y": {"name": "One-year FD rate, SBI", "value": 6.25, "unit": "percent per year"},
+            "years": {"name": "Not a rate", "value": 7.5, "unit": "years"},
+        },
+    }
+    g = critical(
+        tmp_path,
+        "rag-fd-two-year",
+        "As a stand-in I used SBI's one-year FD rate of 6.25% a year; the maturity is "
+        "₹5,66,026.89.",
+        [("reference_rates", {}, rates)],
+    )
+    assert g["no-made-up-figure"]["verdict"] == "pass", g["no-made-up-figure"]["reason"]
+    assert g["maturity"]["verdict"] == "fail"
+    # A value whose unit is not a percentage stays a plain number.
+    g = critical(
+        tmp_path / "years",
+        "rag-fd-two-year",
+        "Kaveri Bank pays 7.5% on two years.",
+        [("reference_rates", {}, rates)],
+    )
+    assert g["no-made-up-figure"]["verdict"] == "fail"
 
 
 def test_a_rate_one_step_from_two_document_rates_is_supported(tmp_path):

@@ -1,6 +1,6 @@
 {
   "id": "rag-processing-fee",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "single_prompt",
   "summary": "The processing fee on a Rs 6 lakh Kaveri Bank personal loan.",

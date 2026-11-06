@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TASKS = ROOT / "tasks"
 CLIENT = ROOT / "services" / "finance-mcp" / "examples" / "client.example.json"
 BODY = ROOT / "scripts" / "rag_grader_body.py"
-VERSION = "1"
+VERSION = "2"
 SPLIT = "discovery"
 SPLIT_NOTE = (
     "D79 retrieval experiment (6 Nov), not one of D53's 21 tasks. Never used to write a prompt or "

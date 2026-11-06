@@ -1,6 +1,6 @@
 {
   "id": "rag-personal-loan-emi",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "single_prompt",
   "summary": "A Rs 3 lakh Kaveri Bank personal loan for 3 years with a CIBIL score of 785: the rate and the EMI.",

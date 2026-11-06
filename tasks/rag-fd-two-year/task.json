@@ -1,6 +1,6 @@
 {
   "id": "rag-fd-two-year",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "single_prompt",
   "summary": "Rs 5 lakh in a Kaveri Bank FD for 2 years: the rate, and the maturity amount.",

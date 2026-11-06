@@ -1,6 +1,6 @@
 {
   "id": "rag-fd-break-early",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "single_prompt",
   "summary": "A Rs 2 lakh, 3-year Kaveri Bank FD broken after exactly 1 year: the rate paid and the payout.",

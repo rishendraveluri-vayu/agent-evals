@@ -1,6 +1,6 @@
 {
   "id": "rag-personal-loan-foreclose",
-  "version": "1",
+  "version": "2",
   "split": "discovery",
   "kind": "single_prompt",
   "summary": "Closing a Kaveri Bank personal loan after 8 EMIs with Rs 3,46,500 outstanding: the foreclosure charge.",

@@ -70,8 +70,12 @@ def _walk(value, key, out_all, out_rates):
             if RATE_KEY.search(key or ""):
                 out_rates.add(d)
     elif isinstance(value, dict):
+        # A rate written as {"value": 6.25, "unit": "percent per year"}, as `reference_rates`
+        # returns each rate: its "value" names no rate, its "unit" does.
+        unit = value.get("unit")
+        percent_unit = isinstance(unit, str) and ("percent" in unit.lower() or "%" in unit)
         for k, v in value.items():
-            _walk(v, str(k), out_all, out_rates)
+            _walk(v, "rate" if percent_unit and k == "value" else str(k), out_all, out_rates)
     elif isinstance(value, list):
         for v in value:
             _walk(v, key, out_all, out_rates)
