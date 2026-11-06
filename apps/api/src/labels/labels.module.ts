@@ -7,5 +7,6 @@ import { LabelsService } from './labels.service';
   imports: [CatalogueModule],
   controllers: [LabelsController],
   providers: [LabelsService],
+  exports: [LabelsService],
 })
 export class LabelsModule {}
