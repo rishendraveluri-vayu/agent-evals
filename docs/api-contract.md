@@ -681,6 +681,10 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   - `rests_on_judge` (6 Nov): `{differing, tasks: [{task, task_id, a, b}], all}`, the tasks with a
     nonzero difference whose outcome a required judge decided in `a` and `b` trials, `all` when
     that is every such task; null when none (today, all judges being optional);
+  - `missing_trials` (soak test, 6 Nov): `{planned, a, b, tasks: [{task, task_id, a, b}], text}`
+    when an arm has fewer done trials than planned (`planned` is N per task in each arm; a slot
+    whose every attempt was an infra failure has none), with how many each arm lacks in all and
+    per task; `text` is also appended to `verdict_text`. Null when both arms have every trial;
   - `costs[].missing` (6 Nov): per arm, trials left out for having no value (tokens no longer read
     a missing count as 0); per-task rows count a grading that failed or found no graders as
     `incomplete`;

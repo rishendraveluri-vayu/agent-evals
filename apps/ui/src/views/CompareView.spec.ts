@@ -302,6 +302,26 @@ describe('CompareView against the API: caveats from the statistics (review S6, S
     expect(w.get('[data-test="judge-decided"]').text()).toBe('Decided by the judge: 1 of the 4 tasks that differ (debt-hardship-03) had at least one outcome decided by the LLM judge.');
   });
 
+  it('says when an arm has fewer trials than planned because a slot ended with only infra failures (soak test, 6 Nov)', async () => {
+    const base = compares.exp_heldout as unknown as { stats: Record<string, unknown> };
+    const text =
+      "The arms' trial counts are unequal: arm A has 105 of its 105 planned trials and arm B has 104 of its 105 planned trials. " +
+      '1 slot on 1 task (draft-convo-where-to-start) ended with no trial to grade, every attempt an infra failure, and the verdict uses the trials each arm has.';
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': {
+        ...base,
+        stats: { ...base.stats, missing_trials: { planned: 5, a: 0, b: 1, tasks: [{ task: 'sha256:x', task_id: 'draft-convo-where-to-start', a: 0, b: 1 }], text } },
+      },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as unknown as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="missing-trials"]').text()).toBe(`Missing trials: ${text}`);
+  });
+
   it('shows neither when the statistics have none (every shipped run)', async () => {
     routeFetch({
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
@@ -314,6 +334,7 @@ describe('CompareView against the API: caveats from the statistics (review S6, S
     await settle();
     expect(w.find('[data-test="unequal-decided"]').exists()).toBe(false);
     expect(w.find('[data-test="judge-decided"]').exists()).toBe(false);
+    expect(w.find('[data-test="missing-trials"]').exists()).toBe(false);
   });
 });
 

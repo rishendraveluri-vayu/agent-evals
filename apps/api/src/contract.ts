@@ -1100,6 +1100,14 @@ export interface CompareStats {
    * task has such a trial (today every judge criterion is optional).
    */
   rests_on_judge: { differing: number; tasks: { task: Sha256; task_id: string; a: number; b: number }[]; all: boolean } | null;
+  /**
+   * Soak test (6 Nov): the arms ran unequal numbers of trials because some slots ended with no
+   * trial to grade (every attempt an infra failure: D16's cap reached, or a label never re-queued).
+   * `planned` is the trials planned per task in each arm (the experiment's N); `a` and `b` are how
+   * many each arm lacks in all, `tasks` the tasks that lack any, in the experiment's order, and
+   * `text` the sentence also appended to `verdict_text`. Null when both arms have every trial.
+   */
+  missing_trials?: { planned: number; a: number; b: number; tasks: { task: Sha256; task_id: string; a: number; b: number }[]; text: string } | null;
 }
 
 // ---- Trials --------------------------------------------------------------------------

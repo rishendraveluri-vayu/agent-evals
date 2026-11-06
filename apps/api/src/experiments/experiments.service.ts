@@ -1212,7 +1212,9 @@ export class ExperimentsService {
         result = { stats: null, note: noVerdictNote(versions, { experimentId: r.id, tasks: r.task_sha256s.length, reused }), versions };
       } else {
         const configs = await this.db.query<{ model: string }>('SELECT model FROM configs WHERE hash = ANY($1)', [r.config_hashes.slice(0, 2)]);
-        const analysed = analyse({ seed: r.id, tasks: statsTasks(r, trials, grades, taskIds), madeUpPrices: configs.some((c) => isFakeModel(c.model)), calibration: r.calibration });
+        // `planned`: N per task in each arm, so a slot that ended with only infra failures is named
+        // beside the verdict (soak test, 6 Nov).
+        const analysed = analyse({ seed: r.id, tasks: statsTasks(r, trials, grades, taskIds), madeUpPrices: configs.some((c) => isFakeModel(c.model)), calibration: r.calibration, planned: r.n });
         result = { ...analysed, versions };
       }
       if (this.statsCache.size >= 200) this.statsCache.delete(this.statsCache.keys().next().value as string);

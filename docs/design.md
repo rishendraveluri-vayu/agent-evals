@@ -401,6 +401,11 @@ Choice of N (decided 5 Nov, Rishi: "Approve both, N=10"; `docs/experiment.md`, "
   - `unequal_decided` names any task where one arm has more than twice as many decided trials as the
     other (the sign-flip test leans towards the arm with fewer then); `rests_on_judge` lists tasks
     whose outcome a required judge decided (none today, all judges being optional).
+  - `missing_trials` (soak test, 6 Nov) says when an arm has fewer trials than planned: a slot whose
+    every attempt was an infra failure (D16's cap reached, or a label never re-queued) has no trial
+    to grade. It gives how many each arm lacks and on which tasks, and the same sentence ends the
+    verdict's text. The verdict is still computed from the trials each arm has; the soak's
+    experiment 3 had compared 105 against 104 trials with no word of it.
   - A trial whose grading failed, or that has no graders, counts as incomplete in the per-task rows
     as in the statistics; token means leave out trials without a token count instead of reading 0.
 - **Judge agreement (`stats/`, D8), after the same review.** The false-pass gap is the signed
