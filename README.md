@@ -65,14 +65,8 @@ flowchart TD
     K -- no --> V["B is better<br/>(or worse)"]
 ```
 
-- Interval: resample the tasks 10,000 times.
-- Paired test: a sign-flip test. If the change did nothing, each task's difference is as likely
-  negative as positive, so it counts how often random flips look as extreme as what happened.
-- "Practically equivalent" needs the interval inside ±10 points, and the same 6-task floor.
-- Per-task flags get a Benjamini-Hochberg correction, so testing 20 tasks at once doesn't throw up
-  a flag by luck as often.
-
-More in [`docs/design.md`](docs/design.md), section 6.
+The interval comes from resampling tasks, the paired test is a sign-flip test, and per-task flags get a
+multiple-comparison correction. Details in [`docs/design.md`](docs/design.md), section 6.
 
 ## How it works
 
@@ -98,16 +92,6 @@ flowchart LR
 - The tasks are a personal-finance assistant for clients in India: calculator tools, client files,
   and a simulated client for the multi-turn ones. 31 tasks: 10 held out for scoring, 11 for
   discovery (where v1's failures were found), 10 for retrieval.
-
-| Service | What it does | Port (localhost) |
-| --- | --- | --- |
-| `ui` | The web app, served by nginx | 8080 |
-| `api` | Database, trial queue, run controls, grading jobs | 3000 |
-| `litellm` | Model proxy, one key and budget per trial | 4000 |
-| `worker-*` | One per harness: claim a trial, run it, upload the results | none |
-| `grader` | Grades finished trials | none |
-| `fake-llm` | Scripted model server for tests and CI | internal |
-| `postgres` | The platform's database and LiteLLM's | internal |
 
 ## Running it for real
 
@@ -152,8 +136,12 @@ Stop it with `docker compose down`. Add `-v` to wipe the database too.
 
 ### A harness
 
-One folder under `workers/` (adapter, capabilities file, Dockerfile, gate tests) and one service
-block in `docker-compose.yml`. Nothing in the platform core changes.
+One folder under `workers/` and one service block in `docker-compose.yml`. You write two methods,
+`setup(ctx)` and `run_turn(ctx, history, max_steps)`; the shared library does the rest. Nothing in
+the platform core changes.
+
+<details>
+<summary>Steps</summary>
 
 ```bash
 make new-harness NAME=crewai      # scaffold workers/crewai/ and print its compose service
@@ -161,13 +149,20 @@ make probe-harness NAME=crewai    # see what actually reaches the model, against
 make test-harness NAME=crewai     # the contract's gate tests
 ```
 
-You write two methods: `setup(ctx)`, which maps our settings to the harness's own, and
-`run_turn(ctx, history, max_steps)`, one agent turn. The shared library handles the spec, timeout,
-tools, simulated client, result and trace. The five adapters here are 300 to 420 lines each.
-Contract: [`docs/adapter-contract.md`](docs/adapter-contract.md). How each harness was wrapped:
-[`docs/harness-guide.md`](docs/harness-guide.md).
+`setup(ctx)` maps our settings to the harness's own; `run_turn` is one agent turn. The shared
+library handles the spec, timeout, tools, simulated client, result and trace. The five adapters here
+are 300 to 420 lines each. Contract: [`docs/adapter-contract.md`](docs/adapter-contract.md). How
+each harness was wrapped: [`docs/harness-guide.md`](docs/harness-guide.md).
+
+</details>
 
 ### A model
+
+One entry in `services/litellm/config.yaml`: provider route, key variable, prices. A local
+open-weight model (Qwen 2.5 7B through Ollama) is already registered.
+
+<details>
+<summary>Steps</summary>
 
 1. Add one entry to `services/litellm/config.yaml`: provider route, the key's variable name, prices.
 2. A new provider also needs its key passed to LiteLLM: add the variable to the `litellm` service
@@ -187,19 +182,26 @@ A local open-weight model is already registered: `qwen2.5-7b-local`, through Oll
 `docker compose exec ollama ollama pull qwen2.5:7b` (about 4.7 GB), and pick it in a config. Free,
 but slow on a CPU: minutes per call.
 
+</details>
+
 ### A task
 
-One folder `tasks/<id>/` with a `task.json`: the messages (or a simulated client), the client's
-data file if there is one, and the graders. Graders can check an exact number from a tool, whether
-a tool was called, text present or absent, the end state, where every number came from, a Python
-unit test, or ask the LLM judge with a rubric.
+One folder `tasks/<id>/` with a `task.json`: the messages (or a simulated client), the client's data
+file if there is one, and the graders. The API picks it up without a restart.
+
+<details>
+<summary>Graders and examples</summary>
+
+Graders can check an exact number from a tool, whether a tool was called, text present or absent,
+the end state, where every number came from, a Python unit test, or ask the LLM judge with a rubric.
 
 - Short hand-written example: `tasks/demo-skill-card-transfer/task.json`.
 - Fields: [`docs/api-contract.md`](docs/api-contract.md) (Task file). Graders:
   [`docs/proposals/grader-format.md`](docs/proposals/grader-format.md).
-- The API picks up a new task without a restart.
 - Don't name a hand-written task `draft-*`. `scripts/make_draft_tasks.py` writes those folders and
   overwrites hand edits.
+
+</details>
 
 ## Tests
 
