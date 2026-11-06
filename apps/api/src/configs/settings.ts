@@ -69,6 +69,8 @@ function isToggle(v: unknown): v is Toggle {
  * past them is almost always a typo, and a runaway trial costs money.
  */
 export const MAX_STEPS = 200;
+/** The UI's cap since SP7, the API's since the review's re-check (6 Nov): past it, a typo is likelier than a plan. */
+export const MAX_OUTPUT_TOKENS = 64_000;
 export const MAX_TIMEOUT_S = 3600;
 
 /** Why a value is not valid for a setting, or null if it is. */
@@ -77,7 +79,7 @@ export function settingProblem(name: SettingName, v: unknown): string | null {
     case 'temperature':
       return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 2 ? null : 'a number from 0 to 2';
     case 'max_output_tokens':
-      return typeof v === 'number' && Number.isSafeInteger(v) && v >= 1 ? null : 'an integer of at least 1';
+      return typeof v === 'number' && Number.isSafeInteger(v) && v >= 1 && v <= MAX_OUTPUT_TOKENS ? null : `an integer from 1 to ${MAX_OUTPUT_TOKENS}`;
     case 'max_steps':
       return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= MAX_STEPS ? null : `an integer from 1 to ${MAX_STEPS}`;
     case 'timeout_s':

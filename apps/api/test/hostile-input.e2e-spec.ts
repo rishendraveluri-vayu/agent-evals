@@ -171,5 +171,33 @@ describeWithDb('hostile input from workers and clients (e2e, real Postgres)', ()
     await request(env.http).post(`/api/worker/trials/${c.trial_id}/heartbeat`).set(auth).send({ worker_id: 'w-real', attempt: c.attempt }).expect(200);
     const [seen] = (await env.pool.query<{ fresh: boolean }>(`SELECT last_seen_at > now() - interval '60 seconds' AS fresh FROM workers WHERE worker_id = 'w-real'`)).rows;
     expect(seen.fresh).toBe(true);
+
+    // Re-check (6 Nov): once idle, its empty claims keep it live, so an idle pool still counts;
+    // a made-up id's empty claims still add nothing.
+    await e.report(c, 'w-real');
+    await env.pool.query(`UPDATE workers SET last_seen_at = now() - interval '5 minutes' WHERE worker_id = 'w-real'`);
+    await claim({ worker_id: 'w-real', harness: 'ownloop' }).expect(204);
+    const [idle] = (await env.pool.query<{ fresh: boolean }>(`SELECT last_seen_at > now() - interval '60 seconds' AS fresh FROM workers WHERE worker_id = 'w-real'`)).rows;
+    expect(idle.fresh).toBe(true);
+    await claim({ worker_id: 'ghost-after', harness: 'ownloop' }).expect(204);
+    expect(await workers()).not.toContain('ghost-after');
+  });
+
+  // ---- re-check of the review (6 Nov) ----
+
+  it('refuses an unknown label set on the agreement route, a long end_state is cut, and a finished run has no arm to resume', async () => {
+    await request(env.http).get('/api/judge/agreement?set=bogus').expect(400);
+    expect((await request(env.http).get('/api/judge/agreement?set=heldout').expect(200)).text).toBe('null');
+    // A long end_state is cut to 64 characters and named in the trial's problems.
+    await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 1 });
+    const c = (await e.claim('w-long-end'))!;
+    await e.report(c, 'w-long-end', 'agent', { end_state: 'x'.repeat(5000) });
+    const [row] = (await env.pool.query<{ n: number }>('SELECT length(end_state)::int AS n FROM trials WHERE id = $1', [c.trial_id])).rows;
+    expect(row.n).toBe(64);
+    const B = await makeConfig(env.http, cat, { name: 'hostile B', settings: { temperature: 0.7 } });
+    const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 1 });
+    await request(env.http).post(`/api/experiments/${exp.id}/stop`).expect(200);
+    const res = await request(env.http).post(`/api/experiments/${exp.id}/arms/A/resume`).expect(409);
+    expect(res.body).toMatchObject({ error: 'experiment_finished' });
   });
 });

@@ -104,6 +104,9 @@ async function requeue(q: Queryable, trialId: string, attempt: number, experimen
  * happens here, in a transaction, with the trial row locked; a report and the sweep lock the
  * experiment row before it (the lock order in run-state.ts, E3 to E5).
  */
+/** Candidates a claim tries before answering 204: another worker may hold the first ones. */
+const CLAIM_TRIES = 8;
+
 @Injectable()
 export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(WorkerService.name);
@@ -164,10 +167,12 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     }
     const modelBaseUrl = this.litellm.workerBaseUrl; // fails early when LiteLLM is not configured
     const claimed = await this.claimNext(workerId, harness, modelBaseUrl);
-    // Item 8, narrowed by E10 (6 Nov review): a worker counts as live for the estimate once it holds
-    // a trial (this claim, then its heartbeats). An empty claim (204) records nothing, so claims
-    // under made-up worker ids no longer add live workers.
+    // Item 8 with E10 (6 Nov review): a worker counts as live once it has held a trial (this claim,
+    // then its heartbeats); after that an empty claim (204) keeps it live, so an idle pool still
+    // counts in the time estimate (the re-check found every idle worker looked absent). An empty
+    // claim from a worker id that never held a trial records nothing, so made-up ids add none.
     if (claimed) await this.seen(workerId, harness);
+    else await this.db.query('UPDATE workers SET last_seen_at = now() WHERE worker_id = $1 AND harness = $2', [workerId, harness]);
     return claimed;
   }
 
@@ -183,25 +188,42 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
   private claimNext(workerId: string, harness: string, modelBaseUrl: string): Promise<ClaimResponse | null> {
     return this.db.tx(async (client) => {
       // A probe trial (D33) has no experiment and goes first: it is a short pre-run check.
-      const t = await one<TrialRow>(
-        client,
-        `UPDATE trials SET status = 'claimed', worker_id = $2, claimed_at = now(), heartbeat_at = now()
-         WHERE id = (
-           SELECT t.id FROM trials t LEFT JOIN experiments e ON e.id = t.experiment_id
-           WHERE t.status = 'queued' AND t.harness = $1 AND (t.probe OR e.status = 'running')
+      const claimable = `t.status = 'queued' AND t.harness = $1 AND (t.probe OR e.status = 'running')
              -- SP7: a shipped example is never claimed (it is never running either: belt and braces).
              AND (e.id IS NULL OR e.example_name IS NULL)
              -- D37: a paused arm's trials wait; the other arm keeps claiming. A probe has no arm.
              -- D44: in a calibration run one config is both arms, told apart by repeat.
              AND NOT EXISTS (SELECT 1 FROM experiment_arms a
-                             WHERE a.experiment_id = t.experiment_id AND a.paused_at IS NOT NULL AND ${TRIAL_IN_ARM})
+                             WHERE a.experiment_id = t.experiment_id AND a.paused_at IS NOT NULL AND ${TRIAL_IN_ARM})`;
+      // Lock order (run-state.ts): the experiment row before the trial. The claim's second write to
+      // the trial (spec, keys) re-checks the foreign key, which takes KEY SHARE on the experiment;
+      // taken only then, while holding the trial, it deadlocked with Stop, which holds the
+      // experiment FOR UPDATE and waits for that trial (re-check of the 6 Nov review, E5). So the
+      // candidate's experiment is locked KEY SHARE first, then the trial is taken if still claimable.
+      let t: TrialRow | undefined;
+      for (let skip = 0; skip < CLAIM_TRIES && !t; skip++) {
+        const cand = await one<{ id: string; experiment_id: string | null }>(
+          client,
+          `SELECT t.id, t.experiment_id FROM trials t LEFT JOIN experiments e ON e.id = t.experiment_id
+           WHERE ${claimable}
            -- Probes first (D33), then each experiment in its seeded claim order (D32).
            ORDER BY t.probe DESC, e.started_at, e.id, t.order_index, t.attempt, t.created_at
-           LIMIT 1
-           FOR UPDATE OF t SKIP LOCKED)
-         RETURNING id, experiment_id, probe, task_sha256, config_hash, repeat_index, attempt`,
-        [harness, workerId],
-      );
+           LIMIT 1 OFFSET $2`,
+          [harness, skip],
+        );
+        if (!cand) break;
+        if (cand.experiment_id) await client.query('SELECT 1 FROM experiments WHERE id = $1 FOR KEY SHARE', [cand.experiment_id]);
+        t = await one<TrialRow>(
+          client,
+          `UPDATE trials SET status = 'claimed', worker_id = $2, claimed_at = now(), heartbeat_at = now()
+           WHERE id = (
+             SELECT t.id FROM trials t LEFT JOIN experiments e ON e.id = t.experiment_id
+             WHERE t.id = $3 AND ${claimable}
+             FOR UPDATE OF t SKIP LOCKED)
+           RETURNING id, experiment_id, probe, task_sha256, config_hash, repeat_index, attempt`,
+          [harness, workerId, cand.id],
+        );
+      }
       if (!t) return null;
       const exp = t.experiment_id ? ((await one<ExperimentRow>(client, 'SELECT * FROM experiments WHERE id = $1', [t.experiment_id])) as ExperimentRow) : null;
       const cfg = (await one<ConfigRow>(client, `${CONFIG_SELECT} WHERE c.hash = $1`, [t.config_hash])) as ConfigRow;

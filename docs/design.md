@@ -163,8 +163,11 @@ Storage: experiment trials, their spans, grading jobs, grades, labels and events
   "running", Stop cannot leave a queued trial behind, and reports and controls no longer deadlock. The
   sweep runs one transaction per experiment. At the end of a trial the worker reads its LiteLLM calls
   with the same back-off and 600 s deadline as its uploads and report, so a short API, LiteLLM or
-  Postgres outage no longer throws a finished trial away. A worker counts as live for the time estimate
-  only once it has claimed a trial or sent a heartbeat; a claim for a harness with no folder is refused.
+  Postgres outage no longer throws a finished trial away. A claim takes its candidate's experiment
+  row (KEY SHARE) before the trial, the same order, so a claim racing Stop no longer deadlocks (found
+  by the re-check). A worker counts as live for the time estimate once it has held a trial, and its
+  empty claims keep it live while idle; a made-up worker id never counts, and a claim for a harness
+  with no folder is refused.
 
 ## 4. How runs are isolated and reproduced
 

@@ -237,3 +237,17 @@ def test_the_runner_report_schema_takes_sim_error():
     assert result["conversation"]["ended_by"] == "sim_error"
     assert errors("result", result) == []
     assert label(OK, {"result": result}, example["proxy_usage"]) == "infra:sim_error"
+
+
+def test_a_litellm_code_that_is_not_an_http_status_is_a_provider_error():
+    """Re-check of the review (6 Nov): with Postgres down, LiteLLM refuses the agent's call with
+    "the authentication database is temporarily unreachable" and logs error_code P1001, not an
+    HTTP status; that trial was labelled the agent's. It is the platform's failure."""
+    result = {
+        "end_state": "harness_error",
+        "end_detail": {"exception_message": "Service Unavailable"},
+    }
+    assert provider_label("P1001", result, proxy_seen=True) == "infra:provider_error"
+    assert provider_label("unknown", result, proxy_seen=True) == "infra:provider_error"
+    assert provider_label("budget_exceeded", result, proxy_seen=True) == "infra:budget_net"
+    assert provider_label("400", result, proxy_seen=True) is None

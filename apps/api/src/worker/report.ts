@@ -247,6 +247,8 @@ function count(v: unknown, what: string, problems: string[]): number | null {
   return v;
 }
 
+const END_STATE_MAX = 64;
+
 /** The numbers the API indexes: LiteLLM's usage for the agent key (R10.9), and the
  *  simulated client's spend from its own chat spans. What it cannot take goes in `problems` (E8). */
 export function usageOf(report: JsonObject, result: JsonObject | null, rows: SpanRow[], problems: string[] = []): Usage {
@@ -254,7 +256,10 @@ export function usageOf(report: JsonObject, result: JsonObject | null, rows: Spa
   const timing = isObj(report.timing) ? report.timing : {};
   const simSpans = rows.filter((r) => r.name.startsWith('chat ') && r.attributes['evals.role'] === 'sim');
   const simCost = simSpans.reduce((sum, r) => sum + (amount(r.attributes['evals.cost_usd'], `span ${r.span_id} evals.cost_usd`, problems) ?? 0), 0);
-  const endState = typeof report.end_state === 'string' ? report.end_state : result && typeof result.end_state === 'string' ? result.end_state : null;
+  const rawEnd = typeof report.end_state === 'string' ? report.end_state : result && typeof result.end_state === 'string' ? result.end_state : null;
+  // The contract's end states are short words, extensible (contract v2); a long one is cut and named (re-check of the review, 6 Nov).
+  if (rawEnd !== null && rawEnd.length > END_STATE_MAX) problems.push(`end_state was ${rawEnd.length} characters, cut to ${END_STATE_MAX}`);
+  const endState = rawEnd === null ? null : rawEnd.slice(0, END_STATE_MAX);
   return {
     cost_usd: proxy ? amount(proxy.cost_usd, 'proxy_usage.cost_usd', problems) : null,
     sim_cost_usd: simSpans.length ? Math.round(simCost * 1e8) / 1e8 : null,

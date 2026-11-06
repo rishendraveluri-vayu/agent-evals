@@ -692,7 +692,11 @@ export class ExperimentsService {
   /** D37: resumes a paused arm; its queued trials can be claimed again. */
   async resumeArm(id: string, configHash: string): Promise<ExperimentDetail> {
     const arm = await this.armRow(id, configHash);
-    assertNotExample(await this.row(id), 'have an arm resumed');
+    const exp = await this.row(id);
+    assertNotExample(exp, 'have an arm resumed');
+    // A stopped run has nothing to resume (re-check of the review, 6 Nov: it answered 200). A done one
+    // can: an arm paused on a config error at the last trial is resumed so its comparison can read it.
+    if (exp.status === 'cancelled') throw conflict('experiment_finished', `experiment ${id} was stopped, so it has no arm to resume`);
     await this.db.tx(async (client) => {
       await lockExperiment(client, id); // the lock order in run-state.ts (E3 to E5)
       const { rowCount } = await client.query(

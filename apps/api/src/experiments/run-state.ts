@@ -50,7 +50,9 @@ export interface StoredEvent {
  *   queues nothing, or Stop sees the new attempt and cancels it (E4);
  * - no transaction holds the weak lock an insert of a trial or an event takes on the experiment
  *   (KEY SHARE) and then asks for FOR UPDATE, which is how two of them deadlocked (E5).
- * A claim locks only the trial it takes (SKIP LOCKED) and never waits for the experiment row. A
+ * A claim takes its candidate's experiment row KEY SHARE first and then the trial (SKIP LOCKED),
+ * so it waits behind a run control rather than holding the trial against it (the claim's second
+ * write to the trial re-checks the foreign key, which takes that lock anyway). A
  * grades report locks its grading job, then the experiment (applyFutility), and never an
  * unfinished trial. applyRunRules and applyFutility lock the row again: a no-op after this.
  */

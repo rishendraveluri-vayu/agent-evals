@@ -72,6 +72,25 @@ describeWithDb('races between reports, the sweep and run controls (e2e, real Pos
     }
   });
 
+  it('claims racing a Stop never deadlock or answer 500 (re-check of E5)', async () => {
+    // As the re-verification found it: two workers claiming while Stop is pressed. The claim's
+    // second write to its trial takes KEY SHARE on the experiment; it used to do so while holding
+    // the trial, against Stop holding the experiment and waiting for that trial.
+    for (let r = 0; r < 12; r += 1) {
+      const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 2 });
+      const claimOf = (w: string) => request(env.http).post('/api/worker/claim').set(auth).send({ worker_id: w, harness: 'ownloop' });
+      const [c1, c2, stop] = await Promise.all([claimOf(`w-cs-${r}-1`), claimOf(`w-cs-${r}-2`), request(env.http).post(`/api/experiments/${exp.id}/stop`)]);
+      expect({ round: r, codes: [c1.status, c2.status, stop.status].map((c) => (c === 204 ? 200 : c)) }).toEqual({ round: r, codes: [200, 200, 200] });
+      const n = await counts(exp.id);
+      // Whatever got claimed before the stop is kept (it runs and reports); nothing is left queued.
+      expect({ round: r, queued: n.queued ?? 0 }).toEqual({ round: r, queued: 0 });
+      for (const [res, w] of [[c1, `w-cs-${r}-1`], [c2, `w-cs-${r}-2`]] as const) {
+        if (res.status === 200) await report(res.body as ClaimResponse, w, 'agent');
+      }
+      await e.quiesce();
+    }
+  }, 60_000);
+
   it('reports, the lease sweep and run controls at once never deadlock or answer 500, and end consistent (E5)', async () => {
     const codes: number[] = [];
     for (let r = 0; r < ROUNDS; r += 1) {

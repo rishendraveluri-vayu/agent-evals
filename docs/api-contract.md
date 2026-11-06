@@ -163,7 +163,7 @@ simulated-client task the API also summarises that file (profile and debts) into
   | --- | --- | --- |
   | `unsupported_setting` | the model refuses it | "Claude Haiku 5.5 rejects temperature: leave it unset, or pick a model that takes it." |
   | `unsupported_setting` | the harness cannot take it (the message quotes the capabilities file's reason) | "ownloop ignores memory: leave it unset, or pick a harness that takes it (hermes)." |
-  | `invalid_setting` | a bad value | "Set max_steps to an integer of at least 1, or leave it unset for the default." |
+  | `invalid_setting` | a bad value | "Set max_steps to an integer from 1 to 200, or leave it unset for the default." (`max_output_tokens` 1 to 64000, `timeout_s` above 0 and at most 3600) |
   | `unknown_setting` | a name that is not a setting | "Did you mean temperature? Rename temprature to temperature." |
   | `invalid_harness_options`, `unknown_harness`, `unknown_model`, `unknown_prompt`, `unknown_toolset` | | where to pick a valid one |
   | `harness_not_implemented` | the harness is scaffolded, not implemented: its capabilities file still has the scaffold's `"TODO"` version (since 5 Nov, A2) | "Finish it first (workers/crewai/README.md): write setup and run_turn, run probe.sh, set version.package and version.ref in its capabilities.json, and add its worker to docker-compose.yml. Until then pick a harness from GET /harnesses: ..." |
@@ -1007,18 +1007,23 @@ What the API refuses or rewrites since the review's fixes (`docs/destructive-rev
 - **Values:** `POST /experiments` takes `budget_usd` above 0 and at most 1000, and no NUL in `name`
   or `axis`. `POST /configs` takes a name of at most 120 characters with no NUL, `max_steps` from 1
   to 200 and `timeout_s` above 0 and at most 3600 (the 400 says "Set max_steps to an integer from 1
-  to 200, or leave it unset for the default."). Any value the database cannot store is a 400
-  `invalid_value`, not a 500.
+  to 200, or leave it unset for the default."), and `max_output_tokens` from 1 to 64000. Any value
+  the database cannot store is a 400 `invalid_value`, not a 500. `GET /judge/agreement` with an
+  unknown `set` is a 400 `invalid_query`; an arm of a stopped run cannot be resumed (409
+  `experiment_finished`; a done run's arm can, as D37 needs).
 - **Queries:** a repeated `status` on `GET /experiments/:id/trials` is a list; a repeated `config`
   or `task` is 400 `invalid_filter`; a repeated `experiment` or `items` on `GET /labels/queue` is
   400 `invalid_query`.
 - **Worker protocol:** a claim for a harness with no folder under `workers/` is 400
-  `unknown_harness`; `worker_id` is 1 to 200 characters without NUL; a worker counts as live only
-  after a claim that gets a trial, or a heartbeat (a 204 records nothing); a heartbeat's `attempt`
+  `unknown_harness`; `worker_id` is 1 to 200 characters without NUL; a worker counts as live once a
+  claim has given it a trial, and then its heartbeats and its empty claims (204) keep it live; an
+  empty claim from a worker id that never held a trial records nothing; a claim locks the
+  candidate's experiment row (KEY SHARE) before the trial, as every run control does; a heartbeat's `attempt`
   must be 1 or 2 (400 `invalid_heartbeat`). In a report, a NUL in any string or key becomes U+FFFD
   and the trial's `problems` say how many (the stored files keep their bytes); numbers are taken
   only when finite and at least 0, otherwise stored as null and named in `problems`; counts are
-  clamped to 2,147,483,647; a span kind or status outside its range gets the default.
+  clamped to 2,147,483,647; a span kind or status outside its range gets the default; an
+  `end_state` longer than 64 characters is cut and named in `problems`.
 - **Run state:** every route that changes an experiment's trials locks the experiment row first and
   reads its status from it (lock order in `apps/api/src/worker/run-state.ts`).
 - **Labels:** `POST /labels` refuses a trial the queue would not offer (a fake model's, a probe, a

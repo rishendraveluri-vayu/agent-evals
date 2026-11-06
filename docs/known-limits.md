@@ -426,6 +426,7 @@ cannot tell apart:
 ## After the destructive review (6 Nov)
 
 What the fixes leave, or chose (`docs/destructive-review.md`):
+- **LiteLLM's own failures are infra failures.** A logged code that is not an HTTP status (LiteLLM's `P1001` when its database is unreachable and it cannot check the key, or `unknown`) is `infra:provider_error` and re-run once; before the re-check it was counted against the agent.
 - **An adapter that crashes before its first model call is now an infra failure** (`infra:provider_error`) and is re-run once: the runner cannot tell it from LiteLLM being unreachable, and the connection-error case relies on matching the adapter's error text. Blaming the agent for an outage was the worse error.
 - **An outage longer than the 60 s lease still loses the attempt**: heartbeats fail, the sweep abandons it, and it is re-run once. Shorter outages no longer do.
 - **A NUL character in a report is replaced** (U+FFFD) in the database copy, with a problem noted on the trial; the stored files keep the original bytes, so the two differ there.

@@ -27,7 +27,7 @@ interface Limit {
 
 export const SETTING_LIMITS: Record<NumberSetting, Limit> = {
   temperature: { integer: false, min: 0, aboveMin: false, max: 2, apiMax: true, words: 'a number from 0 to 2' },
-  max_output_tokens: { integer: true, min: 1, aboveMin: false, max: 64_000, apiMax: false, words: 'a whole number from 1 to 64,000' },
+  max_output_tokens: { integer: true, min: 1, aboveMin: false, max: 64_000, apiMax: true, words: 'a whole number from 1 to 64,000' },
   max_steps: { integer: true, min: 1, aboveMin: false, max: 200, apiMax: true, words: 'a whole number from 1 to 200' },
   timeout_s: { integer: false, min: 0, aboveMin: true, max: 3_600, apiMax: true, words: 'a number of seconds above 0 and at most 3,600 (one hour)' },
 };

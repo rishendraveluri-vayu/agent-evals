@@ -371,6 +371,8 @@ def provider_label(
     - 429 or 5xx: infra:provider_error (the API re-queues it once);
     - 408, LiteLLM's per-call timeout: infra:provider_error too (D16: a call LiteLLM retried
       that still fails is infra);
+    - a code that is not an HTTP status (LiteLLM's own failure, e.g. P1001 when its database is
+      unreachable): infra:provider_error;
     - 401, 403, 404: infra:config_error (the API never re-queues it and pauses the experiment);
     - 400: a context-too-long error stays the agent's; one about the request setup (auth, an
       unknown model, a rejected or unsupported parameter) is infra:config_error; any other 400
@@ -390,6 +392,11 @@ def provider_label(
         return "infra:provider_error"
     if last_status == "budget_exceeded":
         return "infra:budget_net"
+    # Re-check of the review (6 Nov): LiteLLM logs a code that is not an HTTP status when it
+    # fails itself, e.g. "P1001" (its database unreachable, so it cannot check the key) or
+    # "unknown"; the call never reached the model, so it is the platform's failure.
+    if not last_status.isdigit():
+        return "infra:provider_error"
     if last_status in ("408", "429") or last_status.startswith("5"):
         return "infra:provider_error"
     if last_status in CONFIG_STATUSES:
