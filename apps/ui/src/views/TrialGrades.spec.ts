@@ -33,7 +33,7 @@ function mountWith(over: Over = {}) {
     [`/api/trials/${ID}/spans`]: trialSpans,
     [`/api/trials/${ID}/files/checks.json`]: over.checks ?? checks,
     '/api/judge/agreement?set=heldout': null,
-    // Nothing still to label, so the judge's reasons show.
+    // What is left to label: the page shows the judge's reasons whatever it holds (7 Nov).
     '/api/labels/queue?set=heldout': over.queue ?? [],
     ...(over.trust ? { '/api/judge/trust?experiment=exp_heldout': { ...trustJson, judges: over.trust } } : {}),
     '/api/experiments/exp_heldout': over.experiment ?? (details as Record<string, unknown>).exp_heldout,
@@ -374,13 +374,14 @@ describe('TrialView judge trust', () => {
       expect(tax.find('[data-test="grade-trust-criterion"]').exists()).toBe(false);
     });
 
-    it("keeps the badges but not the judge's answers while the task's held-out outputs are still to label", async () => {
+    it("shows the badges and the judge's answers while the task's held-out outputs are still to label", async () => {
       const w = mountWith({ trust: [haikuV4], queue: queue.heldout, task: { id: 'distress-12' } });
       await settle();
       const tax = judgeOf(w, 'fd-tax');
-      expect(tax.find('[data-test="hidden-reasons"]').exists()).toBe(true);
+      expect(tax.find('[data-test="hidden-reasons"]').exists()).toBe(false);
+      expect(tax.get('[data-test="grade-reason"]').text()).toContain('The profile shows a 30% slab');
       expect(tax.get('[data-test="trust-label"]').text()).toBe('Trusted');
-      expect(tax.find('[data-test="grade-trust-answer"]').exists()).toBe(false);
+      expect(tax.get('[data-test="grade-trust-answer"]').text()).toBe(', answered no');
     });
 
     it('shows no trust line when the trust could not be read', async () => {

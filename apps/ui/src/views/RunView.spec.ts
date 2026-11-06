@@ -224,7 +224,7 @@ describe('RunView, a finished run in fixture mode', () => {
     expect(w.get('[data-test="legend-infra"] .cell').classes()).toEqual(expect.arrayContaining(['cell--pass', 'cell--retried']));
   });
 
-  it("gives each failed or stopped-short cell its cause in its tooltip, keeping the judge against your label blind (D64)", async () => {
+  it('gives each failed or stopped-short cell its cause in its tooltip, the judge against your label included (D64)', async () => {
     const rows = (experimentTrials as unknown as Record<string, TrialRowSummary[]>).exp_heldout;
     const wrongTool = rows.find((t) => t.task_id === 'payoff-order-08' && t.cause?.cause === 'wrong_tool')!;
     const judged = rows.find((t) => t.cause?.cause === 'judge_vs_label')!;
@@ -233,9 +233,9 @@ describe('RunView, a finished run in fixture mode', () => {
     await settle();
     const titles = w.findAll('[data-test="run-grid"] [data-state]').map((c) => c.attributes('title'));
     expect(titles).toContain(`payoff-order-08, arm B, trial ${wrongTool.repeat_index + 1}: failed; wrong tool`);
-    // This page does not read the label queue, so it never says where the judge and your label part ways.
-    expect(titles).toContain(`${judged.task_id}, arm B, trial ${judged.repeat_index + 1}: failed; a judge check failed`);
-    expect(titles.join('\n')).not.toContain('your label');
+    // Where the judge and your label part ways is named, whatever is left to label (7 Nov).
+    expect(titles).toContain(`${judged.task_id}, arm B, trial ${judged.repeat_index + 1}: failed; judge disagrees with your label`);
+    expect(titles.join('\n')).not.toContain('a judge check failed');
     expect(titles).toContain(`${steps.task_id}, arm A, trial ${steps.repeat_index + 1}: failed; ran out of steps`);
     // A pass has no cause.
     expect(titles.filter((t) => t?.endsWith(': passed')).length).toBeGreaterThan(0);

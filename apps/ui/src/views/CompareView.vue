@@ -456,10 +456,10 @@ const regressions = computed(() => {
   const rate = (c: { passed: number; graded: number }) => (c.graded ? `${c.passed} of ${c.graded}` : 'none decided');
   return s.regressions.map((r) => {
     const failedB = r.failed_trials.find((t) => t.arm === 'B') ?? r.failed_trials[0];
-    // D64: the causes more common in B than in A on this task; the judge against your label stays
-    // off the page while labelling is blind.
-    const grew = (r.causes_grew ?? []).filter((c) => labelsDone.value || c.cause !== 'judge_vs_label').map((c) => ({ key: c.cause, words: causeWord(c.cause), a: c.a, b: c.b }));
-    const linked = causeView(failedB?.cause, labelsDone.value);
+    // D64: the causes more common in B than in A on this task, the judge against your label among
+    // them, shown at once (7 Nov).
+    const grew = (r.causes_grew ?? []).map((c) => ({ key: c.cause, words: causeWord(c.cause), a: c.a, b: c.b }));
+    const linked = causeView(failedB?.cause);
     return {
       key: r.task,
       name: r.task_id,
@@ -628,7 +628,7 @@ const taskRows = computed<TaskRow[]>(() => {
       const look = lookTrial(r.key);
       const name = taskName(r.key);
       const what = look && look.trial.passed === false ? 'a failed trial' : 'a trial';
-      const linkTitle = look ? `Open ${what} of ${name}, arm ${armOfTrial(look.trial).toUpperCase()}${look.disputed && labelsDone.value ? ' (your label disagrees with the judge)' : ''}` : '';
+      const linkTitle = look ? `Open ${what} of ${name}, arm ${armOfTrial(look.trial).toUpperCase()}${look.disputed ? ' (your label disagrees with the judge)' : ''}` : '';
       return {
         key: r.key,
         name,
@@ -672,10 +672,6 @@ function verdictOf(r: TaskRow): { kind: Verdict; label?: string } {
 const labelOf = (r: TaskRow) => (!r.diff ? noDiffWords(r).detail : stats.value ? `${signed(r.diff.estimate)} (${intervalText(r.diff)})` : `${signed(r.diff.estimate)}, no interval`);
 
 const differing = computed(() => taskRows.value.filter((r) => r.significant).length);
-
-/** While held-out outputs remain to label, nothing on the page says where your labels and the
- *  judge part ways, so labelling stays blind. */
-const labelsDone = computed(() => (data.value?.queue.length ?? 0) === 0);
 
 /** How many tasks differ, and how wide the rest's intervals are: no clear difference at this N is
  *  an absence of evidence, not a finding of no change. */
@@ -777,7 +773,7 @@ const worthALook = computed(() => {
     title,
     text: `${finding} Open the failed trials to see whether the agent or the grader is behind it.`,
     link: look ? href.trial(look.trial.id) : null,
-    button: look?.disputed && labelsDone.value ? 'Open a failed trial (your label disagrees with the judge)' : 'Open a failed trial',
+    button: look?.disputed ? 'Open a failed trial (your label disagrees with the judge)' : 'Open a failed trial',
   };
 });
 </script>
@@ -1337,7 +1333,6 @@ const worthALook = computed(() => {
         v-if="data.compare.behaviour"
         :behaviour="data.compare.behaviour"
         :prose="data.compare.prose_figures ?? []"
-        :labels-done="labelsDone"
       />
 
       <section

@@ -1073,7 +1073,7 @@ What the API refuses or rewrites since the review's fixes (`docs/destructive-rev
   says whether anyone else labelled it. The one rule that crosses raters is D52's: a trial
   labelled in one set, by anyone, is offered in no other set. A malformed `rater` (including an
   empty one) is a 400 `invalid_rater`. Without `rater`, any rater's label counts, as before D73;
-  the experiments list and the Judge, trial and comparison pages ask that way. The Label page
+  the experiments list and the comparison page ask that way, for counts only. The Label page
   asks who is labelling before it loads anything, remembers the id in that browser, and sends it
   with every queue request and every label.
 - `POST /labels` with `{item_id, set, rater, criterion, value: "yes"|"no"|"unsure", note, second_look?}`

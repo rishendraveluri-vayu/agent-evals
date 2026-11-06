@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { api, bareToolName, type AnyTrial } from '../api/client';
 import { ApiError } from '../api/errors';
 import { isFixtureMode } from '../api/mode';
-import type { BlindItem, ExperimentDetail, TrialRowSummary, JudgeAgreement, JudgeCriterionTrust, JudgeTrust, PromptView, TrialResult, VersionRef } from '../api/types';
+import type { ExperimentDetail, TrialRowSummary, JudgeAgreement, JudgeCriterionTrust, JudgeTrust, PromptView, TrialResult, VersionRef } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import NotFound from '../components/NotFound.vue';
@@ -32,9 +32,6 @@ interface Loaded {
   prompts: PromptView[];
   /** Your held-out labels against the judge, to flag a judge verdict you disagree with. */
   judge: JudgeAgreement | null;
-  /** Held-out outputs still to label. A failed load counts as none, as on the Judge page, so the
-   *  two pages always agree on whether labelling is still blind. */
-  queue: BlindItem[];
   /** The number-provenance check from the trial's checks.json, when it has one. */
   checks: ProvenanceView | null;
   /** How far to trust the judges of this trial's experiment (D83); null when unknown. */
@@ -53,11 +50,10 @@ async function trialOrMissing(id: string): Promise<AnyTrial> {
 }
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
-  const [any, spans, judge, queue] = await Promise.all([
+  const [any, spans, judge] = await Promise.all([
     trialOrMissing(props.trialId),
     optional(api.trialSpans(props.trialId), [] as SpanView[]),
     optional(api.judgeAgreement('heldout'), null),
-    optional(api.labelQueue('heldout'), [] as BlindItem[]),
   ]);
   const experimentId = any.kind === 'experiment' ? any.trial.experiment_id : null;
   const hasChecks = any.kind === 'experiment' && any.trial.files.some((f) => f.path === 'checks.json');
@@ -69,7 +65,7 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
     hasChecks ? optional(api.trialJson(props.trialId, 'checks.json').then(provenanceOf), null) : Promise.resolve(null),
     experimentId && hasJudge ? optional(api.judgeTrust(experimentId).then((r) => r.judges), null) : Promise.resolve(null),
   ]);
-  return { any, spans, experiment, siblings, prompts, judge, queue, checks, trust };
+  return { any, spans, experiment, siblings, prompts, judge, checks, trust };
 });
 
 const EMPTY_RESULT: TrialResult = {};
@@ -177,28 +173,13 @@ const rerun = computed(() => {
   return `${as}, not graded yet`;
 });
 
-/** While held-out outputs remain to label, the page never says where your labels and the judge
- *  part ways. */
-const labelsDone = computed(() => (data.value?.queue.length ?? 0) === 0);
-
 /** D64: why a failed trial failed, or why it stopped short, by the API's rules; null otherwise. */
 const cause = computed(() => {
   const d = data.value;
   if (!d || d.any.kind !== 'experiment') return null;
-  const c = causeView(d.any.trial.cause, labelsDone.value);
+  const c = causeView(d.any.trial.cause);
   if (!c) return null;
   return { ...c, lead: outcome.value?.kind === 'fail' ? 'Why it failed' : 'Why it stopped short', reason: sentence(c.reason) };
-});
-/** Outputs of this trial's task still in the held-out queue: while any remain, the judge's reasons
- *  for the task (quotes, rationale, highlights) stay hidden, so they cannot steer those labels. */
-const queuedForTask = computed(() => {
-  const id = vm.value?.taskId;
-  return id ? (data.value?.queue ?? []).filter((q) => q.task_id === id).length : 0;
-});
-const hiddenReasons = computed(() => {
-  const n = queuedForTask.value;
-  if (!n) return '';
-  return `The judge's reasons for this task are hidden while ${n} of its held-out outputs ${n === 1 ? 'is' : 'are'} still to label.`;
 });
 
 /** The harness and its pinned version from result.json: "Hermes 6112c2a". Contract v2 gives the
@@ -409,7 +390,7 @@ function segments(body: string, quotes: Quote[], amounts: AmountCheck[], markdow
 }
 
 const failedQuotes = computed<Quote[]>(() =>
-  queuedForTask.value ? [] : (vm.value?.grades ?? []).flatMap((g) => (g.verdict === 'fail' ? g.quotes.map((text) => ({ text, index: g.index, name: g.name })) : [])),
+  (vm.value?.grades ?? []).flatMap((g) => (g.verdict === 'fail' ? g.quotes.map((text) => ({ text, index: g.index, name: g.name })) : [])),
 );
 const unsupportedAmounts = computed(() => data.value?.checks?.unsupported ?? []);
 
@@ -609,9 +590,9 @@ const numberCheck = computed(() => {
   };
 });
 
-/** Where your held-out label disagrees with the judge on this trial's check: shown only once the
- *  held-out set is labelled. */
-const disputeOf = (g: GradeView) => (labelsDone.value ? (data.value?.judge?.disagreements.find((x) => x.trial_id === props.trialId && x.criterion === g.name) ?? null) : null);
+/** Where your held-out label disagrees with the judge on this trial's check, shown at once, whether
+ *  or not outputs remain to label (7 Nov). */
+const disputeOf = (g: GradeView) => data.value?.judge?.disagreements.find((x) => x.trial_id === props.trialId && x.criterion === g.name) ?? null;
 const labelWord = (v: string) => (v === 'yes' ? 'Yes' : v === 'no' ? 'No' : 'Not sure');
 
 /** "Failed on" names each failed check, says which the judge graded, and which you dispute. */
@@ -1130,14 +1111,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               :title="g.kind === 'judge' ? `Rubric version ${g.graderVersion}` : undefined"
             ><template v-if="g.judgeModel">Judge <span class="mono">{{ g.judgeModel }}</span>, rubric <span class="mono">{{ shortVersion(g.graderVersion) }}</span></template><template v-else>{{ gradeKind(g) }}</template><template v-if="g.score !== null && g.verdict === 'other'">, score {{ g.score }}</template></span>
             <p
-              v-if="isJudge(g) && hiddenReasons"
-              class="small hidden-reasons"
-              data-test="hidden-reasons"
-            >
-              {{ hiddenReasons }}
-            </p>
-            <p
-              v-else-if="notJudged(g) && isExample"
+              v-if="notJudged(g) && isExample"
               class="small"
               data-test="not-judged"
             >
@@ -1197,7 +1171,6 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                   data-test="grade-trust-criterion"
                 >
                   <span><span class="mono">{{ c.criterion }}</span><span
-                    v-if="!hiddenReasons"
                     class="secondary"
                     data-test="grade-trust-answer"
                   >, {{ answerWord(c.verdict) }}</span></span>
@@ -1701,12 +1674,6 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
   padding: 8px 12px;
   background: var(--ground);
   border-radius: 6px;
-}
-
-/* While the task's held-out outputs are still to label, this one line stands in for the judge's
-   quotes and rationale. */
-.hidden-reasons {
-  color: var(--ink-2);
 }
 
 /* How far to trust the judge behind a judge check (D83): one line per question it answered. */

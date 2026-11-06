@@ -465,15 +465,17 @@ describe('CompareView: how the arms behaved (D64)', () => {
     expect(w.find('[data-test="cause-blind"]').exists()).toBe(false);
   });
 
-  it('keeps where the judge and your labels disagree out of sight while held-out outputs remain to label', async () => {
+  it('counts where the judge and your labels disagree as its own cause while held-out outputs remain to label', async () => {
     route();
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
-    const names = rows(w, 'cause-table').map((r) => r[0]);
-    expect(names).toContain('A judge check failed');
-    expect(names).not.toContain('Judge disagrees with your label');
-    expect(w.get('[data-test="cause-rules"]').text()).not.toContain('Judge disagrees');
-    expect(w.get('[data-test="cause-blind"]').text()).toBe('Where the judge and the human labels disagree stays hidden until the held-out outputs are labelled.');
+    const causes = rows(w, 'cause-table');
+    expect(causes.find((r) => r[0] === 'Judge disagrees with your label')).toEqual(['Judge disagrees with your label', '0', '1']);
+    expect(causes.map((r) => r[0])).not.toContain('A judge check failed');
+    const rules = w.get('[data-test="cause-rules"]');
+    expect(rules.findAll('li')).toHaveLength(9);
+    expect(rules.text()).toContain('Judge disagrees with your label. On a check you labelled, the judge’s verdict differs from your label.');
+    expect(w.find('[data-test="cause-blind"]').exists()).toBe(false);
   });
 
   it('says on each task where B dropped which causes grew from A to B, and the opened trial’s cause', async () => {
@@ -483,12 +485,12 @@ describe('CompareView: how the arms behaved (D64)', () => {
     const [fd, payoff] = w.findAll('[data-test="regression"]');
     expect(payoff.get('[data-test="regression-causes"]').text()).toBe('More common in B: gave up early, 0 → 2; wrong tool, 0 → 1');
     expect(payoff.get('[data-test="regression-link-cause"]').text()).toBe('· wrong tool');
-    // The judge against your label stays hidden while labelling is blind.
-    expect(fd.get('[data-test="regression-causes"]').text()).toBe('More common in B: other, 0 → 2');
-    expect(fd.get('[data-test="regression-link-cause"]').text()).toBe('· a judge check failed');
+    // The judge against your label is named, though held-out outputs remain to label (7 Nov).
+    expect(fd.get('[data-test="regression-causes"]').text()).toBe('More common in B: other, 0 → 2; judge disagrees with your label, 0 → 1');
+    expect(fd.get('[data-test="regression-link-cause"]').text()).toBe('· judge disagrees with your label');
   });
 
-  it('shows the judge against your label on the regression list once the held-out outputs are labelled', async () => {
+  it('names the judge against your label on the regression list the same way once the held-out outputs are labelled', async () => {
     route({}, []);
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
@@ -765,7 +767,7 @@ describe('CompareView against the API: an experiment on fake models', () => {
   });
 });
 
-describe('CompareView against the API: blind labelling', () => {
+describe('CompareView against the API: a failure your label disputes', () => {
   type Trial = { id: string; task_sha256: string; config_hash: string; passed: boolean | null };
   const trials = (experimentTrials as unknown as Record<string, Trial[]>).exp_heldout;
   const fd = (details as unknown as { exp_heldout: { tasks: { id: string; sha256: string }[] } }).exp_heldout.tasks.find((t) => t.id === 'fd-vs-sip-07')?.sha256;
@@ -779,16 +781,15 @@ describe('CompareView against the API: blind labelling', () => {
     '/api/labels/queue?set=heldout': labelQueue,
   });
 
-  it('never says your label disagrees with the judge while held-out outputs remain to label', async () => {
+  it('says your label disagrees with the judge while held-out outputs remain to label, on the button and the task row', async () => {
     routeFetch(routes(queue.heldout));
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
-    expect(w.get('[data-test="look-link"]').text()).toBe('Open a failed trial');
-    expect(w.text()).not.toContain('your label disagrees');
-    expect(w.html()).not.toContain('your label disagrees');
+    expect(w.get('[data-test="look-link"]').text()).toBe('Open a failed trial (your label disagrees with the judge)');
+    expect(w.html()).toContain('Open a failed trial of fd-vs-sip-07, arm B (your label disagrees with the judge)');
   });
 
-  it('says so once the held-out set is labelled', async () => {
+  it('says so the same way once the held-out set is labelled', async () => {
     routeFetch(routes([]));
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();

@@ -94,15 +94,14 @@ describe('TrialView in fixture mode', () => {
     expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 checks');
   });
 
-  it('keeps your held-out label out of sight while held-out outputs remain, on a task not in the queue', async () => {
-    // fd-vs-sip-07 has no output in the queue, but your label on this trial disputes the judge.
+  it('says where your held-out label disputes the judge, though the sample still has held-out outputs to label', async () => {
+    // The sample's held-out queue has 3 outputs to go, and your label on this trial disputes the
+    // judge: the page says so all the same (7 Nov).
     const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
     await settle();
-    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge)');
-    expect(w.find('[data-test="dispute"]').exists()).toBe(false);
-    expect(w.text()).not.toContain('Your held-out label');
-    expect(w.text()).not.toContain('your label');
-    // Its quotes, rationale and highlight stay: none of its outputs is still to label.
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge; your label passes it)');
+    expect(w.get('[data-test="dispute"]').text()).toBe('Your held-out label: Yes. You and the judge disagree on this check. See judge agreement');
+    // Its quotes, rationale and highlight stay.
     const grades = w.findAll('[data-test="grade"]');
     expect(grades[1].find('blockquote').exists()).toBe(true);
     expect(grades[1].text()).toContain('The profile shows a 30% slab');
@@ -194,7 +193,7 @@ describe('TrialView in fixture mode', () => {
   });
 });
 
-describe('TrialView against the API: blind labelling', () => {
+describe("TrialView against the API: the judge's reasons and your label, with outputs still to label", () => {
   type Detail = { tasks: { id: string; sha256: string }[] };
   const heldout = (details as unknown as Record<string, Detail>).exp_heldout;
   /** The trial's task, as GET /trials/:id carries it: the task's id and sha256. */
@@ -212,44 +211,41 @@ describe('TrialView against the API: blind labelling', () => {
     });
   }
 
-  it("hides the judge's reasons on a task with outputs still to label, keeping its verdicts", async () => {
+  it("shows the judge's reasons on a task with outputs still to label, beside its verdicts", async () => {
+    // distress-12 has an output in the held-out queue: its judge's quotes, rationale and highlight
+    // show all the same (7 Nov).
     routes({ trialId: 'tr_distress-12_b_3', task: sha('distress-12') });
     const w = mount(TrialView, { props: { trialId: 'tr_distress-12_b_3' } });
     await settle();
     const grades = w.findAll('[data-test="grade"]');
     expect(grades).toHaveLength(3);
     for (const [g, rubric] of [[grades[1], '5123602'], [grades[2], '728a3f4']] as const) {
-      // Title, Pass or Fail, and the judge's model and rubric stay; quotes and rationale go. The
-      // rubric's version is a sha256, shown short.
+      // The rubric's version is a sha256, shown short.
       expect(g.get('[data-test="grade-kind"]').text()).toBe(`Judge claude-haiku-5-5, rubric ${rubric}`);
       expect(g.find('.pill').exists()).toBe(true);
-      expect(g.find('blockquote').exists()).toBe(false);
-      expect(g.get('[data-test="hidden-reasons"]').text()).toBe("The judge's reasons for this task are hidden while 1 of its held-out outputs is still to label.");
+      expect(g.find('[data-test="grade-reason"]').exists()).toBe(true);
     }
-    expect(grades[1].text()).toContain('fd-tax');
     expect(grades[1].get('.pill').text()).toBe('Fail');
-    expect(grades[1].text()).not.toContain('The profile shows a 30% slab');
-    // A code-graded check is unchanged.
-    expect(grades[0].text()).toContain('found ₹7,10,870, within ±1 of 710870 (fd_maturity maturity_rupees)');
-    expect(grades[0].find('[data-test="hidden-reasons"]').exists()).toBe(false);
-    // No highlight in the transcript, and no key for one.
-    expect(w.find('mark').exists()).toBe(false);
-    expect(w.find('[data-test="quote-link"]').exists()).toBe(false);
-    expect(w.find('[data-test="mark-key"]').exists()).toBe(false);
-    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge)');
+    expect(grades[1].find('blockquote').exists()).toBe(true);
+    expect(grades[1].text()).toContain('The profile shows a 30% slab');
+    expect(w.find('[data-test="hidden-reasons"]').exists()).toBe(false);
+    // The highlight in the transcript, and its key.
+    expect(w.find('mark').exists()).toBe(true);
+    expect(w.find('[data-test="quote-link"]').exists()).toBe(true);
+    expect(w.find('[data-test="mark-key"]').exists()).toBe(true);
     expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 checks');
   });
 
-  it('counts the outputs still to label for the task', async () => {
-    const two = [...queue.heldout, { ...queue.heldout[1], item_id: 'lq_extra' }];
-    routes({ trialId: 'tr_distress-12_b_3', task: sha('distress-12'), queue: two });
+  it('never asks what is left to label: nothing on the page waits on it', async () => {
+    const { calls } = routes({ trialId: 'tr_distress-12_b_3', task: sha('distress-12') });
     const w = mount(TrialView, { props: { trialId: 'tr_distress-12_b_3' } });
     await settle();
-    expect(w.get('[data-test="hidden-reasons"]').text()).toBe("The judge's reasons for this task are hidden while 2 of its held-out outputs are still to label.");
+    expect(calls.some((c) => c.url.includes('/labels/queue'))).toBe(false);
+    expect(w.find('[data-test="grade-quote"]').exists()).toBe(true);
   });
 
-  it('brings back your label and where it disputes the judge once the held-out set is labelled', async () => {
-    routes({ queue: [] });
+  it('says where your label disputes the judge while held-out outputs remain to label', async () => {
+    routes({});
     const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
     await settle();
     expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge; your label passes it)');
@@ -374,16 +370,24 @@ describe('TrialView against the API: the failure cause (D64)', () => {
     expect(inOrderOf(w, '[data-test="failed-on"]', '[data-test="trial-cause"]')).toBe(true);
   });
 
-  it('keeps the judge against your label out of sight while held-out outputs remain, and names it once they are labelled', async () => {
-    const judgeVsLabel = { cause: 'judge_vs_label', reason: 'On fd-tax the judge said no and the human label says yes', contributing: [], rules_version: 'causes-1' };
-    let w = mountWith(judgeVsLabel);
-    await settle();
-    expect(w.get('[data-test="trial-cause"]').text()).toBe('Why it failed: A judge check failed. How it compares with the human labels is shown once the held-out outputs are labelled.');
-    expect(w.text()).not.toContain('your label');
-    w = mountWith(judgeVsLabel, []);
+  it('names the judge against your label as the cause while held-out outputs remain to label', async () => {
+    const judgeVsLabel = { cause: 'judge_vs_label', reason: 'On fd-tax the judge said no and the human label says yes', contributing: [{ cause: 'other', reason: 'fd-tax failed' }], rules_version: 'causes-1' };
+    const w = mountWith(judgeVsLabel);
     await settle();
     expect(w.get('[data-test="trial-cause-name"]').text()).toBe('Judge disagrees with your label');
-    expect(w.get('[data-test="trial-cause"]').text()).toContain('On fd-tax the judge said no and the human label says yes.');
+    expect(w.get('[data-test="trial-cause"] p').text()).toBe('Why it failed: Judge disagrees with your label. On fd-tax the judge said no and the human label says yes.');
+    expect(w.get('[data-test="trial-cause-also"]').text()).toBe('Also other: fd-tax failed.');
+  });
+
+  it('lists the judge against your label among the other causes too', async () => {
+    const w = mountWith({
+      cause: 'wrong_tool',
+      reason: 'fd_maturity was never called; calculate_emi was',
+      contributing: [{ cause: 'judge_vs_label', reason: 'On fd-tax the judge said no and the human label says yes' }],
+      rules_version: 'causes-1',
+    });
+    await settle();
+    expect(w.get('[data-test="trial-cause-also"]').text()).toBe('Also judge disagrees with your label: On fd-tax the judge said no and the human label says yes.');
   });
 
   it('says why a trial stopped short even when its checks passed, and shows nothing for a trial with no cause', async () => {

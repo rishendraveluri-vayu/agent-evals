@@ -23,23 +23,20 @@ describe('failure causes in words (D64)', () => {
   });
 
   it('shows a cause with its contributing ones, and nothing for a trial without one', () => {
-    expect(causeView(null, true)).toBeNull();
-    expect(causeView(cause('wrong_tool', ['tool_error']), true)).toEqual({
+    expect(causeView(null)).toBeNull();
+    expect(causeView(cause('wrong_tool', ['tool_error']))).toEqual({
       kind: 'wrong_tool',
       name: 'Wrong tool',
       reason: 'wrong_tool because',
       contributing: [{ kind: 'tool_error', name: 'Tool error, not recovered', reason: 'tool_error too' }],
-      hidden: false,
     });
   });
 
-  it('keeps the judge against your label off the screen while held-out outputs remain to label', () => {
-    expect(causeView(cause('wrong_answer', ['judge_vs_label']), false)?.contributing).toEqual([]);
-    expect(causeView(cause('wrong_answer', ['judge_vs_label']), true)?.contributing.map((c) => c.kind)).toEqual(['judge_vs_label']);
-    const blind = causeView(cause('judge_vs_label', ['wrong_answer']), false)!;
-    expect(blind).toMatchObject({ kind: 'judge_vs_label', name: 'A judge check failed', hidden: true });
-    expect(blind.reason).not.toContain('your label');
-    expect(blind.contributing.map((c) => c.kind)).toEqual(['wrong_answer']);
+  it('names the judge against your label, primary or contributing, with nothing held back (7 Nov)', () => {
+    expect(causeView(cause('wrong_answer', ['judge_vs_label']))?.contributing).toEqual([{ kind: 'judge_vs_label', name: 'Judge disagrees with your label', reason: 'judge_vs_label too' }]);
+    const primary = causeView(cause('judge_vs_label', ['wrong_answer']))!;
+    expect(primary).toMatchObject({ kind: 'judge_vs_label', name: 'Judge disagrees with your label', reason: 'judge_vs_label because' });
+    expect(primary.contributing.map((c) => c.kind)).toEqual(['wrong_answer']);
   });
 
   it('ends a reason as a sentence once', () => {

@@ -289,7 +289,7 @@ const blocks = (text: string) => mdBlocks(text);
         <span
           v-if="queue && left > 0"
           data-test="judge-later"
-        >Label these before you open the Judge page: the judge's reasons there can steer your labels ({{ left }} to go).</span>
+        >Label these before you open the Judge page or any trial: the judge's reasons there can steer your labels ({{ left }} to go).</span>
         <a
           v-else-if="!loading && rater && !editingRater"
           :href="href.judge()"

@@ -685,9 +685,8 @@ const grid = computed(() => {
               ? `infra failure (${infraReason(last?.label) || 'infra'}), not re-run`
               : CELL_WORDS[state];
         const retried = hadInfra && (state === 'pass' || state === 'fail');
-        // D64: a failed or stopped-short trial's cause. This page does not load the label queue, so
-        // it keeps labelling blind: the judge against your label reads as a judge check that failed.
-        const cause = latestDone(attempts)?.cause ? causeView(latestDone(attempts)?.cause, false) : null;
+        // D64: a failed or stopped-short trial's cause, the judge against your label included (7 Nov).
+        const cause = latestDone(attempts)?.cause ? causeView(latestDone(attempts)?.cause) : null;
         const why = cause ? `; ${cause.name.toLowerCase()}` : '';
         return { state, retried, attempts, label: `${t.id}, arm ${String.fromCharCode(65 + arm)}, trial ${r + 1}: ${words}${retried ? ', after an infra failure' : ''}${why}` };
       }),

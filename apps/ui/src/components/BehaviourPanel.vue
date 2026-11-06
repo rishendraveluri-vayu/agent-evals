@@ -14,8 +14,6 @@ import { percent, plural, signed } from '../lib/format';
 const props = defineProps<{
   behaviour: CompareBehaviour;
   prose: ProseFiguresArm[];
-  /** While held-out outputs remain to label, where the judge and your labels disagree stays hidden. */
-  labelsDone: boolean;
 }>();
 
 const arms = computed(() => props.behaviour.arms);
@@ -150,25 +148,21 @@ const endRows = computed(() => {
   return names.map((s) => ({ state: s, name: endStateName(s), cells: arms.value.map((x) => `${x.end_states.find((e) => e.end_state === s)?.trials ?? 0} of ${x.trials}`) }));
 });
 
-/** Causes in rule order. While labelling is blind, the judge against your label shows only as a judge check that failed. */
+/** Causes in rule order, the judge against your label among them, shown at once (7 Nov). */
 const causeRows = computed(() => {
   const kinds = new Set<CauseKind>(arms.value.flatMap((x) => x.causes.by_cause.map((c) => c.cause)));
-  return CAUSE_ORDER.filter((k) => kinds.has(k)).flatMap((k) => {
+  return CAUSE_ORDER.filter((k) => kinds.has(k)).map((k) => {
     const cells = arms.value.map((x) => x.causes.by_cause.find((c) => c.cause === k) ?? { primary: 0, contributing: 0 });
-    const blind = k === 'judge_vs_label' && !props.labelsDone;
-    if (blind && cells.every((c) => !c.primary)) return [];
-    return [
-      {
-        kind: k,
-        name: blind ? 'A judge check failed' : CAUSE_NAME[k],
-        cells: cells.map((c) => ({ primary: c.primary, also: blind ? 0 : c.contributing })),
-        grew: two.value && cells[1].primary > cells[0].primary,
-      },
-    ];
+    return {
+      kind: k,
+      name: CAUSE_NAME[k],
+      cells: cells.map((c) => ({ primary: c.primary, also: c.contributing })),
+      grew: two.value && cells[1].primary > cells[0].primary,
+    };
   });
 });
 const withCause = computed(() => arms.value.map((x) => `${x.arm} ${x.causes.trials} of ${x.trials}`).join(', '));
-const rules = computed(() => CAUSE_ORDER.filter((k) => props.labelsDone || k !== 'judge_vs_label').map((k) => ({ kind: k, name: CAUSE_NAME[k], rule: CAUSE_RULE[k] })));
+const rules = CAUSE_ORDER.map((k) => ({ kind: k, name: CAUSE_NAME[k], rule: CAUSE_RULE[k] }));
 </script>
 
 <template>
@@ -496,13 +490,6 @@ const rules = computed(() => CAUSE_ORDER.filter((k) => props.labelsDone || k !==
             Rules over what each trial recorded (its end state, tool calls, check results and your labels), so they cost nothing and give the same cause every time. They point where to look; the trial page is the evidence. Where a harness reports an ending its own way, the reason on the trial says so.
           </p>
         </details>
-        <p
-          v-if="!labelsDone"
-          class="secondary smaller"
-          data-test="cause-blind"
-        >
-          Where the judge and the human labels disagree stays hidden until the held-out outputs are labelled.
-        </p>
       </div>
     </div>
   </section>

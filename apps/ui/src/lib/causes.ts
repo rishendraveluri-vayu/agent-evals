@@ -41,26 +41,20 @@ export interface CauseLine {
 
 export interface CauseView extends CauseLine {
   contributing: CauseLine[];
-  /** The primary cause is the judge against your label, and labelling is still blind. */
-  hidden: boolean;
 }
 
 /** Ends a reason as a sentence: with a full stop, unless it already ends on one. */
 export const sentence = (text: string): string => (/[.!?…]["”)]?$/.test(text.trim()) ? text.trim() : `${text.trim()}.`);
 
 /**
- * A trial's cause as a screen shows it. While held-out outputs remain to label, where the judge and
- * your labels part ways stays off every screen (as elsewhere), so a contributing judge-vs-label
- * is left out, and a primary one says only that a judge check failed.
+ * A trial's cause as a screen shows it, with every contributing one. Where the judge and your
+ * labels part ways shows at once, whether or not outputs remain to label (7 Nov): the held-out
+ * queue never empties, so a wait for it would hide it for good.
  */
-export function causeView(cause: TrialCause | null | undefined, labelsDone: boolean): CauseView | null {
+export function causeView(cause: TrialCause | null | undefined): CauseView | null {
   if (!cause) return null;
   const line = (kind: CauseKind, reason: string): CauseLine => ({ kind, name: CAUSE_NAME[kind] ?? kind, reason });
-  const contributing = cause.contributing.filter((c) => labelsDone || c.cause !== 'judge_vs_label').map((c) => line(c.cause, c.reason));
-  if (cause.cause === 'judge_vs_label' && !labelsDone) {
-    return { kind: cause.cause, name: 'A judge check failed', reason: 'How it compares with the human labels is shown once the held-out outputs are labelled', contributing, hidden: true };
-  }
-  return { ...line(cause.cause, cause.reason), contributing, hidden: false };
+  return { ...line(cause.cause, cause.reason), contributing: cause.contributing.map((c) => line(c.cause, c.reason)) };
 }
 
 /** A cause's name in lower case, for the middle of a sentence ("failed, wrong tool"). */
