@@ -4,6 +4,27 @@ Five reviewers tried to break the platform at commit `b94b77d` (claims vs code, 
 
 Status key: open, fixed (commit), limit (moved to known-limits), owner (Rishi).
 
+## Status (6 Nov, after the fixes)
+
+Each fix has a test; the fixers' branches are merged in the commits named. "Verified" means the reviewers' original attack was re-run against the fixed code (section at the end).
+
+| Findings | Status |
+| --- | --- |
+| C1 Conclusion, C2 video | owner (Rishi) |
+| C3 conflict check on the Run screen, not tied to Sonnet | fixed: 8c0ca81, 7605868 (D75 amended) |
+| C4 cost total, C5 judge story, C6 v2 held-out judging disclosed, C7 check estimate | fixed: 40d399d, 7605868 |
+| C8 new provider, C9 positive control, C12 served model, C14 leak tests in CI, C15 nominal interval, C16 replications, C17 Holm | fixed: aca739f |
+| C10 state checks | limit: assumption A52 (aca739f) |
+| C11 skills demo not shipped | fixed: 189c5de (sixth example) |
+| C13 Jest count | fixed: 30ce17c (recounted again at the end) |
+| C18 harness guide, effect checks; C19 small items | fixed: b6cac34 (effect checks never run: known-limits) |
+| S1 to S4, S6, S7, S10 to S12, minor | fixed: merge 396c73c (shipped results pinned by a test, unchanged); thresholds open as D77 |
+| S5, S8, S9 (screens) | fixed: merge 29cc633 |
+| E1 to E12 | fixed: merge 48b3d1c (limits chosen open as D77) |
+| G1 to G12 | fixed: merge 1c43da7 (no shipped outcome changes); G1's quoted-then-disowned figure stays a limit (the judge's job); G3 echo rule open as D77 |
+| U1 to U14, fake-run N | fixed: merge 29cc633, 3e88cba |
+| U15 Ollama not checked | limit: a warning, the API has no signal for it (known-limits) |
+
 
 Detail and repros for each ID: findings.md in this folder. C = claims, S = stats, E = engine/API,
 G = graders/cheating, U = UI. None of the 70-odd findings changes a shipped headline number; all
