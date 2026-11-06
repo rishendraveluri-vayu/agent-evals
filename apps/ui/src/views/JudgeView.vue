@@ -1,155 +1,143 @@
 <script setup lang="ts">
+/**
+ * How far to trust each LLM judge (D83, GET /judge/trust). A judge is a judge model × rubric; its
+ * trust is worked out criterion by criterion from the human labels on outputs it graded, and its
+ * own status is its overall criterion's. Each judge shows its status and summary, the figures per
+ * criterion, where it and people disagree, and a link to label more of its outputs blind.
+ *
+ * Where it and people disagree stays closed, set by set, while that set still has outputs to
+ * label, so the judge's reasons cannot steer the labels still to come (as on the labels page).
+ */
 import { computed } from 'vue';
 import { api } from '../api/client';
-import type { BlindItem, ConfigView, ExperimentSummary, JudgeAgreement } from '../api/types';
-import AppIcon from '../components/AppIcon.vue';
+import type { AgreementFigures, BlindItem, ExperimentSummary, JudgeCriterionTrust, JudgeTrust, JudgeTrustResponse, JudgeTrustStatus, TaskView } from '../api/types';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
-import { armsOf, checksToGo as countChecks, NBSP } from '../lib/arms';
+import TrustBadge from '../components/TrustBadge.vue';
 import { optional, useLoad } from '../lib/async';
-import { percent, plural, shortHash, wilson } from '../lib/format';
+import { capitalise, minus, percent, plainText, plural } from '../lib/format';
+import { experimentName, modelName } from '../lib/names';
+import type { StripRow, Tick } from '../lib/scale';
+import { intervalWords, kappaWords, labelSetFor, rubricName } from '../lib/trust';
 import { href } from '../router';
 
+type TrustSet = 'heldout' | 'tuning';
+type Disagreement = JudgeCriterionTrust['disagreements'][number] & { criterion: string };
+
 const { data, error, loading } = useLoad(async () => {
-  const [agreement, configs, experiments, queue] = await Promise.all([
-    api.judgeAgreement('heldout'),
-    optional(api.configs(), [] as ConfigView[]),
-    optional(api.experiments(), [] as ExperimentSummary[]),
+  const [trust, heldout, tuning, experiments, tasks] = await Promise.all([
+    api.judgeTrust(),
+    // A failed load counts as nothing left to label, as on the trial page, so the two pages agree
+    // on whether labelling is still blind.
     optional(api.labelQueue('heldout'), [] as BlindItem[]),
+    optional(api.labelQueue('tuning'), [] as BlindItem[]),
+    optional(api.experiments(), [] as ExperimentSummary[]),
+    optional(api.tasks(), [] as TaskView[]),
   ]);
-  return { agreement, configs, experiments, queue };
+  const toGo: Record<TrustSet, number> = { heldout: heldout.length, tuning: tuning.length };
+  return { trust, toGo, experiments, tasks };
 });
 
-/** Held-out items still to label: until there are none, every number here is provisional. */
-const toGo = computed(() => data.value?.queue.length ?? 0);
-/** The same work counted in checks (one output, one question), the unit the agreement is measured in. */
-const checksToGo = computed(() => countChecks(data.value?.queue ?? []));
+const trust = computed<JudgeTrustResponse | null>(() => data.value?.trust ?? null);
+const bar = computed(() => trust.value?.bar ?? null);
 
-const j = computed<JudgeAgreement | null>(() => data.value?.agreement ?? null);
+const SET_NAMES: Record<TrustSet, string> = { heldout: 'held-out', tuning: 'tuning' };
 
-const answer = computed(() => {
-  const a = j.value;
-  if (!a) return null;
-  const k = a.kappa;
-  // While held-out checks remain to label, the answer is only as good as the labels so far.
-  const soFar = toGo.value > 0;
-  const title =
-    k.estimate >= a.bar && k.low >= a.bar
-      ? soFar
-        ? 'Yes so far'
-        : 'Yes, on this evidence'
-      : k.estimate >= a.bar
-        ? soFar
-          ? 'Mostly so far, with one caution'
-          : 'Mostly, with one caution'
-        : 'Not yet';
-  const pos = k.estimate >= a.bar ? 'above the bar' : 'below the bar';
-  const tail = k.low < a.bar && k.estimate >= a.bar ? `, but the interval runs from ${k.low.toFixed(2)} to ${k.high.toFixed(2)}, so its lower end is under ${a.bar}` : `, with an interval from ${k.low.toFixed(2)} to ${k.high.toFixed(2)}`;
-  return {
-    title,
-    text: `The judge agrees with you on ${a.agree} of ${a.labels} labelled checks (one output, one question). Cohen's κ is ${k.estimate.toFixed(2)}, ${pos}${tail}.`,
-    meaning:
-      k.low >= a.bar
-        ? 'Judge-graded tasks can be read like the others.'
-        : "What this means for results: a difference on tasks that need the judge's pass is weaker evidence than one on code-graded tasks. Read those task rows with that in mind.",
-  };
-});
-
-/** The experiment that compared exactly these configs, so each one gets its arm's name and colour. */
-const pairExperiment = computed(() => {
-  const hashes = j.value?.per_config.map((c) => c.config) ?? [];
-  return (
-    data.value?.experiments.find((e) => e.config_hashes.length === 2 && e.config_hashes[0] !== e.config_hashes[1] && hashes.every((h) => e.config_hashes.includes(h))) ?? null
-  );
-});
-
-function armKey(hash: string): 'a' | 'b' | null {
-  const e = pairExperiment.value;
-  if (!e) return null;
-  return e.config_hashes[0] === hash ? 'a' : e.config_hashes[1] === hash ? 'b' : null;
+/** The judge's newest experiment of your own (a shipped example is never labelled), and where to
+ *  calibrate it: its held-out set when it has held-out tasks, else tuning. */
+function calibrateOf(j: JudgeTrust): { href: string; name: string } | null {
+  const d = data.value;
+  if (!d) return null;
+  for (const id of j.experiments) {
+    const e = d.experiments.find((x) => x.id === id);
+    if (!e || e.example) continue;
+    const tasks = d.tasks.filter((t) => e.task_sha256s.includes(t.sha256));
+    if (!tasks.length) return null;
+    return { href: href.labels({ set: labelSetFor(tasks), experiment: e.id, calibrate: true }), name: experimentName(e) };
+  }
+  return null;
 }
 
-function configLabel(hash: string): string {
-  const e = pairExperiment.value;
-  const arm = e ? armsOf(e, data.value?.configs ?? []).find((a) => a.hash === hash) : null;
-  return arm?.label ?? `Config ${shortHash(hash)}`;
-}
-
-const lede = computed(() => {
-  const a = j.value;
-  if (!a) return 'How often the LLM judge gives the same answer as a person, on held-out checks that are never used to tune the rubric.';
-  const on = checksToGo.value ? `${a.labels} of ${a.labels + checksToGo.value} held-out checks so far` : `the ${a.labels} held-out checks`;
-  // The bar is stated, not dated: D8 (the judge threshold) is still open, so nothing on record
-  // says when it was set.
-  return `Measured on ${on}, which are never used to tune the rubric. The bar is ${a.bar}.`;
-});
-
-/** "3 held-out outputs (7 checks)" */
-const toGoWords = computed(() => `${plural(toGo.value, 'held-out output')} (${plural(checksToGo.value, 'check')})`);
-
-/** Your own consistency beside the judge's agreement with you, each with its 95% interval. Ten
- *  relabels give a wide interval, so the line says when the two cannot be told apart. */
-const selfLine = computed(() => {
-  const a = j.value;
-  if (!a?.self) return '';
-  const rate = (k: number, n: number) => {
-    const i = wilson(k, n);
-    return `${percent(k / Math.max(1, n))}, interval ${percent(i.low)} to ${percent(i.high)}`;
-  };
-  const self = wilson(a.self.same, a.self.total);
-  const judgeRate = a.agree / Math.max(1, a.labels);
-  const judge = `The judge matched you on ${a.agree} of ${a.labels} (${rate(a.agree, a.labels)})`;
-  const relabels = a.self.total === 1 ? '1 relabel is' : `${a.self.total} relabels are`;
-  const verdict =
-    judgeRate >= self.low && judgeRate <= self.high
-      ? `${judge}. ${relabels} too few to tell that apart from your own consistency.`
-      : `${judge}, ${judgeRate < self.low ? 'below' : 'above'} your own consistency.`;
-  return `relabelled checks got the same answer (${rate(a.self.same, a.self.total)}). ${verdict}`;
-});
-
-/** "20 checks", or "20 and 18 checks" when the arms differ. */
-function checksWords(counts: number[]): string {
-  if (!counts.length) return '';
-  if (counts.every((c) => c === counts[0])) return `${counts.length > 1 ? `${counts[0]} checks each` : plural(counts[0], 'check')}`;
-  return `${counts.slice(0, -1).join(', ')} and ${counts[counts.length - 1]} checks`;
-}
-
-/** Under the per-config rows: what kappa per arm can and cannot say. No interval comes per arm,
- *  and kappa cannot say which arm the judge is lenient on; the matrix's disagreements are not
- *  split by arm. */
-const perConfigNote = computed(() => {
-  const a = j.value;
-  if (!a) return '';
-  const rows = a.per_config;
-  const within = `Cohen's κ within each arm, ${checksWords(rows.map((c) => c.labels))}.`;
-  const gap =
-    rows.length === 2 ? ` No interval is given per arm, and at this size the gap between ${rows[0].kappa.toFixed(2)} and ${rows[1].kappa.toFixed(2)} says little.` : ' No interval is given per arm.';
-  const lean = ` κ also cannot show which arm the judge is lenient on: the ${a.matrix.judge_pass_you_fail} too-lenient and ${a.matrix.judge_fail_you_pass} too-strict checks are not split by arm here.`;
-  return `${within}${gap}${lean}`;
-});
-
-/** "checks got the same verdict in all 3 runs (96%, interval 91% to 98%)", with its Wilson 95%
- *  interval, as the line beside it gives for your own relabels. */
-const retestLine = computed(() => {
-  const r = j.value?.retest;
-  if (!r) return '';
-  const i = wilson(r.identical, r.total);
-  return `checks got the same verdict in all ${r.runs} runs (${percent(r.identical / Math.max(1, r.total))}, interval ${percent(i.low)} to ${percent(i.high)}).${r.note ? ` ${r.note}` : ''}`;
-});
-
-const kappaText = (k: number) => `κ${NBSP}${k.toFixed(2)}`;
-
-/** The kappa scale: evenly spaced, so a phone can keep every other tick. */
-const kappaTicks = computed(() => {
-  const bar = j.value?.bar ?? 0.6;
-  const values = [0, 0.2, 0.4, 0.6, 0.8, 1].filter((v) => Math.abs(v - bar) > 1e-9);
-  return [
-    ...values.map((v) => (v === 1 ? { value: 1, label: '1, full agreement', short: '1' } : { value: v, label: String(v) })),
-    { value: bar, label: `bar ${bar}`, strong: true },
+/** Held-out kappa per criterion with its interval, on one scale with the bar; only the criteria
+ *  whose kappa and interval are both defined. */
+function stripOf(j: JudgeTrust) {
+  const b = bar.value;
+  const shown = j.criteria.filter((c) => c.heldout && c.heldout.kappa !== null && c.heldout.kappa_interval.low !== null && c.heldout.kappa_interval.high !== null);
+  if (!b || !shown.length) return null;
+  const rows: StripRow[] = shown.map((c) => {
+    const f = c.heldout as AgreementFigures;
+    return { estimate: f.kappa as number, low: f.kappa_interval.low as number, high: f.kappa_interval.high as number, tone: 'ink', label: `${c.criterion} ${kappaWords(f.kappa)}` };
+  });
+  const min = Math.min(0, Math.floor(Math.min(...rows.map((r) => r.low)) * 5) / 5);
+  const values: number[] = [];
+  for (let v = min; v <= 1 + 1e-9; v += 0.2) values.push(Math.round(v * 10) / 10);
+  const ticks: Tick[] = [
+    ...values.filter((v) => Math.abs(v - b.kappa) > 1e-9).map((v) => (v === 1 ? { value: 1, label: '1, full agreement', short: '1' } : { value: v, label: minus(String(v)) })),
+    { value: b.kappa, label: `bar ${b.kappa}`, strong: true },
   ].sort((p, q) => p.value - q.value);
-});
+  const parts = shown.map((c) => `${c.criterion} ${kappaWords(c.heldout?.kappa ?? null)} (${intervalWords(c.heldout?.kappa_interval)})`);
+  return { rows, ticks, min, summary: `Held-out kappa by question, with its interval: ${parts.join('; ')}. The bar is ${b.kappa}.` };
+}
 
-const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'no' || v === 'fail' ? 'No' : 'Not sure');
+/** Where the judge and people disagree, held-out first; a set's stay closed while it has
+ *  outputs left to label. */
+function disagreementsOf(j: JudgeTrust) {
+  const toGo = data.value?.toGo ?? { heldout: 0, tuning: 0 };
+  const all: Disagreement[] = j.criteria.flatMap((c) => c.disagreements.map((d) => ({ ...d, criterion: c.criterion })));
+  all.sort((p, q) => (p.set === q.set ? 0 : p.set === 'heldout' ? -1 : 1));
+  const held = (['heldout', 'tuning'] as TrustSet[])
+    .map((set) => ({ set, count: all.filter((d) => d.set === set).length, toGo: toGo[set] }))
+    .filter((h) => h.count > 0 && h.toGo > 0);
+  const closed = new Set(held.map((h) => h.set));
+  const pairs = j.criteria.reduce((sum, c) => sum + (c.heldout?.n ?? 0) + (c.tuning?.n ?? 0), 0);
+  return { all, shown: all.filter((d) => !closed.has(d.set)), held, pairs, capped: j.criteria.some((c) => c.disagreements.length >= 50) };
+}
+
+const judges = computed(() =>
+  (trust.value?.judges ?? []).map((j, i) => ({
+    key: `${j.judge_model} ${j.rubric}`,
+    id: `judge-${i}`,
+    judge: j,
+    calibrate: calibrateOf(j),
+    strip: stripOf(j),
+    disagreements: disagreementsOf(j),
+  })),
+);
+
+const yesNo = (v: 'yes' | 'no') => (v === 'yes' ? 'Yes' : 'No');
+
+/** One set's figures as lines of text: how many labels, kappa and its interval, and how the judge
+ *  answers where people say yes and where they say no. */
+function figureLines(f: AgreementFigures | null): string[] {
+  if (!f) return [];
+  const iv = intervalWords(f.kappa_interval);
+  const lines = [`${plural(f.n, 'label')}, ${f.human_no} of them "no"`, `Kappa ${kappaWords(f.kappa)}${iv ? ` (${iv})` : f.kappa === null ? '' : ', no interval yet'}`];
+  const sides = [f.sensitivity !== null ? `yes to ${percent(f.sensitivity)} of people's yes` : '', f.specificity !== null ? `no to ${percent(f.specificity)} of their no` : ''].filter(Boolean);
+  if (sides.length) lines.push(`Says ${sides.join(', ')}`);
+  const out = [f.human_left_out ? `${f.human_left_out} not sure or tied` : '', f.judge_undecided ? `${f.judge_undecided} the judge did not decide` : ''].filter(Boolean);
+  if (out.length) lines.push(`Left out: ${out.join(', ')}`);
+  return lines;
+}
+
+const tuningLine = (f: AgreementFigures | null) => (f ? `${plural(f.n, 'label')}, kappa ${kappaWords(f.kappa)}` : '');
+const retestLine = (r: JudgeCriterionTrust['retest']) => (r ? `${r.identical} of ${r.total} the same${r.share !== null ? ` (${percent(r.share)})` : ''}` : '');
+const reasonsOf = (c: JudgeCriterionTrust) => (c.status === 'not_trusted' ? (c.d8?.reasons ?? []).map((r) => capitalise(plainText(r))) : []);
+const needsLine = (c: JudgeCriterionTrust) => (c.status === 'too_few' && c.needs_human_no ? `Needs ${c.needs_human_no} more "no" ${c.needs_human_no === 1 ? 'label' : 'labels'} on held-out outputs.` : '');
+
+/** What each badge means, with the bar as the API applies it. */
+const statuses = computed<{ status: JudgeTrustStatus; text: string }[]>(() => {
+  const b = bar.value;
+  const trusted = b
+    ? `Tested on held-out labels, and it clears the bar: kappa at least ${b.kappa}, the low end of its interval at least ${b.kappa_low}, at least ${b.min_human_no} "no" labels from people, no gap between the arms in how often it passes what people fail, and the same verdict at least ${percent(b.retest)} of the time when it grades an output again.`
+    : 'Tested on held-out labels, and it clears the bar.';
+  return [
+    { status: 'uncalibrated', text: 'No one has labelled an output this judge graded. Its verdicts are a hint.' },
+    { status: 'tuning_only', text: 'Labelled only in the tuning set, which shapes the rubric. Its agreement is shown, but it has not been tested blind.' },
+    { status: 'too_few', text: `Held-out labels exist, but fewer than ${b?.min_human_no ?? 5} of them are "no", or kappa cannot be worked out yet, so the bar cannot be applied.` },
+    { status: 'trusted', text: trusted },
+    { status: 'not_trusted', text: 'Tested on held-out labels, and it misses the bar. The reasons are listed with it.' },
+  ];
+});
 </script>
 
 <template>
@@ -158,436 +146,486 @@ const valueWord = (v: string) => (v === 'yes' || v === 'pass' ? 'Yes' : v === 'n
       aria-label="Breadcrumb"
       class="crumbs"
     >
-      <a :href="href.labels()">Labels</a> / Judge agreement
+      <a :href="href.labels()">Labels</a> / Judge trust
     </nav>
     <h1 tabindex="-1">
       Can we trust the judge?
     </h1>
-    <p class="lede">
-      {{ lede }}
+    <p
+      class="lede"
+      data-test="judge-lede"
+    >
+      A judge is only as good as its agreement with people. Each one here is measured against human labels on the outputs it graded, one question at a time. Label a few outputs blind and its agreement updates as you go.
     </p>
     <p
-      v-if="toGo"
-      class="caveat"
-      data-test="provisional"
+      class="secondary small kappa-note"
+      data-test="kappa-note"
     >
-      <AppIcon
-        name="alert"
-        :size="14"
-      />
-      <span><strong class="caveat-lead">Provisional:</strong> {{ toGoWords }} still to label. These numbers will change.</span>
+      Kappa is agreement beyond chance: 1 is perfect, 0 is no better than chance.
     </p>
   </div>
 
   <LoadState
     :loading="loading"
     :error="error"
-    what="the judge check"
+    what="how far to trust each judge"
   >
     <section
-      v-if="!j"
+      v-if="!judges.length"
       class="panel panel--pad"
       data-test="judge-empty"
     >
       <h2 class="section-title">
-        Not shown in this version
+        No judge has graded any output yet.
       </h2>
-      <p class="secondary not-yet">
-        This page does not show the judge's agreement with the held-out human labels: in this version it is worked out outside the UI, by a command-line tool that reads the labels and the judge's grades. So nothing on these pages says how far to trust a judge-graded result.
+      <p class="secondary empty-text">
+        Approve judging on an experiment's comparison page. Once its grades are in, each judge shows here with how far to trust it.
       </p>
     </section>
-    <template v-else-if="answer">
-      <section
-        aria-labelledby="answer"
-        class="panel answer"
-        data-test="judge-answer"
-      >
-        <div class="answer-main">
-          <h2
-            id="answer"
-            class="answer-title"
-          >
-            {{ answer.title }}
-          </h2>
-          <p class="answer-text">
-            {{ answer.text }}
-          </p>
-          <IntervalStrip
-            :min="0"
-            :max="1"
-            :ticks="kappaTicks"
-            :rows="[{ estimate: j.kappa.estimate, low: j.kappa.low, high: j.kappa.high, tone: 'ink', label: `κ ${j.kappa.estimate.toFixed(2)}, ${j.labels} labelled checks` }]"
-            :reference="{ value: j.bar }"
-            :summary="`Kappa ${j.kappa.estimate.toFixed(2)}, interval ${j.kappa.low.toFixed(2)} to ${j.kappa.high.toFixed(2)}, bar at ${j.bar}`"
-          />
-          <p class="secondary small meaning">
-            {{ answer.meaning }}
-          </p>
-        </div>
-        <div class="answer-side">
-          <h3 class="sub-title">
-            Where you and the judge land
-          </h3>
-          <table
-            class="matrix small"
-            data-test="judge-matrix"
-          >
-            <thead>
-              <tr>
-                <td />
-                <th scope="col">
-                  You: pass
-                </th>
-                <th scope="col">
-                  You: fail
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th scope="row">
-                  Judge: pass
-                </th>
-                <td
-                  class="agree"
-                  data-test="matrix-cell"
-                >
-                  <span class="n">{{ j.matrix.judge_pass_you_pass }}</span>agree
-                </td>
-                <td
-                  class="disagree"
-                  data-test="matrix-cell"
-                >
-                  <span class="n">{{ j.matrix.judge_pass_you_fail }}</span>too lenient
-                </td>
-              </tr>
-              <tr>
-                <th scope="row">
-                  Judge: fail
-                </th>
-                <td
-                  class="disagree"
-                  data-test="matrix-cell"
-                >
-                  <span class="n">{{ j.matrix.judge_fail_you_pass }}</span>too strict
-                </td>
-                <td
-                  class="agree"
-                  data-test="matrix-cell"
-                >
-                  <span class="n">{{ j.matrix.judge_fail_you_fail }}</span>agree
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
 
-      <div class="stat-strip three">
-        <section aria-labelledby="perconfig">
+    <section
+      v-for="j in judges"
+      :key="j.key"
+      :aria-labelledby="j.id"
+      class="panel judge"
+      data-test="judge"
+    >
+      <div class="judge-head">
+        <div class="judge-name">
           <h2
-            id="perconfig"
-            class="cell-title"
+            :id="j.id"
+            class="section-title"
+            data-test="judge-name"
           >
-            Per config
+            {{ modelName(j.judge.judge_model) }}, rubric <span
+              class="mono"
+              :title="j.judge.rubric"
+            >{{ rubricName(j.judge.rubric) }}</span>
           </h2>
-          <div class="per-config small">
-            <div
-              v-for="c in j.per_config"
-              :key="c.config"
-              class="per-row"
-            >
-              <span
-                class="arm"
-                data-test="per-config-row"
-              ><span
-                class="dot"
-                :class="armKey(c.config) ? `dot--${armKey(c.config)}` : ''"
-              /><span>{{ configLabel(c.config) }} · <span class="num">{{ kappaText(c.kappa) }}</span> · {{ plural(c.labels, 'check') }}</span></span>
-            </div>
-            <p
-              class="secondary"
-              data-test="per-config-note"
-            >
-              {{ perConfigNote }}
-            </p>
-          </div>
-        </section>
-        <section aria-labelledby="retest">
-          <h2
-            id="retest"
-            class="cell-title"
-          >
-            Same input, judged {{ j.retest?.runs ?? 3 }} times
-          </h2>
-          <template v-if="j.retest">
-            <span class="figure num">{{ j.retest.identical }} of {{ j.retest.total }}</span>
-            <p
-              class="secondary small"
-              data-test="retest-line"
-            >
-              {{ retestLine }}
-            </p>
-          </template>
-          <p
-            v-else
-            class="secondary small"
-          >
-            Not run yet.
+          <p class="secondary small">
+            {{ plural(j.judge.trials_judged, 'trial') }} judged, in {{ plural(j.judge.experiments.length, 'experiment') }}
           </p>
-        </section>
-        <section aria-labelledby="self">
-          <h2
-            id="self"
-            class="cell-title"
-          >
-            You, a day later
-          </h2>
-          <template v-if="j.self">
-            <span class="figure num">{{ j.self.same }} of {{ j.self.total }}</span>
-            <p
-              class="secondary small"
-              data-test="self-line"
+        </div>
+        <TrustBadge :status="j.judge.status" />
+      </div>
+      <p
+        class="judge-summary"
+        data-test="judge-summary"
+      >
+        {{ plainText(j.judge.summary) }}
+      </p>
+      <p
+        v-if="j.calibrate"
+        class="calibrate-row"
+      >
+        <a
+          class="btn btn--quiet"
+          :href="j.calibrate.href"
+          data-test="judge-calibrate"
+        >Calibrate this judge</a>
+        <span class="secondary small">Label outputs from {{ j.calibrate.name }}, without seeing its verdicts.</span>
+      </p>
+
+      <IntervalStrip
+        v-if="j.strip"
+        class="strip"
+        :min="j.strip.min"
+        :max="1"
+        :ticks="j.strip.ticks"
+        :rows="j.strip.rows"
+        :reference="{ value: bar?.kappa ?? 0.6 }"
+        :summary="j.strip.summary"
+      />
+
+      <div class="table-wrap criteria-wrap">
+        <table
+          class="table criteria"
+          data-test="criteria-table"
+        >
+          <caption class="visually-hidden">
+            How far to trust {{ modelName(j.judge.judge_model) }} on each question
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">
+                Question
+              </th>
+              <th scope="col">
+                Trust
+              </th>
+              <th scope="col">
+                Held-out labels
+              </th>
+              <th scope="col">
+                Tuning labels
+              </th>
+              <th scope="col">
+                Same verdict twice
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="c in j.judge.criteria"
+              :key="c.criterion"
+              :data-criterion="c.criterion"
+              data-test="criterion-row"
             >
-              {{ selfLine }}
-            </p>
-          </template>
-          <p
-            v-else
-            class="secondary small"
-          >
-            No relabelling yet.
-          </p>
-        </section>
+              <th scope="row">
+                <span class="mono strong">{{ c.criterion }}</span>
+                <span
+                  v-if="c.text"
+                  class="secondary small block question"
+                >{{ c.text }}</span>
+              </th>
+              <td data-test="criterion-trust">
+                <span class="cell-label">Trust</span>
+                <TrustBadge
+                  :status="c.status"
+                  :summary="c.summary"
+                />
+                <ul
+                  v-if="reasonsOf(c).length"
+                  class="reasons small"
+                  data-test="criterion-reasons"
+                >
+                  <li
+                    v-for="(r, ri) in reasonsOf(c)"
+                    :key="ri"
+                  >
+                    {{ r }}
+                  </li>
+                </ul>
+                <p
+                  v-if="needsLine(c)"
+                  class="small needs"
+                  data-test="criterion-needs"
+                >
+                  {{ needsLine(c) }}
+                </p>
+              </td>
+              <td data-test="criterion-heldout">
+                <span class="cell-label">Held-out labels</span>
+                <template v-if="c.heldout">
+                  <span
+                    v-for="(line, li) in figureLines(c.heldout)"
+                    :key="li"
+                    class="block"
+                    :class="{ 'secondary small': li > 1 }"
+                  >{{ line }}</span>
+                </template>
+                <span
+                  v-else
+                  class="secondary"
+                >None yet</span>
+              </td>
+              <td data-test="criterion-tuning">
+                <span class="cell-label">Tuning labels</span>
+                <span v-if="c.tuning">{{ tuningLine(c.tuning) }}</span>
+                <span
+                  v-else
+                  class="secondary"
+                >None yet</span>
+              </td>
+              <td data-test="criterion-retest">
+                <span class="cell-label">Same verdict twice</span>
+                <span v-if="c.retest">{{ retestLine(c.retest) }}</span>
+                <span
+                  v-else
+                  class="secondary"
+                >Not measured yet</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
-      <section
-        aria-labelledby="disagree"
-        class="stack"
+      <details
+        v-if="j.disagreements.all.length"
+        class="disclosure disagreements"
+        data-test="disagreements"
       >
-        <h2
-          id="disagree"
-          class="section-title"
-        >
-          The {{ j.disagreements.length }} disagreements
-        </h2>
-        <!-- Until the held-out set is labelled, the judge's reasons stay closed, so they cannot
-             steer the labels still to come. The numbers above stay, marked provisional. -->
+        <summary>
+          <span class="summary-text">
+            <span class="strong">Where it and people disagree</span>
+            <span class="secondary small">{{ plural(j.disagreements.all.length, 'output') }}</span>
+          </span>
+        </summary>
         <p
-          v-if="toGo > 0"
-          class="secondary"
-          data-test="disagreements-later"
+          v-for="h in j.disagreements.held"
+          :key="h.set"
+          class="secondary small held"
+          data-test="disagreements-held"
         >
-          These open when the held-out set is done ({{ toGo }} to go), so the judge's reasons cannot steer the labels still to come.
+          {{ h.count }} on {{ SET_NAMES[h.set] }} labels open when the {{ SET_NAMES[h.set] }} set is done ({{ h.toGo }} to go), so the judge's reasons cannot steer the labels still to come.
         </p>
-        <div
-          v-else
-          class="table-wrap"
+        <ul
+          v-if="j.disagreements.shown.length"
+          class="dis-list"
         >
-          <table class="table disagreements">
-            <thead>
-              <tr>
-                <th scope="col">
-                  Task
-                </th>
-                <th scope="col">
-                  Question
-                </th>
-                <th scope="col">
-                  You
-                </th>
-                <th scope="col">
-                  Judge
-                </th>
-                <th scope="col">
-                  Judge's evidence
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(r, i) in j.disagreements"
-                :key="i"
-                data-test="disagreement-row"
-              >
-                <th scope="row">
-                  <a
-                    v-if="r.trial_id"
-                    :href="href.trial(r.trial_id)"
-                    class="mono task-link"
-                  >{{ r.task }}</a>
-                  <span
-                    v-else
-                    class="mono"
-                  >{{ r.task }}</span>
-                </th>
-                <td>{{ r.criterion }}</td>
-                <td class="strong">
-                  {{ valueWord(r.you) }}
-                </td>
-                <td class="strong">
-                  {{ valueWord(r.judge) }}
-                </td>
-                <td class="secondary">
-                  {{ r.evidence }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <li
+            v-for="(d, di) in j.disagreements.shown"
+            :key="di"
+            class="dis"
+            data-test="disagreement"
+          >
+            <p class="dis-head small">
+              <a
+                :href="href.trial(d.trial_id)"
+                class="mono"
+              >{{ d.task_id }}</a> · <span class="mono">{{ d.criterion }}</span> · <span class="secondary">{{ capitalise(SET_NAMES[d.set]) }} label</span>
+            </p>
+            <p
+              class="small"
+              data-test="disagreement-verdicts"
+            >
+              People said <strong>{{ yesNo(d.human) }}</strong>, the judge said <strong>{{ yesNo(d.judge) }}</strong>.
+            </p>
+            <p
+              v-if="d.judge_reason"
+              class="small secondary"
+              data-test="disagreement-reason"
+            >
+              The judge's reason: {{ d.judge_reason }}
+            </p>
+            <p
+              v-if="d.human_note"
+              class="small secondary"
+              data-test="disagreement-note"
+            >
+              The label's note: {{ d.human_note }}
+            </p>
+          </li>
+        </ul>
+        <p
+          v-if="j.disagreements.capped"
+          class="secondary smaller held"
+        >
+          Up to 50 are listed for each question.
+        </p>
+      </details>
+      <p
+        v-else-if="j.disagreements.pairs"
+        class="secondary small"
+        data-test="no-disagreements"
+      >
+        It matches people on every labelled output so far.
+      </p>
+    </section>
+
+    <section
+      aria-labelledby="badges"
+      class="panel panel--pad legend"
+      data-test="trust-legend"
+    >
+      <h2
+        id="badges"
+        class="section-title"
+      >
+        What the badges mean
+      </h2>
+      <p class="secondary small legend-lede">
+        Held-out labels test the judge, on tasks its rubric was never tuned on. Tuning labels only help write the rubric. A badge never changes a grade: it says how far to read one.
+      </p>
+      <dl class="statuses">
+        <div
+          v-for="s in statuses"
+          :key="s.status"
+          data-test="legend-row"
+        >
+          <dt><TrustBadge :status="s.status" /></dt>
+          <dd class="small">
+            {{ s.text }}
+          </dd>
         </div>
-      </section>
-    </template>
+      </dl>
+    </section>
   </LoadState>
 </template>
 
 <style scoped>
-.not-yet {
+.kappa-note {
+  margin-top: 6px;
+  max-width: 72ch;
+}
+
+.empty-text {
   margin-top: 8px;
   max-width: 72ch;
 }
 
-.answer {
-  display: flex;
-  flex-wrap: wrap;
-  border-radius: 14px;
-}
-
-.answer-main {
-  flex: 999 1 560px;
-  min-width: 0;
-  padding: 28px 32px;
+.judge {
+  padding: 22px 24px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  min-width: 0;
 }
 
-.answer-title {
-  font-size: 30px;
-  letter-spacing: -0.01em;
+.judge-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
 }
 
-.answer-text {
-  font-size: 17px;
-  max-width: 62ch;
+.judge-name {
+  min-width: 0;
 }
 
-.meaning {
+.judge-name .mono {
+  font-size: 15px;
+}
+
+.judge-summary {
   max-width: 72ch;
 }
 
-.answer-side {
-  flex: 1 1 320px;
-  min-width: 0;
-  padding: 28px 30px;
-  border-left: 1px solid var(--rule-soft);
-}
-
-.sub-title {
-  font-size: 15px;
-  margin-bottom: 12px;
-}
-
-.matrix {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 6px;
-  text-align: center;
-}
-
-.matrix th {
-  font-weight: 500;
-  color: var(--ink-2);
-}
-
-.matrix tbody th {
-  text-align: right;
-}
-
-.matrix td {
-  padding: 14px 8px;
-  border-radius: 8px;
-  color: var(--ink);
-}
-
-/* Neutral on purpose: the words agree, too lenient and too strict carry the meaning. The
-   disagreements are the cells to read, so they get the ink outline and the heavier count. */
-.agree {
-  background: var(--surface-muted);
-}
-
-.disagree {
-  background: var(--surface);
-  box-shadow: inset 0 0 0 2px var(--ink);
-}
-
-.n {
-  display: block;
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.disagree .n {
-  font-weight: 700;
-}
-
-.three {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-}
-
-.three > section {
-  padding: 22px 24px;
-}
-
-.cell-title {
-  font-size: 16px;
-  margin-bottom: 12px;
-}
-
-.per-config {
+.calibrate-row {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.per-row {
-  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 8px 14px;
+}
+
+.strip {
+  max-width: 760px;
 }
 
 .strong {
   font-weight: 600;
 }
 
-.figure {
-  display: block;
-  font-size: 28px;
-  font-weight: 600;
+.question {
+  margin-top: 2px;
+  max-width: 40ch;
+}
+
+.criteria .mono {
+  white-space: normal;
+}
+
+.reasons {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  max-width: 40ch;
+}
+
+.reasons li + li {
+  margin-top: 4px;
+}
+
+.needs {
+  margin-top: 6px;
+}
+
+.cell-label {
+  display: none;
 }
 
 .disagreements {
-  min-width: 820px;
+  padding-bottom: 6px;
 }
 
-.task-link {
-  color: var(--ink);
+.held {
+  margin: 4px 0 10px;
+  max-width: 72ch;
 }
 
-@media (max-width: 640px) {
-  .answer-main {
-    padding: 22px 20px;
+.dis-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dis {
+  padding: 12px 0;
+  border-top: 1px solid var(--rule-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 80ch;
+}
+
+.dis-head .mono {
+  white-space: nowrap;
+}
+
+.legend-lede {
+  margin: 6px 0 12px;
+  max-width: 72ch;
+}
+
+.statuses {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 10px 16px;
+  align-items: baseline;
+}
+
+.statuses > div {
+  display: contents;
+}
+
+.statuses dd {
+  margin: 0;
+  max-width: 72ch;
+}
+
+/* A phone reads each question as a card: one figure under another, each with its name, so the
+   page never scrolls sideways. */
+@media (max-width: 760px) {
+  .judge {
+    padding: 18px 16px;
   }
 
-  .answer-side {
-    padding: 20px;
-    border-left: 0;
-    border-top: 1px solid var(--rule-soft);
+  .criteria thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
   }
 
-  .answer-title {
-    font-size: 26px;
+  .criteria,
+  .criteria tbody,
+  .criteria tr,
+  .criteria th,
+  .criteria td {
+    display: block;
+    width: 100%;
+  }
+
+  .criteria tr {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  .criteria tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .table.criteria th,
+  .table.criteria td {
+    border-bottom: 0;
+    padding: 4px 16px;
+  }
+
+  .cell-label {
+    display: block;
+    color: var(--ink-2);
+    font-size: 13px;
+  }
+
+  .statuses {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .statuses dd {
+    margin-bottom: 8px;
   }
 }
 </style>

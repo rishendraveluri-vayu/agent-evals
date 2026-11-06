@@ -26,19 +26,6 @@ export function percent(rate: number): string {
   return `${Math.round(rate * 100)}%`;
 }
 
-/** The Wilson score interval for k successes in n trials, at 95% (z = 1.96), as rates from 0 to 1.
- *  It stays inside 0 to 1 and is sensible for small n, where k / n alone says too much. */
-export function wilson(k: number, n: number): { low: number; high: number } {
-  if (n <= 0) return { low: 0, high: 1 };
-  const z = 1.96;
-  const p = k / n;
-  const z2 = z * z;
-  const denom = 1 + z2 / n;
-  const centre = (p + z2 / (2 * n)) / denom;
-  const half = (z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / denom;
-  return { low: Math.max(0, centre - half), high: Math.min(1, centre + half) };
-}
-
 /**
  * $18.40, $0.18, $0.0094, $0.0122: cents from $1 up; below $1, three significant figures (with at
  * least the cents, and no trailing zeros past them), so two small amounts side by side always show
