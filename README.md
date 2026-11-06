@@ -51,6 +51,7 @@ agents on **fake models** (`fake/...`), which the full platform's Config screen 
 local server answers at made-up prices, so a run needs no key and spends nothing. A fake model
 makes the same scripted calls whatever the task (one always works out the same EMI), so most of
 its trials fail: such a run tests the platform (queueing, retries, traces, grading), not an agent.
+A run on fake models defaults to 2 trials per task and arm, so it finishes in a few minutes.
 
 **With a key** you can run agents on real models. Copy `.env.example` to `.env`, add
 `ANTHROPIC_API_KEY` (Claude) and/or `GEMINI_API_KEY`, then run `docker compose up -d` again. A
@@ -177,7 +178,10 @@ setting (a 400), list it in `MODEL_REJECTS` (`apps/api/src/configs/settings.ts`)
 that model leave it out; that table holds Haiku 5.5's `temperature` and the local Qwen's
 `parallel_tool_calls`. For the UI to say when a new provider's key is missing, also add it to
 `PROVIDER_KEYS` (`apps/api/src/common/app-config.ts`) and its flag in compose; without that the
-model still runs, and its key shows as unknown. Then check it:
+model still runs, and its key shows as unknown. The local open-weight model (`qwen2.5-7b-local`,
+the `local-model` compose profile) needs no key and costs nothing; the Build and Config screens
+never pick it by default, and the Run screen can warn but not check that Ollama is up. Then check
+it:
 
 ```bash
 uv run --no-project --with pyyaml==6.0.3 python scripts/check_litellm_config.py   # no cache, prices set
