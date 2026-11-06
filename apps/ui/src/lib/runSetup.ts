@@ -105,6 +105,14 @@ export function missingKey(model: string | null | undefined, models: ModelView[]
   return PROVIDERS[providerOf(model, models) ?? '']?.key ?? "the provider's API key";
 }
 
+/** The open-weight model served by a local Ollama container (LiteLLM's `qwen2.5-7b-local`): free
+ *  per token and keyless, but it answers only while the local-model compose profile is up. */
+export function isLocalModel(model: string | null | undefined, models: ModelView[] = []): boolean {
+  if (!model || isFake(model)) return false;
+  const provider = models.find((m) => m.name === model)?.provider ?? '';
+  return model.endsWith('-local') || provider === 'ollama' || provider === 'ollama_chat';
+}
+
 /** "needs ANTHROPIC_API_KEY in .env", for a model whose key is not set; '' otherwise. */
 export function needsKeyWords(model: string | null | undefined, models: ModelView[]): string {
   const key = missingKey(model, models);

@@ -17,7 +17,7 @@ import { experimentName, infraReason, modelName, splitName } from '../lib/names'
 import { href, navigate, replaceRoute } from '../router';
 import { eventView, pauseCause } from '../lib/runs';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
-import { armPauseHelp, defaultArms, defaultBudget, defaultN, DEFAULT_N, isEngineTest, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, validateSeed, type ArmDefaults } from '../lib/runSetup';
+import { armPauseHelp, defaultArms, defaultBudget, defaultN, DEFAULT_N, isEngineTest, isLocalModel, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, validateSeed, type ArmDefaults } from '../lib/runSetup';
 import { FAKE_SIM_MODEL, isFake, simModels } from '../lib/models';
 import { CHECKER_MODEL, ensureConflictChecks, needsConflictCheck } from '../lib/conflictGate';
 import { text } from '../trials';
@@ -128,6 +128,12 @@ const runModels = computed(() => {
 });
 /** What this run calls that costs money, for the start panel. */
 const realModels = computed(() => [...new Set(runModels.value.map((m) => m.model).filter((m) => !isFake(m)))]);
+/** The local open-weight model among them: free per token and keyless, but it answers only while
+ *  its Ollama container is up, which the API has no way to tell this page. Said by Start. */
+const localModels = computed(() => realModels.value.filter((m) => isLocalModel(m, data.value?.models ?? [])));
+const localNames = computed(() => localModels.value.map((m) => modelName(m)).join(' and '));
+/** The models that cost money per token: every real one except the local one. */
+const paidModels = computed(() => realModels.value.filter((m) => !localModels.value.includes(m)));
 /** Every model this run calls whose provider key is not set in .env (GET /models' key_set). */
 const keysMissing = computed(() =>
   // D75: a Hermes agent on a real model has its prompt checked first, on Claude Sonnet 5.5.
@@ -1651,6 +1657,18 @@ onBeforeUnmount(() => taskObserver?.disconnect());
             {{ actionError }}
           </p>
           <template v-if="draft || data.experiment">
+            <p
+              v-if="localModels.length && !started"
+              class="local-note small"
+              role="note"
+              data-test="local-model-warning"
+            >
+              <AppIcon
+                name="alert"
+                :size="14"
+              />
+              <span>{{ localNames }} runs on this machine through Ollama, and this page cannot tell whether Ollama is up. Start it first with <span class="mono">docker compose --profile local-model up -d ollama</span> and pull the model once (the README, Add a model, has both steps); if it is not running, every trial on it fails. It costs nothing per token, but on a CPU one call can take minutes.</span>
+            </p>
             <div
               v-if="confirmPaid"
               class="confirm"
@@ -1665,7 +1683,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                 <AppIcon
                   name="alert"
                   :size="14"
-                /> This run calls real models and costs real money.
+                /> {{ paidModels.length ? 'This run calls real models and costs real money.' : 'This run calls a local model: free per token, but slow on a CPU.' }}
               </p>
               <ul class="small confirm-facts">
                 <li v-if="paidFacts.trials">
@@ -2380,6 +2398,24 @@ onBeforeUnmount(() => taskObserver?.disconnect());
 
 .n-field .error {
   margin: 4px 0 0;
+}
+
+/* The local model's note by Start: a warning, never a block. */
+.local-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 4px solid var(--ink);
+  background: var(--surface-muted);
+  border-radius: 6px;
+}
+
+.local-note > :deep(svg),
+.local-note > svg {
+  flex: none;
+  margin-top: 3px;
 }
 
 /* The paid-run confirmation, as the conflict check asks before its paid call. */

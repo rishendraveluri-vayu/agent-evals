@@ -612,6 +612,55 @@ describe('RunView starts a fake-only run at 2 trials (the README’s fake path)'
   });
 });
 
+describe('RunView warns that the local model runs only while Ollama is up', () => {
+  useFixtures();
+  const qwen: ConfigView = { ...fixtureConfigs[2], hash: `sha256:9e${'0'.repeat(61)}3`, name: 'Own loop, Qwen local', model: 'qwen2.5-7b-local' };
+  const models = [
+    { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: true },
+    { name: 'qwen2.5-7b-local', provider: 'ollama_chat', input_per_mtok: 0, output_per_mtok: 0, key_set: null },
+  ];
+
+  it('says by Start how to bring Ollama up, without blocking Start, and never calls the run paid', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, qwen]);
+    vi.spyOn(api, 'models').mockResolvedValue(models);
+    const w = mount(RunView, { props: { a: qwen.hash, b: '' } });
+    await settle();
+    await w.get('[data-test="sim-model"]').setValue('qwen2.5-7b-local');
+    await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
+    await settle();
+    const note = w.get('[data-test="local-model-warning"]');
+    expect(note.attributes('role')).toBe('note');
+    expect(note.text()).toBe(
+      'Qwen2.5 7b Local runs on this machine through Ollama, and this page cannot tell whether Ollama is up. Start it first with docker compose --profile local-model up -d ollama and pull the model once (the README, Add a model, has both steps); if it is not running, every trial on it fails. It costs nothing per token, but on a CPU one call can take minutes.',
+    );
+    // A warning, not a check: Start stays on.
+    expect(w.get('[data-test="start"]').attributes('disabled')).toBeUndefined();
+    await w.get('[data-test="start"]').trigger('click');
+    await settle();
+    expect(w.get('[data-test="confirm-paid"] #paid-title').text()).toBe('This run calls a local model: free per token, but slow on a CPU.');
+  });
+
+  it('keeps the paid wording when a model that costs money is in the run too', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, qwen]);
+    vi.spyOn(api, 'models').mockResolvedValue(models);
+    const w = mount(RunView, { props: { a: qwen.hash, b: '' } });
+    await settle();
+    await w.get('[data-test="sim-model"]').setValue('claude-haiku-5-5');
+    await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
+    await settle();
+    expect(w.find('[data-test="local-model-warning"]').exists()).toBe(true);
+    await w.get('[data-test="start"]').trigger('click');
+    await settle();
+    expect(w.get('[data-test="confirm-paid"] #paid-title').text()).toBe('This run calls real models and costs real money.');
+  });
+
+  it('says nothing about Ollama for a run on hosted models', async () => {
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    expect(w.find('[data-test="local-model-warning"]').exists()).toBe(false);
+  });
+});
+
 describe('RunView futility check: off by default when every model is fake, on for a paid run (A41)', () => {
   useFixtures();
   const box = (w: VueWrapper) => w.get('[data-test="futility-box"]').element as HTMLInputElement;
