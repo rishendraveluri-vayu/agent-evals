@@ -1,6 +1,6 @@
 {
   "id": "draft-payoff-order",
-  "version": "4",
+  "version": "5",
   "split": "discovery",
   "kind": "single_prompt",
   "summary": "Meera can put Rs 20,000 a month towards her three debts: which first, and when is she debt-free?",
@@ -50,6 +50,10 @@
       "match": "any",
       "tolerance": {
         "abs": 0
+      },
+      "context": {
+        "after": "months?\\b|mos?\\b|EMIs?\\b|instal?l?ments?\\b",
+        "before": "\\bmonths?(?:\\s+(?:down\\s+|drops?\\s+|falls?\\s+)?to)?|\\bmonths?\\b[^\\n|]*\\|(?:[^\\n|]*\\|)*?"
       }
     },
     {

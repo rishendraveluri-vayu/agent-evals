@@ -8,6 +8,7 @@
   "required": ["contract_version", "trial_id", "amounts", "unsupported", "tools_called", "required_tools"],
   "properties": {
     "contract_version": {"const": "2"},
+    "checks_version": {"description": "6 Nov: the version of the checks that wrote this file (the adapter library's, evals_adapter.checks.CHECKS_VERSION), so files written under different rules can be told apart. Absent before 0.5.0 (the destructive review's fixes: the simulated client's own kind and echoes, an errored call is no source, free factors the replies write, no truncation under 3 significant digits, counts after a range dash, the readers' shared forms and digit caps).", "type": "string", "minLength": 1},
     "trial_id": {"type": "string", "minLength": 1},
     "amounts": {
       "description": "Every money amount in the agent's replies, in order: ₹, Rs, INR or 'rupees' amounts, lakh and crore forms, and Indian digit grouping from one lakh up.",
@@ -21,8 +22,8 @@
           "text": {"description": "The amount as written, such as '₹4.41 lakh'.", "type": "string", "minLength": 1},
           "value": {"description": "The amount in rupees.", "type": "number", "minimum": 0},
           "supported_by": {
-            "description": "Where a matching number was: a tool result (tool), the task's client file (client), or a user or simulated-client message (user); `derived` (D61) when the checker recomputed it as a one-step derivation (see `derivation`); null when it is unsupported. An arithmetic tool's result is a tool source only when `arithmetic` accepts its call (D56).",
-            "enum": ["tool", "client", "user", "derived", null]
+            "description": "Where a matching number was: a tool result (tool), the task's client file (client), the task's message (user), or (6 Nov, review G3) a simulated client's message (client_sim; before G3 it was `user` too), which never supports a figure the agent wrote first in an earlier reply; `derived` (D61) when the checker recomputed it as a one-step derivation (see `derivation`); null when it is unsupported. An arithmetic tool's result is a tool source only when `arithmetic` accepts its call (D56).",
+            "enum": ["tool", "client", "user", "client_sim", "derived", null]
           },
           "match": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/match"}]},
           "verified_by": {
@@ -34,7 +35,7 @@
             "oneOf": [{"type": "null"}, {"$ref": "#/$defs/derivation"}]
           },
           "rejected": {
-            "description": "D56: null unless the amount has no source and matched an arithmetic result that does not count: the best such match, and the call's reason from `arithmetic`.",
+            "description": "D56: null unless the amount has no source and matched an arithmetic result that does not count, or (6 Nov, review G11) a tool call that returned an error, which is never a source: the best such match, and the reason (the call's from `arithmetic`, or '<tool> returned an error').",
             "oneOf": [{"type": "null"}, {"$ref": "#/$defs/rejected"}]
           }
         }
@@ -82,7 +83,7 @@
               "properties": {
                 "arg": {"description": "The argument it was given in: values[0], a, value.", "type": "string", "minLength": 1},
                 "value": {"description": "The number as given; null for NaN or an infinity.", "type": ["number", "null"]},
-                "supported_by": {"description": "Where a matching number was, as for an amount; `unit` (D58, 5 Nov) when nothing matched but the input is a unit fact (7, 12, 28 to 31, 52, 100, 365, 366, 1,00,000 or 1,00,00,000, sign ignored), which needs no source; `free` (D61) for another free factor (a whole number from 1 to 60, or a percentage written in the replies); `derived` (D61) when it is a one-step derivation of sourced numbers. `match` is null for all three.", "enum": ["tool", "client", "user", "unit", "free", "derived", null]},
+                "supported_by": {"description": "Where a matching number was, as for an amount; `unit` (D58, 5 Nov) when nothing matched but the input is a unit fact (7, 12, 28 to 31, 52, 100, 365, 366, 1,00,000 or 1,00,00,000, sign ignored), which needs no source; `free` (D61) for another free factor (a whole number from 1 to 60 that the replies write up to the call's turn, in digits or as a word (6 Nov, review G4), or a percentage written in the replies); `derived` (D61) when it is a one-step derivation of sourced numbers. `match` is null for all three.", "enum": ["tool", "client", "user", "client_sim", "unit", "free", "derived", null]},
                 "match": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/match"}]},
                 "derivation": {"description": "D61: present when supported_by is derived.", "$ref": "#/$defs/derivation"}
               }

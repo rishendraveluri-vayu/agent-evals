@@ -47,6 +47,15 @@ def problems(spec: Any) -> list[str]:
             re.compile(spec["pattern"])
         except re.error as exc:
             out.append(f"pattern: not a valid regular expression ({exc})")
+    if not out and spec.get("type") == "number" and isinstance(spec.get("context"), dict):
+        for side in ("after", "before"):
+            pattern = spec["context"].get(side)
+            if not isinstance(pattern, str):
+                continue
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                out.append(f"context.{side}: not a valid regular expression ({exc})")
     return out
 
 

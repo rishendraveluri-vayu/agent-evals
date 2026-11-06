@@ -189,11 +189,19 @@ def memory_skill_events(ctx: TrialContext, name: str, args: Any, result: Any) ->
 
 
 def is_error_result(result: Any) -> bool:
+    """Whether a tool result Hermes handed back is an error: a JSON object with `error` and no
+    `result`, or text starting "Error". Hermes appends its own notes after the JSON when a tool
+    keeps failing ('{"error": ...}\\n\\n[Tool loop warning: ...]', seen in the positive control),
+    so the JSON at the head of the text decides, not the whole text."""
     if isinstance(result, str):
+        text = result.lstrip()
         try:
-            result = json.loads(result)
+            result = json.loads(text)
         except ValueError:
-            return result.startswith("Error")
+            try:
+                result, _ = json.JSONDecoder().raw_decode(text)
+            except ValueError:
+                return text.startswith("Error")
     return isinstance(result, dict) and "error" in result and "result" not in result
 
 

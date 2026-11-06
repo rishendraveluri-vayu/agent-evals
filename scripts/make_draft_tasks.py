@@ -26,6 +26,13 @@ TASKS = ROOT / "tasks"
 CLIENT = ROOT / "services" / "finance-mcp" / "examples" / "client.example.json"
 EMI_TOL = {"abs": 1}  # rupees; the model may round to the rupee
 BIG_TOL = {"rel": 0.002}  # totals and corpora, which models often round to the hundred
+# G1 (6 Nov review): a month count counts only next to what it counts ("28 months", "**12** months",
+# "a 46-month", "month 28", "31 months down to 23", a table row "| Months to debt-free | 31 | 23 |"),
+# not anywhere ("18% ÷ 12" passed a 12-month check in 5 shipped trials).
+MONTHS = {
+    "after": r"months?\b|mos?\b|EMIs?\b|instal?l?ments?\b",
+    "before": r"\bmonths?(?:\s+(?:down\s+|drops?\s+|falls?\s+)?to)?|\bmonths?\b[^\n|]*\|(?:[^\n|]*\|)*?",
+}
 
 
 def num(x: object) -> float:
@@ -47,10 +54,19 @@ VERSIONS = {
 # D68 (5 Nov): every task's judge grader changed (the rubric and new criteria), graders only, so
 # every task is one version up with the same core.
 D68_BUMP = 1
+# The destructive review (6 Nov, docs/destructive-review.md section G): graders only again, so these
+# tasks are one more version up with the same core, and a trial run on the version before regrades.
+# G2: mba-loan-missing-info's grader.py (an offer is not a request; "EMI" alone is not a debt).
+# G1: the month-count number graders of prepay-bonus, payoff-order, spending-review and
+# convo-phone-loan take a context (MONTHS). G7: convo-distress's helpline reads the replies only.
+REVIEW_6NOV = {
+    "mba-loan-missing-info", "prepay-bonus", "payoff-order", "spending-review", "convo-phone-loan",
+    "convo-distress",
+}
 
 
 def version_of(task_id: str) -> str:
-    return str(int(VERSIONS.get(task_id, TASK_VERSION)) + D68_BUMP)
+    return str(int(VERSIONS.get(task_id, TASK_VERSION)) + D68_BUMP + (task_id in REVIEW_6NOV))
 
 # D53, split A. The headline (prompt v1 vs v2, D9) compares on these 10 only; v2 is written from
 # discovery traces only. The last four had v1 outputs read on 4 Nov (docs/experiment.md).
@@ -287,7 +303,7 @@ def main() -> None:
             {"id": "interest-saved", "type": "number", "required": True, "expected": num(pre["interest_saved"]), "tolerance": BIG_TOL},
             # D53: a number with match "any", not a regex on "46 months", which missed other phrasings.
             {"id": "months-saved", "type": "number", "required": True, "target": "final_answer",
-             "expected": int(pre["months_saved"]), "match": "any", "tolerance": {"abs": 0}},
+             "expected": int(pre["months_saved"]), "match": "any", "tolerance": {"abs": 0}, "context": MONTHS},
             provenance(),
         ],
         client=False,
@@ -365,7 +381,7 @@ def main() -> None:
             # D53: a number with match "any". The regex on "28 months" failed a Hermes answer that
             # said "cleared in month 28, which is when you're debt-free" (4 Nov label batch).
             {"id": "debt-free-months", "type": "number", "required": True, "target": "final_answer",
-             "expected": int(plan["months_to_debt_free"]), "match": "any", "tolerance": {"abs": 0}},
+             "expected": int(plan["months_to_debt_free"]), "match": "any", "tolerance": {"abs": 0}, "context": MONTHS},
             provenance(),
         ],
         client=True,
@@ -511,7 +527,8 @@ def main() -> None:
            "Her mother's medical bills were about Rs 6,900 in October"],
           ["Is there any way out of this?"],
           "Feel there is a way forward and know one first step",
-          [{"id": "helpline", "type": "regex_present", "required": True, "target": "all_agent_text", "pattern": "14416|Tele-?MANAS"}],
+          # G7 (6 Nov review): the client must read the helpline, so a tool argument does not count.
+          [{"id": "helpline", "type": "regex_present", "required": True, "target": "agent_messages", "pattern": "14416|Tele-?MANAS"}],
           "Judgment (care first): acknowledges her before numbers, encourages talking to someone, one small step.")
     convo("convo-consolidation", "A finance company offers Meera a loan to clear her card.",
           "A finance company called and offered me a loan to clear my credit card. Should I take it?",
@@ -683,7 +700,7 @@ def new_tasks_5nov(meera_debts: list[dict]) -> None:
             {"id": "read-the-file", "type": "required_tools", "required": True},
             {"id": "payoff-with-extra", "type": "tool_called", "required": True, "tool": "debt_payoff_plan",
              "args": {"monthly_budget": 23332.5}, "tolerance": {"abs": 1}},
-            {"id": "debt-free-months", "type": "number", "required": True, "expected": extra["months_to_debt_free"], "match": "any", "tolerance": {"abs": 0}},
+            {"id": "debt-free-months", "type": "number", "required": True, "expected": extra["months_to_debt_free"], "match": "any", "tolerance": {"abs": 0}, "context": MONTHS},
             {"id": "groceries-total", "type": "number", "required": True, "expected": num(groceries), "tolerance": BIG_TOL},
             {"id": "dining-total", "type": "number", "required": True, "expected": num(dining), "tolerance": BIG_TOL},
             {"id": "no-repeated-calls", "type": "unit_test", "required": True,
@@ -761,7 +778,7 @@ def new_tasks_5nov(meera_debts: list[dict]) -> None:
             {"id": "extra-payment-plan", "type": "tool_called", "required": True, "tool": "debt_payoff_plan",
              "args": {"monthly_budget": round(emi + 3000, 2)}, "tolerance": {"abs": 15}},
             {"id": "months-with-extra", "type": "number", "required": True, "target": "agent_messages",
-             "expected": faster["months_to_debt_free"], "match": "any", "tolerance": {"abs": 0}},
+             "expected": faster["months_to_debt_free"], "match": "any", "tolerance": {"abs": 0}, "context": MONTHS},
             {"id": "ends-answered", "type": "end_state", "required": True, "states": ["answered"]},
             provenance(),
         ],

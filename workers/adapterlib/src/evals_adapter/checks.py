@@ -7,14 +7,19 @@
 
    - `tool`: a tool result (the `execute_tool` spans of the same or an earlier agent turn);
    - `client`: the task's client file (the files in /trial/state);
-   - `user`: a user or simulated-client message before the reply.
+   - `user`: the task's own message (the client's first words);
+   - `client_sim`: a simulated client's message before the reply (G3, 6 Nov review: its own
+     kind, so support that rests on the simulator is visible). A number in it that only repeats
+     a figure the agent wrote first, in an earlier reply, is not a source: the client disputing
+     "Where did 68,156 come from?" must not support the agent's 68,156.
 
    An amount matches a number when it equals it at the precision shown: exactly, rounded
    half-up, or cut (truncated) to the digits written ("about ₹8,997" matches 8997.26, "₹1,667"
-   matches 1667.50, "₹1.23 lakh" matches 123,456). Trailing zeros in a whole amount may also be
-   rounding, as long as two significant digits remain and the number is within 1% of the
-   amount ("about ₹49,500" matches 49,483; "₹31,000" does not match 31,330). This is a
-   heuristic for a reader, not a grade.
+   matches 1667.50, "₹1.23 lakh" matches 123,456), cutting only for a figure written with three
+   significant digits or more ("₹5 lakh" matches 4.50 to 5.49 lakh, not 5.95 lakh). Trailing
+   zeros in a whole amount may also be rounding, as long as two significant digits remain and
+   the number is within 1% of the amount ("about ₹49,500" matches 49,483; "₹31,000" does not
+   match 31,330). This is a heuristic for a reader, not a grade.
 
    **Verify, don't trace (D61, A44).** Each amount is verified one of three ways, recorded in
    `verified_by`:
@@ -35,7 +40,8 @@
    `percent_change`, `round`): a call's result counts when the call returned no error and each
    number it was given is sourced (an earlier non-arithmetic tool result or counted arithmetic
    result, the client file, or a message up to the call's turn) or a free factor (a unit fact,
-   a whole number from 1 to 60, a percentage the replies state); add, subtract, percent_change
+   a whole number from 1 to 60 that the replies write, a percentage the replies
+   state); add, subtract, percent_change
    and round need a source for every input; every call needs one sourced amount (100 or more);
    and no number in its result only repeats an input with no source (D58's identity guard). So
    `multiply([emi, 12])` counts and `multiply([100, 12])` does not, and `round(x)` or
@@ -65,7 +71,14 @@ from typing import Any
 from evals_adapter.derive import AMOUNT_MIN, Derivation, Operand, Pool, Pools, find
 from evals_adapter.spec import CONTRACT_VERSION, TrialPaths
 
-SOURCES = ("tool", "client", "user")  # also the order of preference between equal matches
+# The checks' own version, written into every checks.json: the adapter library's version
+# (pyproject.toml; a test keeps them equal). 0.5.0 (6 Nov): the destructive review's G3, G4, G6,
+# G8, G9, G10 and G11. A checks.json without it was written by 0.4.0 or earlier.
+CHECKS_VERSION = "0.5.0"
+# Also the order of preference between equal matches. `user` is the task's message, `client_sim`
+# a simulated client's (G3).
+SOURCES = ("tool", "client", "user", "client_sim")
+MESSAGES = frozenset({"user", "client_sim"})  # the kinds whose `where` is <source>:<index>
 HOW = ("exact", "rounded", "truncated", "rounded")  # by match rank; rank 3 is trailing zeros
 
 # Number words that scale what comes before them. Case-insensitive.
@@ -85,13 +98,22 @@ UNIT_WORDS = {
 }
 MONEY_UNITS = {"lakh", "lakhs", "lac", "lacs", "crore", "crores", "cr"}  # money without a marker
 
-NUMBER = r"\d+(?:,\d+)*(?:\.\d+)?"
+# At most 30 digits in a run and 12 comma groups (G6, 6 Nov review): a longer run is no number,
+# so a reply of 4,400 nines cannot become an amount whose JSON integer Python refuses to write.
+NUMBER = r"\d{1,30}(?:,\d{1,30}){0,12}(?:\.\d{1,30})?(?!\d)"
+MAX_FIGURE_EXPONENT = 40  # an arithmetic argument above 10^40 is no figure (G6)
 UNIT = r"lakhs?|lacs?|crores?|cr\b\.?|thousand|k\b|million|mn\b|L\b"
-# A number, with a currency marker before it or else not glued to a word or a decimal point
-# (so "t001" and "v2.3" hold no numbers), and an optional unit word and "rupees" after it.
+# Between a marker and its number, or a number and its unit: spaces, tabs, a no-break, thin or
+# narrow space, or markdown emphasis ("₹ 45,000", "₹**45,000**", "₹4.41 **lakh**"). G10 (6
+# Nov review): the grader's reader (evals_graders.amounts) reads the same, and a test there runs
+# both over the same cases; before, "₹" and a no-break space hid an amount from this check.
+GAP = r"(?:[ \t   ]|\*)*"
+# A number, with a currency marker before it (and maybe a minus: "₹-5,000" is read as 5,000, as
+# "-₹5,000" is) or else not glued to a word or a decimal point (so "t001" and "v2.3" hold no
+# numbers), and an optional unit word and "rupees" after it.
 TOKEN = re.compile(
-    rf"(?:(?P<cur>₹|\bRs\.?|\bINR)[ \t]*|(?<![\w.]))(?P<num>{NUMBER})"
-    rf"(?:[ \t]*(?P<unit>{UNIT}))?(?:[ \t]*(?P<post>rupees?)\b)?",
+    rf"(?:(?P<cur>₹|\bRs\.?|\bINR){GAP}[-−]?|(?<![\w.]))(?P<num>{NUMBER})"
+    rf"(?:{GAP}(?P<unit>{UNIT}))?(?:{GAP}(?P<post>rupees?)\b)?",
     re.IGNORECASE,
 )
 # Dates and times in sources (transaction dates) are not amounts: 2026-10-25 is not ₹2,026.
@@ -100,12 +122,20 @@ DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z?
 # at ...?prid=63742 or a PDF named with %20 and a year). A URL ends at whitespace or a quote, so
 # one inside a JSON string stops at the string's end.
 URL = re.compile(r"\bhttps?://[^\s\"'<>]+", re.IGNORECASE)
-RANGE_GAP = re.compile(r"^[ \t]*(?:–|—|-|to)[ \t]*$", re.IGNORECASE)
+RANGE_GAP = re.compile(r"^[ \t   ]*(?:–|—|-|to)[ \t   ]*$", re.I)
+# The other end of a range, with its unit, right after a marked amount ("₹2–3 lakh"). Matched at
+# a position, not on a slice, so a long reply is not copied once per amount (G6).
+RANGE_END = re.compile(
+    rf"{GAP}(?:–|—|-|to){GAP}(?:₹|Rs\.?|INR)?{GAP}{NUMBER}{GAP}(?P<unit>{UNIT})", re.IGNORECASE
+)
 WESTERN = re.compile(r"^\d{1,3}(?:,\d{3})+$")
 INDIAN = re.compile(r"^\d{1,2}(?:,\d{2})*,\d{3}$")
 INDIAN_LAKH_PLUS = re.compile(r"^\d{1,2}(?:,\d{2})+,\d{3}$")  # 1,00,000 and up
 MCP_PREFIX = re.compile(r"^mcp__.+?__")
 COARSE_TOLERANCE = Decimal("0.01")
+# Cutting a number to the digits shown matches only a figure written with this many significant
+# digits or more (G8): "about ₹8,997" for 8,997.26 and "₹4.41 lakh" for 4,41,999 still match.
+TRUNCATE_MIN_DIGITS = 3
 
 # D56: the finance server's arithmetic tools (toolset finance/v2, D54). Their results are sources
 # only when their inputs are supported; every other tool's result is a source as it stands.
@@ -126,8 +156,11 @@ UNIT_FACTS = frozenset(
 # D61 (A44): figures are verified, not traced. A figure counts when it matches a source, or when
 # the checker recomputes it as a one-step derivation (derive.py) with at least one sourced amount.
 # Free factors, which an arithmetic tool's input may be without a source: the unit facts, whole
-# numbers from 1 to COUNT_MAX (counts and periods: months, years, people, instalments), and
-# percentages written in the agent's replies.
+# numbers from 1 to COUNT_MAX (counts and periods: months, years, people, instalments) that the
+# replies write (in digits or as a word), and percentages written in the agent's replies. G4
+# (6 Nov review):
+# any whole number up to 60 used to be free, so multiply([84250, 19]) "sourced" any multiple of a
+# sourced figure; now the factor must be one a reader can see ("19 months", "11 × ₹10,488.62").
 COUNT_MAX = 60
 # A derivation in prose uses only factors a reader can see: a count written in the replies (a
 # whole number from 2 to WRITTEN_COUNT_MAX that is not a money amount, in digits or as a word up
@@ -141,6 +174,10 @@ NUMBER_WORDS = {w: Decimal(n) for n, w in enumerate(_WORDS.split(), start=2)}
 COUNTED = (
     r"months?|years?|yrs?|weeks?|days?|quarters?|people|persons?|members?|children|kids|"
     r"instal?l?ments?|EMIs?|payments?|times|visits?|sessions?"
+)
+# A counted word right after a number ("46 months", "12 more EMIs"): the number is a count.
+COUNT_AFTER = re.compile(
+    rf"[ \t-]*(?:more[ \t]+|extra[ \t]+|fewer[ \t]+|less[ \t]+)?(?:{COUNTED})\b", re.IGNORECASE
 )
 CURRENCY_BEFORE = re.compile(r"(?:₹|\bRs\.?|\bINR)[ \t]*$", re.IGNORECASE)
 COUNT_TEXT = re.compile(
@@ -162,7 +199,7 @@ PERCENT_TEXT = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)[ \t]*(?:%|per[ \t]?cent\b)
 # and a rounding work on amounts, never on a free factor. The others (multiply, divide,
 # percent_of) need one sourced amount; their other inputs may be free factors.
 EVERY_INPUT_SOURCED = frozenset({"add", "subtract", "percent_change", "round"})
-SOURCED = ("tool", "client", "user")  # an input's supported_by when a source holds it
+SOURCED = SOURCES  # an input's supported_by when a source holds it
 # Whether a coarse match (trailing zeros within 1%) may verify a derivation, as it may a source.
 # It may not (A44): a round figure is usually a choice or an estimate ("such as ₹4,500 a month"),
 # and within 1% nearly every round figure is some sum or share of the numbers in an answer. On
@@ -220,7 +257,13 @@ def money_amounts(text: str) -> list[Amount]:
         parts = _grouped(raw)
         marked = bool(m.group("cur") or m.group("post"))
         percent = text[m.end() : m.end() + 1] == "%"
-        in_range = last_end is not None and RANGE_GAP.match(text[last_end : m.start()])
+        # G9 (6 Nov review): "₹5.96 lakh – 46 months sooner" is a figure and a count, not a range:
+        # the second end of a range is money only when no counted word follows it.
+        in_range = (
+            last_end is not None
+            and RANGE_GAP.match(text[last_end : m.start()])
+            and not COUNT_AFTER.match(text, m.end())
+        )
         is_money = marked or (
             not percent
             and (
@@ -251,11 +294,7 @@ def money_amounts(text: str) -> list[Amount]:
 
 def _range_unit(text: str, end: int) -> int | None:
     """'₹2–3 lakh': a marked amount with no unit takes the unit of the range's other end."""
-    rest = re.match(
-        rf"^[ \t]*(?:–|—|-|to)[ \t]*(?:₹|Rs\.?|INR)?[ \t]*{NUMBER}[ \t]*(?P<unit>{UNIT})",
-        text[end:],
-        re.IGNORECASE,
-    )
+    rest = RANGE_END.match(text, end)
     if not rest:
         return None
     key = rest.group("unit").rstrip(".").lower()
@@ -285,9 +324,19 @@ def source_numbers(text: str) -> list[Decimal]:
     return out
 
 
+def significant_digits(shown: Decimal) -> int:
+    """The significant digits a figure is written with: 3 for 4.41, 1 for 5 or 0.5, 3 for 500."""
+    return len(shown.as_tuple().digits) if shown.is_finite() else 0
+
+
 def _match_rank(amount: Amount, source: Decimal) -> tuple[int, Decimal] | None:
     """How well `source` (rupees) explains `amount`: (rank, step in rupees), best rank first:
-    0 exact, 1 rounded to the digits shown, 2 cut to them, 3 rounded at trailing zeros."""
+    0 exact, 1 rounded to the digits shown, 2 cut to them, 3 rounded at trailing zeros.
+
+    A figure written with fewer than TRUNCATE_MIN_DIGITS significant digits is never matched by
+    cutting (G8, 6 Nov review): "₹5 lakh" was "supported" by anything from 5.00 to 5.99 lakh
+    (₹5,95,511.77 included), and "₹1 lakh" by 1.00 to 1.99 lakh. It still matches by rounding,
+    so "₹5 lakh" stands for 4.50 to 5.49 lakh."""
     value = abs(source) / amount.unit
     shown = abs(amount.shown)
     step = Decimal(1).scaleb(-amount.decimals)
@@ -296,7 +345,10 @@ def _match_rank(amount: Amount, source: Decimal) -> tuple[int, Decimal] | None:
             return 0, step * amount.unit
         if value.quantize(step, rounding=ROUND_HALF_UP) == shown:
             return 1, step * amount.unit
-        if value.quantize(step, rounding=ROUND_DOWN) == shown:
+        if (
+            significant_digits(shown) >= TRUNCATE_MIN_DIGITS
+            and value.quantize(step, rounding=ROUND_DOWN) == shown
+        ):
             return 2, step * amount.unit
         # Trailing zeros as rounding ("about ₹49,500" for 49,483): at least two significant
         # digits must remain, and the number must be within 1% of the amount, so a round
@@ -327,6 +379,10 @@ class Source:
     call: int | None = None  # a tool source: the call's position among the trial's tool calls
     arithmetic: bool = False  # an arithmetic tool's result, a source only if its call is (D56)
     rates: list[Decimal] = field(default_factory=list)  # D61: its rates and percentages
+    # G11 (6 Nov review): a call that returned an error is never a source. Its message can echo
+    # the call's own arguments ("unknown argument(s) ₹50,000"), which would source a made-up
+    # figure. It is kept only so an amount that matches it says why it does not count.
+    error: bool = False
 
 
 def _attrs(span: dict[str, Any]) -> dict[str, Any]:
@@ -389,7 +445,11 @@ def gather_sources(
     calls: list[dict[str, Any]],
     transcript: list[dict[str, Any]],
     client_files: dict[str, str],
+    verified: set[tuple[int, Decimal]] | None = None,
 ) -> list[Source]:
+    """Every source the agent could read. A simulated client's number that repeats a figure the
+    agent wrote first is left out (G3), unless that figure is in `verified` (its reply turn and
+    value): the client repeating a figure the checker verified adds nothing false."""
     sources = []
     for call in calls:
         if call["result"]:
@@ -402,21 +462,46 @@ def gather_sources(
                     call=call["index"],
                     arithmetic=call["name"] in ARITHMETIC_TOOLS,
                     rates=source_rates(str(call["result"])),
+                    error=bool(call["is_error"]),
                 )
             )
     for name, text in sorted(client_files.items()):
         sources.append(Source("client", name, -1, source_numbers(text), rates=source_rates(text)))
     agent_turn = 0
+    written: list[Amount] = []  # the money amounts in the agent's replies so far, unverified
     for index, entry in enumerate(transcript):
         if entry.get("source") == "agent":
+            written += [
+                a
+                for a in money_amounts(entry.get("content") or "")
+                if (agent_turn, a.value) not in (verified or set())
+            ]
             agent_turn += 1
             continue
         if entry.get("role") == "user":
             where = f"{entry.get('source') or 'user'}:{index}"
             text = entry["content"]
             numbers, rates = source_numbers(text), source_rates(text)
-            sources.append(Source("user", where, agent_turn, numbers, rates=rates))
+            kind = "client_sim" if entry.get("source") == "client_sim" else "user"
+            if kind == "client_sim":
+                numbers = [n for n in numbers if not echoes(n, written)]
+            sources.append(Source(kind, where, agent_turn, numbers, rates=rates))
     return sources
+
+
+def echoes(number: Decimal, written: list[Amount]) -> bool:
+    """G3: whether a number in a simulated client's message only repeats a figure the agent
+    wrote in an earlier reply: equal to it, or the figure rounded or cut to the digits the client
+    used ("68,156" for ₹68,156.40). Not by trailing-zeros rounding, so the client's own round
+    "about 68,000" stays its own."""
+    amount = _input_amount(number)
+    if amount is None:
+        return False
+    for figure in written:
+        ranked = _match_rank(amount, figure.value)
+        if ranked is not None and ranked[0] <= 2:
+            return True
+    return False
 
 
 Best = tuple[int, int, Decimal, Source, Decimal]  # rank, source order, step, source, number
@@ -445,7 +530,7 @@ def _match(best: Best) -> dict[str, Any]:
     rank, _, step, source, number = best
     out: dict[str, Any] = {
         "value": _number(number),
-        "where": f"{source.kind}:{source.where}" if source.kind != "user" else source.where,
+        "where": source.where if source.kind in MESSAGES else f"{source.kind}:{source.where}",
         "how": HOW[rank],
         "precision": _number(step),
     }
@@ -469,14 +554,22 @@ def _figure(value: Decimal) -> str:
     return ("-" if value < 0 else "") + whole + dot + frac
 
 
+def _figure_or_nan(number: Decimal) -> Decimal:
+    """G6: a figure beyond 10^MAX_FIGURE_EXPONENT is read as NaN, which nothing supports, so an
+    argument of 5,000 digits cannot become a JSON integer too long for Python to write."""
+    return (
+        Decimal("NaN") if number.is_finite() and number.adjusted() > MAX_FIGURE_EXPONENT else number
+    )
+
+
 def _walk_figures(value: Any, path: str, out: list[tuple[str, Decimal]]) -> None:
     if isinstance(value, bool) or value is None:
         return
     if isinstance(value, Decimal):
-        out.append((path, value))
+        out.append((path, _figure_or_nan(value)))
     elif isinstance(value, str):  # a number sent as a string, which the server coerces
         try:
-            out.append((path, Decimal(value.strip())))
+            out.append((path, _figure_or_nan(Decimal(value.strip()))))
         except InvalidOperation:
             return
     elif isinstance(value, list):
@@ -583,14 +676,48 @@ def written_counts(text: str) -> set[Decimal]:
     return out
 
 
-def is_free_factor(number: Decimal, percents: set[Decimal]) -> bool:
-    """D61: a number that needs no source: a unit fact, a whole number from 1 to COUNT_MAX, or a
-    percentage the agent wrote in its replies."""
+NUMBER_WORD = re.compile(rf"\b(?:{'|'.join(NUMBER_WORDS)})\b", re.IGNORECASE)
+# Words for a factor, with the whole numbers they stand for: halving is ÷ 2 or 50%.
+FACTOR_WORDS = {
+    re.compile(r"\bhal(?:f|ve|ves|ved|ving)\b", re.IGNORECASE): {Decimal(2), Decimal(50)},
+    re.compile(r"\bquarters?\b", re.IGNORECASE): {Decimal(4), Decimal(25)},
+    re.compile(r"\b(?:double[sd]?|doubling|twice)\b", re.IGNORECASE): {Decimal(2)},
+}
+
+
+def written_whole_numbers(text: str) -> set[Decimal]:
+    """G4: the whole numbers a reply writes that are not money, in digits ("11 × ₹10,488.62",
+    "35 months", "50%"), as a word from two to twelve ("eleven payments"), or as a factor word
+    (half: 2 and 50; quarter: 4 and 25; double, twice: 2). An arithmetic call's free whole number
+    must be one of these, so a reader can see the factor it used. Dates and URLs hold none."""
+    out: set[Decimal] = set()
+    clean = DATE.sub(" ", URL.sub(" ", text or ""))
+    for m in TOKEN.finditer(clean):
+        raw = m.group("num")
+        if m.group("cur") or m.group("post") or m.group("unit") or "." in raw or "," in raw:
+            continue
+        try:
+            out.add(Decimal(raw))
+        except InvalidOperation:
+            continue
+    out |= {NUMBER_WORDS[w.group(0).lower()] for w in NUMBER_WORD.finditer(clean)}
+    for word, numbers in FACTOR_WORDS.items():
+        if word.search(clean):
+            out |= numbers
+    return out
+
+
+def is_free_factor(
+    number: Decimal, percents: set[Decimal], counts: set[Decimal] = frozenset()
+) -> bool:
+    """D61: a number that needs no source: a unit fact, a whole number from 1 to COUNT_MAX that
+    the agent wrote in its replies (`counts`, G4: written_whole_numbers), or a percentage it
+    wrote there."""
     if not number.is_finite():
         return False
     n = abs(number)
     whole = n == n.to_integral_value()
-    return n in UNIT_FACTS or (whole and 1 <= n <= COUNT_MAX) or n in percents
+    return n in UNIT_FACTS or (whole and 1 <= n <= COUNT_MAX and n in counts) or n in percents
 
 
 def _window(amount: Amount, coarse: bool) -> tuple[Decimal, Decimal]:
@@ -616,7 +743,7 @@ def _ranker(amount: Amount, coarse: bool) -> Callable[[Decimal], int | None]:
 
 
 def _where(source: Source) -> str:
-    return f"{source.kind}:{source.where}" if source.kind != "user" else source.where
+    return source.where if source.kind in MESSAGES else f"{source.kind}:{source.where}"
 
 
 def _pools(
@@ -687,12 +814,15 @@ def _replies(transcript: list[dict[str, Any]]) -> list[tuple[int, str]]:
     return out
 
 
-def _percents_by_turn(replies: list[tuple[int, str]]) -> dict[int, set[Decimal]]:
-    """The percentages written in the replies up to and including each turn; -1 has them all."""
+def _by_turn(
+    replies: list[tuple[int, str]], read: Callable[[str], set[Decimal]]
+) -> dict[int, set[Decimal]]:
+    """What `read` finds (percentages, written counts) in the replies up to and including each
+    turn; -1 has them all."""
     out: dict[int, set[Decimal]] = {}
     seen: set[Decimal] = set()
     for turn, text in replies:
-        seen = seen | percentages(text)
+        seen = seen | read(text)
         out[turn] = seen
     out[-1] = seen
     return out
@@ -707,7 +837,8 @@ def trace_arithmetic(
     source. Each number it was given is sourced (it matches a non-arithmetic tool result or a
     counted arithmetic result from an earlier call, the client file, or a user message up to the
     call's turn; or it is a one-step derivation of those), a free factor (a unit fact, a whole
-    number from 1 to COUNT_MAX, or a percentage written in the replies up to the call's turn), or
+    number from 1 to COUNT_MAX written in the replies up to the call's turn, or a
+    percentage written there), or
     unsupported. The result counts when the call returned no error and was given numbers, none
     unsupported; add, subtract, percent_change and round had a source for every input; at least
     one input is a sourced amount (100 or more); and no number in the result only repeats an
@@ -715,7 +846,8 @@ def trace_arithmetic(
     `arithmetic`, and the positions of the counted calls."""
     accepted: set[int] = set()
     records: list[dict[str, Any]] = []
-    percents_by_turn = _percents_by_turn(list(replies))
+    percents_by_turn = _by_turn(list(replies), percentages)
+    counts_by_turn = _by_turn(list(replies), written_whole_numbers)
     for call in calls:
         name, index, turn = call["name"], call["index"], call["turn"]
         if name not in ARITHMETIC_TOOLS:
@@ -726,13 +858,14 @@ def trace_arithmetic(
 
         def supports(s: Source, index: int = index, turn: int = turn) -> bool:
             if s.kind == "tool":
-                return before(s, index) and (not s.arithmetic or s.call in accepted)
+                return before(s, index) and not s.error and (not s.arithmetic or s.call in accepted)
             return s.kind == "client" or turn == -1 or s.turn <= turn
 
         def unaccepted(s: Source, index: int = index) -> bool:
             return before(s, index) and s.arithmetic and s.call not in accepted
 
         percents = percents_by_turn.get(turn, percents_by_turn.get(-1, set()))
+        counts = counts_by_turn.get(turn, counts_by_turn.get(-1, set()))
         figures, unreadable = call_inputs(call)
         inputs, missing, unsourced, unfree, amounts = [], [], [], [], []
         for arg, number in figures:
@@ -742,7 +875,7 @@ def trace_arithmetic(
                 kind = best[3].kind
             elif amount and is_unit_fact(number):
                 kind = "unit"
-            elif amount and is_free_factor(number, percents):
+            elif amount and is_free_factor(number, percents, counts):
                 kind = "free"
             else:
                 kind = None
@@ -847,6 +980,8 @@ def provenance(
     records = {r["call"]: r for r in arithmetic or []}
 
     def counts(source: Source) -> bool:
+        if source.error:
+            return False
         return not source.arithmetic or bool(records.get(source.call, {}).get("supported"))
 
     answer: list[tuple[Decimal, str]] = []  # verified figures: (value, where written)
@@ -895,7 +1030,10 @@ def provenance(
                 row = _row(turn, amount, None, None, None, None)
                 rejected = _best(amount, sources, lambda s, t=turn: s.turn <= t and not counts(s))
                 if rejected is not None:
-                    reason = records.get(rejected[3].call, {}).get("reason") or "not supported"
+                    source = rejected[3]
+                    reason = records.get(source.call, {}).get("reason") or (
+                        f"{source.where} returned an error" if source.error else "not supported"
+                    )
                     row["rejected"] = {**_match(rejected), "reason": reason}
                 done[i] = row
             rows.append(done[i])
@@ -959,9 +1097,18 @@ def run_checks(
     """checks.json for one trial, from its spec, result, spans and client files."""
     transcript = ((result or {}).get("conversation") or {}).get("transcript") or []
     calls = tool_calls(spans)
+    replies = _replies(transcript)
     sources = gather_sources(calls, transcript, files)
-    arithmetic, _ = trace_arithmetic(calls, sources, _replies(transcript))
+    arithmetic, _ = trace_arithmetic(calls, sources, replies)
     rows = provenance(transcript, sources, arithmetic)
+    # G3, second pass: a client's echo of a figure the first pass verified is a source again (an
+    # arithmetic input never rests on a figure verified in a reply otherwise, so a correct
+    # multiply(10,488.62, 11) on the agent's own verified EMI-plus-₹3,000 lost its only source).
+    verified = {(r["turn"], Decimal(str(r["value"]))) for r in rows if r["supported_by"]}
+    if verified:
+        sources = gather_sources(calls, transcript, files, verified)
+        arithmetic, _ = trace_arithmetic(calls, sources, replies)
+        rows = provenance(transcript, sources, arithmetic)
     required = ((spec or {}).get("task") or {}).get("required_tools")
     seen: list[str] = []
     for call in calls:
@@ -970,6 +1117,7 @@ def run_checks(
     trial_id = (result or {}).get("trial_id") or ((spec or {}).get("trial") or {}).get("id")
     return {
         "contract_version": CONTRACT_VERSION,
+        "checks_version": CHECKS_VERSION,
         "trial_id": trial_id or "unknown",
         "amounts": rows,
         "unsupported": sum(1 for r in rows if r["supported_by"] is None),

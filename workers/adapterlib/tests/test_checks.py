@@ -103,6 +103,22 @@ def test_ranges_short_units_and_negatives():
     assert texts("₹500 last month, 12 l of milk") == ["₹500"]
 
 
+def test_a_count_after_a_dash_is_not_the_end_of_a_range():
+    """Destructive review G9 (6 Nov): "₹5.96 lakh – 46 months sooner" read 46 as ₹46 lakh, an
+    unsupported figure in a correct answer."""
+    assert texts("- Interest saved: ₹5.96 lakh – 46 months sooner") == ["₹5.96 lakh"]
+    assert texts("₹18,332.50 - 24 EMIs left") == ["₹18,332.50"]
+    assert texts("₹9,000 to 12 more months") == ["₹9,000"]
+    # A real range still is one.
+    assert texts("₹8,000–9,000 a month") == ["₹8,000", "9,000"]
+    assert values("₹2–3 lakh, ₹4 lakh - 5 lakh") == [
+        Decimal(200000),
+        Decimal(300000),
+        Decimal(400000),
+        Decimal(500000),
+    ]
+
+
 def test_source_numbers_scale_words_split_json_lists_and_skip_dates_and_ids():
     text = (
         '{"total_balance":441050.00,"total_balance_words":"4.41 lakh","ids":[1,2,3],'
@@ -119,6 +135,16 @@ def test_source_numbers_scale_words_split_json_lists_and_skip_dates_and_ids():
     ]
     # Hermes's escaped JSON and ADK's envelope hold the same numbers.
     assert Decimal("8997.26") in source_numbers('{"result": "{\\"emi\\":8997.26}"}')
+
+
+def test_checks_json_carries_the_checks_version_which_is_the_packages():
+    import tomllib
+
+    pyproject = tomllib.loads((Path(checks.__file__).parents[2] / "pyproject.toml").read_text())
+    assert pyproject["project"]["version"] == checks.CHECKS_VERSION
+    out = run_checks(make_spec(), {"trial_id": "t_v"}, [], {})
+    assert out["checks_version"] == checks.CHECKS_VERSION
+    assert errors("checks", out) == []
 
 
 def test_tool_names_lose_the_harness_prefix():
@@ -214,6 +240,31 @@ def test_one_point_two_three_lakh_matches_123456_and_truncation_counts():
     }
 
 
+def test_a_figure_with_under_three_significant_digits_is_never_cut_to_match():
+    """Destructive review G8 (6 Nov): "about ₹5 lakh" for ₹5,95,511.77 was supported by cutting
+    5.955 lakh to 5; and "₹1 lakh" by anything from 1.00 to 1.99 lakh. They match by rounding
+    only now: ₹5 lakh is 4.50 to 5.49 lakh."""
+
+    def first(reply: str, result: str) -> dict:
+        spans = [turn_span("a" * 16, 0), span("prepayment_impact", "a" * 16, result)]
+        return checks_for([reply], spans)["amounts"][0]
+
+    assert first("About ₹5 lakh.", '{"interest_saved":595511.77}')["supported_by"] is None
+    assert first("Keep ₹1 lakh aside.", '{"buffer":160000}')["supported_by"] is None
+    assert first("₹45 for the fee.", '{"fee":45.80}')["supported_by"] is None  # rounds to 46
+    rounded = first("About ₹5 lakh.", '{"spare":460000}')  # 4.6 lakh rounds to 5
+    assert (rounded["supported_by"], rounded["match"]["how"]) == ("tool", "rounded")
+    # Three significant digits or more still match by cutting.
+    out = checks_for(
+        ["About ₹5.95 lakh, or ₹8,997 a month."],
+        [turn_span("a" * 16, 0), span("p", "a" * 16, '{"a":595511.77,"emi":8997.86}')],
+    )
+    assert [r["match"]["how"] for r in out["amounts"]] == ["truncated", "truncated"]
+    assert checks.significant_digits(Decimal("4.41")) == 3
+    assert checks.significant_digits(Decimal("5")) == 1
+    assert checks.significant_digits(Decimal("500")) == 3
+
+
 def test_trailing_zeros_round_only_within_one_percent():
     spans = [
         turn_span("a" * 16, 0),
@@ -242,7 +293,7 @@ def test_a_correct_calculation_without_a_tool_is_derived_in_prose():
     )
     rows = by_text(out)
     assert (rows["₹3,930"]["supported_by"], rows["₹3,930"]["verified_by"]) == ("tool", "source")
-    assert rows["₹8,000"]["supported_by"] == "user"
+    assert rows["₹8,000"]["supported_by"] == "client_sim"  # its own kind since G3
     assert rows["₹8,000"]["match"]["where"] == "client_sim:2"
     assert rows["₹6,880"]["supported_by"] == "tool"
     assert rows["₹1,120"] == {
@@ -599,6 +650,29 @@ def test_an_arithmetic_result_needs_readable_arguments_given_numbers_and_no_erro
         assert out["amounts"][0]["rejected"]["reason"] == reason
 
 
+def test_a_tools_error_message_is_not_a_source():
+    """Destructive review G11 (6 Nov): an error that echoes the call's arguments sourced the
+    figure the agent made up. The amount says what it matched and why that does not count."""
+    error = (
+        '{"error": "Error executing tool get_client_profile: unknown argument(s) ₹50,000;'
+        ' it takes no arguments"}'
+    )
+    spans = [
+        turn_span(T, 0),
+        span("get_client_profile", T, error, True, 1, {"₹50,000": True}),
+        span("subtract", T, '{"difference":40000}', start=2, args={"a": 50000, "b": 10000}),
+    ]
+    out = checks_for(["Clearing the card first saves you about ₹50,000 more."], spans)
+    (row,) = out["amounts"]
+    assert row["supported_by"] is None
+    assert row["rejected"]["where"] == "tool:get_client_profile"
+    assert row["rejected"]["reason"] == "get_client_profile returned an error"
+    assert out["arithmetic"][0]["inputs"][0]["supported_by"] is None  # nor an input's source
+    # The same text as a successful result is a source.
+    ok = [turn_span(T, 0), span("get_client_profile", T, '{"note": "₹50,000"}', start=1)]
+    assert checks_for(["About ₹50,000 more."], ok)["amounts"][0]["supported_by"] == "tool"
+
+
 def test_a_finance_tools_result_counts_whatever_it_was_given():
     """D56 changes only the arithmetic tools: calculate_emi's result is a source even when its
     principal was made up (docs/known-limits.md, Platform checks)."""
@@ -624,6 +698,58 @@ def test_the_unit_facts_are_the_d58_list_and_never_zero_or_one():
     # By value, sign ignored, as the amounts' rule ignores signs; nothing else is one.
     assert all(is_unit_fact(Decimal(t)) for t in ("12", "12.0", "12.00", "-12", "1E+5"))
     assert not any(is_unit_fact(Decimal(t)) for t in ("0", "1", "-1", "12.5", "11", "1000", "NaN"))
+
+
+def test_a_free_whole_number_must_be_a_count_the_replies_write():
+    """Destructive review G4 (6 Nov): any whole number from 1 to 60 was a free factor, so
+    multiply([84250, 19]) and then divide(.., 32) turned a sourced balance into any figure (here
+    the made-up "about ₹50,000"). A count is free only when a reply writes it ("19 months")."""
+    files = {"client.json": '{"debts":[{"name":"Credit card","balance":84250.00}]}'}
+    launder = [
+        turn_span(T, 0),
+        span("multiply", T, '{"product":1600750}', start=1, args={"values": [84250, 19]}),
+        span("divide", T, '{"quotient":50023.44}', start=2, args={"a": 1600750, "b": 32}),
+    ]
+    reply = "Clearing the card first would save you about ₹50,023.44 over the next year."
+    out = checks_for([reply], launder, files=files)
+    first, second = out["arithmetic"]
+    assert first["supported"] is False and first["inputs"][1]["supported_by"] is None
+    assert first["reason"] == "multiply's input 19 is not supported"
+    assert second["supported"] is False
+    assert out["amounts"][0]["supported_by"] is None
+    # The same calls with the factors written in a reply count: a reader can see them.
+    said = "Over 19 months that is ₹16,00,750 on the card; spread over 32 months, ₹50,023.44."
+    out = checks_for([said], launder, files=files)
+    assert out["arithmetic"][0]["inputs"][1]["supported_by"] == "free"
+    assert [a["supported"] for a in out["arithmetic"]] == [True, True]
+    assert out["unsupported"] == 0
+
+
+def test_the_factors_a_reply_writes():
+    """G4: the shipped replies that wrote their factor kept their arithmetic: "11 × ₹10,488.62"
+    (own-loop replication) and "Halving it frees ₹1,995.00" (percent_of(3990, 50))."""
+    assert checks.written_whole_numbers(
+        "- **Eleven full payments:** 11 × ₹10,488.62 = ₹1,15,374.82, then 3 more; on 2026-11-05"
+    ) == {Decimal(11), Decimal(3)}
+    assert checks.written_whole_numbers(
+        "Dining: ₹3,990.00 a month. Halving it frees ₹1,995.00."
+    ) == {
+        Decimal(2),
+        Decimal(50),
+    }
+    assert checks.written_whole_numbers("a quarter of it, ₹35 a day, 4.5%") == {
+        Decimal(4),
+        Decimal(25),
+    }
+    dining = [
+        turn_span(T, 0),
+        span("list_transactions", T, '{"total_debits":3990.00}', start=1),
+        span("percent_of", T, '{"amount":1995.00}', start=2, args={"value": 3990, "percent": 50}),
+    ]
+    out = checks_for(["Dining: ₹3,990.00 a month. Halving it frees ₹1,995.00."], dining)
+    assert out["arithmetic"][0]["supported"] is True and out["unsupported"] == 0
+    out = checks_for(["Dining: ₹3,990.00 a month. Cutting it frees ₹1,995.00."], dining)
+    assert out["arithmetic"][0]["reason"] == "percent_of's input 50 is not supported"
 
 
 def test_a_year_of_emis_from_multiply_by_12_is_supported():
@@ -1049,9 +1175,11 @@ def test_free_factors_written_counts_percentages_and_source_rates():
         '{"annual_rate_pct":42,"returned_count":16,"r":{"value":6.25,"unit":"percent per year"},'
         '"note":"FOIR 50%"}'
     ) == [Decimal(50), Decimal(42), Decimal("6.25")]
-    assert checks.is_free_factor(Decimal(60), set()) and not checks.is_free_factor(
-        Decimal(61), set()
-    )
+    # G4 (6 Nov review): a whole number up to 60 is free only when the replies write it as a count.
+    assert checks.is_free_factor(Decimal(60), set(), {Decimal(60)})
+    assert not checks.is_free_factor(Decimal(61), set(), {Decimal(61)})
+    assert not checks.is_free_factor(Decimal(60), set())
+    assert checks.is_free_factor(Decimal(12), set())  # a unit fact needs no count
     assert checks.is_free_factor(Decimal("7.4"), {Decimal("7.4")})
     assert not checks.is_free_factor(Decimal("7.4"), set())
 
@@ -1071,6 +1199,69 @@ def test_the_client_file_and_the_user_message_support_amounts():
     assert rows["₹84,250"]["supported_by"] == "client"
     assert rows["Rs 20,000"]["supported_by"] == "user"
     assert rows["Rs 20,000"]["match"]["where"] == "task:0"
+
+
+def test_the_simulated_client_repeating_the_agents_figure_is_not_a_source():
+    """Destructive review G3 (6 Nov): the client's words were a source even when it disputed the
+    agent's figure ("Where did 68,156 come from?" made the agent's next 68,156 supported). A
+    number the agent wrote first, in an earlier reply, is not a source in a later client
+    message; the client's own figures are, under their own kind `client_sim`."""
+    users = (
+        "How much will the car cost me?",
+        "Where did ₹68,156 come from? And my bonus is ₹50,000 this year.",
+    )
+    replies = [
+        "The car would cost you about ₹68,156 in interest.",
+        "The ₹68,156 is the interest; with your ₹50,000 bonus you could cut it.",
+    ]
+    out = checks_for(replies, user=users)
+    first, again, bonus = out["amounts"]
+    assert (first["turn"], first["supported_by"]) == (0, None)
+    assert (again["turn"], again["supported_by"]) == (1, None)  # was "user" from client_sim:2
+    assert bonus["supported_by"] == "client_sim"
+    assert bonus["match"]["where"] == "client_sim:2"
+    # Fewer digits than the agent wrote are still an echo; the client's own round figure is not.
+    replies = ["About ₹68,156.40 in interest.", "Yes, ₹68,156, or about ₹68,000 if you round."]
+    out = checks_for(replies, user=("Car cost?", "So 68,156 rupees? Or about 68,000?"))
+    rows = by_text(out)
+    assert rows["₹68,156"]["supported_by"] is None
+    assert rows["₹68,000"]["supported_by"] == "client_sim"
+    # The task's own message keeps the `user` kind, and a figure it gave first stays sourced.
+    out = checks_for(["Your ₹20,000 a month helps."], user=("I can spare Rs 20,000 a month.",))
+    assert out["amounts"][0]["supported_by"] == "user"
+
+
+def test_the_client_repeating_a_verified_figure_still_supports_an_arithmetic_input():
+    """G3's second pass: the own-loop replication trial t_0mw3cy22td954e5e9c986d440. The agent
+    derived ₹10,488.62 (EMI ₹7,488.62 + the client's ₹3,000) in prose, the client repeated it,
+    and multiply(10488.62, 11) used it. The echo of a verified figure counts; an arithmetic input
+    has no other way to rest on a figure verified in a reply."""
+    debts = '{"debts":[{"name":"Personal loan","minimum_payment":7488.62}]}'
+    spans = [
+        turn_span("a" * 16, 0),
+        turn_span("b" * 16, 1),
+        span("list_debts", "a" * 16, debts, start=1),
+        span(
+            "multiply", "b" * 16, '{"product":115374.82}', start=2, args={"values": [10488.62, 11]}
+        ),
+    ]
+    users = (
+        "I can add about 3,000 a month. How fast can I finish?",
+        "Paying 10,488.62 a month for 12 months is 1,25,900, isn't it?",
+    )
+    replies = [
+        "With your EMI of ₹7,488.62 and ₹3,000 more, you pay ₹10,488.62 a month.",
+        "Not quite: 11 full payments, 11 × ₹10,488.62 = ₹1,15,374.82, then a smaller last one.",
+    ]
+    out = checks_for(replies, spans, user=users)
+    (record,) = out["arithmetic"]
+    assert record["supported"] is True
+    assert record["inputs"][0]["supported_by"] == "client_sim"
+    assert by_text(out)["₹1,15,374.82"]["supported_by"] == "tool"
+    # An unverified figure the client repeats still supports nothing.
+    replies[0] = "With your EMI and a bit more, you pay ₹10,488.62 a month."
+    out = checks_for(replies, spans, user=users)
+    assert out["arithmetic"][0]["supported"] is False
 
 
 def test_a_tool_result_from_a_later_turn_does_not_support_an_earlier_reply():
@@ -1167,6 +1358,52 @@ def test_the_runner_writes_checks_json_after_every_trial(tmp_path):
     assert "checks.json" in {f["path"] for f in report["files"]}
 
 
+def test_a_no_break_space_or_bold_does_not_hide_a_made_up_amount():
+    """Destructive review G10 (6 Nov): "₹" then a no-break space hid ₹46,500 from this check
+    (the grader read it, this check did not), so a made-up EMI passed provenance. Bold between
+    the marker and the number, a minus after it and "₹49.41L" are read the same way too."""
+    spans = [turn_span(T, 0), span("calculate_emi", T, EMI, start=1)]
+    reply = (
+        "Your EMI will be ₹ 46,500 a month, or ₹**46,500**, so about ₹-46,500 a month;"
+        " ₹11.59L in interest."
+    )
+    out = checks_for([reply], spans)
+    assert [(a["value"], a["supported_by"]) for a in out["amounts"]] == [
+        (46500, None),
+        (46500, None),
+        (46500, None),
+        (1159000, "tool"),
+    ]
+    assert out["unsupported"] == 3
+
+
+def test_a_huge_figure_is_no_amount_and_checks_json_can_always_be_written():
+    """Destructive review G6 (6 Nov): "₹" and 4,400 nines made an amount whose integer
+    json.dumps refuses (over Python's 4,300-digit limit), outside the runner's try, so the trial
+    became an infra failure. A digit run over 30 digits is no number, and an arithmetic
+    argument above 10^40 is read as NaN, which nothing supports."""
+    out = checks_for(["Your saving is ₹" + "9" * 4400 + "."])
+    assert out["amounts"] == []
+    huge = span("multiply", T, '{"product":1}', start=1, args='{"values": [' + "9" * 5000 + ", 2]}")
+    out = checks_for(["Rs 1 lakh."], [turn_span(T, 0), huge])
+    (record,) = out["arithmetic"]
+    assert record["inputs"][0]["value"] is None and record["supported"] is False
+    json.dumps(out)  # does not raise
+
+
+def test_the_runner_records_a_checks_failure_while_writing_checks_json(tmp_path, monkeypatch):
+    """G6: whatever the checks return, the runner's checks.json write cannot raise."""
+    from evals_adapter import runner
+
+    paths = TrialPaths(tmp_path)
+    paths.out.mkdir(parents=True)
+    monkeypatch.setattr(runner, "run_checks", lambda *a: {"value": 10**5000})
+    entry = runner.write_checks(paths, make_spec(), None)
+    assert entry["valid"] is False and entry["path"] is None
+    assert "checks failed: ValueError" in entry["errors"][0]
+    assert not (paths.out / "checks.json").exists()
+
+
 def test_checks_run_even_when_the_adapter_crashed(tmp_path):
     spec = make_spec(**{"harness_options.crash_before_lib": 7})
     report, _, _ = run(tmp_path, spec)
@@ -1217,6 +1454,9 @@ EXPECTED_UNSUPPORTED = {
     "ownloop/claude-haiku-5-5/single": [],
 }
 EXPECTED_DERIVED = {
+    # G3 (6 Nov review): the client's "not the ₹6,880 from October" repeats the agent's turn-1
+    # ₹6,880, which the checker derived (₹4,380 + ₹2,500), so it still supports the agent's two
+    # later ₹6,880s (a client repeating a verified figure adds nothing false).
     "hermes/claude-haiku-5-5/conversation": ["₹13,579", "₹6,880", "₹1,120", "₹2,810", "₹2,810"],
     "langgraph/claude-haiku-5-5/conversation": [
         "₹30,000",

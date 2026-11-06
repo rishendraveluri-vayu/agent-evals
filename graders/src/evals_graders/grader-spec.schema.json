@@ -67,7 +67,17 @@
         },
         "tolerance": {"$ref": "#/$defs/tolerance"},
         "target": {"$ref": "#/$defs/target"},
-        "match": {"enum": ["amount", "any"], "default": "amount", "description": "amount: only rupee amounts (a ₹/Rs/INR marker, lakh or crore, or digit grouping). any: every number, e.g. the 28 in '28 months'."}
+        "match": {"enum": ["amount", "any"], "default": "amount", "description": "amount: only rupee amounts (a ₹/Rs/INR marker, lakh or crore, or digit grouping). any: every number, e.g. the 28 in '28 months'."},
+        "context": {
+          "description": "Words a number needs next to it to count (6 Nov, review G1: a month count of 12 passed on '18% ÷ 12'). after: a Python regular expression that must start right after the number; before: one that must end right before it. Only spaces, markdown emphasis (* _ ~), a hyphen or a dash may sit between (and a colon before), so '28 months', '**28** months', 'a 28-month plan' and 'month 28' fit after 'months?' or before '\\bmonths?'. Case-insensitive. With both, either one is enough.",
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "after": {"type": "string", "minLength": 1},
+            "before": {"type": "string", "minLength": 1}
+          }
+        }
       }
     },
     "tool_called": {

@@ -1,6 +1,6 @@
 {
   "id": "draft-convo-phone-loan",
-  "version": "3",
+  "version": "4",
   "split": "held_out",
   "kind": "conversation",
   "summary": "Rohan regrets a loan he took for a phone and a Goa trip and asks what it really costs. Regret: kind and direct; terms from his file; a monthly extra needs the payoff plan.",
@@ -69,6 +69,10 @@
       "match": "any",
       "tolerance": {
         "abs": 0
+      },
+      "context": {
+        "after": "months?\\b|mos?\\b|EMIs?\\b|instal?l?ments?\\b",
+        "before": "\\bmonths?(?:\\s+(?:down\\s+|drops?\\s+|falls?\\s+)?to)?|\\bmonths?\\b[^\\n|]*\\|(?:[^\\n|]*\\|)*?"
       }
     },
     {

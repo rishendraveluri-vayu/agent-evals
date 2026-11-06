@@ -1,6 +1,6 @@
 {
   "id": "draft-prepay-bonus",
-  "version": "3",
+  "version": "4",
   "split": "discovery",
   "kind": "single_prompt",
   "summary": "Prepay Rs 3 lakh of a Rs 18.4 lakh home loan at 9.1% with 168 months left, keeping the EMI.",
@@ -47,6 +47,10 @@
       "match": "any",
       "tolerance": {
         "abs": 0
+      },
+      "context": {
+        "after": "months?\\b|mos?\\b|EMIs?\\b|instal?l?ments?\\b",
+        "before": "\\bmonths?(?:\\s+(?:down\\s+|drops?\\s+|falls?\\s+)?to)?|\\bmonths?\\b[^\\n|]*\\|(?:[^\\n|]*\\|)*?"
       }
     },
     {
