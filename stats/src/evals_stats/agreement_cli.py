@@ -20,6 +20,9 @@ from typing import Any
 
 from evals_stats.agreement import (
     HUMAN_UNSURE_POLICIES,
+    MAX_UNDEFINED_SHARE,
+    CriterionReport,
+    Interval,
     Pair,
     between_raters,
     human_majority,
@@ -122,6 +125,27 @@ def fmt(v: Any) -> str:
     return "-" if v is None else (f"{v:.2f}" if isinstance(v, float) else str(v))
 
 
+def interval_text(i: Interval) -> str:
+    """An interval as "0.40 to 0.90", or why there is none: too many resamples had no value (S3)."""
+    if i.low is not None:
+        return f"{fmt(i.low)} to {fmt(i.high)}"
+    share = i.undefined_share
+    return f"undefined: {share:.0%} of resamples" if share else "undefined"
+
+
+def gap_text(r: CriterionReport) -> str:
+    """Each pair of arms' signed false-pass gap (second minus first) and its interval (S2)."""
+    if not r.false_pass_gaps:
+        return "- (one arm)"
+    if len(r.false_pass_gaps) == 1:
+        g = r.false_pass_gaps[0]
+        return f"{fmt(g.gap)} ({interval_text(g.interval)})"
+    return "; ".join(
+        f"{g.arms[1]} - {g.arms[0]}: {fmt(g.gap)} ({interval_text(g.interval)})"
+        for g in r.false_pass_gaps
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="evals-agreement", description=__doc__.splitlines()[0])
     ap.add_argument("--set", required=True, choices=["tuning", "heldout", "final"])
@@ -179,22 +203,31 @@ def main(argv: list[str] | None = None) -> int:
         f"Set {args.set}: {len(labels)} labels on {len(trials)} trials, measured against "
         f"{args.rater}; unsure labels: {args.human_unsure}\n"
     )
+    arms = sorted({a for r in reports for a in r.by_arm})
+    if len(arms) == 2:
+        print(f"False-pass gap: {arms[1]} minus {arms[0]}.\n")
     print(
         "| criterion | n | kappa (95% CI) | sensitivity | specificity | false passes | "
-        "false fails | left out (Rishi unsure / judge no answer) | false-pass gap across arms |"
+        "false fails | left out (Rishi unsure / judge no answer) | false-pass gap between arms |"
     )
     print("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for r in reports:
         k = r.intervals["kappa"]
-        gap = fmt(r.false_pass_gap)
-        if r.false_pass_gap_interval:
-            gi = r.false_pass_gap_interval
-            gap += f" ({fmt(gi.low)} to {fmt(gi.high)})"
         print(
-            f"| {r.criterion} | {r.table.n} | {fmt(r.table.kappa)} ({fmt(k.low)} to "
-            f"{fmt(k.high)}) | {fmt(r.table.sensitivity)} | {fmt(r.table.specificity)} | "
-            f"{r.table.fp} | {r.table.fn} | {r.human_left_out} / {r.judge_undecided} | {gap} |"
+            f"| {r.criterion} | {r.table.n} | {fmt(r.table.kappa)} ({interval_text(k)}) | "
+            f"{fmt(r.table.sensitivity)} | {fmt(r.table.specificity)} | "
+            f"{r.table.fp} | {r.table.fn} | {r.human_left_out} / {r.judge_undecided} | "
+            f"{gap_text(r)} |"
         )
+    print(
+        f"\nAn interval is undefined when more than {MAX_UNDEFINED_SHARE:.0%} of its resamples "
+        "had no value (one answer only, or no human no in an arm)."
+    )
+    print(f"\nD8, the trust bar (it applies to the held-out set; this is the {args.set} set):")
+    for r in reports:
+        d8 = r.d8 or {"trusted": False, "reasons": ["not checked"]}
+        verdict = "trusted" if d8["trusted"] else "not trusted: " + "; ".join(d8["reasons"])
+        print(f"- {r.criterion}: {verdict}")
     for b in out["between_raters"]:
         print(
             f"\n{b['raters'][0]} with {b['raters'][1]} on {b['n']} shared labels: agreement "
