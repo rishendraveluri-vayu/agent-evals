@@ -21,8 +21,12 @@ import { href } from '../router';
 
 /** `set`, `experiment` and `items` come from the address (#/labels?set=heldout&items=t_a,t_b): the
  *  set to open on, one batch to label, or a chosen list of trials (GET /labels/queue takes both),
- *  such as the trials a judge panel disagreed on (D71). */
-const props = defineProps<{ initialSet?: LabelSet | null; experiment?: string | null; items?: string | null }>();
+ *  such as the trials a judge panel disagreed on (D71). `calibrate` (with an experiment, D83) asks
+ *  for that batch in an order that balances its judge's passes and fails; the items still carry no
+ *  verdict. */
+const props = defineProps<{ initialSet?: LabelSet | null; experiment?: string | null; items?: string | null; calibrate?: boolean }>();
+/** Calibrating needs an experiment: the API refuses it on the whole queue. */
+const calibrating = !!props.calibrate && !!props.experiment;
 
 const fixtures = isFixtureMode();
 const SETS: { set: LabelSet; name: string; file: string; purpose: string }[] = [
@@ -53,7 +57,9 @@ const set = ref<LabelSet>(props.initialSet ?? 'tuning');
 const { data, error, loading, reload } = useLoad(async () => {
   const who = rater.value;
   if (!who) return null;
-  const entries = await Promise.all(SETS.map(async (s) => [s.set, await optional(api.labelQueue(s.set, props.experiment ?? undefined, props.items ?? undefined, who), null)] as const));
+  const entries = await Promise.all(
+    SETS.map(async (s) => [s.set, await optional(api.labelQueue(s.set, props.experiment ?? undefined, props.items ?? undefined, who, calibrating), null)] as const),
+  );
   return Object.fromEntries(entries) as Record<LabelSet, BlindItem[] | null>;
 });
 /** Opens on the first set with something to label, unless the address names one. */
@@ -289,6 +295,17 @@ const blocks = (text: string) => mdBlocks(text);
           :href="href.judge()"
           data-test="judge-link"
         >See judge agreement</a>
+      </p>
+      <p
+        v-if="calibrating"
+        class="caveat"
+        data-test="calibrate-banner"
+      >
+        <AppIcon
+          name="info"
+          :size="14"
+        />
+        <span><strong class="caveat-lead">You're calibrating a judge.</strong> These outputs were picked so its passes and fails are balanced. You won't see its verdicts.</span>
       </p>
       <p
         v-if="rater && !editingRater"

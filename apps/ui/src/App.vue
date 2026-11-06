@@ -95,10 +95,11 @@ watch(
     <TrialsView v-else-if="route.name === 'recorded'" />
     <LabelView
       v-else-if="route.name === 'labels'"
-      :key="`labels-${route.set}-${route.experiment}-${route.items}`"
+      :key="`labels-${route.set}-${route.experiment}-${route.items}-${route.calibrate}`"
       :initial-set="route.set"
       :experiment="route.experiment"
       :items="route.items"
+      :calibrate="route.calibrate"
     />
     <JudgeView v-else-if="route.name === 'judge'" />
     <HarnessesView v-else-if="route.name === 'harnesses'" />

@@ -15,7 +15,8 @@ export type Route =
   | { name: 'compare'; id: string; panel: string | null }
   | { name: 'trial'; id: string }
   | { name: 'recorded' }
-  | { name: 'labels'; set: LabelSet | null; experiment: string | null; items: string | null }
+  /** `calibrate`: label one experiment's outputs to calibrate its judge (D83). */
+  | { name: 'labels'; set: LabelSet | null; experiment: string | null; items: string | null; calibrate: boolean }
   | { name: 'judge' }
   | { name: 'harnesses' }
   | { name: 'tasks' }
@@ -57,7 +58,13 @@ function routeOf(hash: string): Route {
   if (first === 'trials' && second && parts.length === 2) return { name: 'trial', id: dec(second) };
   if (first === 'labels' && parts.length === 1) {
     const set = params.get('set');
-    return { name: 'labels', set: (LABEL_SETS as readonly string[]).includes(set ?? '') ? (set as LabelSet) : null, experiment: params.get('experiment'), items: params.get('items') };
+    return {
+      name: 'labels',
+      set: (LABEL_SETS as readonly string[]).includes(set ?? '') ? (set as LabelSet) : null,
+      experiment: params.get('experiment'),
+      items: params.get('items'),
+      calibrate: params.get('calibrate') === '1',
+    };
   }
   if (first === 'labels' && second === 'judge') return { name: 'judge' };
   if (first === 'harnesses' && parts.length === 1) return { name: 'harnesses' };
@@ -116,7 +123,15 @@ export const href = {
   compareJudge: (id: string) => `#/experiments/${enc(id)}?panel=judge`,
   trial: (id: string) => `#/trials/${enc(id)}`,
   recorded: () => '#/trials',
-  labels: () => '#/labels',
+  /** The labelling page; with `calibrate`, one experiment's outputs ordered to calibrate its judge (D83). */
+  labels: (opts: { set?: LabelSet; experiment?: string; calibrate?: boolean } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.set) q.set('set', opts.set);
+    if (opts.experiment) q.set('experiment', opts.experiment);
+    if (opts.calibrate) q.set('calibrate', '1');
+    const s = q.toString();
+    return `#/labels${s ? `?${s}` : ''}`;
+  },
   judge: () => '#/labels/judge',
   harnesses: () => '#/harnesses',
   tasks: () => '#/tasks',

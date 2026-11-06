@@ -575,3 +575,55 @@ describe('LabelView, who is labelling', () => {
     expect(calls.filter((c) => c.method === 'POST').map((c) => c.body)).toEqual([{ item_id: 'lq_r', set: 'heldout', rater: 'ravi', criterion: 'order', value: 'no', note: '' }]);
   });
 });
+
+describe('LabelView, calibrating a judge (D83)', () => {
+  it("asks for the experiment's queue in calibrating order, says so, and still shows no verdict", async () => {
+    const { calls } = routeFetch({
+      '/api/labels/queue?set=heldout&experiment=exp_heldout&rater=rater-one&calibrate=1': [tuningItem('c_one', 'Pay the credit card first.'), tuningItem('c_two', 'Start with the loan.')],
+      '/api/labels/queue?set=tuning&experiment=exp_heldout&rater=rater-one&calibrate=1': [],
+      '/api/labels/queue?set=final&experiment=exp_heldout&rater=rater-one&calibrate=1': [],
+    });
+    const w = mount(LabelView, { props: { initialSet: 'heldout', experiment: 'exp_heldout', calibrate: true } });
+    await settle();
+    expect(calls.map((c) => c.url).sort()).toEqual([
+      '/api/labels/queue?set=final&experiment=exp_heldout&rater=rater-one&calibrate=1',
+      '/api/labels/queue?set=heldout&experiment=exp_heldout&rater=rater-one&calibrate=1',
+      '/api/labels/queue?set=tuning&experiment=exp_heldout&rater=rater-one&calibrate=1',
+    ]);
+    const banner = w.get('[data-test="calibrate-banner"]');
+    expect(banner.text()).toBe("You're calibrating a judge. These outputs were picked so its passes and fails are balanced. You won't see its verdicts.");
+    expect(banner.get('strong.caveat-lead').text()).toBe("You're calibrating a judge.");
+    expect(banner.find('svg.icon').exists()).toBe(true);
+    // In the page head, under the lede, where the page's other caveats sit.
+    expect(w.get('.page-head').element.contains(banner.element)).toBe(true);
+    // The blind item drops the harness, model, config, cost and grade the API sent along, as it
+    // always does (the question's own words say "Pass or fail", so the full blind check is not used).
+    expect(w.get('[data-test="blind-item"]').text()).not.toMatch(/hermes|haiku|claude|3b81e04|\$|\barm\b|verdict/i);
+    expect(w.get('[data-test="progress"]').text()).toBe('1 of 2');
+  });
+
+  it('calibrates only an experiment: without one the queue is the usual one and no banner shows', async () => {
+    const { calls } = routeFetch({
+      '/api/labels/queue?set=heldout&rater=rater-one': [],
+      '/api/labels/queue?set=tuning&rater=rater-one': [],
+      '/api/labels/queue?set=final&rater=rater-one': [],
+    });
+    const w = mount(LabelView, { props: { initialSet: 'heldout', calibrate: true } });
+    await settle();
+    expect(calls).toHaveLength(3);
+    expect(calls.every((c) => !c.url.includes('calibrate'))).toBe(true);
+    expect(w.find('[data-test="calibrate-banner"]').exists()).toBe(false);
+  });
+
+  it('shows no banner on a batch that is not being calibrated', async () => {
+    const { calls } = routeFetch({
+      '/api/labels/queue?set=tuning&experiment=e_batch&rater=rater-one': [],
+      '/api/labels/queue?set=heldout&experiment=e_batch&rater=rater-one': [],
+      '/api/labels/queue?set=final&experiment=e_batch&rater=rater-one': [],
+    });
+    const w = mount(LabelView, { props: { initialSet: 'tuning', experiment: 'e_batch' } });
+    await settle();
+    expect(calls.every((c) => !c.url.includes('calibrate'))).toBe(true);
+    expect(w.find('[data-test="calibrate-banner"]').exists()).toBe(false);
+  });
+});
