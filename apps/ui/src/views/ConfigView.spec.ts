@@ -185,7 +185,7 @@ describe('ConfigView in fixture mode', () => {
     expect(create).toHaveBeenCalledTimes(1);
     const body = create.mock.calls[0][0];
     expect(body.harness).toBe('ownloop');
-    expect(Object.keys(body.settings ?? {}).sort()).toEqual(['max_output_tokens', 'max_steps', 'parallel_tool_calls', 'timeout_s']);
+    expect(Object.keys(body.settings ?? {}).sort()).toEqual(['max_output_tokens', 'max_steps', 'timeout_s']);
     expect(body.parent_hash).toBeUndefined();
     expect(w.text()).toContain('Saved as config');
     expect(w.get('[data-test="open-saved"]').attributes('href')).toMatch(/^#\/configs\/sha256%3A/);
@@ -201,7 +201,8 @@ describe('ConfigView in fixture mode', () => {
     const settings = create.mock.calls[0][0].settings ?? {};
     expect(settings.memory).toEqual({ enabled: true });
     expect(settings.skills).toEqual({ enabled: false });
-    expect(settings.parallel_tool_calls).toBe(false);
+    // Off is the API's default: it is left out, so a model that refuses it (the local Qwen) still saves.
+    expect(settings.parallel_tool_calls).toBeUndefined();
   });
 
   it('shows how each setting reaches the model, what happens when it is unset, and whether it changed behaviour', async () => {
@@ -564,6 +565,29 @@ describe('ConfigView says which models need a key (QA major 1)', () => {
     await settle();
     expect((w.get('[data-test="model-select"]').element as HTMLSelectElement).value).toBe('fake/finance-emi');
     expect(w.find('[data-test="save-blocked"]').exists()).toBe(false);
+  });
+
+  it('on a fresh keyless database never starts on the local model, and calls it free, not paid (destructive review U1)', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([]);
+    vi.spyOn(api, 'models').mockResolvedValue([
+      { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false },
+      { name: 'qwen2.5-7b-local', provider: 'ollama_chat', input_per_mtok: 0, output_per_mtok: 0, key_set: null },
+    ]);
+    const create = vi.spyOn(api, 'createConfig');
+    const w = mount(ConfigView);
+    await settle();
+    expect((w.get('[data-test="model-select"]').element as HTMLSelectElement).value).toBe('fake/finance-emi');
+    expect(w.findAll('[data-test="model-select"] option').map((o) => o.text())).toContain('Qwen2.5 7b Local (local, free)');
+    await w.get('[data-test="model-select"]').setValue('qwen2.5-7b-local');
+    await settle();
+    const note = w.get('[data-test="local-model-note"]').text();
+    expect(note).toContain('free per token, and it needs no key');
+    expect(note).toContain('docker compose --profile local-model up -d ollama');
+    expect(w.text()).not.toContain('A real model: each call costs money');
+    await w.get('[data-test="save-config"]').trigger('click');
+    await settle();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][0].settings).not.toHaveProperty('parallel_tool_calls');
   });
 });
 

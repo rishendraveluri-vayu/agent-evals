@@ -134,7 +134,7 @@ describe('Build an agent, in fixture mode', () => {
     expect(create).toHaveBeenCalledTimes(1);
     const body = create.mock.calls[0][0];
     expect(body.harness).toBe('ownloop');
-    expect(body.settings).toEqual({ parallel_tool_calls: false });
+    expect(body.settings).toEqual({});
   });
 
   it('saves through POST /configs with the choices, and only the settings it set', async () => {
@@ -429,5 +429,77 @@ describe('Build an agent, fresh-clone QA round 3', () => {
     expect(view.get('[data-test="reason-memory"]').text()).toBe(
       'Google ADK does not support memory. The Runner gets no memory service, so nothing is stored or recalled. ADK has memory services; the adapter does not wire them yet.',
     );
+  });
+});
+
+describe('Build an agent on a fresh database with no key (destructive review U1)', () => {
+  const KEYLESS = [
+    { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false },
+    { name: 'claude-sonnet-5-5', provider: 'anthropic', input_per_mtok: 1, output_per_mtok: 5, key_set: false },
+    { name: 'gemini-3.8-flash', provider: 'gemini', input_per_mtok: 0.75, output_per_mtok: 3.75, key_set: false },
+    { name: 'qwen2.5-7b-local', provider: 'ollama_chat', input_per_mtok: 0, output_per_mtok: 0, key_set: null },
+  ];
+
+  function freshKeyless() {
+    vi.spyOn(api, 'models').mockResolvedValue(KEYLESS);
+    vi.spyOn(api, 'configs').mockResolvedValue([]);
+  }
+
+  it('starts on a hosted model, not the local one whose key_set is null, and saves without parallel tool calls', async () => {
+    freshKeyless();
+    const create = vi.spyOn(api, 'createConfig');
+    const view = await open();
+    expect((view.get('[data-test="model-claude-haiku-5-5"] input').element as HTMLInputElement).checked).toBe(true);
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][0].model).toBe('claude-haiku-5-5');
+    expect(create.mock.calls[0][0].settings).not.toHaveProperty('parallel_tool_calls');
+    expect(view.find('[data-test="save-error"]').exists()).toBe(false);
+  });
+
+  it('says the local model is free and needs no key, never that it costs money, and saves it without parallel tool calls', async () => {
+    freshKeyless();
+    const create = vi.spyOn(api, 'createConfig');
+    const view = await open();
+    expect(view.get('[data-test="model-qwen2.5-7b-local"]').text()).toContain('Free: runs on this machine, needs no key');
+    expect(view.find('[data-test="model-qwen2.5-7b-local"] [data-test="needs-key"]').exists()).toBe(false);
+    await view.get('[data-test="model-qwen2.5-7b-local"] input').setValue(true);
+    await settle();
+    const note = view.get('[data-test="model-cost-note"]').text();
+    expect(note).toContain('it costs nothing per token and needs no key');
+    expect(note).toContain('docker compose --profile local-model up -d ollama');
+    expect(note).not.toContain('costs money');
+    expect(note).not.toContain('API key');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(create.mock.calls[0][0].model).toBe('qwen2.5-7b-local');
+    expect(create.mock.calls[0][0].settings).not.toHaveProperty('parallel_tool_calls');
+  });
+
+  it('sends parallel tool calls only when ticked, and greys it out after the model refuses it', async () => {
+    freshKeyless();
+    const refusal = new ApiError(
+      400,
+      'unsupported_setting',
+      'Qwen2.5 7B (local Ollama) (qwen2.5-7b-local) refuses parallel_tool_calls: LiteLLM answered 400. Leave parallel_tool_calls unset for qwen2.5-7b-local',
+      'Qwen2.5 7B (local Ollama) rejects parallel_tool_calls: leave it unset, or pick a model that takes it.',
+    );
+    const create = vi.spyOn(api, 'createConfig').mockRejectedValueOnce(refusal);
+    const view = await open();
+    await view.get('[data-test="model-qwen2.5-7b-local"] input').setValue(true);
+    await view.get('#build-parallel_tool_calls').setValue(true);
+    await settle();
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(create.mock.calls[0][0].settings).toEqual({ parallel_tool_calls: true, memory: { enabled: false } });
+    expect(view.get('[data-test="save-error"]').text()).toContain('leave it unset, or pick a model that takes it');
+    // Learnt: the setting is now greyed out with the model's reason, and the next save leaves it out.
+    expect(view.get('#build-parallel_tool_calls').attributes('disabled')).toBeDefined();
+    expect(view.get('[data-test="reason-parallel_tool_calls"]').text()).toContain('rejects parallel_tool_calls');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1][0].settings).toEqual({ memory: { enabled: false } });
   });
 });

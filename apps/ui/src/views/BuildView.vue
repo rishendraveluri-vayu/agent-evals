@@ -8,7 +8,7 @@
  */
 import { computed, reactive, ref, watch } from 'vue';
 import { api } from '../api/client';
-import { errorWithFix } from '../api/errors';
+import { ApiError, errorWithFix } from '../api/errors';
 import type { ConfigView, CreatedPrompt, Harness, Json, ModelView, PromptView, SettingName, ToolsetView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import InfoTip from '../components/InfoTip.vue';
@@ -19,7 +19,7 @@ import { baselineFor, missingKey } from '../lib/runSetup';
 import { plainText, shortHash, shortRef } from '../lib/format';
 import { harnessFacts, harnessTagline, memoryLine } from '../lib/harnessInfo';
 import { mdBlocks } from '../lib/markdown';
-import { isFake } from '../lib/models';
+import { defaultRealModel, isFake, isLocal, LOCAL_MODEL_COMMAND } from '../lib/models';
 import { harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
 import { NAME_MAX, settingProblem } from '../lib/limits';
 import { ignoredReasons } from '../lib/settings';
@@ -67,8 +67,9 @@ const realModels = computed(() => (data.value?.models ?? []).filter((m) => !isFa
 watch(data, (d) => {
   if (!d || form.harness) return;
   form.harness = d.harnesses[0]?.name ?? '';
-  // A model that can run (its key is set) first.
-  form.model = (realModels.value.find((m) => !missingKey(m.name, realModels.value)) ?? realModels.value[0])?.name ?? '';
+  // A hosted model that can run (its key is set) first, else the first hosted one (saving is free
+  // without its key); never the local one by default, which runs only once Ollama is up.
+  form.model = defaultRealModel(realModels.value);
   form.prompt = taskPrompts.value[0]?.sha256 ?? '';
 });
 
@@ -82,8 +83,10 @@ const promptBlocks = computed(() => (prompt.value ? mdBlocks(prompt.value.text) 
 const toolCount = computed(() => toolset.value?.servers.reduce((n, s) => n + s.allowed_tools.length, 0) ?? 0);
 
 const perMillion = (v: number | null) => (v === null ? 'not priced' : `$${v.toFixed(2)}`);
-const priceLine = (m: ModelView) =>
-  m.input_per_mtok === null && m.output_per_mtok === null ? 'Not priced in the LiteLLM config' : `${perMillion(m.input_per_mtok)} in, ${perMillion(m.output_per_mtok)} out per million tokens`;
+const priceLine = (m: ModelView) => {
+  if (isLocal(m)) return 'Free: runs on this machine, needs no key';
+  return m.input_per_mtok === null && m.output_per_mtok === null ? 'Not priced in the LiteLLM config' : `${perMillion(m.input_per_mtok)} in, ${perMillion(m.output_per_mtok)} out per million tokens`;
+};
 const keyName = (m: ModelView | null) => (m?.provider ? PROVIDER_KEYS[m.provider] : undefined);
 
 function versionLine(h: Harness): string {
@@ -93,9 +96,14 @@ function versionLine(h: Harness): string {
 // ---------------------------------------------------------------- settings
 
 const supported = (name: Shown) => harness.value?.capabilities.settings[name]?.supported ?? false;
+/** A model's refusals learnt from a 400 this visit, by model: on a fresh database no saved agent
+ *  says yet that the model refuses a setting. */
+const learnt = reactive<Record<string, Partial<Record<SettingName, string>>>>({});
 /** Why a setting cannot be used with this agent type and model, in words; empty when it can. */
 const ignored = computed<Partial<Record<SettingName, string>>>(() =>
-  harness.value ? ignoredReasons(harnessName(harness.value.name), harness.value.capabilities.settings, form.model, data.value?.configs ?? []) : {},
+  harness.value
+    ? { ...ignoredReasons(harnessName(harness.value.name), harness.value.capabilities.settings, form.model, data.value?.configs ?? []), ...(learnt[form.model] ?? {}) }
+    : {},
 );
 const usable = (name: Shown) => supported(name) && !ignored.value[name];
 
@@ -115,13 +123,17 @@ function settingInfo(name: Shown): string {
   }
 }
 
-/** What the form sets. A number left empty is unset (the API's default applies); a toggle is
+/** What the form sets. A number left empty is unset (the API's default applies); parallel tool
+ *  calls is sent only when turned on (off is the API's default, so the agent is the same, and a
+ *  model that refuses the setting, such as the local Qwen, refuses it even as false); memory is
  *  sent when the agent type takes it; a setting it cannot take is never sent. */
 const settings = computed(() => {
   const out: Partial<Record<SettingName, Json>> = {};
   for (const name of SHOWN) {
     if (!usable(name)) continue;
-    if (name === 'parallel_tool_calls') out[name] = form.toggles[name] === true;
+    if (name === 'parallel_tool_calls') {
+      if (form.toggles[name] === true) out[name] = true;
+    }
     else if (name === 'memory') out[name] = { enabled: form.toggles[name] === true };
     else {
       const raw = form.numbers[name]?.trim();
@@ -238,15 +250,22 @@ async function save() {
     saved.value = { config, existed: known.has(config.hash) || config.name !== form.name.trim() };
   } catch (err) {
     saveError.value = plainText(errorWithFix(err));
+    // A model's refusal holds for every agent on that model: grey the setting from now on, so the
+    // next save leaves it out (the full Config screen does the same).
+    if (err instanceof ApiError && err.code === 'unsupported_setting' && err.message.includes(form.model)) {
+      const named = SHOWN.find((n) => new RegExp(`\\b${n}\\b`).test(err.message));
+      if (named && supported(named)) learnt[form.model] = { ...(learnt[form.model] ?? {}), [named]: plainText(err.fix ?? err.message) };
+    }
   } finally {
     saving.value = false;
   }
 }
 
 // Any change after saving is a different agent: the saved panel goes until it is saved again.
-// The source is a string, so reloading the configs after a save (same choices) is no change.
+// The source is the choices themselves, as a string, so reloading the configs after a save, or
+// learning a model's refusal from one (whose error should stay in view), is no change.
 watch(
-  () => JSON.stringify([form.harness, form.model, form.prompt, settings.value]),
+  () => JSON.stringify([form.harness, form.model, form.prompt, form.numbers, form.toggles]),
   () => {
     saved.value = null;
     saveError.value = null;
@@ -293,7 +312,7 @@ const keyMissing = computed(() => missingKey(form.model, data.value?.models ?? [
  *  profile) does not count as runnable. A keyless reviewer is pointed at the free route. */
 const noKeys = computed(() => realModels.value.length > 0 && !realModels.value.some((m) => m.key_set === true));
 /** The local open-weight model, when LiteLLM lists it: it needs no key, only its compose profile. */
-const localModel = computed(() => realModels.value.find((m) => m.key_set === null && m.name.endsWith('-local')) ?? null);
+const localModel = computed(() => realModels.value.find((m) => isLocal(m)) ?? null);
 </script>
 
 <template>
@@ -455,7 +474,11 @@ const localModel = computed(() => realModels.value.find((m) => m.key_set === nul
             name="alert"
             :size="16"
           />
-          <span v-if="keyMissing"><span class="mono">{{ keyMissing }}</span> is not set in <span class="mono">.env</span>, so this model cannot run yet. Saving is free and works anyway; before a run, add the key, then run <span class="mono">docker compose up -d</span>. A run calls a real model, so it costs money: the Run screen shows the trials, models and cost before anything starts.</span>
+          <span
+            v-if="isLocal(model)"
+            data-test="local-model-note"
+          >{{ modelName(model.name) }} runs on this machine, through Ollama: it costs nothing per token and needs no key. It answers only once its compose profile is up (<span class="mono">{{ LOCAL_MODEL_COMMAND }}</span>, then pull the model once; see the README, Add a model), and slowly on a CPU, so it suits a smoke check, not an experiment. Saving costs nothing; the Run screen shows the trials and models before anything starts.</span>
+          <span v-else-if="keyMissing"><span class="mono">{{ keyMissing }}</span> is not set in <span class="mono">.env</span>, so this model cannot run yet. Saving is free and works anyway; before a run, add the key, then run <span class="mono">docker compose up -d</span>. A run calls a real model, so it costs money: the Run screen shows the trials, models and cost before anything starts.</span>
           <span v-else>Running this agent calls a real model, so it costs money and needs <template v-if="keyName(model)">the provider's key, <span class="mono">{{ keyName(model) }}</span>,</template><template v-else>the provider's API key</template> in <span class="mono">.env</span>. Saving costs nothing; the Run screen shows the trials, models and cost before anything starts.</span>
         </p>
       </fieldset>

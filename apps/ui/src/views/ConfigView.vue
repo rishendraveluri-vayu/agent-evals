@@ -12,7 +12,7 @@ import { mdBlocks } from '../lib/markdown';
 import { harnessVersion, plainText, shortHash, shortRef, splitIdents } from '../lib/format';
 import { autoConfigName, contentDiff, PLATFORM_DEFAULTS } from '../lib/checks';
 import { BOOLEAN_SETTINGS, harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
-import { agentModels, FAKE_EMI_MODEL, fakeDoes, isFake } from '../lib/models';
+import { agentModels, FAKE_EMI_MODEL, fakeDoes, isFake, isLocal, LOCAL_MODEL_COMMAND, runnableHosted } from '../lib/models';
 import { NAME_MAX, settingProblem } from '../lib/limits';
 import { missingKey, needsKeyWords, ownConfigs } from '../lib/runSetup';
 import { ignoredReasons, toggleValue } from '../lib/settings';
@@ -95,9 +95,10 @@ watch(data, (d) => {
   baseHash.value = base?.hash ?? '';
   fromExample.value = base?.example_only ? base : null;
   form.harness = base?.harness ?? d.harnesses[0]?.name ?? '';
-  // With no config to start from: a real model whose key is not known to be missing, else the
-  // first fake one, which needs no key and spends nothing.
-  const runnable = d.models.find((m) => !missingKey(m.name, d.models));
+  // With no config to start from: a hosted model whose key is set (or not known to be missing),
+  // else the first fake one, which needs no key and spends nothing. Never the local model by
+  // default: it needs no key, but it answers only once its Ollama service is up.
+  const runnable = runnableHosted(d.models)[0];
   form.model = base?.model ?? runnable?.name ?? agentModels([]).fake[0]?.name ?? '';
   // Your newest config on a model whose key is not set (one saved in the builder without a key)
   // would start a new config on a model that cannot run: start on the first model with a key, else
@@ -155,13 +156,17 @@ const ignored = computed<Partial<Record<SettingName, string>>>(() => ({
 }));
 const isIgnored = (name: SettingName) => !!ignored.value[name];
 
-/** The settings the form sets: numbers left empty are unset; toggles are always set. A setting
- *  the harness or the model ignores is never sent. */
+/** The settings the form sets: numbers left empty are unset; parallel tool calls only when on
+ *  (off is the API's default, so the config is the same, and a model that refuses the setting,
+ *  such as the local Qwen, refuses it even as false); memory, skills and compression always. A
+ *  setting the harness or the model ignores is never sent. */
 const settings = computed(() => {
   const out: Partial<Record<SettingName, number | boolean | { enabled: boolean }>> = {};
   for (const name of SETTING_NAMES) {
     if (!supported(name) || isIgnored(name)) continue;
-    if (name === 'parallel_tool_calls') out[name] = form.toggles[name] === true;
+    if (name === 'parallel_tool_calls') {
+      if (form.toggles[name] === true) out[name] = true;
+    }
     else if (BOOLEAN_SETTINGS.includes(name)) out[name] = { enabled: form.toggles[name] === true };
     else {
       const raw = form.numbers[name]?.trim();
@@ -646,12 +651,12 @@ watch(
               v-model="form.model"
               data-test="model-select"
             >
-              <optgroup label="Real models: each call costs money">
+              <optgroup label="Real models: a hosted model's calls cost money">
                 <option
                   v-for="m in modelGroups.real"
                   :key="m.name"
                   :value="m.name"
-                >{{ modelName(m.name) }}{{ needsKeyWords(m.name, data.models) ? ` (${needsKeyWords(m.name, data.models)})` : '' }}</option>
+                >{{ modelName(m.name) }}{{ isLocal(m) ? ' (local, free)' : needsKeyWords(m.name, data.models) ? ` (${needsKeyWords(m.name, data.models)})` : '' }}</option>
               </optgroup>
               <optgroup label="Fake models: scripted replies, free">
                 <option
@@ -666,6 +671,11 @@ watch(
               class="secondary smaller"
               data-test="fake-model-note"
             >Fake: the fake LLM server plays a script ({{ fakeDoes(form.model) }}). No real model and no real spend; LiteLLM still counts made-up prices, so budgets and spend work as they would.</span>
+            <span
+              v-else-if="model && isLocal(model)"
+              class="secondary smaller"
+              data-test="local-model-note"
+            >Runs on this machine, through Ollama: free per token, and it needs no key. It answers only once its compose profile is up ({{ LOCAL_MODEL_COMMAND }}, then pull the model once; see the README, Add a model), and slowly on a CPU.</span>
             <span
               v-else-if="model"
               class="secondary smaller"

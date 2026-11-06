@@ -7,6 +7,7 @@ import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, splitCheck } fro
 import { sentenceChanges } from './diff';
 import { harnessVersion, identParts, money, plainText, relative, shortHash, shortVersion, signed, splitIdents, wholeMoney, wilson } from './format';
 import { mdBlocks } from './markdown';
+import { defaultRealModel, isFree, isLocal, runnableHosted } from './models';
 import { alsoGradedBy, isJudged as taskIsJudged, modelName } from './names';
 import { domainFor, ticksFor, verdictTone } from './scale';
 
@@ -496,5 +497,37 @@ describe('armIndexOf (G8: one rule, the calibration flag, as the API armIndex)',
   it('reads it from the repeat in an A/A calibration run: arm B is n to 2n - 1', () => {
     const e = { config_hashes: ['ha', 'ha'], n: 3, calibration: true };
     expect([0, 2, 3, 5].map((r) => armIndexOf(t('ha', r), e))).toEqual([0, 0, 1, 1]);
+  });
+});
+
+describe('models: the default and the local one (destructive review U1)', () => {
+  const m = (name: string, provider: string | null, key_set: boolean | null, price = 1) => ({ name, provider, input_per_mtok: price, output_per_mtok: price, key_set });
+  const haiku = m('claude-haiku-5-5', 'anthropic', false);
+  const gemini = m('gemini-3.8-flash', 'gemini', true);
+  const unknown = m('claude-sonnet-5-5', 'anthropic', null);
+  const qwen = m('qwen2.5-7b-local', 'ollama_chat', null, 0);
+
+  it('knows the local model by its name or its Ollama provider, and calls it free', () => {
+    expect(isLocal(qwen)).toBe(true);
+    expect(isLocal('qwen2.5-7b-local')).toBe(true);
+    expect(isLocal(m('llama-3', 'ollama', null))).toBe(true);
+    expect(isLocal(haiku)).toBe(false);
+    expect(isLocal(null)).toBe(false);
+    expect(isFree(qwen)).toBe(true);
+    expect(isFree(haiku)).toBe(false);
+  });
+
+  it('counts a hosted model as runnable when its key is set, then when it is unknown; never the local one', () => {
+    expect(runnableHosted([qwen, haiku, unknown, gemini]).map((x) => x.name)).toEqual(['gemini-3.8-flash', 'claude-sonnet-5-5']);
+    expect(runnableHosted([qwen, haiku])).toEqual([]);
+  });
+
+  it('starts a new agent on a model with its key set, else the first hosted one, and on the local one only when it is the only one', () => {
+    expect(defaultRealModel([qwen, haiku, gemini])).toBe('gemini-3.8-flash');
+    expect(defaultRealModel([qwen, haiku])).toBe('claude-haiku-5-5');
+    expect(defaultRealModel([haiku, qwen])).toBe('claude-haiku-5-5');
+    expect(defaultRealModel([qwen])).toBe('qwen2.5-7b-local');
+    expect(defaultRealModel([m('fake/finance-emi', null, null), haiku])).toBe('claude-haiku-5-5');
+    expect(defaultRealModel([])).toBe('');
   });
 });
