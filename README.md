@@ -67,7 +67,7 @@ Stop it with `docker compose down`. `docker compose down -v` also wipes the loca
 files stay in `./runs/`, your labels in `./labels/`, and prompt versions you saved in
 `configs/prompts/`. To remove the trial files, delete what is inside `runs/`, not the folder
 itself: `rm -rf runs/*` (one fake run of 150 trials left about 22 MB there in testing; opening all
-seven shipped examples writes about 442 MB: 68 to 81 MB for each of the six runs, 4 MB for the skills demo). No sudo is
+eight shipped examples writes about 514 MB: 68 to 81 MB for each of the seven runs, 4 MB for the skills demo). No sudo is
 needed. The API runs as uid 1000; when you are another user, its start-up step gives those three
 folders (the folders only, never what is in them) to uid 1000, keeps your group and makes them
 group-writable, so everything it writes there is yours to delete. If `rm` is refused anyway (a

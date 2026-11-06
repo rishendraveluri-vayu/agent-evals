@@ -68,7 +68,7 @@ These are the documents we need so nothing gets lost. **Required** means the bri
 | Video link in `README.md` | 10 minutes or less: define a config, run it, compare, drill into a failed trial | **Required** | SP9 | Not started |
 | `docs/judge-validation.md` | Label set, agreement, kappa, per-config checks | Required content, own file by choice | SP5 | Done for the tuning set and the D74 dev rounds (rubric v4 frozen); the frozen judges have graded all 40 held-out trials, awaiting Rishi's held-out labels |
 | `tasks/` | The 20+ task set with graders | **Required** | SP4 | Done: 21 tasks, plus a skills demo |
-| `experiments/<id>/` | Exported raw JSON or CSV, config hashes, spend | Evidence behind `experiment.md` | SP8 | Instead: `examples/` ships seven full bundles: the headline, its A/A, the two positive controls (calculators down; the planted prompt defect, D78), the two replications (own loop, LangGraph) and the skills demo |
+| `experiments/<id>/` | Exported raw JSON or CSV, config hashes, spend | Evidence behind `experiment.md` | SP8 | Instead: `examples/` ships eight full bundles: the headline, its A/A, the two positive controls (calculators down; the planted prompt defect, D78), the retrieval run (D79), the two replications (own loop, LangGraph) and the skills demo |
 | `labels/` | Rishi's hand labels, with date and split | Evidence behind `judge-validation.md`, and hard to redo | SP5 | Done: `labels/tuning.jsonl` |
 | `docs/decisions.md` | Each call: options, choice, why, what would change it | Not required, but it's how Rishi explains the system | Each decision | Done |
 | `docs/hermes-notes.md` | Measured and unverified Hermes behaviour | Feeds limits and design | Each finding | Done |
@@ -257,7 +257,7 @@ The order matters because the rubric freezes with the platform:
 - [ ] Run a pilot on a cheap model, then choose N from its variance (not run: N came from the simulated power table; the discovery run, read afterwards as the pilot, is in `docs/design.md` section 6)
 - [x] Run the invariance diff on the two configs (`docs/experiment.md`, Invariance check)
 - [x] Run the experiment (5 Nov; `docs/experiment.md`, Results)
-- [x] Export raw results to `experiments/<id>/` (instead: seven full bundles in `examples/`, the headline, its A/A, the two positive controls, the two replications and the skills demo, each loadable from the Experiments screen and exportable as CSV or JSON)
+- [x] Export raw results to `experiments/<id>/` (instead: eight full bundles in `examples/`, the headline, its A/A, the two positive controls, the retrieval run, the two replications and the skills demo, each loadable from the Experiments screen and exportable as CSV or JSON)
 - [x] Inspect 2 or 3 trajectories that explain the difference (`docs/experiment.md`, Trajectories)
 - [x] Record actual spend in `cost.md`
 

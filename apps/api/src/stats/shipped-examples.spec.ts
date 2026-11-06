@@ -246,6 +246,39 @@ const PINNED: Record<string, { summary: ReturnType<typeof summary>; text: string
     critical: 'Critical failures: +1.3 points (95% interval 0.0 to +3.8) over 8 tasks with 13 critical checks. No rise beyond noise.',
     calibration: null,
   },
+  // D79, run 6 Nov and regraded once after a grader fix (rag tasks v2); pinned as the API computed it then.
+  'retrieval-search-documents': {
+    summary: {
+      a: counts(0.2857, 40, 140),
+      b: counts(0.8429, 118, 140),
+      diff: { estimate: 55.71, low: 34.29, high: 77.14 },
+      p: 0.001953,
+      verdict: 'better',
+      pass_rate_verdict: 'better',
+      critical: { status: 'did_not_rise', tasks: 14, diff: { estimate: -22.86, low: -40.71, high: -7.86 }, blocks_better: false },
+      calibration: null,
+      excluded: 0,
+      tasks: [
+        ['rag-convo-card-late-fee', 40, 0.08669, 0.1214, false],
+        ['rag-convo-fd-senior', 50, 0.03251, 0.05057, false],
+        ['rag-convo-two-wheeler-bonus', 50, 0.03251, 0.05057, false],
+        ['rag-fd-break-early', 100, 1.083e-05, 3.031e-05, true],
+        ['rag-fd-two-year', 100, 1.083e-05, 3.031e-05, true],
+        ['rag-home-loan-repo-linked', 100, 1.083e-05, 3.031e-05, true],
+        ['rag-personal-loan-emi', 100, 1.083e-05, 3.031e-05, true],
+        ['rag-personal-loan-foreclose', 90, 0.0001191, 0.0002778, true],
+        ['rag-processing-fee', 100, 1.083e-05, 3.031e-05, true],
+        ['rag-tax-new-regime', 50, 0.03251, 0.05057, false],
+        ['draft-college-cost-stepup', 0, 1, 1, false],
+        ['draft-first-year-interest', 0, 1, 1, false],
+        ['draft-otp-scam', 0, 1, 1, false],
+        ['draft-sip-education-goal', 0, 1, 1, false],
+      ],
+    },
+    text: 'B passes more than A: +55.7 points (95% interval +34.3 to +77.1), p = 0.001953 by the paired sign-flip test over 14 tasks.',
+    critical: 'Critical failures: -22.9 points (95% interval -40.7 to -7.9) over 14 tasks with 18 critical checks. No rise beyond noise.',
+    calibration: null,
+  },
   'replication-langgraph-prompt-v1-vs-v2': {
     summary: {
       a: counts(0.55, 55, 100),
@@ -319,7 +352,7 @@ const PINNED: Record<string, { summary: ReturnType<typeof summary>; text: string
 };
 
 describe('the shipped examples recompute exactly', () => {
-  it('ships the seven examples this test pins', () => {
+  it('ships the eight examples this test pins', () => {
     expect(names).toEqual(Object.keys(PINNED).sort());
   });
 
