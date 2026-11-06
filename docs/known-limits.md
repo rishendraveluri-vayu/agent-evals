@@ -433,7 +433,7 @@ What the fixes leave, or chose (`docs/destructive-review.md`):
 - **Uneven decided counts bias the paired test.** With one arm deciding many fewer trials of a task than the other (10 against 2 or 3), the sign-flip test leans towards that arm (false "better" 5 to 7% in simulation). The comparison now names such tasks; it does not correct for them.
 - **Undefined intervals.** A judge-agreement interval with more than 5% of its resamples undefined is reported as undefined; with few human "no" labels most criteria will read that way, and cannot pass D8.
 - **The Run screen cannot check that Ollama is up** for a local-model run (the API has no signal for it); it warns instead.
-- **Limits the API now enforces:** a run's spending limit at most $1,000; `max_steps` 1 to 200; `timeout_s` at most 3,600; config names at most 120 characters. Raising one is a one-line change in the API and the UI.
+- **Limits the API now enforces:** a run's spending limit at most $100 (D77; every real run so far cost under $5); `max_steps` 1 to 200; `timeout_s` at most 3,600; `max_output_tokens` at most 64,000; config names at most 120 characters. Raising one is a one-line change in the API and the UI.
 
 ## To check before submission
 

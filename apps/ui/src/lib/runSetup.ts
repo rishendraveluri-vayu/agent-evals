@@ -231,7 +231,7 @@ export function plainRunError(err: unknown): string {
     case 'invalid_experiment':
       if (/same hash twice/.test(m)) return 'Arm A and arm B are the same agent. Pick a different agent for one of them.';
       if (/^n must be/.test(m)) return 'Trials per task and arm must be a whole number from 1 to 1,000.';
-      if (/budget_usd/.test(m)) return 'Set a spending limit above $0 and at most $1,000.';
+      if (/budget_usd/.test(m)) return 'Set a spending limit above $0 and at most $100.';
       if (/order_seed/.test(m)) return 'The claim-order seed must be a whole number from 0 to 4,294,967,295, or left empty for a random one.';
       if (/name is required/.test(m)) return 'Give the run a name.';
       if (/^name is \d+ characters/.test(m)) return 'The run name is longer than 200 characters: shorten it.';

@@ -63,7 +63,7 @@ export const MAX_ARMS = 2;
  * E9 (6 Nov review): the most an experiment's budget may be, in dollars. There was no upper bound
  * (1e308 was accepted and became the LiteLLM team's cap). Every run so far cost under $10.
  */
-export const MAX_BUDGET_USD = 1000;
+export const MAX_BUDGET_USD = 100;
 
 export interface ExperimentRow {
   id: string;

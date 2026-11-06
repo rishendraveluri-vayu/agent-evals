@@ -204,12 +204,12 @@ export function splitCheck(tasks: TaskView[], all: TaskView[]): Check {
 }
 
 /** The API's ceiling on one run's spending limit (MAX_BUDGET_USD in apps/api/src/experiments/experiments.service.ts). */
-export const BUDGET_MAX_USD = 1000;
+export const BUDGET_MAX_USD = 100;
 
 export function budgetCheck(budget: number | undefined, estimate: Estimate | null): Check {
   if (!estimate) return { ok: false, title: 'No estimate yet', detail: 'The cost estimate has not come back.' };
   if (!budget || budget <= 0) return { ok: false, title: 'No spending limit set', detail: 'Set the LiteLLM budget for the whole experiment.' };
-  // The API refuses a limit above $1,000 (MAX_BUDGET_USD): past it, a typo is likelier than a plan.
+  // The API refuses a limit above $100 (MAX_BUDGET_USD, D77): every real run so far cost under $5.
   if (budget > BUDGET_MAX_USD) return { ok: false, title: 'The spending limit is too high', detail: `It is ${wholeMoney(budget)}; the platform takes at most ${wholeMoney(BUDGET_MAX_USD)} for one run.` };
   if (budget < estimate.cost_usd.high) {
     return { ok: false, title: 'The spending limit is below the likely cost', detail: `It is ${wholeMoney(budget)}, but the run may cost up to ${money(estimate.cost_usd.high)}, so it could stop part-way.` };

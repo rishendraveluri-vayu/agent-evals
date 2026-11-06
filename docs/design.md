@@ -408,7 +408,7 @@ Choice of N (decided 5 Nov, Rishi: "Approve both, N=10"; `docs/experiment.md`, "
   was the absolute gap, whose interval almost never could. A bootstrap interval with more than 5% of
   resamples undefined (say kappa on one negative label) is reported as undefined, not as a narrow
   interval, and a criterion with fewer than 5 human "no" labels cannot pass D8 (both thresholds are
-  proposals for Rishi). `d8_check` applies D8 in code; test-retest is not wired in, so it says so.
+  confirmed by Rishi, D77). `d8_check` applies D8 in code; test-retest is not wired in, so it says so.
 
 ### Failure causes and behaviour per arm (D64)
 

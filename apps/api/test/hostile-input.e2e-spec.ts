@@ -109,12 +109,12 @@ describeWithDb('hostile input from workers and clients (e2e, real Postgres)', ()
     const nul = await request(env.http).post('/api/experiments').send(plan({ name: 'a\u0000b' })).expect(400);
     expect(nul.body).toMatchObject({ error: 'invalid_experiment', message: 'name contains a NUL character (\\u0000), which cannot be stored' });
     await request(env.http).post('/api/experiments').send(plan({ axis: 'x\u0000' })).expect(400);
-    for (const budget of [1e308, 1000.01]) {
+    for (const budget of [1e308, 100.01]) {
       const res = await request(env.http).post('/api/experiments').send(plan({ budget_usd: budget })).expect(400);
-      expect(res.body).toMatchObject({ error: 'invalid_experiment', message: 'budget_usd must be a number above 0 and at most 1000' });
+      expect(res.body).toMatchObject({ error: 'invalid_experiment', message: 'budget_usd must be a number above 0 and at most 100' });
     }
-    const top = (await request(env.http).post('/api/experiments').send(plan({ budget_usd: 1000 })).expect(201)).body as { id: string; budget_usd: number };
-    expect(top.budget_usd).toBe(1000);
+    const top = (await request(env.http).post('/api/experiments').send(plan({ budget_usd: 100 })).expect(201)).body as { id: string; budget_usd: number };
+    expect(top.budget_usd).toBe(100);
 
     // Any route: a NUL the database cannot take is a 400 from the error filter, not a 500.
     const trial = await request(env.http).get('/api/trials/%00').expect(400);

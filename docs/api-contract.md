@@ -1004,7 +1004,7 @@ field is left (a key inside a binary file cannot be scrubbed, so it fails the ex
 ## Limits and hostile input (destructive review, 6 Nov)
 
 What the API refuses or rewrites since the review's fixes (`docs/destructive-review.md`, E1 to E12):
-- **Values:** `POST /experiments` takes `budget_usd` above 0 and at most 1000, and no NUL in `name`
+- **Values:** `POST /experiments` takes `budget_usd` above 0 and at most 100 (D77), and no NUL in `name`
   or `axis`. `POST /configs` takes a name of at most 120 characters with no NUL, `max_steps` from 1
   to 200 and `timeout_s` above 0 and at most 3600 (the 400 says "Set max_steps to an integer from 1
   to 200, or leave it unset for the default."), and `max_output_tokens` from 1 to 64000. Any value

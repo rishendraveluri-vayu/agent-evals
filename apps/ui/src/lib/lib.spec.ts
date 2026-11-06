@@ -224,7 +224,7 @@ describe('checks before a run', () => {
     const estimate = estimateOf({ expected: 20, low: 15, high: 27 });
     expect(budgetCheck(25, estimate).ok).toBe(false);
     expect(budgetCheck(40, estimate).ok).toBe(true);
-    expect(budgetCheck(1001, estimate)).toMatchObject({ ok: false, title: 'The spending limit is too high' });
+    expect(budgetCheck(101, estimate)).toMatchObject({ ok: false, title: 'The spending limit is too high' });
   });
 });
 
