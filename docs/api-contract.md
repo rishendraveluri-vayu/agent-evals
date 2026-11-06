@@ -1089,7 +1089,9 @@ What the API refuses or rewrites since the review's fixes (`docs/destructive-rev
   `rater` is not a rater id is skipped, with a warning in the API's log.
   The agreement (`evals-agreement`) takes a second-look answer in place of the first "unsure" and
   does not count it as a relabel; an "unsure" given again stays "unsure" and is left out.
-- `GET /judge/agreement?set=heldout` is SP5 and returns `null` until then.
+- `GET /judge/agreement?set=heldout` is SP5 and returns `null` until then. The UI reads where the
+  judge and the labels disagree from Judge trust's `disagreements` (below); the comparison reads
+  this reply's too, should it ever list any.
 
 ## Judge trust (D83, 6 Nov)
 

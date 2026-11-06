@@ -738,13 +738,22 @@ const axisCaption = computed(() => {
   return `B minus A, in points. ${level}% intervals, not corrected; ${verdicts}`;
 });
 
+/** Trials where a human label disagrees with the judge: from the judges' trust (D83), which lists
+ *  every disagreement with its trial, and the older agreement reply when it has any. */
+const disputedTrials = computed(() => {
+  const d = data.value;
+  const fromTrust = (d?.trust ?? []).flatMap((j) => j.criteria.flatMap((c) => c.disagreements.map((x) => x.trial_id)));
+  const fromAgreement = (d?.judge?.disagreements ?? []).map((x) => x.trial_id);
+  return new Set([...fromTrust, ...fromAgreement].filter((id): id is string => !!id));
+});
+
 /** The failed trial to open for a task: arm B first, then arm A, skipping any trial whose judge
- *  verdict your held-out label disputes, since that failure may not be the agent's. When every
- *  failure is disputed, the disputed one is still offered, and the button says so. */
+ *  verdict a label disputes, since that failure may not be the agent's. When every failure is
+ *  disputed, the disputed one is still offered, and the button says so. */
 function lookTrial(task: string): { trial: TrialRowSummary; disputed: boolean } | null {
   const d = data.value;
   if (!d) return null;
-  const disputed = new Set((d.judge?.disagreements ?? []).map((x) => x.trial_id).filter((id): id is string => !!id));
+  const disputed = disputedTrials.value;
   const failedIn = (arm: 0 | 1) => d.trials.filter((t) => t.task_sha256 === task && armIndexOf(t, d.detail) === arm && t.passed === false);
   const failed = [...failedIn(1), ...failedIn(0)];
   const clean = failed.find((t) => !disputed.has(t.id));

@@ -2,11 +2,12 @@ import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import details from '../fixtures/experiment-details.json';
 import experimentTrials from '../fixtures/experiment-trials.json';
-import judge from '../fixtures/judge-agreement.json';
+import trustJson from '../fixtures/judge-trust.json';
 import queue from '../fixtures/label-queue.json';
 import prompts from '../fixtures/prompts.json';
 import trialSpans from '../fixtures/trial-spans.json';
 import trial from '../fixtures/trial.json';
+import type { JudgeCriterionTrust, JudgeTrustResponse } from '../api/types';
 import { routeFetch, settle, useFixtures } from '../test/helpers';
 import TrialView from './TrialView.vue';
 
@@ -100,7 +101,7 @@ describe('TrialView in fixture mode', () => {
     const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
     await settle();
     expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge; your label passes it)');
-    expect(w.get('[data-test="dispute"]').text()).toBe('Your held-out label: Yes. You and the judge disagree on this check. See judge agreement');
+    expect(w.get('[data-test="dispute"]').text()).toBe('Your held-out label disagrees with the judge on fd-tax: you said Yes, the judge said No. See judge agreement');
     // Its quotes, rationale and highlight stay.
     const grades = w.findAll('[data-test="grade"]');
     expect(grades[1].find('blockquote').exists()).toBe(true);
@@ -198,12 +199,25 @@ describe("TrialView against the API: the judge's reasons and your label, with ou
   const heldout = (details as unknown as Record<string, Detail>).exp_heldout;
   /** The trial's task, as GET /trials/:id carries it: the task's id and sha256. */
   const sha = (id: string) => ({ id, sha256: heldout.tasks.find((t) => t.id === id)?.sha256 ?? '' });
-  function routes(over: { trialId?: string; task?: { id: string; sha256: string }; queue?: unknown }) {
+  type Disagreement = JudgeCriterionTrust['disagreements'][number];
+  const sample = trustJson as unknown as JudgeTrustResponse;
+  /** The judge-trust reply for exp_heldout's judges, with the given criteria's disagreements in
+   *  place of the sample's. */
+  const trustFor = (by: Record<string, Disagreement[]> = {}): JudgeTrustResponse => ({
+    ...sample,
+    judges: sample.judges
+      .filter((j) => j.experiments.includes('exp_heldout'))
+      .map((j) => ({ ...j, criteria: j.criteria.map((c) => (by[c.criterion] ? { ...c, disagreements: by[c.criterion] } : c)) })),
+  });
+  const onFd = (over: Partial<Disagreement>): Disagreement => ({ trial_id: 'tr_fd-vs-sip-07_b_3', task_id: 'fd-vs-sip-07', set: 'heldout', human: 'yes', judge: 'no', judge_reason: null, human_note: null, ...over });
+  function routes(over: { trialId?: string; task?: { id: string; sha256: string }; queue?: unknown; trust?: JudgeTrustResponse }) {
     const id = over.trialId ?? 'tr_fd-vs-sip-07_b_3';
     return routeFetch({
       [`/api/trials/${id}`]: { ...trial, id, task: over.task ? { ...trial.task, ...over.task } : trial.task },
       [`/api/trials/${id}/spans`]: trialSpans,
-      '/api/judge/agreement?set=heldout': judge,
+      // The never-built agreement reply (SP5): the API returns null. The disputes come from trust.
+      '/api/judge/agreement?set=heldout': null,
+      '/api/judge/trust?experiment=exp_heldout': over.trust ?? trustFor(),
       '/api/labels/queue?set=heldout': over.queue ?? queue.heldout,
       '/api/experiments/exp_heldout': heldout,
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
@@ -244,18 +258,65 @@ describe("TrialView against the API: the judge's reasons and your label, with ou
     expect(w.find('[data-test="grade-quote"]').exists()).toBe(true);
   });
 
-  it('says where your label disputes the judge while held-out outputs remain to label', async () => {
-    routes({});
+  it("says where your label disputes the judge, from the judge's trust, while /judge/agreement returns null and outputs remain to label", async () => {
+    const { calls } = routes({});
     const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
     await settle();
+    expect(calls.some((c) => c.url.startsWith('/api/judge/agreement'))).toBe(false);
     expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge; your label passes it)');
     const grades = w.findAll('[data-test="grade"]');
     const dispute = grades[1].get('[data-test="dispute"]');
-    expect(dispute.text()).toBe('Your held-out label: Yes. You and the judge disagree on this check. See judge agreement');
+    expect(dispute.text()).toBe('Your held-out label disagrees with the judge on fd-tax: you said Yes, the judge said No. See judge agreement');
+    expect(dispute.get('.mono').text()).toBe('fd-tax');
     expect(dispute.get('a').attributes('href')).toBe('#/labels/judge');
+    // The question your label disputes is marked in the trust list; horizon's dispute is another trial's.
+    expect(grades[1].get('[data-test="grade-trust-dispute"]').text()).toBe(', your label: yes');
     expect(grades[2].find('[data-test="dispute"]').exists()).toBe(false);
+    expect(grades[2].find('[data-test="grade-trust-dispute"]').exists()).toBe(false);
     expect(w.find('mark').exists()).toBe(true);
     expect(w.find('[data-test="hidden-reasons"]').exists()).toBe(false);
+  });
+
+  it('names the set and both answers for each disputed question, and says "your label: no" when no dispute passes the check', async () => {
+    routes({ trust: trustFor({ 'fd-tax': [onFd({ set: 'tuning', human: 'no', judge: 'yes' })] }) });
+    let w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
+    await settle();
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge; your label: no)');
+    expect(w.get('[data-test="dispute"]').text()).toBe('Your tuning label disagrees with the judge on fd-tax: you said No, the judge said Yes. See judge agreement');
+    expect(w.get('[data-test="grade-trust-dispute"]').text()).toBe(', your label: no');
+    // Another trial's disagreement is not this one's.
+    routes({ trust: trustFor({ 'fd-tax': [onFd({ trial_id: 'tr_fd-vs-sip-07_b_4' })] }) });
+    w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
+    await settle();
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge)');
+    expect(w.find('[data-test="dispute"]').exists()).toBe(false);
+    expect(w.find('[data-test="grade-trust-dispute"]').exists()).toBe(false);
+  });
+
+  it('lists every question a check is disputed on in one line', async () => {
+    const [first, second, third] = trial.grades;
+    const evidence = [
+      { criterion: 'overall', required: true, verdict: 'yes', quote: 'an FD is the safer choice', source: 'final_answer' },
+      ...(second.evidence as Record<string, unknown>[]),
+    ];
+    const tr = 'tr_fd-vs-sip-07_b_3';
+    const trust = trustFor({ overall: [onFd({ human: 'no', judge: 'yes' })], 'fd-tax': [onFd({})] });
+    routeFetch({
+      [`/api/trials/${tr}`]: { ...trial, grades: [first, { ...second, evidence }, third] },
+      [`/api/trials/${tr}/spans`]: trialSpans,
+      '/api/judge/trust?experiment=exp_heldout': trust,
+      '/api/experiments/exp_heldout': heldout,
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/prompts': prompts,
+    });
+    const w = mount(TrialView, { props: { trialId: tr } });
+    await settle();
+    expect(w.get('[data-test="dispute"]').text()).toBe(
+      'Your held-out labels disagree with the judge on 2 questions: overall (you said No, the judge said Yes); fd-tax (you said Yes, the judge said No). See judge agreement',
+    );
+    expect(w.findAll('[data-test="grade-trust-dispute"]').map((d) => d.text())).toEqual([', your label: no', ', your label: yes']);
+    // One of them passes it in your label.
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge; your label passes it)');
   });
 });
 
@@ -267,7 +328,6 @@ describe('TrialView against the API: the outcome in words, and the simulated cli
     routeFetch({
       '/api/trials/tr_fd-vs-sip-07_b_3': { ...trial, grades: over.grades ?? trial.grades },
       '/api/trials/tr_fd-vs-sip-07_b_3/spans': trialSpans,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
       '/api/experiments/exp_heldout': { ...heldout, sim_model: over.simModel === undefined ? heldout.sim_model : over.simModel },
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
@@ -308,7 +368,6 @@ describe('TrialView against the API: an attempt stopped on infra (U6)', () => {
     routeFetch({
       '/api/trials/tr_fd-vs-sip-07_b_2': abandoned,
       '/api/trials/tr_fd-vs-sip-07_b_2/spans': [],
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
       '/api/experiments/exp_heldout': { ...heldout, status },
       '/api/experiments/exp_heldout/trials': siblings,
@@ -347,7 +406,6 @@ describe('TrialView against the API: the failure cause (D64)', () => {
     routeFetch({
       '/api/trials/tr_fd-vs-sip-07_b_3': { ...trial, cause, ...over },
       '/api/trials/tr_fd-vs-sip-07_b_3/spans': trialSpans,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': labels,
       '/api/experiments/exp_heldout': heldout,
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
@@ -455,7 +513,6 @@ describe('TrialView against the API: memory and skills (brief item 6)', () => {
     routeFetch({
       '/api/trials/tr_fd-vs-sip-07_b_3': { ...trial, result: { ...trial.result, applied_settings: applied } },
       '/api/trials/tr_fd-vs-sip-07_b_3/spans': [{ ...root, events }, ...rest],
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
       '/api/experiments/exp_heldout': heldout,
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,

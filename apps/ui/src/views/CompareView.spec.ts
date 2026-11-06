@@ -1,11 +1,12 @@
 import { mount, type VueWrapper } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 import { api } from '../api/client';
-import type { Compare, CompareStats } from '../api/types';
+import type { Compare, CompareStats, JudgeTrustResponse } from '../api/types';
 import compares from '../fixtures/compares.json';
 import details from '../fixtures/experiment-details.json';
 import experimentTrials from '../fixtures/experiment-trials.json';
 import judge from '../fixtures/judge-agreement.json';
+import trustJson from '../fixtures/judge-trust.json';
 import queue from '../fixtures/label-queue.json';
 import { routeFetch, settle, useFixtures } from '../test/helpers';
 import { ApiError } from '../api/errors';
@@ -771,17 +772,34 @@ describe('CompareView against the API: a failure your label disputes', () => {
   type Trial = { id: string; task_sha256: string; config_hash: string; passed: boolean | null };
   const trials = (experimentTrials as unknown as Record<string, Trial[]>).exp_heldout;
   const fd = (details as unknown as { exp_heldout: { tasks: { id: string; sha256: string }[] } }).exp_heldout.tasks.find((t) => t.id === 'fd-vs-sip-07')?.sha256;
-  // Every failure of fd-vs-sip-07 is one your label disputes, so the callout can only offer a disputed one.
-  const disputedAll = { ...judge, disagreements: trials.filter((t) => t.task_sha256 === fd && t.passed === false).map((t) => ({ ...judge.disagreements[2], trial_id: t.id })) };
-  const routes = (labelQueue: unknown) => ({
+  // Every failure of fd-vs-sip-07 is one a label disputes, so the callout can only offer a disputed one.
+  const failedFd = trials.filter((t) => t.task_sha256 === fd && t.passed === false).map((t) => t.id);
+  const sample = trustJson as unknown as JudgeTrustResponse;
+  /** exp_heldout's judges as GET /judge/trust gives them, every failed fd-vs-sip-07 trial disputed on fd-tax. */
+  const disputedTrust: JudgeTrustResponse = {
+    ...sample,
+    judges: sample.judges
+      .filter((j) => j.experiments.includes('exp_heldout'))
+      .map((j) => ({
+        ...j,
+        criteria: j.criteria.map((c) =>
+          c.criterion === 'fd-tax' ? { ...c, disagreements: failedFd.map((id) => ({ trial_id: id, task_id: 'fd-vs-sip-07', set: 'heldout' as const, human: 'yes' as const, judge: 'no' as const, judge_reason: null, human_note: null })) } : c,
+        ),
+      })),
+  };
+  const disputedAgreement = { ...judge, disagreements: failedFd.map((id) => ({ ...judge.disagreements[2], trial_id: id })) };
+  const routes = (labelQueue: unknown, over: { trust?: unknown; agreement?: unknown } = {}) => ({
     '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
     '/api/experiments/exp_heldout/compare': compares.exp_heldout,
     '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-    '/api/judge/agreement?set=heldout': disputedAll,
+    // The never-built agreement reply (SP5) is null; the disputes come from the judges' trust.
+    '/api/judge/agreement?set=heldout': over.agreement ?? null,
+    '/api/judge/trust?experiment=exp_heldout': over.trust ?? disputedTrust,
     '/api/labels/queue?set=heldout': labelQueue,
   });
 
-  it('says your label disagrees with the judge while held-out outputs remain to label, on the button and the task row', async () => {
+  it("says your label disagrees with the judge, from the judges' trust, on the button and the task row, while outputs remain to label", async () => {
+    expect(failedFd.length).toBeGreaterThan(1);
     routeFetch(routes(queue.heldout));
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
@@ -792,6 +810,18 @@ describe('CompareView against the API: a failure your label disputes', () => {
   it('says so the same way once the held-out set is labelled', async () => {
     routeFetch(routes([]));
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="look-link"]').text()).toBe('Open a failed trial (your label disagrees with the judge)');
+  });
+
+  it('opens an undisputed failure when the trust lists none of them, and still reads an agreement reply that does', async () => {
+    const none = { ...disputedTrust, judges: disputedTrust.judges.map((j) => ({ ...j, criteria: j.criteria.map((c) => ({ ...c, disagreements: [] })) })) };
+    routeFetch(routes(queue.heldout, { trust: none }));
+    let w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="look-link"]').text()).toBe('Open a failed trial');
+    routeFetch(routes(queue.heldout, { trust: none, agreement: disputedAgreement }));
+    w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     expect(w.get('[data-test="look-link"]').text()).toBe('Open a failed trial (your label disagrees with the judge)');
   });

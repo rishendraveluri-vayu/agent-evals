@@ -32,6 +32,7 @@ function mountWith(over: Over = {}) {
     [`/api/trials/${ID}`]: { ...trial, grades: over.grades ?? trial.grades, grading: over.grading ?? trial.grading, files, result: over.result ?? trial.result, task: { ...trial.task, ...over.task } },
     [`/api/trials/${ID}/spans`]: trialSpans,
     [`/api/trials/${ID}/files/checks.json`]: over.checks ?? checks,
+    // The never-built agreement reply (SP5) is null; disputes come from the trust reply.
     '/api/judge/agreement?set=heldout': null,
     // What is left to label: the page shows the judge's reasons whatever it holds (7 Nov).
     '/api/labels/queue?set=heldout': over.queue ?? [],
@@ -326,9 +327,12 @@ describe('TrialView judge trust', () => {
       expect(rows.map((r) => [r.get('.mono').text(), r.get('[data-test="grade-trust-answer"]').text(), r.get('[data-test="trust-label"]').text()])).toEqual([['fd-tax', ', answered no', 'Trusted']]);
       expect(tax.get('[data-test="trust-badge"]').attributes('title')).toBe('Meets the trust bar on 30 held-out labels: its verdicts on this question can be relied on.');
       expect(tax.get('[data-test="grade-trust-link"]').attributes('href')).toBe('#/labels/judge');
+      // The sample's trust lists a held-out label on this trial that passes fd-tax: marked there.
+      expect(tax.get('[data-test="grade-trust-dispute"]').text()).toBe(', your label: yes');
       const horizon = judgeOf(w, 'horizon').get('[data-test="grade-trust"]');
       expect(horizon.get('[data-test="grade-trust-answer"]').text()).toBe(', answered yes');
       expect(horizon.get('[data-test="trust-label"]').text()).toBe('Too few labels');
+      expect(horizon.find('[data-test="grade-trust-dispute"]').exists()).toBe(false);
       // A code-graded check has no judge, so no trust line.
       expect(judgeOf(w, 'fd-maturity').find('[data-test="grade-trust"]').exists()).toBe(false);
     });
@@ -384,10 +388,22 @@ describe('TrialView judge trust', () => {
       expect(tax.get('[data-test="grade-trust-answer"]').text()).toBe(', answered no');
     });
 
-    it('shows no trust line when the trust could not be read', async () => {
+    it("marks a question your label disputes from the judge's trust, with no agreement reply", async () => {
+      const w = mountWith({ trust: [haikuV4] });
+      await settle();
+      const tax = judgeOf(w, 'fd-tax');
+      expect(tax.get('[data-test="grade-trust-dispute"]').text()).toBe(', your label: yes');
+      expect(tax.get('[data-test="dispute"]').text()).toBe('Your held-out label disagrees with the judge on fd-tax: you said Yes, the judge said No. See judge agreement');
+      expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge; your label passes it)');
+      expect(judgeOf(w, 'horizon').find('[data-test="grade-trust-dispute"]').exists()).toBe(false);
+    });
+
+    it('shows no trust line, and no dispute, when the trust could not be read', async () => {
       const w = mountWith();
       await settle();
       expect(w.find('[data-test="grade-trust"]').exists()).toBe(false);
+      expect(w.find('[data-test="dispute"]').exists()).toBe(false);
+      expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge)');
     });
   });
 });

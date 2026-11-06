@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { api, bareToolName, type AnyTrial } from '../api/client';
 import { ApiError } from '../api/errors';
 import { isFixtureMode } from '../api/mode';
-import type { ExperimentDetail, TrialRowSummary, JudgeAgreement, JudgeCriterionTrust, JudgeTrust, PromptView, TrialResult, VersionRef } from '../api/types';
+import type { ExperimentDetail, TrialRowSummary, JudgeCriterionTrust, JudgeTrust, PromptView, TrialResult, VersionRef } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import NotFound from '../components/NotFound.vue';
@@ -30,11 +30,10 @@ interface Loaded {
   experiment: ExperimentDetail | null;
   siblings: TrialRowSummary[];
   prompts: PromptView[];
-  /** Your held-out labels against the judge, to flag a judge verdict you disagree with. */
-  judge: JudgeAgreement | null;
   /** The number-provenance check from the trial's checks.json, when it has one. */
   checks: ProvenanceView | null;
-  /** How far to trust the judges of this trial's experiment (D83); null when unknown. */
+  /** How far to trust the judges of this trial's experiment (D83), with where each disagrees with
+   *  the human labels; null when unknown. */
   trust: JudgeTrust[] | null;
 }
 
@@ -50,11 +49,7 @@ async function trialOrMissing(id: string): Promise<AnyTrial> {
 }
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
-  const [any, spans, judge] = await Promise.all([
-    trialOrMissing(props.trialId),
-    optional(api.trialSpans(props.trialId), [] as SpanView[]),
-    optional(api.judgeAgreement('heldout'), null),
-  ]);
+  const [any, spans] = await Promise.all([trialOrMissing(props.trialId), optional(api.trialSpans(props.trialId), [] as SpanView[])]);
   const experimentId = any.kind === 'experiment' ? any.trial.experiment_id : null;
   const hasChecks = any.kind === 'experiment' && any.trial.files.some((f) => f.path === 'checks.json');
   const hasJudge = any.kind === 'experiment' && any.trial.grades.some((g) => g.kind === 'judge' || !!g.judge_model);
@@ -65,7 +60,7 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
     hasChecks ? optional(api.trialJson(props.trialId, 'checks.json').then(provenanceOf), null) : Promise.resolve(null),
     experimentId && hasJudge ? optional(api.judgeTrust(experimentId).then((r) => r.judges), null) : Promise.resolve(null),
   ]);
-  return { any, spans, experiment, siblings, prompts, judge, checks, trust };
+  return { any, spans, experiment, siblings, prompts, checks, trust };
 });
 
 const EMPTY_RESULT: TrialResult = {};
@@ -555,9 +550,14 @@ function rubricOfGrade(g: GradeView): string | null {
   return spec ? rubricOf(spec) : null;
 }
 
+type Dispute = JudgeCriterionTrust['disagreements'][number] & { criterion: string };
+
 /** How far to trust the judge behind each judge check (D83), matched by its model and rubric: per
  *  criterion it answered, or, for a check it never answered (not judged, a failed call), the
- *  judge's own status. A check not judged takes the model approved for the experiment, if any. */
+ *  judge's own status. A check not judged takes the model approved for the experiment, if any.
+ *  `disputes`: where a human label on this trial disagrees with the judge, from the same trust
+ *  reply, on the questions this check answered (the one named as the check when it lists none),
+ *  shown at once, whatever is left to label (7 Nov). */
 const gradeTrust = computed(() =>
   (vm.value?.grades ?? []).map((g) => {
     const judges = data.value?.trust;
@@ -565,8 +565,14 @@ const gradeTrust = computed(() =>
     const model = g.judgeModel ?? (notJudged(g) ? (data.value?.experiment?.judge?.model ?? null) : null);
     const judge = judgeFor(judges, model, rubricOfGrade(g));
     if (!judge) return null;
-    const criteria = g.criteria.map((c) => ({ ...c, trust: judge.criteria.find((x) => x.criterion === c.criterion) ?? (null as JudgeCriterionTrust | null) }));
-    return { judge, criteria };
+    const onThisTrial = (c: JudgeCriterionTrust) => c.disagreements.filter((x) => x.trial_id === props.trialId).map((x): Dispute => ({ ...x, criterion: c.criterion }));
+    const asked = g.criteria.length ? g.criteria.map((c) => c.criterion) : [g.graderId];
+    const disputes = judge.criteria.filter((c) => asked.includes(c.criterion)).flatMap(onThisTrial);
+    const criteria = g.criteria.map((c) => {
+      const trust = judge.criteria.find((x) => x.criterion === c.criterion) ?? null;
+      return { ...c, trust, dispute: disputes.find((x) => x.criterion === c.criterion) ?? null };
+    });
+    return { judge, criteria, disputes };
   }),
 );
 const answerWord = (v: string | null) => (v === 'yes' ? 'answered yes' : v === 'no' ? 'answered no' : 'no answer');
@@ -590,20 +596,29 @@ const numberCheck = computed(() => {
   };
 });
 
-/** Where your held-out label disagrees with the judge on this trial's check, shown at once, whether
- *  or not outputs remain to label (7 Nov). */
-const disputeOf = (g: GradeView) => data.value?.judge?.disagreements.find((x) => x.trial_id === props.trialId && x.criterion === g.name) ?? null;
-const labelWord = (v: string) => (v === 'yes' ? 'Yes' : v === 'no' ? 'No' : 'Not sure');
+const SET_WORDS: Record<Dispute['set'], string> = { heldout: 'held-out', tuning: 'tuning' };
+const yesNo = (v: string) => (v === 'yes' ? 'Yes' : 'No');
+
+/** A check's disputes in words: "Your held-out label disagrees with the judge on overall: you said
+ *  No, the judge said Yes." With more than one: "Your held-out labels disagree with the judge on 2
+ *  questions: overall (you said No, the judge said Yes); …". The set is named when all share one. */
+function disputeWords(list: Dispute[]): { lead: string; items: { criterion: string; words: string }[] } {
+  const sets = [...new Set(list.map((x) => x.set))];
+  const set = sets.length === 1 ? `${SET_WORDS[sets[0]]} ` : '';
+  const answers = (x: Dispute) => `you said ${yesNo(x.human)}, the judge said ${yesNo(x.judge)}`;
+  if (list.length === 1) return { lead: `Your ${set}label disagrees with the judge on `, items: [{ criterion: list[0].criterion, words: `: ${answers(list[0])}` }] };
+  return { lead: `Your ${set}labels disagree with the judge on ${list.length} questions: `, items: list.map((x) => ({ criterion: x.criterion, words: ` (${answers(x)})` })) };
+}
+const gradeDisputes = computed(() => gradeTrust.value.map((t) => (t?.disputes.length ? disputeWords(t.disputes) : null)));
 
 /** "Failed on" names each failed check, says which the judge graded, and which you dispute. */
 const failedOn = computed(() =>
   (vm.value?.grades ?? [])
-    .map((g) => ({ g, index: g.index }))
+    .map((g, gi) => ({ g, index: g.index, disputes: gradeTrust.value[gi]?.disputes ?? [] }))
     .filter(({ g }) => g.verdict === 'fail')
-    .map(({ g, index }) => {
-      const dispute = disputeOf(g);
+    .map(({ g, index, disputes }) => {
       let note = '';
-      if (isJudge(g)) note = dispute ? (dispute.you === 'yes' ? ' (judge; your label passes it)' : ` (judge; your label: ${labelWord(dispute.you).toLowerCase()})`) : ' (judge)';
+      if (isJudge(g)) note = disputes.some((x) => x.human === 'yes') ? ' (judge; your label passes it)' : disputes.length ? ' (judge; your label: no)' : ' (judge)';
       return { name: g.name, index, note };
     }),
 );
@@ -1173,7 +1188,11 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                   <span><span class="mono">{{ c.criterion }}</span><span
                     class="secondary"
                     data-test="grade-trust-answer"
-                  >, {{ answerWord(c.verdict) }}</span></span>
+                  >, {{ answerWord(c.verdict) }}</span><span
+                    v-if="c.dispute"
+                    class="strong"
+                    data-test="grade-trust-dispute"
+                  >, your label: {{ c.dispute.human }}</span></span>
                   <TrustBadge
                     v-if="c.trust"
                     :status="c.trust.status"
@@ -1200,11 +1219,14 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               >How far to trust this judge</a>
             </div>
             <p
-              v-if="disputeOf(g)"
+              v-if="gradeDisputes[gi]"
               class="small dispute"
               data-test="dispute"
             >
-              Your held-out label: {{ labelWord(disputeOf(g)?.you ?? 'unsure') }}. You and the judge disagree on this check.
+              {{ gradeDisputes[gi]?.lead }}<span
+                v-for="(x, xi) in gradeDisputes[gi]?.items"
+                :key="xi"
+              >{{ xi ? '; ' : '' }}<span class="mono">{{ x.criterion }}</span>{{ x.words }}</span>.
               <a :href="href.judge()">See judge agreement</a>
             </p>
           </div>
