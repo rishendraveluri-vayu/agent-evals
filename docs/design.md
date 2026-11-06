@@ -32,7 +32,7 @@ class MyHarness(Adapter):
     def run_turn(self, ctx, history, max_steps): ...     # one agent turn -> TurnResult
 ```
 
-A model is one entry in LiteLLM's config (README, Add a model).
+A model from a provider LiteLLM already reaches is one entry in LiteLLM's config (README, Add a model). A new provider also needs its key flag in compose, one line in the API's provider table (`PROVIDER_KEYS`) so the UI can say when its key is missing, and, if the model refuses a setting, a line in `MODEL_REJECTS`; both tables are data in core code, not adapters (`docs/known-limits.md`).
 
 **The main entities** (section 3):
 
@@ -71,7 +71,7 @@ Decided:
   - Each one counts only after it passes the settings test and the tool test.
   - The deadline for each one is Thursday 5 Nov, 12:00. A harness that misses it is cut on its own. Cut order: the two SDKs first, LangGraph last, never the own loop.
 - **Adding a harness is an adapter, not a core change** (R2). The test cases are adding a GitHub coding agent or the Claude Agent SDK tomorrow. Until its author fills `version` in the capabilities file, which `make new-harness` writes as `TODO`, the catalogue leaves the new harness out and the API refuses configs and experiments for it (5 Nov, review A2), since no worker would claim its trials.
-- **A new model is one config line**, because all model access goes through LiteLLM (SP1 done-when).
+- **A new model on a known provider is one config line**, because all model access goes through LiteLLM (SP1 done-when); a new provider adds the two table lines above.
 - **Task tools come from one MCP server shared by every harness** (D14), so every harness sees the same tool names, descriptions and schemas. It is started per trial over stdio inside the harness container, so its state lives in the trial folder. A toolset version is the list of the server's tools a config allows (`allowed_tools`), carried in the spec; each adapter filters the server's tools to it. Since 5 Nov the toolset is `finance/v3`: the 11 finance tools, 7 arithmetic tools (`add`, `subtract`, `multiply`, `divide`, `percent_of`, `percent_change`, `round`), so every figure in an answer can come from a tool and the agent never does its own sums (D54), and `reference_rates`, documented Indian market assumptions approved by Rishi (FD, savings, PPF, CPI inflation, repo rate, a long-run equity return) each with its source and date, so a rate the agent volunteers has a source too (D58). `finance/v2` (without `reference_rates`) replaced `finance/all`, and v3 replaced v2, each as a new version; a change to the tools, or to a reference rate's value, is never an edit of a version in place. A second built-in toolset, `finance-no-calculators/v3` (D70), is listed after it for the positive control only: the same server and version without the eight calculators, marked `validation_only` in `GET /toolsets` so neither the builder nor a new config picks it (A46).
 - **Self-improvement is explicit** (R3). Anything that lets an agent change its own prompt, skills or memory in the background is a config setting, off unless a config turns it on.
 
@@ -271,8 +271,9 @@ Decided (D10 as revised 5 Nov, D41, D42, D43, D44, D50; the proposal is `docs/pr
   interval breaks) and Fisher's exact test. With 12 to 20 tasks at 5%, about one would look
   different by chance, so a task is flagged "beyond noise" only after Benjamini-Hochberg at q =
   0.05 across the tasks: among flagged tasks, at most about 5% are expected to be noise. A flag
-  means "look here", not a verdict. Holm was rejected because at N = 5 to 10 trials it can never
-  flag a task.
+  means "look here", not a verdict. Holm was rejected because it is too strict for this design:
+  at N = 5 trials a task can never pass its first bar (the smallest two-sided Fisher p, 0/5 against
+  5/5, is 0.0079 against 0.05/20 = 0.0025), and at N = 6 to 10 only a near-total flip can.
 - **The critical-failure guardrail (D10).** Each grader may carry a severity (critical, major or
   minor) in its task file, set by Rishi; it never changes a verdict. Per task with a required
   critical check, the critical-failure rate is the share of decided trials where such a check

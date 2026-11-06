@@ -138,7 +138,7 @@ Same prompts, model, tools, tasks and N on each harness:
 | Own loop (`e_0mw3cy22s7dd697c36b50430d`) | 56% | 64% | +8.0 (−4 to +23) | 0.44 | no detectable difference | 3 / 2 / 5 | $0.0087 → $0.0112 |
 | LangGraph (`e_0mw3cy2930970251621fd47f3`) | 55% | 72% | +17.0 (+5 to +29) | 0.047 | better | 6 / 1 / 3 | $0.0085 → $0.0124 |
 
-- **Direction:** v2 is ahead on all three harnesses, by 8 to 17 points; one of the three verdicts clears the pre-registered rule. Three tests at alpha 0.05 make a single p of 0.047 modest on its own; the consistent direction across three independent harnesses is the stronger evidence.
+- **Direction:** v2 is ahead on all three harnesses, by 8 to 17 points; one of the three verdicts clears the pre-registered rule. Three tests at alpha 0.05 make a single p of 0.047 modest on its own; the consistent direction across three harnesses is the stronger evidence, though the three runs share the same 10 tasks, prompts, model and simulated client, so they are not independent replications of the whole design.
 - **Cost:** v2 costs 29 to 46% more per trial on every harness, from its extra tool calls.
 - **Harnesses at v1** (descriptive only, separate experiments, same tasks, model and prompt): Hermes 64%, own loop 56%, LangGraph 55%.
 

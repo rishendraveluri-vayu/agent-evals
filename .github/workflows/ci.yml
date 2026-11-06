@@ -137,6 +137,10 @@ jobs:
           for w in ownloop langgraph adk openai-agents; do
             (cd workers/$w && uv sync --locked && uv run pytest -q tests/test_proxy.py)
           done
+      - name: Image leak and kill tests (D3) on the images compose built
+        env:
+          EVALS_IMAGE_TESTS: '1'
+        run: cd workers/adapterlib && uv sync --locked && uv run pytest -q tests/test_images.py
       - name: Logs on failure
         if: failure()
         run: docker compose logs --no-color --tail 200

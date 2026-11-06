@@ -81,7 +81,8 @@ trials, isolation, retries, traces, deterministic graders, an LLM judge, blind l
 failure causes, and the comparison (verdict, 95% intervals, a paired test, per-task flags,
 critical-failure guardrail, cost and time, A/A calibration; `docs/design.md`, section 6).
 **The real experiment has run:** on Hermes with Claude Haiku 5.5, prompt v2 passed 73 of 100
-trials on the 10 held-out tasks against v1's 64, +9 points (95% interval +3 to +16, p = 0.0625),
+trials on the 10 held-out tasks against v1's 64, +9 points (95% interval +3 to +16, nominal: at 10
+tasks the method covers about 91%, `docs/design.md` section 6; p = 0.0625),
 which the rule fixed before the run calls "no detectable difference": 5 of the 10 tasks scored
 the same in both arms (always passed or always failed), and the 5 left are too few for the test
 to reach p < 0.05. v1 run against itself as a check gave −4 points (−12 to +3), no difference,
@@ -90,10 +91,14 @@ as it should. Nearly all of the +9 is one check, that every rupee figure comes f
 **The platform passes its own test:** with the calculator tools broken on purpose (a positive
 control set out before the run), it found +44.8 points (+23.8 to +65.7, p = 0.0011), flagged 7
 tasks, all among those predicted and none of the 7 controls, and named "wrong tool" as the
-cause in 68 of 83 failures. The same v1 vs v2 on two more harnesses: own loop +8 (−4 to +23),
-LangGraph +17 (+5 to +29, p = 0.047, "better"). **The judge is so far checked only against the
-human labels used for tuning,** where its overall verdict was too lenient, so no judge verdict
-counts in the result. The write-up, with inspected trials: `docs/experiment.md`.
+cause in 68 of 83 failures. Those 14 predicted tasks require the removed tools in their graders,
+so this shows the pipeline and the statistics catch a known break and point at the right tasks,
+not how sensitive the tasks are to a subtle change in behaviour. The same v1 vs v2 on two more
+harnesses, same tasks and model: own loop +8 (−4 to +23),
+LangGraph +17 (+5 to +29, p = 0.047, "better", one of three tests). **The LLM judge counts for nothing yet.** Its
+rubric was tuned on my labels (overall kappa 0.30 at first, 0.63 on a dev set after it learned my
+principles, D74), and the frozen version is measured once against my blind labels of 40 held-out
+trials; until it passes, no judge verdict counts in any result (`docs/judge-validation.md`). The write-up, with inspected trials: `docs/experiment.md`.
 
 ## Three ways in
 
@@ -213,6 +218,7 @@ scripts/setup_hermes.sh && make test-harness NAME=hermes   # Hermes needs its pi
 python3 scripts/smoke.py                                                     # the running stack, end to end
 docker compose --profile smoke run --rm netcheck                             # worker isolation
 python3 scripts/sp3_kill_test.py --n 2       # crash recovery: kills a worker mid-run, checks every trial ran once
+(cd workers/adapterlib && EVALS_IMAGE_TESTS=1 uv run pytest -q tests/test_images.py)   # isolation between trials, on the built worker images (about 3 min)
 ```
 
 **The API's database tests.** Without `TEST_DATABASE_URL`, `pnpm test` skips the API's
