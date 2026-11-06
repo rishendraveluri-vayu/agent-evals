@@ -9,7 +9,7 @@ import { analyse } from './analysis';
 import { gradedAlike } from './graded-alike';
 
 /**
- * The five shipped examples' results, recomputed from their bundles (`examples/<name>/rows.json.gz`)
+ * The shipped examples' results, recomputed from their bundles (`examples/<name>/rows.json.gz`)
  * the way `statsOf` reads them from the database after a load: the done trials, each one's latest
  * finished grading and its grades, LiteLLM's retries from the chat spans. A change to the
  * statistics that moves a shipped verdict, interval or p-value fails here (destructive review, 6 Nov).
@@ -265,10 +265,32 @@ const PINNED: Record<string, { summary: ReturnType<typeof summary>; text: string
     critical: 'Critical failures: +2.5 points (95% interval 0.0 to +6.3) over 8 tasks with 13 critical checks. No rise beyond noise.',
     calibration: null,
   },
+  // Shipped 6 Nov, after the fixes: pinned as the fixed statistics compute it (3 tasks x 4 trials).
+  'skills-demo-balance-transfer-playbook': {
+    summary: {
+      a: { rate: 0.6667, passed: 8, graded: 12, incomplete: 0 },
+      b: counts(1, 12, 12),
+      diff: { estimate: 33.33, low: 0, high: 100 },
+      p: 1,
+      verdict: 'no_detectable_difference',
+      pass_rate_verdict: 'no_detectable_difference',
+      critical: { status: 'did_not_rise', tasks: 3, diff: { estimate: -33.33, low: -100, high: 0 }, blocks_better: false },
+      calibration: null,
+      excluded: 0,
+      tasks: [
+        ['demo-skill-card-transfer', 100, 0.02857, 0.08571, false],
+        ['draft-emi-home-loan', 0, 1, 1, false],
+        ['draft-first-year-interest', 0, 1, 1, false],
+      ],
+    },
+    text: 'No detectable difference: +33.3 points (95% interval 0.0 to +100.0), p = 1 by the paired sign-flip test over 3 tasks. Differences as large as 100 points are not ruled out. With fewer than 6 tasks no other verdict is possible: the paired test cannot reach p < 0.05.',
+    critical: 'Critical failures: -33.3 points (95% interval -100.0 to 0.0) over 3 tasks with 5 critical checks. No rise beyond noise.',
+    calibration: null,
+  },
 };
 
 describe('the shipped examples recompute exactly', () => {
-  it('ships the five examples this test pins', () => {
+  it('ships the six examples this test pins', () => {
     expect(names).toEqual(Object.keys(PINNED).sort());
   });
 
@@ -280,7 +302,7 @@ describe('the shipped examples recompute exactly', () => {
     expect(stats.verdict_text).toBe(pinned.text);
     expect(stats.critical.text).toBe(pinned.critical);
     expect(stats.calibration?.text ?? null).toBe(pinned.calibration);
-    // Every shipped task has 5 or 10 decided trials in each arm (S6).
+    // Every shipped task has 4, 5 or 10 decided trials in each arm (S6).
     expect(stats.unequal_decided).toBeNull();
     // Every shipped judge criterion is optional, so no outcome rests on the judge (S12).
     expect(stats.rests_on_judge).toBeNull();
