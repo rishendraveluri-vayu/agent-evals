@@ -228,33 +228,40 @@ const blocked = computed<string | null>(() => {
 const saving = ref(false);
 const saveError = ref<string | null>(null);
 const saved = ref<{ config: ConfigView; existed: boolean } | null>(null);
+/** A save of the agent or of a prompt is on its way: every step is locked until it answers, so
+ *  the saved panel always describes what was sent, never a choice changed in the meantime. */
+const busy = computed(() => saving.value || promptSaving.value);
 
 async function save() {
   const d = data.value;
-  if (blocked.value || !d || !toolset.value) return;
+  if (busy.value || blocked.value || !d || !toolset.value) return;
   saving.value = true;
   saveError.value = null;
+  // What is sent, read once.
+  const name = form.name.trim();
+  const model = form.model;
   try {
     const known = new Set(d.configs.map((c) => c.hash));
     const config = await api.createConfig({
-      name: form.name.trim(),
+      name,
       harness: form.harness,
-      model: form.model,
+      model,
       prompt_sha256: form.prompt,
       toolset_sha256: toolset.value.sha256,
       settings: settings.value,
     });
-    data.value = { ...d, configs: await api.configs() };
+    const configs = await api.configs();
+    data.value = { ...(data.value ?? d), configs };
     // The API returns the stored agent when this content exists already, under the name it was
     // first saved with; the name typed here is not used.
-    saved.value = { config, existed: known.has(config.hash) || config.name !== form.name.trim() };
+    saved.value = { config, existed: known.has(config.hash) || config.name !== name };
   } catch (err) {
     saveError.value = plainText(errorWithFix(err));
     // A model's refusal holds for every agent on that model: grey the setting from now on, so the
     // next save leaves it out (the full Config screen does the same).
-    if (err instanceof ApiError && err.code === 'unsupported_setting' && err.message.includes(form.model)) {
+    if (err instanceof ApiError && err.code === 'unsupported_setting' && err.message.includes(model)) {
       const named = SHOWN.find((n) => new RegExp(`\\b${n}\\b`).test(err.message));
-      if (named && supported(named)) learnt[form.model] = { ...(learnt[form.model] ?? {}), [named]: plainText(err.fix ?? err.message) };
+      if (named && supported(named)) learnt[model] = { ...(learnt[model] ?? {}), [named]: plainText(err.fix ?? err.message) };
     }
   } finally {
     saving.value = false;
@@ -344,7 +351,10 @@ const localModel = computed(() => realModels.value.find((m) => isLocal(m)) ?? nu
       @submit.prevent="save"
     >
       <!-- 1. Agent type -->
-      <fieldset class="step">
+      <fieldset
+        class="step"
+        :disabled="busy"
+      >
         <legend class="step-title">
           <span
             class="step-n"
@@ -411,7 +421,10 @@ const localModel = computed(() => realModels.value.find((m) => isLocal(m)) ?? nu
       </fieldset>
 
       <!-- 2. Model -->
-      <fieldset class="step">
+      <fieldset
+        class="step"
+        :disabled="busy"
+      >
         <legend class="step-title">
           <span
             class="step-n"
@@ -484,7 +497,10 @@ const localModel = computed(() => realModels.value.find((m) => isLocal(m)) ?? nu
       </fieldset>
 
       <!-- 3. Instructions -->
-      <fieldset class="step">
+      <fieldset
+        class="step"
+        :disabled="busy"
+      >
         <legend class="step-title">
           <span
             class="step-n"
@@ -619,7 +635,10 @@ const localModel = computed(() => realModels.value.find((m) => isLocal(m)) ?? nu
       </fieldset>
 
       <!-- 4. Settings -->
-      <fieldset class="step">
+      <fieldset
+        class="step"
+        :disabled="busy"
+      >
         <legend class="step-title">
           <span
             class="step-n"
@@ -694,7 +713,10 @@ const localModel = computed(() => realModels.value.find((m) => isLocal(m)) ?? nu
       </fieldset>
 
       <!-- 5. Save -->
-      <fieldset class="step">
+      <fieldset
+        class="step"
+        :disabled="busy"
+      >
         <legend class="step-title">
           <span
             class="step-n"

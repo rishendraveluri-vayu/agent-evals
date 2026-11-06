@@ -432,6 +432,33 @@ describe('Build an agent, fresh-clone QA round 3', () => {
   });
 });
 
+describe('Build an agent during a slow save (destructive review U13)', () => {
+  it('locks every choice until the save answers, so the saved panel names what was sent', async () => {
+    let answer: (c: never) => void = () => undefined;
+    const pending = new Promise<never>((resolve) => {
+      answer = resolve;
+    });
+    const create = vi.spyOn(api, 'createConfig').mockReturnValue(pending);
+    const view = await open();
+    await pickHarness(view, 'ownloop');
+    await view.get('[data-test="agent-name"]').setValue('Slow one');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    const steps = view.findAll('fieldset.step');
+    expect(steps).toHaveLength(5);
+    for (const step of steps) expect(step.attributes('disabled')).toBeDefined();
+    expect(view.get('[data-test="model-gemini-3.8-flash"] input').element.matches(':disabled')).toBe(true);
+    expect(view.get('[data-test="agent-name"]').element.matches(':disabled')).toBe(true);
+    // A second press while it is on its way sends nothing more.
+    await view.get('form').trigger('submit');
+    expect(create).toHaveBeenCalledTimes(1);
+    answer({ ...OWN_LOOP, name: 'Slow one' } as never);
+    await settle();
+    for (const step of view.findAll('fieldset.step')) expect(step.attributes('disabled')).toBeUndefined();
+    expect(view.get('[data-test="saved-status"]').text()).toContain('Slow one');
+  });
+});
+
 describe('Build an agent on a fresh database with no key (destructive review U1)', () => {
   const KEYLESS = [
     { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false },

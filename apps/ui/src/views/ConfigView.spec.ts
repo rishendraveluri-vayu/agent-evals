@@ -672,3 +672,30 @@ describe('ConfigView, fresh-clone QA round 3', () => {
     expect(w.text().split('Not checked yet').length - 1).toBe(0);
   });
 });
+
+describe('ConfigView during a slow save (destructive review U13)', () => {
+  it('locks the form, the name and the comparison until the save answers', async () => {
+    let answer: (c: Config) => void = () => undefined;
+    const create = vi.spyOn(api, 'createConfig').mockReturnValue(
+      new Promise<Config>((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const w = mount(ConfigView, { attachTo: document.body });
+    await settle();
+    await w.get('[data-test="config-name"]').setValue('Slow config');
+    await w.get('[data-test="save-config"]').trigger('click');
+    await settle();
+    expect(w.findAll('form fieldset.block-set').every((f) => f.attributes('disabled') !== undefined)).toBe(true);
+    expect(w.get('[data-test="model-select"]').element.matches(':disabled')).toBe(true);
+    expect(w.get('[data-test="config-name"]').attributes('disabled')).toBeDefined();
+    expect(w.get('[data-test="base-select"]').attributes('disabled')).toBeDefined();
+    await w.get('[data-test="save-config"]').trigger('click');
+    expect(create).toHaveBeenCalledTimes(1);
+    answer({ ...(configs[3] as unknown as Config), hash: `sha256:5104${'0'.repeat(60)}`, name: 'Slow config' });
+    await settle();
+    expect(w.get('[data-test="model-select"]').element.matches(':disabled')).toBe(false);
+    expect(w.text()).toContain('Saved as config 5104000');
+    w.unmount();
+  });
+});

@@ -489,12 +489,14 @@ const refusalFor = (field: string) => (refusal.value?.field === field ? refusal.
 async function save(thenRun: boolean) {
   const d0 = data.value;
   // Save is off with its reason shown under it (invalid); Enter in a field ends here too.
-  if (invalid.value || !d0) return;
+  if (saving.value || invalid.value || !d0) return;
+  // The form is locked while saving, so what was sent is what the page says was saved.
   saving.value = true;
   refusal.value = null;
+  const name = form.name.trim();
   try {
     const config = await api.createConfig({
-      name: form.name.trim(),
+      name,
       harness: form.harness,
       model: form.model,
       prompt_sha256: form.prompt,
@@ -506,7 +508,7 @@ async function save(thenRun: boolean) {
     });
     // The API returns the stored config when this content exists already, under the name it was
     // first saved with; the name typed here is not used.
-    existed.value = d0.configs.some((c) => c.hash === config.hash) || config.name !== form.name.trim();
+    existed.value = d0.configs.some((c) => c.hash === config.hash) || config.name !== name;
     saved.value = config;
     // The saved list (and its count) shows the new config at once.
     if (!d0.configs.some((c) => c.hash === config.hash) && data.value) data.value = { ...data.value, configs: [...data.value.configs, config] };
@@ -600,7 +602,10 @@ watch(
         novalidate
         @submit.prevent="save(false)"
       >
-        <fieldset class="block-set">
+        <fieldset
+          class="block-set"
+          :disabled="saving"
+        >
           <legend class="legend">
             Harness
           </legend>
@@ -640,7 +645,10 @@ watch(
           </p>
         </fieldset>
 
-        <fieldset class="block-set pair">
+        <fieldset
+          class="block-set pair"
+          :disabled="saving"
+        >
           <legend class="visually-hidden">
             Model and prompt
           </legend>
@@ -861,7 +869,10 @@ watch(
           </div>
         </fieldset>
 
-        <fieldset class="block-set">
+        <fieldset
+          class="block-set"
+          :disabled="saving"
+        >
           <legend class="legend">
             Tools
           </legend>
@@ -927,7 +938,10 @@ watch(
           </ul>
         </fieldset>
 
-        <fieldset class="block-set">
+        <fieldset
+          class="block-set"
+          :disabled="saving"
+        >
           <legend class="legend">
             Settings
           </legend>
@@ -1292,6 +1306,7 @@ watch(
               type="text"
               :maxlength="NAME_MAX"
               data-test="config-name"
+              :disabled="saving"
               @input="nameTouched = true"
             >
             <span class="secondary smaller">A label for lists: up to {{ NAME_MAX }} characters. It is not part of the config's identity.</span>
@@ -1321,6 +1336,7 @@ watch(
               <select
                 v-model="baseHash"
                 data-test="base-select"
+                :disabled="saving"
               >
                 <option
                   v-if="!base"
