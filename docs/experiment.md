@@ -165,6 +165,18 @@ Experiment `e_0mw4mta9bbe283aef553ba013`, $2.050, 200 of 200 trials, no infra fa
 
 **What a failure looks like.** The dealbreaker's failures are rarely wild numbers. In a typical loan-to-clear-card trial (`t_0mw4mta9d6d45d4e960b37c03`) the agent calls `calculate_emi` for the new loan's EMI, then writes "Left unpaid, that costs roughly ₹35,000 a year in interest". That figure is close to 42% of ₹84,250 (₹35,385), but no tool produced it, so the provenance check fails the trial. The fixed prompt forbids exactly that ("Never write 'about', 'roughly' or 'around' before an amount you worked out yourself").
 
+## Validation results: retrieval, a document search tool (6 Nov)
+
+Experiment `e_0mw4q1j92d384937501c826eb`, $2.085, 280 of 280 trials, no infra failure, 29 minutes on five Hermes workers. Plan committed before the run (`770d9fa`). One deviation: the critical check was fixed after the results and the run regraded (Deviations, below); both gradings are given where they differ. Against the criteria:
+
+1. **Verdict: pass.** "B passes more than A": +55.7 points (95% interval +34.3 to +77.1), sign-flip p = 0.0020 over 14 tasks. Without the documents arm A passed 40 of 140, with them arm B 118 of 140. The same in both gradings.
+2. **Flags: pass.** Six tasks are flagged beyond noise, all among the 10 predicted: rag-fd-two-year, rag-fd-break-early, rag-personal-loan-emi, rag-processing-fee, rag-personal-loan-foreclose (0 to 9 of 10) and rag-home-loan-repo-linked (each 0 to 10 of 10 unless shown). The other four predicted tasks rose too but are not flagged at this N: the three conversations (0 to 4 or 5 of 10) and rag-tax-new-regime (0 to 5). All four controls passed 10 of 10 in both arms.
+3. **Causes: pass.** Every one of arm A's 100 trials on the predicted tasks failed, and every failure is one of the two the plan names. In the corrected grading, 42 state a rate, fee or rule figure no tool returned; 58 invent nothing and miss the figure, most of them saying plainly that they do not have the bank's rates (first grading: 53 and 47).
+
+**Critical failures fell**, from 30.0% of graded trials in A to 7.1% in B: −22.9 points (−40.7 to −7.9) in the corrected grading (first grading 37.9%, −30.7 points). Arm B's 10 are mostly real by the plan's own rules: on rag-tax-new-regime 5 trials add the 4% cess from memory, which the bulletin leaves out as unverified, and on rag-convo-two-wheeler-bonus 4 state a rupee charge no tool supports.
+
+**Secondary measure.** On the 10 predicted tasks, arm A stated a made-up figure in 42 of 100 trials and declined or missed without inventing in 58; arm B in 10 and 10, and passed 78. Where arm A did invent, it was often open about it: one trial quoted SBI's FD rate from `reference_rates` "as a stand-in" for Kaveri Bank's, and on the tax task it gave the correct slabs "from my own knowledge" and said to check them. Both fail the number or the critical check by the plan's rule that every figure comes from a source (Named before the run, (b)).
+
 ## Cross-harness replication results (5 Nov)
 
 Same prompts, model, tools, tasks and N on each harness:
