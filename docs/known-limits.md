@@ -11,9 +11,10 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 2. **The LLM judge is built and calibrated, but it failed the bar on my held-out labels, so it's
    shown and not counted.** The frozen rubric v4 on Gemini 3.8 Flash reached kappa 0.63 on a
    29-trial dev set (interval −0.05 to 1.00), then −0.14 on the 40 held-out trials Rishi labelled
-   blind: it passed all 9 answers he failed that it graded. His fails name things the rubric never
-   asks for (tax on the gains, moving to debt as a goal nears, an emergency fund). Every verdict
-   rests on the deterministic checks (`docs/judge-validation.md`, top).
+   blind: it passed all 9 answers he failed that it graded. Most of his fails name things the
+   rubric never asks for (tax on the gains, moving to debt as a goal nears); two are for a missing
+   question the rubric says is not a fail on its own. Every verdict rests on the deterministic
+   checks (`docs/judge-validation.md`, top).
 3. **The headline mostly measures one rule.** 31 of v1's 36 failures and 24 of v2's 27 fail only
    the check that every rupee figure comes from a tool; without it the arms pass 95 and 97 of 100.
    That check is strict: a correct figure rounded in prose fails it (Platform checks, below).
