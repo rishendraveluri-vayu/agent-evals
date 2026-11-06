@@ -126,7 +126,7 @@
           ],
           "properties": {
             "complete": {
-              "description": "False if LiteLLM's log still held fewer calls than the harness reported after the runner's wait. Such a trial's counts and cost are not trusted.",
+              "description": "True only when, after the runner's wait, LiteLLM's log held at least the calls the trial is known to have made with each of its keys (the agent's: the harness's own count; the simulator's: one per line of out/sim_replies.jsonl), at least SPEND_LOG_QUIET_S (7 s) had passed since the adapter exited, and no count had changed for 1.5 s. False when that could not be shown within 30 s: such a trial's counts, cost and trace are not trusted.",
               "type": "boolean"
             },
             "model_calls": {

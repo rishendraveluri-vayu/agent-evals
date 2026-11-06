@@ -7,8 +7,10 @@ Hidden harness retries show up here as extra spans, which is why the counts come
 
 Checked against LiteLLM v1.99.4 on 3 Nov: `GET /spend/logs?api_key=<token>` returns one row per
 call, failures included (`status: failure`, `metadata.error_information.error_code`), and with
-`store_prompts_in_spend_logs` the bodies are in `proxy_server_request` and `response`. Rows land
-about 1 s after the call with `proxy_batch_write_at: 1`.
+`store_prompts_in_spend_logs` the bodies are in `proxy_server_request` and `response`. Rows are
+written in batches: LiteLLM flushes every `proxy_batch_write_at + randint(0, 5)` seconds, the
+interval drawn once when it starts (proxy_server.py, `batch_writing_interval`), so with our 1 s
+a row lands 1 to 6 s after its call, plus the write itself (SPEND_LOG_QUIET_S).
 
 LiteLLM's own retries (D16) do not add rows: a request it retried is still one row, with the
 retries in `metadata.attempted_retries` (checked 4 Nov). So a span is one request the harness
@@ -36,6 +38,14 @@ from evals_adapter.trace import (
     new_span_id,
     trace_id_for,
 )
+
+# How long after the adapter exits the runner waits before it takes LiteLLM's log as complete:
+# LiteLLM's longest flush interval with `proxy_batch_write_at: 1` (6 s, see above) and a second for
+# the write. Soak test (6 Nov): the agent key's read ended about 2 s after the adapter exited (once
+# the harness's own count was met) and the simulator key's, with no floor, 1.5 s later, while rows
+# landed 0.1 to 2.3 s after their call; 9 of the 11 trials short of a call (8 simulated-client
+# calls, one Hermes summary call its own count leaves out) were still marked complete.
+SPEND_LOG_QUIET_S = 7.0
 
 
 @dataclass
@@ -96,6 +106,52 @@ class ProxyClient:
         instead (`evals_adapter.worker.ApiProxyClient`), with the same wait and settle logic."""
         return self._request("GET", f"/spend/logs?api_key={token}") or []
 
+    def read_calls(
+        self,
+        wants: list[tuple[str, int]],
+        since: float | None = None,
+        quiet_s: float = SPEND_LOG_QUIET_S,
+        settle_s: float = 1.5,
+        max_wait_s: float = 30.0,
+        poll_s: float = 0.3,
+    ) -> tuple[dict[str, list[dict]], bool]:
+        """Every logged call for each key, oldest first, and whether the log is shown complete.
+
+        `wants` is (token, floor) per key: the floor is how many calls the trial is known to
+        have made with it (the runner's `_harness_calls` and `_sim_calls`). LiteLLM writes its
+        log in batches, so the record counts as complete only when every key holds at least its
+        floor, `quiet_s` has passed since `since` (when the adapter exited: no call can start
+        after it, and LiteLLM's last batch is written within SPEND_LOG_QUIET_S), and no key's
+        count has changed for `settle_s`. The wait also covers calls nobody counted, such as
+        Hermes's summary call at its step limit. If `max_wait_s` runs out first, the records
+        are returned with complete=False and the trial is flagged, never trusted. No read before
+        `since + quiet_s - settle_s` could show anything, so the first one waits until then."""
+        start = time.time()
+        since = start if since is None else since
+        not_before = since + quiet_s
+        first = not_before - settle_s
+        if first > start:
+            time.sleep(min(first - start, max_wait_s))
+        last: dict[str, int] | None = None
+        stable_since = time.time()
+        rows: dict[str, list[dict]] = {}
+        complete = False
+        while True:
+            rows = {token: self._spend_rows(token) for token, _ in wants}
+            now = time.time()
+            counts = {token: len(r) for token, r in rows.items()}
+            if counts != last:
+                last, stable_since = counts, now
+            enough = all(counts[token] >= floor for token, floor in wants)
+            if enough and now >= not_before and now - stable_since >= settle_s:
+                complete = True
+                break
+            if now - start > max_wait_s:
+                break
+            time.sleep(poll_s)
+        order = lambda r: (r.get("startTime") or "", r.get("request_id") or "")  # noqa: E731
+        return {token: sorted(r, key=order) for token, r in rows.items()}, complete
+
     def call_records(
         self,
         token: str,
@@ -104,29 +160,11 @@ class ProxyClient:
         min_wait_s: float = 2.0,
         max_wait_s: float = 30.0,
     ) -> tuple[list[dict], bool]:
-        """Every logged call for the key, oldest first, and whether the log looks complete.
-
-        LiteLLM writes the spend log in batches and can lag by seconds under load, so the runner
-        waits until it holds at least `expect_at_least` calls (the harness's own count: the
-        proxy should see at least what the harness says it made), the count has not changed
-        for `settle_s`, and `min_wait_s` has passed. If `max_wait_s` runs out first, the
-        records are returned with complete=False and the trial is flagged, never trusted."""
-        start = time.time()
-        last_n, stable_since = -1, time.time()
-        rows: list[dict] = []
-        while True:
-            rows = self._spend_rows(token)
-            now = time.time()
-            if len(rows) != last_n:
-                last_n, stable_since = len(rows), now
-            enough = len(rows) >= expect_at_least
-            if enough and now - stable_since >= settle_s and now - start >= min_wait_s:
-                break
-            if now - start > max_wait_s:
-                break
-            time.sleep(0.3)
-        rows = sorted(rows, key=lambda r: (r.get("startTime") or "", r.get("request_id") or ""))
-        return rows, len(rows) >= expect_at_least
+        """One key's calls, waiting at least `min_wait_s` from now (read_calls)."""
+        rows, complete = self.read_calls(
+            [(token, expect_at_least)], None, min_wait_s, settle_s, max_wait_s
+        )
+        return rows[token], complete
 
     @staticmethod
     def usage(records: list[dict], complete: bool = True) -> dict[str, Any]:

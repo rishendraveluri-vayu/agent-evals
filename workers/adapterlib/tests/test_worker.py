@@ -27,10 +27,11 @@ from worker_support import (
     alive,
     pids_with_env,
     rows_in_turn,
+    turn_window,
     worker_spec,
 )
 
-from evals_adapter.fake_api import FAKE_WORKER_TOKEN, FakeWorkerApi, make_claim
+from evals_adapter.fake_api import FAKE_WORKER_TOKEN, FakeWorkerApi, make_claim, spend_row
 from evals_adapter.proxy import ProxyError
 from evals_adapter.worker import (
     ApiClient,
@@ -72,6 +73,8 @@ def config(tmp_path: Path, api: FakeWorkerApi, cmd: list[str] = SCRIPTED_CMD, **
         "idle_max_s": 0.05,
         "retry_base_s": 0.01,
         "retry_max_s": 0.05,
+        # The fake API's rows are there at once; LiteLLM's lag is tested on its own below.
+        "spend_log_quiet_s": 0.2,
     }
     values.update(kw)
     return WorkerConfig(**values)
@@ -395,7 +398,12 @@ def test_a_second_trial_of_the_same_conversation_reuses_the_simulator_replies(tm
     sim = SimServer(
         ["Will I lose the house?", "OK. What should I do first?", "Thank you. [[END_CONVERSATION]]"]
     )
-    api.calls = lambda trial_id, role: []
+    # LiteLLM's rows for trial 1's three simulator calls; trial 2's replies all come from the cache.
+    api.calls = lambda trial_id, role: (
+        [spend_row(i, "2026-11-06T00:00:00", "2026-11-06T00:00:01") for i in (1, 2, 3)]
+        if role == "sim" and trial_id == "t_sim_1"
+        else []
+    )
     api.serve_sim_cache = True
     turns = [{"reply": "{{last_user}}", "model_calls": 0}]
     keys = {"model": "sk-trial-agent-fake", "sim": "sk-trial-sim-fake"}
@@ -438,6 +446,66 @@ def test_a_second_trial_of_the_same_conversation_reuses_the_simulator_replies(tm
     transcript = first["result"]["conversation"]["transcript"]
     assert second["result"]["conversation"]["transcript"] == transcript
     assert transcript[-1]["content"] == "Thank you."
+    # Trial 1's record holds its three simulator calls; trial 2 made none.
+    assert first["runner_report"]["proxy_usage"]["complete"] is True
+    assert second["runner_report"]["proxy_usage"]["complete"] is True
+
+
+def conversation_claim(sim_url: str, trial_id: str = "t_lag_1") -> dict:
+    spec = worker_spec(trial_id, harness_options={"turns": [{"reply": "ok", "model_calls": 0}]})
+    spec["task"]["client_sim"] = client_sim(sim_url)
+    spec["task"]["messages"] = [{"role": "user", "content": "I don't know where to start."}]
+    return make_claim(spec, keys={"model": "sk-trial-agent-fake", "sim": "sk-trial-sim-fake"})
+
+
+def test_the_record_waits_for_the_simulators_calls_that_land_late(tmp_path, api):
+    """Soak test (6 Nov): 8 trials lost their last simulated-client call. The simulator's key was
+    read with no floor and stopped after 1.5 s of no change, before LiteLLM wrote the row. Each
+    line of out/sim_replies.jsonl is a call LiteLLM answered, so the read now waits for them."""
+    sim = SimServer(["Will I lose the house?", "Thank you. [[END_CONVERSATION]]"])
+    first_sim_read: list[float] = []
+
+    def calls(trial_id: str, role: str) -> list[dict]:
+        if role != "sim":
+            return []
+        first_sim_read.append(time.time())
+        if time.time() - first_sim_read[0] < 2.5:  # LiteLLM has not written them yet
+            return []
+        return [spend_row(i, "2026-11-06T00:00:00", "2026-11-06T00:00:01") for i in (1, 2)]
+
+    api.calls = calls
+    api.claims.append(conversation_claim(sim.url))
+    try:
+        Worker(config(tmp_path, api)).serve(exit_on_idle=True)
+    finally:
+        sim.close()
+    (body,) = api.reports()
+    sim_chats = [s for s in body["spans"] if s["name"].startswith("chat ")]
+    assert len(sim.requests) == 2
+    assert [attrs(s)["evals.role"] for s in sim_chats] == ["sim", "sim"]
+    assert body["runner_report"]["proxy_usage"]["complete"] is True
+
+
+def test_a_call_the_harness_did_not_count_is_waited_for_after_the_adapter_exits(tmp_path, api):
+    """Soak test (6 Nov): a Hermes trial at its step limit made 25 calls and counted 24 (its
+    summary call), so the read stopped once 24 rows were there, about 2 s after the adapter
+    exited, and the 25th landed later. The read now lasts until LiteLLM's last batch since the
+    adapter exited is written (SPEND_LOG_QUIET_S; 3 s here), whatever the harness counted."""
+
+    def calls(trial_id: str, role: str) -> list[dict]:
+        rows = rows_in_turn(tmp_path / "trial", n=3)
+        turn_end = turn_window(tmp_path / "trial")[1] / 1e9
+        # The third row lands 2.3 s after the turn ended, the soak's longest lag.
+        return rows if time.time() >= turn_end + 2.3 else rows[:2]
+
+    api.calls = calls
+    api.claims.append(make_claim(worker_spec(harness_options=QUICK)))  # the harness counts 2
+    Worker(config(tmp_path, api, spend_log_quiet_s=3.0)).serve(exit_on_idle=True)
+    (body,) = api.reports()
+    usage = body["runner_report"]["proxy_usage"]
+    assert body["result"]["counts"]["model_calls"] == 2
+    assert usage["model_calls"] == 3 and usage["complete"] is True
+    assert len([s for s in body["spans"] if s["name"].startswith("chat ")]) == 3
 
 
 def test_api_proxy_client_maps_keys_and_reads_calls_through_the_api(tmp_path, api):

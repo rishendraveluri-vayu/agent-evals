@@ -2,11 +2,13 @@
 (checked 3 Nov against the compose proxy and the fake model)."""
 
 import json
+import re
+import time
 
-from support import CONTRACT, attrs, errors, read_jsonl
+from support import CONTRACT, REPO, attrs, errors, read_jsonl
 
-from evals_adapter.proxy import ProxyClient, call_status, merge_proxy_spans
-from evals_adapter.runner import label
+from evals_adapter.proxy import SPEND_LOG_QUIET_S, ProxyClient, call_status, merge_proxy_spans
+from evals_adapter.runner import _sim_calls, label
 from evals_adapter.spec import TrialPaths
 from evals_adapter.trace import Tracer, trace_id_for
 
@@ -191,3 +193,75 @@ def test_runner_flags_spend_logs_that_never_catch_up():
     )
     assert len(rows) == 1 and not complete
     assert ProxyClient.usage(rows, complete)["complete"] is False
+
+
+def stub(client: ProxyClient, rows_for):
+    """`rows_for(token, seconds since the stub was made)` answers each spend-log read."""
+    t0 = time.time()
+    reads: list[tuple[str, float]] = []
+
+    def request(method, path, body=None):
+        token = path.split("api_key=")[1]
+        reads.append((token, time.time() - t0))
+        return rows_for(token, time.time() - t0)
+
+    client._request = request
+    return reads
+
+
+def test_both_keys_are_read_until_each_holds_what_the_trial_made():
+    """Soak test (6 Nov): the simulator key had no floor. Each key now waits for its own."""
+    client = ProxyClient("http://unused", "sk-unused")
+    stub(
+        client,
+        lambda tok, t: [
+            row(i, "a", "b") for i in range(2 if tok == "agent" else (3 if t > 0.6 else 1))
+        ],
+    )
+    rows, complete = client.read_calls([("agent", 2), ("sim", 3)], quiet_s=0.2, settle_s=0.2)
+    assert complete and len(rows["agent"]) == 2 and len(rows["sim"]) == 3
+
+
+def test_a_key_short_of_its_floor_leaves_the_whole_record_incomplete():
+    client = ProxyClient("http://unused", "sk-unused")
+    stub(client, lambda tok, t: [row(i, "a", "b") for i in range(2)])
+    rows, complete = client.read_calls(
+        [("agent", 2), ("sim", 3)], quiet_s=0.1, settle_s=0.1, max_wait_s=0.6
+    )
+    assert not complete and len(rows["sim"]) == 2
+
+
+def test_a_row_that_lands_within_the_quiet_period_is_kept_and_none_is_read_before_it_could_count():
+    """A call nobody counted (Hermes's summary call) lands after the floor is met: the record is
+    only complete once LiteLLM's last batch since the adapter exited is written."""
+    client = ProxyClient("http://unused", "sk-unused")
+    since = time.time()
+    reads = stub(client, lambda tok, t: [row(i, "a", "b") for i in range(3 if t > 0.8 else 2)])
+    rows, complete = client.read_calls([("agent", 2)], since=since, quiet_s=1.2, settle_s=0.3)
+    assert complete and len(rows["agent"]) == 3
+    assert time.time() - since >= 1.2
+    # The first read waits until since + quiet_s - settle_s: nothing earlier could show it.
+    assert reads[0][1] >= 0.85
+
+
+def test_a_log_still_changing_when_the_wait_runs_out_is_not_complete():
+    client = ProxyClient("http://unused", "sk-unused")
+    stub(client, lambda tok, t: [row(i, "a", "b") for i in range(int(t * 10))])
+    _rows, complete = client.read_calls([("agent", 1)], quiet_s=0.1, settle_s=0.3, max_wait_s=0.8)
+    assert not complete
+
+
+def test_the_quiet_period_covers_litellms_longest_flush_and_its_write():
+    """LiteLLM v1.99.4 flushes its spend log every proxy_batch_write_at + randint(0, 5) s, drawn at
+    start-up; compose sets proxy_batch_write_at to 1 (services/litellm/config.yaml)."""
+    text = (REPO / "services" / "litellm" / "config.yaml").read_text()
+    (batch,) = re.findall(r"^\s*proxy_batch_write_at:\s*(\d+)\s*$", text, re.MULTILINE)
+    assert int(batch) + 5 + 1 <= SPEND_LOG_QUIET_S
+
+
+def test_the_simulator_floor_is_one_call_per_reply_line(tmp_path):
+    paths = TrialPaths(tmp_path)
+    assert _sim_calls(paths) == 0
+    paths.out.mkdir(parents=True)
+    paths.sim_replies.write_text('{"key": "a"}\n{"key": "b", "error": "empty"}\nnot json\n\n[1]\n')
+    assert _sim_calls(paths) == 2
