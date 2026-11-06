@@ -82,7 +82,7 @@
               "properties": {
                 "arg": {"description": "The argument it was given in: values[0], a, value.", "type": "string", "minLength": 1},
                 "value": {"description": "The number as given; null for NaN or an infinity.", "type": ["number", "null"]},
-                "supported_by": {"description": "Where a matching number was, as for an amount; `unit` (D58, 5 Nov) when nothing matched but the input is a unit fact (7, 12, 28 to 31, 52, 100, 365, 366, 1,00,000 or 1,00,00,000, sign ignored), which needs no source; `free` (D61) for another free factor (a whole number from 1 to 60, or a percentage written in the replies); `derived` (D61) when it is a one-step derivation of sourced numbers. `match` is null for all three.", "enum": ["tool", "client", "user", "unit", "free", "derived", null]},
+                "supported_by": {"description": "Where a matching number was, as for an amount; `unit` (D58, 5 Nov) when nothing matched but the input is a unit fact (7, 12, 28 to 31, 52, 100, 365, 366, 1,00,000 or 1,00,00,000, sign ignored), which needs no source; `free` (D61) for another free factor (a whole number from 1 to 60 that the replies write up to the call's turn, in digits or as a word (6 Nov, review G4), or a percentage written in the replies); `derived` (D61) when it is a one-step derivation of sourced numbers. `match` is null for all three.", "enum": ["tool", "client", "user", "unit", "free", "derived", null]},
                 "match": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/match"}]},
                 "derivation": {"description": "D61: present when supported_by is derived.", "$ref": "#/$defs/derivation"}
               }

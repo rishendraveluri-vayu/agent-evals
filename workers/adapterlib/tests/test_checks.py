@@ -690,6 +690,58 @@ def test_the_unit_facts_are_the_d58_list_and_never_zero_or_one():
     assert not any(is_unit_fact(Decimal(t)) for t in ("0", "1", "-1", "12.5", "11", "1000", "NaN"))
 
 
+def test_a_free_whole_number_must_be_a_count_the_replies_write():
+    """Destructive review G4 (6 Nov): any whole number from 1 to 60 was a free factor, so
+    multiply([84250, 19]) and then divide(.., 32) turned a sourced balance into any figure (here
+    the made-up "about ₹50,000"). A count is free only when a reply writes it ("19 months")."""
+    files = {"client.json": '{"debts":[{"name":"Credit card","balance":84250.00}]}'}
+    launder = [
+        turn_span(T, 0),
+        span("multiply", T, '{"product":1600750}', start=1, args={"values": [84250, 19]}),
+        span("divide", T, '{"quotient":50023.44}', start=2, args={"a": 1600750, "b": 32}),
+    ]
+    reply = "Clearing the card first would save you about ₹50,023.44 over the next year."
+    out = checks_for([reply], launder, files=files)
+    first, second = out["arithmetic"]
+    assert first["supported"] is False and first["inputs"][1]["supported_by"] is None
+    assert first["reason"] == "multiply's input 19 is not supported"
+    assert second["supported"] is False
+    assert out["amounts"][0]["supported_by"] is None
+    # The same calls with the factors written in a reply count: a reader can see them.
+    said = "Over 19 months that is ₹16,00,750 on the card; spread over 32 months, ₹50,023.44."
+    out = checks_for([said], launder, files=files)
+    assert out["arithmetic"][0]["inputs"][1]["supported_by"] == "free"
+    assert [a["supported"] for a in out["arithmetic"]] == [True, True]
+    assert out["unsupported"] == 0
+
+
+def test_the_factors_a_reply_writes():
+    """G4: the shipped replies that wrote their factor kept their arithmetic: "11 × ₹10,488.62"
+    (own-loop replication) and "Halving it frees ₹1,995.00" (percent_of(3990, 50))."""
+    assert checks.written_whole_numbers(
+        "- **Eleven full payments:** 11 × ₹10,488.62 = ₹1,15,374.82, then 3 more; on 2026-11-05"
+    ) == {Decimal(11), Decimal(3)}
+    assert checks.written_whole_numbers(
+        "Dining: ₹3,990.00 a month. Halving it frees ₹1,995.00."
+    ) == {
+        Decimal(2),
+        Decimal(50),
+    }
+    assert checks.written_whole_numbers("a quarter of it, ₹35 a day, 4.5%") == {
+        Decimal(4),
+        Decimal(25),
+    }
+    dining = [
+        turn_span(T, 0),
+        span("list_transactions", T, '{"total_debits":3990.00}', start=1),
+        span("percent_of", T, '{"amount":1995.00}', start=2, args={"value": 3990, "percent": 50}),
+    ]
+    out = checks_for(["Dining: ₹3,990.00 a month. Halving it frees ₹1,995.00."], dining)
+    assert out["arithmetic"][0]["supported"] is True and out["unsupported"] == 0
+    out = checks_for(["Dining: ₹3,990.00 a month. Cutting it frees ₹1,995.00."], dining)
+    assert out["arithmetic"][0]["reason"] == "percent_of's input 50 is not supported"
+
+
 def test_a_year_of_emis_from_multiply_by_12_is_supported():
     """D58's first case: 12 months in a year needs no source, so twelve sourced EMIs are a
     supported figure. Under D56 alone this was unsupported unless 12 appeared somewhere."""
@@ -1113,9 +1165,11 @@ def test_free_factors_written_counts_percentages_and_source_rates():
         '{"annual_rate_pct":42,"returned_count":16,"r":{"value":6.25,"unit":"percent per year"},'
         '"note":"FOIR 50%"}'
     ) == [Decimal(50), Decimal(42), Decimal("6.25")]
-    assert checks.is_free_factor(Decimal(60), set()) and not checks.is_free_factor(
-        Decimal(61), set()
-    )
+    # G4 (6 Nov review): a whole number up to 60 is free only when the replies write it as a count.
+    assert checks.is_free_factor(Decimal(60), set(), {Decimal(60)})
+    assert not checks.is_free_factor(Decimal(61), set(), {Decimal(61)})
+    assert not checks.is_free_factor(Decimal(60), set())
+    assert checks.is_free_factor(Decimal(12), set())  # a unit fact needs no count
     assert checks.is_free_factor(Decimal("7.4"), {Decimal("7.4")})
     assert not checks.is_free_factor(Decimal("7.4"), set())
 

@@ -36,7 +36,8 @@
    `percent_change`, `round`): a call's result counts when the call returned no error and each
    number it was given is sourced (an earlier non-arithmetic tool result or counted arithmetic
    result, the client file, or a message up to the call's turn) or a free factor (a unit fact,
-   a whole number from 1 to 60, a percentage the replies state); add, subtract, percent_change
+   a whole number from 1 to 60 that the replies write, a percentage the replies
+   state); add, subtract, percent_change
    and round need a source for every input; every call needs one sourced amount (100 or more);
    and no number in its result only repeats an input with no source (D58's identity guard). So
    `multiply([emi, 12])` counts and `multiply([100, 12])` does not, and `round(x)` or
@@ -130,8 +131,11 @@ UNIT_FACTS = frozenset(
 # D61 (A44): figures are verified, not traced. A figure counts when it matches a source, or when
 # the checker recomputes it as a one-step derivation (derive.py) with at least one sourced amount.
 # Free factors, which an arithmetic tool's input may be without a source: the unit facts, whole
-# numbers from 1 to COUNT_MAX (counts and periods: months, years, people, instalments), and
-# percentages written in the agent's replies.
+# numbers from 1 to COUNT_MAX (counts and periods: months, years, people, instalments) that the
+# replies write (in digits or as a word), and percentages written in the agent's replies. G4
+# (6 Nov review):
+# any whole number up to 60 used to be free, so multiply([84250, 19]) "sourced" any multiple of a
+# sourced figure; now the factor must be one a reader can see ("19 months", "11 × ₹10,488.62").
 COUNT_MAX = 60
 # A derivation in prose uses only factors a reader can see: a count written in the replies (a
 # whole number from 2 to WRITTEN_COUNT_MAX that is not a money amount, in digits or as a word up
@@ -615,14 +619,48 @@ def written_counts(text: str) -> set[Decimal]:
     return out
 
 
-def is_free_factor(number: Decimal, percents: set[Decimal]) -> bool:
-    """D61: a number that needs no source: a unit fact, a whole number from 1 to COUNT_MAX, or a
-    percentage the agent wrote in its replies."""
+NUMBER_WORD = re.compile(rf"\b(?:{'|'.join(NUMBER_WORDS)})\b", re.IGNORECASE)
+# Words for a factor, with the whole numbers they stand for: halving is ÷ 2 or 50%.
+FACTOR_WORDS = {
+    re.compile(r"\bhal(?:f|ve|ves|ved|ving)\b", re.IGNORECASE): {Decimal(2), Decimal(50)},
+    re.compile(r"\bquarters?\b", re.IGNORECASE): {Decimal(4), Decimal(25)},
+    re.compile(r"\b(?:double[sd]?|doubling|twice)\b", re.IGNORECASE): {Decimal(2)},
+}
+
+
+def written_whole_numbers(text: str) -> set[Decimal]:
+    """G4: the whole numbers a reply writes that are not money, in digits ("11 × ₹10,488.62",
+    "35 months", "50%"), as a word from two to twelve ("eleven payments"), or as a factor word
+    (half: 2 and 50; quarter: 4 and 25; double, twice: 2). An arithmetic call's free whole number
+    must be one of these, so a reader can see the factor it used. Dates and URLs hold none."""
+    out: set[Decimal] = set()
+    clean = DATE.sub(" ", URL.sub(" ", text or ""))
+    for m in TOKEN.finditer(clean):
+        raw = m.group("num")
+        if m.group("cur") or m.group("post") or m.group("unit") or "." in raw or "," in raw:
+            continue
+        try:
+            out.add(Decimal(raw))
+        except InvalidOperation:
+            continue
+    out |= {NUMBER_WORDS[w.group(0).lower()] for w in NUMBER_WORD.finditer(clean)}
+    for word, numbers in FACTOR_WORDS.items():
+        if word.search(clean):
+            out |= numbers
+    return out
+
+
+def is_free_factor(
+    number: Decimal, percents: set[Decimal], counts: set[Decimal] = frozenset()
+) -> bool:
+    """D61: a number that needs no source: a unit fact, a whole number from 1 to COUNT_MAX that
+    the agent wrote in its replies (`counts`, G4: written_whole_numbers), or a percentage it
+    wrote there."""
     if not number.is_finite():
         return False
     n = abs(number)
     whole = n == n.to_integral_value()
-    return n in UNIT_FACTS or (whole and 1 <= n <= COUNT_MAX) or n in percents
+    return n in UNIT_FACTS or (whole and 1 <= n <= COUNT_MAX and n in counts) or n in percents
 
 
 def _window(amount: Amount, coarse: bool) -> tuple[Decimal, Decimal]:
@@ -719,12 +757,15 @@ def _replies(transcript: list[dict[str, Any]]) -> list[tuple[int, str]]:
     return out
 
 
-def _percents_by_turn(replies: list[tuple[int, str]]) -> dict[int, set[Decimal]]:
-    """The percentages written in the replies up to and including each turn; -1 has them all."""
+def _by_turn(
+    replies: list[tuple[int, str]], read: Callable[[str], set[Decimal]]
+) -> dict[int, set[Decimal]]:
+    """What `read` finds (percentages, written counts) in the replies up to and including each
+    turn; -1 has them all."""
     out: dict[int, set[Decimal]] = {}
     seen: set[Decimal] = set()
     for turn, text in replies:
-        seen = seen | percentages(text)
+        seen = seen | read(text)
         out[turn] = seen
     out[-1] = seen
     return out
@@ -739,7 +780,8 @@ def trace_arithmetic(
     source. Each number it was given is sourced (it matches a non-arithmetic tool result or a
     counted arithmetic result from an earlier call, the client file, or a user message up to the
     call's turn; or it is a one-step derivation of those), a free factor (a unit fact, a whole
-    number from 1 to COUNT_MAX, or a percentage written in the replies up to the call's turn), or
+    number from 1 to COUNT_MAX written in the replies up to the call's turn, or a
+    percentage written there), or
     unsupported. The result counts when the call returned no error and was given numbers, none
     unsupported; add, subtract, percent_change and round had a source for every input; at least
     one input is a sourced amount (100 or more); and no number in the result only repeats an
@@ -747,7 +789,8 @@ def trace_arithmetic(
     `arithmetic`, and the positions of the counted calls."""
     accepted: set[int] = set()
     records: list[dict[str, Any]] = []
-    percents_by_turn = _percents_by_turn(list(replies))
+    percents_by_turn = _by_turn(list(replies), percentages)
+    counts_by_turn = _by_turn(list(replies), written_whole_numbers)
     for call in calls:
         name, index, turn = call["name"], call["index"], call["turn"]
         if name not in ARITHMETIC_TOOLS:
@@ -765,6 +808,7 @@ def trace_arithmetic(
             return before(s, index) and s.arithmetic and s.call not in accepted
 
         percents = percents_by_turn.get(turn, percents_by_turn.get(-1, set()))
+        counts = counts_by_turn.get(turn, counts_by_turn.get(-1, set()))
         figures, unreadable = call_inputs(call)
         inputs, missing, unsourced, unfree, amounts = [], [], [], [], []
         for arg, number in figures:
@@ -774,7 +818,7 @@ def trace_arithmetic(
                 kind = best[3].kind
             elif amount and is_unit_fact(number):
                 kind = "unit"
-            elif amount and is_free_factor(number, percents):
+            elif amount and is_free_factor(number, percents, counts):
                 kind = "free"
             else:
                 kind = None
