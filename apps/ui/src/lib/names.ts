@@ -129,11 +129,12 @@ export function configName(hash: string): string {
   return `config ${shortHash(hash)}`;
 }
 
-/** Infra labels in words: infra:provider_error → provider error. */
+/** Infra labels in words: infra:provider_error → LiteLLM or provider error (a LiteLLM outage lands
+ *  there too, as does a provider's). */
 export function infraReason(label: string | null | undefined): string {
   if (!label?.startsWith('infra:')) return '';
   const reasons: Record<string, string> = {
-    'infra:provider_error': 'provider error',
+    'infra:provider_error': 'LiteLLM or provider error',
     'infra:budget_net': 'budget safety net',
     'infra:adapter_crash': 'adapter crash',
     'infra:timeout_kill': 'killed at the timeout',

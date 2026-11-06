@@ -8,7 +8,7 @@ import { sentenceChanges } from './diff';
 import { harnessVersion, identParts, money, plainText, relative, shortHash, shortVersion, signed, signedMoney, splitIdents, wholeMoney, wilson } from './format';
 import { mdBlocks } from './markdown';
 import { defaultRealModel, isFree, isLocal, runnableHosted } from './models';
-import { alsoGradedBy, isJudged as taskIsJudged, modelName } from './names';
+import { alsoGradedBy, infraReason, isJudged as taskIsJudged, modelName } from './names';
 import { domainFor, ticksFor, verdictTone } from './scale';
 
 /** A result as Hermes shows it to the model, in the form a recorded Hermes trial holds it. */
@@ -598,5 +598,13 @@ describe('models: the default and the local one (destructive review U1)', () => 
     expect(defaultRealModel([qwen])).toBe('qwen2.5-7b-local');
     expect(defaultRealModel([m('fake/finance-emi', null, null), haiku])).toBe('claude-haiku-5-5');
     expect(defaultRealModel([])).toBe('');
+  });
+});
+
+describe('infraReason', () => {
+  it('names LiteLLM beside the provider for a provider error: a LiteLLM outage lands there too (soak test, 6 Nov)', () => {
+    expect(infraReason('infra:provider_error')).toBe('LiteLLM or provider error');
+    expect(infraReason('infra:config_error')).toBe('config error, the setup was refused');
+    expect(infraReason('agent')).toBe('');
   });
 });

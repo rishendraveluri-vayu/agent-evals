@@ -505,3 +505,47 @@ describe('analyse: an A/A calibration run (D44)', () => {
     expect(analyse({ seed: 'e_ab', tasks: [task('t', 1, 2, 1, 2)] }, fast).stats?.calibration).toBeNull();
   });
 });
+
+describe('arms with fewer trials than planned (soak test, 6 Nov)', () => {
+  // The soak's experiment 3: one arm-B slot of draft-convo-where-to-start ended with only an infra
+  // failure, and the verdict used 105 against 104 trials without a word.
+  const tasks = (): TaskInput[] => [...Array.from({ length: 6 }, (_, i) => task(`t${i}`, 3, 5, 4, 5)), task('draft-convo-where-to-start', 3, 5, 3, 4)];
+
+  it('says so in the verdict text and names the tasks, with how many each arm lacks', () => {
+    const s = analyse({ seed: 'e_soak3', tasks: tasks(), planned: 5 }, fast).stats!;
+    expect(s.missing_trials).toEqual({
+      planned: 5,
+      a: 0,
+      b: 1,
+      tasks: [{ task: 'sha256:draft-convo-where-to-start', task_id: 'draft-convo-where-to-start', a: 0, b: 1 }],
+      text:
+        "The arms' trial counts are unequal: arm A has 35 of its 35 planned trials and arm B has 34 of its 35 planned trials. " +
+        '1 slot on 1 task (draft-convo-where-to-start) ended with no trial to grade, every attempt an infra failure, and the verdict uses the trials each arm has.',
+    });
+    expect(s.verdict_text.endsWith(` ${s.missing_trials!.text}`)).toBe(true);
+    // Only what is said changes: the arms' counts are what they were.
+    expect(s.b.graded).toBe(34);
+    expect(s.a.graded).toBe(35);
+  });
+
+  it('counts a trial whose grading gave no outcome as run, not missing', () => {
+    const t = task('t', 1, 2, 1, 1);
+    t.trials.push(trial('t-b-incomplete', 'B', 'incomplete'));
+    expect(analyse({ seed: 'e_inc', tasks: [t], planned: 2 }, fast).stats?.missing_trials).toBeNull();
+  });
+
+  it('is null when every planned trial ran, or when the plan is not given', () => {
+    const full = [...tasks().slice(0, 6), task('draft-convo-where-to-start', 3, 5, 3, 5)];
+    const s = analyse({ seed: 'e_full', tasks: full, planned: 5 }, fast).stats!;
+    expect(s.missing_trials).toBeNull();
+    expect(s.verdict_text).not.toContain('unequal');
+    expect(analyse({ seed: 'e_soak3', tasks: tasks() }, fast).stats?.missing_trials).toBeNull();
+  });
+
+  it('names at most five tasks and counts the rest', () => {
+    const short = Array.from({ length: 7 }, (_, i) => task(`s${i}`, 1, 2, 1, 1));
+    const m = analyse({ seed: 'e_many', tasks: short, planned: 2 }, fast).stats!.missing_trials!;
+    expect(m).toMatchObject({ a: 0, b: 7 });
+    expect(m.text).toContain('7 slots on 7 tasks (s0, s1, s2, s3, s4 and 2 more)');
+  });
+});

@@ -30,7 +30,13 @@ from typing import Any
 from evals_adapter.adapter import utc_iso
 from evals_adapter.checks import client_files, run_checks
 from evals_adapter.checks import read_spans as read_check_spans
-from evals_adapter.proxy import ProxyClient, TrialKey, merge_proxy_spans
+from evals_adapter.proxy import (
+    SPEND_LOG_QUIET_S,
+    ProxyClient,
+    TrialKey,
+    call_error,
+    merge_proxy_spans,
+)
 from evals_adapter.spec import CONTRACT_VERSION, END_STATES, TRIAL_DIR_ENV, TrialPaths, check_spec
 
 LOG_CAP_BYTES = 50 * 1024 * 1024  # contract section 10
@@ -316,6 +322,23 @@ def _harness_calls(paths: TrialPaths) -> int:
         return 0
 
 
+def _sim_calls(paths: TrialPaths) -> int:
+    """Simulator calls LiteLLM answered, as the floor for the simulator key's log: the simulated
+    client writes one line to out/sim_replies.jsonl per reply it fetched (a cached reply makes no
+    call and no line; an empty reply still gets its line, section 9). A failed call has no line,
+    and may or may not have a row, so it is not counted."""
+    try:
+        lines = paths.sim_replies.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return 0
+    n = 0
+    for line in lines:
+        with contextlib.suppress(ValueError):
+            if isinstance(json.loads(line), dict):
+                n += 1
+    return n
+
+
 # D26: which provider 400s are the agent's outcome and which are the platform's setup. Both are
 # matched against the error the adapter reported (end_detail), case-insensitively; the context
 # check runs first. A 400 that matches neither stays the agent's outcome, as before D26.
@@ -346,6 +369,30 @@ UNREACHABLE = re.compile(
     r"|errno 111",
     re.IGNORECASE,
 )
+# Soak test (6 Nov): with Postgres stopped for 10 s, LiteLLM v1.99.4 refused calls with 404 "Team
+# doesn't exist in db. Team=... Create team via `/team/new` call." although the team existed:
+# auth_checks.get_team_object turns any failed read of the team into that 404. That label paused
+# arms as infra:config_error, never re-queued. The API creates each trial's team and key before the
+# trial, so LiteLLM saying one is missing, or that it has no database, is LiteLLM's or Postgres's
+# fault, never the config's. LiteLLM's own words for it, from its source at the pin: an object
+# lookup that "doesn't exist in db" (team, key, user, organisation), the 503 `no_db_connection`
+# ("the authentication database is temporarily unreachable"), the 400 "No connected db", the
+# "No DB Connected" / "Not connected to DB" / "Database not connected" checks, and Prisma's
+# "Can't reach database server" inside a 401 "Authentication Error, ...". A harness can quote the
+# apostrophe escaped (the Agents SDK reports "doesn\'t").
+LITELLM_DB_FAULT = re.compile(
+    r"(?:doesn\\?'?t|does not) exist in (?:the )?db"
+    r"|no_db_connection|database is temporarily unreachable"
+    r"|no (?:db|database) connected|no connected db|not connected to (?:the )?db"
+    r"|database not connected|(?:can\\?'?t|cannot) reach database server",
+    re.IGNORECASE,
+)
+
+
+def litellm_db_fault(*texts: str | None) -> bool:
+    """Whether LiteLLM's answer (its spend-log error message, or the error the adapter reported)
+    says LiteLLM could not use its own database (see LITELLM_DB_FAULT)."""
+    return any(t and LITELLM_DB_FAULT.search(t) for t in texts)
 
 
 def _error_text(result: dict[str, Any]) -> str:
@@ -362,12 +409,19 @@ def _unreachable(result: dict[str, Any]) -> bool:
 
 
 def provider_label(
-    last_status: str | None, result: dict[str, Any], proxy_seen: bool = False
+    last_status: str | None,
+    result: dict[str, Any],
+    proxy_seen: bool = False,
+    last_error: str | None = None,
 ) -> str | None:
     """D26: the infra label for a `harness_error`, from LiteLLM's last status for the agent key
     and the error the adapter reported, or None when the ending stays the agent's outcome.
 
     - budget stop: infra:budget_net;
+    - LiteLLM could not use its own database (LITELLM_DB_FAULT, in LiteLLM's error for the last
+      call, `last_error`, or in the adapter's error), whatever the status: infra:provider_error,
+      re-queued once (soak test, 6 Nov: its 404 "Team doesn't exist in db" during a Postgres stop
+      was taken for a config error);
     - 429 or 5xx: infra:provider_error (the API re-queues it once);
     - 408, LiteLLM's per-call timeout: infra:provider_error too (D16: a call LiteLLM retried
       that still fails is infra);
@@ -392,6 +446,10 @@ def provider_label(
         return "infra:provider_error"
     if last_status == "budget_exceeded":
         return "infra:budget_net"
+    if proxy_seen and litellm_db_fault(
+        last_error if last_status != "200" else None, _error_text(result)
+    ):
+        return "infra:provider_error"
     # Re-check of the review (6 Nov): LiteLLM logs a code that is not an HTTP status when it
     # fails itself, e.g. "P1001" (its database unreachable, so it cannot check the key) or
     # "unknown"; the call never reached the model, so it is the platform's failure.
@@ -419,12 +477,14 @@ def label(
     checked: dict[str, Any],
     proxy_usage: dict | None,
     sim_last_status: str | None = None,
+    last_error: str | None = None,
 ) -> str:
     """Contract section 7, with D26's provider-error labels. A conversation the simulated
     client's failure ended (ended_by sim_error: its call failed or its reply had no text) is
     infra:sim_error whatever the agent key's status, because the agent did not cause it (D26),
     except when the simulator's own key ran out of budget: that is a budget stop,
-    infra:budget_net, which D26 says is never re-queued."""
+    infra:budget_net, which D26 says is never re-queued. `last_error` is LiteLLM's error
+    message for the agent key's last logged call, when it failed (proxy.call_error)."""
     if launch_info["signal"] is not None:
         return "infra:timeout_kill"
     result = checked["result"]
@@ -436,7 +496,10 @@ def label(
         return "infra:sim_error"
     if result["end_state"] == "harness_error":
         infra = provider_label(
-            (proxy_usage or {}).get("last_status"), result, proxy_seen=proxy_usage is not None
+            (proxy_usage or {}).get("last_status"),
+            result,
+            proxy_seen=proxy_usage is not None,
+            last_error=last_error,
         )
         if infra is not None:
             return infra
@@ -480,6 +543,8 @@ class ProxySettings:
     client: ProxyClient
     budget_usd: float  # the per-trial safety net, set well above the estimate (R10.6)
     sim_budget_usd: float = 0.5
+    # How long after the adapter exits before LiteLLM's log can count as complete (proxy.py).
+    spend_log_quiet_s: float = SPEND_LOG_QUIET_S
 
 
 def run_trial(
@@ -519,15 +584,27 @@ def run_trial(
         info = launch(paths, inputs, net, on_spawn)
         proxy_usage = None
         sim_last_status = None
+        last_error = None
         if proxy is not None and agent_key is not None:
-            claimed = _harness_calls(paths)
-            records, complete = proxy.client.call_records(agent_key.token, expect_at_least=claimed)
+            # Both keys are read together, each until it holds what the trial is known to have
+            # made with it, and only after LiteLLM's last batch since the adapter exited. Soak test
+            # (6 Nov): the simulator's key had no floor and the agent's was the harness's count,
+            # so 9 trials missing a call were still marked complete.
+            wants = [(agent_key.token, _harness_calls(paths))]
+            if sim_key is not None:
+                wants.append((sim_key.token, _sim_calls(paths)))
+            calls, complete = proxy.client.read_calls(
+                wants, since=info["ended"], quiet_s=proxy.spend_log_quiet_s
+            )
+            records = calls[agent_key.token]
+            # `complete` covers both keys: the trial's spend and trace include the simulator's.
             proxy_usage = proxy.client.usage(records, complete)
+            last_error = call_error(records[-1] if records else None)
             merge_proxy_spans(paths, records, trial_id)
             if sim_key is not None:
-                sim_records, sim_complete = proxy.client.call_records(sim_key.token, min_wait_s=0.5)
+                sim_records = calls[sim_key.token]
                 merge_proxy_spans(paths, sim_records, trial_id, role="sim")
-                sim_last_status = proxy.client.usage(sim_records, sim_complete).get("last_status")
+                sim_last_status = proxy.client.usage(sim_records, complete).get("last_status")
     finally:
         if proxy is not None:
             try:
@@ -540,7 +617,7 @@ def run_trial(
         "trial_id": inputs.spec["trial"]["id"],
         "attempt": inputs.spec["trial"].get("attempt", 1),
         "harness": (checked["raw_result"] or {}).get("harness", {}).get("name", "unknown"),
-        "label": label(info, checked, proxy_usage, sim_last_status),
+        "label": label(info, checked, proxy_usage, sim_last_status, last_error),
         "end_state": (checked["result"] or {}).get("end_state"),
         "adapter": {
             "exit_code": info["exit_code"],

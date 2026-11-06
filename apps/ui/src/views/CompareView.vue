@@ -990,6 +990,17 @@ const worthALook = computed(() => {
               <span><strong class="caveat-lead">Uneven trial counts:</strong> {{ stats.unequal_decided.text }}</span>
             </p>
             <p
+              v-if="stats.missing_trials"
+              class="caveat caveat--alarm"
+              data-test="missing-trials"
+            >
+              <AppIcon
+                name="alert"
+                :size="14"
+              />
+              <span><strong class="caveat-lead">Missing trials:</strong> {{ stats.missing_trials.text }}</span>
+            </p>
+            <p
               v-if="judgeDecided"
               class="caveat"
               data-test="judge-decided"

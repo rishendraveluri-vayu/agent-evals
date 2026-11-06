@@ -99,6 +99,12 @@ export interface AnalysisInput {
   madeUpPrices?: boolean;
   /** D44: this run is an A/A calibration (one config on both arms). */
   calibration?: boolean;
+  /**
+   * Trials planned per task in each arm (the experiment's N; a reused arm A takes N per task too,
+   * D34). With it, a task whose arm has fewer done trials, a slot whose every attempt was an infra
+   * failure, is named in `missing_trials` and the verdict's text. Left out by the simulations.
+   */
+  planned?: number;
 }
 
 export interface AnalysisOptions {
@@ -408,6 +414,42 @@ function verdictText(v: PassRateVerdict | 'held_back', diff: StatsInterval, p: n
   return `No detectable difference: ${numbers}.${hiding}${few}${margin}`;
 }
 
+/**
+ * Soak test (6 Nov): a slot whose attempts were all infra failures (D16's cap reached, or a label
+ * never re-queued) has no trial, so its arm has fewer trials than planned and the verdict rests on
+ * unequal counts (104 against 105 in the soak's experiment 3, with no word of it). Per task, how
+ * many planned trials each arm lacks, and one sentence for the verdict; null when none is missing.
+ */
+function missingTrials(input: AnalysisInput): CompareStats['missing_trials'] {
+  const planned = input.planned;
+  if (planned === undefined || !Number.isInteger(planned) || planned < 1) return null;
+  const tasks = input.tasks.flatMap((t) => {
+    const lacks = (arm: 'A' | 'B') => Math.max(0, planned - t.trials.filter((x) => x.arm === arm).length);
+    const a = lacks('A');
+    const b = lacks('B');
+    return a || b ? [{ task: t.task, task_id: t.task_id, a, b }] : [];
+  });
+  if (!tasks.length) return null;
+  const total = input.tasks.length * planned;
+  const a = tasks.reduce((s, t) => s + t.a, 0);
+  const b = tasks.reduce((s, t) => s + t.b, 0);
+  const has = (arm: string, missing: number) => `arm ${arm} has ${total - missing} of its ${total} planned ${total === 1 ? 'trial' : 'trials'}`;
+  const named = tasks.slice(0, UNEQUAL_NAMED).map((t) => t.task_id);
+  const more = tasks.length > UNEQUAL_NAMED ? ` and ${tasks.length - UNEQUAL_NAMED} more` : '';
+  const slots = a + b;
+  const on = `${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'}`;
+  return {
+    planned,
+    a,
+    b,
+    tasks,
+    text:
+      `The arms' trial counts are unequal: ${has('A', a)} and ${has('B', b)}. ` +
+      `${slots} ${slots === 1 ? 'slot' : 'slots'} on ${on} (${named.join(', ')}${more}) ended with no trial to grade, every attempt an infra failure, ` +
+      'and the verdict uses the trials each arm has.',
+  };
+}
+
 /** S6's caveat: the tasks in the aggregate whose arms have very unequal decided counts; null when none. */
 function unequalDecided(eligible: { t: TaskInput; a: StatsArmCounts; b: StatsArmCounts }[]): CompareStats['unequal_decided'] {
   const uneven = eligible.filter((e) => Math.max(e.a.graded, e.b.graded) > UNEQUAL_DECIDED_RATIO * Math.min(e.a.graded, e.b.graded));
@@ -512,7 +554,9 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
 
   const notRuledOut = prVerdict === 'no_detectable_difference' && diff.high > diff.low ? round(Math.max(Math.abs(diff.low), Math.abs(diff.high)), 1) : null;
   const marginOnly = prVerdict === 'no_detectable_difference' && k >= MIN_TASKS_FOR_VERDICT && differing > 0 && differing < MIN_TASKS_FOR_VERDICT && rawDiff.high - rawDiff.low > EPS_POINTS && insideMargin(rawDiff);
-  const text = verdictText(verdict, diff, test.p, k, differing, notRuledOut, marginOnly);
+  // The soak test's experiment 3 gave a verdict over 105 against 104 trials and said nothing of it.
+  const missing = missingTrials(input);
+  const text = `${verdictText(verdict, diff, test.p, k, differing, notRuledOut, marginOnly)}${missing ? ` ${missing.text}` : ''}`;
 
   const pooled = (arm: 'a' | 'b') =>
     eligible.reduce((acc, e) => ({ passed: acc.passed + e[arm].passed, graded: acc.graded + e[arm].graded, incomplete: acc.incomplete + e[arm].incomplete }), { passed: 0, graded: 0, incomplete: 0 });
@@ -572,6 +616,7 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
     judge: null,
     unequal_decided: unequalDecided(eligible),
     rests_on_judge: restsOnJudge(eligible, diffs),
+    missing_trials: missing,
   };
   return { stats, note: null };
 }

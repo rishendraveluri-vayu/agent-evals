@@ -97,7 +97,7 @@ export function shippedAnalysis(name: string, edit?: (tables: Record<string, Row
   const taskIds = new Map(t.tasks.map((k) => [String(k.sha256), String(k.id)]));
   const alike = gradedAlike(versionTasks(e, trials, grades, taskIds)).alike;
   const models = t.configs.filter((c) => e.config_hashes.slice(0, 2).includes(String(c.hash))).map((c) => String(c.model));
-  const { stats } = analyse({ seed: e.id, tasks: statsTasks(e, trials, grades, taskIds), madeUpPrices: models.some(isFakeModel), calibration: e.calibration });
+  const { stats } = analyse({ seed: e.id, tasks: statsTasks(e, trials, grades, taskIds), madeUpPrices: models.some(isFakeModel), calibration: e.calibration, planned: e.n });
   if (!stats) throw new Error(`${name}: no statistics`);
   return { stats, alike };
 }
@@ -335,6 +335,8 @@ describe('the shipped examples recompute exactly', () => {
     expect(stats.unequal_decided).toBeNull();
     // Every shipped judge criterion is optional, so no outcome rests on the judge (S12).
     expect(stats.rests_on_judge).toBeNull();
+    // Every shipped slot has a done trial, so no arm lacks a planned trial (soak test, 6 Nov).
+    expect(stats.missing_trials).toBeNull();
   });
 });
 

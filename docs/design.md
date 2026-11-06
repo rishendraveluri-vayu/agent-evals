@@ -91,7 +91,7 @@ Decided, the adapter rules (R10, 3 Nov):
 - **Declared and proven settings.** Each adapter declares the settings it supports; anything else is rejected before the run. A setting counts only once the settings test sees it in the captured request; tools must pass the tool test.
 - **Native limits, sized runs, safety nets.** Limits go into each harness natively (the wrapper adds what is missing, such as a whole-trial timeout). Runs are sized upfront from the cost, time and N estimate. The runner's process-group kill and the proxy's spend cap are safety nets only.
 - **Only the task's tools,** plus anything the config enables. **Nothing learns** unless the config says so (R3).
-- **The proxy is the source of truth** for tokens, cost, latency and call counts.
+- **The proxy is the source of truth** for tokens, cost, latency and call counts. Its record of a trial counts as complete only when each of the trial's keys holds at least the calls the trial is known to have made (the harness's count; one per simulator reply fetched) and LiteLLM's longest batch interval has passed since the adapter exited (7 s with `proxy_batch_write_at: 1`), so each trial waits about 7 s after its adapter ends (soak test, 6 Nov).
 - **Retries:** LiteLLM retries failed model calls with backoff (429, 5xx and timeouts, up to 3 times; never other 4xx), counted per trial as `proxy_usage.attempts` against the harness's `model_calls`; a trial that still fails is re-run by the runner, capped (D16). **One step is one model call** (D17). **Tool errors go back to the model** wherever the framework allows (D18). **Parallel tool calls** are a setting, off by default (D19). **Harness-added prompt text is kept and recorded** (D20).
 - **Traces:** OpenTelemetry spans in OTLP JSON, one trace per trial, with `gen_ai.*` attributes and our own `evals.*` events for memory, skills and errors; model-call spans from LiteLLM's records, tool and turn spans from each adapter (D12, amended 3 Nov).
 - **Thin adapters, no hidden retries.** One folder per harness; every harness's built-in retries set to zero so retrying happens in one place.
@@ -401,6 +401,11 @@ Choice of N (decided 5 Nov, Rishi: "Approve both, N=10"; `docs/experiment.md`, "
   - `unequal_decided` names any task where one arm has more than twice as many decided trials as the
     other (the sign-flip test leans towards the arm with fewer then); `rests_on_judge` lists tasks
     whose outcome a required judge decided (none today, all judges being optional).
+  - `missing_trials` (soak test, 6 Nov) says when an arm has fewer trials than planned: a slot whose
+    every attempt was an infra failure (D16's cap reached, or a label never re-queued) has no trial
+    to grade. It gives how many each arm lacks and on which tasks, and the same sentence ends the
+    verdict's text. The verdict is still computed from the trials each arm has; the soak's
+    experiment 3 had compared 105 against 104 trials with no word of it.
   - A trial whose grading failed, or that has no graders, counts as incomplete in the per-task rows
     as in the statistics; token means leave out trials without a token count instead of reading 0.
 - **Judge agreement (`stats/`, D8), after the same review.** The false-pass gap is the signed

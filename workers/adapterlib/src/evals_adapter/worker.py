@@ -55,7 +55,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from evals_adapter.adapter import utc_iso
-from evals_adapter.proxy import ProxyClient, ProxyError, TrialKey
+from evals_adapter.proxy import SPEND_LOG_QUIET_S, ProxyClient, ProxyError, TrialKey
 from evals_adapter.runner import (
     ProxySettings,
     TrialInputs,
@@ -309,7 +309,7 @@ class ApiProxyClient(ProxyClient):
 
     - `create_key` returns the keys the claim carried: the API minted them, each limited to the
       trial's model and budget. The key's `token` is the role, which is all the API needs.
-    - `call_records` polls GET /worker/trials/:id/calls with ProxyClient's wait and settle logic.
+    - `read_calls` polls GET /worker/trials/:id/calls with ProxyClient's wait and settle logic.
       Each read is retried on network errors, 5xx and 429 for up to `deadline_s` (E2, 6 Nov
       review: three tries 1 s apart threw a finished trial away when the API, LiteLLM or Postgres
       was down for more than 2 s; the worker gives these reads the same back-off and deadline as
@@ -628,6 +628,9 @@ class WorkerConfig:
     # For each read of the trial's calls (E2), the uploads and the report; then the lease lapses.
     report_retry_s: float = 600.0
     max_file_bytes: int = MAX_FILE_BYTES
+    # How long after the adapter exits before LiteLLM's log can count as complete (proxy.py);
+    # tests on a fake API shorten it.
+    spend_log_quiet_s: float = SPEND_LOG_QUIET_S
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None, **overrides: Any) -> WorkerConfig:
@@ -790,6 +793,7 @@ class Worker:
             ),
             budget_usd=float(budgets.get("trial_usd") or 0.0),
             sim_budget_usd=float(budgets.get("sim_usd") or 0.0),
+            spend_log_quiet_s=self.cfg.spend_log_quiet_s,
         )
         control.check()
         runner_report = run_trial(self.paths.root, inputs, proxy, on_spawn=control.spawned)

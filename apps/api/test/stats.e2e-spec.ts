@@ -169,6 +169,38 @@ describeWithDb('statistics and A/A calibration (e2e, real Postgres)', () => {
     expect(after.costs.find((c) => c.metric === 'cost_usd')!.trials).toEqual({ a: 7, b: 7 });
   });
 
+  it('says the arms ran unequal numbers of trials when a slot ran out of attempts on infra failures (soak test, 6 Nov)', async () => {
+    // The soak's experiment 3 compared 105 against 104 trials and said nothing: one slot had only
+    // an infra attempt. Here one arm-B slot fails on infra twice (D16: re-queued once, never again).
+    const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: tasks(), n: 2, futility: { enabled: false } });
+    let reported = 0;
+    let lost: string | null = null;
+    for (let c = await e.claim('w-lost'); c; c = await e.claim('w-lost')) {
+      const spec = c.spec as { trial: { config_hash: string; repeat_index: number; task_id: string } };
+      const slot = `${spec.trial.config_hash}|${spec.trial.repeat_index}|${spec.trial.task_id}`;
+      // Late in the run, so D32's infra guard (30% of at least 5) does not pause it first.
+      if (lost === null && reported >= 20 && spec.trial.config_hash === B) lost = slot;
+      await e.report(c, 'w-lost', slot === lost ? 'infra:provider_error' : 'agent', slot === lost ? { last_status: '503' } : {});
+      reported += 1;
+    }
+    expect(reported).toBe(29);
+    await e.grade('g-lost', () => 'pass');
+    const cmp = await compare(exp.id);
+    expect(cmp.status).toBe('complete');
+    const s = cmp.stats!;
+    expect(s.b).toMatchObject({ graded: 13 });
+    expect(s.a).toMatchObject({ graded: 14 });
+    const task = lost!.split('|')[2];
+    expect(s.missing_trials).toEqual({
+      planned: 2,
+      a: 0,
+      b: 1,
+      tasks: [{ task: cat.tasks[task], task_id: task, a: 0, b: 1 }],
+      text: expect.stringContaining("The arms' trial counts are unequal: arm A has 14 of its 14 planned trials and arm B has 13 of its 14 planned trials.") as string,
+    });
+    expect(s.verdict_text).toContain(`1 slot on 1 task (${task}) ended with no trial to grade`);
+  });
+
   it('says why there are no statistics: grading still running, or a pilot of one config', async () => {
     const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: tasks().slice(0, 2), n: 1, futility: { enabled: false } });
     await run('w-wait', () => 'pass', false);
