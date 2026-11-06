@@ -1,0 +1,153 @@
+{
+ "contract_version": "2",
+ "checks_version": "0.5.0",
+ "trial_id": "rag-synthetic-rag-tax-new-regime-made-up",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "₹3 lakh",
+   "value": 300000,
+   "supported_by": "client",
+   "match": {
+    "value": 310000,
+    "where": "client:client.json",
+    "how": "rounded",
+    "precision": 100000
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹7 lakh",
+   "value": 700000,
+   "supported_by": "derived",
+   "match": null,
+   "verified_by": "derived_in_prose",
+   "derivation": {
+    "op": "multiply",
+    "operands": [
+     {
+      "value": 60000,
+      "where": "client:client.json"
+     },
+     {
+      "value": 12,
+      "where": "unit fact"
+     }
+    ],
+    "value": 720000,
+    "how": "rounded"
+   },
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹10 lakh",
+   "value": 1000000,
+   "supported_by": "derived",
+   "match": null,
+   "verified_by": "derived_in_prose",
+   "derivation": {
+    "op": "multiply",
+    "operands": [
+     {
+      "value": 84250,
+      "where": "client:client.json"
+     },
+     {
+      "value": 12,
+      "where": "unit fact"
+     }
+    ],
+    "value": 1011000,
+    "how": "rounded"
+   },
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹12 lakh",
+   "value": 1200000,
+   "supported_by": "derived",
+   "match": null,
+   "verified_by": "derived_in_prose",
+   "derivation": {
+    "op": "subtract",
+    "operands": [
+     {
+      "value": 1500000,
+      "where": "answer:0"
+     },
+     {
+      "value": 300000,
+      "where": "answer:0"
+     }
+    ],
+    "value": 1200000,
+    "how": "exact"
+   },
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹15 lakh",
+   "value": 1500000,
+   "supported_by": "derived",
+   "match": null,
+   "verified_by": "derived_in_prose",
+   "derivation": {
+    "op": "subtract",
+    "operands": [
+     {
+      "value": 1800000,
+      "where": "answer:0"
+     },
+     {
+      "value": 300000,
+      "where": "answer:0"
+     }
+    ],
+    "value": 1500000,
+    "how": "exact"
+   },
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹18 lakh",
+   "value": 1800000,
+   "supported_by": "user",
+   "match": {
+    "value": 1800000,
+    "where": "task:0",
+    "how": "exact",
+    "precision": 100000
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹2,30,000",
+   "value": 230000,
+   "supported_by": null,
+   "match": null,
+   "verified_by": null,
+   "derivation": null,
+   "rejected": null
+  }
+ ],
+ "unsupported": 1,
+ "derived_in_prose": 4,
+ "tools_called": [],
+ "required_tools": {
+  "required": [],
+  "called": [],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": []
+}

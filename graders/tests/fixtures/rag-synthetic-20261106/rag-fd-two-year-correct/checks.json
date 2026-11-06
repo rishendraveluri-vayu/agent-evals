@@ -1,0 +1,67 @@
+{
+ "contract_version": "2",
+ "checks_version": "0.5.0",
+ "trial_id": "rag-synthetic-rag-fd-two-year-correct",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "₹5 lakh",
+   "value": 500000,
+   "supported_by": "user",
+   "match": {
+    "value": 500000,
+    "where": "task:0",
+    "how": "exact",
+    "precision": 100000
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹5,73,876.57",
+   "value": 573876.57,
+   "supported_by": "tool",
+   "match": {
+    "value": 573876.57,
+    "where": "tool:fd_maturity",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 1
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹73,876.57",
+   "value": 73876.57,
+   "supported_by": "tool",
+   "match": {
+    "value": 73876.57,
+    "where": "tool:fd_maturity",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 1
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  }
+ ],
+ "unsupported": 0,
+ "derived_in_prose": 0,
+ "tools_called": [
+  "search_documents",
+  "fd_maturity"
+ ],
+ "required_tools": {
+  "required": [],
+  "called": [],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": []
+}

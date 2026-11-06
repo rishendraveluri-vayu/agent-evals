@@ -1,0 +1,81 @@
+{
+ "contract_version": "2",
+ "trial_id": "rag-synthetic-rag-convo-card-late-fee-made-up",
+ "attempt": 1,
+ "harness": "ownloop",
+ "label": "agent",
+ "end_state": "answered",
+ "adapter": {
+  "exit_code": 0,
+  "signal": null,
+  "result_valid": true,
+  "result_errors": [],
+  "trace_valid": true,
+  "trace_errors": [],
+  "leftover_processes": 0
+ },
+ "proxy_usage": null,
+ "logs": {
+  "stdout": {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "truncated": false
+  },
+  "stderr": {
+   "path": "stderr.log",
+   "bytes": 83,
+   "sha256": "b5b82b22a5b35d49ab6e9bdee9a8d7bfe7d4d302e4737fcac71e4a9e345d2f52",
+   "truncated": false
+  }
+ },
+ "files": [
+  {
+   "path": "checks.json",
+   "bytes": 526,
+   "sha256": "f772b2f56bedaa0570e4f374fd84a95b13a80f46bb5c8e373675906c54fc0b03"
+  },
+  {
+   "path": "result.json",
+   "bytes": 3182,
+   "sha256": "53e4cb696f0bd2a444eb6f05d42491e4a81a46e812dc1654b2a1be9b0dc3f6b8"
+  },
+  {
+   "path": "sim_replies.jsonl",
+   "bytes": 760,
+   "sha256": "046a114ea18eb1d45effda939dd1262d3e9e228f8ba5e2972216f0fb8f4c028b"
+  },
+  {
+   "path": "stderr.log",
+   "bytes": 83,
+   "sha256": "b5b82b22a5b35d49ab6e9bdee9a8d7bfe7d4d302e4737fcac71e4a9e345d2f52"
+  },
+  {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "path": "trace.jsonl",
+   "bytes": 3627,
+   "sha256": "bce5c1e382cf6080e38a95a01f1d8a9a7a8b0d996598a8a041f83934e22c0b99"
+  }
+ ],
+ "timing": {
+  "started_at": "2026-11-06T07:55:29.185592Z",
+  "ended_at": "2026-11-06T07:55:34.515666Z",
+  "wall_s": 5.33,
+  "safety_net_s": 120.0
+ },
+ "checks": {
+  "path": "checks.json",
+  "valid": true,
+  "errors": [],
+  "unsupported_amounts": 1,
+  "amounts": 1,
+  "derived_in_prose": 0,
+  "missing_tools": [
+   "list_debts"
+  ]
+ }
+}

@@ -1,0 +1,102 @@
+{
+ "contract_version": "2",
+ "checks_version": "0.5.0",
+ "trial_id": "rag-synthetic-rag-fd-break-early-correct",
+ "amounts": [
+  {
+   "turn": 0,
+   "text": "₹2 lakh",
+   "value": 200000,
+   "supported_by": "user",
+   "match": {
+    "value": 200000,
+    "where": "task:0",
+    "how": "exact",
+    "precision": 100000
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹2,11,333.16",
+   "value": 211333.16,
+   "supported_by": "tool",
+   "match": {
+    "value": 211333.16,
+    "where": "tool:fd_maturity",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 3
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  },
+  {
+   "turn": 0,
+   "text": "₹11,333.16",
+   "value": 11333.16,
+   "supported_by": "tool",
+   "match": {
+    "value": 11333.16,
+    "where": "tool:fd_maturity",
+    "how": "exact",
+    "precision": 0.01,
+    "call": 3
+   },
+   "verified_by": "source",
+   "derivation": null,
+   "rejected": null
+  }
+ ],
+ "unsupported": 0,
+ "derived_in_prose": 0,
+ "tools_called": [
+  "search_documents",
+  "subtract",
+  "fd_maturity"
+ ],
+ "required_tools": {
+  "required": [],
+  "called": [],
+  "missing": [],
+  "only_errors": []
+ },
+ "arithmetic": [
+  {
+   "call": 2,
+   "tool": "subtract",
+   "turn": 0,
+   "supported": false,
+   "inputs": [
+    {
+     "arg": "a",
+     "value": 6.55,
+     "supported_by": "tool",
+     "match": {
+      "value": 6.55,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 0.01,
+      "call": 1
+     }
+    },
+    {
+     "arg": "b",
+     "value": 1,
+     "supported_by": "tool",
+     "match": {
+      "value": 1,
+      "where": "tool:search_documents",
+      "how": "exact",
+      "precision": 0.1,
+      "call": 0
+     }
+    }
+   ],
+   "reason": "subtract was given no sourced amount (a sourced number of 100 or more)"
+  }
+ ]
+}

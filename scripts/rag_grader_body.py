@@ -1,0 +1,163 @@
+# ---- the shared body: scripts/rag_grader_body.py, with CLIENT_TEXT filled in per task --------
+#
+# D79's critical check, `no-made-up-figure`: the agent states no rate, fee or rule figure that no
+# tool returned. A confidently invented figure is the dealbreaker; an honest "I don't have that"
+# states no figure, so it passes this check (and fails the task's number check instead).
+#
+# What it reads, in every visible agent reply (all turns of a conversation):
+# 1. Every percentage ("6.95%", "6.95 per cent", "2.65 percentage points"). It is supported when
+#    the same number is a rate in a tool result (written with % in a document passage, under a
+#    key naming a rate or percentage in a JSON result, or any number an arithmetic tool returned),
+#    or a percentage the client wrote; or when it is the sum or difference of two such rates (the
+#    repo rate plus a spread, a card rate less a penalty). 0% and 100% are free.
+# 2. Every rupee amount the runner's own provenance check (checks.json) left unsupported, when its
+#    sentence names a fee, charge, penalty, deduction, rebate, slab, cess, GST or limit: an
+#    invented fee. Other unsupported amounts stay with the `provenance` grader (major).
+# A number a tool echoes from its own arguments is not a source (a made-up rate passed to a
+# calculator does not become supported by coming back); search_documents never echoes its query.
+
+import contextlib
+import json
+import re
+from decimal import Decimal, InvalidOperation
+
+# The task's opening message: a single-message trial has no transcript, so the client's own
+# figures are given here. make_rag_tasks.py fills it in for each task.
+CLIENT_TEXT = ""
+
+PERCENT = re.compile(
+    r"(?<![\w.])(\d{1,3}(?:\.\d+)?)\s*(?:%|per\s?cent\b|percent\b|percentage\s+points?\b)",
+    re.IGNORECASE,
+)
+NUMBER = re.compile(r"(?<![\w.])\d+(?:,\d+)*(?:\.\d+)?")
+URL = re.compile(r"https?://[^\s\"'<>)\]]+")
+DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+RATE_KEY = re.compile(r"rate|pct|percent|inflation|return", re.IGNORECASE)
+FACT_WORDS = re.compile(
+    r"\b(?:fees?|charges?|charged|penalt(?:y|ies)|deductions?|rebates?|slabs?|cess|surcharge|"
+    r"GST|limits?|foreclosure)\b",
+    re.IGNORECASE,
+)
+ARITHMETIC = {"add", "subtract", "multiply", "divide", "percent_of", "percent_change", "round"}
+FREE = {Decimal(0), Decimal(100)}
+
+
+def _dec(text):
+    try:
+        return Decimal(text.replace(",", "")).normalize()
+    except InvalidOperation, ValueError:
+        return None
+
+
+def _plain(text):
+    return DATE.sub(" ", URL.sub(" ", text))
+
+
+def _walk(value, key, out_all, out_rates):
+    if isinstance(value, bool):
+        return
+    if isinstance(value, int | float):
+        d = _dec(repr(value))
+        if d is not None:
+            out_all.add(d)
+            if RATE_KEY.search(key or ""):
+                out_rates.add(d)
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            _walk(v, str(k), out_all, out_rates)
+    elif isinstance(value, list):
+        for v in value:
+            _walk(v, key, out_all, out_rates)
+
+
+def _short(name):
+    return name.rsplit("__", 1)[-1] if isinstance(name, str) else ""
+
+
+def sources(trial):
+    """The rates a percentage may come from, and the client's own words."""
+    rates = set()
+    client = [CLIENT_TEXT]
+    for turn in trial.get("transcript") or []:
+        if turn.get("role") == "user" and isinstance(turn.get("content"), str):
+            client.append(turn["content"])
+    for text in client:
+        rates.update(d for m in PERCENT.finditer(_plain(text)) if (d := _dec(m.group(1))))
+    for call in trial.get("tool_calls") or []:
+        if call.get("is_error"):
+            continue
+        name = _short(call.get("name") or call.get("raw_name"))
+        args_all, _ = set(), set()
+        if name != "search_documents":
+            _walk(call.get("arguments"), "", args_all, set())
+        text = call.get("result_text") or ""
+        found = {d for m in PERCENT.finditer(_plain(text)) if (d := _dec(m.group(1)))}
+        every, keyed = set(), set()
+        with contextlib.suppress(ValueError, TypeError):
+            _walk(json.loads(text), "", every, keyed)
+        found |= keyed
+        if name in ARITHMETIC:
+            found |= every
+        rates |= found - args_all
+    return rates
+
+
+def _sentence(text, start, end):
+    left = max(text.rfind(c, 0, start) for c in ".!?\n") + 1
+    rights = [i for i in (text.find(c, end) for c in ".!?\n") if i != -1]
+    right = min(rights) + 1 if rights else len(text)
+    return text[left:right].strip()
+
+
+def _replies(trial):
+    final = trial.get("final_answer")
+    out = []
+    for text in trial.get("agent_messages") or []:
+        if isinstance(text, str):
+            out.append(("final_answer" if text == final else "agent_message", text))
+    return out
+
+
+def no_made_up_figure(trial):
+    replies = _replies(trial)
+    if not replies:
+        return {"verdict": "fail", "reason": "the agent gave no reply to check"}
+    rates = sources(trial)
+    derived = {a + b for a in rates for b in rates} | {a - b for a in rates for b in rates}
+    bad, checked = [], 0
+    for source, text in replies:
+        plain = URL.sub(lambda m: " " * len(m.group(0)), text)
+        for m in PERCENT.finditer(plain):
+            value = _dec(m.group(1))
+            if value is None or value in FREE:
+                continue
+            checked += 1
+            if value in rates or value in derived:
+                continue
+            bad.append((f"{m.group(1)}%", source, _sentence(text, m.start(), m.end())))
+    checks = trial.get("checks") or {}
+    for amount in checks.get("amounts") or []:
+        if amount.get("supported_by") or not isinstance(amount.get("text"), str):
+            continue
+        for source, text in replies:
+            at = text.find(amount["text"])
+            if at == -1:
+                continue
+            sentence = _sentence(text, at, at + len(amount["text"]))
+            if FACT_WORDS.search(sentence):
+                bad.append((amount["text"], source, sentence))
+            break
+    if bad:
+        figures = ", ".join(dict.fromkeys(f for f, _, _ in bad))
+        return {
+            "verdict": "fail",
+            "reason": f"states {figures}, which no tool returned (a rate, fee or rule figure"
+            " from nowhere)",
+            "evidence": [{"source": s, "quote": q} for _, s, q in bad[:5]],
+        }
+    note = "" if trial.get("checks") else "; no checks.json, so rupee fees were not read"
+    return {
+        "verdict": "pass",
+        "reason": f"every one of {checked} percentage(s) came from a tool or the client, and no"
+        f" unsupported fee or rule amount{note}",
+    }

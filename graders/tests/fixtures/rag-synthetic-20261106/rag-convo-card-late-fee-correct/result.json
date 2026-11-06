@@ -1,0 +1,146 @@
+{
+ "contract_version": "2",
+ "trial_id": "rag-synthetic-rag-convo-card-late-fee-correct",
+ "end_state": "answered",
+ "end_detail": {
+  "harness_stop_reason": "stop",
+  "exception_type": null,
+  "exception_message": null,
+  "last_message_excerpt": "Then pay at least the minimum, ₹4,212.50, before the due date: that avoids the ₹1,375 late fee. Interest still runs on the rest, so clear it as soon as the hospital bills settle."
+ },
+ "final_answer": "Then pay at least the minimum, ₹4,212.50, before the due date: that avoids the ₹1,375 late fee. Interest still runs on the rest, so clear it as soon as the hospital bills settle.",
+ "conversation": {
+  "agent_turns": 2,
+  "client_turns": 2,
+  "ended_by": "client",
+  "transcript": [
+   {
+    "role": "user",
+    "content": "Ma's hospital bills came this month and I don't think I can pay my Kaveri Bank credit card bill in full. What happens if I pay late?",
+    "source": "task"
+   },
+   {
+    "role": "assistant",
+    "content": "I'm sorry about your mother's hospital bills; that is a lot at once. If the minimum amount due is not paid by the due date, Kaveri Bank charges a late payment fee of ₹1,375, because your total due, ₹84,250, is above ₹50,000. Interest at 42% a year also runs on whatever is unpaid. Can you manage the minimum this month?",
+    "source": "agent"
+   },
+   {
+    "role": "user",
+    "content": "I can pay the minimum, but not the full bill.",
+    "source": "client_sim"
+   },
+   {
+    "role": "assistant",
+    "content": "Then pay at least the minimum, ₹4,212.50, before the due date: that avoids the ₹1,375 late fee. Interest still runs on the rest, so clear it as soon as the hospital bills settle.",
+    "source": "agent"
+   },
+   {
+    "role": "user",
+    "content": "Thank you, that helps.",
+    "source": "client_sim"
+   }
+  ]
+ },
+ "harness": {
+  "name": "ownloop",
+  "version": "0.1.0 (openai 3.42.1, mcp 2.3.0)",
+  "extra": {
+   "tool_names": [
+    "calculate_emi",
+    "amortization_schedule",
+    "prepayment_impact",
+    "debt_payoff_plan",
+    "sip_future_value",
+    "fd_maturity",
+    "inflation_adjusted_value",
+    "loan_affordability",
+    "get_client_profile",
+    "list_debts",
+    "list_transactions",
+    "add",
+    "subtract",
+    "multiply",
+    "divide",
+    "percent_of",
+    "percent_change",
+    "round",
+    "reference_rates",
+    "search_documents"
+   ]
+  }
+ },
+ "applied_settings": {
+  "temperature": {
+   "value": 0.2,
+   "source": "platform_default"
+  },
+  "max_output_tokens": {
+   "value": 1024,
+   "source": "platform_default"
+  },
+  "max_steps": {
+   "value": 10,
+   "source": "platform_default"
+  },
+  "timeout_s": {
+   "value": 60,
+   "source": "platform_default"
+  },
+  "parallel_tool_calls": {
+   "value": false,
+   "source": "platform_default"
+  },
+  "memory": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "the loop has no memory"
+  },
+  "skills": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "the loop has no skills"
+  },
+  "compression": {
+   "value": null,
+   "source": "unsupported",
+   "observed": "the loop never compresses; the full history is sent"
+  },
+  "top_p": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  },
+  "seed": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  },
+  "tool_choice": {
+   "value": null,
+   "source": "harness_default",
+   "observed": "not sent; the provider's default applies"
+  }
+ },
+ "harness_usage": {
+  "model_calls": 4,
+  "input_tokens": 17539,
+  "output_tokens": 143,
+  "cost_usd": null
+ },
+ "counts": {
+  "model_calls": 4,
+  "tool_calls": 2,
+  "tool_errors": 0,
+  "malformed_tool_calls": 0
+ },
+ "integrity": {
+  "before": {},
+  "after": {}
+ },
+ "timing": {
+  "started_at": "2026-11-06T07:55:27.708152Z",
+  "ended_at": "2026-11-06T07:55:29.094385Z",
+  "wall_s": 1.386
+ },
+ "artifacts": []
+}

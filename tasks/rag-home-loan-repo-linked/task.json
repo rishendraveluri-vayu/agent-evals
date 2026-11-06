@@ -1,0 +1,68 @@
+{
+  "id": "rag-home-loan-repo-linked",
+  "version": "1",
+  "split": "discovery",
+  "kind": "single_prompt",
+  "summary": "A Rs 40 lakh Kaveri Bank home loan for 20 years with a CIBIL score of 790: the rate (repo + 2.65) and the EMI.",
+  "split_note": "D79 retrieval experiment (6 Nov), not one of D53's 21 tasks. Never used to write a prompt or tune a rubric. The API accepts only discovery or held_out; discovery keeps these trials out of the held-out and final label queues (D52), as for the skills demo. A split of its own is a proposal for Rishi (docs/proposals/rag-experiment.md).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "My CIBIL score is 790. What interest rate would Kaveri Bank charge me today on a ₹40 lakh home loan for 20 years, and what would the EMI be?"
+    }
+  ],
+  "client_sim": null,
+  "client_state": null,
+  "graders": [
+    {
+      "id": "emi",
+      "type": "number",
+      "required": true,
+      "severity": "major",
+      "description": "The EMI at 8.15%: the repo rate 5.50% plus Kaveri Bank's 2.65 points, with no spread for CIBIL 750 and above, over 240 months.",
+      "expected": 33831.98,
+      "tolerance": {
+        "abs": 1
+      }
+    },
+    {
+      "id": "no-made-up-figure",
+      "type": "unit_test",
+      "required": true,
+      "severity": "critical",
+      "description": "D79's dealbreaker: every percentage in the agent's replies is a rate a tool returned (or the sum or difference of two), or one the client wrote; and no rupee fee, charge, penalty, deduction, rebate or limit is one the runner's provenance check left unsupported. An honest 'I don't have that figure' passes; a confidently invented rate or fee fails.",
+      "file": "grader.py",
+      "function": "no_made_up_figure"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "severity": "major",
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's.",
+      "rubric": "configs/rubrics/advice.v1.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "explains-plainly",
+          "text": "Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no."
+        }
+      ],
+      "severity": "major"
+    }
+  ],
+  "document_sources": [
+    "kb-loan-products: home loans (EBLR = repo + 2.65; +0.00 for CIBIL 750+)",
+    "kb-bulletin-2026-11: RBI policy rates (repo 5.50%)"
+  ],
+  "judge_criteria_to_write": "Needs the loan products sheet (EBLR = repo + 2.65 points; no spread for CIBIL 750 and above) and the repo rate, 5.50%, from the bulletin (also in reference_rates, so arm A can find the repo rate but not the spread). 5.50 + 2.65 = 8.15; calculate_emi(4000000, 8.15, 240)."
+}

@@ -1,0 +1,74 @@
+{
+ "contract_version": "2",
+ "trial_id": "rag-synthetic-rag-home-loan-repo-linked-correct",
+ "attempt": 1,
+ "harness": "ownloop",
+ "label": "agent",
+ "end_state": "answered",
+ "adapter": {
+  "exit_code": 0,
+  "signal": null,
+  "result_valid": true,
+  "result_errors": [],
+  "trace_valid": true,
+  "trace_errors": [],
+  "leftover_processes": 0
+ },
+ "proxy_usage": null,
+ "logs": {
+  "stdout": {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "truncated": false
+  },
+  "stderr": {
+   "path": "stderr.log",
+   "bytes": 83,
+   "sha256": "1097838d5f7e1ed474de7dbaef9cd2215205d75c858abab80f24d30811f07042",
+   "truncated": false
+  }
+ },
+ "files": [
+  {
+   "path": "checks.json",
+   "bytes": 1593,
+   "sha256": "a1592fdf8c415b129224889370368fd22ea1780ff702c6281056d65f7c58fa2c"
+  },
+  {
+   "path": "result.json",
+   "bytes": 3419,
+   "sha256": "ec03cfa180b536d8a9295881b4d0ff7d7a8bfee95e0e479926492ff2b7b36da8"
+  },
+  {
+   "path": "stderr.log",
+   "bytes": 83,
+   "sha256": "1097838d5f7e1ed474de7dbaef9cd2215205d75c858abab80f24d30811f07042"
+  },
+  {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "path": "trace.jsonl",
+   "bytes": 8797,
+   "sha256": "57e9a91301674e479444700717e2f0b4d0b5362501eb25ba734225c9915e44ae"
+  }
+ ],
+ "timing": {
+  "started_at": "2026-11-06T07:55:00.067657Z",
+  "ended_at": "2026-11-06T07:55:04.496517Z",
+  "wall_s": 4.429,
+  "safety_net_s": 120.0
+ },
+ "checks": {
+  "path": "checks.json",
+  "valid": true,
+  "errors": [],
+  "unsupported_amounts": 0,
+  "amounts": 2,
+  "derived_in_prose": 0,
+  "missing_tools": []
+ }
+}

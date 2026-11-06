@@ -1,0 +1,81 @@
+{
+ "contract_version": "2",
+ "trial_id": "rag-synthetic-rag-convo-two-wheeler-bonus-made-up",
+ "attempt": 1,
+ "harness": "ownloop",
+ "label": "agent",
+ "end_state": "answered",
+ "adapter": {
+  "exit_code": 0,
+  "signal": null,
+  "result_valid": true,
+  "result_errors": [],
+  "trace_valid": true,
+  "trace_errors": [],
+  "leftover_processes": 0
+ },
+ "proxy_usage": null,
+ "logs": {
+  "stdout": {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "truncated": false
+  },
+  "stderr": {
+   "path": "stderr.log",
+   "bytes": 83,
+   "sha256": "78ffa1c89d1aa13b0b7900b4422b5c4cbed9229eed47256f393d97191e361420",
+   "truncated": false
+  }
+ },
+ "files": [
+  {
+   "path": "checks.json",
+   "bytes": 530,
+   "sha256": "df061d95aa33ac023ea9e20acc09e978875c383e2e364cfc1217e859ad364e9a"
+  },
+  {
+   "path": "result.json",
+   "bytes": 3184,
+   "sha256": "4aff654ed526d6c4ba1868e24ba7cad30848e96eed601aba046a907481144074"
+  },
+  {
+   "path": "sim_replies.jsonl",
+   "bytes": 747,
+   "sha256": "fc5eb6e71cf10d84dfdfe2ed1177a213a6e836950d6438d2a43a2de11f9609c1"
+  },
+  {
+   "path": "stderr.log",
+   "bytes": 83,
+   "sha256": "78ffa1c89d1aa13b0b7900b4422b5c4cbed9229eed47256f393d97191e361420"
+  },
+  {
+   "path": "stdout.log",
+   "bytes": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "path": "trace.jsonl",
+   "bytes": 3627,
+   "sha256": "a49b4b413a2669abcc14d444c15a4524374eb1aff536b1c628cf1a49e83920e5"
+  }
+ ],
+ "timing": {
+  "started_at": "2026-11-06T07:55:21.343162Z",
+  "ended_at": "2026-11-06T07:55:25.351887Z",
+  "wall_s": 4.009,
+  "safety_net_s": 120.0
+ },
+ "checks": {
+  "path": "checks.json",
+  "valid": true,
+  "errors": [],
+  "unsupported_amounts": 1,
+  "amounts": 1,
+  "derived_in_prose": 0,
+  "missing_tools": [
+   "list_debts"
+  ]
+ }
+}

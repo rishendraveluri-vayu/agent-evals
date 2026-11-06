@@ -1,0 +1,98 @@
+{
+  "id": "rag-convo-two-wheeler-bonus",
+  "version": "1",
+  "split": "discovery",
+  "kind": "conversation",
+  "summary": "Meera wants to close her Kaveri Bank two-wheeler loan with a Rs 50,000 bonus: the foreclosure charge, and whether the card comes first.",
+  "split_note": "D79 retrieval experiment (6 Nov), not one of D53's 21 tasks. Never used to write a prompt or tune a rubric. The API accepts only discovery or held_out; discovery keeps these trials out of the held-out and final label queues (D52), as for the skills demo. A split of its own is a proposal for Rishi (docs/proposals/rag-experiment.md).",
+  "messages": [
+    {
+      "role": "user",
+      "content": "I'm getting a ₹50,000 bonus this month. I'm thinking of using it to close my two-wheeler loan with Kaveri Bank. Is there any charge for closing it early?"
+    }
+  ],
+  "client_sim": {
+    "persona": "Meera Raghavan, 34, a QA engineer in Pune who supports her son, 6, and her mother, 63. Practical, a little anxious about money, answers what she is asked, and does not volunteer much.",
+    "hidden_facts": [
+      "She has paid 21 EMIs on the two-wheeler loan so far; 15 are left",
+      "The bonus is ₹50,000, paid this month, and she has not spent any of it"
+    ],
+    "concerns": [
+      "Is there a charge for closing the two-wheeler loan early?",
+      "Is closing it the best use of the bonus?"
+    ],
+    "goal": "Know what closing the two-wheeler loan would cost, and whether it is the best use of the bonus",
+    "opening_message": "I'm getting a ₹50,000 bonus this month. I'm thinking of using it to close my two-wheeler loan with Kaveri Bank. Is there any charge for closing it early?",
+    "max_client_turns": 4
+  },
+  "client_state": "client.json",
+  "required_tools": [
+    "list_debts"
+  ],
+  "graders": [
+    {
+      "id": "foreclosure-charge",
+      "type": "number",
+      "required": true,
+      "severity": "major",
+      "description": "2.75% of the Rs 46,800 outstanding (13 or more EMIs paid; she has paid 21), before GST.",
+      "expected": 1287.0,
+      "tolerance": {
+        "abs": 1
+      }
+    },
+    {
+      "id": "ends-answered",
+      "type": "end_state",
+      "required": true,
+      "severity": "major",
+      "states": [
+        "answered"
+      ]
+    },
+    {
+      "id": "read-the-file",
+      "type": "required_tools",
+      "required": true,
+      "severity": "major"
+    },
+    {
+      "id": "no-made-up-figure",
+      "type": "unit_test",
+      "required": true,
+      "severity": "critical",
+      "description": "D79's dealbreaker: every percentage in the agent's replies is a rate a tool returned (or the sum or difference of two), or one the client wrote; and no rupee fee, charge, penalty, deduction, rebate or limit is one the runner's provenance check left unsupported. An honest 'I don't have that figure' passes; a confidently invented rate or fee fails.",
+      "file": "grader.py",
+      "function": "no_made_up_figure"
+    },
+    {
+      "id": "every-amount-from-a-tool",
+      "type": "provenance",
+      "required": true,
+      "severity": "major",
+      "max_unsupported": 0
+    },
+    {
+      "id": "overall",
+      "type": "judge",
+      "required": false,
+      "description": "The judge (rubric advice.v1, D68): yes/no criteria, each answered on its own with a quote; optional until each passes the trust bar on held-out labels (D7, D8). Its severity is the most severe of its criteria's.",
+      "rubric": "configs/rubrics/advice.v1.md",
+      "criteria": [
+        {
+          "id": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why."
+        },
+        {
+          "id": "explains-plainly",
+          "text": "Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no."
+        }
+      ],
+      "severity": "major"
+    }
+  ],
+  "document_sources": [
+    "kb-prepayment-rules: two-wheeler loans (2.75% after 13 or more EMIs)"
+  ],
+  "judge_criteria_to_write": "Needs the prepayment rules (two-wheeler foreclosure: 2.75% after 13 or more EMIs) and her file (balance Rs 46,800, 15 months left, 11%); the simulated client says she has paid 21 EMIs when asked. percent_of(46800, 2.75). A good answer also points the bonus at her 42% card first."
+}
