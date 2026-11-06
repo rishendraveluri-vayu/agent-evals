@@ -982,7 +982,7 @@ const planNote = computed(() => {
 const startLabel = computed(() => {
   const fresh = !!draftEstimate.value && draftEstimate.value.trials === plannedTrials.value;
   const count = draft ? (fresh ? plannedTrials.value : null) : (estimate.value?.trials ?? null);
-  return count ? `Start ${count} trials` : 'Start';
+  return count ? `Start ${plural(count, 'trial')}` : 'Start';
 });
 
 /** The paid-run confirmation's facts (D38's pattern): trials, models, the most it can cost, the limit. */
@@ -1732,7 +1732,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
               </p>
               <ul class="small confirm-facts">
                 <li v-if="paidFacts.trials">
-                  {{ paidFacts.trials }} trials
+                  {{ plural(paidFacts.trials, 'trial') }}
                 </li>
                 <li
                   v-for="m in paidFacts.models"

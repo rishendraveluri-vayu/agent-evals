@@ -304,7 +304,7 @@ const hero = computed(() => {
   const [a, b] = arms.value;
   const name = a && b && a.short !== b.short ? `${b.short} minus ${a.short}` : 'B minus A';
   // Arm colour only when the result holds up; a result with no clear difference is grey.
-  const rows: StripRow[] = [{ estimate: s.diff.estimate, low: s.diff.low, high: s.diff.high, tone: verdictTone(s.verdict), label: `${name}, ${s.tasks.length} tasks` }];
+  const rows: StripRow[] = [{ estimate: s.diff.estimate, low: s.diff.low, high: s.diff.high, tone: verdictTone(s.verdict), label: `${name}, ${plural(s.tasks.length, 'task')}` }];
   const aa: StripRow[] = s.aa ? [{ estimate: s.aa.diff.estimate, low: s.aa.diff.low, high: s.aa.diff.high, tone: 'neutral', size: 'sm', label: 'A/A calibration, same config twice' }] : [];
   return {
     level,
@@ -860,7 +860,7 @@ const worthALook = computed(() => {
                 class="nowrap"
                 data-test="sim-client"
               >simulated client {{ simClient }}</span> ·
-            </template><span class="nowrap">{{ totalTrials(data.detail) }} trials</span><template v-if="commits.plan">
+            </template><span class="nowrap">{{ plural(totalTrials(data.detail), 'trial') }}</span><template v-if="commits.plan">
               · <a
                 :href="href.run(data.detail.id)"
                 class="secondary nowrap"

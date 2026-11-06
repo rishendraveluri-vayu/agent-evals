@@ -237,3 +237,26 @@ describe('ExperimentsView with the shipped examples loaded (destructive review U
     w.unmount();
   });
 });
+
+describe('ExperimentsView counts in words (destructive review U14)', () => {
+  it('says "1 task" and "1 trial", never "1 tasks" or "1 trials"', async () => {
+    const done = (experiments as { id: string }[]).find((e) => e.id === 'exp_heldout') as Record<string, unknown>;
+    const detail = (details as Record<string, Record<string, unknown>>).exp_heldout as { tasks: unknown[] };
+    const compare = compares.exp_heldout as unknown as { stats: { tasks: unknown[] } };
+    routeFetch({
+      '/api/experiments': [{ ...done, n: 1 }],
+      '/api/configs': configs,
+      '/api/harnesses': [],
+      '/api/labels/queue?set=heldout': [],
+      '/api/labels/queue?set=tuning': [],
+      '/api/experiments/exp_heldout/compare': { ...compare, stats: { ...compare.stats, tasks: compare.stats.tasks.slice(0, 1) } },
+      '/api/experiments/exp_heldout': { ...detail, n: 1, tasks: detail.tasks.slice(0, 1) },
+    });
+    const w = mount(ExperimentsView);
+    await settle();
+    const latest = w.get('[data-test="latest-result"]');
+    expect(latest.get('figcaption').text()).toContain('paired over 1 held-out task with 1 trial each.');
+    expect(latest.text()).toContain('v2 minus v1, 1 task');
+    expect(w.text()).not.toMatch(/\b1 (tasks|trials)\b/);
+  });
+});

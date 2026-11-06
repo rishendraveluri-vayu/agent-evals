@@ -98,7 +98,7 @@ const latestResult = computed(() => {
     low: stats.diff.low,
     high: stats.diff.high,
     tone: verdictTone(stats.verdict),
-    label: arms.length === 2 ? `${arms[1].short} minus ${arms[0].short}, ${stats.tasks.length} tasks` : undefined,
+    label: arms.length === 2 ? `${arms[1].short} minus ${arms[0].short}, ${plural(stats.tasks.length, 'task')}` : undefined,
   };
   const aa: StripRow[] = stats.aa ? [{ estimate: stats.aa.diff.estimate, low: stats.aa.diff.low, high: stats.aa.diff.high, tone: 'neutral', size: 'sm', label: 'A/A calibration, same config twice' }] : [];
   return {
@@ -113,7 +113,7 @@ const latestResult = computed(() => {
     max,
     ticks: ticksFor(min, max, 10),
     rows: [main, ...aa],
-    caption: `${level}% interval ${intervalText(stats.diff)}, paired over ${latest.tasks.length}${split ? ` ${split}` : ''} tasks with ${latest.n} trials each.${noise}`,
+    caption: `${level}% interval ${intervalText(stats.diff)}, paired over ${latest.tasks.length}${split ? ` ${split}` : ''} ${latest.tasks.length === 1 ? 'task' : 'tasks'} with ${plural(latest.n, 'trial')} each.${noise}`,
     caveat: judgeCaveat({
       differing: stats.tasks.filter((t) => t.beyond_noise).map((t) => latest.tasks.find((x) => x.sha256 === t.task || x.id === t.task)),
       isJudged,
