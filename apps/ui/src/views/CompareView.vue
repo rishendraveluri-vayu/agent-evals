@@ -10,6 +10,7 @@ import IntervalStrip from '../components/IntervalStrip.vue';
 import JudgePanel from '../components/JudgePanel.vue';
 import LoadState from '../components/LoadState.vue';
 import NotFound from '../components/NotFound.vue';
+import TrustBadge from '../components/TrustBadge.vue';
 import VerdictTag from '../components/VerdictTag.vue';
 import { agreementWords, armDifferences, armIndexOf, armLetter, armsOf, armState, differingShort, namedByHash, noDiffWords as noDiffFor, excludesZero, noWidth, shownWidth, intervalText, judgeCaveat, NBSP, passedText, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
@@ -18,7 +19,7 @@ import { identParts, money, percent, plainText, plural, seconds, shortHash, shor
 import { isFake } from '../lib/models';
 import { alsoGradedBy, experimentName, gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
-import { labelSetFor } from '../lib/trust';
+import { labelSetFor, rubricName } from '../lib/trust';
 import { href } from '../router';
 
 /** `panel`: `judge` opens the page at its judge panel (the trial page links there). */
@@ -49,11 +50,11 @@ interface Loaded {
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
   // A shipped example has no judge panel and its trials are never in the label queue, so its page
-  // does not fetch the held-out queue (every held-out output, a large reply), the agreement or the
-  // judges' trust.
+  // does not fetch the held-out queue (every held-out output, a large reply) or the agreement. It
+  // does read its judges' trust (D83), shown read-only, since a reviewer starts on this page.
   const detailP = experimentOrMissing(props.experimentId);
   const blindP = detailP.then(async (d): Promise<{ judge: JudgeAgreement | null; queue: BlindItem[]; trust: JudgeTrust[] | null }> => {
-    if (d.example) return { judge: null, queue: [], trust: null };
+    if (d.example) return { judge: null, queue: [], trust: await optional(api.judgeTrust(d.id).then((r) => r.judges), null) };
     const [judge, queue, trust] = await Promise.all([
       optional(api.judgeAgreement('heldout'), null),
       optional(api.labelQueue('heldout'), [] as BlindItem[]),
@@ -1226,6 +1227,40 @@ const worthALook = computed(() => {
         @changed="refreshJudge"
       />
 
+      <!-- A shipped example's judges, read-only (D83): no approval, regrade or calibrating here. -->
+      <section
+        v-if="data.detail.example && data.trust && data.trust.length"
+        aria-labelledby="example-judge"
+        class="stack"
+        data-test="example-judge-trust"
+      >
+        <h2
+          id="example-judge"
+          class="section-title"
+        >
+          LLM judge
+        </h2>
+        <p class="small">
+          This run's trials were also graded by an LLM judge. Its verdicts are on each trial page, but they count in nothing: a judge counts only once it agrees with people's labels well enough.
+        </p>
+        <ul class="example-trust-list">
+          <li
+            v-for="j in data.trust"
+            :key="`${j.judge_model} ${j.rubric}`"
+            data-test="example-judge-row"
+          >
+            <span class="small"><span class="strong">{{ modelName(j.judge_model) }}</span>, rubric <span class="mono">{{ rubricName(j.rubric) }}</span></span>
+            <TrustBadge :status="j.status" />
+            <span class="small secondary example-trust-summary">{{ plainText(j.summary) }}</span>
+          </li>
+        </ul>
+        <a
+          class="small"
+          :href="href.judge()"
+          data-test="example-judge-link"
+        >Every question, on the judge page</a>
+      </section>
+
       <section
         v-if="metrics.length"
         aria-labelledby="costs"
@@ -2239,5 +2274,21 @@ const worthALook = computed(() => {
   align-items: center;
   min-height: 32px;
   color: var(--ink);
+}
+.example-trust-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.example-trust-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+}
+.example-trust-summary {
+  flex-basis: 100%;
 }
 </style>

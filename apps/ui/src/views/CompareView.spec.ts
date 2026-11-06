@@ -608,7 +608,30 @@ describe('CompareView against the API: no statistics yet', () => {
     // (every held-out output, a large reply) nor the agreement is fetched.
     expect(calls.map((c) => c.url)).not.toContain('/api/labels/queue?set=heldout');
     expect(calls.map((c) => c.url)).not.toContain('/api/judge/agreement?set=heldout');
-    expect(calls.map((c) => c.url).filter((u) => u.startsWith('/api/judge/trust'))).toEqual([]);
+    // D83: its judges' trust is read for a read-only section (no calibrate: its trials are never queued).
+    expect(calls.map((c) => c.url).filter((u) => u.startsWith('/api/judge/trust'))).toEqual(['/api/judge/trust?experiment=exp_heldout']);
+    expect(w.find('[data-test="example-judge-trust"]').exists()).toBe(false); // no judges in this reply
+  });
+
+  it('shows a shipped example\'s judges read-only, with their trust and no calibrate button (D83)', async () => {
+    const detail = (details as Record<string, Record<string, unknown>>).exp_heldout;
+    routeFetch({
+      '/api/experiments/exp_heldout': { ...detail, example: { name: 'headline', title: 'Headline', loaded_at: '2026-11-05T08:00:00.000Z' } },
+      '/api/experiments/exp_heldout/compare': compares.exp_heldout,
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/trust?experiment=exp_heldout': {
+        bar: { kappa: 0.6, kappa_low: 0.4, retest: 0.9, min_human_no: 5, max_undefined_share: 0.05, resamples: 2000, human_unsure: 'exclude' },
+        judges: [{ judge_model: 'gemini-3.8-flash', rubric: 'configs/rubrics/advice.v4.md', experiments: ['exp_heldout'], trials_judged: 200, criteria: [], status: 'not_trusted', summary: 'Not trusted: kappa 0.00 on 40 held-out labels is below 0.6.' }],
+      },
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const s = w.get('[data-test="example-judge-trust"]');
+    expect(s.text()).toContain('advice.v4');
+    expect(s.text()).toContain('Not trusted');
+    expect(s.text()).toContain('Not trusted: kappa 0.00 on 40 held-out labels is below 0.6.');
+    expect(w.get('[data-test="example-judge-link"]').attributes('href')).toBe('#/labels/judge');
+    expect(w.find('[data-test="judge-calibrate"]').exists()).toBe(false);
   });
 });
 
