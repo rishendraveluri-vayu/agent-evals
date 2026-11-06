@@ -7,6 +7,7 @@ import { normalizeSha } from '../common/hashing';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { newId } from '../common/ids';
 import type { StoredTask } from '../catalogue/catalogue.service';
+import { readHarnesses } from '../catalogue/catalogue-files';
 import { CONFIG_SELECT, type ConfigRow, configId } from '../configs/configs.service';
 import { Db, type Queryable } from '../database/db.service';
 import { NOT_EXAMPLE_TRIAL } from '../examples/example-guard';
@@ -40,6 +41,11 @@ interface TrialRow {
   sim_key_token: string | null;
   problems: string[];
 }
+
+/** The longest worker id a claim may give (E10). Compose's are `<harness>-<hostname>`. */
+const WORKER_ID_MAX = 200;
+/** How long the list of harness folders a claim is checked against is kept (E10). */
+const HARNESS_CACHE_MS = 30_000;
 
 const one = async <T>(q: Queryable, sql: string, params: unknown[]): Promise<T | undefined> =>
   ((await q.query(sql, params)).rows as T[])[0];
@@ -103,6 +109,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(WorkerService.name);
   private timer: NodeJS.Timeout | null = null;
   private sweeping = false;
+  private harnessCache: { at: number; names: Set<string> } | null = null;
 
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -144,11 +151,36 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     const b = (body ?? {}) as Record<string, unknown>;
     if (typeof b.worker_id !== 'string' || !b.worker_id) throw badRequest('invalid_claim', 'worker_id is required');
     if (typeof b.harness !== 'string' || !b.harness) throw badRequest('invalid_claim', 'harness is required');
+    if (b.worker_id.length > WORKER_ID_MAX || b.worker_id.includes('\u0000')) {
+      throw badRequest('invalid_claim', `worker_id must be 1 to ${WORKER_ID_MAX} characters, with no NUL`);
+    }
     const workerId = b.worker_id;
     const harness = b.harness;
+    // E10: a claim for a harness with no folder under workers/ can never get a trial; refused, so
+    // it adds no worker row either.
+    const harnesses = await this.harnessNames();
+    if (!harnesses.has(harness)) {
+      throw badRequest('unknown_harness', `no harness named ${JSON.stringify(harness.slice(0, 80))} under workers/`, `Set EVALS_HARNESS to one of: ${[...harnesses].sort().join(', ')}.`);
+    }
     const modelBaseUrl = this.litellm.workerBaseUrl; // fails early when LiteLLM is not configured
-    // Item 8: a worker that asks for work is live, whether or not it gets any.
-    await this.seen(workerId, harness);
+    const claimed = await this.claimNext(workerId, harness, modelBaseUrl);
+    // Item 8, narrowed by E10 (6 Nov review): a worker counts as live for the estimate once it holds
+    // a trial (this claim, then its heartbeats). An empty claim (204) records nothing, so claims
+    // under made-up worker ids no longer add live workers.
+    if (claimed) await this.seen(workerId, harness);
+    return claimed;
+  }
+
+  /** The harness folders under workers/ (scaffolded ones included), read at most every HARNESS_CACHE_MS. */
+  private async harnessNames(): Promise<Set<string>> {
+    const now = Date.now();
+    if (!this.harnessCache || now - this.harnessCache.at > HARNESS_CACHE_MS) {
+      this.harnessCache = { at: now, names: new Set((await readHarnesses(this.config.workersDir)).map((h) => h.name)) };
+    }
+    return this.harnessCache.names;
+  }
+
+  private claimNext(workerId: string, harness: string, modelBaseUrl: string): Promise<ClaimResponse | null> {
     return this.db.tx(async (client) => {
       // A probe trial (D33) has no experiment and goes first: it is a short pre-run check.
       const t = await one<TrialRow>(

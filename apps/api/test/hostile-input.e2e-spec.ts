@@ -145,4 +145,31 @@ describeWithDb('hostile input from workers and clients (e2e, real Postgres)', ()
     const timeout = await request(env.http).post('/api/configs').send({ ...base, name: 't', settings: { timeout_s: 1e9 } }).expect(400);
     expect(timeout.body).toMatchObject({ error: 'invalid_setting', message: 'timeout_s must be a number of seconds above 0 and at most 3600' });
   });
+
+  // ---- E10 ----
+
+  it('refuses a claim for a harness with no folder, and counts as live only workers that hold a trial (E10)', async () => {
+    const workers = async () => (await env.pool.query<{ worker_id: string }>('SELECT worker_id FROM workers ORDER BY worker_id')).rows.map((r) => r.worker_id);
+    const before = await workers();
+    const claim = (body: Record<string, unknown>) => request(env.http).post('/api/worker/claim').set(auth).send(body);
+    const unknown = await claim({ worker_id: 'ghost-h', harness: 'made-up' }).expect(400);
+    expect(unknown.body).toMatchObject({ error: 'unknown_harness', fix: expect.stringContaining('ownloop') as string });
+    await claim({ worker_id: 'x'.repeat(201), harness: 'ownloop' }).expect(400);
+    await claim({ worker_id: 'a\u0000b', harness: 'ownloop' }).expect(400);
+    // Nothing queued: 204, and a hundred made-up worker ids add no live worker.
+    for (let i = 0; i < 100; i += 1) await claim({ worker_id: `ghost-${i}`, harness: 'ownloop' }).expect(204);
+    expect(await workers()).toEqual(before);
+    const est = await request(env.http).post('/api/experiments/estimate').send({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 1 }).expect(200);
+    const live = (est.body as { basis_detail: { workers: Record<string, { live: number }> } }).basis_detail.workers.ownloop.live;
+    expect(live).toBeLessThan(10);
+
+    // A worker that gets a trial is live, and stays so while it heartbeats.
+    await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 1 });
+    const c = (await e.claim('w-real'))!;
+    expect(await workers()).toContain('w-real');
+    await env.pool.query(`UPDATE workers SET last_seen_at = now() - interval '5 minutes' WHERE worker_id = 'w-real'`);
+    await request(env.http).post(`/api/worker/trials/${c.trial_id}/heartbeat`).set(auth).send({ worker_id: 'w-real', attempt: c.attempt }).expect(200);
+    const [seen] = (await env.pool.query<{ fresh: boolean }>(`SELECT last_seen_at > now() - interval '60 seconds' AS fresh FROM workers WHERE worker_id = 'w-real'`)).rows;
+    expect(seen.fresh).toBe(true);
+  });
 });
