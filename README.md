@@ -5,7 +5,7 @@ made it better, worse or no different, and how sure that is. Deterministic check
 judge for what code can't decide, calibrated against my own hand labels. Every trial's full trace
 is one click away.
 
-Video walkthrough (10 min): _link to add_
+Video walkthrough (8 min): _link to add_
 
 ```mermaid
 flowchart LR
@@ -26,7 +26,7 @@ Open http://127.0.0.1:8080 and click **See a finished example**. No key needed, 
 
 You get a real 400-trial experiment: the verdict, each task's results, and every trial's trace
 (messages, tool calls, and what the grader decided and why). First build takes about 5 minutes and
-needs about 15 GB of disk.
+uses about 10 GB of disk (have 15 GB free).
 
 ## Results
 
@@ -38,11 +38,12 @@ run. Anything I changed after is listed as a deviation in
 | --- | --- | --- |
 | Planted one bad prompt line: "answer from your own knowledge to keep replies fast" | Fixed prompt +28 points (+9 to +49), p = 0.047 | Caught. 3 tasks flagged, all ones I predicted |
 | Removed the calculator tools | +45 points with them (+24 to +66), p = 0.001 | Caught |
-| Added a document search tool (a bank's current rates, this year's tax slabs) | +56 points with it (+34 to +77), p = 0.002 | A real gain. Without it the agent made up a rate or fee in 42 of 100 trials |
+| Added a document search tool (a bank's current rates, this year's tax slabs) | +56 points with it (+34 to +77), p = 0.002 | Caught. A control built to be caught: the bank is fictional, so only the tool knows its rates. Without it the agent made up a rate or fee in 42 of 100 trials (counted after a grader fix and regrade, listed as a deviation) |
 | Nothing: the same agent on both sides | −4 points (−12 to +3) | No false alarm |
 | My actual prompt fix, v1 to v2 | +9 points (+3 to +16), p = 0.0625 | Not enough tasks to call it |
 
-The last row is the one that matters. v2 is probably better. But 4 of the 10 tasks always passed
+The last row is the one that matters. v2 probably passes more often, mostly by following the
+sourcing rule (What I'd trust least, below). But 4 of the 10 tasks always passed
 and 1 always failed, in both versions, so only 5 tasks could show a difference. With 5, the test
 can't get under p = 0.05 however big the gap. The fix is more tasks in the middle, not more trials.
 
@@ -94,8 +95,9 @@ flowchart LR
   my hand labels: tuned on about 30 discovery trials I labelled, then checked once against 40
   held-out trials I labelled blind. A judge criterion counts in a verdict once it agrees with me
   well enough (kappa at least 0.6, and no lean towards either version). The current judge didn't:
-  on the 40 held-out trials it passed all 9 answers I failed. So it's shown on every trial page and
-  doesn't count yet. Details: [`docs/judge-validation.md`](docs/judge-validation.md).
+  on the 40 held-out trials it passed all 9 answers I failed. So it doesn't count. Its verdicts on
+  those 40 are in `judge-panel/`; the shipped examples were never judged, so their trial pages say
+  "Not judged". Details: [`docs/judge-validation.md`](docs/judge-validation.md).
 - The tasks are a personal-finance assistant for clients in India: calculator tools, client files,
   and a simulated client for the multi-turn ones. 31 tasks: 10 held out for scoring, 11 for
   discovery (where v1's failures were found), 10 for retrieval.
@@ -264,7 +266,11 @@ Full list: [`docs/known-limits.md`](docs/known-limits.md). The ones that matter:
   Verdicts rest on the code checks. The next rubric comes from those notes, and it needs a fresh
   set of blind labels to be measured.
 - One strict check carries most of the headline's failures: every rupee figure has to come from a
-  tool. A correct number rounded in prose still fails it.
+  tool. A correct number rounded in prose still fails it. On my 40 blind labels the code checks
+  agree with me on only 21 (kappa −0.23): they check facts and sourcing, not whether the advice is
+  good. So read "+9" as "v2 follows the sourcing rule more often", not "v2 gives better advice".
+- No task exercises memory. Hermes's memory is wired and traced, but in 20 memory-on trials it never
+  saved anything, so memory on vs off is untested here.
 - Conversations use a simulated client (Claude Haiku playing the customer). Those results describe
   that simulator, not real people.
 

@@ -18,6 +18,10 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
 3. **The headline mostly measures one rule.** 31 of v1's 36 failures and 24 of v2's 27 fail only
    the check that every rupee figure comes from a tool; without it the arms pass 95 and 97 of 100.
    That check is strict: a correct figure rounded in prose fails it (Platform checks, below).
+   Against Rishi's 40 blind held-out labels the code checks agree on 21 (kappa −0.23, worse than the
+   judge that was rejected): they passed 9 of the 10 answers he failed and failed 10 he passed, 8
+   on the sourcing check alone. So the pass rate measures facts and sourcing, not advice quality
+   (`docs/judge-validation.md`, top).
 4. **Models are named by alias.** `claude-haiku-5-5` is the provider's name, not a dated snapshot,
    so a provider update behind it changes results between runs. Each call records the model id the
    provider served (`gen_ai.response.model` on its span), but the config's hash does not cover it.
@@ -278,6 +282,13 @@ Number provenance began as a text check for highlighting. Since D54 the `provena
 
 ## Statistics (SP6, 5 Nov)
 
+- **Tasks share one client (found 6 Nov by an outside review).** 12 of the 13 draft tasks with a client
+  file use the same `client.json` (5 of the 10 held-out ones: convo-consolidation, convo-job-loss,
+  loan-to-clear-card, prepay-personal-loan and spending-review; convo-phone-loan has its own). The
+  stats treat tasks as independent draws; tasks built on one client's file are correlated, so the
+  task-level intervals are likely somewhat too narrow, and the results describe that client's
+  situation more than a population of clients.
+
 Measured on simulated data (`apps/api/src/stats/simulate.ts`: task pass rates spread uniformly
 from 10% to 75%, arm B adding a fixed effect; 1,000 runs per row, 2,000 bootstrap resamples), with
 the method as built (D10 revised: a task bootstrap, the sign-flip test, D42's verdict, D50's floor):
@@ -454,7 +465,7 @@ A real-model soak of 988 trials over five harnesses at `ac089f8`, with injected 
 - **LiteLLM's hard budget can under-count after a database blip.** After the soak, LiteLLM's team spend counters totalled $11.0815 against $11.1101 in its own spend log: $0.0286 (0.26%) uncounted, all of it in the experiments that had trials in flight during the 10 s Postgres stop. LiteLLM adds each call's cost to its key and team counters as an increment, and its source at the pin retries an increment only after a connection error that proves the write never reached the database (`DB_RETRY_SAFE_ERROR_TYPES`, `litellm/proxy/_types.py`), while it may retry the spend-log rows, which are idempotent; read in the source, not traced through. The experiment's hard cap is the team's `max_budget` checked against that counter, and each trial key's `max_budget` against the key's, so LiteLLM can let spend pass the cap by whatever the counters lost. Our own spend guard (D32) never reads those counters: it sums each trial's recorded `cost_usd` and `sim_cost_usd` (from the spend-log rows the runner read, and those the lease sweep read for abandoned attempts) and projects the rest, but it fires once, as a pause for review, and is not a hard stop. So nothing of ours stops spend at the budget on our recorded figures; whether to add such a stop is open (it is a new run rule).
 - **LiteLLM's database grows about 251 MB per 1,000 trials, against 77 MB for ours** (soak test). It keeps every call's full request and response body in its spend log (`store_prompts_in_spend_logs: true`, `MAX_STRING_LENGTH_PROMPT_IN_DB` raised to 2,000,000). Those bodies are read from LiteLLM once, by the runner during the trial, which copies them into the trial folder (`artifacts/proxy/NNNN.request.json` and `.response.json`); the trace view's request and response bodies, the invariance diff, the rendered-prompt probe, `scripts/verify_hermes.py` and the shipped examples read that copy, never LiteLLM. Later reads of LiteLLM's log (an abandoned attempt's spend, the judge's and the conflict check's cost) use only the `spend` and token fields. So turning `store_prompts_in_spend_logs` off would break every trial's request and response bodies, and is not an option. LiteLLM v1.99.4 has `maximum_spend_logs_retention_period`, which deletes whole spend-log rows past an age; a period of days would keep every read the platform makes, but would also remove LiteLLM's own record of spend (as used to check the soak's counters above). Not changed, and not tried.
 
-## To check before submission
+## Open checks
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted
 - [x] Rate-limit retries that could affect latency numbers (SP6: trials with a retried call are left out of time and counted; Statistics, above)

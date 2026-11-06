@@ -1,6 +1,6 @@
 # Worklog
 
-Not required by the brief. It records what was built and by whom, so the next-round conversation is easy. Keep it or remove it before submission.
+Not required by the brief. It records what was built and by whom, day by day.
 
 ## Tue 3 Nov
 
