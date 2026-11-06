@@ -70,4 +70,26 @@ describeWithDb('hostile input from workers and clients (e2e, real Postgres)', ()
     const [s] = (await env.pool.query<{ name: string; attributes: Record<string, unknown> }>('SELECT name, attributes FROM spans WHERE trial_id = $1', [c.trial_id])).rows;
     expect(s).toEqual({ name: 'chat fake\uFFFDmodel', attributes: { 'k\uFFFD': 'x\uFFFDy' } });
   });
+
+  // ---- E8 ----
+
+  it('stores impossible worker numbers as unknown, clamps a count to the column, and never lets spend go negative (E8)', async () => {
+    const exp = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 2 });
+    const neg = (await e.claim('w-num-1'))!;
+    const rr = runnerReport(neg.trial_id, neg.attempt, 'agent');
+    rr.proxy_usage = { complete: true, model_calls: -1, input_tokens: -5, output_tokens: -7, cost_usd: -1000, last_status: '200' };
+    rr.timing = { wall_s: -99 };
+    expect((await send(neg, 'w-num-1', { runner_report: rr })).status).toBe(200);
+    expect(await row(neg.trial_id)).toMatchObject({ status: 'done', cost_usd: null, input_tokens: null, output_tokens: null, model_calls: null, wall_s: null });
+    expect((await row(neg.trial_id)).problems).toEqual(expect.arrayContaining(['proxy_usage.cost_usd -1000 is not a number of at least 0; stored as unknown']));
+
+    const huge = (await e.claim('w-num-2'))!;
+    const big = runnerReport(huge.trial_id, huge.attempt, 'agent');
+    big.proxy_usage = { complete: true, model_calls: 1, input_tokens: 3_000_000_000, output_tokens: 1, cost_usd: 0.01, last_status: '200' };
+    expect((await send(huge, 'w-num-2', { runner_report: big })).status).toBe(200);
+    expect(await row(huge.trial_id)).toMatchObject({ status: 'done', input_tokens: 2_147_483_647, cost_usd: 0.01 });
+    const d = await e.detail(exp.id);
+    expect(d.status).toBe('done');
+    expect(d.spend_usd).toBeCloseTo(0.01, 8);
+  });
 });

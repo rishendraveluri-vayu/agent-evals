@@ -385,7 +385,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     const sim = await this.simReplies(trial, folder, files, problems);
     const label = body.runner_report.label as string;
     const status = statusForLabel(label);
-    const usage = usageOf(body.runner_report, body.result, spans);
+    const usage = usageOf(body.runner_report, body.result, spans, problems);
 
     const outcome = await this.db.tx(async (client) => {
       // Lock order (run-state.ts): the experiment row first, then the trial. A trial never changes
