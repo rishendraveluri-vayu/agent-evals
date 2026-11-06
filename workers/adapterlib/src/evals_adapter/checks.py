@@ -441,7 +441,11 @@ def gather_sources(
     calls: list[dict[str, Any]],
     transcript: list[dict[str, Any]],
     client_files: dict[str, str],
+    verified: set[tuple[int, Decimal]] | None = None,
 ) -> list[Source]:
+    """Every source the agent could read. A simulated client's number that repeats a figure the
+    agent wrote first is left out (G3), unless that figure is in `verified` (its reply turn and
+    value): the client repeating a figure the checker verified adds nothing false."""
     sources = []
     for call in calls:
         if call["result"]:
@@ -460,11 +464,15 @@ def gather_sources(
     for name, text in sorted(client_files.items()):
         sources.append(Source("client", name, -1, source_numbers(text), rates=source_rates(text)))
     agent_turn = 0
-    written: list[Amount] = []  # the money amounts in the agent's replies so far
+    written: list[Amount] = []  # the money amounts in the agent's replies so far, unverified
     for index, entry in enumerate(transcript):
         if entry.get("source") == "agent":
+            written += [
+                a
+                for a in money_amounts(entry.get("content") or "")
+                if (agent_turn, a.value) not in (verified or set())
+            ]
             agent_turn += 1
-            written += money_amounts(entry.get("content") or "")
             continue
         if entry.get("role") == "user":
             where = f"{entry.get('source') or 'user'}:{index}"
@@ -1085,9 +1093,18 @@ def run_checks(
     """checks.json for one trial, from its spec, result, spans and client files."""
     transcript = ((result or {}).get("conversation") or {}).get("transcript") or []
     calls = tool_calls(spans)
+    replies = _replies(transcript)
     sources = gather_sources(calls, transcript, files)
-    arithmetic, _ = trace_arithmetic(calls, sources, _replies(transcript))
+    arithmetic, _ = trace_arithmetic(calls, sources, replies)
     rows = provenance(transcript, sources, arithmetic)
+    # G3, second pass: a client's echo of a figure the first pass verified is a source again (an
+    # arithmetic input never rests on a figure verified in a reply otherwise, so a correct
+    # multiply(10,488.62, 11) on the agent's own verified EMI-plus-₹3,000 lost its only source).
+    verified = {(r["turn"], Decimal(str(r["value"]))) for r in rows if r["supported_by"]}
+    if verified:
+        sources = gather_sources(calls, transcript, files, verified)
+        arithmetic, _ = trace_arithmetic(calls, sources, replies)
+        rows = provenance(transcript, sources, arithmetic)
     required = ((spec or {}).get("task") or {}).get("required_tools")
     seen: list[str] = []
     for call in calls:

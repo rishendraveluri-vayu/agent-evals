@@ -1221,6 +1221,39 @@ def test_the_simulated_client_repeating_the_agents_figure_is_not_a_source():
     assert out["amounts"][0]["supported_by"] == "user"
 
 
+def test_the_client_repeating_a_verified_figure_still_supports_an_arithmetic_input():
+    """G3's second pass: the own-loop replication trial t_0mw3cy22td954e5e9c986d440. The agent
+    derived ₹10,488.62 (EMI ₹7,488.62 + the client's ₹3,000) in prose, the client repeated it,
+    and multiply(10488.62, 11) used it. The echo of a verified figure counts; an arithmetic input
+    has no other way to rest on a figure verified in a reply."""
+    debts = '{"debts":[{"name":"Personal loan","minimum_payment":7488.62}]}'
+    spans = [
+        turn_span("a" * 16, 0),
+        turn_span("b" * 16, 1),
+        span("list_debts", "a" * 16, debts, start=1),
+        span(
+            "multiply", "b" * 16, '{"product":115374.82}', start=2, args={"values": [10488.62, 11]}
+        ),
+    ]
+    users = (
+        "I can add about 3,000 a month. How fast can I finish?",
+        "Paying 10,488.62 a month for 12 months is 1,25,900, isn't it?",
+    )
+    replies = [
+        "With your EMI of ₹7,488.62 and ₹3,000 more, you pay ₹10,488.62 a month.",
+        "Not quite: 11 full payments, 11 × ₹10,488.62 = ₹1,15,374.82, then a smaller last one.",
+    ]
+    out = checks_for(replies, spans, user=users)
+    (record,) = out["arithmetic"]
+    assert record["supported"] is True
+    assert record["inputs"][0]["supported_by"] == "client_sim"
+    assert by_text(out)["₹1,15,374.82"]["supported_by"] == "tool"
+    # An unverified figure the client repeats still supports nothing.
+    replies[0] = "With your EMI and a bit more, you pay ₹10,488.62 a month."
+    out = checks_for(replies, spans, user=users)
+    assert out["arithmetic"][0]["supported"] is False
+
+
 def test_a_tool_result_from_a_later_turn_does_not_support_an_earlier_reply():
     spans = [
         turn_span("a" * 16, 0),
@@ -1412,17 +1445,9 @@ EXPECTED_UNSUPPORTED = {
 }
 EXPECTED_DERIVED = {
     # G3 (6 Nov review): the client's "not the ₹6,880 from October" repeats the agent's turn-1
-    # figure, so it no longer supports the agent's two later ₹6,880s; the checker derives them
-    # itself (the turn-1 sum, repeated), so none becomes unsupported.
-    "hermes/claude-haiku-5-5/conversation": [
-        "₹13,579",
-        "₹6,880",
-        "₹6,880",
-        "₹6,880",
-        "₹1,120",
-        "₹2,810",
-        "₹2,810",
-    ],
+    # ₹6,880, which the checker derived (₹4,380 + ₹2,500), so it still supports the agent's two
+    # later ₹6,880s (a client repeating a verified figure adds nothing false).
+    "hermes/claude-haiku-5-5/conversation": ["₹13,579", "₹6,880", "₹1,120", "₹2,810", "₹2,810"],
     "langgraph/claude-haiku-5-5/conversation": [
         "₹30,000",
         "₹3,000",
@@ -1460,4 +1485,4 @@ def test_on_the_real_4_nov_transcripts():
     assert derived == EXPECTED_DERIVED
     assert total == 230
     assert sum(len(v) for v in found.values()) == 19
-    assert sum(len(v) for v in derived.values()) == 17  # 15 before G3
+    assert sum(len(v) for v in derived.values()) == 15
