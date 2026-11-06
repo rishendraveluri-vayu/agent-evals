@@ -39,6 +39,15 @@ export const MARGIN_POINTS = 10;
  * Proposed 5 Nov, for Rishi to confirm (docs/known-limits.md, "Statistics").
  */
 export const MIN_TASKS_FOR_VERDICT = 6;
+/**
+ * S6: a task whose arms' decided-trial counts differ by more than this factor gets a caveat. The
+ * sign-flip test weighs each task's difference alike and assumes it is as likely positive as
+ * negative under "no change"; a rate from a handful of trials is coarse (0, 50 or 100% from 2),
+ * so such tasks can tilt it (docs/known-limits.md, "Statistics").
+ */
+export const UNEQUAL_DECIDED_RATIO = 2;
+/** At most this many tasks are named in that caveat's sentence. */
+const UNEQUAL_NAMED = 5;
 /** At most this many failed trials per arm in each regression entry. */
 export const FAILED_TRIALS_PER_ARM = 10;
 
@@ -389,6 +398,23 @@ function verdictText(v: PassRateVerdict | 'held_back', diff: StatsInterval, p: n
   return `No detectable difference: ${numbers}.${hiding}${few}${margin}`;
 }
 
+/** S6's caveat: the tasks in the aggregate whose arms have very unequal decided counts; null when none. */
+function unequalDecided(eligible: { t: TaskInput; a: StatsArmCounts; b: StatsArmCounts }[]): CompareStats['unequal_decided'] {
+  const uneven = eligible.filter((e) => Math.max(e.a.graded, e.b.graded) > UNEQUAL_DECIDED_RATIO * Math.min(e.a.graded, e.b.graded));
+  if (!uneven.length) return null;
+  const tasks = uneven.map((e) => ({ task: e.t.task, task_id: e.t.task_id, a: e.a.graded, b: e.b.graded }));
+  const named = tasks.slice(0, UNEQUAL_NAMED).map((t) => `${t.task_id}: ${t.a} in A, ${t.b} in B`);
+  const more = tasks.length > UNEQUAL_NAMED ? `; and ${tasks.length - UNEQUAL_NAMED} more` : '';
+  const n = tasks.length;
+  return {
+    ratio: UNEQUAL_DECIDED_RATIO,
+    tasks,
+    text:
+      `On ${n} of the ${eligible.length} tasks one arm has more than twice as many decided trials as the other (${named.join('; ')}${more}). ` +
+      `The paired test weighs each task's difference alike, and a rate from few trials is coarse, so ${n === 1 ? 'that task' : 'those tasks'} can tilt it: read the verdict with care.`,
+  };
+}
+
 /**
  * Pass rate, per task and in aggregate, with the verdict; the critical guardrail; the regression
  * list; and cost, tokens and time. Null (with a note) when no task has a decided trial in both arms.
@@ -505,6 +531,7 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
     aa: null,
     calibration,
     judge: null,
+    unequal_decided: unequalDecided(eligible),
   };
   return { stats, note: null };
 }

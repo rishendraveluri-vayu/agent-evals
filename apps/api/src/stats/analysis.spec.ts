@@ -187,6 +187,26 @@ describe('analyse: incomplete trials and one-arm-empty tasks', () => {
     expect(s?.diff.estimate).toBe(25);
   });
 
+  it('adds a caveat when a task has more than twice as many decided trials in one arm as in the other (S6)', () => {
+    const uneven = task('uneven', 5, 10, 2, 3);
+    uneven.trials.push(...Array.from({ length: 7 }, (_, i) => trial(`uneven-bi${i}`, 'B', 'incomplete')));
+    const exactlyTwice = task('twice', 5, 10, 3, 5);
+    const s = analyse({ seed: 'e_uneven', tasks: [uneven, exactlyTwice, ...Array.from({ length: 6 }, (_, i) => task(`t${i}`, 5, 10, 6, 10))] }, fast).stats!;
+    expect(s.unequal_decided).toEqual({
+      ratio: 2,
+      tasks: [{ task: 'sha256:uneven', task_id: 'uneven', a: 10, b: 3 }],
+      text: "On 1 of the 8 tasks one arm has more than twice as many decided trials as the other (uneven: 10 in A, 3 in B). The paired test weighs each task's difference alike, and a rate from few trials is coarse, so that task can tilt it: read the verdict with care.",
+    });
+    expect(analyse({ seed: 'e_even', tasks: [exactlyTwice, task('t', 5, 10, 6, 10)] }, fast).stats!.unequal_decided).toBeNull();
+  });
+
+  it('names at most 5 uneven tasks in the caveat', () => {
+    const s = analyse({ seed: 'e_uneven7', tasks: Array.from({ length: 7 }, (_, i) => task(`u${i}`, 1, 2, 5, 10)) }, fast).stats!;
+    expect(s.unequal_decided?.tasks).toHaveLength(7);
+    expect(s.unequal_decided?.text).toContain('(u0: 2 in A, 10 in B; u1: 2 in A, 10 in B; u2: 2 in A, 10 in B; u3: 2 in A, 10 in B; u4: 2 in A, 10 in B; and 2 more). ');
+    expect(s.unequal_decided?.text).toContain('so those tasks can tilt it');
+  });
+
   it('gives no statistics, with a note, when no task has a decided trial in both arms', () => {
     const r = analyse({ seed: 'e_0', tasks: [{ task: 'sha256:x', task_id: 'x', trials: [trial('x-a', 'A', 'pass'), trial('x-b', 'B', 'incomplete')] }] });
     expect(r.stats).toBeNull();

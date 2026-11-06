@@ -1079,6 +1079,13 @@ export interface CompareStats {
   calibration: { as_expected: boolean; text: string } | null;
   /** SP5's judge agreement on held-out labels, for the caveat when the verdict rests on the judge; null until SP5 reports it. */
   judge: { kappa: number; low: number; high: number; bar: number; tasks: number } | null;
+  /**
+   * S6: the tasks in the aggregate where one arm has more than `ratio` (2) times as many decided
+   * trials as the other, in the experiment's order, with a caveat sentence to show beside the
+   * verdict: the sign-flip test weighs each task alike, and a rate from few trials can tilt it.
+   * Null when no task is that uneven.
+   */
+  unequal_decided: { ratio: number; tasks: { task: Sha256; task_id: string; a: number; b: number }[]; text: string } | null;
 }
 
 // ---- Trials --------------------------------------------------------------------------

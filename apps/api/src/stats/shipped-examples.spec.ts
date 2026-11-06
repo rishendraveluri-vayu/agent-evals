@@ -280,6 +280,8 @@ describe('the shipped examples recompute exactly', () => {
     expect(stats.verdict_text).toBe(pinned.text);
     expect(stats.critical.text).toBe(pinned.critical);
     expect(stats.calibration?.text ?? null).toBe(pinned.calibration);
+    // Every shipped task has 5 or 10 decided trials in each arm (S6).
+    expect(stats.unequal_decided).toBeNull();
   });
 });
 
