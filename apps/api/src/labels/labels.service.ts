@@ -139,13 +139,18 @@ export class LabelsService {
    * trial labelled in one set (by anyone) is offered in no other. Without a rater, any rater's
    * label counts, as before D73.
    */
-  async queue(setInput: unknown, experimentId?: string, itemsInput?: string, raterInput?: string): Promise<LabelQueueItem[]> {
+  async queue(setInput: unknown, experimentInput?: unknown, itemsInput?: unknown, raterInput?: string): Promise<LabelQueueItem[]> {
     const set = labelSet(setInput);
+    // E9: a repeated query parameter arrives as a list (`items` twice was a 500).
+    for (const [name, v] of [['experiment', experimentInput], ['items', itemsInput]] as const) {
+      if (v !== undefined && typeof v !== 'string') throw badRequest('invalid_query', `give ${name} once`, `Send one ${name} parameter${name === 'items' ? ', with the trial ids comma-separated' : ''}.`);
+    }
+    const experimentId = experimentInput as string | undefined;
     const rater = raterInput === undefined ? null : raterId(raterInput);
     // `items` (comma-separated trial ids) limits the queue to a chosen list, such as the trials a
     // judge panel disagreed on (D71). Every other rule still applies: a listed trial outside the
     // set is simply not offered.
-    const items = itemsInput === undefined || itemsInput === '' ? null : itemsInput.split(',').map((s) => s.trim()).filter(Boolean);
+    const items = itemsInput === undefined || itemsInput === '' ? null : (itemsInput as string).split(',').map((s) => s.trim()).filter(Boolean);
     if (items && (items.length > 500 || items.some((id) => !TRIAL_ID.test(id)))) {
       throw badRequest('invalid_items', 'items must be up to 500 comma-separated trial ids', 'Pass trial ids as GET /experiments/:id/trials lists them, for example items=t_abc,t_def.');
     }

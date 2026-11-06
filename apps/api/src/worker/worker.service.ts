@@ -12,7 +12,7 @@ import { Db, type Queryable } from '../database/db.service';
 import { NOT_EXAMPLE_TRIAL } from '../examples/example-guard';
 import { type ExperimentRow, finishIfDone, isSimTask } from '../experiments/experiments.service';
 import { LiteLlmClient, LiteLlmHttpError, type MintedKey } from '../litellm/litellm.client';
-import { FINISHED, HELD, LEASE_S, PAUSES_ARM, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
+import { FINISHED, HELD, LEASE_S, MAX_ATTEMPTS, PAUSES_ARM, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
 import { MAX_FILE_BYTES, checkFiles, locate, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
 import { configErrorFix, configErrorReason, parseReport, spanRows, spendLogUsage, usageOf, withoutNul } from './report';
 import { applyRunRules } from '../experiments/rules';
@@ -284,6 +284,10 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     const b = (body ?? {}) as Partial<HeartbeatRequest>;
     if (typeof b.worker_id !== 'string' || typeof b.attempt !== 'number') {
       throw badRequest('invalid_heartbeat', 'worker_id and attempt are required');
+    }
+    // E9: an attempt the integer column cannot compare with was a 500.
+    if (!Number.isInteger(b.attempt) || b.attempt < 1 || b.attempt > MAX_ATTEMPTS) {
+      throw badRequest('invalid_heartbeat', `attempt must be an integer from 1 to ${MAX_ATTEMPTS}`);
     }
     const kept = await this.db.query<{ harness: string }>(
       `UPDATE trials SET heartbeat_at = now(), status = 'running'

@@ -59,6 +59,12 @@ import { type ArmRow, addEvent, lockExperiment, pauseArm, pauseExperiment } from
 /** D35: arm A and arm B, or one config for a pilot. */
 export const MAX_ARMS = 2;
 
+/**
+ * E9 (6 Nov review): the most an experiment's budget may be, in dollars. There was no upper bound
+ * (1e308 was accepted and became the LiteLLM team's cap). Every run so far cost under $10.
+ */
+export const MAX_BUDGET_USD = 1000;
+
 export interface ExperimentRow {
   id: string;
   name: string;
@@ -389,8 +395,16 @@ export class ExperimentsService {
     }
     const axis = typeof body.axis === 'string' ? body.axis.trim() : '';
     if (!axis) throw badRequest('invalid_experiment', 'axis is required: the one thing the configs differ on');
-    if (typeof body.budget_usd !== 'number' || !Number.isFinite(body.budget_usd) || body.budget_usd <= 0) {
-      throw badRequest('invalid_experiment', 'budget_usd must be a number above 0');
+    // E9: the database cannot store a NUL character (it was a 500).
+    for (const [field, text] of [['name', name], ['axis', axis]] as const) {
+      if (text.includes('\u0000')) throw badRequest('invalid_experiment', `${field} contains a NUL character (\\u0000), which cannot be stored`, `Remove the NUL character from ${field}.`);
+    }
+    if (typeof body.budget_usd !== 'number' || !Number.isFinite(body.budget_usd) || body.budget_usd <= 0 || body.budget_usd > MAX_BUDGET_USD) {
+      throw badRequest(
+        'invalid_experiment',
+        `budget_usd must be a number above 0 and at most ${MAX_BUDGET_USD}`,
+        `Give the experiment's spending limit in dollars, above 0 and at most ${MAX_BUDGET_USD}; a larger run is several experiments.`,
+      );
     }
     const planCommit = planCommitOf(body.plan_commit);
     const { plan, simPrompt, parentId, baseline, run, platform } = await this.resolveRun(body);
@@ -946,23 +960,31 @@ export class ExperimentsService {
     return events.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 1000);
   }
 
-  async trials(id: string, filter: { status?: string; config?: string; task?: string }): Promise<TrialRowSummary[]> {
+  async trials(id: string, filter: { status?: string | string[]; config?: string | string[]; task?: string | string[] }): Promise<TrialRowSummary[]> {
     await this.row(id);
     const where = ['t.experiment_id = $1'];
     const params: unknown[] = [id];
-    if (filter.status) {
-      const statuses = filter.status.split(',');
+    // E9: a repeated query parameter arrives as a list (it was a 500). Repeated statuses add up,
+    // as a comma list does; a config or a task is one value.
+    for (const key of ['config', 'task'] as const) {
+      if (Array.isArray(filter[key])) throw badRequest('invalid_filter', `give ${key} once`, `Filter by one ${key}, or leave ${key} out.`);
+    }
+    const config = filter.config as string | undefined;
+    const task = filter.task as string | undefined;
+    const status = Array.isArray(filter.status) ? filter.status.join(',') : filter.status;
+    if (status) {
+      const statuses = status.split(',');
       const bad = statuses.find((s) => !(TRIAL_STATUSES as readonly string[]).includes(s));
       if (bad) throw badRequest('invalid_filter', `${bad} is not a trial status`);
       params.push(statuses);
       where.push(`t.status = ANY($${params.length})`);
     }
-    if (filter.config) {
-      params.push(normalizeSha(filter.config) ?? filter.config);
+    if (config) {
+      params.push(normalizeSha(config) ?? config);
       where.push(`t.config_hash = $${params.length}`);
     }
-    if (filter.task) {
-      params.push(normalizeSha(filter.task) ?? filter.task);
+    if (task) {
+      params.push(normalizeSha(task) ?? task);
       where.push(`(t.task_sha256 = $${params.length} OR k.id = $${params.length})`);
     }
     const rows = await this.db.query<TrialSummaryRow>(`${TRIAL_SUMMARY_SELECT} WHERE ${where.join(' AND ')} ORDER BY t.seq, t.attempt`, params);

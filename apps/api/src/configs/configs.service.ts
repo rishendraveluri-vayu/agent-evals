@@ -42,6 +42,9 @@ export function configHash(input: ConfigHashInput): string {
   });
 }
 
+/** The longest name a config may have, in characters after trimming (E9; the UI's NAME_MAX). */
+export const CONFIG_NAME_MAX = 120;
+
 /** `c_` and the first 12 hex of the hash: the spec's `config_id`. */
 export function configId(hash: string): string {
   return `c_${hash.replace(/^sha256:/, '').slice(0, 12)}`;
@@ -144,6 +147,12 @@ export class ConfigsService {
     if (typeof body !== 'object' || body === null) throw badRequest('invalid_config', 'the body must be a JSON object');
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!name) throw badRequest('invalid_config', 'name is required');
+    // E9: the UI's limit (NAME_MAX in apps/ui/src/lib/limits.ts), now the API's too; and no NUL,
+    // which the database cannot store.
+    if (name.length > CONFIG_NAME_MAX) {
+      throw badRequest('invalid_config', `name is ${name.length} characters, longer than the ${CONFIG_NAME_MAX} allowed`, `Shorten the name to ${CONFIG_NAME_MAX} characters or fewer.`);
+    }
+    if (name.includes('\u0000')) throw badRequest('invalid_config', 'name contains a NUL character (\\u0000), which cannot be stored', 'Remove the NUL character from the name.');
     if (typeof body.harness !== 'string' || !body.harness) throw badRequest('invalid_config', 'harness is required');
     if (typeof body.model !== 'string' || !body.model) throw badRequest('invalid_config', 'model is required');
     const promptSha = normalizeSha(body.prompt_sha256);

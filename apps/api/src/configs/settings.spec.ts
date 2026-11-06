@@ -170,7 +170,14 @@ describe('fix hints on refused settings (D25 follow-up)', () => {
   });
 
   it('says what value a bad setting needs', () => {
-    expect(body(() => resolveSettings({ max_steps: 0 }, HERMES, 'hermes', MODEL)).fix).toBe('Set max_steps to an integer of at least 1, or leave it unset for the default.');
+    expect(body(() => resolveSettings({ max_steps: 0 }, HERMES, 'hermes', MODEL)).fix).toBe('Set max_steps to an integer from 1 to 200, or leave it unset for the default.');
+  });
+
+  it('refuses max_steps above 200 and timeout_s above 3600, as the UI does (E9)', () => {
+    expect(body(() => resolveSettings({ max_steps: 201 }, HERMES, 'hermes', MODEL)).message).toBe('max_steps must be an integer from 1 to 200');
+    expect(body(() => resolveSettings({ timeout_s: 3600.5 }, HERMES, 'hermes', MODEL)).message).toBe('timeout_s must be a number of seconds above 0 and at most 3600');
+    expect(body(() => resolveSettings({ max_output_tokens: 1e300 }, HERMES, 'hermes', MODEL)).message).toBe('max_output_tokens must be an integer of at least 1');
+    expect(resolveSettings({ max_steps: 200, timeout_s: 3600 }, HERMES, 'hermes', MODEL).settings).toMatchObject({ max_steps: 200, timeout_s: 3600 });
   });
 
   it('suggests the setting a misspelt name meant, and where other options go', () => {

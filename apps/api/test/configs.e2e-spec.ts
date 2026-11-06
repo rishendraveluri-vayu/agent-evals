@@ -174,7 +174,7 @@ describeWithDb('catalogue and configs (e2e, real Postgres)', () => {
     const base = { name: 'x', harness: 'ownloop', model: 'fake/finance-emi', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset };
     const fixOf = async (change: Record<string, unknown>) => ((await request(env.http).post('/api/configs').send({ ...base, ...change }).expect(400)).body as { fix?: string }).fix;
     expect(await fixOf({ settings: { temprature: 0.2 } })).toBe('Did you mean temperature? Rename temprature to temperature.');
-    expect(await fixOf({ settings: { max_steps: -1 } })).toBe('Set max_steps to an integer of at least 1, or leave it unset for the default.');
+    expect(await fixOf({ settings: { max_steps: -1 } })).toBe('Set max_steps to an integer from 1 to 200, or leave it unset for the default.');
     expect(await fixOf({ harness: 'nope' })).toContain('Pick a harness from GET /harnesses: ');
     expect(await fixOf({ model: 'gpt-nope' })).toContain('GET /models');
   });

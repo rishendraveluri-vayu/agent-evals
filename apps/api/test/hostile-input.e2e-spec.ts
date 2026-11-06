@@ -92,4 +92,57 @@ describeWithDb('hostile input from workers and clients (e2e, real Postgres)', ()
     expect(d.status).toBe('done');
     expect(d.spend_usd).toBeCloseTo(0.01, 8);
   });
+
+  // ---- E9 ----
+
+  const plan = (over: Record<string, unknown> = {}) => ({
+    name: 'bounds',
+    axis: 'x',
+    config_hashes: [A],
+    task_sha256s: [cat.tasks['emi-basic']],
+    n: 1,
+    budget_usd: 1,
+    ...over,
+  });
+
+  it('answers a clean 400, never a 500, for a NUL in a name, an unbounded budget and a repeated query parameter (E9)', async () => {
+    const nul = await request(env.http).post('/api/experiments').send(plan({ name: 'a\u0000b' })).expect(400);
+    expect(nul.body).toMatchObject({ error: 'invalid_experiment', message: 'name contains a NUL character (\\u0000), which cannot be stored' });
+    await request(env.http).post('/api/experiments').send(plan({ axis: 'x\u0000' })).expect(400);
+    for (const budget of [1e308, 1000.01]) {
+      const res = await request(env.http).post('/api/experiments').send(plan({ budget_usd: budget })).expect(400);
+      expect(res.body).toMatchObject({ error: 'invalid_experiment', message: 'budget_usd must be a number above 0 and at most 1000' });
+    }
+    const top = (await request(env.http).post('/api/experiments').send(plan({ budget_usd: 1000 })).expect(201)).body as { id: string; budget_usd: number };
+    expect(top.budget_usd).toBe(1000);
+
+    // Any route: a NUL the database cannot take is a 400 from the error filter, not a 500.
+    const trial = await request(env.http).get('/api/trials/%00').expect(400);
+    expect(trial.body).toMatchObject({ error: 'invalid_value' });
+
+    await request(env.http).post(`/api/experiments/${top.id}/start`).expect(200);
+    const both = await request(env.http).get(`/api/experiments/${top.id}/trials?status=queued&status=done`).expect(200);
+    expect((both.body as unknown[]).length).toBe(1);
+    expect((await request(env.http).get(`/api/experiments/${top.id}/trials?status=queued&status=bogus`).expect(400)).body).toMatchObject({ error: 'invalid_filter' });
+    expect((await request(env.http).get(`/api/experiments/${top.id}/trials?config=${A}&config=${A}`).expect(400)).body).toMatchObject({ error: 'invalid_filter', message: 'give config once' });
+    expect((await request(env.http).get('/api/labels/queue?set=tuning&items=t_a&items=t_b').expect(400)).body).toMatchObject({ error: 'invalid_query' });
+
+    const c = (await e.claim('w-bounds'))!;
+    for (const attempt of [1.5, 0, 1e20]) {
+      const hb = await request(env.http).post(`/api/worker/trials/${c.trial_id}/heartbeat`).set(auth).send({ worker_id: 'w-bounds', attempt }).expect(400);
+      expect(hb.body).toMatchObject({ error: 'invalid_heartbeat' });
+    }
+  });
+
+  it('refuses a config name over 120 characters or with a NUL, and max_steps over 200 or timeout_s over 3600 (E9)', async () => {
+    const base = { harness: 'ownloop', model: 'fake/finance-emi', prompt_sha256: cat.prompt, toolset_sha256: cat.toolset, settings: {} };
+    const long = await request(env.http).post('/api/configs').send({ ...base, name: 'n'.repeat(121) }).expect(400);
+    expect(long.body).toMatchObject({ error: 'invalid_config', message: 'name is 121 characters, longer than the 120 allowed' });
+    await request(env.http).post('/api/configs').send({ ...base, name: 'n'.repeat(120) }).expect(201);
+    expect((await request(env.http).post('/api/configs').send({ ...base, name: 'a\u0000' }).expect(400)).body).toMatchObject({ error: 'invalid_config' });
+    const steps = await request(env.http).post('/api/configs').send({ ...base, name: 's', settings: { max_steps: 1_000_000 } }).expect(400);
+    expect(steps.body).toMatchObject({ error: 'invalid_setting', message: 'max_steps must be an integer from 1 to 200' });
+    const timeout = await request(env.http).post('/api/configs').send({ ...base, name: 't', settings: { timeout_s: 1e9 } }).expect(400);
+    expect(timeout.body).toMatchObject({ error: 'invalid_setting', message: 'timeout_s must be a number of seconds above 0 and at most 3600' });
+  });
 });
