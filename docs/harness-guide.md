@@ -27,7 +27,7 @@ This guide explains each of the five harnesses, how our adapter drives it, and w
 - Chapters 1, 8 and 9 updated: answered questions removed or narrowed, five added from the adapters and the run (21 in all).
 - Appendix A: eight new gaps between sources.
 
-**State of play.** All five adapters are built. Each passes the 8 shared gate tests and its drift test against the fake model, directly and through LiteLLM. LangGraph, Google ADK and the Agents SDK were built on 4 Nov and wait on branch `sp1-harnesses` for your review before merge. On 4 Nov all five ran on a real model for the first time: one signed-off smoke run on Claude Haiku 5.5, 3 trials per harness (section 2.9). The run engine (SP3) now claims, runs and stores trials through the API. No effect check (D24) has run.
+**State of play (6 Nov).** All five adapters are built, merged and run in CI: the 8 shared gate tests and the drift test against the fake model, the proxy tests through LiteLLM, and the image leak tests. All five ran on Claude Haiku 5.5 (4 Nov), and the own loop and LangGraph also carried the experiment's replications (5 Nov). No effect check (D24) ran: each setting is shown to reach the request (probed into `capabilities.json`), not to change behaviour on a real model (`docs/known-limits.md`).
 
 **Evidence labels.** Every fact that is not obvious carries one:
 

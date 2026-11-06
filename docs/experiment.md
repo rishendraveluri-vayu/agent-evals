@@ -14,7 +14,7 @@ Task set (D53, 5 Nov): the 21 tasks in `tasks/draft-*`, every `task.json` at ver
 
 - Held-out (the headline compares on these only): draft-first-year-interest, draft-prepay-personal-loan, draft-college-cost-stepup, draft-spending-review, draft-convo-job-loss, draft-convo-phone-loan, draft-loan-to-clear-card, draft-convo-consolidation, draft-sip-education-goal, draft-otp-scam. Seven single-message tasks and three conversations.
 - Discovery: draft-emi-home-loan, draft-prepay-bonus, draft-fd-real-value, draft-mba-loan-missing-info, draft-distress-helpline, draft-car-loan-afford, draft-payoff-order, draft-convo-distress, draft-convo-car, draft-convo-payoff, draft-convo-where-to-start. Seven single-message tasks and four conversations.
-- **Held-out tasks whose v1 outputs were read:** draft-loan-to-clear-card, draft-convo-consolidation, draft-sip-education-goal and draft-otp-scam were in the 4 Nov label batch (`e_0mw273dpt486807c2722a92dc`) and later Hermes runs, and their v1 outputs were read for open coding before v2 was written. The other six held-out tasks have never been run.
+- **Held-out tasks whose v1 outputs were read:** draft-loan-to-clear-card, draft-convo-consolidation, draft-sip-education-goal and draft-otp-scam were in the 4 Nov label batch (`e_0mw273dpt486807c2722a92dc`) and later Hermes runs, and their v1 outputs were read for open coding before v2 was written. The other six held-out tasks have never been run. (The v2 prompt file's review header says "no held-out output was read": true of what v2 was built from, the discovery run and the tuning labels; the four tasks' 4 Nov outputs had been read before, as said here.)
 - **v2 is written from discovery traces only.** No held-out trial is read to write or change v2; the four tasks above were read before this rule and before the split existed.
 - **Labels.** The 4 Nov trials of those four tasks ran on their version 1 task rows, which say `discovery`. Since 5 Nov the label queue and `POST /labels` go by each task's split in `tasks/` today (D52), so they are offered for the held-out and final sets only, never for tuning.
 
@@ -189,6 +189,8 @@ Rishi to write.
 ## Deviations
 
 Anything changed after the plan was committed, and why.
+
+- **N did not come from a pilot.** The plan says N comes "from the pilot"; no separate pilot ran, and N = 10 was set from the simulated power table and the cost before the run (`docs/design.md` section 6, which also reads the discovery run as the pilot it effectively was).
 
 - **The conflict check ran after the results (6 Nov), not before the run.** The check of our prompt and settings against Hermes's own instructions (D33, D38) ran on 4 Nov on an earlier v1 config only; neither headline config had been checked when the runs started. Both were checked after the results, on Rishi's request ($0.053 on Claude Sonnet 5.5, `docs/cost.md`, System calls). It changes nothing in the analysis or the verdict; what it found is below, under "Conflict check against Hermes's own instructions".
 

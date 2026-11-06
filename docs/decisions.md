@@ -90,7 +90,7 @@ Rishi makes these calls. When one settles, move it to Decided and fill in the op
 
 | # | Call | Options | Lean | Needed by |
 | --- | --- | --- | --- | --- |
-| D7 | Tasks using the judge | Any share of the 20+ | About 6 to 8 | Thu |
+| D7 | Which judge criteria become required once a judge passes D8 (every task has a judge grader since D68, all optional until then) | Any share | About 6 to 8 | After the held-out measurement |
 
 ## Notes behind the open calls
 

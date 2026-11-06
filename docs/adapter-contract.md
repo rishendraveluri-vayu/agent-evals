@@ -276,7 +276,7 @@ Nothing is truncated or dropped. Every trial, including infra failures, keeps it
 
 A setting that reaches the request but changes nothing is recorded as **inert** for that harness and model. The capabilities file and the UI say so.
 
-A harness counts once the gate tests pass and its effect checks have run, by its R7 deadline of Thursday 12:00.
+A harness counts once the gate tests pass and its effect checks have run, by its R7 deadline of Thursday 12:00. (In the event the effect checks were not run for any harness; all five count on their gate, drift and probe evidence, and `docs/known-limits.md` says what that leaves unproven.)
 
 ## 9. Simulated client (D22)
 

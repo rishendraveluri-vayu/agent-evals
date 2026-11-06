@@ -42,6 +42,17 @@ Not required by the brief. It records what was built and by whom, so the next-ro
 - Rishi designed the statistics (D10, D41 to D44) and, after the simulations below, revised D10's interval to a task bootstrap and approved the 6-task floor (D50).
 - Claude implemented SP6: the comparison's statistics in the API (`apps/api/src/stats/`, TypeScript, seeded): the verdict with its 95% interval and the exact sign-flip test, per-task Newcombe intervals and Fisher tests with Benjamini-Hochberg flags, the critical-failure guardrail from a new optional grader `severity`, the regression list, and cost, tokens and time (time without trials whose model call LiteLLM retried). A/A calibration runs (D44): one config on both arms when marked, its interval shown under every A/B of that config. The Compare, Run, Experiments and Tasks screens show it all.
 - Surprises: the first design's two-level bootstrap counted trial noise twice; on simulated data it covered the truth 99% of the time and found a real +15 points only 69% of the time at 20 tasks, against 85% for tasks only, which is why D10 was revised. At the headline's 10 to 12 held-out tasks, a real +15 is found only about half the time. Exactly counting 2^20 sign patterns took half a second per comparison until it was split into two halves of 2^10.
+- Rishi ran the real experiment's runs after committing the plan (headline, A/A, positive control, replications on the own loop and LangGraph; $11.0 in all), the skills demo and an open-weight check on the local Qwen. Claude shipped the five runs as examples and wrote the results into `docs/experiment.md`.
+- Judge validation went from one judge to a panel (D71): three judges on Rishi's tuning labels, then critique shadowing (D74): Rishi's principles and four of his trials as worked examples in rubric v3, then v4, frozen after two dev rounds (Gemini 3.8 Flash kappa 0.47 to 0.63 on the dev set). The frozen judges graded all 40 held-out trials, blind to any label. Panel spend $5.89.
+- Rishi decided D72 (no verdict unless both arms were graded alike) and D73 (more than one human rater); Claude built both.
+- Surprises: all three judges shared the same blind spot on the first rubric (they passed four trials Rishi failed for the same reason), so a majority vote could not fix it; teaching the judge Rishi's principles did.
+
+## 6 Nov
+
+- Clean-clone test from GitHub with no keys and no `.env`, cold build, every README command, every screen on desktop and phone: passed; two README figures corrected.
+- The conflict check had never run on the headline's two Hermes configs; run after the results ($0.053), it found nothing against v2's rule. Rishi made it mandatory for every Hermes run on a real model (D75), and then not tied to one model.
+- A destructive review by five agents (claims, statistics, engine, graders, UI) found 70 problems, none changing a shipped result (`docs/destructive-review.md`). Rishi: fix every bug before submitting; out-of-scope items go to known-limits. Fixed the same day by four fixer agents and Claude.
+- Surprises: the review's worst finds were on the reviewer's own path (the keyless Build screen could not save its default agent; the Experiments page headline named the LangGraph replication's "better" without saying so), not in the engine.
 
 ## Entry template
 

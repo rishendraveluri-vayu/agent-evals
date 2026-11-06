@@ -45,7 +45,7 @@ Develop and test. A second checkout on the same machine also needs its own compo
 and image tag (`docker compose -p review`, `EVALS_IMAGE_TAG=review` in its `.env`), or its build
 replaces the first one's images.
 
-**Without a key** you can build, save and preview an agent (see exactly what reaches the model),
+**Without a key** you can build, save and preview an agent (see what reaches the model; for Hermes on Gemini, the text Hermes adds for that model name is missing from the free preview),
 and open the finished example, which is read-only: nothing in it runs again. You can also run
 agents on **fake models** (`fake/...`), which the full platform's Config screen offers: a scripted
 local server answers at made-up prices, so a run needs no key and spends nothing. A fake model
