@@ -2,6 +2,7 @@ import type {
   CompareStats,
   CostStat,
   CriticalGuardrail,
+  GradeKind,
   GraderSeverity,
   PassRateVerdict,
   Regression,
@@ -64,6 +65,8 @@ export interface GradeInput {
   required: boolean;
   verdict: string | null;
   severity: GraderSeverity | null;
+  /** The grade's kind (`judge` for the LLM judge); absent reads as not a judge. */
+  kind?: GradeKind;
 }
 
 /** One done trial (an agent outcome); infra failures never reach the statistics. */
@@ -416,6 +419,35 @@ function unequalDecided(eligible: { t: TaskInput; a: StatsArmCounts; b: StatsArm
 }
 
 /**
+ * A required judge decided this decided trial's outcome: its pass was needed for a pass, or a fail
+ * had no failing required check but the judge's.
+ */
+function judgeDecided(t: TrialInput): boolean {
+  const required = t.grades.filter((g) => g.required);
+  if (!required.some((g) => g.kind === 'judge')) return false;
+  if (t.outcome === 'pass') return true;
+  if (t.outcome !== 'fail') return false;
+  const failing = required.filter((g) => g.verdict === 'fail');
+  return failing.length > 0 && failing.every((g) => g.kind === 'judge');
+}
+
+/**
+ * S12: the tasks in the aggregate with a nonzero difference, and those of them where a required
+ * judge decided at least one trial's outcome in either arm; null when there are none of the latter
+ * (today every judge criterion is optional, so this is null on every shipped result).
+ */
+function restsOnJudge(eligible: { t: TaskInput }[], diffs: number[]): CompareStats['rests_on_judge'] {
+  const differing = eligible.filter((_, i) => Math.abs(diffs[i]) > EPS_RATE);
+  const tasks = differing.flatMap((e) => {
+    const decided = e.t.trials.filter((x) => x.outcome !== 'incomplete' && judgeDecided(x));
+    if (!decided.length) return [];
+    return [{ task: e.t.task, task_id: e.t.task_id, a: decided.filter((x) => x.arm === 'A').length, b: decided.filter((x) => x.arm === 'B').length }];
+  });
+  if (!tasks.length) return null;
+  return { differing: differing.length, tasks, all: tasks.length === differing.length };
+}
+
+/**
  * Pass rate, per task and in aggregate, with the verdict; the critical guardrail; the regression
  * list; and cost, tokens and time. Null (with a note) when no task has a decided trial in both arms.
  */
@@ -532,6 +564,7 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
     calibration,
     judge: null,
     unequal_decided: unequalDecided(eligible),
+    rests_on_judge: restsOnJudge(eligible, diffs),
   };
   return { stats, note: null };
 }

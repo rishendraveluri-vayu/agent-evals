@@ -341,6 +341,37 @@ describe('analyse: the critical-failure guardrail (D10)', () => {
   });
 });
 
+describe('analyse: which tasks rest on the judge (S12)', () => {
+  const judge = (verdict: string, required = true): GradeInput => ({ grader_id: 'advice', required, verdict, severity: 'major', kind: 'judge' });
+  const exact = (verdict: string): GradeInput => ({ grader_id: 'emi', required: true, verdict, severity: 'major', kind: 'exact' });
+  /** Passes need both; a fail is the judge's alone (`judgeFails`) or the exact check's too. */
+  const judged = (id: string, pa: number, pb: number, judgeFails = true, required = true) =>
+    task(id, pa, 10, pb, 10, (_arm, _i, pass) => ({ grades: pass ? [exact('pass'), judge('pass', required)] : judgeFails ? [exact('pass'), judge('fail', required)] : [exact('fail'), judge('fail', required)] }));
+  const plainTask = (id: string, pa: number, pb: number) => task(id, pa, 10, pb, 10, (_arm, _i, pass) => ({ grades: [exact(pass ? 'pass' : 'fail')] }));
+
+  it('lists the differing tasks where a required judge decided an outcome, and says when all of them do', () => {
+    const tasks = [judged('j1', 3, 6), judged('j2', 5, 5), plainTask('p1', 2, 7), plainTask('p2', 4, 4), plainTask('p3', 4, 4), plainTask('p4', 4, 4)];
+    const s = analyse({ seed: 'e_judge', tasks }, fast).stats!;
+    // j2 ties, so it does not count; p1 differs without the judge.
+    expect(s.rests_on_judge).toEqual({ differing: 2, tasks: [{ task: 'sha256:j1', task_id: 'j1', a: 10, b: 10 }], all: false });
+    expect(s.judge).toBeNull();
+    const all = analyse({ seed: 'e_judge_all', tasks: [judged('j1', 3, 6), judged('j3', 6, 3), ...Array.from({ length: 4 }, (_, i) => plainTask(`p${i}`, 4, 4))] }, fast).stats!;
+    expect(all.rests_on_judge).toMatchObject({ differing: 2, all: true });
+    expect(all.rests_on_judge?.tasks.map((t) => t.task_id)).toEqual(['j1', 'j3']);
+  });
+
+  it("counts a judge's fail only when no other required check failed, and its pass always", () => {
+    // Every fail also fails the exact check, so only the passes needed the judge.
+    const s = analyse({ seed: 'e_judge_fail', tasks: [judged('j', 3, 6, false), ...Array.from({ length: 5 }, (_, i) => plainTask(`p${i}`, 4, 4))] }, fast).stats!;
+    expect(s.rests_on_judge?.tasks).toEqual([{ task: 'sha256:j', task_id: 'j', a: 3, b: 6 }]);
+  });
+
+  it('is null when the judge is optional, as every judge criterion is today', () => {
+    const s = analyse({ seed: 'e_judge_opt', tasks: [judged('j', 3, 6, true, false), ...Array.from({ length: 5 }, (_, i) => plainTask(`p${i}`, 4, 5))] }, fast).stats!;
+    expect(s.rests_on_judge).toBeNull();
+  });
+});
+
 describe('analyse: the regression list (D10)', () => {
   it('lists every task where B dropped or a check fell, critical first, with the checks that got worse', () => {
     const dropped = task('dropped', 4, 5, 1, 5, (_a, _i, pass) => ({ grades: [grade('emi', pass ? 'pass' : 'fail', 'minor')] }));

@@ -1302,7 +1302,7 @@ export function statsTasks(r: Pick<ExperimentRow, 'task_sha256s' | 'config_hashe
             trial_id: t.id,
             arm: arm === 0 ? 'A' : 'B',
             outcome: t.job_status === 'done' && (t.outcome === 'pass' || t.outcome === 'fail') ? t.outcome : 'incomplete',
-            grades: (byTrial.get(t.id) ?? []).map((g) => ({ grader_id: g.grader_id, required: g.required, verdict: g.verdict, severity: severity.get(g.grader_id) ?? null })),
+            grades: (byTrial.get(t.id) ?? []).map((g) => ({ grader_id: g.grader_id, required: g.required, verdict: g.verdict, severity: severity.get(g.grader_id) ?? null, kind: g.kind })),
             cost_usd: t.cost_usd,
             tokens: t.input_tokens === null && t.output_tokens === null ? null : (t.input_tokens ?? 0) + (t.output_tokens ?? 0),
             wall_s: t.wall_s,

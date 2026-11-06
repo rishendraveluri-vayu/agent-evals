@@ -1077,7 +1077,7 @@ export interface CompareStats {
   aa: AaCalibration | null;
   /** D44, on a calibration run itself: whether it came out as it should (no difference found, and an interval that holds 0; a zero-width interval at 0 is as expected but its text says it cannot show the noise). */
   calibration: { as_expected: boolean; text: string } | null;
-  /** SP5's judge agreement on held-out labels, for the caveat when the verdict rests on the judge; null until SP5 reports it. */
+  /** SP5's judge agreement on held-out labels, for the caveat when the verdict rests on the judge; null until SP5 reports it to the API (always null today: no held-out labels exist). Which tasks rest on the judge is `rests_on_judge`. */
   judge: { kappa: number; low: number; high: number; bar: number; tasks: number } | null;
   /**
    * S6: the tasks in the aggregate where one arm has more than `ratio` (2) times as many decided
@@ -1086,6 +1086,16 @@ export interface CompareStats {
    * Null when no task is that uneven.
    */
   unequal_decided: { ratio: number; tasks: { task: Sha256; task_id: string; a: number; b: number }[]; text: string } | null;
+  /**
+   * S12: what the "rests on the judge" caveat needs, independent of `judge` (the agreement figures).
+   * `differing`: tasks in the aggregate whose arms passed at different rates (a nonzero difference,
+   * not only those flagged beyond noise). `tasks`: those of them, in the experiment's order, where a
+   * required judge decided at least one decided trial's outcome (its pass was needed for a pass, or
+   * it was the only failing required check of a fail), with how many such trials per arm. `all`:
+   * every differing task is among them, so the verdict rests on the judge. Null when no differing
+   * task has such a trial (today every judge criterion is optional).
+   */
+  rests_on_judge: { differing: number; tasks: { task: Sha256; task_id: string; a: number; b: number }[]; all: boolean } | null;
 }
 
 // ---- Trials --------------------------------------------------------------------------

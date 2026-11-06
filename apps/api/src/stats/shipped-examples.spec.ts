@@ -282,6 +282,8 @@ describe('the shipped examples recompute exactly', () => {
     expect(stats.calibration?.text ?? null).toBe(pinned.calibration);
     // Every shipped task has 5 or 10 decided trials in each arm (S6).
     expect(stats.unequal_decided).toBeNull();
+    // Every shipped judge criterion is optional, so no outcome rests on the judge (S12).
+    expect(stats.rests_on_judge).toBeNull();
   });
 });
 
