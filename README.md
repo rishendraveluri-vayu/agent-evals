@@ -269,6 +269,8 @@ Full list: [`docs/known-limits.md`](docs/known-limits.md). The ones that matter:
   tool. A correct number rounded in prose still fails it. On my 40 blind labels the code checks
   agree with me on only 21 (kappa −0.23): they check facts and sourcing, not whether the advice is
   good. So read "+9" as "v2 follows the sourcing rule more often", not "v2 gives better advice".
+  The rule is also what catches the planted defect: loosened to accept rounded figures, that catch
+  falls to p = 0.094, and without the rule the defect is invisible.
 - No task exercises memory. Hermes's memory is wired and traced, but in 20 memory-on trials it never
   saved anything, so memory on vs off is untested here.
 - Conversations use a simulated client (Claude Haiku playing the customer). Those results describe

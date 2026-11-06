@@ -21,7 +21,9 @@ Where this platform's conclusions should not be trusted. Add a line the moment o
    Against Rishi's 40 blind held-out labels the code checks agree on 21 (kappa −0.23, worse than the
    judge that was rejected): they passed 9 of the 10 answers he failed and failed 10 he passed, 8
    on the sourcing check alone. So the pass rate measures facts and sourcing, not advice quality
-   (`docs/judge-validation.md`, top).
+   (`docs/judge-validation.md`, top). Loosening the rule to accept rounded derived figures leaves the
+   headline undecided (+10, p = 0.125) and loses the planted defect (+22, p = 0.094); removing it
+   hides the defect entirely (`docs/experiment.md`, Deviations).
 4. **Models are named by alias.** `claude-haiku-5-5` is the provider's name, not a dated snapshot,
    so a provider update behind it changes results between runs. Each call records the model id the
    provider served (`gen_ai.response.model` on its span), but the config's hash does not cover it.
