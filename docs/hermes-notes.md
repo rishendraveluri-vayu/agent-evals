@@ -152,3 +152,7 @@ Tests: `workers/hermes/tests/test_prompt_switches.py`, against the fake model se
   request". The own loop and LangGraph never sent cache markers.
 - An earlier version of this note (written the same night) said Hermes still uses the cache; it
   mixed the trials from before and after D31. Corrected on 5 Nov.
+
+## Tool errors followed by Hermes's own text (destructive review, 6 Nov)
+
+- A tool result that is an `{"error": ...}` object followed by Hermes's "[Tool loop warning...]" or "Paused" text was recorded with `is_error=false`: our adapter looked for an error in the whole string, not in the JSON at its head. Seen in 7 tool spans of the positive control. Since 6 Nov the adapter reads the JSON at the head of a result, so such a call is an error (`workers/hermes/tests/test_error_flag.py`); `only_errors`, `successful` and the judge's "(returned an error)" label now see it. No shipped outcome changed: those calls were refused for unsupported inputs anyway. Hermes source is untouched.
