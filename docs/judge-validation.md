@@ -2,6 +2,12 @@
 
 Required by the brief: show how the judge was checked for trustworthiness, for example agreement with a small set of human-labelled examples.
 
+**Where the judge stands (6 Nov), in one place.**
+
+- **The candidate:** rubric v4 (`configs/rubrics/advice.v4.md`) on Gemini 3.8 Flash, frozen on 5 Nov (D74). On the 29-trial dev set its overall agreement with Rishi is kappa 0.63 (interval −0.05 to 1.00), up from 0.30 for rubric v1 on the tuning set. It has graded all 40 held-out trials (`judge-panel/d74-test-heldout-advice-v4.jsonl`); the one measurement against D8's bar waits on Rishi's blind labels of those trials.
+- **What it decides today: nothing.** Every task's judge grader still runs rubric v1 and is optional (D8), so every verdict rests on the deterministic checks. If v4 passes on the held-out labels, the tasks move to v4 on Gemini 3.8 Flash as new task versions; if it does not, the judge stays visible on trial pages and uncounted.
+- **Superseded on the way, kept for the record:** Phase 1's "fixed for Phase 2: Gemini 3.8 Flash with rubric v2" and D73's 27-trial labelling list, both replaced by D74 before any held-out label existed. The same 40 held-out trials were also judged once under v2 (`judge-panel/phase2-heldout-advice-v2.jsonl`, 5 Nov 19:52). That run is kept but will not be scored: rubrics v3 and v4 were written from Rishi's tuning notes and the dev set, and no held-out output was read to write them.
+
 The main risk is not overall accuracy. It's bias that differs by config: if the judge favours long answers and one model writes longer, the result is a fake win.
 
 ## Plan (settled 5 Nov)
@@ -58,7 +64,7 @@ Rishi: "Do multiple models labels on them and find which disagree and iterate, i
 
 **Phase 2: measure once, on held-out trials, rubric frozen.** The judges grade 40 trials of the headline run, 20 per arm, 2 per held-out task and arm, picked at random with a fixed seed before any judge sees them. Rishi labels, blind, every trial where the judges disagree on a criterion, plus 10 picked at random from those where all three agree. Agreement is then estimated over all 40 with each labelled trial weighted by how likely it was to be picked (the agreed trials stand for all the agreed ones), and reported per criterion for the chosen judge against D8's bar, and for the other two as context. The other judges' results do not change the choice: picking the best of three on the same held-out labels would flatter the winner. If no criterion clears the bar, the judge still counts for nothing, and that is the result.
 
-**Amended before any held-out label was written (D73, 5 Nov):** the platform takes more than one rater. If other raters can label (Rishi named two possible; they are remote, so it waits on an offline labelling page, in the spec's parking lot), each labels the same 27 trials, blind to the judges and to each other (each has their own queue, `#/labels?set=heldout&items=...`, with their rater id). The reference is the raters' majority on each criterion (a tie is left out); agreement with each rater is reported too. The raters' agreement with each other (pairwise Cohen's kappa on the items they share) is reported beside the judge's as the ceiling a judge can be expected to reach. With Rishi alone, the reference is his labels, as before. D8's bar is unchanged. `evals-panel judge-panel/phase2-heldout-advice-v2.jsonl --labels labels/heldout.jsonl --weights judge-panel/phase2-to-label.json` computes all of it.
+**Amended before any held-out label was written (D73, 5 Nov; its 27-trial list was superseded by D74, which labels all 40):** the platform takes more than one rater. If other raters can label (Rishi named two possible; they are remote, so it waits on an offline labelling page, in the spec's parking lot), each labels the same 27 trials, blind to the judges and to each other (each has their own queue, `#/labels?set=heldout&items=...`, with their rater id). The reference is the raters' majority on each criterion (a tie is left out); agreement with each rater is reported too. The raters' agreement with each other (pairwise Cohen's kappa on the items they share) is reported beside the judge's as the ceiling a judge can be expected to reach. With Rishi alone, the reference is his labels, as before. D8's bar is unchanged. `evals-panel judge-panel/phase2-heldout-advice-v2.jsonl --labels labels/heldout.jsonl --weights judge-panel/phase2-to-label.json` computes all of it.
 
 **What would change it.** A judge that cannot read the recorded trials (an `error` grade) is reported, not dropped. Spend beyond the cap stops the panel; what has run is reported.
 
@@ -78,7 +84,7 @@ Following "critique shadowing" (Husain: the expert's pass/fail plus a written cr
 - **v3** (his principles and worked examples) let Gemini catch more of his fails (specificity 0.33 to 0.67) but added two false fails. One applied principle 5 ("look for a cheaper way out") as a reason for a no, where his own verdicts treat it as an aside; the other failed an arithmetic slip he passed.
 - **v4** says which principles he fails an answer for (an unasked assumption, a confusing explanation) and which only make a better answer, read from his verdicts. Every judge improved.
 - **Frozen: rubric v4, judge Gemini 3.8 Flash**, after the two rounds the plan allows. On the dev set Gemini's kappa clears D8's 0.6 as a point estimate, with a lower bound far below 0.4, so nothing is trusted until the held-out test.
-- One Gemini call in round 2 ran out of output (the reply was cut off at 8,000 tokens on a long conversation): an `error`, reported, not counted. Spend so far $4.55 of the panel's $8.
+- One Gemini call in round 2 ran out of output (the reply was cut off at 8,000 tokens on a long conversation): an `error`, reported, not counted. Spend at that point $4.55 of the panel's $8; $5.89 in all once the D74 rounds and the held-out judging ran (`docs/cost.md`).
 
 ### Phase 1 results (5 Nov, discovery trials only)
 
@@ -98,7 +104,7 @@ On the specific criteria (clears-card-first 12, keeps-medicines 3, health-cover 
 - **The Claude judges fail trials Rishi passed,** mostly on arithmetic the rubric tells them not to redo: "₹13,800" where the tool gives about ₹6,664, "₹25,700" where it is ₹25,099.25. These are real slips in the answers; whether they should fail "overall" is Rishi's to say on review, so the rubric was not tuned to silence them.
 - **Stopped after two rounds:** Rishi failed 5 of the 33 tuning trials, so a third round would fit those few trials rather than the rule.
 
-**Fixed for Phase 2:** the judge that counts is **Gemini 3.8 Flash with rubric v2**: the highest agreement in both rounds, no false fails, and from a different family than the agent. The majority is reported in Phase 2 as context only. On the tuning set it is still below D8's bar (kappa 0.53, lower bound 0.00), and the bar is measured on held-out labels.
+**Fixed for Phase 2 (superseded by D74 the same evening, before any held-out label; see the top of this file):** the judge that counts is **Gemini 3.8 Flash with rubric v2**: the highest agreement in both rounds, no false fails, and from a different family than the agent. The majority is reported in Phase 2 as context only. On the tuning set it is still below D8's bar (kappa 0.53, lower bound 0.00), and the bar is measured on held-out labels.
 
 ## Limits to state
 
