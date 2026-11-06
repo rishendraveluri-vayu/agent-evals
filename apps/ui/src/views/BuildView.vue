@@ -6,7 +6,7 @@
  * (POST /prompts, POST /configs) and offers only real models; the full screen keeps every setting
  * and the scripted test models.
  */
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 import { api } from '../api/client';
 import { ApiError, errorWithFix } from '../api/errors';
 import type { ConfigView, CreatedPrompt, Harness, Json, ModelView, PromptView, SettingName, ToolsetView } from '../api/types';
@@ -22,6 +22,7 @@ import { mdBlocks } from '../lib/markdown';
 import { defaultRealModel, isFake, isLocal, LOCAL_MODEL_COMMAND } from '../lib/models';
 import { harnessName, harnessShort, modelName, settingLabel } from '../lib/names';
 import { NAME_MAX, settingProblem } from '../lib/limits';
+import { asRecord, readDraft, writeDraft } from '../lib/sessionDraft';
 import { ignoredReasons } from '../lib/settings';
 import { href } from '../router';
 
@@ -71,6 +72,7 @@ watch(data, (d) => {
   // without its key); never the local one by default, which runs only once Ollama is up.
   form.model = defaultRealModel(realModels.value);
   form.prompt = taskPrompts.value[0]?.sha256 ?? '';
+  restoreKept(d);
 });
 
 const harness = computed(() => data.value?.harnesses.find((h) => h.name === form.harness) ?? null);
@@ -320,6 +322,76 @@ const keyMissing = computed(() => missingKey(form.model, data.value?.models ?? [
 const noKeys = computed(() => realModels.value.length > 0 && !realModels.value.some((m) => m.key_set === true));
 /** The local open-weight model, when LiteLLM lists it: it needs no key, only its compose profile. */
 const localModel = computed(() => realModels.value.find((m) => isLocal(m)) ?? null);
+
+// ---------------------------------------------------------------- kept across navigation
+
+/** This tab's choices, a prompt being written included, so a link away (the i's Harnesses page,
+ *  the preview) and Back find the form as it was. */
+const KEEP_KEY = 'agent-evals-build';
+
+/** Puts back what this tab last had, choice by choice: one that no longer exists (a prompt or a
+ *  model gone from the lists) keeps its default. */
+function restoreKept(d: Loaded): void {
+  const kept = asRecord(readDraft(KEEP_KEY));
+  if (!kept) return;
+  const text = (k: string) => {
+    const v = kept[k];
+    return typeof v === 'string' ? v : null;
+  };
+  const keptHarness = text('harness');
+  if (keptHarness && d.harnesses.some((h) => h.name === keptHarness)) form.harness = keptHarness;
+  const keptModel = text('model');
+  if (keptModel && realModels.value.some((m) => m.name === keptModel)) form.model = keptModel;
+  const keptPrompt = text('prompt');
+  if (keptPrompt && taskPrompts.value.some((p) => p.sha256 === keptPrompt)) form.prompt = keptPrompt;
+  const numbersKept = asRecord(kept.numbers) ?? {};
+  for (const name of NUMBER_SETTINGS) {
+    const v = numbersKept[name];
+    if (typeof v === 'string') form.numbers[name] = v;
+  }
+  const togglesKept = asRecord(kept.toggles) ?? {};
+  for (const name of TOGGLE_SETTINGS) {
+    const v = togglesKept[name];
+    if (typeof v === 'boolean') form.toggles[name] = v;
+  }
+  const keptName = text('name');
+  if (kept.nameTouched === true && keptName !== null) {
+    nameTouched.value = true;
+    form.name = keptName;
+  }
+  const base = d.prompts.find((p) => p.sha256 === text('draftBase'));
+  if (kept.promptMode === 'write' && base) {
+    draftBase.value = base;
+    draft.value = text('draft') ?? base.text;
+    promptMode.value = 'write';
+  }
+  const savedHash = text('saved');
+  const config = savedHash ? d.configs.find((c) => c.hash === savedHash) : undefined;
+  // After the choices above settle: setting them clears the saved panel (a change is a new agent).
+  if (config) {
+    void nextTick(() => {
+      saved.value = { config, existed: kept.savedExisted === true };
+    });
+  }
+}
+
+const kept = computed(() => ({
+  harness: form.harness,
+  model: form.model,
+  prompt: form.prompt,
+  name: form.name,
+  nameTouched: nameTouched.value,
+  numbers: { ...form.numbers },
+  toggles: { ...form.toggles },
+  promptMode: promptMode.value,
+  draft: draft.value,
+  draftBase: draftBase.value?.sha256 ?? null,
+  saved: saved.value?.config.hash ?? null,
+  savedExisted: saved.value?.existed ?? false,
+}));
+watch(kept, (value) => {
+  if (data.value && form.harness) writeDraft(KEEP_KEY, value);
+});
 </script>
 
 <template>

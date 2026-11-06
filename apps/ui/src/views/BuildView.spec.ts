@@ -432,6 +432,67 @@ describe('Build an agent, fresh-clone QA round 3', () => {
   });
 });
 
+describe('Build an agent keeps its choices across a link away and Back (destructive review U4)', () => {
+  it('finds every choice and an unsaved prompt draft as they were after the page is left and opened again', async () => {
+    let view = await open();
+    await pickHarness(view, 'langgraph');
+    await view.get('[data-test="model-gemini-3.8-flash"] input').setValue(true);
+    await view.get('[data-test="prompt-select"]').setValue(V1.sha256);
+    await setNumber(view, 'max_steps', '9');
+    await view.get('#build-parallel_tool_calls').setValue(true);
+    await view.get('[data-test="agent-name"]').setValue('Kept by hand');
+    await view.get('[data-test="agent-name"]').trigger('input');
+    await view.get('[data-test="prompt-mode-write"]').trigger('click');
+    await settle();
+    await view.get('[data-test="prompt-draft"]').setValue(`${V1.text}\nA line of my own.`);
+    await settle();
+    // The i's link to the Harnesses page, then Back: the page is made again from nothing.
+    view.unmount();
+    view = await open();
+    expect(view.get('[data-test="harness-langgraph"]').classes()).toContain('tile--on');
+    expect((view.get('[data-test="model-gemini-3.8-flash"] input').element as HTMLInputElement).checked).toBe(true);
+    expect((view.get('#build-max_steps').element as HTMLInputElement).value).toBe('9');
+    expect((view.get('#build-parallel_tool_calls').element as HTMLInputElement).checked).toBe(true);
+    expect((view.get('[data-test="agent-name"]').element as HTMLInputElement).value).toBe('Kept by hand');
+    expect((view.get('[data-test="prompt-draft"]').element as HTMLTextAreaElement).value).toBe(`${V1.text}\nA line of my own.`);
+    expect(view.get('[data-test="prompt-editor"]').text()).toContain(`Your prompt, from ${V1.id} v1`);
+  });
+
+  it('keeps the saved panel too, so Back from the preview still offers what comes next', async () => {
+    let view = await open();
+    await pickHarness(view, 'ownloop');
+    await view.get('[data-test="save-agent"]').trigger('click');
+    await settle();
+    expect(view.find('[data-test="next-steps"]').exists()).toBe(true);
+    const status = view.get('[data-test="saved-status"]').text();
+    view.unmount();
+    view = await open();
+    expect(view.get('[data-test="harness-ownloop"]').classes()).toContain('tile--on');
+    expect(view.get('[data-test="saved-status"]').text()).toBe(status);
+  });
+
+  it('starts fresh, without an error, when storage holds something unreadable or is blocked', async () => {
+    window.sessionStorage.setItem('agent-evals-build', '{not json');
+    let view = await open();
+    expect(view.get('[data-test="harness-hermes"]').classes()).toContain('tile--on');
+    view.unmount();
+    window.sessionStorage.setItem('agent-evals-build', JSON.stringify({ harness: 'gone', model: 42, prompt: 'sha256:gone', numbers: [], toggles: null }));
+    view = await open();
+    expect(view.get('[data-test="harness-hermes"]').classes()).toContain('tile--on');
+    expect((view.get('[data-test="model-claude-haiku-5-5"] input').element as HTMLInputElement).checked).toBe(true);
+    view.unmount();
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    view = await open();
+    await pickHarness(view, 'adk');
+    expect(view.get('[data-test="harness-adk"]').classes()).toContain('tile--on');
+  });
+});
+
 describe('Build an agent during a slow save (destructive review U13)', () => {
   it('locks every choice until the save answers, so the saved panel names what was sent', async () => {
     let answer: (c: never) => void = () => undefined;

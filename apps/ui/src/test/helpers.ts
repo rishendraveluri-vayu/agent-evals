@@ -17,6 +17,8 @@ export function useFixtures(): void {
   });
   beforeEach(() => {
     vi.stubEnv('VITE_FIXTURES', '1');
+    // A page's kept choices (lib/sessionDraft.ts) belong to one test only.
+    window.sessionStorage.clear();
   });
 }
 
