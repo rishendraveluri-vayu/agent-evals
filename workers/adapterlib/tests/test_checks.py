@@ -137,6 +137,16 @@ def test_source_numbers_scale_words_split_json_lists_and_skip_dates_and_ids():
     assert Decimal("8997.26") in source_numbers('{"result": "{\\"emi\\":8997.26}"}')
 
 
+def test_checks_json_carries_the_checks_version_which_is_the_packages():
+    import tomllib
+
+    pyproject = tomllib.loads((Path(checks.__file__).parents[2] / "pyproject.toml").read_text())
+    assert pyproject["project"]["version"] == checks.CHECKS_VERSION
+    out = run_checks(make_spec(), {"trial_id": "t_v"}, [], {})
+    assert out["checks_version"] == checks.CHECKS_VERSION
+    assert errors("checks", out) == []
+
+
 def test_tool_names_lose_the_harness_prefix():
     assert tool_name("mcp__finance__calculate_emi") == "calculate_emi"
     assert tool_name("calculate_emi") == "calculate_emi"

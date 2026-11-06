@@ -71,6 +71,10 @@ from typing import Any
 from evals_adapter.derive import AMOUNT_MIN, Derivation, Operand, Pool, Pools, find
 from evals_adapter.spec import CONTRACT_VERSION, TrialPaths
 
+# The checks' own version, written into every checks.json: the adapter library's version
+# (pyproject.toml; a test keeps them equal). 0.5.0 (6 Nov): the destructive review's G3, G4, G6,
+# G8, G9, G10 and G11. A checks.json without it was written by 0.4.0 or earlier.
+CHECKS_VERSION = "0.5.0"
 # Also the order of preference between equal matches. `user` is the task's message, `client_sim`
 # a simulated client's (G3).
 SOURCES = ("tool", "client", "user", "client_sim")
@@ -1113,6 +1117,7 @@ def run_checks(
     trial_id = (result or {}).get("trial_id") or ((spec or {}).get("trial") or {}).get("id")
     return {
         "contract_version": CONTRACT_VERSION,
+        "checks_version": CHECKS_VERSION,
         "trial_id": trial_id or "unknown",
         "amounts": rows,
         "unsupported": sum(1 for r in rows if r["supported_by"] is None),

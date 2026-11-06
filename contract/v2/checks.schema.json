@@ -8,6 +8,7 @@
   "required": ["contract_version", "trial_id", "amounts", "unsupported", "tools_called", "required_tools"],
   "properties": {
     "contract_version": {"const": "2"},
+    "checks_version": {"description": "6 Nov: the version of the checks that wrote this file (the adapter library's, evals_adapter.checks.CHECKS_VERSION), so files written under different rules can be told apart. Absent before 0.5.0 (the destructive review's fixes: the simulated client's own kind and echoes, an errored call is no source, free factors the replies write, no truncation under 3 significant digits, counts after a range dash, the readers' shared forms and digit caps).", "type": "string", "minLength": 1},
     "trial_id": {"type": "string", "minLength": 1},
     "amounts": {
       "description": "Every money amount in the agent's replies, in order: ₹, Rs, INR or 'rupees' amounts, lakh and crore forms, and Indian digit grouping from one lakh up.",
