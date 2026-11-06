@@ -93,9 +93,11 @@ watch(data, (d) => {
   // A missing arm is the newest other config, the same harness first; never the config on the
   // other arm, and never an A/A run (lib/runSetup.ts).
   const arms = defaultArms(d.configs, props.a, props.b);
-  setup.a = arms.a;
+  // An A/A link that names no agent picks none for you: arm A's picker asks which to calibrate.
+  const pickFirst = setup.calibration && !props.a;
+  setup.a = pickFirst ? '' : arms.a;
   // D44: a calibration runs arm A's agent on arm B too.
-  setup.b = setup.calibration && arms.a ? arms.a : arms.b;
+  setup.b = setup.calibration ? setup.a : arms.b;
   armNote.value = setup.calibration ? null : arms.note;
   setup.simModel = defaultSim.value;
   if (!d.allTasks.some((t) => t.split === setup.split)) setup.split = 'all';
@@ -209,7 +211,8 @@ watch(
   ([on, a], before) => {
     if (!draft || !data.value) return;
     if (on) setup.b = a;
-    else if (before?.[0] && setup.b === a) setup.b = defaultArms(data.value.configs, a, undefined).b;
+    // With no agent on arm A yet, arm B stays empty too: nothing is picked for you.
+    else if (before?.[0] && setup.b === a) setup.b = a ? defaultArms(data.value.configs, a, undefined).b : '';
   },
 );
 /** Arms whose config id is not a saved agent here (a mistyped or stale link): said plainly, and
@@ -316,9 +319,21 @@ const planCommit = computed(() => (draft ? setup.plan : (data.value?.experiment?
 /** An unstarted experiment without a plan commit can be given one before it starts. */
 const needsPlanField = computed(() => !draft && !started.value && !allFake.value && !data.value?.experiment?.plan_commit);
 
+/** A draft with no agent on arm A while agents of your own exist (an A/A link that named none). */
+const noArmPicked = computed(() => draft && !setup.a && pickable.value.own.length > 0);
+
 const checks = computed<Check[]>(() => {
   const d = data.value;
   if (!d) return [];
+  if (noArmPicked.value) {
+    return [
+      {
+        ok: false,
+        title: 'No agent picked for arm A',
+        detail: isCalibration.value ? 'Pick the agent to calibrate above: an A/A calibration runs it on both arms.' : 'Pick an agent for arm A above.',
+      },
+    ];
+  }
   const unknown = unknownArms.value;
   if (unknown.length) {
     // Nothing is known about an agent that is not saved here, so nothing else is checked or claimed.
@@ -1240,6 +1255,13 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                   data-test="arm-a"
                 >
                   <option
+                    v-if="!setup.a"
+                    value=""
+                    disabled
+                  >
+                    {{ setup.calibration ? 'Pick the agent to calibrate' : 'Pick an agent' }}
+                  </option>
+                  <option
                     v-for="c in pickable.own"
                     :key="c.hash"
                     :value="c.hash"
@@ -1304,6 +1326,13 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                   {{ ui ? ' ' : '' }}No saved agent with the id <span class="mono">{{ u.hash }}</span>, so arm {{ u.letter }} is empty.
                 </template>
                 The link may be mistyped, or from another database. Pick a saved agent above; <a :href="href.config()">Configs</a> lists every one.
+              </p>
+              <p
+                v-if="noArmPicked && setup.calibration"
+                class="arm-note small"
+                data-test="aa-pick"
+              >
+                Which agent should this A/A calibration measure? Pick it for arm A; it runs on both arms.
               </p>
               <label
                 class="aa-option small"

@@ -557,6 +557,36 @@ describe('RunView arm defaults (QA blocker 3)', () => {
     expect(armB.value).not.toBe(cfgV1.hash);
   });
 
+  it('asks which agent to calibrate when an A/A link names none, instead of picking one (U14)', async () => {
+    const estimate = vi.spyOn(api, 'estimate');
+    const w = mount(RunView, { props: { a: null, b: null, calibration: true } });
+    await settle();
+    const armA = w.get('[data-test="arm-a"]').element as HTMLSelectElement;
+    expect(armA.value).toBe('');
+    expect(armA.selectedOptions[0]?.text).toBe('Pick the agent to calibrate');
+    expect(selectValue(w, '[data-test="arm-b"]')).toBe('');
+    expect(w.get('[data-test="aa-pick"]').text()).toBe('Which agent should this A/A calibration measure? Pick it for arm A; it runs on both arms.');
+    expect(checkTexts(w)).toEqual(['No agent picked for arm ACheck failed.Pick the agent to calibrate above: an A/A calibration runs it on both arms.']);
+    expect(w.get('[data-test="start"]').attributes('disabled')).toBeDefined();
+    expect(estimate).not.toHaveBeenCalled();
+    await w.get('[data-test="arm-a"]').setValue(cfgV1.hash);
+    await settle();
+    expect(selectValue(w, '[data-test="arm-b"]')).toBe(cfgV1.hash);
+    expect(w.find('[data-test="aa-pick"]').exists()).toBe(false);
+    expect(armA.querySelector('option[value=""]')).toBeNull();
+    expect(estimate).toHaveBeenLastCalledWith(expect.objectContaining({ config_hashes: [cfgV1.hash, cfgV1.hash], calibration: true }));
+  });
+
+  it('keeps arm B empty when the calibration box is unticked before an agent is picked', async () => {
+    const w = mount(RunView, { props: { a: null, b: null, calibration: true } });
+    await settle();
+    await w.get('[data-test="calibration-box"]').setValue(false);
+    await settle();
+    expect(selectValue(w, '[data-test="arm-a"]')).toBe('');
+    expect(selectValue(w, '[data-test="arm-b"]')).toBe('');
+    expect(checkTexts(w)).toEqual(['No agent picked for arm ACheck failed.Pick an agent for arm A above.']);
+  });
+
   it('starts with the box ticked when the link asks for a calibration', async () => {
     const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV1.hash, calibration: true } });
     await settle();
