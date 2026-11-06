@@ -5,7 +5,7 @@ import { agreementWords, armDifferences, armIndexOf, armsOf, armState, axisWords
 import { coverage, coverageText } from './capabilities';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, splitCheck } from './checks';
 import { sentenceChanges } from './diff';
-import { harnessVersion, identParts, money, plainText, relative, shortHash, shortVersion, signed, splitIdents, wholeMoney, wilson } from './format';
+import { harnessVersion, identParts, money, plainText, relative, shortHash, shortVersion, signed, signedMoney, splitIdents, wholeMoney, wilson } from './format';
 import { mdBlocks } from './markdown';
 import { defaultRealModel, isFree, isLocal, runnableHosted } from './models';
 import { alsoGradedBy, isJudged as taskIsJudged, modelName } from './names';
@@ -72,6 +72,22 @@ describe('format', () => {
     expect(money(0.0021)).toBe('$0.0021');
     expect(wholeMoney(150)).toBe('$150');
     expect(shortHash('sha256:7f3a9c2deadbeef')).toBe('7f3a9c2');
+  });
+
+  it('shows money below $1 to three significant figures, so two arms side by side show their difference (destructive review U5)', () => {
+    // The headline's cost per trial: A and B beside "+30%" read $0.0094 and $0.0122, not $0.0094 and $0.01.
+    expect([money(0.0094), money(0.01223)]).toEqual(['$0.0094', '$0.0122']);
+    expect(money(0.18)).toBe('$0.18');
+    expect(money(0.5)).toBe('$0.50');
+    expect(money(0.123456)).toBe('$0.123');
+    expect(money(0.0532)).toBe('$0.0532');
+    expect(money(0.99999)).toBe('$1.00');
+    expect(money(1.234)).toBe('$1.23');
+    expect(money(12.8)).toBe('$12.80');
+    expect(money(0)).toBe('$0');
+    expect(money(null)).toBe('–');
+    expect(signedMoney(0.0028)).toBe('+$0.0028');
+    expect(signedMoney(-0.0028)).toBe('−$0.0028');
   });
 
   it('gives relative times in words', () => {

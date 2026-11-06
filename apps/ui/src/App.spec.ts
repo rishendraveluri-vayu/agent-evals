@@ -92,12 +92,12 @@ describe('App in fixture mode', () => {
     await settle();
     expect(wrapper.get('[data-test="sample-data"]').text()).toBe('Sample data');
     expect(wrapper.get('[data-test="spend-trials"]').text()).toBe('$55.88');
-    expect(wrapper.get('[data-test="spend-platform"]').text()).toBe('$0.02');
+    expect(wrapper.get('[data-test="spend-platform"]').text()).toBe('$0.0183');
     expect(wrapper.get('[data-test="spend"]').text()).toContain('of $150');
     // A phone names each figure on screen, not only in a tooltip (QA round 3, minor 15).
-    expect(wrapper.get('[data-test="spend-compact"]').text()).toBe('Trials $55.88Platform $0.02Checks $0.02 of $2');
+    expect(wrapper.get('[data-test="spend-compact"]').text()).toBe('Trials $55.88Platform $0.0183Checks $0.0183 of $2');
     const meter = wrapper.get('[data-test="allowance"] [role="img"]');
-    expect(meter.attributes('aria-label')).toBe('Conflict checks: $0.02 of $2 used, $1.98 left, 1 call');
+    expect(meter.attributes('aria-label')).toBe('Conflict checks: $0.0183 of $2 used, $1.98 left, 1 call');
   });
 
   it('routes by hash and marks the current section', async () => {

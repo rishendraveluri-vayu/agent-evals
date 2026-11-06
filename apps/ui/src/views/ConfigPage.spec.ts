@@ -126,8 +126,8 @@ describe('ConfigPage: the conflict check (D38)', () => {
     expect(findings[0].text()).toContain(`Hermes says “${first?.harness_says}”`);
     expect(findings[0].text()).toContain(`We say “${first?.we_say}”`);
     expect(findings[0].text()).toContain(first?.why_it_matters ?? '');
-    expect(panel.get('[data-test="check-cost"]').text()).toContain('This check cost $0.02 when it ran; showing the stored result, so this view spent nothing.');
-    expect(panel.get('[data-test="allowance"] [role="img"]').attributes('aria-label')).toBe('Conflict-check allowance: $0.02 of $2 used, $1.98 left, 1 call');
+    expect(panel.get('[data-test="check-cost"]').text()).toContain('This check cost $0.0183 when it ran; showing the stored result, so this view spent nothing.');
+    expect(panel.get('[data-test="allowance"] [role="img"]').attributes('aria-label')).toBe('Conflict-check allowance: $0.0183 of $2 used, $1.98 left, 1 call');
     // A stored result: no paid button at all.
     expect(panel.find('[data-test="run-check"]').exists()).toBe(false);
     expect(run).not.toHaveBeenCalled();
@@ -152,7 +152,7 @@ describe('ConfigPage: the conflict check (D38)', () => {
     await settle();
     expect(run).toHaveBeenCalledTimes(1);
     expect(run).toHaveBeenCalledWith(gemini.hash);
-    expect(panel.get('[data-test="check-cost"]').text()).toContain('This check cost $0.02 when it ran.');
+    expect(panel.get('[data-test="check-cost"]').text()).toContain('This check cost $0.0201 when it ran.');
     expect(spend).toHaveBeenCalledTimes(1);
     window.removeEventListener('evals:spend-changed', spend);
   });
