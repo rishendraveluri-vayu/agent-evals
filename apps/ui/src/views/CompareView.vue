@@ -212,20 +212,31 @@ function armOfTrial(t: TrialRowSummary): ArmKey {
   return armLetter(armIndexOf(t, d.detail)).toLowerCase();
 }
 
-/** The attempt that re-ran an infra-stopped trial: same task, config and repeat, one attempt on. */
+/** The attempt that re-ran an infra-stopped trial: same task, config and repeat, one attempt on.
+ *  An attempt abandoned for want of heartbeats is re-run too, so the next attempt is looked for
+ *  first, whatever stopped this one. With none, the run is either still going (it may come) or
+ *  over (the re-run cap was reached, or the run was stopped). */
 function rerunWords(t: TrialRowSummary): string {
-  if (t.status === 'abandoned') return 'gave up, not re-run';
   const next = data.value?.trials.find((x) => x.task_sha256 === t.task_sha256 && x.config_hash === t.config_hash && x.repeat_index === t.repeat_index && x.attempt === t.attempt + 1);
-  if (!next || next.status === 'queued' || next.status === 'claimed' || next.status === 'running') return 'not re-run yet';
+  if (!next) {
+    const status = data.value?.detail.status;
+    return status === 'running' || status === 'paused' || status === 'created' ? 'not re-run yet' : 'not re-run';
+  }
+  if (next.status === 'queued' || next.status === 'claimed' || next.status === 'running') return 'not re-run yet';
   if (next.status === 'infra_failed' || next.status === 'abandoned') return 're-run also an infra failure';
+  if (next.status === 'cancelled') return 're-run cancelled';
   if (next.passed === true) return 're-run passed';
   if (next.passed === false) return 're-run failed';
   return 're-run not graded yet';
 }
 
+/** Why an attempt stopped on infra: its runner label, or, for an attempt that was abandoned (it
+ *  has no label), that its worker went quiet. */
+const infraCause = (t: Pick<TrialRowSummary, 'status' | 'label'>) => infraReason(t.label) || (t.status === 'abandoned' ? 'its worker stopped sending heartbeats' : '');
+
 const infraRows = computed(() =>
   infraTrials.value.map((t) => {
-    const reason = infraReason(t.label);
+    const reason = infraCause(t);
     return { trial: t, arm: armOfTrial(t), task: taskName(t.task_sha256), cause: `infra failure${reason ? `: ${reason}` : ''}`, rerun: rerunWords(t) };
   }),
 );

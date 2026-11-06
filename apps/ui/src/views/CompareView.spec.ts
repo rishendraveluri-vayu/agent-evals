@@ -250,6 +250,34 @@ describe('CompareView in fixture mode', () => {
   });
 });
 
+describe('CompareView against the API: trials stopped on infra failures', () => {
+  it('says an abandoned attempt was re-run when its next attempt ran, and why it stopped (U6)', async () => {
+    type Row = { id: string; status: string; label: string | null; attempt: number; passed: boolean | null };
+    const rows = (experimentTrials as unknown as Record<string, Row[]>).exp_heldout;
+    // The first attempt went quiet (abandoned, no label) and its re-run passed; the second stop
+    // has no re-run, on a run that is over.
+    const trials = rows
+      .map((t) => (t.id === 'tr_debt-hardship-03_b_2' ? { ...t, status: 'abandoned', label: null } : t))
+      .filter((t) => t.id !== 'tr_fd-vs-sip-07_b_2_attempt2');
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': compares.exp_heldout,
+      '/api/experiments/exp_heldout/trials': trials,
+      '/api/judge/agreement?set=heldout': judge,
+      '/api/labels/queue?set=heldout': queue.heldout,
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const items = w.findAll('[data-test="infra-list"] li').map((li) => li.text());
+    expect(items).toEqual([
+      'B · debt-hardship-03 · attempt 1 · infra failure: its worker stopped sending heartbeats · re-run passed',
+      'B · fd-vs-sip-07 · attempt 1 · infra failure: provider error · not re-run',
+    ]);
+    // Not every stop was re-run, so the verdict box does not say they were.
+    expect(w.get('[data-test="verdict"]').text()).toContain('2 trials stopped on infra failures are listed, not dropped.');
+  });
+});
+
 describe('CompareView against the API: figures written without a tool (D61)', () => {
   const route = (prose: unknown) =>
     routeFetch({

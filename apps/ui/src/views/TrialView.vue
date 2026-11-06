@@ -139,7 +139,37 @@ const vm = computed(() => {
   };
 });
 
-const isInfra = computed(() => !!vm.value?.label?.startsWith('infra:'));
+/** An infra stop: a runner label of infra:..., or an attempt stopped by the engine itself, which
+ *  has no label (abandoned: its worker stopped sending heartbeats). Neither says anything about
+ *  the agent, and neither is graded. */
+const isInfra = computed(() => !!vm.value?.label?.startsWith('infra:') || vm.value?.status === 'abandoned' || vm.value?.status === 'infra_failed');
+/** Why the attempt stopped on infra, in words. */
+const infraWhy = computed(() => {
+  const v = vm.value;
+  if (!v) return '';
+  return infraReason(v.label) || (v.status === 'abandoned' ? 'its worker stopped sending heartbeats' : 'stopped before it reported');
+});
+/** Whether an infra-stopped attempt was run again: the same task, config and repeat, one attempt
+ *  on. With none, a run still going may yet re-run it; a finished one did not. */
+const rerun = computed(() => {
+  const v = vm.value;
+  const d = data.value;
+  if (!v || !d || !isInfra.value || v.repeatIndex === null) return '';
+  const next = d.siblings.find((t) => t.task_sha256 === v.task && t.config_hash === v.configHash && t.repeat_index === v.repeatIndex && t.attempt === v.attempt + 1);
+  if (!next) {
+    const status = d.experiment?.status;
+    if (!status) return '';
+    return status === 'running' || status === 'paused' || status === 'created' ? 'not re-run yet' : 'not re-run';
+  }
+  const as = `re-run as attempt ${next.attempt}`;
+  if (next.status === 'queued' || next.status === 'claimed') return `${as}, not started yet`;
+  if (next.status === 'running') return `${as}, running now`;
+  if (next.status === 'infra_failed' || next.status === 'abandoned') return `${as}, also an infra failure`;
+  if (next.status === 'cancelled') return `${as}, cancelled`;
+  if (next.passed === true) return `${as}, which passed`;
+  if (next.passed === false) return `${as}, which failed`;
+  return `${as}, not graded yet`;
+});
 
 /** While held-out outputs remain to label, the page never says where your labels and the judge
  *  part ways. */
@@ -207,7 +237,7 @@ const title = computed(() => {
 const outcome = computed(() => {
   const v = vm.value;
   if (!v) return null;
-  if (isInfra.value) return { kind: 'infra', text: `Infra failure: ${infraReason(v.label)}, not graded` };
+  if (isInfra.value) return { kind: 'infra', text: `Infra failure: ${infraWhy.value}, not graded` };
   if (v.probe) return { kind: 'pending', text: 'Probe: never graded or counted' };
   // The pill says what happened in the trial's own terms: how many required checks it failed, or
   // how many could not decide (an error, not applicable, the unbuilt judge), so nothing counts as a
@@ -251,7 +281,7 @@ const facts = computed(() => {
   ].filter(Boolean);
   return [
     { k: 'Ended because', v: endStateName(v.endState), n: endNote },
-    { k: 'Counted as', v: isInfra.value ? 'Infra failure' : v.label === 'agent' ? 'Agent outcome' : (v.label ?? 'Not reported'), n: isInfra.value ? infraReason(v.label) : 'Not an infra failure' },
+    { k: 'Counted as', v: isInfra.value ? 'Infra failure' : v.label === 'agent' ? 'Agent outcome' : (v.label ?? 'Not reported'), n: isInfra.value ? capitalise([infraWhy.value, rerun.value].filter(Boolean).join('; ')) : 'Not an infra failure' },
     { k: 'Time', v: seconds(v.wallS), n: startupS.value !== null ? `${startupS.value.toFixed(1)} s of it start-up` : '' },
     {
       k: 'Cost',
