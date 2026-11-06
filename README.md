@@ -96,9 +96,13 @@ flowchart LR
   my hand labels: tuned on about 30 discovery trials I labelled, then checked once against 40
   held-out trials I labelled blind. A judge criterion counts in a verdict once it agrees with me
   well enough (kappa at least 0.6, and no lean towards either version). The current judge didn't:
-  on the 40 held-out trials it passed all 9 answers I failed. So it doesn't count. Its verdicts on
-  those 40 are in `judge-panel/`; the shipped examples were never judged, so their trial pages say
-  "Not judged". Details: [`docs/judge-validation.md`](docs/judge-validation.md).
+  on the 40 held-out trials it passed all 9 answers I failed. So it doesn't count.
+- Every judge grade shows how far to trust it, worked out live from the human labels: *Uncalibrated*
+  (nobody has labelled anything it graded), *Tuning only*, *Too few labels*, or *Trusted* / *Not
+  trusted* by the bar above. A **Calibrate this judge** button opens the blind labeller with a mix
+  of the judge's passes and fails, and the agreement updates as you label. The headline example was
+  judged this way, so its trial pages and the Judge page show the judge as *Not trusted*. Details:
+  [`docs/judge-validation.md`](docs/judge-validation.md).
 - The tasks are a personal-finance assistant for clients in India: calculator tools, client files,
   and a simulated client for the multi-turn ones. 31 tasks: 10 held out for scoring, 11 for
   discovery (where v1's failures were found), 10 for retrieval.
