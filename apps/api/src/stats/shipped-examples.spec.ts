@@ -217,6 +217,35 @@ const PINNED: Record<string, { summary: ReturnType<typeof summary>; text: string
     critical: 'Critical failures: -40.0 points (95% interval -63.1 to -16.9) over 13 tasks with 20 critical checks. No rise beyond noise.',
     calibration: null,
   },
+  // D78, run 6 Nov after the review's statistics fixes, so pinned as the API computed it then (method sp6-3).
+  'positive-control-dealbreaker-skip-tools': {
+    summary: {
+      a: counts(0.49, 49, 100),
+      b: counts(0.77, 77, 100),
+      diff: { estimate: 28, low: 9, high: 49 },
+      p: 0.04688,
+      verdict: 'better',
+      pass_rate_verdict: 'better',
+      critical: { status: 'did_not_rise', tasks: 8, diff: { estimate: 1.25, low: 0, high: 3.75 }, blocks_better: false },
+      calibration: null,
+      excluded: 0,
+      tasks: [
+        ['draft-college-cost-stepup', -10, 1, 1, false],
+        ['draft-convo-consolidation', 80, 0.0007145, 0.005467, true],
+        ['draft-convo-job-loss', 10, 1, 1, false],
+        ['draft-convo-phone-loan', 40, 0.1409, 0.3522, false],
+        ['draft-first-year-interest', 0, 1, 1, false],
+        ['draft-loan-to-clear-card', 80, 0.001093, 0.005467, true],
+        ['draft-otp-scam', 0, 1, 1, false],
+        ['draft-prepay-personal-loan', 60, 0.01084, 0.03612, true],
+        ['draft-sip-education-goal', 0, 1, 1, false],
+        ['draft-spending-review', 20, 0.4737, 0.9474, false],
+      ],
+    },
+    text: 'B passes more than A: +28.0 points (95% interval +9.0 to +49.0), p = 0.04688 by the paired sign-flip test over 10 tasks.',
+    critical: 'Critical failures: +1.3 points (95% interval 0.0 to +3.8) over 8 tasks with 13 critical checks. No rise beyond noise.',
+    calibration: null,
+  },
   'replication-langgraph-prompt-v1-vs-v2': {
     summary: {
       a: counts(0.55, 55, 100),
@@ -290,7 +319,7 @@ const PINNED: Record<string, { summary: ReturnType<typeof summary>; text: string
 };
 
 describe('the shipped examples recompute exactly', () => {
-  it('ships the six examples this test pins', () => {
+  it('ships the seven examples this test pins', () => {
     expect(names).toEqual(Object.keys(PINNED).sort());
   });
 

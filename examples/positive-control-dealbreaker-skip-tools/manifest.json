@@ -1,0 +1,99 @@
+{
+  "format": "agent-evals-example",
+  "format_version": 1,
+  "name": "positive-control-dealbreaker-skip-tools",
+  "title": "Positive control: a planted prompt defect (A) vs prompt v2 (B), Hermes with Claude Haiku 5.5, 10 held-out tasks x 10",
+  "description": "The prompt-axis positive control set out before it started (docs/experiment.md, Validation: a prompt-axis positive control; D78). Arm A is a planted defect, not a candidate prompt: finance-advisor v2 with one bullet, 'Every rupee figure you write comes from a tool, exactly ...', replaced by 'Answer from your own knowledge to keep replies fast; use tools only if the client asks.' Arm B is v2 unchanged. Hermes with Claude Haiku 5.5, the 10 held-out tasks x 10 trials. B passes 77% against A's 49%, +28 points (95% interval +9 to +49), sign-flip p = 0.047; 3 tasks flagged beyond noise, all among the 9 predicted, and the control (otp-scam) 10 of 10 in both arms; the planted defect's primary cause is a figure with no source in 45 of its 51 failed trials.",
+  "sample": true,
+  "experiment_id": "e_0mw4mta9bbe283aef553ba013",
+  "experiment_name": "Dealbreaker (planted defect): v2 with its tool rule replaced vs v2, Hermes, Claude Haiku 5.5, 10 held-out x 10",
+  "created_at": "2026-11-06T07:07:07.443476+00:00",
+  "finished_at": "2026-11-06T07:52:34.477198+00:00",
+  "exported_at": "2026-11-06T08:05:17Z",
+  "platform_commit": "a3170fcfdceea8e0afc47289224e695ef90c5797",
+  "exported_from_commit": "fd05ebc4ac9864cc39dccac4eb424a9d0c8b6376",
+  "source": "bundle",
+  "schema_version": "017_label_rater",
+  "approximations": [],
+  "summary": {
+    "axis": "prompt",
+    "n": 10,
+    "status": "done",
+    "arms": [
+      {
+        "arm": "A",
+        "config_name": "Dealbreaker (planted defect): Hermes, Claude Haiku 5.5, finance-advisor-skip-tools v1, finance v3",
+        "harness": "hermes",
+        "model": "claude-haiku-5-5"
+      },
+      {
+        "arm": "B",
+        "config_name": "Headline v2: Hermes, Claude Haiku 5.5, finance-advisor v2, finance v3",
+        "harness": "hermes",
+        "model": "claude-haiku-5-5"
+      }
+    ],
+    "trials_by_status": {
+      "done": 200
+    },
+    "spend_usd": 2.049876
+  },
+  "counts": {
+    "configs": 5,
+    "tasks": 10,
+    "trials": 200,
+    "spans": 3403,
+    "grades": 1140,
+    "grading_jobs": 200,
+    "events": 0,
+    "files": 5660,
+    "file_bytes": 71021061
+  },
+  "missing_files": [],
+  "scrubbed": {
+    "fields": 0,
+    "texts": 0,
+    "files": []
+  },
+  "secret_check": {
+    "passed": true,
+    "patterns": {
+      "litellm_key": "sk-[A-Za-z0-9_-]{8,}",
+      "bearer_token": "(?i)\\bbearer\\s+[A-Za-z0-9._~+/=-]{8,}"
+    },
+    "fields": [
+      "access_token",
+      "agent_key_token",
+      "api-key",
+      "api_key",
+      "apikey",
+      "authorization",
+      "client_secret",
+      "evals_worker_token",
+      "hashed_token",
+      "key_token",
+      "litellm_master_key",
+      "master_key",
+      "password",
+      "proxy-authorization",
+      "refresh_token",
+      "secret_key",
+      "sim_key_token",
+      "token",
+      "user_api_key",
+      "user_api_key_hash",
+      "worker_token",
+      "x-api-key"
+    ]
+  },
+  "parts": {
+    "rows.json.gz": {
+      "bytes": 1695882,
+      "sha256": "sha256:8cd4076f4690b8d16a640fdda9fc2acbde0f36d1c3deb1ec93d0e5eac2ff9ec6"
+    },
+    "files.jsonl.gz": {
+      "bytes": 17079776,
+      "sha256": "sha256:17d3490d470f94d6504a1fcafe3d019c4be56d7788ad429aa4f50e0cf8bd8f07"
+    }
+  }
+}
