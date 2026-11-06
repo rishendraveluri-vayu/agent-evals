@@ -236,17 +236,53 @@ export class LabelsService {
     if (body.note !== undefined && body.note !== null && typeof body.note !== 'string') throw badRequest('invalid_label', 'note must be text');
     const params: unknown[] = [body.item_id];
     const split = await this.splitCondition(params, set);
-    const [trial] = await this.db.query<{ id: string; body: JsonObject; task_id: string; in_split: boolean }>(
-      `SELECT t.id, k.body, k.id AS task_id, ${split} AS in_split FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 WHERE t.id = $1 AND t.status = 'done'`,
+    params.push(set);
+    // E11 (6 Nov review): the queue's own rules (queue() above), so a label can only be given to a
+    // trial the queue could have offered: not a probe, an agent outcome with a result, not a
+    // shipped example's, not a fake model's script, and labelled in no other set (D52).
+    const [trial] = await this.db.query<{
+      id: string;
+      body: JsonObject;
+      task_id: string;
+      in_split: boolean;
+      probe: boolean;
+      label: string | null;
+      has_result: boolean;
+      own: boolean;
+      fake: boolean;
+      other_set: string | null;
+    }>(
+      `SELECT t.id, k.body, k.id AS task_id, ${split} AS in_split, t.probe, t.label, t.result IS NOT NULL AS has_result,
+              ${NOT_EXAMPLE_TRIAL('t')} AS own,
+              EXISTS (SELECT 1 FROM configs fc WHERE fc.hash = t.config_hash AND fc.model LIKE 'fake/%') AS fake,
+              (SELECT min(o.label_set) FROM labels o WHERE o.trial_id = t.id AND o.label_set <> $${params.length}) AS other_set
+       FROM trials t JOIN tasks k ON k.sha256 = t.task_sha256 WHERE t.id = $1 AND t.status = 'done'`,
       params,
     );
     if (!trial) throw notFound('unknown_item', `no finished trial ${body.item_id} to label`);
+    const why = !trial.own
+      ? `${trial.id} belongs to a shipped example: labels/ holds judgments of this database's own runs`
+      : trial.probe
+        ? `${trial.id} is a probe (a prompt check on the fake model), not an agent's answer`
+        : trial.fake
+          ? `${trial.id} ran on a fake model (fake/*), which plays a script: there is no agent output to judge`
+          : trial.label !== 'agent' || !trial.has_result
+            ? `${trial.id} has no agent outcome with a result to judge`
+            : null;
+    if (why) throw badRequest('not_labellable', why, 'Label the items GET /labels/queue offers.');
     if (!trial.in_split) {
       const other = splitFor(set) === 'held_out' ? 'discovery' : 'held-out';
       throw badRequest(
         'wrong_split',
         `${trial.task_id} is a ${other} task, and the ${set} set takes ${splitFor(set) === 'held_out' ? 'held-out' : 'discovery'} tasks only`,
         'Label it in the set its task belongs to: tuning for discovery tasks, held-out or final for held-out tasks.',
+      );
+    }
+    if (trial.other_set) {
+      throw badRequest(
+        'wrong_set',
+        `${trial.id} already has labels in the ${trial.other_set} set, and a trial is labelled in one set only (D52)`,
+        `Label it in the ${trial.other_set} set, or pick another item from GET /labels/queue?set=${set}.`,
       );
     }
     const criteria = judgeCriteria(trial.body);
