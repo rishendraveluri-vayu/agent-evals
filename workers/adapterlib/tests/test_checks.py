@@ -214,6 +214,31 @@ def test_one_point_two_three_lakh_matches_123456_and_truncation_counts():
     }
 
 
+def test_a_figure_with_under_three_significant_digits_is_never_cut_to_match():
+    """Destructive review G8 (6 Nov): "about ₹5 lakh" for ₹5,95,511.77 was supported by cutting
+    5.955 lakh to 5; and "₹1 lakh" by anything from 1.00 to 1.99 lakh. They match by rounding
+    only now: ₹5 lakh is 4.50 to 5.49 lakh."""
+
+    def first(reply: str, result: str) -> dict:
+        spans = [turn_span("a" * 16, 0), span("prepayment_impact", "a" * 16, result)]
+        return checks_for([reply], spans)["amounts"][0]
+
+    assert first("About ₹5 lakh.", '{"interest_saved":595511.77}')["supported_by"] is None
+    assert first("Keep ₹1 lakh aside.", '{"buffer":160000}')["supported_by"] is None
+    assert first("₹45 for the fee.", '{"fee":45.80}')["supported_by"] is None  # rounds to 46
+    rounded = first("About ₹5 lakh.", '{"spare":460000}')  # 4.6 lakh rounds to 5
+    assert (rounded["supported_by"], rounded["match"]["how"]) == ("tool", "rounded")
+    # Three significant digits or more still match by cutting.
+    out = checks_for(
+        ["About ₹5.95 lakh, or ₹8,997 a month."],
+        [turn_span("a" * 16, 0), span("p", "a" * 16, '{"a":595511.77,"emi":8997.86}')],
+    )
+    assert [r["match"]["how"] for r in out["amounts"]] == ["truncated", "truncated"]
+    assert checks.significant_digits(Decimal("4.41")) == 3
+    assert checks.significant_digits(Decimal("5")) == 1
+    assert checks.significant_digits(Decimal("500")) == 3
+
+
 def test_trailing_zeros_round_only_within_one_percent():
     spans = [
         turn_span("a" * 16, 0),

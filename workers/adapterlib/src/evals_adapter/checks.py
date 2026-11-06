@@ -11,10 +11,11 @@
 
    An amount matches a number when it equals it at the precision shown: exactly, rounded
    half-up, or cut (truncated) to the digits written ("about ₹8,997" matches 8997.26, "₹1,667"
-   matches 1667.50, "₹1.23 lakh" matches 123,456). Trailing zeros in a whole amount may also be
-   rounding, as long as two significant digits remain and the number is within 1% of the
-   amount ("about ₹49,500" matches 49,483; "₹31,000" does not match 31,330). This is a
-   heuristic for a reader, not a grade.
+   matches 1667.50, "₹1.23 lakh" matches 123,456), cutting only for a figure written with three
+   significant digits or more ("₹5 lakh" matches 4.50 to 5.49 lakh, not 5.95 lakh). Trailing
+   zeros in a whole amount may also be rounding, as long as two significant digits remain and
+   the number is within 1% of the amount ("about ₹49,500" matches 49,483; "₹31,000" does not
+   match 31,330). This is a heuristic for a reader, not a grade.
 
    **Verify, don't trace (D61, A44).** Each amount is verified one of three ways, recorded in
    `verified_by`:
@@ -106,6 +107,9 @@ INDIAN = re.compile(r"^\d{1,2}(?:,\d{2})*,\d{3}$")
 INDIAN_LAKH_PLUS = re.compile(r"^\d{1,2}(?:,\d{2})+,\d{3}$")  # 1,00,000 and up
 MCP_PREFIX = re.compile(r"^mcp__.+?__")
 COARSE_TOLERANCE = Decimal("0.01")
+# Cutting a number to the digits shown matches only a figure written with this many significant
+# digits or more (G8): "about ₹8,997" for 8,997.26 and "₹4.41 lakh" for 4,41,999 still match.
+TRUNCATE_MIN_DIGITS = 3
 
 # D56: the finance server's arithmetic tools (toolset finance/v2, D54). Their results are sources
 # only when their inputs are supported; every other tool's result is a source as it stands.
@@ -285,9 +289,19 @@ def source_numbers(text: str) -> list[Decimal]:
     return out
 
 
+def significant_digits(shown: Decimal) -> int:
+    """The significant digits a figure is written with: 3 for 4.41, 1 for 5 or 0.5, 3 for 500."""
+    return len(shown.as_tuple().digits) if shown.is_finite() else 0
+
+
 def _match_rank(amount: Amount, source: Decimal) -> tuple[int, Decimal] | None:
     """How well `source` (rupees) explains `amount`: (rank, step in rupees), best rank first:
-    0 exact, 1 rounded to the digits shown, 2 cut to them, 3 rounded at trailing zeros."""
+    0 exact, 1 rounded to the digits shown, 2 cut to them, 3 rounded at trailing zeros.
+
+    A figure written with fewer than TRUNCATE_MIN_DIGITS significant digits is never matched by
+    cutting (G8, 6 Nov review): "₹5 lakh" was "supported" by anything from 5.00 to 5.99 lakh
+    (₹5,95,511.77 included), and "₹1 lakh" by 1.00 to 1.99 lakh. It still matches by rounding,
+    so "₹5 lakh" stands for 4.50 to 5.49 lakh."""
     value = abs(source) / amount.unit
     shown = abs(amount.shown)
     step = Decimal(1).scaleb(-amount.decimals)
@@ -296,7 +310,10 @@ def _match_rank(amount: Amount, source: Decimal) -> tuple[int, Decimal] | None:
             return 0, step * amount.unit
         if value.quantize(step, rounding=ROUND_HALF_UP) == shown:
             return 1, step * amount.unit
-        if value.quantize(step, rounding=ROUND_DOWN) == shown:
+        if (
+            significant_digits(shown) >= TRUNCATE_MIN_DIGITS
+            and value.quantize(step, rounding=ROUND_DOWN) == shown
+        ):
             return 2, step * amount.unit
         # Trailing zeros as rounding ("about ₹49,500" for 49,483): at least two significant
         # digits must remain, and the number must be within 1% of the amount, so a round
