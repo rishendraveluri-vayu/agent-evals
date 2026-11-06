@@ -11,7 +11,7 @@
  */
 import { computed } from 'vue';
 import { api } from '../api/client';
-import type { AgreementFigures, ExperimentSummary, JudgeCriterionTrust, JudgeTrust, JudgeTrustResponse, JudgeTrustStatus, TaskView } from '../api/types';
+import type { AgreementFigures, ExperimentDetail, ExperimentSummary, JudgeCriterionTrust, JudgeTrust, JudgeTrustResponse, JudgeTrustStatus, TaskView } from '../api/types';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import TrustBadge from '../components/TrustBadge.vue';
@@ -31,7 +31,12 @@ const { data, error, loading } = useLoad(async () => {
     optional(api.experiments(), [] as ExperimentSummary[]),
     optional(api.tasks(), [] as TaskView[]),
   ]);
-  return { trust, experiments, tasks };
+  // Each judge's experiment to calibrate on, in full: the tasks as it ran them say which label set
+  // its outputs go to. The task list can't once a task has a newer version (the held-out tasks
+  // each got one with rubric v4, D83), as its hashes no longer match the experiment's.
+  const ids = [...new Set(trust.judges.map((j) => ownExperimentOf(j, experiments)).filter((id): id is string => id !== null))];
+  const details = new Map(await Promise.all(ids.map(async (id) => [id, await optional(api.experiment(id), null as ExperimentDetail | null)] as const)));
+  return { trust, experiments, tasks, details };
 });
 
 const trust = computed<JudgeTrustResponse | null>(() => data.value?.trust ?? null);
@@ -39,19 +44,23 @@ const bar = computed(() => trust.value?.bar ?? null);
 
 const SET_NAMES: Record<TrustSet, string> = { heldout: 'held-out', tuning: 'tuning' };
 
-/** The judge's newest experiment of your own (a shipped example is never labelled), and where to
- *  calibrate it: its held-out set when it has held-out tasks, else tuning. */
+/** The judge's newest experiment of your own: a shipped example is never labelled. */
+function ownExperimentOf(j: JudgeTrust, experiments: readonly ExperimentSummary[]): string | null {
+  return j.experiments.find((id) => experiments.some((x) => x.id === id && !x.example)) ?? null;
+}
+
+/** Where to calibrate the judge: on its newest experiment of your own, in the held-out set when
+ *  that experiment ran held-out tasks, else tuning. Its tasks as it ran them, else the current
+ *  tasks with the same hashes. */
 function calibrateOf(j: JudgeTrust): { href: string; name: string } | null {
   const d = data.value;
   if (!d) return null;
-  for (const id of j.experiments) {
-    const e = d.experiments.find((x) => x.id === id);
-    if (!e || e.example) continue;
-    const tasks = d.tasks.filter((t) => e.task_sha256s.includes(t.sha256));
-    if (!tasks.length) return null;
-    return { href: href.labels({ set: labelSetFor(tasks), experiment: e.id, calibrate: true }), name: experimentName(e) };
-  }
-  return null;
+  const id = ownExperimentOf(j, d.experiments);
+  const e = d.experiments.find((x) => x.id === id);
+  if (!id || !e) return null;
+  const ran = d.details.get(id)?.tasks ?? d.tasks.filter((t) => e.task_sha256s.includes(t.sha256));
+  if (!ran.length) return null;
+  return { href: href.labels({ set: labelSetFor(ran), experiment: id, calibrate: true }), name: experimentName(e) };
 }
 
 /** Held-out kappa per criterion with its interval, on one scale with the bar; only the criteria

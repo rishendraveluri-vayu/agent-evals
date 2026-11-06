@@ -199,6 +199,18 @@ describe('JudgeView against the API', () => {
     expect(unlabelled.find('[data-test="no-disagreements"]').exists()).toBe(false);
   });
 
+  it('links to calibrate after its tasks have a newer version, reading the set from the experiment as it ran', async () => {
+    // The task list holds only newer versions, whose hashes match no experiment; exp_heldout's own record keeps its tasks.
+    const newer = tasks.map((t) => ({ ...t, sha256: `sha256:${'f'.repeat(63)}${t.id.length % 10}` }));
+    const ran = [{ ...tasks[0], split: 'held_out' }];
+    routeFetch({ '/api/judge/trust': trust, '/api/experiments': experiments, '/api/tasks': newer, '/api/experiments/exp_heldout': { id: 'exp_heldout', tasks: ran } });
+    const w = mount(JudgeView);
+    await settle();
+    expect(judgeNamed(w, 'Claude Haiku 5.5, rubric advice.v4').get('[data-test="judge-calibrate"]').attributes('href')).toBe('#/labels?set=heldout&experiment=exp_heldout&calibrate=1');
+    // exp_model's record is not served: with no task to go on, no link.
+    expect(judgeNamed(w, 'Claude Haiku 5.5, rubric advice.v3').find('[data-test="judge-calibrate"]').exists()).toBe(false);
+  });
+
   it('never links to calibrate on a shipped example, which is never labelled', async () => {
     const exampled = experiments.map((e) => (e.id === 'exp_heldout' ? { ...e, example: { name: 'x', title: 'Shipped', loaded_at: '2026-11-05T08:00:00.000Z' } } : e));
     routeFetch({ '/api/judge/trust': trust, '/api/experiments': exampled, '/api/tasks': tasks });
