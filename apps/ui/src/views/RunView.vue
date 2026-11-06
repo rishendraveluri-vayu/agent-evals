@@ -430,8 +430,17 @@ function confirmedStart() {
   void (draft ? startNew() : startCreated());
 }
 
+/** False once this page is left: a start that finishes later never pulls you back to it. */
+let alive = true;
+onBeforeUnmount(() => {
+  alive = false;
+});
+
 async function startNew() {
   if (!canStart.value || n.value === null) return;
+  // Where the start was asked from: it opens the run's page only if you are still here.
+  const from = window.location.hash;
+  const stillHere = () => alive && window.location.hash === from;
   busy.value = true;
   actionError.value = null;
   // D75: check the Hermes prompts first, so a check that fails leaves nothing half-made.
@@ -458,13 +467,14 @@ async function startNew() {
     createdId = created.id;
     await api.startExperiment(created.id);
     // The run's own page replaces the setup in the address and in history, so neither a refresh
-    // nor Back offers to start the same trials again.
-    replaceRoute(href.run(created.id));
+    // nor Back offers to start the same trials again. Left meanwhile, you stay where you went; the
+    // run is listed on Experiments.
+    if (stillHere()) replaceRoute(href.run(created.id));
   } catch (err) {
     if (createdId) {
       // Saved but not started: its own page can start it or discard it, so a retry never makes a second one.
       setRunFlash(createdId, `The run was saved but did not start: ${plainRunError(err)} Start it here, or discard it.`);
-      replaceRoute(href.run(createdId));
+      if (stillHere()) replaceRoute(href.run(createdId));
     } else {
       actionError.value = plainRunError(err);
     }
@@ -522,7 +532,8 @@ async function discard() {
   actionError.value = null;
   try {
     await api.discardExperiment(id);
-    navigate(href.experiments());
+    // Left meanwhile, you stay where you went.
+    if (alive) navigate(href.experiments());
   } catch (err) {
     actionError.value = plainRunError(err);
   } finally {

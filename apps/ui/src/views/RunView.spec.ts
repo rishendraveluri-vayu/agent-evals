@@ -870,6 +870,21 @@ describe('RunView, an experiment created but never started (QA major 7)', () => 
     expect(window.location.hash).toBe('#/experiments');
   });
 
+  it('leaves you where you went when you left the page while it was being discarded', async () => {
+    routeFetch(routes(orphan));
+    let release: (e: ExperimentDetail) => void = () => undefined;
+    vi.spyOn(api, 'discardExperiment').mockImplementation(() => new Promise<ExperimentDetail>((resolve) => (release = resolve)));
+    const w = mount(RunView, { props: { experimentId: 'e_orphan' } });
+    await settle();
+    await w.get('[data-test="discard-ask"]').trigger('click');
+    await w.get('[data-test="discard-confirm"]').trigger('click');
+    window.location.hash = '#/build';
+    w.unmount();
+    release({ ...orphan, status: 'cancelled' });
+    await settle();
+    expect(window.location.hash).toBe('#/build');
+  });
+
   it('says why when the draft saved it but could not start it', async () => {
     setRunFlash('e_orphan', 'The run was saved but did not start: The platform could not be reached. Check that it is running, then try again. Start it here, or discard it.');
     routeFetch(routes(orphan));
@@ -959,6 +974,49 @@ describe('RunView drafts: N, refusals and the name (QA major 12)', () => {
     expect(currentHash.value).toBe('#/experiments/e_started/run');
     // Replaced, not added: Back goes to wherever the setup was opened from.
     expect(window.history.length).toBe(entries);
+  });
+
+  it('never pulls you back to the run once you have left the page while it was starting', async () => {
+    const created = { ...(details as unknown as Record<string, ExperimentDetail>).exp_heldout, id: 'e_left', status: 'created' as const };
+    let release: (e: ExperimentDetail) => void = () => undefined;
+    vi.spyOn(api, 'createExperiment').mockImplementation(() => new Promise<ExperimentDetail>((resolve) => (release = resolve)));
+    const start = vi.spyOn(api, 'startExperiment').mockResolvedValue({ ...created, status: 'running' });
+    window.location.hash = `#/run?a=${encodeURIComponent(cfgV1.hash)}&b=${encodeURIComponent(cfgV2.hash)}`;
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
+    await settle();
+    await w.get('[data-test="start"]').trigger('click');
+    await w.get('[data-test="confirm-paid-start"]').trigger('click');
+    await settle();
+    // The person opens Build while the run is being made; the setup page goes.
+    window.location.hash = '#/build';
+    w.unmount();
+    release(created);
+    await settle();
+    expect(start).toHaveBeenCalledWith('e_left');
+    expect(window.location.hash).toBe('#/build');
+  });
+
+  it('stays put when the address changed while the run was starting, even on the same page', async () => {
+    const created = { ...(details as unknown as Record<string, ExperimentDetail>).exp_heldout, id: 'e_moved', status: 'created' as const };
+    let release: (e: ExperimentDetail) => void = () => undefined;
+    vi.spyOn(api, 'createExperiment').mockImplementation(() => new Promise<ExperimentDetail>((resolve) => (release = resolve)));
+    vi.spyOn(api, 'startExperiment').mockRejectedValue(new ApiError(0, 'unreachable', 'The API could not be reached (Failed to fetch)'));
+    window.location.hash = `#/run?a=${encodeURIComponent(cfgV1.hash)}&b=${encodeURIComponent(cfgV2.hash)}`;
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    await w.get('[data-test="plan-commit"]').setValue('3e1a9f0');
+    await settle();
+    await w.get('[data-test="start"]').trigger('click');
+    await w.get('[data-test="confirm-paid-start"]').trigger('click');
+    await settle();
+    window.location.hash = '#/experiments';
+    release(created);
+    await settle();
+    expect(window.location.hash).toBe('#/experiments');
+    // The saved run still says why it did not start, once it is opened.
+    expect(takeRunFlash('e_moved')).toContain('The run was saved but did not start');
   });
 
   it('opens the saved run when it was created but did not start, and says why there', async () => {
