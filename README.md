@@ -30,8 +30,8 @@ uses about 10 GB of disk (have 15 GB free).
 
 ## Results
 
-All on Hermes Agent with Claude Haiku 5.5. Each plan and its predictions were committed before the
-run. Anything I changed after is listed as a deviation in
+All on Hermes Agent, with Claude Haiku 5.5 unless the row says otherwise. Each plan and its
+predictions were committed before the run. Anything I changed after is listed as a deviation in
 [`docs/experiment.md`](docs/experiment.md).
 
 | Change | Result | What it means |
@@ -40,6 +40,7 @@ run. Anything I changed after is listed as a deviation in
 | Removed the calculator tools | +45 points with them (+24 to +66), p = 0.001 | Caught |
 | Added a document search tool (a bank's current rates, this year's tax slabs) | +56 points with it (+34 to +77), p = 0.002 | Caught. A control built to be caught: the bank is fictional, so only the tool knows its rates. Without it the agent made up a rate or fee in 42 of 100 trials (counted after a grader fix and regrade, listed as a deviation) |
 | Nothing: the same agent on both sides | −4 points (−12 to +3) | No false alarm |
+| Swapped the model: Claude Haiku 5.5 to Gemini 3.8 Flash, same harness and prompt | −4 points (−20 to +16), p = 0.81 | No overall difference, but the tasks split: Gemini makes twice the tool calls, wins the many-sums task 10 to 3, runs out of steps in conversations, and costs 4x per trial |
 | My actual prompt fix, v1 to v2 | +9 points (+3 to +16), p = 0.0625 | Not enough tasks to call it |
 
 The last row is the one that matters. v2 probably passes more often, mostly by following the
