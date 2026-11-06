@@ -67,3 +67,87 @@ def test_indian_format():
     assert fmt_inr(441050) == "₹4,41,050"
     assert fmt_inr(999) == "₹999"
     assert fmt_inr(12345678.5) == "₹1,23,45,678.50"
+
+
+# ---- G10 (6 Nov review): the grader's money reader and the runner's agree --------------------
+
+# Marked amounts in the forms the review found the two readers split on (a no-break space after
+# the marker, markdown bold, a minus after the marker, "₹49.41L"), and the everyday forms. Each
+# case: the text and the rupee values both readers must find, in order.
+SHARED_CASES = [
+    ("₹45,000 a month", [45000]),
+    ("₹ 45,000 a month", [45000]),
+    ("₹ 45,000 a month", [45000]),  # no-break space
+    ("₹ 45,000 a month", [45000]),  # narrow no-break space
+    ("Rs. 45,000 and INR 500", [45000, 500]),  # thin space
+    ("₹**45,000** a month", [45000]),
+    ("**₹45,000** a month", [45000]),
+    ("₹ **45,000** a month", [45000]),
+    ("a refund of ₹-5,000", [5000]),
+    ("a refund of ₹−5,000", [5000]),  # U+2212
+    ("a refund of -₹5,000", [5000]),
+    ("₹49.41L in interest", [4941000]),
+    ("₹49.41 L in interest", [4941000]),
+    ("₹4.41 lakh, ₹4.41 lakh and ₹**4.41 lakh**", [441000, 441000, 441000]),
+    ("Rs 2 crore, ₹1.5 cr", [20000000, 15000000]),
+    ("INR 18332.5 and ₹8,997.26", [18332.5, 8997.26]),
+    ("₹92k, ₹20 thousand and ₹1.2 million", [92000, 20000, 1200000]),
+    ("5,000 rupees, or 5,000 rupees", [5000, 5000]),
+    ("₹1,01,341 overall", [101341]),
+]
+
+
+def _runner_reader():
+    import sys
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[2] / "workers" / "adapterlib" / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from evals_adapter.checks import money_amounts
+
+    return money_amounts
+
+
+@pytest.mark.parametrize(("text", "values"), SHARED_CASES)
+def test_the_grader_and_the_runner_read_the_same_marked_amounts(text, values):
+    money_amounts = _runner_reader()
+    runner = [float(a.value) for a in money_amounts(text)]
+    grader = [f.value for f in find(text, "amount")]
+    assert runner == pytest.approx(values)
+    assert grader == pytest.approx(values)
+    for f in find(text, "amount"):
+        assert f.text in text
+
+
+def test_where_the_readers_differ_on_purpose():
+    """Unmarked amounts: the grader reads Western grouping (45,000) as an amount, the runner only
+    Indian grouping from a lakh up, and the runner reads a bare range end after a marked amount;
+    'L' after an unmarked number is a litre to both."""
+    money_amounts = _runner_reader()
+    assert [f.value for f in find("45,000 a month", "amount")] == [45000]
+    assert money_amounts("45,000 a month") == []
+    assert [float(a.value) for a in money_amounts("₹8,000–9,000")] == [8000, 9000]
+    assert [f.value for f in find("12 L of milk", "any")] == [12]
+    assert money_amounts("12 L of milk") == []
+
+
+def test_long_digit_runs_are_quick_and_not_numbers():
+    """G6 (6 Nov review): NUMBER_RE's lookahead was quadratic: a 60,000-digit run followed by
+    letters and a digit took the unit test past its timeout. Digit runs are capped at 30."""
+    import time
+
+    money_amounts = _runner_reader()
+    for text in (
+        "Ref " + "1" * 60_000 + "x1",
+        "₹" + "9" * 60_000 + ".",
+        "₹" + ",999" * 15_000,
+    ):
+        started = time.perf_counter()
+        found = find(text, "any")
+        money = money_amounts(text)
+        assert time.perf_counter() - started < 2.0
+        assert all(len(f.text) < 500 for f in found)
+        assert all(len(a.text) < 500 for a in money)
+    assert find("₹" + "9" * 31, "any") == []
+    assert [f.value for f in find("₹" + "9" * 30, "any")] == [float("9" * 30)]

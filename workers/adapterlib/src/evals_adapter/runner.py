@@ -215,6 +215,9 @@ def write_checks(paths: TrialPaths, spec: dict[str, Any], result: dict[str, Any]
     recorded and never changes the trial's label."""
     try:
         checks = run_checks(spec, result, read_check_spans(paths.trace), client_files(paths.state))
+        # Inside the try (G6, 6 Nov review): a figure too long to write as a JSON integer raised
+        # here, outside it, and the whole trial became an infra failure.
+        text = json.dumps(checks, ensure_ascii=False, indent=1)
     except Exception as exc:  # noqa: BLE001
         print(f"[evals-runner] checks failed: {exc!r}", file=sys.stderr)
         return {
@@ -227,7 +230,7 @@ def write_checks(paths: TrialPaths, spec: dict[str, Any], result: dict[str, Any]
             "missing_tools": None,
         }
     target = paths.out / "checks.json"
-    target.write_text(json.dumps(checks, ensure_ascii=False, indent=1), encoding="utf-8")
+    target.write_text(text, encoding="utf-8")
     errors: list[str] = []
     schema = (_schemas() or {}).get("checks")
     if schema is not None:

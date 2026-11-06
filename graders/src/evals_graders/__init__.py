@@ -11,7 +11,8 @@ The grader spec format is a draft for Rishi: docs/proposals/grader-format.md.
 # so the new grades are stored next to the old ones instead of looking like the same grader.
 FRAMEWORK_VERSION = "0.7.0"
 # 0.7.0 (6 Nov, the destructive review's section G): a number grader may need context words next
-# to the number (G1).
+# to the number (G1); the money reader reads what the runner's does (a no-break space or bold after
+# ₹, ₹-5,000, ₹49.41L, million) and caps digit runs at 30 (G10, G6).
 # 0.6.0: provenance on D61's checks.json (verify, don't trace); its reason and evidence name the
 # figures derived in prose, and a pre-D61 file says so. 0.5.0: provenance on checks.json from
 # runner 0.3.0 (D58: unit facts, the identity guard, reference_rates). 0.4.0: provenance traces

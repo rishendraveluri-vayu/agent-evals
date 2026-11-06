@@ -1315,6 +1315,52 @@ def test_the_runner_writes_checks_json_after_every_trial(tmp_path):
     assert "checks.json" in {f["path"] for f in report["files"]}
 
 
+def test_a_no_break_space_or_bold_does_not_hide_a_made_up_amount():
+    """Destructive review G10 (6 Nov): "₹" then a no-break space hid ₹46,500 from this check
+    (the grader read it, this check did not), so a made-up EMI passed provenance. Bold between
+    the marker and the number, a minus after it and "₹49.41L" are read the same way too."""
+    spans = [turn_span(T, 0), span("calculate_emi", T, EMI, start=1)]
+    reply = (
+        "Your EMI will be ₹ 46,500 a month, or ₹**46,500**, so about ₹-46,500 a month;"
+        " ₹11.59L in interest."
+    )
+    out = checks_for([reply], spans)
+    assert [(a["value"], a["supported_by"]) for a in out["amounts"]] == [
+        (46500, None),
+        (46500, None),
+        (46500, None),
+        (1159000, "tool"),
+    ]
+    assert out["unsupported"] == 3
+
+
+def test_a_huge_figure_is_no_amount_and_checks_json_can_always_be_written():
+    """Destructive review G6 (6 Nov): "₹" and 4,400 nines made an amount whose integer
+    json.dumps refuses (over Python's 4,300-digit limit), outside the runner's try, so the trial
+    became an infra failure. A digit run over 30 digits is no number, and an arithmetic
+    argument above 10^40 is read as NaN, which nothing supports."""
+    out = checks_for(["Your saving is ₹" + "9" * 4400 + "."])
+    assert out["amounts"] == []
+    huge = span("multiply", T, '{"product":1}', start=1, args='{"values": [' + "9" * 5000 + ", 2]}")
+    out = checks_for(["Rs 1 lakh."], [turn_span(T, 0), huge])
+    (record,) = out["arithmetic"]
+    assert record["inputs"][0]["value"] is None and record["supported"] is False
+    json.dumps(out)  # does not raise
+
+
+def test_the_runner_records_a_checks_failure_while_writing_checks_json(tmp_path, monkeypatch):
+    """G6: whatever the checks return, the runner's checks.json write cannot raise."""
+    from evals_adapter import runner
+
+    paths = TrialPaths(tmp_path)
+    paths.out.mkdir(parents=True)
+    monkeypatch.setattr(runner, "run_checks", lambda *a: {"value": 10**5000})
+    entry = runner.write_checks(paths, make_spec(), None)
+    assert entry["valid"] is False and entry["path"] is None
+    assert "checks failed: ValueError" in entry["errors"][0]
+    assert not (paths.out / "checks.json").exists()
+
+
 def test_checks_run_even_when_the_adapter_crashed(tmp_path):
     spec = make_spec(**{"harness_options.crash_before_lib": 7})
     report, _, _ = run(tmp_path, spec)

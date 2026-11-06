@@ -94,13 +94,22 @@ UNIT_WORDS = {
 }
 MONEY_UNITS = {"lakh", "lakhs", "lac", "lacs", "crore", "crores", "cr"}  # money without a marker
 
-NUMBER = r"\d+(?:,\d+)*(?:\.\d+)?"
+# At most 30 digits in a run and 12 comma groups (G6, 6 Nov review): a longer run is no number,
+# so a reply of 4,400 nines cannot become an amount whose JSON integer Python refuses to write.
+NUMBER = r"\d{1,30}(?:,\d{1,30}){0,12}(?:\.\d{1,30})?(?!\d)"
+MAX_FIGURE_EXPONENT = 40  # an arithmetic argument above 10^40 is no figure (G6)
 UNIT = r"lakhs?|lacs?|crores?|cr\b\.?|thousand|k\b|million|mn\b|L\b"
-# A number, with a currency marker before it or else not glued to a word or a decimal point
-# (so "t001" and "v2.3" hold no numbers), and an optional unit word and "rupees" after it.
+# Between a marker and its number, or a number and its unit: spaces, tabs, a no-break, thin or
+# narrow space, or markdown emphasis ("₹ 45,000", "₹**45,000**", "₹4.41 **lakh**"). G10 (6
+# Nov review): the grader's reader (evals_graders.amounts) reads the same, and a test there runs
+# both over the same cases; before, "₹" and a no-break space hid an amount from this check.
+GAP = r"(?:[ \t   ]|\*)*"
+# A number, with a currency marker before it (and maybe a minus: "₹-5,000" is read as 5,000, as
+# "-₹5,000" is) or else not glued to a word or a decimal point (so "t001" and "v2.3" hold no
+# numbers), and an optional unit word and "rupees" after it.
 TOKEN = re.compile(
-    rf"(?:(?P<cur>₹|\bRs\.?|\bINR)[ \t]*|(?<![\w.]))(?P<num>{NUMBER})"
-    rf"(?:[ \t]*(?P<unit>{UNIT}))?(?:[ \t]*(?P<post>rupees?)\b)?",
+    rf"(?:(?P<cur>₹|\bRs\.?|\bINR){GAP}[-−]?|(?<![\w.]))(?P<num>{NUMBER})"
+    rf"(?:{GAP}(?P<unit>{UNIT}))?(?:{GAP}(?P<post>rupees?)\b)?",
     re.IGNORECASE,
 )
 # Dates and times in sources (transaction dates) are not amounts: 2026-10-25 is not ₹2,026.
@@ -109,7 +118,12 @@ DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z?
 # at ...?prid=63742 or a PDF named with %20 and a year). A URL ends at whitespace or a quote, so
 # one inside a JSON string stops at the string's end.
 URL = re.compile(r"\bhttps?://[^\s\"'<>]+", re.IGNORECASE)
-RANGE_GAP = re.compile(r"^[ \t]*(?:–|—|-|to)[ \t]*$", re.IGNORECASE)
+RANGE_GAP = re.compile(r"^[ \t   ]*(?:–|—|-|to)[ \t   ]*$", re.I)
+# The other end of a range, with its unit, right after a marked amount ("₹2–3 lakh"). Matched at
+# a position, not on a slice, so a long reply is not copied once per amount (G6).
+RANGE_END = re.compile(
+    rf"{GAP}(?:–|—|-|to){GAP}(?:₹|Rs\.?|INR)?{GAP}{NUMBER}{GAP}(?P<unit>{UNIT})", re.IGNORECASE
+)
 WESTERN = re.compile(r"^\d{1,3}(?:,\d{3})+$")
 INDIAN = re.compile(r"^\d{1,2}(?:,\d{2})*,\d{3}$")
 INDIAN_LAKH_PLUS = re.compile(r"^\d{1,2}(?:,\d{2})+,\d{3}$")  # 1,00,000 and up
@@ -276,11 +290,7 @@ def money_amounts(text: str) -> list[Amount]:
 
 def _range_unit(text: str, end: int) -> int | None:
     """'₹2–3 lakh': a marked amount with no unit takes the unit of the range's other end."""
-    rest = re.match(
-        rf"^[ \t]*(?:–|—|-|to)[ \t]*(?:₹|Rs\.?|INR)?[ \t]*{NUMBER}[ \t]*(?P<unit>{UNIT})",
-        text[end:],
-        re.IGNORECASE,
-    )
+    rest = RANGE_END.match(text, end)
     if not rest:
         return None
     key = rest.group("unit").rstrip(".").lower()
@@ -532,14 +542,22 @@ def _figure(value: Decimal) -> str:
     return ("-" if value < 0 else "") + whole + dot + frac
 
 
+def _figure_or_nan(number: Decimal) -> Decimal:
+    """G6: a figure beyond 10^MAX_FIGURE_EXPONENT is read as NaN, which nothing supports, so an
+    argument of 5,000 digits cannot become a JSON integer too long for Python to write."""
+    return (
+        Decimal("NaN") if number.is_finite() and number.adjusted() > MAX_FIGURE_EXPONENT else number
+    )
+
+
 def _walk_figures(value: Any, path: str, out: list[tuple[str, Decimal]]) -> None:
     if isinstance(value, bool) or value is None:
         return
     if isinstance(value, Decimal):
-        out.append((path, value))
+        out.append((path, _figure_or_nan(value)))
     elif isinstance(value, str):  # a number sent as a string, which the server coerces
         try:
-            out.append((path, Decimal(value.strip())))
+            out.append((path, _figure_or_nan(Decimal(value.strip()))))
         except InvalidOperation:
             return
     elif isinstance(value, list):
