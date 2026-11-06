@@ -6,7 +6,7 @@
 import { ApiError, errorText, errorWithFix } from '../api/errors';
 import type { ArmView, ConfigView, ModelView, TaskView } from '../api/types';
 import { axisFromDiff, localDiff } from './checks';
-import { isFake } from './models';
+import { isFake, isLocal } from './models';
 import { modelName, splitName } from './names';
 
 // ---------------------------------------------------------------------------------------- arms
@@ -109,8 +109,8 @@ export function missingKey(model: string | null | undefined, models: ModelView[]
  *  per token and keyless, but it answers only while the local-model compose profile is up. */
 export function isLocalModel(model: string | null | undefined, models: ModelView[] = []): boolean {
   if (!model || isFake(model)) return false;
-  const provider = models.find((m) => m.name === model)?.provider ?? '';
-  return model.endsWith('-local') || provider === 'ollama' || provider === 'ollama_chat';
+  // One rule for the whole UI (lib/models.ts): by its name, or by its Ollama provider when listed.
+  return isLocal(models.find((m) => m.name === model) ?? model);
 }
 
 /** "needs ANTHROPIC_API_KEY in .env", for a model whose key is not set; '' otherwise. */
