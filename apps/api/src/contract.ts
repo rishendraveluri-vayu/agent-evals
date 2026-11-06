@@ -1679,3 +1679,100 @@ export interface SystemSpendRow {
   created_at: string;
   settled_at: string | null;
 }
+
+// ---------------------------------------------------------------------------------------------
+// D83: how far to trust an LLM judge, from humans' labels (GET /judge/trust)
+
+/**
+ * A judge's trust on one criterion, per judge model × rubric × criterion (D83):
+ * - `uncalibrated`: no human label on any output this judge graded; its verdicts are a hint.
+ * - `tuning_only`: labels only in the tuning set; agreement shown, never tested blind.
+ * - `too_few`: held-out labels exist, but D8 cannot be applied yet (fewer than D77's 5 human "no"
+ *   labels, or kappa or its interval undefined).
+ * - `trusted` / `not_trusted`: D8 applied on the held-out labels.
+ */
+export type JudgeTrustStatus = 'uncalibrated' | 'tuning_only' | 'too_few' | 'trusted' | 'not_trusted';
+
+/** A percentile bootstrap interval; both ends null when undefined (D77: over 5% of resamples undefined). */
+export interface AgreementInterval {
+  low: number | null;
+  high: number | null;
+  undefined_share: number | null;
+}
+
+/** Judge against humans on one criterion in one label set. Positive = "yes" (pass). */
+export interface AgreementFigures {
+  /** Pairs with a firm human yes/no (raters' majority; ties and "unsure" left out) and a judge yes/no. */
+  n: number;
+  /** judge yes & human yes */
+  tp: number;
+  /** judge yes & human no (a false pass) */
+  fp: number;
+  /** judge no & human yes (a false fail) */
+  fn: number;
+  /** judge no & human no */
+  tn: number;
+  agreement: number | null;
+  kappa: number | null;
+  kappa_interval: AgreementInterval;
+  sensitivity: number | null;
+  specificity: number | null;
+  /** fp + tn: the human "no" labels used (D77 needs 5 for D8). */
+  human_no: number;
+  /** Labelled items left out: human unsure or a raters' tie. */
+  human_left_out: number;
+  /** Labelled items where the judge gave no yes or no (error, not judged). */
+  judge_undecided: number;
+  /** D8: arm B's false-pass rate minus arm A's, for the experiment with the most labelled pairs on both arms; null when no experiment has human "no" labels on both arms. */
+  false_pass_gap: { experiment_id: string; estimate: number | null; interval: AgreementInterval; includes_zero: boolean | null } | null;
+}
+
+export interface JudgeCriterionTrust {
+  criterion: string;
+  /** The criterion's question, from the judge grader's spec (first seen); null if unknown. */
+  text: string | null;
+  status: JudgeTrustStatus;
+  /** One plain sentence for screens: what the status means and what to do next. */
+  summary: string;
+  heldout: AgreementFigures | null;
+  tuning: AgreementFigures | null;
+  /** D8 on the held-out pairs (null when there are none): trusted, and why not. */
+  d8: { trusted: boolean; reasons: string[] } | null;
+  /** D8's test-retest: identical verdicts between the two latest gradings of the same trial by this judge; null when no trial was judged twice. */
+  retest: { identical: number; total: number; share: number | null } | null;
+  /** Held-out human "no" labels still needed before D8 can be applied (D77), else null. */
+  needs_human_no: number | null;
+  /** Where judge and humans disagree, held-out first; never more than 50. */
+  disagreements: {
+    trial_id: string;
+    task_id: string;
+    set: 'tuning' | 'heldout';
+    human: 'yes' | 'no';
+    judge: 'yes' | 'no';
+    /** The judge's quote or reason for this criterion, if it gave one. */
+    judge_reason: string | null;
+    /** The human's note on this label, if any. */
+    human_note: string | null;
+  }[];
+}
+
+export interface JudgeTrust {
+  judge_model: string;
+  /** The rubric's path, e.g. `configs/rubrics/advice.v4.md`. */
+  rubric: string;
+  /** Experiments with at least one current judge grade from this judge, newest first. */
+  experiments: string[];
+  /** Trials with a current judge grade from this judge. */
+  trials_judged: number;
+  criteria: JudgeCriterionTrust[];
+  /** Its `overall` criterion's status if it has one, else the least trusted criterion's. */
+  status: JudgeTrustStatus;
+  summary: string;
+}
+
+export interface JudgeTrustResponse {
+  /** D8 and D77 as applied. */
+  bar: { kappa: number; kappa_low: number; retest: number; min_human_no: number; max_undefined_share: number; resamples: number; human_unsure: 'exclude' };
+  /** Every judge (model × rubric) with a current judge grade; filtered to an experiment's judges with `?experiment=`. Trust is always computed over all labels. */
+  judges: JudgeTrust[];
+}

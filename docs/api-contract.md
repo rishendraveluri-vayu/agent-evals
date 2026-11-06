@@ -1090,3 +1090,46 @@ What the API refuses or rewrites since the review's fixes (`docs/destructive-rev
   The agreement (`evals-agreement`) takes a second-look answer in place of the first "unsure" and
   does not count it as a relabel; an "unsure" given again stays "unsure" and is left out.
 - `GET /judge/agreement?set=heldout` is SP5 and returns `null` until then.
+
+## Judge trust (D83, 6 Nov)
+
+How far to trust an LLM judge, worked out live from the humans' labels and the judge's grades, so a
+judge is never shown as if it were checked when it was not. Types: `JudgeTrustResponse` and its
+parts in `apps/api/src/contract.ts`.
+
+- `GET /judge/trust` returns `JudgeTrustResponse`: one `JudgeTrust` per judge, a judge being a
+  judge model × rubric (the `judge_model` of its grades and the `rubric` of the judge grader's spec
+  in the grading job), for every judge with at least one current judge grade. `?experiment=<id>`
+  keeps only the judges with a current judge grade on that experiment's trials; their trust is
+  still computed over all labels. An unknown experiment is a 404 `unknown_experiment`.
+- **Pairs.** One pair per (trial, criterion) where the trial's current judge grade from that judge
+  has a `yes` or `no` for the criterion (its evidence items `{criterion, verdict}`) and the label
+  set holds a firm human answer: the raters' majority of each rater's settled label (D46, D73), a
+  tie or `unsure` left out and counted (`human_left_out`); a criterion the judge did not decide is
+  counted in `judge_undecided`. Pairs are split by the label's set: `heldout` (the test) and
+  `tuning`; `final` labels are not used.
+- **Figures** per criterion and set: the 2×2 table, agreement, Cohen's kappa, sensitivity,
+  specificity, and kappa's percentile bootstrap interval (2,000 resamples of the pairs, seeded by
+  the judge, criterion and set, so the same data gives the same interval; undefined when more than
+  5% of resamples have no kappa, D77). Ported from `stats/src/evals_stats/agreement.py`; the point
+  figures match it exactly, the intervals to within resampling noise.
+- **D8 on the held-out pairs**, as `d8_check` in `agreement.py`: kappa ≥ 0.6, its interval's lower
+  end ≥ 0.4, at least 5 human "no" labels (D77), the signed false-pass gap between the arms (B − A,
+  in the experiment with the most labelled pairs) with an interval holding 0, and test-retest
+  ≥ 90%. Test-retest compares the two latest gradings of the same trial by the same judge (a
+  regrade is a second grading); unmeasured, it is a reason, as are an unmeasurable gap or an
+  undefined interval.
+- **Status** per criterion: `uncalibrated` (no pairs), `tuning_only` (tuning pairs only),
+  `too_few` (held-out pairs, but fewer than 5 human "no" labels, or kappa or its interval
+  undefined; `needs_human_no` says how many more), else `trusted` or `not_trusted` by D8. A judge's
+  own status is its `overall` criterion's, else its least trusted criterion's (order: uncalibrated,
+  tuning_only, too_few, not_trusted, trusted, least first). `summary` is one plain sentence for the
+  screen. Trust never changes a grade or a verdict: a judge criterion counts only when its task
+  makes it required (D8, D63).
+- **Calibrating.** `GET /labels/queue?set=&experiment=<id>&calibrate=1` orders that experiment's
+  unlabelled items so the judge's current `overall` verdicts alternate, pass then fail, then the
+  items it has no verdict on; the blind item never carries the verdict. Without `experiment`,
+  `calibrate` is a 400 `invalid_query`.
+- **The comparison's `stats.judge`** is filled from the held-out figures of the `overall` criterion
+  of the experiment's judge (the one with the most current grades on it): `{kappa, low, high, bar,
+  tasks}`, `tasks` being the held-out tasks with pairs; null without held-out pairs.
