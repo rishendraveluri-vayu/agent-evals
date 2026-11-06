@@ -37,7 +37,7 @@ narrow it.
 ## 3. The paired test: sign-flip permutation
 
 Under "no difference", A and B are exchangeable within a task, so each d(t) is as likely positive as
-negative. Flip the signs of the K differences in every combination (exact for K up to about 20,
+negative. Flip the signs of the K differences in every combination (exact for K up to about 20 as proposed; as built, exact up to 30,
 2^K flips), and the p-value is the share of flipped means at least as far from zero as the observed
 one. No normality assumption, and the pairing is by task. (McNemar needs one trial per task and arm,
 so it does not fit N > 1; a mixed-effects logistic model is the heavier alternative.)

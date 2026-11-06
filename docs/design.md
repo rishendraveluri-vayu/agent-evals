@@ -158,7 +158,7 @@ Storage: experiment trials, their spans, grading jobs, grades, labels and events
 
 - **Concurrency and outages (destructive review, 6 Nov).** Every transaction that changes an
   experiment's trials (a worker's report, the lease sweep, start, pause, resume, stop, discard, arm
-  pause and resume) first locks the experiment row (`lockExperiment`, `apps/api/src/worker/run-state.ts`,
+  pause and resume) first locks the experiment row (`lockExperiment`, `apps/api/src/experiments/run-state.ts`,
   which states the lock order) and reads the status from it, so two last reports cannot leave a run
   "running", Stop cannot leave a queued trial behind, and reports and controls no longer deadlock. The
   sweep runs one transaction per experiment. At the end of a trial the worker reads its LiteLLM calls

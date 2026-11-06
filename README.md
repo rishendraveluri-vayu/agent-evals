@@ -48,7 +48,7 @@ sourcing rule (What I'd trust least, below). But 4 of the 10 tasks always passed
 and 1 always failed, in both versions, so only 5 tasks could show a difference. With 5, the test
 can't get under p = 0.05 however big the gap. The fix is more tasks in the middle, not more trials.
 
-Every run together cost about $35 in model calls ([`docs/cost.md`](docs/cost.md)).
+Every run together cost about $43 in model calls ([`docs/cost.md`](docs/cost.md)).
 
 ## How the verdict works
 
