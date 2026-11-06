@@ -17,12 +17,10 @@ const judgeNamed = (w: VueWrapper, name: string) => {
 };
 const row = (judge: ReturnType<typeof judgeNamed>, criterion: string) => judge.get(`[data-test="criterion-row"][data-criterion="${criterion}"]`);
 
-/** The page against a stubbed API: the trust response, and what is still to label in each set. */
-function mountWith(body: JudgeTrustResponse, toGo: { heldout?: unknown[]; tuning?: unknown[] } = {}) {
+/** The page against a stubbed API. */
+function mountWith(body: JudgeTrustResponse) {
   const fetched = routeFetch({
     '/api/judge/trust': body,
-    '/api/labels/queue?set=heldout': toGo.heldout ?? [],
-    '/api/labels/queue?set=tuning': toGo.tuning ?? [],
     '/api/experiments': experiments,
     '/api/tasks': tasks,
   });
@@ -127,7 +125,7 @@ describe('JudgeView in fixture mode', () => {
     expect(judgeNamed(w, 'Claude Haiku 5.5, rubric advice.v4').text()).toContain('Label outputs from Prompt v1 vs v2, held-out, without seeing its verdicts.');
   });
 
-  it("keeps where it and people disagree closed while that set has outputs to label, and opens the other set's", async () => {
+  it('lists where it and people disagree in a fold, even with outputs still to label, under a caution to label first', async () => {
     const w = mount(JudgeView);
     await settle();
     const haiku = judgeNamed(w, 'Claude Haiku 5.5, rubric advice.v4');
@@ -135,14 +133,12 @@ describe('JudgeView in fixture mode', () => {
     expect(list.element.tagName).toBe('DETAILS');
     expect(list.attributes('open')).toBeUndefined();
     expect(list.get('summary').text()).toContain('16 outputs');
-    // The sample's held-out set has 3 outputs to go; its tuning set none.
-    expect(list.get('[data-test="disagreements-held"]').text()).toBe(
-      "12 on held-out labels open when the held-out set is done (3 to go), so the judge's reasons cannot steer the labels still to come.",
+    // The sample's held-out set has 3 outputs to go: they are listed all the same (7 Nov).
+    expect(list.get('[data-test="disagreements-caution"]').text()).toBe(
+      "If you will label this judge's outputs, label them first: its reasons here can steer the labels you give.",
     );
-    const shown = list.findAll('[data-test="disagreement"]');
-    expect(shown).toHaveLength(4);
-    expect(shown.every((d) => d.get('.dis-head').text().endsWith('Tuning label'))).toBe(true);
-    expect(list.text()).not.toContain('Lectures her about the EMI');
+    expect(list.findAll('[data-test="disagreement"]')).toHaveLength(16);
+    expect(list.text()).toContain('Lectures her about the EMI');
   });
 
   it('explains every badge, with the bar as applied', async () => {
@@ -158,11 +154,10 @@ describe('JudgeView in fixture mode', () => {
 });
 
 describe('JudgeView against the API', () => {
-  it('opens every disagreement once both sets are labelled: held-out first, with the reason, the note and the trial', async () => {
+  it('lists every disagreement held-out first, with the reason, the note and the trial', async () => {
     const { w } = mountWith(trust);
     await settle();
     const haiku = judgeNamed(w, 'Claude Haiku 5.5, rubric advice.v4');
-    expect(haiku.find('[data-test="disagreements-held"]').exists()).toBe(false);
     const shown = haiku.findAll('[data-test="disagreement"]');
     // Every one the figures count: 12 held-out and 4 tuning, held-out first.
     expect(shown).toHaveLength(16);
@@ -177,14 +172,11 @@ describe('JudgeView against the API', () => {
     expect(shown[1].find('[data-test="disagreement-note"]').exists()).toBe(false);
   });
 
-  it('keeps a set closed only while that set has outputs to label', async () => {
-    const { w } = mountWith(trust, { tuning: [{ item_id: 'x', task_summary: '', transcript: [], tool_calls: [], criteria: [] }] });
+  it('never asks what is left to label: the list does not wait on it', async () => {
+    const { w, calls } = mountWith(trust);
     await settle();
-    const haiku = judgeNamed(w, 'Claude Haiku 5.5, rubric advice.v4');
-    expect(haiku.get('[data-test="disagreements-held"]').text()).toBe(
-      "4 on tuning labels open when the tuning set is done (1 to go), so the judge's reasons cannot steer the labels still to come.",
-    );
-    expect(haiku.findAll('[data-test="disagreement"]')).toHaveLength(12);
+    expect(calls.some((c) => c.url.includes('/labels/queue'))).toBe(false);
+    expect(judgeNamed(w, 'Claude Haiku 5.5, rubric advice.v4').findAll('[data-test="disagreement"]')).toHaveLength(16);
   });
 
   it('says so when no judge has graded anything, and still says what the badges mean', async () => {
@@ -209,7 +201,7 @@ describe('JudgeView against the API', () => {
 
   it('never links to calibrate on a shipped example, which is never labelled', async () => {
     const exampled = experiments.map((e) => (e.id === 'exp_heldout' ? { ...e, example: { name: 'x', title: 'Shipped', loaded_at: '2026-11-05T08:00:00.000Z' } } : e));
-    routeFetch({ '/api/judge/trust': trust, '/api/labels/queue?set=heldout': [], '/api/labels/queue?set=tuning': [], '/api/experiments': exampled, '/api/tasks': tasks });
+    routeFetch({ '/api/judge/trust': trust, '/api/experiments': exampled, '/api/tasks': tasks });
     const w = mount(JudgeView);
     await settle();
     // Its next newest experiment, exp_harness, is your own.

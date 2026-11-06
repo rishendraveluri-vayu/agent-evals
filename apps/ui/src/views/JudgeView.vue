@@ -5,12 +5,13 @@
  * own status is its overall criterion's. Each judge shows its status and summary, the figures per
  * criterion, where it and people disagree, and a link to label more of its outputs blind.
  *
- * Where it and people disagree stays closed, set by set, while that set still has outputs to
- * label, so the judge's reasons cannot steer the labels still to come (as on the labels page).
+ * Where it and people disagree lists every labelled output the judge got wrong, open to anyone, with
+ * a caution to label first: reading the judge's reasons can steer the labels still to come (7 Nov).
+ * The labels page stays blind; it never shows the judge's verdicts.
  */
 import { computed } from 'vue';
 import { api } from '../api/client';
-import type { AgreementFigures, BlindItem, ExperimentSummary, JudgeCriterionTrust, JudgeTrust, JudgeTrustResponse, JudgeTrustStatus, TaskView } from '../api/types';
+import type { AgreementFigures, ExperimentSummary, JudgeCriterionTrust, JudgeTrust, JudgeTrustResponse, JudgeTrustStatus, TaskView } from '../api/types';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import TrustBadge from '../components/TrustBadge.vue';
@@ -25,17 +26,12 @@ type TrustSet = 'heldout' | 'tuning';
 type Disagreement = JudgeCriterionTrust['disagreements'][number] & { criterion: string };
 
 const { data, error, loading } = useLoad(async () => {
-  const [trust, heldout, tuning, experiments, tasks] = await Promise.all([
+  const [trust, experiments, tasks] = await Promise.all([
     api.judgeTrust(),
-    // A failed load counts as nothing left to label, as on the trial page, so the two pages agree
-    // on whether labelling is still blind.
-    optional(api.labelQueue('heldout'), [] as BlindItem[]),
-    optional(api.labelQueue('tuning'), [] as BlindItem[]),
     optional(api.experiments(), [] as ExperimentSummary[]),
     optional(api.tasks(), [] as TaskView[]),
   ]);
-  const toGo: Record<TrustSet, number> = { heldout: heldout.length, tuning: tuning.length };
-  return { trust, toGo, experiments, tasks };
+  return { trust, experiments, tasks };
 });
 
 const trust = computed<JudgeTrustResponse | null>(() => data.value?.trust ?? null);
@@ -79,21 +75,15 @@ function stripOf(j: JudgeTrust) {
   return { rows, ticks, min, summary: `Held-out kappa by question, with its interval: ${parts.join('; ')}. The bar is ${b.kappa}.` };
 }
 
-/** Where the judge and people disagree, held-out first; a set's stay closed while it has
- *  outputs left to label. */
+/** Where the judge and people disagree, held-out first. */
 function disagreementsOf(j: JudgeTrust) {
-  const toGo = data.value?.toGo ?? { heldout: 0, tuning: 0 };
   const all: Disagreement[] = j.criteria.flatMap((c) => c.disagreements.map((d) => ({ ...d, criterion: c.criterion })));
   all.sort((p, q) => (p.set === q.set ? 0 : p.set === 'heldout' ? -1 : 1));
-  const held = (['heldout', 'tuning'] as TrustSet[])
-    .map((set) => ({ set, count: all.filter((d) => d.set === set).length, toGo: toGo[set] }))
-    .filter((h) => h.count > 0 && h.toGo > 0);
-  const closed = new Set(held.map((h) => h.set));
   // From the figures, not the list (which the API caps): labelled outputs, and how many it got wrong.
   const figures = j.criteria.flatMap((c) => [c.heldout, c.tuning]).filter((f): f is AgreementFigures => f !== null);
   const pairs = figures.reduce((sum, f) => sum + f.n, 0);
   const counted = figures.reduce((sum, f) => sum + f.fp + f.fn, 0);
-  return { all, shown: all.filter((d) => !closed.has(d.set)), held, agrees: pairs > 0 && counted === 0, capped: j.criteria.some((c) => c.disagreements.length >= 50) };
+  return { all, agrees: pairs > 0 && counted === 0, capped: j.criteria.some((c) => c.disagreements.length >= 50) };
 }
 
 const judges = computed(() =>
@@ -355,19 +345,14 @@ const statuses = computed<{ status: JudgeTrustStatus; text: string }[]>(() => {
           </span>
         </summary>
         <p
-          v-for="h in j.disagreements.held"
-          :key="h.set"
           class="secondary small held"
-          data-test="disagreements-held"
+          data-test="disagreements-caution"
         >
-          {{ h.count }} on {{ SET_NAMES[h.set] }} labels open when the {{ SET_NAMES[h.set] }} set is done ({{ h.toGo }} to go), so the judge's reasons cannot steer the labels still to come.
+          If you will label this judge's outputs, label them first: its reasons here can steer the labels you give.
         </p>
-        <ul
-          v-if="j.disagreements.shown.length"
-          class="dis-list"
-        >
+        <ul class="dis-list">
           <li
-            v-for="(d, di) in j.disagreements.shown"
+            v-for="(d, di) in j.disagreements.all"
             :key="di"
             class="dis"
             data-test="disagreement"

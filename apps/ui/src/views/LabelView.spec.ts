@@ -62,7 +62,7 @@ describe('LabelView in fixture mode', () => {
     const w = mount(LabelView);
     await settle();
     expect(w.find('a[href="#/labels/judge"]').exists()).toBe(false);
-    expect(w.get('[data-test="judge-later"]').text()).toBe("The judge's reasons open on the Judge page when this set is done (3 to go).");
+    expect(w.get('[data-test="judge-later"]').text()).toBe("Label these before you open the Judge page: the judge's reasons there can steer your labels (3 to go).");
     await w.get('[data-test="set-tuning"]').trigger('click');
     expect(w.find('[data-test="judge-later"]').exists()).toBe(false);
     expect(w.get('[data-test="judge-link"]').attributes('href')).toBe('#/labels/judge');

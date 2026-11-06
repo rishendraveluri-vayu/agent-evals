@@ -285,11 +285,11 @@ const blocks = (text: string) => mdBlocks(text);
         data-test="set-purpose"
       >
         {{ purpose }}
-        <!-- While this set has items to go, the judge's verdicts stay out of sight, so labelling stays blind. -->
+        <!-- While this set has items to go, this page links nowhere near the judge's verdicts and says to label first, so labelling stays blind. -->
         <span
           v-if="queue && left > 0"
           data-test="judge-later"
-        >The judge's reasons open on the Judge page when this set is done ({{ left }} to go).</span>
+        >Label these before you open the Judge page: the judge's reasons there can steer your labels ({{ left }} to go).</span>
         <a
           v-else-if="!loading && rater && !editingRater"
           :href="href.judge()"
