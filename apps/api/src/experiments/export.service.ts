@@ -16,6 +16,11 @@ const outcomeOf = (r: ExportRow): TrialGradingState => gradingState({ ...r, stat
  * `outcome` and grades are its current grading's (the latest finished grading job), as the
  * comparison and the run grid count them; older grade versions stay in the database, in the JSON
  * export's `grade_history` and in the bundle.
+ *
+ * E6 (6 Nov review): with arm A reused from a parent (D34), the export also holds the parent's
+ * trials that arm A counts, first, as the comparison counts them. Each keeps its own
+ * `experiment_id` (the experiment it ran in) and says so in `reused_from`, which is null for the
+ * experiment's own trials.
  */
 
 const PAGE = 200;
@@ -27,6 +32,8 @@ const GRADE_JSON = `json_build_object('grader_id', g.grader_id, 'grader_version'
 interface ExportRow {
   id: string;
   experiment_id: string;
+  /** 0 for a trial arm A reuses from a parent (D34), 1 for the experiment's own: the page order. */
+  src: number;
   repeat_index: number;
   attempt: number;
   seq: number;
@@ -130,7 +137,17 @@ export const CSV_COLUMNS = [
   'grades_json',
   'problems',
   'folder',
+  // E6: the experiment a reused arm-A trial ran in (D34), empty for the experiment's own trials.
+  // Last, so a reader that takes the earlier columns by position still finds them.
+  'reused_from',
 ] as const;
+
+/**
+ * E12 (6 Nov review): text a spreadsheet would run as a formula (it starts with =, +, -, @, a tab
+ * or a carriage return) gets a leading apostrophe, so a config name, a task id or an error message
+ * is shown, never run. Numbers, booleans and dates are written as they are, never changed.
+ */
+const FORMULA_START = /^[=+\-@\t\r]/;
 
 export function csvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
@@ -138,7 +155,9 @@ export function csvCell(value: unknown): string {
     value instanceof Date
       ? value.toISOString()
       : typeof value === 'string'
-        ? value
+        ? FORMULA_START.test(value)
+          ? `'${value}`
+          : value
         : typeof value === 'number' || typeof value === 'boolean'
           ? String(value)
           : JSON.stringify(value);
@@ -161,11 +180,12 @@ export class ExportService {
   }
 
   private async *pages(experimentId: string): AsyncGenerator<ExportRow[]> {
-    let after = -1;
-    let afterAttempt = 0;
+    // Keyset paging on (src, seq, attempt, id): a reused trial's seq is its parent's, so seq and
+    // attempt alone are not unique across the two sources.
+    let after: [number, number, number, string] = [-1, -1, 0, ''];
     for (;;) {
       const page = await this.db.query<ExportRow>(
-        `SELECT t.id, t.experiment_id, t.repeat_index, t.attempt, t.seq, t.status, t.label, t.end_state, t.worker_id,
+        `SELECT t.id, t.experiment_id, (CASE WHEN t.experiment_id = $1 THEN 1 ELSE 0 END)::int AS src, t.repeat_index, t.attempt, t.seq, t.status, t.label, t.end_state, t.worker_id,
                 t.claimed_at, t.finished_at, t.cost_usd, t.sim_cost_usd, t.spend_unknown, t.input_tokens, t.output_tokens, t.model_calls,
                 (SELECT string_agg(DISTINCT s.attributes ->> 'gen_ai.response.model', ' ')
                    FROM spans s
@@ -188,15 +208,16 @@ export class ExportService {
          LEFT JOIN LATERAL (
            SELECT j.status FROM grading_jobs j WHERE j.trial_id = t.id AND j.status <> 'superseded' ORDER BY j.created_at DESC, j.id DESC LIMIT 1
          ) gl ON true
-         WHERE t.experiment_id = $1 AND (t.seq, t.attempt) > ($2, $3)
-         ORDER BY t.seq, t.attempt LIMIT ${PAGE}`,
-        [experimentId, after, afterAttempt],
+         -- D34: a reused arm A's rows are the parent's trials it took (E6).
+         WHERE (t.experiment_id = $1 OR t.id IN (SELECT unnest(a.reused_trial_ids) FROM experiment_arms a WHERE a.experiment_id = $1))
+           AND ((CASE WHEN t.experiment_id = $1 THEN 1 ELSE 0 END), t.seq, t.attempt, t.id) > ($2::int, $3::int, $4::int, $5::text)
+         ORDER BY (CASE WHEN t.experiment_id = $1 THEN 1 ELSE 0 END), t.seq, t.attempt, t.id LIMIT ${PAGE}`,
+        [experimentId, ...after],
       );
       if (page.length) yield page;
       if (page.length < PAGE) return;
       const last = page[page.length - 1];
-      after = last.seq;
-      afterAttempt = last.attempt;
+      after = [last.src, last.seq, last.attempt, last.id];
     }
   }
 
@@ -221,6 +242,7 @@ export class ExportService {
         id: r.id,
         experiment_id: r.experiment_id,
         arm: armOf(experiment, r.config_hash, r.repeat_index),
+        reused_from: r.experiment_id === experimentId ? null : r.experiment_id,
         repeat_index: r.repeat_index,
         attempt: r.attempt,
         status: r.status,
@@ -318,16 +340,19 @@ export class ExportService {
   async *csv(experimentId: string): AsyncGenerator<string> {
     const experiment = await this.experiments.row(experimentId);
     const configs = await this.configsFor(experiment.config_hashes);
-    const title = experimentTitle(experiment);
+    // A reused trial's title is that of the experiment it ran in (E6).
+    const titles = new Map<string, string>([[experimentId, experimentTitle(experiment)]]);
     yield `${CSV_COLUMNS.join(',')}\n`;
     for await (const r of this.rows(experimentId)) {
       const c = configs.get(r.config_hash);
       const grades = Array.isArray(r.grades) ? (r.grades as { verdict?: unknown }[]) : [];
+      if (!titles.has(r.experiment_id)) titles.set(r.experiment_id, experimentTitle(await this.experiments.row(r.experiment_id)));
       const values: Record<(typeof CSV_COLUMNS)[number], unknown> = {
         experiment_id: r.experiment_id,
-        experiment_title: title,
+        experiment_title: titles.get(r.experiment_id),
         trial_id: r.id,
         arm: armOf(experiment, r.config_hash, r.repeat_index),
+        reused_from: r.experiment_id === experimentId ? null : r.experiment_id,
         repeat_index: r.repeat_index,
         attempt: r.attempt,
         status: r.status,

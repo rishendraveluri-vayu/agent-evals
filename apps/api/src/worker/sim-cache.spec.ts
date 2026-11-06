@@ -73,4 +73,14 @@ describe('parseSimReplies', () => {
     expect(rows).toEqual([{ key: key('4'), reply: '[[END_CONVERSATION]]', usage: null }]);
     expect(problems).toEqual(['sim_replies.jsonl line 3 has an empty reply; not cached']);
   });
+
+  it('never caches a reply with a NUL in it, and stores its usage without one (E7)', () => {
+    const text = [
+      JSON.stringify({ key: key('1'), reply: 'half\u0000a reply', model: 'sim-model' }),
+      JSON.stringify({ key: key('2'), reply: 'fine', model: 'sim-model', usage: { note: 'n\u0000' } }),
+    ].join('\n');
+    const { rows, problems } = parseSimReplies(text, 'sim-model');
+    expect(rows).toEqual([{ key: key('2'), reply: 'fine', usage: { note: 'n\uFFFD' } }]);
+    expect(problems).toEqual(['sim_replies.jsonl line 1 has a NUL character in its reply; not cached']);
+  });
 });

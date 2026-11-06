@@ -442,6 +442,33 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
       reused_trial_ids: expect.arrayContaining(parentTrials) as string[],
     });
     expect((await env.pool.query('SELECT count(*)::int AS n FROM trials WHERE experiment_id = $1', [parent.id])).rows[0]).toEqual({ n: 2 });
+
+    // E6: the export holds what the comparison counts, arm A's reused trials first, each still
+    // the parent's (its experiment_id) and saying so in reused_from.
+    const childTrials = (await trials(child.id)).map((t) => t.id).sort();
+    const json = JSON.parse((await request(env.http).get(`/api/experiments/${child.id}/export?format=json`).expect(200)).text) as {
+      trials: { id: string; experiment_id: string; arm: string; reused_from: string | null }[];
+    };
+    expect(json.trials.map((t) => [t.arm, t.experiment_id, t.reused_from])).toEqual([
+      ['A', parent.id, parent.id],
+      ['A', parent.id, parent.id],
+      ['B', child.id, null],
+      ['B', child.id, null],
+    ]);
+    expect(json.trials.slice(0, 2).map((t) => t.id).sort()).toEqual(parentTrials);
+    expect(json.trials.slice(2).map((t) => t.id).sort()).toEqual(childTrials);
+    const [header, ...lines] = parseCsv((await request(env.http).get(`/api/experiments/${child.id}/export?format=csv`).expect(200)).text);
+    const col = (name: string): number => header.indexOf(name);
+    expect(header.at(-1)).toBe('reused_from');
+    expect(lines.map((l) => [l[col('arm')], l[col('experiment_id')], l[col('reused_from')]])).toEqual([
+      ['A', parent.id, parent.id],
+      ['A', parent.id, parent.id],
+      ['B', child.id, ''],
+      ['B', child.id, ''],
+    ]);
+    // The parent's own export is unchanged: its two trials, its own.
+    const own = JSON.parse((await request(env.http).get(`/api/experiments/${parent.id}/export?format=json`).expect(200)).text) as { trials: { id: string; reused_from: string | null }[] };
+    expect(own.trials.map((t) => [t.id, t.reused_from]).sort()).toEqual(parentTrials.map((id) => [id, null]));
   });
 
   it('refuses the reuse and queues arm A again when the platform commit differs, saying why (D34)', async () => {

@@ -123,7 +123,55 @@ def test_rate_limits_server_errors_and_budget_stops_keep_their_labels(status, ex
 def test_without_a_litellm_record_the_message_alone_does_not_relabel():
     """D26 reads LiteLLM's status; with no proxy record (a direct fake run) nothing changes."""
     assert label(OK, harness_error(UNSCOPED_KEY), None) == "agent"
-    assert label(OK, harness_error(UNSCOPED_KEY), {"last_status": None}) == "agent"
+    assert label(OK, harness_error(CONNECTION_REFUSED, "adapter_exception"), None) == "agent"
+
+
+# The shapes a harness reports when LiteLLM is not reachable (E1, 6 Nov review: LiteLLM taken off
+# the trials network). The openai client, as the own loop, LangGraph and the Agents SDK raise it:
+CONNECTION_REFUSED = "Connection error."
+HTTPX_REFUSED = "[Errno 111] Connection refused"
+UNRESOLVED = "litellm.APIConnectionError: [Errno -3] Temporary failure in name resolution"
+
+
+def unreachable(message: str, kind: str = "APIConnectionError") -> dict:
+    checked = harness_error(message, f"model call failed: {kind}")
+    checked["result"]["end_detail"]["exception_type"] = kind
+    return checked
+
+
+@pytest.mark.parametrize(
+    "checked",
+    [
+        unreachable(CONNECTION_REFUSED),
+        unreachable(HTTPX_REFUSED, "ConnectError"),
+        unreachable(UNRESOLVED),
+        harness_error(None, "adapter_exception"),
+    ],
+)
+def test_no_call_reached_litellm_is_a_provider_error_not_the_agents(checked):
+    """E1: LiteLLM's record exists but holds no call (the runner read it: last_status None,
+    model_calls 0). No request reached the model, so whatever the harness said, the agent did not
+    cause it: infra:provider_error, which the API re-queues once like any provider error."""
+    usage = {"last_status": None, "model_calls": 0, "complete": True}
+    assert label(OK, checked, usage) == "infra:provider_error"
+    assert provider_label(None, checked["result"], proxy_seen=True) == "infra:provider_error"
+    assert provider_label(None, checked["result"]) is None
+
+
+def test_litellm_lost_after_a_logged_call_is_a_provider_error():
+    """E1: the earlier calls were logged (last_status 200), then LiteLLM went away: the call that
+    failed never reached it, so it was never logged. The adapter's error says so."""
+    for message, kind in (
+        (CONNECTION_REFUSED, "APIConnectionError"),
+        (HTTPX_REFUSED, "ConnectError"),
+    ):
+        checked = unreachable(message, kind)
+        assert label(OK, checked, {"last_status": "200"}) == "infra:provider_error"
+    # Any other harness error after a successful call stays the agent's, as before.
+    assert (
+        label(OK, harness_error(OTHER_400, "adapter_exception"), {"last_status": "200"}) == "agent"
+    )
+    assert label(OK, unreachable(CONNECTION_REFUSED), None) == "agent"
 
 
 def test_an_answered_trial_is_never_relabelled_by_an_earlier_failed_call():

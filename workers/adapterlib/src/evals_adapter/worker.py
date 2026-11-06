@@ -265,12 +265,55 @@ class TrialControl:
             raise TrialStopped(self.reason or "stopped")
 
 
+class GaveUp(RuntimeError):  # noqa: N818 - a deadline, not a fault of its own
+    """A call kept failing with network errors, 5xx or 429 until its deadline passed."""
+
+
+def retry_until(
+    what: str,
+    call: Callable[[], Any],
+    control: TrialControl,
+    deadline: float,
+    delay_for: Callable[[int], float],
+) -> Any:
+    """Repeat `call` on network errors, 5xx and 429, waiting `delay_for(n)` after the n-th
+    failure, until it answers or `deadline` (time.monotonic) passes, then raise GaveUp. Any other
+    refusal is raised at once; a stopped trial stops the waiting (TrialStopped)."""
+    n = 0
+    while True:
+        control.check()
+        try:
+            return call()
+        except ApiError as exc:
+            if not exc.retryable:
+                raise
+            error: Exception = exc
+        except NetworkError as exc:
+            error = exc
+        if time.monotonic() >= deadline:
+            raise GaveUp(f"gave up on the {what}: {error}") from error
+        delay = delay_for(n)
+        log(f"{what} failed ({error}); sending it again in {delay:.1f} s")
+        n += 1
+        if control.stopped.wait(delay):
+            control.check()
+
+
+def default_backoff(n: int) -> float:
+    """1 s, doubling to at most 30 s, with jitter: WorkerConfig's retry_base_s and retry_max_s."""
+    return min(30.0, 1.0 * 2 ** min(n, 16)) * (0.5 + 0.5 * random.random())  # noqa: S311
+
+
 class ApiProxyClient(ProxyClient):
     """The runner's `ProxyClient` over the API's worker endpoints (D2).
 
     - `create_key` returns the keys the claim carried: the API minted them, each limited to the
       trial's model and budget. The key's `token` is the role, which is all the API needs.
     - `call_records` polls GET /worker/trials/:id/calls with ProxyClient's wait and settle logic.
+      Each read is retried on network errors, 5xx and 429 for up to `deadline_s` (E2, 6 Nov
+      review: three tries 1 s apart threw a finished trial away when the API, LiteLLM or Postgres
+      was down for more than 2 s; the worker gives these reads the same back-off and deadline as
+      its uploads and its report, WorkerConfig.report_retry_s).
     - `revoke` does nothing: the API revokes when the trial is reported or its claim lapses.
     """
 
@@ -282,16 +325,16 @@ class ApiProxyClient(ProxyClient):
         trial_id: str,
         keys: Mapping[str, Any],
         control: TrialControl | None = None,
-        retries: int = 3,
-        retry_s: float = 1.0,
+        deadline_s: float = 600.0,
+        backoff: Callable[[int], float] = default_backoff,
     ) -> None:
         # No ProxyClient.__init__: the worker has no LiteLLM URL and no master key.
         self.api = api
         self.trial_id = trial_id
         self.keys = dict(keys)
         self.control = control
-        self.retries = retries
-        self.retry_s = retry_s
+        self.deadline_s = deadline_s
+        self.backoff = backoff
 
     def create_key(
         self, trial_id: str, role: str, max_budget_usd: float, models: list[str]
@@ -308,21 +351,20 @@ class ApiProxyClient(ProxyClient):
         return None
 
     def _spend_rows(self, token: str) -> list[dict]:
-        last: Exception | None = None
-        for n in range(self.retries):
-            if self.control is not None:
-                self.control.check()
-            try:
-                return self.api.calls(self.trial_id, token)
-            except NetworkError as exc:
-                last = exc
-            except ApiError as exc:
-                if not exc.retryable:
-                    raise ProxyError(str(exc)) from exc
-                last = exc
-            if n + 1 < self.retries:
-                time.sleep(self.retry_s)
-        raise ProxyError(f"could not read the {token} calls for {self.trial_id}: {last}")
+        try:
+            return retry_until(
+                f"read of the {token} calls for {self.trial_id}",
+                lambda: self.api.calls(self.trial_id, token),
+                self.control or TrialControl(),
+                time.monotonic() + self.deadline_s,
+                self.backoff,
+            )
+        except ApiError as exc:  # a refusal that repeating will not change
+            raise ProxyError(str(exc)) from exc
+        except GaveUp as exc:
+            raise ProxyError(
+                f"could not read the {token} calls for {self.trial_id}: {exc}"
+            ) from exc
 
 
 class Heartbeat:
@@ -583,7 +625,8 @@ class WorkerConfig:
     idle_max_s: float = 15.0
     retry_base_s: float = 1.0
     retry_max_s: float = 30.0
-    report_retry_s: float = 600.0  # for the uploads and the report; then the lease lapses
+    # For each read of the trial's calls (E2), the uploads and the report; then the lease lapses.
+    report_retry_s: float = 600.0
     max_file_bytes: int = MAX_FILE_BYTES
 
     @classmethod
@@ -737,7 +780,14 @@ class Worker:
         )
         budgets = claim.get("budgets") or {}
         proxy = ProxySettings(
-            ApiProxyClient(self.api, trial_id, claim["keys"], control),
+            ApiProxyClient(
+                self.api,
+                trial_id,
+                claim["keys"],
+                control,
+                deadline_s=self.cfg.report_retry_s,
+                backoff=lambda n: self._jitter(self.cfg.retry_base_s, self.cfg.retry_max_s, n),
+            ),
             budget_usd=float(budgets.get("trial_usd") or 0.0),
             sim_budget_usd=float(budgets.get("sim_usd") or 0.0),
         )
@@ -818,24 +868,13 @@ class Worker:
     ) -> Any:
         """Repeat `call` on network errors, 5xx and 429, with jittered back-off, until it answers
         or `deadline` passes. Any other refusal is raised at once."""
-        n = 0
-        while True:
-            control.check()
-            try:
-                return call()
-            except ApiError as exc:
-                if not exc.retryable:
-                    raise
-                error: Exception = exc
-            except NetworkError as exc:
-                error = exc
-            if time.monotonic() >= deadline:
-                raise RuntimeError(f"gave up on the {what}: {error}") from error
-            delay = self._jitter(self.cfg.retry_base_s, self.cfg.retry_max_s, n)
-            log(f"{what} failed ({error}); sending it again in {delay:.1f} s")
-            n += 1
-            if control.stopped.wait(delay):
-                control.check()
+        return retry_until(
+            what,
+            call,
+            control,
+            deadline,
+            lambda n: self._jitter(self.cfg.retry_base_s, self.cfg.retry_max_s, n),
+        )
 
     # -- between trials (D3)
 

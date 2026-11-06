@@ -7,16 +7,17 @@ import { normalizeSha } from '../common/hashing';
 import { APP_CONFIG, type AppConfig } from '../common/app-config';
 import { newId } from '../common/ids';
 import type { StoredTask } from '../catalogue/catalogue.service';
+import { readHarnesses } from '../catalogue/catalogue-files';
 import { CONFIG_SELECT, type ConfigRow, configId } from '../configs/configs.service';
 import { Db, type Queryable } from '../database/db.service';
 import { NOT_EXAMPLE_TRIAL } from '../examples/example-guard';
 import { type ExperimentRow, finishIfDone, isSimTask } from '../experiments/experiments.service';
 import { LiteLlmClient, LiteLlmHttpError, type MintedKey } from '../litellm/litellm.client';
-import { FINISHED, HELD, LEASE_S, PAUSES_ARM, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
+import { FINISHED, HELD, LEASE_S, MAX_ATTEMPTS, PAUSES_ARM, SWEEP_INTERVAL_MS, shouldRequeue, statusForLabel } from '../trials/status';
 import { MAX_FILE_BYTES, checkFiles, locate, safeRelPath, storeUpload, trialFolder } from '../trials/trial-files';
-import { configErrorFix, configErrorReason, parseReport, spanRows, spendLogUsage, usageOf } from './report';
+import { configErrorFix, configErrorReason, parseReport, spanRows, spendLogUsage, usageOf, withoutNul } from './report';
 import { applyRunRules } from '../experiments/rules';
-import { TRIAL_IN_ARM, pauseArm } from '../experiments/run-state';
+import { TRIAL_IN_ARM, lockExperiment, pauseArm } from '../experiments/run-state';
 import { SIM_REPLIES_FILE, type SimReplyRow, type SimScope, parseSimReplies, simScope } from './sim-cache';
 import { clientSummary } from './client-summary';
 import { CLIENT_STATE_FILE, SIM_MAX_OUTPUT_TOKENS, buildSpec } from './spec-builder';
@@ -40,6 +41,11 @@ interface TrialRow {
   sim_key_token: string | null;
   problems: string[];
 }
+
+/** The longest worker id a claim may give (E10). Compose's are `<harness>-<hostname>`. */
+const WORKER_ID_MAX = 200;
+/** How long the list of harness folders a claim is checked against is kept (E10). */
+const HARNESS_CACHE_MS = 30_000;
 
 const one = async <T>(q: Queryable, sql: string, params: unknown[]): Promise<T | undefined> =>
   ((await q.query(sql, params)).rows as T[])[0];
@@ -95,13 +101,15 @@ async function requeue(q: Queryable, trialId: string, attempt: number, experimen
 
 /**
  * The worker protocol (D2): claim, heartbeat, report, and the lease sweep. Every status change
- * happens here, in a transaction, with the trial row locked.
+ * happens here, in a transaction, with the trial row locked; a report and the sweep lock the
+ * experiment row before it (the lock order in run-state.ts, E3 to E5).
  */
 @Injectable()
 export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(WorkerService.name);
   private timer: NodeJS.Timeout | null = null;
   private sweeping = false;
+  private harnessCache: { at: number; names: Set<string> } | null = null;
 
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -143,11 +151,36 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     const b = (body ?? {}) as Record<string, unknown>;
     if (typeof b.worker_id !== 'string' || !b.worker_id) throw badRequest('invalid_claim', 'worker_id is required');
     if (typeof b.harness !== 'string' || !b.harness) throw badRequest('invalid_claim', 'harness is required');
+    if (b.worker_id.length > WORKER_ID_MAX || b.worker_id.includes('\u0000')) {
+      throw badRequest('invalid_claim', `worker_id must be 1 to ${WORKER_ID_MAX} characters, with no NUL`);
+    }
     const workerId = b.worker_id;
     const harness = b.harness;
+    // E10: a claim for a harness with no folder under workers/ can never get a trial; refused, so
+    // it adds no worker row either.
+    const harnesses = await this.harnessNames();
+    if (!harnesses.has(harness)) {
+      throw badRequest('unknown_harness', `no harness named ${JSON.stringify(harness.slice(0, 80))} under workers/`, `Set EVALS_HARNESS to one of: ${[...harnesses].sort().join(', ')}.`);
+    }
     const modelBaseUrl = this.litellm.workerBaseUrl; // fails early when LiteLLM is not configured
-    // Item 8: a worker that asks for work is live, whether or not it gets any.
-    await this.seen(workerId, harness);
+    const claimed = await this.claimNext(workerId, harness, modelBaseUrl);
+    // Item 8, narrowed by E10 (6 Nov review): a worker counts as live for the estimate once it holds
+    // a trial (this claim, then its heartbeats). An empty claim (204) records nothing, so claims
+    // under made-up worker ids no longer add live workers.
+    if (claimed) await this.seen(workerId, harness);
+    return claimed;
+  }
+
+  /** The harness folders under workers/ (scaffolded ones included), read at most every HARNESS_CACHE_MS. */
+  private async harnessNames(): Promise<Set<string>> {
+    const now = Date.now();
+    if (!this.harnessCache || now - this.harnessCache.at > HARNESS_CACHE_MS) {
+      this.harnessCache = { at: now, names: new Set((await readHarnesses(this.config.workersDir)).map((h) => h.name)) };
+    }
+    return this.harnessCache.names;
+  }
+
+  private claimNext(workerId: string, harness: string, modelBaseUrl: string): Promise<ClaimResponse | null> {
     return this.db.tx(async (client) => {
       // A probe trial (D33) has no experiment and goes first: it is a short pre-run check.
       const t = await one<TrialRow>(
@@ -284,6 +317,10 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     if (typeof b.worker_id !== 'string' || typeof b.attempt !== 'number') {
       throw badRequest('invalid_heartbeat', 'worker_id and attempt are required');
     }
+    // E9: an attempt the integer column cannot compare with was a 500.
+    if (!Number.isInteger(b.attempt) || b.attempt < 1 || b.attempt > MAX_ATTEMPTS) {
+      throw badRequest('invalid_heartbeat', `attempt must be an integer from 1 to ${MAX_ATTEMPTS}`);
+    }
     const kept = await this.db.query<{ harness: string }>(
       `UPDATE trials SET heartbeat_at = now(), status = 'running'
        WHERE id = $1 AND attempt = $2 AND worker_id = $3 AND status IN ('claimed', 'running') RETURNING harness`,
@@ -358,7 +395,9 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
   // ---- report ----
 
   async report(id: string, raw: unknown): Promise<ReportResponse> {
-    const body = parseReport(raw);
+    // E7: no NUL reaches Postgres (it cannot store one); the trial says how many were replaced.
+    const sent = withoutNul(raw);
+    const body = parseReport(sent.value);
     const [trial] = await this.db.query<TrialRow>('SELECT * FROM trials WHERE id = $1', [id]);
     if (!trial) throw notFound('unknown_trial', `no trial ${id}`);
     if (body.attempt !== trial.attempt) {
@@ -374,14 +413,20 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     const folder = folderOf(trial);
     const files = await checkFiles(this.config.runsDir, folder, body.files);
     const { rows: spans, problems } = spanRows(body.spans);
+    if (sent.replaced) {
+      problems.push(`the report had ${sent.replaced} NUL character${sent.replaced === 1 ? '' : 's'}, stored as U+FFFD (the database cannot hold NUL); the uploaded files keep them`);
+    }
     const bad = files.filter((f) => !f.ok);
     if (bad.length) problems.push(`${bad.length} of ${files.length} files not uploaded or different from what the API stored under ${folder}`);
     const sim = await this.simReplies(trial, folder, files, problems);
     const label = body.runner_report.label as string;
     const status = statusForLabel(label);
-    const usage = usageOf(body.runner_report, body.result, spans);
+    const usage = usageOf(body.runner_report, body.result, spans, problems);
 
     const outcome = await this.db.tx(async (client) => {
+      // Lock order (run-state.ts): the experiment row first, then the trial. A trial never changes
+      // experiment, so the id read above is the one to lock. A probe has no experiment (D33).
+      const exp = trial.experiment_id === null ? null : await lockExperiment<Pick<ExperimentRow, 'status'>>(client, trial.experiment_id);
       const locked = (await one<TrialRow>(client, 'SELECT * FROM trials WHERE id = $1 FOR UPDATE', [id])) as TrialRow;
       if (locked.reported_at) return null; // a concurrent duplicate won the race
       if (!HELD.includes(locked.status) || locked.worker_id !== body.worker_id) {
@@ -407,7 +452,8 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
           usage.proxy_complete,
           usage.wall_s,
           JSON.stringify(files),
-          JSON.stringify(problems),
+          // A file's own text quoted in a problem (sim_replies.jsonl) can carry a NUL too.
+          JSON.stringify(withoutNul(problems).value),
           folder,
         ],
       );
@@ -437,11 +483,10 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
       let requeued: string | null = null;
       // A probe (no experiment) is never re-queued and pauses nothing: POST rendered-prompt probes again.
       const experimentId = locked.experiment_id;
-      if (experimentId === null) return { stored, requeued, simStored };
-      if (status === 'infra_failed') {
-        const exp = (await one<{ status: ExperimentRow['status'] }>(client, 'SELECT status FROM experiments WHERE id = $1', [experimentId]))!;
-        requeued = await requeue(client, id, locked.attempt, exp.status, label);
-      }
+      if (experimentId === null || !exp) return { stored, requeued, simStored };
+      // E4: the status is the locked row's, so a Stop that committed first is seen here (no
+      // re-queue), and one that comes after sees this new attempt and cancels it.
+      if (status === 'infra_failed') requeued = await requeue(client, id, locked.attempt, exp.status, label);
       if (label === PAUSES_ARM) {
         // D26, amended by D37: the setup is wrong (a key, the model, a refused setting), so every
         // later trial of this config would fail the same way. Its arm stops claiming until someone
@@ -524,33 +569,40 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
    * spend from LiteLLM first (G3). Returns what it changed.
    */
   async sweep(): Promise<{ abandoned: string[]; requeued: string[] }> {
-    const changed = await this.db.tx(async (client) => {
-      const { rows } = await client.query<{ id: string; experiment_id: string | null; attempt: number; status: ExperimentRow['status'] | null }>(
-        `WITH lapsed AS (
-           UPDATE trials SET status = 'abandoned', finished_at = now()
+    const lapsed = `t.status IN ('claimed', 'running') AND t.heartbeat_at < now() - make_interval(secs => $1::double precision)
+       -- SP7: a shipped example's rows are never changed, whatever state it was shipped in.
+       AND ${NOT_EXAMPLE_TRIAL('t')}`;
+    // Which experiments have a lapsed lease (null: a probe's). Each is then handled in its own
+    // transaction, in the lock order (run-state.ts): the experiment row first, then its trials.
+    const owners = await this.db.query<{ experiment_id: string | null }>(`SELECT DISTINCT t.experiment_id FROM trials t WHERE ${lapsed}`, [LEASE_S]);
+    const changed = { abandoned: [] as string[], requeued: [] as string[] };
+    for (const { experiment_id: experimentId } of owners) {
+      const done = await this.db.tx(async (client) => {
+        const exp = experimentId === null ? null : await lockExperiment<Pick<ExperimentRow, 'status'>>(client, experimentId);
+        const { rows } = await client.query<{ id: string; attempt: number }>(
+          `UPDATE trials SET status = 'abandoned', finished_at = now()
            WHERE id IN (
              SELECT t.id FROM trials t
-             WHERE t.status IN ('claimed', 'running') AND t.heartbeat_at < now() - make_interval(secs => $1::double precision)
-               -- SP7: a shipped example's rows are never changed, whatever state it was shipped in.
-               AND ${NOT_EXAMPLE_TRIAL('t')}
+             WHERE ${lapsed} AND (CASE WHEN $2::text IS NULL THEN t.experiment_id IS NULL ELSE t.experiment_id = $2 END)
              FOR UPDATE OF t SKIP LOCKED)
-           RETURNING id, experiment_id, attempt)
-         SELECT l.id, l.experiment_id, l.attempt, e.status FROM lapsed l LEFT JOIN experiments e ON e.id = l.experiment_id`,
-        [LEASE_S],
-      );
-      const requeued: string[] = [];
-      for (const r of rows) {
+           RETURNING id, attempt`,
+          [LEASE_S, experimentId],
+        );
+        const requeued: string[] = [];
         // A lapsed probe (no experiment) is not re-queued; POST rendered-prompt probes again.
-        const next = r.status === null ? null : await requeue(client, r.id, r.attempt, r.status, null);
-        if (next) requeued.push(next);
-      }
-      for (const exp of new Set(rows.map((r) => r.experiment_id))) {
-        if (exp === null) continue; // a probe
-        await finishIfDone(client, exp);
-        await applyRunRules(client, exp); // D32: an abandoned attempt counts for the infra guard
-      }
-      return { abandoned: rows.map((r) => r.id), requeued };
-    });
+        if (exp && experimentId !== null && rows.length) {
+          for (const r of rows) {
+            const next = await requeue(client, r.id, r.attempt, exp.status, null);
+            if (next) requeued.push(next);
+          }
+          await finishIfDone(client, experimentId);
+          await applyRunRules(client, experimentId); // D32: an abandoned attempt counts for the infra guard
+        }
+        return { abandoned: rows.map((r) => r.id), requeued };
+      });
+      changed.abandoned.push(...done.abandoned);
+      changed.requeued.push(...done.requeued);
+    }
     if (changed.abandoned.length) this.logger.warn(`abandoned lapsed trials: ${changed.abandoned.join(', ')}`);
     const pending = await this.db.query<{ id: string; status: TrialStatus; agent_key_token: string; sim_key_token: string | null }>(
       `SELECT id, status, agent_key_token, sim_key_token FROM trials

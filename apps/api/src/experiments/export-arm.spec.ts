@@ -1,5 +1,24 @@
 import { armIndex } from './experiments.service';
-import { armOf } from './export.service';
+import { armOf, csvCell } from './export.service';
+
+// E12: text a spreadsheet would run as a formula is written with a leading apostrophe; numbers,
+// booleans and dates never change.
+describe('csvCell', () => {
+  it('neutralises text that starts like a formula', () => {
+    expect(csvCell('=HYPERLINK("http://x","click")')).toBe(`"'=HYPERLINK(""http://x"",""click"")"`);
+    expect(['+1', '-2+3', '@SUM(A1)', '\tx', '\rx'].map(csvCell)).toEqual(["'+1", "'-2+3", "'@SUM(A1)", "'\tx", `"'\rx"`]);
+    expect(csvCell('arm A = baseline')).toBe('arm A = baseline');
+  });
+
+  it('never changes a number, a boolean, a date or an empty cell', () => {
+    expect(csvCell(-0.0042)).toBe('-0.0042');
+    expect(csvCell(-3)).toBe('-3');
+    expect(csvCell(false)).toBe('false');
+    expect(csvCell(new Date('2026-11-06T10:00:00Z'))).toBe('2026-11-06T10:00:00.000Z');
+    expect(csvCell(null)).toBe('');
+    expect(csvCell([{ verdict: 'pass' }])).toBe('"[{""verdict"":""pass""}]"');
+  });
+});
 
 // G8: the export names arms by the same rule as every other screen (armIndex), so an A/A
 // calibration run's arm B is read from the calibration flag, not inferred from a repeated hash.

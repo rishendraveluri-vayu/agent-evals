@@ -1151,6 +1151,43 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     }
   });
 
+  it('takes a label only for a trial the queue could offer: no fake model, probe, shipped example or other set (E11)', async () => {
+    const lines = async (): Promise<number> => (await fs.readFile(path.join(env.labelsDir, 'tuning.jsonl'), 'utf8').catch(() => '')).split('\n').filter(Boolean).length;
+    const ok = { rater: 'rishi', criterion: 'empathy', value: 'yes' };
+    // A fake model's trial plays a script: never in the queue, and now never labelled.
+    for (const { id } of (await env.pool.query("SELECT id FROM experiments WHERE status IN ('running', 'paused')")).rows as { id: string }[]) await cancel(id);
+    await experiment();
+    const f = (await claim('w-e11-fake'))!;
+    await report(f, 'w-e11-fake');
+    const before = await lines();
+    const fake = await saveLabel({ ...ok, item_id: f.trial_id }).expect(400);
+    expect(fake.body).toMatchObject({ error: 'not_labellable', message: expect.stringContaining('fake model') as string, fix: expect.stringContaining('GET /labels/queue') as string });
+
+    // A real-model trial is labellable, until it is a probe's or a shipped example's.
+    const { expId, trial } = await labelItem('w-e11');
+    // (A probe has no experiment: the row is made one for the moment.)
+    await env.pool.query('UPDATE trials SET probe = true, experiment_id = NULL WHERE id = $1', [trial]);
+    expect((await saveLabel({ ...ok, item_id: trial }).expect(400)).body).toMatchObject({ error: 'not_labellable', message: expect.stringContaining('probe') as string });
+    await env.pool.query('UPDATE trials SET probe = false, experiment_id = $2 WHERE id = $1', [trial, expId]);
+    await env.pool.query(`UPDATE experiments SET example_name = 'e11-example' WHERE id = $1`, [expId]);
+    expect((await saveLabel({ ...ok, item_id: trial }).expect(400)).body).toMatchObject({ error: 'not_labellable', message: expect.stringContaining('shipped example') as string });
+    await env.pool.query('UPDATE experiments SET example_name = NULL WHERE id = $1', [expId]);
+    expect(await lines()).toBe(before);
+
+    // D52: a trial labelled in one set is labelled in no other, by anyone.
+    const file = path.join(env.tasksDir, 'emi-basic', 'task.json');
+    const task = await fs.readFile(file, 'utf8');
+    try {
+      await fs.writeFile(file, JSON.stringify({ ...(JSON.parse(task) as object), version: '2', split: 'held_out' }, null, 2));
+      await saveLabel({ ...ok, item_id: trial, set: 'heldout' }).expect(201);
+      const other = await saveLabel({ ...ok, item_id: trial, set: 'final', rater: 'rater-b' }).expect(400);
+      expect(other.body).toMatchObject({ error: 'wrong_set', message: expect.stringContaining('already has labels in the heldout set') as string });
+      await saveLabel({ ...ok, item_id: trial, set: 'heldout', criterion: 'no_jargon' }).expect(201);
+    } finally {
+      await fs.writeFile(file, task);
+    }
+  });
+
   it('takes a report far over Express’s 100 kB default body limit', async () => {
     const exp = await experiment();
     const c = (await claim('w-big'))!;

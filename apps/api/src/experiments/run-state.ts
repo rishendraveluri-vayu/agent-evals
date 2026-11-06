@@ -37,6 +37,28 @@ export interface StoredEvent {
   data?: Record<string, Json>;
 }
 
+/**
+ * Lock order (E3, E4, E5 of the 6 Nov review). A transaction that changes an experiment's status,
+ * its trials, its arms or its events takes the experiment row first, with lockExperiment, then the
+ * trial rows, then the arm rows, and reads the experiment's status from that locked row, never
+ * from a read made before the transaction. The trial report and the lease sweep (worker.service.ts)
+ * and every run control (start, pause, resume, stop, discard, an arm's pause and resume) do so, so
+ * two of them on one experiment run one after the other:
+ * - the last two reports see each other, so finishIfDone marks the run done (E3: both used to see
+ *   the other trial still running, and the run stayed `running` for ever);
+ * - Stop and an infra report's re-queue never interleave: the report sees the run cancelled and
+ *   queues nothing, or Stop sees the new attempt and cancels it (E4);
+ * - no transaction holds the weak lock an insert of a trial or an event takes on the experiment
+ *   (KEY SHARE) and then asks for FOR UPDATE, which is how two of them deadlocked (E5).
+ * A claim locks only the trial it takes (SKIP LOCKED) and never waits for the experiment row. A
+ * grades report locks its grading job, then the experiment (applyFutility), and never an
+ * unfinished trial. applyRunRules and applyFutility lock the row again: a no-op after this.
+ */
+export async function lockExperiment<T extends object = { id: string; status: string }>(q: Queryable, experimentId: string): Promise<T | undefined> {
+  const { rows } = await q.query(`SELECT * FROM experiments WHERE id = $1 FOR UPDATE`, [experimentId]);
+  return rows[0] as T | undefined;
+}
+
 export async function addEvent(q: Queryable, e: StoredEvent): Promise<void> {
   await q.query(
     `INSERT INTO experiment_events (experiment_id, kind, detail, config_hash, trial_id, attempt, data)

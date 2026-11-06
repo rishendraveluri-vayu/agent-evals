@@ -101,9 +101,10 @@ export class ExperimentsController {
   @Get(':id/trials')
   trials(
     @Param('id') id: string,
-    @Query('status') status?: string,
-    @Query('config') config?: string,
-    @Query('task') task?: string,
+    // A repeated parameter arrives as a list (E9).
+    @Query('status') status?: string | string[],
+    @Query('config') config?: string | string[],
+    @Query('task') task?: string | string[],
   ): Promise<TrialRowSummary[]> {
     return this.experiments.trials(id, { status, config, task });
   }

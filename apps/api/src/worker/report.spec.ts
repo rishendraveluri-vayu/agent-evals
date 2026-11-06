@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { ApiError } from '../common/api-error';
 import type { JsonObject } from '../contract';
-import { configErrorFix, configErrorReason, parseReport, reportedSha, spanRows, spendLogUsage, usageOf } from './report';
+import { configErrorFix, configErrorReason, parseReport, reportedSha, spanRows, spendLogUsage, usageOf, withoutNul } from './report';
 
 const EXAMPLES = path.resolve(__dirname, '../../../../contract/v2/examples');
 const exampleSpans = readFileSync(path.join(EXAMPLES, 'trace.jsonl'), 'utf8')
@@ -81,6 +81,36 @@ describe('usageOf', () => {
     expect(usage.cost_usd).toBeNull();
     expect(usage.sim_cost_usd).toBeNull();
   });
+
+  it('takes only finite numbers of at least 0, clamps counts to the integer column, and says what it refused (E8)', () => {
+    const problems: string[] = [];
+    const report = {
+      ...exampleReport,
+      proxy_usage: { complete: true, model_calls: -1, input_tokens: 3_000_000_000, output_tokens: 1.5, cost_usd: -1000, last_status: '200' },
+      timing: { wall_s: -99 },
+    };
+    const sim = { ...exampleSpans[0], spanId: 'eeeeeeeeeeeeeeee', name: 'chat sim', attributes: [{ key: 'evals.role', value: { stringValue: 'sim' } }, { key: 'evals.cost_usd', value: { doubleValue: -5 } }] };
+    const usage = usageOf(report, null, spanRows([sim]).rows, problems);
+    expect(usage).toMatchObject({ cost_usd: null, input_tokens: 2_147_483_647, output_tokens: null, model_calls: null, wall_s: null, sim_cost_usd: 0 });
+    expect(problems).toEqual([
+      'span eeeeeeeeeeeeeeee evals.cost_usd -5 is not a number of at least 0; stored as unknown',
+      'proxy_usage.cost_usd -1000 is not a number of at least 0; stored as unknown',
+      'proxy_usage.input_tokens 3000000000 is more than the 2147483647 the database holds; stored as 2147483647',
+      'proxy_usage.output_tokens 1.5 is not a whole number of at least 0; stored as unknown',
+      'proxy_usage.model_calls -1 is not a whole number of at least 0; stored as unknown',
+      'timing.wall_s -99 is not a number of at least 0; stored as unknown',
+    ]);
+    // A runner's ordinary report says nothing.
+    const quiet: string[] = [];
+    usageOf({ ...exampleReport, proxy_usage: { complete: true, model_calls: 2, input_tokens: 100, output_tokens: 20, cost_usd: 0.001 }, timing: { wall_s: 1.2 } }, null, [], quiet);
+    expect(quiet).toEqual([]);
+  });
+
+  it('keeps a span whose kind or status code is out of the column range, with the defaults (E8)', () => {
+    const { rows } = spanRows([{ ...exampleSpans[0], kind: 99_999, status: { code: -40_000 } }]);
+    expect(rows[0]).toMatchObject({ kind: 1, status_code: 0 });
+    expect(spanRows([{ ...exampleSpans[0], kind: 3, status: { code: 2 } }]).rows[0]).toMatchObject({ kind: 3, status_code: 2 });
+  });
 });
 
 describe('configErrorReason (D26)', () => {
@@ -138,5 +168,24 @@ describe("an abandoned attempt's spend from LiteLLM's spend log (G3)", () => {
 
   it('skips rows that are not objects and fields that are not numbers', () => {
     expect(spendLogUsage(['x', null, { spend: 'n/a', prompt_tokens: 'many' }, { spend: 0.5, prompt_tokens: 7 }], null)).toMatchObject({ cost_usd: 0.5, input_tokens: 7, model_calls: 2 });
+  });
+});
+
+describe('withoutNul (E7)', () => {
+  it('replaces every NUL in strings and keys with U+FFFD, deep, and counts them', () => {
+    const sent = { a: 'x\u0000y\u0000', list: ['ok', { 'k\u0000': 'v' }], n: 3, t: true, z: null };
+    const { value, replaced } = withoutNul(sent);
+    expect(replaced).toBe(3);
+    expect(value).toEqual({ a: 'x\uFFFDy\uFFFD', list: ['ok', { 'k\uFFFD': 'v' }], n: 3, t: true, z: null });
+    expect(JSON.stringify(value)).not.toContain('\\u0000');
+    expect(sent.a).toBe('x\u0000y\u0000'); // a copy: the input is not changed
+  });
+
+  it('leaves a body without NUL equal, and keeps a "__proto__" key a plain key', () => {
+    const body = JSON.parse('{"__proto__": {"polluted": true}, "b": [1, "two"]}') as Record<string, unknown>;
+    const { value, replaced } = withoutNul(body);
+    expect(replaced).toBe(0);
+    expect(Object.keys(value as object)).toEqual(['__proto__', 'b']);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 });

@@ -21,6 +21,17 @@ export const badRequest = (code: string, message: string, fix?: string): ApiErro
 export const notFound = (code: string, message: string, fix?: string): ApiError => new ApiError(404, code, message, fix);
 export const conflict = (code: string, message: string, fix?: string): ApiError => new ApiError(409, code, message, fix);
 
+/**
+ * A Postgres error of class 22, "data exception" (node-pg's DatabaseError carries the SQLSTATE in
+ * `code`): 22021 a NUL or bad byte in text, 22P05 a NUL in jsonb, 22003 a number out of range,
+ * 22P02 text that is not of the column's type, and the rest of the class.
+ */
+function isDataError(e: unknown): e is Error & { code: string } {
+  if (!(e instanceof Error) || !('severity' in e)) return false;
+  const code = (e as { code?: unknown }).code;
+  return typeof code === 'string' && /^22[0-9A-Z]{3}$/.test(code);
+}
+
 function snake(text: string): string {
   return text
     .replace(/([a-z])([A-Z])/g, '$1_$2')
@@ -53,6 +64,18 @@ export class ApiErrorFilter implements ExceptionFilter {
       return;
     }
     const message = exception instanceof Error ? exception.message : String(exception);
+    if (isDataError(exception)) {
+      // E9: a value from the request the database cannot take (a NUL character, a number out of
+      // a column's range, text that is not of the column's type) is the request's fault: a 400
+      // that says so, not a 500. Logged, in case the value was the API's own.
+      this.logger.warn(`refused a value the database cannot store (${exception.code}): ${message}`);
+      res.status(400).json({
+        error: 'invalid_value',
+        message: `a value in the request cannot be stored: ${message}`,
+        fix: 'Remove any NUL character (\\u0000) and keep numbers in range, then send it again.',
+      });
+      return;
+    }
     this.logger.error(exception instanceof Error ? (exception.stack ?? message) : message);
     res.status(500).json({ error: 'internal_error', message });
   }

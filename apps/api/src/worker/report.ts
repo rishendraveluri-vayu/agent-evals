@@ -9,7 +9,6 @@ import { plainValue } from '../trials/trial-store';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
-const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const int = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) ? v : null);
 
 /**
@@ -18,6 +17,31 @@ const int = (v: unknown): number | null => (typeof v === 'number' && Number.isIn
  */
 export function reportedSha(raw: string): string {
   return normalizeSha(raw) ?? raw.trim().toLowerCase();
+}
+
+/**
+ * E7 (6 Nov review): Postgres text and jsonb cannot hold U+0000, so a report carrying one failed
+ * with a 500 on every retry and the finished trial was lost. Every NUL in a string or an object key
+ * becomes U+FFFD (the replacement character) before anything is stored, and `replaced` says how
+ * many, for the trial's problems. The uploaded files keep the bytes as the worker sent them.
+ */
+export function withoutNul(value: unknown): { value: unknown; replaced: number } {
+  let replaced = 0;
+  const clean = (v: unknown): unknown => {
+    if (typeof v === 'string') {
+      if (!v.includes('\u0000')) return v;
+      const parts = v.split('\u0000');
+      replaced += parts.length - 1;
+      return parts.join('\uFFFD');
+    }
+    if (Array.isArray(v)) return v.map(clean);
+    if (!isObj(v)) return v;
+    const out: Obj = {};
+    // defineProperty, so a key such as "__proto__" stays a plain key of the copy.
+    for (const [k, x] of Object.entries(v)) Object.defineProperty(out, clean(k) as string, { value: clean(x), enumerable: true, writable: true, configurable: true });
+    return out;
+  };
+  return { value: clean(value), replaced };
 }
 
 /** The body's shape. A bad span or file is not a reason to refuse a whole trial's report. */
@@ -114,6 +138,12 @@ export interface SpanRow {
 }
 
 const NS = /^(0|[1-9][0-9]{0,19})$/;
+/** Postgres smallint, the span kind and status code columns. */
+const SMALLINT = { min: -32_768, max: 32_767 } as const;
+const small = (v: unknown, fallback: number): number => {
+  const n = int(v);
+  return n !== null && n >= SMALLINT.min && n <= SMALLINT.max ? n : fallback;
+};
 
 /** Spans the table can hold, plus a note for each one it cannot (kept in trace.jsonl). */
 export function spanRows(spans: unknown[]): { rows: SpanRow[]; problems: string[] } {
@@ -145,10 +175,11 @@ export function spanRows(spans: unknown[]): { rows: SpanRow[]; problems: string[
       span_id: s.spanId,
       parent_span_id: typeof s.parentSpanId === 'string' && s.parentSpanId ? s.parentSpanId : null,
       name: s.name,
-      kind: int(s.kind) ?? 1,
+      // E8: a value the column cannot hold is not a reason to lose the span.
+      kind: small(s.kind, 1),
       start_ns: start,
       end_ns: end,
-      status_code: int(status.code) ?? 0,
+      status_code: small(status.code, 0),
       attributes,
       raw: s,
     });
@@ -177,7 +208,7 @@ export function spendLogUsage(
   sim: unknown[] | null,
 ): { cost_usd: number; sim_cost_usd: number | null; input_tokens: number; output_tokens: number; model_calls: number } {
   const rows = agent.filter(isObj);
-  const tokens = (field: string): number => rows.reduce((s, r) => s + (int(r[field]) ?? 0), 0);
+  const tokens = (field: string): number => Math.min(INT_MAX, rows.reduce((s, r) => s + Math.max(0, int(r[field]) ?? 0), 0));
   return {
     cost_usd: spendLogUsd(agent),
     sim_cost_usd: sim === null ? null : spendLogUsd(sim),
@@ -187,22 +218,51 @@ export function spendLogUsage(
   };
 }
 
+/** Postgres integer, the token and call count columns. */
+export const INT_MAX = 2_147_483_647;
+
+/**
+ * E8 (6 Nov review): a number the worker reported is taken only when it is finite and at least 0;
+ * anything else is stored as unknown (null, never zero) and named in `problems`. A count above
+ * the integer column's range is stored as INT_MAX, also named. A negative cost used to lower the
+ * experiment's spend (-1000 was stored), and 3e9 tokens failed the whole report with a 500.
+ */
+function amount(v: unknown, what: string, problems: string[]): number | null {
+  if (v === undefined || v === null) return null;
+  if (typeof v === 'number' && Number.isFinite(v) && v >= 0) return v;
+  problems.push(`${what} ${JSON.stringify(v)?.slice(0, 40)} is not a number of at least 0; stored as unknown`);
+  return null;
+}
+
+function count(v: unknown, what: string, problems: string[]): number | null {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) {
+    problems.push(`${what} ${JSON.stringify(v)?.slice(0, 40)} is not a whole number of at least 0; stored as unknown`);
+    return null;
+  }
+  if (v > INT_MAX) {
+    problems.push(`${what} ${v} is more than the ${INT_MAX} the database holds; stored as ${INT_MAX}`);
+    return INT_MAX;
+  }
+  return v;
+}
+
 /** The numbers the API indexes: LiteLLM's usage for the agent key (R10.9), and the
- *  simulated client's spend from its own chat spans. */
-export function usageOf(report: JsonObject, result: JsonObject | null, rows: SpanRow[]): Usage {
+ *  simulated client's spend from its own chat spans. What it cannot take goes in `problems` (E8). */
+export function usageOf(report: JsonObject, result: JsonObject | null, rows: SpanRow[], problems: string[] = []): Usage {
   const proxy = isObj(report.proxy_usage) ? report.proxy_usage : null;
   const timing = isObj(report.timing) ? report.timing : {};
   const simSpans = rows.filter((r) => r.name.startsWith('chat ') && r.attributes['evals.role'] === 'sim');
-  const simCost = simSpans.reduce((sum, r) => sum + (num(r.attributes['evals.cost_usd']) ?? 0), 0);
+  const simCost = simSpans.reduce((sum, r) => sum + (amount(r.attributes['evals.cost_usd'], `span ${r.span_id} evals.cost_usd`, problems) ?? 0), 0);
   const endState = typeof report.end_state === 'string' ? report.end_state : result && typeof result.end_state === 'string' ? result.end_state : null;
   return {
-    cost_usd: proxy ? num(proxy.cost_usd) : null,
+    cost_usd: proxy ? amount(proxy.cost_usd, 'proxy_usage.cost_usd', problems) : null,
     sim_cost_usd: simSpans.length ? Math.round(simCost * 1e8) / 1e8 : null,
-    input_tokens: proxy ? int(proxy.input_tokens) : null,
-    output_tokens: proxy ? int(proxy.output_tokens) : null,
-    model_calls: proxy ? int(proxy.model_calls) : null,
+    input_tokens: proxy ? count(proxy.input_tokens, 'proxy_usage.input_tokens', problems) : null,
+    output_tokens: proxy ? count(proxy.output_tokens, 'proxy_usage.output_tokens', problems) : null,
+    model_calls: proxy ? count(proxy.model_calls, 'proxy_usage.model_calls', problems) : null,
     proxy_complete: proxy && typeof proxy.complete === 'boolean' ? proxy.complete : null,
-    wall_s: num(timing.wall_s),
+    wall_s: amount(timing.wall_s, 'timing.wall_s', problems),
     end_state: endState,
   };
 }
