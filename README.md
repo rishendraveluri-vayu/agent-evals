@@ -2,7 +2,8 @@
 
 Runs two versions of an agent on the same tasks, many times each, and tells you whether the change
 made it better, worse or no different, and how sure that is. Deterministic checks first, an LLM
-judge only where code can't decide. Every trial's full trace is one click away.
+judge for what code can't decide, calibrated against my own hand labels. Every trial's full trace
+is one click away.
 
 Video walkthrough (10 min): _link to add_
 
@@ -89,6 +90,11 @@ flowchart LR
 - Each trial runs in a fresh folder on a network that only reaches the API, LiteLLM and the fake
   model server. If a worker dies mid-trial, the trial is re-run and its spend still counts.
 - Grading is its own step. A grader fix means a regrade, not a re-run.
+- An LLM judge grades what code can't, like whether the advice fits this client. It's calibrated on
+  my hand labels: tuned on about 30 discovery trials I labelled, then checked once against 40
+  held-out trials I labelled blind. A
+  judge criterion counts in a verdict once it agrees with me well enough (kappa at least 0.6, and
+  no lean towards either version). Details: [`docs/judge-validation.md`](docs/judge-validation.md).
 - The tasks are a personal-finance assistant for clients in India: calculator tools, client files,
   and a simulated client for the multi-turn ones. 31 tasks: 10 held out for scoring, 11 for
   discovery (where v1's failures were found), 10 for retrieval.
@@ -252,8 +258,8 @@ Isolation between trials, on the built images (about 3 minutes):
 Full list: [`docs/known-limits.md`](docs/known-limits.md). The ones that matter:
 
 - 10 held-out tasks decide the headline, and half of them couldn't separate the two prompts.
-- The LLM judge decides nothing yet. It's tuned on my labels and gets one measurement against 40
-  held-out trials I label blind. Until it passes, every verdict is code checks only.
+- The judge's calibration set is small: 40 blind labels, all mine. That's enough to catch a judge
+  that's badly off or leans towards one version, not to prove a good one beyond doubt.
 - One strict check carries most of the headline's failures: every rupee figure has to come from a
   tool. A correct number rounded in prose still fails it.
 - Conversations use a simulated client (Claude Haiku playing the customer). Those results describe
