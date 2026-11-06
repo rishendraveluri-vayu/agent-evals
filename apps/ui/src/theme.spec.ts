@@ -286,4 +286,9 @@ describe('focus', () => {
     expect(css).toMatch(/h1\[tabindex='-1'\]:focus,\s*h2\[tabindex='-1'\]:focus \{\s*outline: none;/);
     expect(css).toMatch(/:focus-visible \{\s*outline: 2px solid var\(--focus\);/);
   });
+
+  // jsdom lays nothing out, so the width checks themselves are Playwright's (390 and 1440 px).
+  it('never lets a select widen a phone page past its edge (destructive review U11)', () => {
+    expect(css).toMatch(/\nselect \{\s*max-width: 100%;\s*min-width: 0;/);
+  });
 });
