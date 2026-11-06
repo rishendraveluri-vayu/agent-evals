@@ -165,3 +165,36 @@ Five reviewers: claims (C), stats (S), engine/API (E), UI (U), graders/cheating 
 - U15 LOW (inferred): Run screen doesn't check Ollama is up for Qwen-local config.
 - Observation MED: fake-model path defaults N=5 -> 100 trials, ~17 min on one worker; suggest N=1-2 when all fake.
 - Held: no XSS anywhere (no v-html); double-click Save/Start one request; two tabs idempotent; examples under pressure OK; unknown ids -> Not found; N validation; keyboard + focus; dark mode contrast; headline numbers match export and /compare; stopped run says no verdict; next-failure walk.
+
+---
+
+# Verified: the original attacks re-run against the fixed code (6 Nov, f330b5d)
+
+Two agents, each on a fresh clone with its own stack and no keys, re-ran the reviewers' original attack scripts.
+
+- **Engine and API:** E1 to E4 and E6 to E12 no longer break. The 75 s API outage lost nothing, and the kill test, smoke and netcheck pass. A normal 2-arm fake run, pause/resume and stop all work. Still breaking, then fixed in e75405d:
+  - E5 in one form: Stop racing workers' claims deadlocked (500 in 13 of 20 rounds). A claim now locks the experiment before the trial, and a race test fails on the old code.
+  - New N1: during a Postgres outage LiteLLM logs `P1001`, and the trial was labelled the agent's. It is now `infra:provider_error`.
+  - Minor items:
+    - arm resume on a stopped run returned 200;
+    - an unknown `set` on the agreement route returned 200;
+    - `max_output_tokens` had no cap;
+    - a long `end_state` was stored as given;
+    - idle workers looked absent to the estimate (D77 item 5 narrowed).
+- **UI:** U1 to U13, U15, the fake-run N and S5, S8, S9 no longer break. Checks on a fresh database:
+  - the Build screen's default agent saves without a key;
+  - the headline card names the harness and model;
+  - the first door reaches the verdict in 14 s, and all six examples load (the skills demo's trial shows the skill load);
+  - 50 page loads on desktop and phone had no errors.
+
+  Still breaking, then fixed in 302e3c8:
+  - U14 "1 tasks" and "1 comparisons";
+  - new: the Run screen's estimate had no retry after a LiteLLM outage;
+  - new: the header badge showed the browser's raw words and wrapped;
+  - new: the progress line counted an infra attempt as a finished trial;
+  - new: a hosted model against the local Qwen could never pass the one-change check.
+
+  Kept as limits:
+  - the background copy of the other examples needs the tab open (README says so, and opening the first door again finishes it);
+  - the Run screen cannot check Ollama.
+- **Graders and statistics:** the reviewers' crafted scenarios and simulations are regression tests in the suites, which pass. All 1,010 shipped trials recompute to the same outcomes, and all six shipped comparisons to the same verdicts.
