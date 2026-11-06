@@ -283,7 +283,7 @@ def test_a_correct_calculation_without_a_tool_is_derived_in_prose():
     )
     rows = by_text(out)
     assert (rows["₹3,930"]["supported_by"], rows["₹3,930"]["verified_by"]) == ("tool", "source")
-    assert rows["₹8,000"]["supported_by"] == "user"
+    assert rows["₹8,000"]["supported_by"] == "client_sim"  # its own kind since G3
     assert rows["₹8,000"]["match"]["where"] == "client_sim:2"
     assert rows["₹6,880"]["supported_by"] == "tool"
     assert rows["₹1,120"] == {
@@ -1191,6 +1191,36 @@ def test_the_client_file_and_the_user_message_support_amounts():
     assert rows["Rs 20,000"]["match"]["where"] == "task:0"
 
 
+def test_the_simulated_client_repeating_the_agents_figure_is_not_a_source():
+    """Destructive review G3 (6 Nov): the client's words were a source even when it disputed the
+    agent's figure ("Where did 68,156 come from?" made the agent's next 68,156 supported). A
+    number the agent wrote first, in an earlier reply, is not a source in a later client
+    message; the client's own figures are, under their own kind `client_sim`."""
+    users = (
+        "How much will the car cost me?",
+        "Where did ₹68,156 come from? And my bonus is ₹50,000 this year.",
+    )
+    replies = [
+        "The car would cost you about ₹68,156 in interest.",
+        "The ₹68,156 is the interest; with your ₹50,000 bonus you could cut it.",
+    ]
+    out = checks_for(replies, user=users)
+    first, again, bonus = out["amounts"]
+    assert (first["turn"], first["supported_by"]) == (0, None)
+    assert (again["turn"], again["supported_by"]) == (1, None)  # was "user" from client_sim:2
+    assert bonus["supported_by"] == "client_sim"
+    assert bonus["match"]["where"] == "client_sim:2"
+    # Fewer digits than the agent wrote are still an echo; the client's own round figure is not.
+    replies = ["About ₹68,156.40 in interest.", "Yes, ₹68,156, or about ₹68,000 if you round."]
+    out = checks_for(replies, user=("Car cost?", "So 68,156 rupees? Or about 68,000?"))
+    rows = by_text(out)
+    assert rows["₹68,156"]["supported_by"] is None
+    assert rows["₹68,000"]["supported_by"] == "client_sim"
+    # The task's own message keeps the `user` kind, and a figure it gave first stays sourced.
+    out = checks_for(["Your ₹20,000 a month helps."], user=("I can spare Rs 20,000 a month.",))
+    assert out["amounts"][0]["supported_by"] == "user"
+
+
 def test_a_tool_result_from_a_later_turn_does_not_support_an_earlier_reply():
     spans = [
         turn_span("a" * 16, 0),
@@ -1335,7 +1365,18 @@ EXPECTED_UNSUPPORTED = {
     "ownloop/claude-haiku-5-5/single": [],
 }
 EXPECTED_DERIVED = {
-    "hermes/claude-haiku-5-5/conversation": ["₹13,579", "₹6,880", "₹1,120", "₹2,810", "₹2,810"],
+    # G3 (6 Nov review): the client's "not the ₹6,880 from October" repeats the agent's turn-1
+    # figure, so it no longer supports the agent's two later ₹6,880s; the checker derives them
+    # itself (the turn-1 sum, repeated), so none becomes unsupported.
+    "hermes/claude-haiku-5-5/conversation": [
+        "₹13,579",
+        "₹6,880",
+        "₹6,880",
+        "₹6,880",
+        "₹1,120",
+        "₹2,810",
+        "₹2,810",
+    ],
     "langgraph/claude-haiku-5-5/conversation": [
         "₹30,000",
         "₹3,000",
@@ -1373,4 +1414,4 @@ def test_on_the_real_4_nov_transcripts():
     assert derived == EXPECTED_DERIVED
     assert total == 230
     assert sum(len(v) for v in found.values()) == 19
-    assert sum(len(v) for v in derived.values()) == 15
+    assert sum(len(v) for v in derived.values()) == 17  # 15 before G3

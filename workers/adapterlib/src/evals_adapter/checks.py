@@ -7,7 +7,11 @@
 
    - `tool`: a tool result (the `execute_tool` spans of the same or an earlier agent turn);
    - `client`: the task's client file (the files in /trial/state);
-   - `user`: a user or simulated-client message before the reply.
+   - `user`: the task's own message (the client's first words);
+   - `client_sim`: a simulated client's message before the reply (G3, 6 Nov review: its own
+     kind, so support that rests on the simulator is visible). A number in it that only repeats
+     a figure the agent wrote first, in an earlier reply, is not a source: the client disputing
+     "Where did 68,156 come from?" must not support the agent's 68,156.
 
    An amount matches a number when it equals it at the precision shown: exactly, rounded
    half-up, or cut (truncated) to the digits written ("about ₹8,997" matches 8997.26, "₹1,667"
@@ -67,7 +71,10 @@ from typing import Any
 from evals_adapter.derive import AMOUNT_MIN, Derivation, Operand, Pool, Pools, find
 from evals_adapter.spec import CONTRACT_VERSION, TrialPaths
 
-SOURCES = ("tool", "client", "user")  # also the order of preference between equal matches
+# Also the order of preference between equal matches. `user` is the task's message, `client_sim`
+# a simulated client's (G3).
+SOURCES = ("tool", "client", "user", "client_sim")
+MESSAGES = frozenset({"user", "client_sim"})  # the kinds whose `where` is <source>:<index>
 HOW = ("exact", "rounded", "truncated", "rounded")  # by match rank; rank 3 is trailing zeros
 
 # Number words that scale what comes before them. Case-insensitive.
@@ -174,7 +181,7 @@ PERCENT_TEXT = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)[ \t]*(?:%|per[ \t]?cent\b)
 # and a rounding work on amounts, never on a free factor. The others (multiply, divide,
 # percent_of) need one sourced amount; their other inputs may be free factors.
 EVERY_INPUT_SOURCED = frozenset({"add", "subtract", "percent_change", "round"})
-SOURCED = ("tool", "client", "user")  # an input's supported_by when a source holds it
+SOURCED = SOURCES  # an input's supported_by when a source holds it
 # Whether a coarse match (trailing zeros within 1%) may verify a derivation, as it may a source.
 # It may not (A44): a round figure is usually a choice or an estimate ("such as ₹4,500 a month"),
 # and within 1% nearly every round figure is some sum or share of the numbers in an answer. On
@@ -443,16 +450,36 @@ def gather_sources(
     for name, text in sorted(client_files.items()):
         sources.append(Source("client", name, -1, source_numbers(text), rates=source_rates(text)))
     agent_turn = 0
+    written: list[Amount] = []  # the money amounts in the agent's replies so far
     for index, entry in enumerate(transcript):
         if entry.get("source") == "agent":
             agent_turn += 1
+            written += money_amounts(entry.get("content") or "")
             continue
         if entry.get("role") == "user":
             where = f"{entry.get('source') or 'user'}:{index}"
             text = entry["content"]
             numbers, rates = source_numbers(text), source_rates(text)
-            sources.append(Source("user", where, agent_turn, numbers, rates=rates))
+            kind = "client_sim" if entry.get("source") == "client_sim" else "user"
+            if kind == "client_sim":
+                numbers = [n for n in numbers if not echoes(n, written)]
+            sources.append(Source(kind, where, agent_turn, numbers, rates=rates))
     return sources
+
+
+def echoes(number: Decimal, written: list[Amount]) -> bool:
+    """G3: whether a number in a simulated client's message only repeats a figure the agent
+    wrote in an earlier reply: equal to it, or the figure rounded or cut to the digits the client
+    used ("68,156" for ₹68,156.40). Not by trailing-zeros rounding, so the client's own round
+    "about 68,000" stays its own."""
+    amount = _input_amount(number)
+    if amount is None:
+        return False
+    for figure in written:
+        ranked = _match_rank(amount, figure.value)
+        if ranked is not None and ranked[0] <= 2:
+            return True
+    return False
 
 
 Best = tuple[int, int, Decimal, Source, Decimal]  # rank, source order, step, source, number
@@ -481,7 +508,7 @@ def _match(best: Best) -> dict[str, Any]:
     rank, _, step, source, number = best
     out: dict[str, Any] = {
         "value": _number(number),
-        "where": f"{source.kind}:{source.where}" if source.kind != "user" else source.where,
+        "where": source.where if source.kind in MESSAGES else f"{source.kind}:{source.where}",
         "how": HOW[rank],
         "precision": _number(step),
     }
@@ -686,7 +713,7 @@ def _ranker(amount: Amount, coarse: bool) -> Callable[[Decimal], int | None]:
 
 
 def _where(source: Source) -> str:
-    return f"{source.kind}:{source.where}" if source.kind != "user" else source.where
+    return source.where if source.kind in MESSAGES else f"{source.kind}:{source.where}"
 
 
 def _pools(
