@@ -57,17 +57,17 @@ describe('CompareView in fixture mode', () => {
     await settle();
     expect(w.get('[data-test="arms-line"]').text()).toBe('A: Prompt v1 (config 3b81e04)B: Prompt v2 (config 7f3a9c2)');
     const meta = w.get('[data-test="meta-line"]');
-    expect(meta.text()).toBe('Hermes 6112c2a with Claude Haiku 5.5 · simulated client Claude Haiku 5.5 · 120 trials · plan 3e1a9f0, committed before the run · platform c4d2e19');
+    expect(meta.text()).toBe('Hermes 6112c2a with Claude Haiku 5.5 · simulated client Claude Haiku 5.5 · 120 trials · plan 3e1a9f0 (recorded, not checked) · platform c4d2e19');
     // Each group keeps together; the line breaks only at a middot.
     expect(meta.findAll('.nowrap').map((g) => g.text())).toEqual([
       'Hermes 6112c2a with Claude Haiku 5.5',
       'simulated client Claude Haiku 5.5',
       '120 trials',
-      'plan 3e1a9f0, committed before the run',
+      'plan 3e1a9f0 (recorded, not checked)',
       'platform c4d2e19',
     ]);
     const plan = w.get('[data-test="plan-commit"]');
-    expect(plan.text()).toBe('plan 3e1a9f0, committed before the run');
+    expect(plan.text()).toBe('plan 3e1a9f0 (recorded, not checked)');
     expect(plan.attributes('href')).toBe('#/experiments/exp_heldout/run');
     expect(w.get('[data-test="platform-commit"]').text()).toBe('platform c4d2e19');
   });
@@ -815,7 +815,7 @@ describe('CompareView against the API: the check on the method', () => {
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     expect(w.find('[data-test="sim-client"]').exists()).toBe(false);
-    expect(w.get('[data-test="meta-line"]').text()).toBe('Hermes 6112c2a with Claude Haiku 5.5 · 120 trials · plan 3e1a9f0, committed before the run · platform c4d2e19');
+    expect(w.get('[data-test="meta-line"]').text()).toBe('Hermes 6112c2a with Claude Haiku 5.5 · 120 trials · plan 3e1a9f0 (recorded, not checked) · platform c4d2e19');
   });
 
   it('says there is no A/A calibration for these configs yet, and links to set one up for arm A', async () => {

@@ -874,7 +874,7 @@ const worthALook = computed(() => {
                 :href="href.run(data.detail.id)"
                 class="secondary nowrap"
                 data-test="plan-commit"
-              >plan <span class="mono">{{ commits.plan }}</span>, committed before the run</a>
+              >plan <span class="mono">{{ commits.plan }}</span> (recorded, not checked)</a>
             </template><template v-if="commits.platform">
               · <span
                 class="nowrap"
