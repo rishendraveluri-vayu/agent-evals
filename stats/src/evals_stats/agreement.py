@@ -103,12 +103,20 @@ class Table:
         }
 
 
+# D73: the raters' majority on an item where as many raters said yes as no. It is not an "unsure"
+# (nobody was unsure), so it is left out under either unsure policy (destructive review S11).
+TIE = "tie"
+
+
 def human_value(label: str, policy: str) -> str | None:
-    """yes, no, or None (left out) for one of Rishi's labels under the unsure policy."""
+    """yes, no, or None (left out) for one of Rishi's labels under the unsure policy. A raters'
+    tie (TIE) is always left out."""
     if policy not in HUMAN_UNSURE_POLICIES:
         raise ValueError(f"human_unsure must be one of {HUMAN_UNSURE_POLICIES}, not {policy!r}")
     if label in ("yes", "no"):
         return label
+    if label == TIE:
+        return None
     return "no" if policy == "no" else None
 
 
@@ -470,7 +478,8 @@ def human_majority(
     labels_by_rater: dict[str, dict[tuple[str, str], str]], human_unsure: str
 ) -> dict[tuple[str, str], str]:
     """Per (trial, criterion): what more than half of the raters who gave a firm answer said, under
-    the unsure policy; `unsure` (so left out) on a tie or when nobody gave one."""
+    the unsure policy; TIE when they split evenly (always left out: under `--human-unsure no` an
+    "unsure" would count as a human no); `unsure` when nobody gave a firm answer."""
     keys: set[tuple[str, str]] = set()
     for labels in labels_by_rater.values():
         keys |= set(labels)
@@ -482,7 +491,10 @@ def human_majority(
             if key in labels and (v := human_value(labels[key], human_unsure)) is not None
         ]
         yes, no = firm.count("yes"), firm.count("no")
-        out[key] = "yes" if yes * 2 > len(firm) else "no" if no * 2 > len(firm) else "unsure"
+        if not firm:
+            out[key] = "unsure"
+        else:
+            out[key] = "yes" if yes * 2 > len(firm) else "no" if no * 2 > len(firm) else TIE
     return out
 
 

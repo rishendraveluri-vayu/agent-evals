@@ -248,11 +248,29 @@ def test_d73_majority_and_raters_against_each_other():
     b = {("t1", "c"): "yes", ("t2", "c"): "yes", ("t3", "c"): "unsure"}
     assert human_majority({"a": a, "b": b}, "exclude") == {
         ("t1", "c"): "yes",
-        ("t2", "c"): "unsure",  # a tie is left out
+        ("t2", "c"): "tie",  # a tie is left out
         ("t3", "c"): "yes",  # b unsure, a's firm answer decides
     }
     [pair] = between_raters({"a": a, "b": b}, "exclude")
     assert pair["raters"] == ["a", "b"] and pair["n"] == 2 and pair["agreement"] == 0.5
+
+
+def test_d73_a_firm_tie_is_left_out_under_either_unsure_policy():
+    """S11: under --human-unsure no, the tie came back as "unsure" and so counted as a human no:
+    a judge's yes on it read as a false pass."""
+    from evals_stats.agreement import human_majority
+
+    labels = {"rishi": {("t1", "c"): "yes"}, "asha": {("t1", "c"): "no"}}
+    for policy in ("exclude", "no"):
+        majority = human_majority(labels, policy)
+        assert majority == {("t1", "c"): "tie"}
+        assert human_value("tie", policy) is None
+        [r] = report([Pair("t1", "c", majority[("t1", "c")], "yes", "A")], policy, resamples=10)
+        assert r.table.n == 0 and r.table.fp == 0 and r.human_left_out == 1
+    # Nobody firm: "unsure", which the policy decides (here: two unsure raters, so a no).
+    both_unsure = {"rishi": {("t1", "c"): "unsure"}, "asha": {("t1", "c"): "unsure"}}
+    assert human_majority(both_unsure, "exclude") == {("t1", "c"): "unsure"}
+    assert human_majority(both_unsure, "no") == {("t1", "c"): "no"}
 
 
 # ---- the destructive review, 6 Nov (S2, S3): synthetic verdicts only ------------------------
