@@ -902,7 +902,7 @@ export interface CriticalGuardrail {
    * least 6 of its tasks had different critical-failure rates in the two arms. `did_not_rise`: otherwise.
    */
   status: 'no_critical_checks' | 'no_decided_trials' | 'rose' | 'did_not_rise';
-  /** The required critical checks, as `task_id/grader_id`. */
+  /** The required critical checks in every task, as `task_id/grader_id`, including tasks left out of its aggregate; `text` counts only those on the tasks it compared. */
   checks: string[];
   /** Tasks in its aggregate: those with a critical check and a decided trial in both arms. */
   tasks: number;

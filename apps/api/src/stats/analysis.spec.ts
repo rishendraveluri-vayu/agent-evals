@@ -266,6 +266,17 @@ describe('analyse: the critical-failure guardrail (D10)', () => {
     expect(s?.critical.status).toBe('no_critical_checks');
   });
 
+  it("counts in its sentence only the critical checks on the tasks it compared, not those on tasks it left out (S10)", () => {
+    const grades = [grade('c1', 'pass', 'critical'), grade('c2', 'pass', 'critical')];
+    const twoChecks = (id: string, undecided: 'A' | null) => task(id, 5, 10, 5, 10, (a) => (a === undecided ? { outcome: 'incomplete', grades } : { grades }));
+    // Two tasks with two critical checks each are compared; two more have no decided trial in arm A.
+    const tasks = [twoChecks('t0', null), twoChecks('t1', null), ...Array.from({ length: 4 }, (_, i) => task(`p${i}`, 5, 10, 5, 10)), twoChecks('x1', 'A'), twoChecks('x2', 'A')];
+    const s = analyse({ seed: 'e_s10', tasks }, fast).stats!;
+    expect(s.excluded_tasks.map((t) => t.task_id)).toEqual(['x1', 'x2']);
+    expect(s.critical.checks).toEqual(['t0/c1', 't0/c2', 't1/c1', 't1/c2', 'x1/c1', 'x1/c2', 'x2/c1', 'x2/c2']);
+    expect(s.critical.text).toBe('Critical failures: 0.0 points (95% interval 0.0 to 0.0) over 2 tasks with 4 critical checks. No rise beyond noise.');
+  });
+
   it('says when the tasks with a critical check have no decided trial in both arms', () => {
     const crit: TaskInput = { task: 'sha256:c', task_id: 'c', trials: [trial('c-a', 'A', 'fail', { grades: [grade('safety', 'fail', 'critical')] }), trial('c-b', 'B', 'incomplete')] };
     const s = analyse({ seed: 'e_nodec', tasks: [crit, task('t', 1, 3, 2, 3)] }, fast).stats;

@@ -177,6 +177,8 @@ function criticalFailed(t: TrialInput): boolean {
 interface GuardrailResult {
   g: Omit<CriticalGuardrail, 'blocks_better' | 'text'>;
   aboveZero: boolean;
+  /** The critical checks on the tasks in its aggregate: what its sentence counts (S10). */
+  usedChecks: number;
 }
 
 /**
@@ -188,18 +190,19 @@ interface GuardrailResult {
  */
 function guardrail(input: AnalysisInput, eligible: Set<string>, opts: Required<Pick<AnalysisOptions, 'resamples' | 'levels'>> & Pick<AnalysisOptions, 'exactMaxTasks' | 'flips'>): GuardrailResult {
   const checks: string[] = [];
-  const withChecks: TaskInput[] = [];
+  const withChecks: { t: TaskInput; checks: number }[] = [];
   for (const t of input.tasks) {
     const ids = new Set<string>();
     for (const tr of t.trials) for (const g of tr.grades) if (g.required && g.severity === 'critical') ids.add(g.grader_id);
     if (!ids.size) continue;
     checks.push(...[...ids].sort().map((id) => `${t.task_id}/${id}`));
-    withChecks.push(t);
+    withChecks.push({ t, checks: ids.size });
   }
   const none = { tasks: 0, a: null, b: null, diff: null, p_value: null, differing: 0 };
-  if (!checks.length) return { g: { status: 'no_critical_checks', checks, ...none }, aboveZero: false };
-  const used = withChecks.filter((t) => eligible.has(t.task));
-  if (!used.length) return { g: { status: 'no_decided_trials', checks, ...none }, aboveZero: false };
+  if (!checks.length) return { g: { status: 'no_critical_checks', checks, ...none }, aboveZero: false, usedChecks: 0 };
+  const usedWith = withChecks.filter((x) => eligible.has(x.t.task));
+  if (!usedWith.length) return { g: { status: 'no_decided_trials', checks, ...none }, aboveZero: false, usedChecks: 0 };
+  const used = usedWith.map((x) => x.t);
   const per = used.map((t) => {
     const arm = (letter: 'A' | 'B') => {
       const decided = t.trials.filter((x) => x.arm === letter && x.outcome !== 'incomplete');
@@ -230,15 +233,17 @@ function guardrail(input: AnalysisInput, eligible: Set<string>, opts: Required<P
       differing,
     },
     aboveZero,
+    usedChecks: usedWith.reduce((s, x) => s + x.checks, 0),
   };
 }
 
-function guardrailText(g: Omit<CriticalGuardrail, 'text'>, aboveZero: boolean): string {
+function guardrailText(g: Omit<CriticalGuardrail, 'text'>, aboveZero: boolean, usedChecks: number): string {
   if (g.status === 'no_critical_checks') return 'No check is marked critical in these tasks, so this comparison says nothing about critical failures.';
+  const count = (n: number) => `${n} critical ${n === 1 ? 'check' : 'checks'}`;
   const n = g.checks.length;
-  const checks = `${n} critical ${n === 1 ? 'check' : 'checks'}`;
-  if (g.status === 'no_decided_trials' || !g.diff) return `There ${n === 1 ? 'is' : 'are'} ${checks}, but no task with one has a decided trial in both arms, so critical failures could not be compared.`;
-  const what = `Critical failures: ${pts(g.diff.estimate)} points (95% interval ${pts(g.diff.low)} to ${pts(g.diff.high)}) over ${g.tasks} ${g.tasks === 1 ? 'task' : 'tasks'} with ${checks}.`;
+  if (g.status === 'no_decided_trials' || !g.diff) return `There ${n === 1 ? 'is' : 'are'} ${count(n)}, but no task with one has a decided trial in both arms, so critical failures could not be compared.`;
+  // Only the checks on the tasks it compared: a task left out of the aggregate adds none (S10).
+  const what = `Critical failures: ${pts(g.diff.estimate)} points (95% interval ${pts(g.diff.low)} to ${pts(g.diff.high)}) over ${g.tasks} ${g.tasks === 1 ? 'task' : 'tasks'} with ${count(usedChecks)}.`;
   const p = g.p_value === null || g.p_value === undefined ? '' : ` (${pValueText(g.p_value)} by the paired sign-flip test)`;
   if (g.blocks_better) return `${what} They rose beyond noise${p}, so B is not called better although its pass rate rose.`;
   if (g.status === 'rose') return `${what} They rose beyond noise${p}.`;
@@ -419,9 +424,9 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
   const perTask = new Map(tasks.map((t) => [t.task, t]));
 
   // D10's guardrail: B is not called better while its critical failures rose beyond noise.
-  const { g, aboveZero } = guardrail(input, new Set(eligible.map((e) => e.t.task)), { ...opts, exactMaxTasks: options.exactMaxTasks, flips: options.flips });
+  const { g, aboveZero, usedChecks } = guardrail(input, new Set(eligible.map((e) => e.t.task)), { ...opts, exactMaxTasks: options.exactMaxTasks, flips: options.flips });
   const blocks = prVerdict === 'better' && g.status === 'rose';
-  const critical: CriticalGuardrail = { ...g, blocks_better: blocks, text: guardrailText({ ...g, blocks_better: blocks }, aboveZero) };
+  const critical: CriticalGuardrail = { ...g, blocks_better: blocks, text: guardrailText({ ...g, blocks_better: blocks }, aboveZero, usedChecks) };
   const verdict = blocks ? 'held_back' : prVerdict;
 
   const notRuledOut = prVerdict === 'no_detectable_difference' && diff.high > diff.low ? round(Math.max(Math.abs(diff.low), Math.abs(diff.high)), 1) : null;
