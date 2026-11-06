@@ -1074,13 +1074,17 @@ export class ExperimentsService {
       // A trial's outcome is its latest finished grading job's, as on the run grid and the trial
       // page: pass when every required grader passed, fail when one failed, incomplete otherwise
       // (grader format, "The task's outcome"). Older grade versions and optional graders do not count.
+      // Incomplete, as gradingState says and the statistics count it: a finished grading with no
+      // outcome, a task with no graders, or grading that gave up with no finished job before it.
+      // Only a trial still waiting for its grade is neither graded nor incomplete.
       // D44: a calibration run's one config is both arms; `second` is arm B (repeats n to 2n - 1).
       `SELECT t.task_sha256 AS task, k.id AS task_id, t.config_hash AS config, c.name AS config_name,
               ($2::boolean AND t.repeat_index >= $3) AS second,
               count(*) FILTER (WHERE t.status = 'done')::int AS trials,
               count(*) FILTER (WHERE t.status = 'done' AND g.outcome IN ('pass', 'fail'))::int AS graded,
               count(*) FILTER (WHERE t.status = 'done' AND g.outcome = 'pass')::int AS passed,
-              count(*) FILTER (WHERE t.status = 'done' AND g.status = 'done' AND (g.outcome IS NULL OR g.outcome = 'incomplete'))::int AS incomplete,
+              count(*) FILTER (WHERE t.status = 'done' AND (g.outcome IS NULL OR g.outcome NOT IN ('pass', 'fail'))
+                                     AND (g.status IS NOT NULL OR gl.status = 'failed'))::int AS incomplete,
               count(*) FILTER (WHERE t.status = 'infra_failed')::int AS infra_failed,
               count(*) FILTER (WHERE t.status = 'abandoned')::int AS abandoned
        FROM trials t
@@ -1090,6 +1094,9 @@ export class ExperimentsService {
          SELECT j.status, j.outcome FROM grading_jobs j
          WHERE j.trial_id = t.id AND j.status IN ('done', 'no_graders') ORDER BY j.created_at DESC, j.id DESC LIMIT 1
        ) g ON true
+       LEFT JOIN LATERAL (
+         SELECT j.status FROM grading_jobs j WHERE j.trial_id = t.id AND j.status <> 'superseded' ORDER BY j.created_at DESC, j.id DESC LIMIT 1
+       ) gl ON true
        -- D34: a reused arm A's rows are the parent's trials it took.
        WHERE t.experiment_id = $1 OR t.id IN (SELECT unnest(reused_trial_ids) FROM experiment_arms WHERE experiment_id = $1)
        GROUP BY t.task_sha256, k.id, t.config_hash, c.name, 5`,

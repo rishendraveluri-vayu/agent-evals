@@ -675,8 +675,10 @@ export interface CompareRow {
   passed: number;
   /** Done trials with an outcome, pass or fail, from their latest finished grading. */
   graded: number;
-  /** Done trials whose latest grading finished without an outcome: a required grader errored, was
-   *  not applicable or did not run (the judge, unapproved). Counted apart, never as a pass or fail. */
+  /** Done trials with no outcome once grading settled (TrialGradingState `incomplete`, `no_graders`
+   *  or `grading_failed`): a required grader errored, was not applicable or did not run (the judge,
+   *  unapproved), the task has no graders, or grading gave up. Counted apart, never as a pass or
+   *  fail, as the statistics count them. `trials - graded - incomplete` are still waiting for a grade. */
   incomplete: number;
   /** Agent-labelled (gradable) trials. */
   trials: number;

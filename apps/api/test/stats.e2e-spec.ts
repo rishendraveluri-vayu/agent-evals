@@ -184,6 +184,23 @@ describeWithDb('statistics and A/A calibration (e2e, real Postgres)', () => {
     expect(await compare(pilot.id)).toMatchObject({ status: 'complete', stats: null, stats_note: 'A pilot of one config has nothing to compare it with, so there is no verdict.' });
   });
 
+  it('counts a trial whose grading gave up, or whose task has no graders, as undecided in the rows, as the statistics do, not as still grading', async () => {
+    const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: tasks().slice(0, 1), n: 3, futility: { enabled: false } });
+    await run('w-settled', () => 'pass');
+    const [first, second] = (await trials(exp.id)).filter((t) => t.config_hash === B);
+    // One of arm B's gradings gave up (its lease lapsed 3 times); another found no graders to run.
+    await env.pool.query(`UPDATE grading_jobs SET status = 'failed', outcome = NULL, passed = NULL WHERE trial_id = $1`, [first.id]);
+    await env.pool.query(`UPDATE grading_jobs SET status = 'no_graders', outcome = NULL, passed = NULL WHERE trial_id = $1`, [second.id]);
+    const states = new Map((await trials(exp.id)).map((t) => [t.id, t.grading]));
+    expect([states.get(first.id), states.get(second.id)]).toEqual(['grading_failed', 'no_graders']);
+    const cmp = await compare(exp.id);
+    expect(cmp.rows.map((r) => [r.arm, r.trials, r.graded, r.incomplete])).toEqual([
+      ['A', 3, 3, 0],
+      ['B', 3, 1, 2],
+    ]);
+    expect(cmp.stats?.tasks[0]).toMatchObject({ a: { graded: 3, incomplete: 0 }, b: { graded: 1, incomplete: 2 } });
+  });
+
   // ---- D44: A/A calibration ----
 
   it('refuses the same config twice unless the run is marked as a calibration, and a calibration of two configs', async () => {
