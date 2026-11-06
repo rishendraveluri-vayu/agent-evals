@@ -1,6 +1,7 @@
-"""The MCP server: 19 read-only tools over the calculators, the client file, the arithmetic
-module and the reference rates (eight calculators, three client tools, and since 5 Nov seven
-arithmetic tools, D54, and `reference_rates`, D58).
+"""The MCP server: 20 read-only tools over the calculators, the client file, the arithmetic
+module, the reference rates and the document library (eight calculators, three client tools, and
+since 5 Nov seven arithmetic tools, D54, and `reference_rates`, D58; since 6 Nov
+`search_documents`, D79, which only the `finance-rag` toolset allows).
 
 What every harness sees is decided here, so three things are pinned:
 
@@ -30,7 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from finance_mcp import __version__, arithmetic, calculators, reference
+from finance_mcp import __version__, arithmetic, calculators, documents, reference
 from finance_mcp.client_data import (
     MAX_TRANSACTIONS_LIMIT,
     ClientDataError,
@@ -218,9 +219,11 @@ def _text(fn: Callable[..., dict[str, Any]], *args: Any, **kwargs: Any) -> CallT
 
 def create_server(state_dir: Path | None) -> FinanceServer:
     """Build the server. `state_dir` holds this trial's client.json, or is None for none.
-    The reference rates are read and checked here, so a malformed file fails at startup."""
+    The reference rates and the documents are read and checked here, so a malformed file fails
+    at startup."""
     server = FinanceServer()
     rates = reference.load()
+    library = documents.load()
 
     def calculate_emi(
         principal: LoanPrincipal, annual_rate_pct: AnnualRatePct, tenure_months: TenureMonths
@@ -522,6 +525,29 @@ def create_server(state_dir: Path | None) -> FinanceServer:
     def reference_rates() -> CallToolResult:
         return _text(reference.reference_rates, rates)
 
+    def search_documents(
+        query: Annotated[
+            str,
+            Field(
+                description="Words to search for, such as 'fixed deposit rate 2 years' or "
+                "'personal loan foreclosure charge'.",
+                max_length=500,
+            ),
+        ],
+        top_k: Annotated[
+            int,
+            Field(
+                description=f"How many passages to return, best first; at most "
+                f"{documents.MAX_TOP_K} are returned.",
+                ge=1,
+            ),
+        ] = documents.DEFAULT_TOP_K,
+    ) -> CallToolResult:
+        try:
+            return _text(library.search, query, top_k)
+        except documents.SearchError as exc:
+            raise ToolError(str(exc)) from None
+
     tools: list[tuple[Callable[..., CallToolResult], str]] = [
         (
             calculate_emi,
@@ -636,6 +662,15 @@ def create_server(state_dir: Path | None) -> FinanceServer:
         "repo rate, and a long-run equity index return. Each has a value in percent, "
         "its source (organisation and URL) and the date it applies to; they are a dated "
         "snapshot, not live rates.",
+    )
+    server.register(
+        search_documents,
+        "Keyword search over Kaveri Bank's (fictional) document library, edition "
+        f"{documents.EDITION}: its fixed and recurring deposit rate card, deposit rules, loan "
+        "products and rates, prepayment and foreclosure rules, schedule of charges, credit card "
+        "terms, savings account rates and FAQ, and the November 2026 rates and rules bulletin "
+        "(RBI and income tax figures, each with its official source). Returns the best-matching "
+        "passages, each with its document id, title, date and section.",
     )
 
     @server.custom_route("/health", methods=["GET"])

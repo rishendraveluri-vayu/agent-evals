@@ -693,5 +693,33 @@
       "readOnlyHint": true,
       "openWorldHint": false
     }
+  },
+  {
+    "name": "search_documents",
+    "description": "Keyword search over Kaveri Bank's (fictional) document library, edition 2026-11-06: its fixed and recurring deposit rate card, deposit rules, loan products and rates, prepayment and foreclosure rules, schedule of charges, credit card terms, savings account rates and FAQ, and the November 2026 rates and rules bulletin (RBI and income tax figures, each with its official source). Returns the best-matching passages, each with its document id, title, date and section.",
+    "inputSchema": {
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Words to search for, such as 'fixed deposit rate 2 years' or 'personal loan foreclosure charge'.",
+          "maxLength": 500
+        },
+        "top_k": {
+          "type": "integer",
+          "description": "How many passages to return, best first; at most 5 are returned.",
+          "minimum": 1,
+          "default": 3
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
   }
 ]

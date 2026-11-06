@@ -77,6 +77,8 @@ SAMPLE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ("round", {"value": 23120.456, "places": -3}),
     # The reference rates (D58, 5 Nov).
     ("reference_rates", {}),
+    # The document library (D79, 6 Nov), only in the finance-rag toolset.
+    ("search_documents", {"query": "fixed deposit rate 2 years"}),
 ]
 
 EXPECTED_TOOLS = [name for name, _ in SAMPLE_CALLS]
