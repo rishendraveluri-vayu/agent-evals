@@ -4,18 +4,24 @@
  * budget and what it has spent; approving it (a paid step, confirmed first, then a regrade), a
  * regrade, and revoking it. Approval mints a capped LiteLLM key for that experiment only
  * (docs/api-contract.md, Judge approval), so the judge can never spend past the budget.
+ *
+ * Under it, how far to trust the experiment's judges (D83), and a way to calibrate them: label a
+ * few of its outputs blind, in an order that balances the judge's passes and fails.
  */
 import { computed, ref } from 'vue';
 import { api } from '../api/client';
 import { errorWithFix } from '../api/errors';
 import { isFixtureMode } from '../api/mode';
-import type { JudgeView, ModelView } from '../api/types';
+import type { JudgeTrust, JudgeView, ModelView } from '../api/types';
 import { optional, useLoad } from '../lib/async';
 import { money, plainText, plural, relative, wholeMoney } from '../lib/format';
 import { isFake } from '../lib/models';
 import { modelName } from '../lib/names';
 import { missingKey } from '../lib/runSetup';
+import { rubricName } from '../lib/trust';
+import { href } from '../router';
 import AppIcon from './AppIcon.vue';
+import TrustBadge from './TrustBadge.vue';
 
 const props = defineProps<{
   experimentId: string;
@@ -27,6 +33,10 @@ const props = defineProps<{
   /** Which arms ran on a fake model ("Both arms", "Arm A"), or null: their outputs are scripted,
    *  so a real judge would spend real money grading made-up text. Approving then asks twice. */
   fakeArms?: string | null;
+  /** This experiment's judges and how far to trust each (D83); null when it could not be read. */
+  trust?: JudgeTrust[] | null;
+  /** The labels page, calibrating this experiment's judge. */
+  calibrateHref?: string;
 }>();
 /** Something changed on the API (an approval, a revoke, a regrade queued): read the experiment again. */
 const emit = defineEmits<{ changed: [] }>();
@@ -491,6 +501,71 @@ async function revoke() {
     >
       {{ error }}
     </p>
+
+    <section
+      v-if="trust"
+      class="trust-section"
+      aria-labelledby="judge-trust-title"
+      data-test="judge-trust"
+    >
+      <h3
+        id="judge-trust-title"
+        class="sub-title"
+      >
+        How far to trust it
+      </h3>
+      <p
+        class="small trust-why"
+        data-test="judge-trust-why"
+      >
+        A judge is only as good as its agreement with people. Label a few of its outputs blind, without seeing its verdicts, and its agreement updates as you go.
+      </p>
+      <ul
+        v-if="trust.length"
+        class="trust-list"
+      >
+        <li
+          v-for="j in trust"
+          :key="`${j.judge_model} ${j.rubric}`"
+          class="trust-row"
+          data-test="judge-trust-row"
+        >
+          <span class="trust-head">
+            <span
+              class="small"
+              data-test="judge-trust-name"
+            ><span class="strong">{{ modelName(j.judge_model) }}</span>, rubric <span class="mono">{{ rubricName(j.rubric) }}</span></span>
+            <TrustBadge :status="j.status" />
+          </span>
+          <span
+            class="small secondary"
+            data-test="judge-trust-summary"
+          >{{ plainText(j.summary) }}</span>
+        </li>
+      </ul>
+      <p
+        v-else
+        class="small secondary"
+        data-test="judge-trust-none"
+      >
+        No judge has graded this experiment's outputs yet, so there is nothing to measure. Once one has, how far to trust it shows here.
+      </p>
+      <div
+        v-if="trust.length && calibrateHref"
+        class="row"
+      >
+        <a
+          class="btn btn--quiet"
+          :href="calibrateHref"
+          data-test="judge-calibrate"
+        >Calibrate this judge</a>
+        <a
+          :href="href.judge()"
+          class="small"
+          data-test="judge-trust-link"
+        >Every question, on the judge page</a>
+      </div>
+    </section>
   </section>
 </template>
 
@@ -587,6 +662,44 @@ async function revoke() {
 
 .done {
   margin-top: 8px;
+}
+
+.trust-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.sub-title {
+  font-size: 15px;
+}
+
+.trust-why {
+  margin: 4px 0 10px;
+  max-width: 72ch;
+}
+
+.trust-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trust-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 72ch;
+}
+
+.trust-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
 }
 
 .error {

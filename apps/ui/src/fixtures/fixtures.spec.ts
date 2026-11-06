@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../api/errors';
-import { SETTING_NAMES, type ExperimentDetail, type TrialRowSummary } from '../api/types';
+import { SETTING_NAMES, type ExperimentDetail, type JudgeTrustResponse, type JudgeTrustStatus, type TrialRowSummary } from '../api/types';
 import { fixtureResponse } from './index';
 
 const keys = (value: unknown) => Object.keys(value as Record<string, unknown>).sort();
@@ -42,7 +42,13 @@ const FIELDS = {
   allowance: ['kind', 'limit_usd', 'used_usd', 'remaining_usd', 'calls', 'half_reached'],
   spend: ['trials_usd', 'trials_spend_unknown', 'fake_trials_usd', 'system_usd', 'judge_usd', 'judge_approvals', 'total_usd', 'system_by_kind', 'allowances'],
   blind: ['item_id', 'task_id', 'task_summary', 'transcript', 'tool_calls', 'criteria'],
+  trustBar: ['kappa', 'kappa_low', 'retest', 'min_human_no', 'max_undefined_share', 'resamples', 'human_unsure'],
+  judgeTrust: ['judge_model', 'rubric', 'experiments', 'trials_judged', 'criteria', 'status', 'summary'],
+  criterionTrust: ['criterion', 'text', 'status', 'summary', 'heldout', 'tuning', 'd8', 'retest', 'needs_human_no', 'disagreements'],
+  agreement: ['n', 'tp', 'fp', 'fn', 'tn', 'agreement', 'kappa', 'kappa_interval', 'sensitivity', 'specificity', 'human_no', 'human_left_out', 'judge_undecided', 'false_pass_gap'],
+  disagreement: ['trial_id', 'task_id', 'set', 'human', 'judge', 'judge_reason', 'human_note'],
 };
+const STATUSES: JudgeTrustStatus[] = ['uncalibrated', 'tuning_only', 'too_few', 'trusted', 'not_trusted'];
 
 /** The fixtures stand in for the API, so they must keep the contract's shapes. */
 describe('fixtures', () => {
@@ -197,5 +203,75 @@ describe('fixtures', () => {
     } catch (err) {
       expect((err as ApiError).status).toBe(404);
     }
+  });
+});
+
+/** GET /judge/trust (D83): the sample judges stand in for the API's, so they keep its shapes and
+ *  its rules, and cover every status. */
+describe('the judge trust fixture', () => {
+  const all = fixtureResponse('GET', '/judge/trust') as JudgeTrustResponse;
+
+  it('keeps the contract shapes, and figures that add up', () => {
+    expect(keys(all)).toEqual(['bar', 'judges']);
+    expect(keys(all.bar)).toEqual(sorted(FIELDS.trustBar));
+    for (const j of all.judges) {
+      expect(keys(j)).toEqual(sorted(FIELDS.judgeTrust));
+      for (const c of j.criteria) {
+        expect(keys(c)).toEqual(sorted(FIELDS.criterionTrust));
+        for (const f of [c.heldout, c.tuning]) {
+          if (!f) continue;
+          expect(keys(f)).toEqual(sorted(FIELDS.agreement));
+          expect(f.n).toBe(f.tp + f.fp + f.fn + f.tn);
+          expect(f.human_no).toBe(f.fp + f.tn);
+        }
+        for (const d of c.disagreements) {
+          expect(keys(d)).toEqual(sorted(FIELDS.disagreement));
+          expect(d.human).not.toBe(d.judge);
+        }
+        // Every disagreement the tables count is listed (the API lists up to 50), held-out first.
+        for (const set of ['heldout', 'tuning'] as const) {
+          const f = c[set];
+          const listed = c.disagreements.filter((d) => d.set === set);
+          expect(listed.filter((d) => d.human === 'no').length, `${c.criterion} ${set}`).toBe(f?.fp ?? 0);
+          expect(listed.filter((d) => d.human === 'yes').length, `${c.criterion} ${set}`).toBe(f?.fn ?? 0);
+        }
+        expect(c.disagreements.map((d) => d.set)).toEqual([...c.disagreements.map((d) => d.set)].sort());
+      }
+    }
+  });
+
+  it('gives each criterion the status its figures call for, and each judge its overall criterion\'s', () => {
+    for (const j of all.judges) {
+      for (const c of j.criteria) {
+        if (c.status === 'uncalibrated') expect([c.heldout, c.tuning]).toEqual([null, null]);
+        if (c.status === 'tuning_only') expect([c.heldout, !!c.tuning]).toEqual([null, true]);
+        if (c.status === 'too_few') expect(c.heldout && (c.heldout.human_no < all.bar.min_human_no || c.heldout.kappa_interval.low === null)).toBe(true);
+        if (c.status === 'too_few') expect(c.needs_human_no).toBe(all.bar.min_human_no - (c.heldout?.human_no ?? 0));
+        if (c.status === 'trusted' || c.status === 'not_trusted') expect(c.d8?.trusted).toBe(c.status === 'trusted');
+        if (c.status === 'not_trusted') expect(c.d8?.reasons.length).toBeGreaterThan(0);
+      }
+      expect(j.status).toBe(j.criteria.find((c) => c.criterion === 'overall')?.status);
+    }
+    const statuses = (list: { status: JudgeTrustStatus }[]) => [...new Set(list.map((x) => x.status))].sort();
+    expect(statuses(all.judges.flatMap((j) => j.criteria))).toEqual([...STATUSES].sort());
+    expect(statuses(all.judges)).toEqual(['not_trusted', 'trusted', 'tuning_only', 'uncalibrated']);
+  });
+
+  it("keeps only an experiment's judges when asked, and refuses an experiment that does not exist", () => {
+    const heldout = fixtureResponse('GET', '/judge/trust?experiment=exp_heldout') as JudgeTrustResponse;
+    expect(heldout.judges.map((j) => `${j.judge_model} ${j.rubric}`)).toEqual(['claude-haiku-5-5 configs/rubrics/advice.v4.md']);
+    expect((fixtureResponse('GET', '/judge/trust?experiment=exp_harness') as JudgeTrustResponse).judges).toHaveLength(2);
+    expect((fixtureResponse('GET', '/judge/trust?experiment=exp_futility') as JudgeTrustResponse).judges).toEqual([]);
+    try {
+      fixtureResponse('GET', '/judge/trust?experiment=e_nope');
+      expect.unreachable();
+    } catch (err) {
+      expect([(err as ApiError).status, (err as ApiError).code]).toEqual([404, 'unknown_experiment']);
+    }
+  });
+
+  it('refuses to calibrate a label queue without an experiment, as the API does', () => {
+    expect(() => fixtureResponse('GET', '/labels/queue?set=heldout&calibrate=1')).toThrow(ApiError);
+    expect(fixtureResponse('GET', '/labels/queue?set=heldout&experiment=exp_heldout&calibrate=1')).toHaveLength(3);
   });
 });

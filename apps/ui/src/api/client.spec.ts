@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { jsonReply } from '../test/helpers';
+import { jsonReply, routeFetch } from '../test/helpers';
 import { api } from './client';
 import { ApiError, errorWithFix } from './errors';
 
@@ -57,5 +57,33 @@ describe('the API client in an outage (destructive review U8)', () => {
     const err = await failure(() => api.configs());
     expect([err.status, err.code]).toEqual([0, 'unreachable']);
     expect(err.message).toBe('The API could not be reached: check that the stack is running (docker compose ps), then try again');
+  });
+});
+
+describe('the API client for judge trust (D83)', () => {
+  it("asks for every judge, or for one experiment's", async () => {
+    const reply = { bar: { kappa: 0.6, kappa_low: 0.4, retest: 0.9, min_human_no: 5, max_undefined_share: 0.05, resamples: 2000, human_unsure: 'exclude' }, judges: [] };
+    const { calls } = routeFetch({ '/api/judge/trust': reply, '/api/judge/trust?experiment=exp+1': reply });
+    expect(await api.judgeTrust()).toEqual(reply);
+    expect(await api.judgeTrust('exp 1')).toEqual(reply);
+    expect(calls.map((c) => [c.method, c.url])).toEqual([
+      ['GET', '/api/judge/trust'],
+      ['GET', '/api/judge/trust?experiment=exp+1'],
+    ]);
+  });
+
+  it('sends calibrate=1 on the label queue only when asked', async () => {
+    const { calls } = routeFetch({
+      '/api/labels/queue?set=heldout&experiment=exp_heldout&rater=asha&calibrate=1': [],
+      '/api/labels/queue?set=heldout&experiment=exp_heldout&rater=asha': [],
+    });
+    await api.labelQueue('heldout', 'exp_heldout', undefined, 'asha', true);
+    await api.labelQueue('heldout', 'exp_heldout', undefined, 'asha', false);
+    await api.labelQueue('heldout', 'exp_heldout', undefined, 'asha');
+    expect(calls.map((c) => c.url)).toEqual([
+      '/api/labels/queue?set=heldout&experiment=exp_heldout&rater=asha&calibrate=1',
+      '/api/labels/queue?set=heldout&experiment=exp_heldout&rater=asha',
+      '/api/labels/queue?set=heldout&experiment=exp_heldout&rater=asha',
+    ]);
   });
 });

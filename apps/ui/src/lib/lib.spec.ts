@@ -5,7 +5,7 @@ import { agreementWords, armDifferences, armIndexOf, armsOf, armState, axisWords
 import { coverage, coverageText } from './capabilities';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, splitCheck } from './checks';
 import { sentenceChanges } from './diff';
-import { harnessVersion, identParts, money, plainText, relative, shortHash, shortVersion, signed, signedMoney, splitIdents, wholeMoney, wilson } from './format';
+import { harnessVersion, identParts, money, plainText, relative, shortHash, shortVersion, signed, signedMoney, splitIdents, wholeMoney } from './format';
 import { mdBlocks } from './markdown';
 import { defaultRealModel, isFree, isLocal, runnableHosted } from './models';
 import { alsoGradedBy, infraReason, isJudged as taskIsJudged, modelName } from './names';
@@ -489,17 +489,6 @@ describe('splitIdents', () => {
       { text: ' also has a state check). Its ', ident: false },
     ]);
     expect(identParts('No ids.', [])).toEqual([{ text: 'No ids.', ident: false }]);
-  });
-});
-
-describe('wilson', () => {
-  const pct = (i: { low: number; high: number }) => [Math.round(i.low * 100), Math.round(i.high * 100)];
-
-  it('gives the 95% Wilson interval for a count, inside 0 to 1', () => {
-    expect(pct(wilson(9, 10))).toEqual([60, 98]);
-    expect(pct(wilson(34, 40))).toEqual([71, 93]);
-    expect(wilson(10, 10).high).toBe(1);
-    expect(wilson(0, 10).low).toBe(0);
   });
 });
 

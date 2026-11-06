@@ -27,6 +27,7 @@ import type {
   Harness,
   JudgeApprovalRequest,
   JudgeApprovalResponse,
+  JudgeTrustResponse,
   JudgeView,
   LoadExampleResponse,
   ModelView,
@@ -47,6 +48,7 @@ import experimentTrialsJson from './experiment-trials.json';
 import experimentsJson from './experiments.json';
 import harnessesJson from './harnesses.json';
 import judgeJson from './judge-agreement.json';
+import judgeTrustJson from './judge-trust.json';
 import labelQueueJson from './label-queue.json';
 import metaJson from './meta.json';
 import modelsJson from './models.json';
@@ -76,6 +78,7 @@ const compares = comparesJson as unknown as Record<string, Compare>;
 const labelQueue = labelQueueJson as unknown as Record<string, unknown[]>;
 const renderedPrompts = renderedPromptsJson as unknown as Record<string, RenderedPromptView>;
 const conflictChecks = conflictChecksJson as unknown as Record<string, ConflictCheckView>;
+const judgeTrust = judgeTrustJson as unknown as JudgeTrustResponse;
 const trial = trialJson as unknown as { id: string };
 const recordedTrial = recordedTrialJson as unknown as { summary: { trialId: string } };
 
@@ -468,6 +471,22 @@ function saveLabel(body: CreateLabelRequest) {
   return { saved: false, reason: 'sample data' };
 }
 
+/** GET /labels/queue: the sample queue of a set. As the API does, `calibrate` needs an
+ *  experiment; the sample order is already mixed, so calibrating reorders nothing here. */
+function labelQueueFor(p: URLSearchParams): unknown[] {
+  if (p.get('calibrate') === '1' && !p.get('experiment')) throw new ApiError(400, 'invalid_query', 'calibrate needs an experiment', 'Calibrate from an experiment: its comparison page links here.');
+  return labelQueue[p.get('set') ?? ''] ?? [];
+}
+
+/** GET /judge/trust: every sample judge, or with `experiment` the ones that graded its trials (as
+ *  the API filters); an experiment that does not exist is a 404. The "human" side of each figure
+ *  is sample data for the screens, not anyone's labels. */
+function trustFor(experiment: string | null): JudgeTrustResponse {
+  if (!experiment) return judgeTrust;
+  experimentDetail(experiment);
+  return { ...judgeTrust, judges: judgeTrust.judges.filter((j) => j.experiments.includes(experiment)) };
+}
+
 function renderedPrompt(hash: string): RenderedPromptView {
   findConfig(hash);
   return renderedPrompts[hash] ?? { config_hash: hash, status: 'none', probe: null, cached: false, error: null, rendered: null };
@@ -597,9 +616,10 @@ const routes: [string, RegExp, Handler][] = [
       throw notFound(`trial ${id}. The sample covers one trial in full: fd-vs-sip-07, arm B, trial 3`);
     },
   ],
-  ['GET', /^\/labels\/queue$/, (_m, p) => labelQueue[p.get('set') ?? ''] ?? []],
+  ['GET', /^\/labels\/queue$/, (_m, p) => labelQueueFor(p)],
   ['POST', /^\/labels$/, (_m, _p, body) => saveLabel(body as CreateLabelRequest)],
   ['GET', /^\/judge\/agreement$/, (_m, p) => (p.get('set') === 'heldout' ? judgeJson : null)],
+  ['GET', /^\/judge\/trust$/, (_m, p) => trustFor(p.get('experiment'))],
 ];
 
 export function fixtureResponse(method: string, path: string, body?: unknown): unknown {

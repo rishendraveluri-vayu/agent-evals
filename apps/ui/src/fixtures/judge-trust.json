@@ -1,0 +1,601 @@
+{
+  "bar": {
+    "kappa": 0.6,
+    "kappa_low": 0.4,
+    "retest": 0.9,
+    "min_human_no": 5,
+    "max_undefined_share": 0.05,
+    "resamples": 2000,
+    "human_unsure": "exclude"
+  },
+  "judges": [
+    {
+      "judge_model": "claude-haiku-5-5",
+      "rubric": "configs/rubrics/advice.v4.md",
+      "experiments": [
+        "exp_heldout",
+        "exp_harness",
+        "exp_aa"
+      ],
+      "trials_judged": 112,
+      "criteria": [
+        {
+          "criterion": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why.",
+          "status": "not_trusted",
+          "summary": "Tested on 40 held-out labels and it missed the trust bar (D8): read its verdicts as a hint, and look at where it disagrees with people.",
+          "heldout": {
+            "n": 40,
+            "tp": 17,
+            "fp": 5,
+            "fn": 4,
+            "tn": 14,
+            "agreement": 0.775,
+            "kappa": 0.5477,
+            "kappa_interval": {
+              "low": 0.29,
+              "high": 0.79,
+              "undefined_share": 0.0
+            },
+            "sensitivity": 0.8095,
+            "specificity": 0.7368,
+            "human_no": 19,
+            "human_left_out": 2,
+            "judge_undecided": 1,
+            "false_pass_gap": {
+              "experiment_id": "exp_heldout",
+              "estimate": 0.21,
+              "interval": {
+                "low": 0.02,
+                "high": 0.4,
+                "undefined_share": 0
+              },
+              "includes_zero": false
+            }
+          },
+          "tuning": {
+            "n": 12,
+            "tp": 6,
+            "fp": 1,
+            "fn": 1,
+            "tn": 4,
+            "agreement": 0.8333,
+            "kappa": 0.6571,
+            "kappa_interval": {
+              "low": 0.21,
+              "high": 0.97,
+              "undefined_share": 0.0
+            },
+            "sensitivity": 0.8571,
+            "specificity": 0.8,
+            "human_no": 5,
+            "human_left_out": 0,
+            "judge_undecided": 0,
+            "false_pass_gap": null
+          },
+          "d8": {
+            "trusted": false,
+            "reasons": [
+              "kappa 0.55 is under the bar of 0.6 (D8)",
+              "the lower end of its interval, 0.29, is under 0.4",
+              "arm B's false-pass rate is 0.21 higher than arm A's (interval 0.02 to 0.40), so the judge lets more of one arm's failures through"
+            ]
+          },
+          "retest": {
+            "identical": 46,
+            "total": 50,
+            "share": 0.92
+          },
+          "needs_human_no": null,
+          "disagreements": [
+            {
+              "trial_id": "tr_debt-regret-04_b_1",
+              "task_id": "debt-regret-04",
+              "set": "heldout",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": "Direct about the real cost of the phone, and kind in tone.",
+              "human_note": "Lectures her about the EMI in the second paragraph."
+            },
+            {
+              "trial_id": "tr_distress-12_b_2",
+              "task_id": "distress-12",
+              "set": "heldout",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": "Acknowledges the client's stress before any numbers.",
+              "human_note": null
+            },
+            {
+              "trial_id": "tr_debt-hardship-03_a_1",
+              "task_id": "debt-hardship-03",
+              "set": "heldout",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": "Jumps to a payoff order before asking how the family is managing.",
+              "human_note": "It does ask first, in one line; fine for me."
+            },
+            {
+              "trial_id": "tr_distress-12_a_1",
+              "task_id": "distress-12",
+              "set": "heldout",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "tr_distress-12_b_1",
+              "task_id": "distress-12",
+              "set": "heldout",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "tr_debt-hardship-03_b_1",
+              "task_id": "debt-hardship-03",
+              "set": "heldout",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "tr_debt-regret-04_a_1",
+              "task_id": "debt-regret-04",
+              "set": "heldout",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "tr_fd-vs-sip-07_a_1",
+              "task_id": "fd-vs-sip-07",
+              "set": "heldout",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "tr_fd-vs-sip-07_b_1",
+              "task_id": "fd-vs-sip-07",
+              "set": "heldout",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "tm_gold-loan-16_a_1",
+              "task_id": "gold-loan-16",
+              "set": "tuning",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": "Recommends the gold loan without naming the risk of losing the gold.",
+              "human_note": "The risk is named in the last line."
+            },
+            {
+              "trial_id": "td_loan-for-loan-14_a_1",
+              "task_id": "loan-for-loan-14",
+              "set": "tuning",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
+            }
+          ]
+        },
+        {
+          "criterion": "fd-tax",
+          "text": "Does the advice account for tax on the FD interest at the client's slab? Yes or no.",
+          "status": "trusted",
+          "summary": "Meets the trust bar on 30 held-out labels: its verdicts on this question can be relied on.",
+          "heldout": {
+            "n": 30,
+            "tp": 14,
+            "fp": 1,
+            "fn": 1,
+            "tn": 14,
+            "agreement": 0.9333,
+            "kappa": 0.8667,
+            "kappa_interval": {
+              "low": 0.68,
+              "high": 1.0,
+              "undefined_share": 0.0
+            },
+            "sensitivity": 0.9333,
+            "specificity": 0.9333,
+            "human_no": 15,
+            "human_left_out": 0,
+            "judge_undecided": 0,
+            "false_pass_gap": {
+              "experiment_id": "exp_heldout",
+              "estimate": -0.02,
+              "interval": {
+                "low": -0.15,
+                "high": 0.11,
+                "undefined_share": 0
+              },
+              "includes_zero": true
+            }
+          },
+          "tuning": null,
+          "d8": {
+            "trusted": true,
+            "reasons": []
+          },
+          "retest": {
+            "identical": 29,
+            "total": 30,
+            "share": 0.9667
+          },
+          "needs_human_no": null,
+          "disagreements": [
+            {
+              "trial_id": "tr_fd-vs-sip-07_b_3",
+              "task_id": "fd-vs-sip-07",
+              "set": "heldout",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": "The comparison uses the pre-tax FD amount.",
+              "human_note": "The tax note was in the last line; the judge missed it."
+            },
+            {
+              "trial_id": "tr_distress-12_a_1",
+              "task_id": "distress-12",
+              "set": "heldout",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
+            }
+          ]
+        },
+        {
+          "criterion": "horizon",
+          "text": "Is the recommendation built around the client's stated deadline? Yes or no.",
+          "status": "too_few",
+          "summary": "Has 10 held-out labels but only 3 human \"no\" labels, and the bar needs 5 (D77): 2 more are needed.",
+          "heldout": {
+            "n": 10,
+            "tp": 7,
+            "fp": 1,
+            "fn": 0,
+            "tn": 2,
+            "agreement": 0.9,
+            "kappa": 0.7368,
+            "kappa_interval": {
+              "low": null,
+              "high": null,
+              "undefined_share": 0.08
+            },
+            "sensitivity": 1.0,
+            "specificity": 0.6667,
+            "human_no": 3,
+            "human_left_out": 0,
+            "judge_undecided": 0,
+            "false_pass_gap": null
+          },
+          "tuning": null,
+          "d8": {
+            "trusted": false,
+            "reasons": [
+              "only 3 human \"no\" labels, and the bar needs 5 (D77)",
+              "kappa's interval is undefined: over 5% of resamples had no kappa"
+            ]
+          },
+          "retest": null,
+          "needs_human_no": 2,
+          "disagreements": [
+            {
+              "trial_id": "tr_fd-vs-sip-07_a_1",
+              "task_id": "fd-vs-sip-07",
+              "set": "heldout",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": "Names the five-year goal and picks the option for it.",
+              "human_note": null
+            }
+          ]
+        },
+        {
+          "criterion": "explains-plainly",
+          "text": "Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no.",
+          "status": "tuning_only",
+          "summary": "Agrees with 10 tuning labels, but it has never been tested on held-out labels: label some held-out outputs to test it.",
+          "heldout": null,
+          "tuning": {
+            "n": 10,
+            "tp": 5,
+            "fp": 1,
+            "fn": 1,
+            "tn": 3,
+            "agreement": 0.8,
+            "kappa": 0.5833,
+            "kappa_interval": {
+              "low": 0.12,
+              "high": 0.95,
+              "undefined_share": 0.0
+            },
+            "sensitivity": 0.8333,
+            "specificity": 0.75,
+            "human_no": 4,
+            "human_left_out": 0,
+            "judge_undecided": 0,
+            "false_pass_gap": null
+          },
+          "d8": null,
+          "retest": null,
+          "needs_human_no": 5,
+          "disagreements": [
+            {
+              "trial_id": "tm_gold-loan-16_a_2",
+              "task_id": "gold-loan-16",
+              "set": "tuning",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": "Explains the interest rate and the tenure in plain words.",
+              "human_note": "Never says what the monthly payment means for her budget."
+            },
+            {
+              "trial_id": "td_loan-for-loan-14_a_1",
+              "task_id": "loan-for-loan-14",
+              "set": "tuning",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": null,
+              "human_note": null
+            }
+          ]
+        },
+        {
+          "criterion": "kind-and-direct",
+          "text": "Is the advice kind and direct, without lecturing the client? Yes or no.",
+          "status": "uncalibrated",
+          "summary": "No one has labelled an output this judge graded on this question, so its verdicts are a hint.",
+          "heldout": null,
+          "tuning": null,
+          "d8": null,
+          "retest": null,
+          "needs_human_no": null,
+          "disagreements": []
+        }
+      ],
+      "status": "not_trusted",
+      "summary": "Tested on 40 held-out labels and it missed the trust bar (D8): read its verdicts as a hint, and look at where it disagrees with people."
+    },
+    {
+      "judge_model": "gemini-3.8-flash",
+      "rubric": "configs/rubrics/advice.v4.md",
+      "experiments": [
+        "exp_harness"
+      ],
+      "trials_judged": 24,
+      "criteria": [
+        {
+          "criterion": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why.",
+          "status": "trusted",
+          "summary": "Meets the trust bar on 24 held-out labels: its verdicts can be relied on.",
+          "heldout": {
+            "n": 24,
+            "tp": 12,
+            "fp": 1,
+            "fn": 1,
+            "tn": 10,
+            "agreement": 0.9167,
+            "kappa": 0.8322,
+            "kappa_interval": {
+              "low": 0.6,
+              "high": 0.98,
+              "undefined_share": 0.0
+            },
+            "sensitivity": 0.9231,
+            "specificity": 0.9091,
+            "human_no": 11,
+            "human_left_out": 0,
+            "judge_undecided": 0,
+            "false_pass_gap": {
+              "experiment_id": "exp_harness",
+              "estimate": 0.03,
+              "interval": {
+                "low": -0.09,
+                "high": 0.15,
+                "undefined_share": 0
+              },
+              "includes_zero": true
+            }
+          },
+          "tuning": null,
+          "d8": {
+            "trusted": true,
+            "reasons": []
+          },
+          "retest": {
+            "identical": 24,
+            "total": 24,
+            "share": 1
+          },
+          "needs_human_no": null,
+          "disagreements": [
+            {
+              "trial_id": "th_distress-12_b_1",
+              "task_id": "distress-12",
+              "set": "heldout",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": "Points the client to a helpline and one small step.",
+              "human_note": "Gives the helpline but no small step."
+            },
+            {
+              "trial_id": "th_debt-hardship-03_a_2",
+              "task_id": "debt-hardship-03",
+              "set": "heldout",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": "Leads with the payoff maths.",
+              "human_note": null
+            }
+          ]
+        },
+        {
+          "criterion": "explains-plainly",
+          "text": "Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no.",
+          "status": "too_few",
+          "summary": "Has 6 held-out labels but only 2 human \"no\" labels; 3 more are needed before the bar can be applied.",
+          "heldout": {
+            "n": 6,
+            "tp": 4,
+            "fp": 1,
+            "fn": 0,
+            "tn": 1,
+            "agreement": 0.8333,
+            "kappa": 0.5714,
+            "kappa_interval": {
+              "low": null,
+              "high": null,
+              "undefined_share": 0.11
+            },
+            "sensitivity": 1.0,
+            "specificity": 0.5,
+            "human_no": 2,
+            "human_left_out": 0,
+            "judge_undecided": 0,
+            "false_pass_gap": null
+          },
+          "tuning": null,
+          "d8": {
+            "trusted": false,
+            "reasons": [
+              "only 2 human \"no\" labels, and the bar needs 5"
+            ]
+          },
+          "retest": null,
+          "needs_human_no": 3,
+          "disagreements": [
+            {
+              "trial_id": "th_distress-12_a_1",
+              "task_id": "distress-12",
+              "set": "heldout",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
+            }
+          ]
+        }
+      ],
+      "status": "trusted",
+      "summary": "Meets the trust bar on 24 held-out labels: its verdicts can be relied on."
+    },
+    {
+      "judge_model": "claude-haiku-5-5",
+      "rubric": "configs/rubrics/advice.v3.md",
+      "experiments": [
+        "exp_model",
+        "exp_discovery"
+      ],
+      "trials_judged": 30,
+      "criteria": [
+        {
+          "criterion": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why.",
+          "status": "tuning_only",
+          "summary": "Agrees with 20 tuning labels, but it has never been tested on held-out labels: label some held-out outputs to test it.",
+          "heldout": null,
+          "tuning": {
+            "n": 20,
+            "tp": 9,
+            "fp": 2,
+            "fn": 2,
+            "tn": 7,
+            "agreement": 0.8,
+            "kappa": 0.596,
+            "kappa_interval": {
+              "low": 0.24,
+              "high": 0.84,
+              "undefined_share": 0.0
+            },
+            "sensitivity": 0.8182,
+            "specificity": 0.7778,
+            "human_no": 9,
+            "human_left_out": 0,
+            "judge_undecided": 0,
+            "false_pass_gap": null
+          },
+          "d8": null,
+          "retest": null,
+          "needs_human_no": 5,
+          "disagreements": [
+            {
+              "trial_id": "td_loan-for-loan-14_a_1",
+              "task_id": "loan-for-loan-14",
+              "set": "tuning",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "td_loan-for-loan-14_b_1",
+              "task_id": "loan-for-loan-14",
+              "set": "tuning",
+              "human": "no",
+              "judge": "yes",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "td_home-loan-tax-18_a_1",
+              "task_id": "home-loan-tax-18",
+              "set": "tuning",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": null,
+              "human_note": null
+            },
+            {
+              "trial_id": "td_home-loan-tax-18_b_1",
+              "task_id": "home-loan-tax-18",
+              "set": "tuning",
+              "human": "yes",
+              "judge": "no",
+              "judge_reason": null,
+              "human_note": null
+            }
+          ]
+        }
+      ],
+      "status": "tuning_only",
+      "summary": "Agrees with 20 tuning labels, but it has never been tested on held-out labels: label some held-out outputs to test it."
+    },
+    {
+      "judge_model": "claude-sonnet-5-5",
+      "rubric": "configs/rubrics/advice.v4.md",
+      "experiments": [
+        "exp_pilot"
+      ],
+      "trials_judged": 8,
+      "criteria": [
+        {
+          "criterion": "overall",
+          "text": "Would a real client in this situation be well served by this? Pass or fail, and one line on why.",
+          "status": "uncalibrated",
+          "summary": "No one has labelled an output this judge graded, so its verdicts are a hint: label a few to calibrate it.",
+          "heldout": null,
+          "tuning": null,
+          "d8": null,
+          "retest": null,
+          "needs_human_no": null,
+          "disagreements": []
+        }
+      ],
+      "status": "uncalibrated",
+      "summary": "No one has labelled an output this judge graded, so its verdicts are a hint: label a few to calibrate it."
+    }
+  ]
+}

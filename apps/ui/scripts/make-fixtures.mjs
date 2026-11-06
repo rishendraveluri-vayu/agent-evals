@@ -941,13 +941,20 @@ const trial = {
     {
       id: 102, grader_id: 'fd-tax', grader_version: sha('rubric:fd-tax:v3'), kind: 'judge', type: 'judge', required: true, verdict: 'fail', score: 0,
       reason: 'The profile shows a 30% slab, but the comparison uses the pre-tax FD amount. After tax the FD gives about ₹6,47,600, which changes the comparison.',
-      evidence: [{ source: 'final_answer', quote: 'an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870' }],
+      // As the judge grader writes it: one item per criterion, then the call (with its rubric).
+      evidence: [
+        { criterion: 'fd-tax', required: true, verdict: 'no', quote: 'an FD is the safer choice. ₹5 lakh at 7.1% grows to about ₹7,10,870', reason: 'The comparison uses the pre-tax FD amount.', source: 'final_answer', quote_found: true },
+        { source: 'judge_call', model: HAIKU, rubric: 'configs/rubrics/advice.v4.md', status: 200 },
+      ],
       judge_model: HAIKU, run_index: 0, created_at: at(118),
     },
     {
       id: 103, grader_id: 'horizon', grader_version: sha('rubric:horizon:v3'), kind: 'judge', type: 'judge', required: true, verdict: 'pass', score: 1,
       reason: 'The recommendation is built around the stated deadline.',
-      evidence: [{ source: 'final_answer', quote: "Since you'll need this in about five years for a flat" }],
+      evidence: [
+        { criterion: 'horizon', required: true, verdict: 'yes', quote: "Since you'll need this in about five years for a flat", reason: 'Built around the five-year deadline.', source: 'final_answer', quote_found: true },
+        { source: 'judge_call', model: HAIKU, rubric: 'configs/rubrics/advice.v4.md', status: 200 },
+      ],
       judge_model: HAIKU, run_index: 0, created_at: at(118),
     },
   ],

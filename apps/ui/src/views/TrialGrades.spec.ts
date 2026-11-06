@@ -4,11 +4,13 @@ import { describe, expect, it } from 'vitest';
 import details from '../fixtures/experiment-details.json';
 import experimentTrials from '../fixtures/experiment-trials.json';
 import prompts from '../fixtures/prompts.json';
+import trustJson from '../fixtures/judge-trust.json';
+import queue from '../fixtures/label-queue.json';
 import checks from '../fixtures/trial-checks.json';
 import trialSpans from '../fixtures/trial-spans.json';
 import trial from '../fixtures/trial.json';
 import { provenanceOf } from '../lib/grading';
-import { routeFetch, settle } from '../test/helpers';
+import { routeFetch, settle, useFixtures } from '../test/helpers';
 import TrialView from './TrialView.vue';
 
 const ID = 'tr_fd-vs-sip-07_b_3';
@@ -19,16 +21,21 @@ type Over = {
   files?: { path: string; bytes: number; sha256: string; ok: boolean }[];
   result?: Record<string, unknown>;
   experiment?: Record<string, unknown>;
+  /** GET /judge/trust?experiment=exp_heldout's judges; not served when left out. */
+  trust?: unknown[];
+  queue?: unknown[];
+  task?: Record<string, unknown>;
 };
 function mountWith(over: Over = {}) {
   const files = over.files ?? trial.files;
   routeFetch({
-    [`/api/trials/${ID}`]: { ...trial, grades: over.grades ?? trial.grades, grading: over.grading ?? trial.grading, files, result: over.result ?? trial.result },
+    [`/api/trials/${ID}`]: { ...trial, grades: over.grades ?? trial.grades, grading: over.grading ?? trial.grading, files, result: over.result ?? trial.result, task: { ...trial.task, ...over.task } },
     [`/api/trials/${ID}/spans`]: trialSpans,
     [`/api/trials/${ID}/files/checks.json`]: over.checks ?? checks,
     '/api/judge/agreement?set=heldout': null,
     // Nothing still to label, so the judge's reasons show.
-    '/api/labels/queue?set=heldout': [],
+    '/api/labels/queue?set=heldout': over.queue ?? [],
+    ...(over.trust ? { '/api/judge/trust?experiment=exp_heldout': { ...trustJson, judges: over.trust } } : {}),
     '/api/experiments/exp_heldout': over.experiment ?? (details as Record<string, unknown>).exp_heldout,
     '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
     '/api/prompts': prompts,
@@ -296,5 +303,90 @@ describe('TrialView: the facts around a trial, as the live API gives them', () =
     expect(words.text()).toContain('judging does not apply to a shipped example');
     expect(words.find('a').exists()).toBe(false);
     expect(w.find('a[href*="panel=judge"]').exists()).toBe(false);
+  });
+});
+
+/** D83: how far to trust the judge behind each judge check, matched by its model and its rubric. */
+describe('TrialView judge trust', () => {
+  const [haikuV4, , haikuV3] = trustJson.judges;
+  const judgeOf = (w: ReturnType<typeof mountWith>, name: string) => {
+    const g = w.findAll('[data-test="grade"]').find((x) => x.find('.grade-head .strong').text() === name);
+    if (!g) throw new Error(`no grade ${name}`);
+    return g;
+  };
+
+  describe('in fixture mode', () => {
+    useFixtures();
+
+    it("shows each question's trust badge beside the judge's answer, and links to the judge page", async () => {
+      const w = mount(TrialView, { props: { trialId: ID } });
+      await settle();
+      const tax = judgeOf(w, 'fd-tax').get('[data-test="grade-trust"]');
+      const rows = tax.findAll('[data-test="grade-trust-criterion"]');
+      expect(rows.map((r) => [r.get('.mono').text(), r.get('[data-test="grade-trust-answer"]').text(), r.get('[data-test="trust-label"]').text()])).toEqual([['fd-tax', ', answered no', 'Trusted']]);
+      expect(tax.get('[data-test="trust-badge"]').attributes('title')).toBe('Meets the trust bar on 30 held-out labels: its verdicts on this question can be relied on.');
+      expect(tax.get('[data-test="grade-trust-link"]').attributes('href')).toBe('#/labels/judge');
+      const horizon = judgeOf(w, 'horizon').get('[data-test="grade-trust"]');
+      expect(horizon.get('[data-test="grade-trust-answer"]').text()).toBe(', answered yes');
+      expect(horizon.get('[data-test="trust-label"]').text()).toBe('Too few labels');
+      // A code-graded check has no judge, so no trust line.
+      expect(judgeOf(w, 'fd-maturity').find('[data-test="grade-trust"]').exists()).toBe(false);
+    });
+  });
+
+  describe('against the API', () => {
+    it('tells two rubrics of one judge model apart by the rubric the grade records', async () => {
+      const w = mountWith({ trust: [haikuV3, haikuV4] });
+      await settle();
+      expect(judgeOf(w, 'fd-tax').get('[data-test="trust-label"]').text()).toBe('Trusted');
+    });
+
+    it('shows no badge rather than a wrong one when the grade does not say which rubric it used', async () => {
+      const [first, second, third] = trial.grades;
+      const bare = (g: typeof second) => ({ ...g, evidence: (g.evidence as Record<string, unknown>[]).filter((e) => e.source !== 'judge_call') });
+      const w = mountWith({ trust: [haikuV3, haikuV4], grades: [first, bare(second), bare(third)] });
+      await settle();
+      expect(w.find('[data-test="grade-trust"]').exists()).toBe(false);
+    });
+
+    it("finds the rubric in the task's grader spec when the grade does not carry it", async () => {
+      const [first, second, third] = trial.grades;
+      const bare = (g: typeof second) => ({ ...g, evidence: (g.evidence as Record<string, unknown>[]).filter((e) => e.source !== 'judge_call') });
+      const detail = (details as Record<string, { tasks: { sha256: string; graders: unknown[] }[] }>).exp_heldout;
+      const tasks = detail.tasks.map((t) => (t.sha256 === trial.task.sha256 ? { ...t, graders: [{ id: 'fd-tax', type: 'judge', rubric: { id: 'advice', version: 'v4' } }] } : t));
+      const w = mountWith({ trust: [haikuV3, haikuV4], grades: [first, bare(second), bare(third)], experiment: { ...detail, tasks } });
+      await settle();
+      expect(judgeOf(w, 'fd-tax').get('[data-test="trust-label"]').text()).toBe('Trusted');
+      expect(judgeOf(w, 'horizon').find('[data-test="grade-trust"]').exists()).toBe(false);
+    });
+
+    it("gives a check that was never judged the judge's own status, in plain words", async () => {
+      const [first, second] = trial.grades;
+      const reason = 'judging is not approved for this experiment, so the judge was not called and nothing was spent';
+      const w = mountWith({ trust: [haikuV4], grades: [first, { ...second, verdict: 'not_implemented', score: null, reason, evidence: [], judge_model: null }] });
+      await settle();
+      const tax = judgeOf(w, 'fd-tax');
+      expect(tax.find('[data-test="not-judged"]').exists()).toBe(true);
+      const line = tax.get('[data-test="grade-trust-line"]');
+      expect(line.get('[data-test="trust-label"]').text()).toBe('Not trusted');
+      expect(line.text()).toContain('Tested on 40 held-out labels and it missed the trust bar: read its verdicts as a hint');
+      expect(line.text()).not.toContain('D8');
+      expect(tax.find('[data-test="grade-trust-criterion"]').exists()).toBe(false);
+    });
+
+    it("keeps the badges but not the judge's answers while the task's held-out outputs are still to label", async () => {
+      const w = mountWith({ trust: [haikuV4], queue: queue.heldout, task: { id: 'distress-12' } });
+      await settle();
+      const tax = judgeOf(w, 'fd-tax');
+      expect(tax.find('[data-test="hidden-reasons"]').exists()).toBe(true);
+      expect(tax.get('[data-test="trust-label"]').text()).toBe('Trusted');
+      expect(tax.find('[data-test="grade-trust-answer"]').exists()).toBe(false);
+    });
+
+    it('shows no trust line when the trust could not be read', async () => {
+      const w = mountWith();
+      await settle();
+      expect(w.find('[data-test="grade-trust"]').exists()).toBe(false);
+    });
   });
 });

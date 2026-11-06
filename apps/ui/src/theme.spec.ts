@@ -74,6 +74,8 @@ const TEXT: [string, string][] = [
   ['ink', 'arm-b-soft'],
   ['client', 'surface-muted'],
   ['ink', 'mark'],
+  // A judge that missed the trust bar: its badge's words and edge (TrustBadge.vue).
+  ['warning', 'surface'],
 ];
 
 /** Marks and control edges against the surface: 3:1 (WCAG non-text contrast). */

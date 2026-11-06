@@ -608,6 +608,7 @@ describe('CompareView against the API: no statistics yet', () => {
     // (every held-out output, a large reply) nor the agreement is fetched.
     expect(calls.map((c) => c.url)).not.toContain('/api/labels/queue?set=heldout');
     expect(calls.map((c) => c.url)).not.toContain('/api/judge/agreement?set=heldout');
+    expect(calls.map((c) => c.url).filter((u) => u.startsWith('/api/judge/trust'))).toEqual([]);
   });
 });
 
@@ -1349,5 +1350,81 @@ describe('CompareView against the API: the judge panel with a reused arm A', () 
     await form.get('[data-test="judge-budget-input"]').setValue('2');
     // 4 judged tasks of 12: arm B's 20 trials on them, and the 20 of arm A's 60 reused ones.
     expect(form.get('[data-test="judge-confirm"]').text()).toContain('A paid step: approving sends 40 finished trials to Claude Haiku 5.5');
+  });
+});
+
+describe("CompareView's judge panel: how far to trust the judge (D83)", () => {
+  useFixtures();
+
+  it("lists this experiment's judge with its status and summary, says why labels matter, and links to calibrate it", async () => {
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const trust = w.get('[data-test="judge-panel"] [data-test="judge-trust"]');
+    expect(trust.get('h3').text()).toBe('How far to trust it');
+    expect(trust.get('[data-test="judge-trust-why"]').text()).toBe(
+      'A judge is only as good as its agreement with people. Label a few of its outputs blind, without seeing its verdicts, and its agreement updates as you go.',
+    );
+    const rows = trust.findAll('[data-test="judge-trust-row"]');
+    expect(rows.map((r) => r.get('[data-test="judge-trust-name"]').text())).toEqual(['Claude Haiku 5.5, rubric advice.v4']);
+    expect(rows[0].get('[data-test="trust-label"]').text()).toBe('Not trusted');
+    // The API's sentence, without its decision-log reference.
+    expect(rows[0].get('[data-test="judge-trust-summary"]').text()).toBe(
+      'Tested on 40 held-out labels and it missed the trust bar: read its verdicts as a hint, and look at where it disagrees with people.',
+    );
+    // Its tasks are held-out tasks, so the labels go to the held-out set, ordered for calibrating.
+    const button = trust.get('[data-test="judge-calibrate"]');
+    expect(button.text()).toBe('Calibrate this judge');
+    expect(button.attributes('href')).toBe('#/labels?set=heldout&experiment=exp_heldout&calibrate=1');
+    expect(trust.get('[data-test="judge-trust-link"]').attributes('href')).toBe('#/labels/judge');
+  });
+
+  it('calibrates in the tuning set when the experiment ran discovery tasks only', async () => {
+    const w = mount(CompareView, { props: { experimentId: 'exp_model' } });
+    await settle();
+    const trust = w.get('[data-test="judge-trust"]');
+    expect(trust.get('[data-test="trust-label"]').text()).toBe('Tuning only');
+    expect(trust.get('[data-test="judge-calibrate"]').attributes('href')).toBe('#/labels?set=tuning&experiment=exp_model&calibrate=1');
+  });
+
+  it('lists each judge when two graded the experiment', async () => {
+    const w = mount(CompareView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    const rows = w.findAll('[data-test="judge-trust-row"]');
+    expect(rows.map((r) => `${r.get('[data-test="judge-trust-name"]').text()}: ${r.get('[data-test="trust-label"]').text()}`)).toEqual([
+      'Claude Haiku 5.5, rubric advice.v4: Not trusted',
+      'Gemini 3.8 Flash, rubric advice.v4: Trusted',
+    ]);
+  });
+});
+
+describe("CompareView's judge panel against the API: no judge yet", () => {
+  it('says no judge has graded the experiment, with no calibrate button, and asks for this experiment only', async () => {
+    const { calls } = routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': compares.exp_heldout,
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': null,
+      '/api/labels/queue?set=heldout': [],
+      '/api/judge/trust?experiment=exp_heldout': { bar: { kappa: 0.6, kappa_low: 0.4, retest: 0.9, min_human_no: 5, max_undefined_share: 0.05, resamples: 2000, human_unsure: 'exclude' }, judges: [] },
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(calls.map((c) => c.url)).toContain('/api/judge/trust?experiment=exp_heldout');
+    expect(w.get('[data-test="judge-trust-none"]').text()).toBe("No judge has graded this experiment's outputs yet, so there is nothing to measure. Once one has, how far to trust it shows here.");
+    expect(w.find('[data-test="judge-calibrate"]').exists()).toBe(false);
+  });
+
+  it('leaves the trust section out when the trust could not be read', async () => {
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': compares.exp_heldout,
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/judge/agreement?set=heldout': null,
+      '/api/labels/queue?set=heldout': [],
+    });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.find('[data-test="judge-panel"]').exists()).toBe(true);
+    expect(w.find('[data-test="judge-trust"]').exists()).toBe(false);
   });
 });

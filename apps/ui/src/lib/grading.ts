@@ -26,6 +26,13 @@ export interface EvidenceView {
   tool: string | null;
 }
 
+/** One criterion a judge grade answered (the judge grader's evidence item `{criterion, verdict}`). */
+export interface JudgeAnswer {
+  criterion: string;
+  /** yes, no, or what the judge gave instead (missing, an unclear word). */
+  verdict: string | null;
+}
+
 export interface GradeView {
   index: number;
   id: number | null;
@@ -50,6 +57,11 @@ export interface GradeView {
   /** Everything else it quoted, with where from. */
   evidence: EvidenceView[];
   judgeModel: string | null;
+  /** A judge grade's answers, one per criterion, in the rubric's order; empty for other grades and
+   *  for a judge check that was never answered (not judged, or the call failed). */
+  criteria: JudgeAnswer[];
+  /** The rubric the judge was called with (its `judge_call` evidence item), when the grade says. */
+  rubric: string | null;
   runIndex: number;
 }
 
@@ -95,6 +107,17 @@ function evidenceItems(e: Json): EvidenceView[] {
   });
 }
 
+/** The judge grader's evidence: an item per criterion, and one for the call with its rubric. */
+function judgeParts(e: Json): { criteria: JudgeAnswer[]; rubric: string | null } {
+  const list = Array.isArray(e) ? e.filter(isObj) : [];
+  const criteria = list.flatMap((item): JudgeAnswer[] => {
+    const criterion = str(item.criterion);
+    return criterion ? [{ criterion, verdict: str(item.verdict) }] : [];
+  });
+  const call = list.find((item) => item.source === 'judge_call');
+  return { criteria, rubric: call ? str(call.rubric) : null };
+}
+
 export function gradeView(g: Grade, index: number): GradeView {
   const e = g.evidence;
   const items = evidenceItems(e);
@@ -102,6 +125,7 @@ export function gradeView(g: Grade, index: number): GradeView {
   const reason = str(g.reason) ?? (typeof e === 'string' ? str(e) : legacy ? firstString(legacy, ['reason', 'rationale', 'explanation', 'why']) : null);
   const raw = g.verdict ?? null;
   const verdict = verdictOf(raw, g.score);
+  const judge = g.kind === 'judge' || g.judge_model ? judgeParts(e) : { criteria: [], rubric: null };
   return {
     index,
     id: typeof g.id === 'number' ? g.id : null,
@@ -119,6 +143,8 @@ export function gradeView(g: Grade, index: number): GradeView {
     quotes: items.filter((x) => x.source === null || ANSWER_SOURCES.has(x.source)).map((x) => x.quote),
     evidence: items.filter((x) => x.source !== null && !ANSWER_SOURCES.has(x.source)),
     judgeModel: g.judge_model,
+    criteria: judge.criteria,
+    rubric: judge.rubric,
     runIndex: g.run_index,
   };
 }
