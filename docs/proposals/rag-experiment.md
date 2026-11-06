@@ -1,6 +1,6 @@
 # Retrieval experiment (D79): tasks, documents and figures for review
 
-For Rishi to review before any spend. Nothing here has run on a real model. The plan is in `docs/experiment.md`, "Validation: retrieval, a document search tool", marked as a draft.
+Approved by Rishi on 6 Nov ("go with your recommendations"): the decisions below were settled as recommended, with N = 10. Nothing here had run on a real model when it was approved. The plan is in `docs/experiment.md`, "Validation: retrieval, a document search tool", marked as a draft.
 
 ## What is built
 
