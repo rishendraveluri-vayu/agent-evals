@@ -1,0 +1,99 @@
+{
+  "format": "agent-evals-example",
+  "format_version": 1,
+  "name": "model-axis-haiku-vs-gemini",
+  "title": "Model axis: Hermes with prompt v2 on Claude Haiku 5.5 (A) and Gemini 3.8 Flash (B), 10 held-out tasks x 10",
+  "description": "The model-axis run set out before it started (docs/experiment.md, Model axis; plan 517443e). The same Hermes config twice, differing only in the model. Haiku passes 79% against Gemini's 75%: -4 points (95% interval -20 to +16), sign-flip p = 0.81 over 10 tasks, no detectable difference. The tasks split: Gemini wins spending-review 10 of 10 against 3, by calling a tool for every sum, and falls on the conversation tasks, where it ran out of its 24 steps in 18 trials. It made twice the tool calls and cost about 4 times as much per trial.",
+  "sample": true,
+  "experiment_id": "e_0mw50g6t64e7e5266f881befc",
+  "experiment_name": "Model axis: Claude Haiku 5.5 vs Gemini 3.8 Flash, Hermes, prompt v2, 10 held-out x 10",
+  "created_at": "2026-11-06T13:28:51.068533+00:00",
+  "finished_at": "2026-11-06T14:15:30.243242+00:00",
+  "exported_at": "2026-11-06T14:20:29Z",
+  "platform_commit": "517443ee3891291f14513747a119d9c8ab01d69e",
+  "exported_from_commit": "1e020b6e79253f538b77a7024738d71cbe5fdfa3",
+  "source": "bundle",
+  "schema_version": "017_label_rater",
+  "approximations": [],
+  "summary": {
+    "axis": "model",
+    "n": 10,
+    "status": "done",
+    "arms": [
+      {
+        "arm": "A",
+        "config_name": "Headline v2: Hermes, Claude Haiku 5.5, finance-advisor v2, finance v3",
+        "harness": "hermes",
+        "model": "claude-haiku-5-5"
+      },
+      {
+        "arm": "B",
+        "config_name": "Model axis B: Hermes, Gemini 3.8 Flash, finance-advisor v2, finance v3",
+        "harness": "hermes",
+        "model": "gemini-3.8-flash"
+      }
+    ],
+    "trials_by_status": {
+      "done": 200
+    },
+    "spend_usd": 5.920533
+  },
+  "counts": {
+    "configs": 5,
+    "tasks": 10,
+    "trials": 200,
+    "spans": 4763,
+    "grades": 1140,
+    "grading_jobs": 200,
+    "events": 0,
+    "files": 6640,
+    "file_bytes": 132563896
+  },
+  "missing_files": [],
+  "scrubbed": {
+    "fields": 0,
+    "texts": 0,
+    "files": []
+  },
+  "secret_check": {
+    "passed": true,
+    "patterns": {
+      "litellm_key": "sk-[A-Za-z0-9_-]{8,}",
+      "bearer_token": "(?i)\\bbearer\\s+[A-Za-z0-9._~+/=-]{8,}"
+    },
+    "fields": [
+      "access_token",
+      "agent_key_token",
+      "api-key",
+      "api_key",
+      "apikey",
+      "authorization",
+      "client_secret",
+      "evals_worker_token",
+      "hashed_token",
+      "key_token",
+      "litellm_master_key",
+      "master_key",
+      "password",
+      "proxy-authorization",
+      "refresh_token",
+      "secret_key",
+      "sim_key_token",
+      "token",
+      "user_api_key",
+      "user_api_key_hash",
+      "worker_token",
+      "x-api-key"
+    ]
+  },
+  "parts": {
+    "rows.json.gz": {
+      "bytes": 2837437,
+      "sha256": "sha256:95ec7cfc5426bd82fd864a07faf92366a1489254eb29f6fe7897a6723df0a683"
+    },
+    "files.jsonl.gz": {
+      "bytes": 35846346,
+      "sha256": "sha256:8630ba11ce6dec5967f45144eb4d1cc15221bca32214f124d579a9b8ac67389b"
+    }
+  }
+}

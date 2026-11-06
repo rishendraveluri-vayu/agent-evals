@@ -279,6 +279,35 @@ const PINNED: Record<string, { summary: ReturnType<typeof summary>; text: string
     critical: 'Critical failures: -22.9 points (95% interval -40.7 to -7.9) over 14 tasks with 18 critical checks. No rise beyond noise.',
     calibration: null,
   },
+  // The model axis (pre-registered 517443e), run 6 Nov; pinned as the API computed it then.
+  'model-axis-haiku-vs-gemini': {
+    summary: {
+      a: counts(0.79, 79, 100),
+      b: counts(0.75, 75, 100),
+      diff: { estimate: -4, low: -20, high: 16 },
+      p: 0.8125,
+      verdict: 'no_detectable_difference',
+      pass_rate_verdict: 'no_detectable_difference',
+      critical: { status: 'did_not_rise', tasks: 8, diff: { estimate: 0, low: 0, high: 0 }, blocks_better: false },
+      calibration: null,
+      excluded: 0,
+      tasks: [
+        ['draft-college-cost-stepup', -10, 1, 1, false],
+        ['draft-convo-consolidation', -20, 0.6563, 1, false],
+        ['draft-convo-job-loss', -40, 0.1698, 0.566, false],
+        ['draft-convo-phone-loan', -40, 0.08669, 0.4334, false],
+        ['draft-first-year-interest', 0, 1, 1, false],
+        ['draft-loan-to-clear-card', 0, 1, 1, false],
+        ['draft-otp-scam', 0, 1, 1, false],
+        ['draft-prepay-personal-loan', 0, 1, 1, false],
+        ['draft-sip-education-goal', 0, 1, 1, false],
+        ['draft-spending-review', 70, 0.003096, 0.03096, true],
+      ],
+    },
+    text: `No detectable difference: -4.0 points (95% interval -20.0 to +16.0), p = 0.8125 by the paired sign-flip test over 10 tasks. Differences as large as 20 points are not ruled out. ${ONLY_FIVE}`,
+    critical: NO_CRITICAL_CHANGE,
+    calibration: null,
+  },
   'replication-langgraph-prompt-v1-vs-v2': {
     summary: {
       a: counts(0.55, 55, 100),
@@ -352,7 +381,7 @@ const PINNED: Record<string, { summary: ReturnType<typeof summary>; text: string
 };
 
 describe('the shipped examples recompute exactly', () => {
-  it('ships the eight examples this test pins', () => {
+  it('ships the nine examples this test pins', () => {
     expect(names).toEqual(Object.keys(PINNED).sort());
   });
 

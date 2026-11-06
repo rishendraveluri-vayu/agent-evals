@@ -131,8 +131,8 @@ Stop it with `docker compose down`. Add `-v` to wipe the database too.
 - A second checkout on the same machine needs its own project name, ports and image tag
   (`docker compose -p review`, `EVALS_IMAGE_TAG=review` in its `.env`). Otherwise its build
   replaces the first one's images.
-- Disk: a cold build used about 9.9 GB in testing. Opening all eight shipped examples writes about
-  514 MB of trial files into `runs/`.
+- Disk: a cold build used about 9.9 GB in testing. Opening all nine shipped examples writes about
+  640 MB of trial files into `runs/`.
 - `down -v` doesn't touch files on disk: trial files in `./runs/`, labels in `./labels/`, prompt
   versions you saved in `configs/prompts/`. Clear trial files with `rm -rf runs/*` (not the folder
   itself). No sudo needed, the API makes those folders group-writable. If `rm` is still refused (a
