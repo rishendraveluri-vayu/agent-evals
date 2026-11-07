@@ -47,7 +47,6 @@ import experimentDetailsJson from './experiment-details.json';
 import experimentTrialsJson from './experiment-trials.json';
 import experimentsJson from './experiments.json';
 import harnessesJson from './harnesses.json';
-import judgeJson from './judge-agreement.json';
 import judgeTrustJson from './judge-trust.json';
 import labelQueueJson from './label-queue.json';
 import metaJson from './meta.json';
@@ -618,7 +617,6 @@ const routes: [string, RegExp, Handler][] = [
   ],
   ['GET', /^\/labels\/queue$/, (_m, p) => labelQueueFor(p)],
   ['POST', /^\/labels$/, (_m, _p, body) => saveLabel(body as CreateLabelRequest)],
-  ['GET', /^\/judge\/agreement$/, (_m, p) => (p.get('set') === 'heldout' ? judgeJson : null)],
   ['GET', /^\/judge\/trust$/, (_m, p) => trustFor(p.get('experiment'))],
 ];
 

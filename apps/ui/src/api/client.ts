@@ -22,7 +22,6 @@ import type {
   ExperimentDetail,
   ExperimentSummary,
   Harness,
-  JudgeAgreement,
   JudgeApprovalRequest,
   JudgeApprovalResponse,
   JudgeRevokeResponse,
@@ -329,7 +328,6 @@ export const api = {
     return Array.isArray(body) ? body.map(toBlindItem) : [];
   },
   saveLabel: (body: CreateLabelRequest) => post<LabelLine>('/labels', body),
-  judgeAgreement: (set: LabelSet) => call<JudgeAgreement | null>('GET', `/judge/agreement${query({ set })}`),
   /** How far to trust each judge (model × rubric), criterion by criterion, from the human labels
    *  (D83). `experiment` keeps that experiment's judges; their trust still counts every label. */
   judgeTrust: (experiment?: string) => call<JudgeTrustResponse>('GET', `/judge/trust${query({ experiment })}`),

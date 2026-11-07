@@ -1007,8 +1007,6 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     expect((await request(env.http).get(`/api/labels/queue?set=final&experiment=${exp.id}`).expect(200)).body).toHaveLength(0);
     const wrong = await request(env.http).post('/api/labels').send({ item_id: item.item_id, rater: 'rishi', set: 'heldout', criterion: 'empathy', value: 'yes' }).expect(400);
     expect(wrong.body).toMatchObject({ error: 'wrong_split' });
-    const agreement = await request(env.http).get('/api/judge/agreement?set=heldout').expect(200);
-    expect(agreement.text).toBe('null');
 
     // D46: "unsure" comes back once, after the fresh items, for a firm answer.
     await request(env.http).post('/api/labels').send({ item_id: item.item_id, rater: 'rishi', set: 'tuning', criterion: 'empathy', value: 'yes', second_look: true }).expect(400); // already firm

@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { api } from '../api/client';
 import { ApiError } from '../api/errors';
 import { isFixtureMode } from '../api/mode';
-import type { BlindItem, Compare, CompareRow, ExperimentDetail, TrialRowSummary, Interval, JudgeAgreement, JudgeTrust, TaskView } from '../api/types';
+import type { BlindItem, Compare, CompareRow, ExperimentDetail, TrialRowSummary, Interval, JudgeTrust, TaskView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import BehaviourPanel from '../components/BehaviourPanel.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
@@ -41,26 +41,22 @@ interface Loaded {
   detail: ExperimentDetail;
   compare: Compare;
   trials: TrialRowSummary[];
-  judge: JudgeAgreement | null;
   /** Held-out items still to label: while any remain, the judge's agreement is provisional. */
   queue: BlindItem[];
-  /** How far to trust this experiment's judges (D83), or null when it could not be read. */
+  /** How far to trust this experiment's judges (D83), with where labels dispute them; null when it
+   *  could not be read. */
   trust: JudgeTrust[] | null;
 }
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
   // A shipped example has no judge panel and its trials are never in the label queue, so its page
-  // does not fetch the held-out queue (every held-out output, a large reply) or the agreement. It
-  // does read its judges' trust (D83), shown read-only, since a reviewer starts on this page.
+  // does not fetch the held-out queue (every held-out output, a large reply). It does read its
+  // judges' trust (D83), shown read-only, since a reviewer starts on this page.
   const detailP = experimentOrMissing(props.experimentId);
-  const blindP = detailP.then(async (d): Promise<{ judge: JudgeAgreement | null; queue: BlindItem[]; trust: JudgeTrust[] | null }> => {
-    if (d.example) return { judge: null, queue: [], trust: await optional(api.judgeTrust(d.id).then((r) => r.judges), null) };
-    const [judge, queue, trust] = await Promise.all([
-      optional(api.judgeAgreement('heldout'), null),
-      optional(api.labelQueue('heldout'), [] as BlindItem[]),
-      optional(api.judgeTrust(d.id).then((r) => r.judges), null),
-    ]);
-    return { judge, queue, trust };
+  const blindP = detailP.then(async (d): Promise<{ queue: BlindItem[]; trust: JudgeTrust[] | null }> => {
+    if (d.example) return { queue: [], trust: await optional(api.judgeTrust(d.id).then((r) => r.judges), null) };
+    const [queue, trust] = await Promise.all([optional(api.labelQueue('heldout'), [] as BlindItem[]), optional(api.judgeTrust(d.id).then((r) => r.judges), null)]);
+    return { queue, trust };
   });
   const [detail, compare, trials, blind] = await Promise.all([
     detailP,
@@ -739,12 +735,11 @@ const axisCaption = computed(() => {
 });
 
 /** Trials where a human label disagrees with the judge: from the judges' trust (D83), which lists
- *  every disagreement with its trial, and the older agreement reply when it has any. */
+ *  every disagreement with its trial. */
 const disputedTrials = computed(() => {
   const d = data.value;
   const fromTrust = (d?.trust ?? []).flatMap((j) => j.criteria.flatMap((c) => c.disagreements.map((x) => x.trial_id)));
-  const fromAgreement = (d?.judge?.disagreements ?? []).map((x) => x.trial_id);
-  return new Set([...fromTrust, ...fromAgreement].filter((id): id is string => !!id));
+  return new Set(fromTrust.filter((id): id is string => !!id));
 });
 
 /** The failed trial to open for a task: arm B first, then arm A, skipping any trial whose judge

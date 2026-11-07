@@ -185,9 +185,9 @@ describeWithDb('hostile input from workers and clients (e2e, real Postgres)', ()
 
   // ---- re-check of the review (6 Nov) ----
 
-  it('refuses an unknown label set on the agreement route, a long end_state is cut, and a finished run has no arm to resume', async () => {
-    await request(env.http).get('/api/judge/agreement?set=bogus').expect(400);
-    expect((await request(env.http).get('/api/judge/agreement?set=heldout').expect(200)).text).toBe('null');
+  it('has no agreement stub any more, cuts a long end_state, and a finished run has no arm to resume', async () => {
+    // SP5's GET /judge/agreement always answered null; D83's GET /judge/trust replaced it (7 Nov).
+    await request(env.http).get('/api/judge/agreement?set=heldout').expect(404);
     // A long end_state is cut to 64 characters and named in the trial's problems.
     await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 1 });
     const c = (await e.claim('w-long-end'))!;

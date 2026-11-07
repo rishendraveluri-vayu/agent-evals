@@ -32,8 +32,6 @@ function mountWith(over: Over = {}) {
     [`/api/trials/${ID}`]: { ...trial, grades: over.grades ?? trial.grades, grading: over.grading ?? trial.grading, files, result: over.result ?? trial.result, task: { ...trial.task, ...over.task } },
     [`/api/trials/${ID}/spans`]: trialSpans,
     [`/api/trials/${ID}/files/checks.json`]: over.checks ?? checks,
-    // The never-built agreement reply (SP5) is null; disputes come from the trust reply.
-    '/api/judge/agreement?set=heldout': null,
     // What is left to label: the page shows the judge's reasons whatever it holds (7 Nov).
     '/api/labels/queue?set=heldout': over.queue ?? [],
     ...(over.trust ? { '/api/judge/trust?experiment=exp_heldout': { ...trustJson, judges: over.trust } } : {}),
@@ -388,7 +386,7 @@ describe('TrialView judge trust', () => {
       expect(tax.get('[data-test="grade-trust-answer"]').text()).toBe(', answered no');
     });
 
-    it("marks a question your label disputes from the judge's trust, with no agreement reply", async () => {
+    it("marks a question your label disputes from the judge's trust", async () => {
       const w = mountWith({ trust: [haikuV4] });
       await settle();
       const tax = judgeOf(w, 'fd-tax');

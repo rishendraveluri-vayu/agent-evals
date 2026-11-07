@@ -1031,9 +1031,8 @@ What the API refuses or rewrites since the review's fixes (`docs/destructive-rev
   or `axis`. `POST /configs` takes a name of at most 120 characters with no NUL, `max_steps` from 1
   to 200 and `timeout_s` above 0 and at most 3600 (the 400 says "Set max_steps to an integer from 1
   to 200, or leave it unset for the default."), and `max_output_tokens` from 1 to 64000. Any value
-  the database cannot store is a 400 `invalid_value`, not a 500. `GET /judge/agreement` with an
-  unknown `set` is a 400 `invalid_query`; an arm of a stopped run cannot be resumed (409
-  `experiment_finished`; a done run's arm can, as D37 needs).
+  the database cannot store is a 400 `invalid_value`, not a 500. An arm of a stopped run cannot be
+  resumed (409 `experiment_finished`; a done run's arm can, as D37 needs).
 - **Queries:** a repeated `status` on `GET /experiments/:id/trials` is a list; a repeated `config`
   or `task` is 400 `invalid_filter`; a repeated `experiment`, `items` or `calibrate` (D83) on
   `GET /labels/queue`, or a repeated `experiment` on `GET /judge/trust`, is 400 `invalid_query`.
@@ -1099,9 +1098,9 @@ What the API refuses or rewrites since the review's fixes (`docs/destructive-rev
   `rater` is not a rater id is skipped, with a warning in the API's log.
   The agreement (`evals-agreement`) takes a second-look answer in place of the first "unsure" and
   does not count it as a relabel; an "unsure" given again stays "unsure" and is left out.
-- `GET /judge/agreement?set=heldout` is SP5 and returns `null` until then. The UI reads where the
-  judge and the labels disagree from Judge trust's `disagreements` (below); the comparison reads
-  this reply's too, should it ever list any.
+- Where the judge and the labels agree and disagree is Judge trust (below): every page reads the
+  disagreements from its `disagreements`. SP5's `GET /judge/agreement` stub, which always returned
+  `null`, was removed on 7 Nov and is now a 404.
 
 ## Judge trust (D83, 6 Nov)
 

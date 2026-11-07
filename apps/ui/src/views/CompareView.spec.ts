@@ -5,7 +5,6 @@ import type { Compare, CompareStats, JudgeTrustResponse } from '../api/types';
 import compares from '../fixtures/compares.json';
 import details from '../fixtures/experiment-details.json';
 import experimentTrials from '../fixtures/experiment-trials.json';
-import judge from '../fixtures/judge-agreement.json';
 import trustJson from '../fixtures/judge-trust.json';
 import queue from '../fixtures/label-queue.json';
 import { routeFetch, settle, useFixtures } from '../test/helpers';
@@ -264,7 +263,6 @@ describe('CompareView against the API: trials stopped on infra failures', () => 
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
       '/api/experiments/exp_heldout/compare': compares.exp_heldout,
       '/api/experiments/exp_heldout/trials': trials,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
     });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
@@ -294,7 +292,6 @@ describe('CompareView against the API: caveats from the statistics (review S6, S
         },
       },
       '/api/experiments/exp_heldout/trials': (experimentTrials as unknown as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
     });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
@@ -315,7 +312,6 @@ describe('CompareView against the API: caveats from the statistics (review S6, S
         stats: { ...base.stats, missing_trials: { planned: 5, a: 0, b: 1, tasks: [{ task: 'sha256:x', task_id: 'draft-convo-where-to-start', a: 0, b: 1 }], text } },
       },
       '/api/experiments/exp_heldout/trials': (experimentTrials as unknown as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
     });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
@@ -328,7 +324,6 @@ describe('CompareView against the API: caveats from the statistics (review S6, S
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
       '/api/experiments/exp_heldout/compare': compares.exp_heldout,
       '/api/experiments/exp_heldout/trials': (experimentTrials as unknown as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
     });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
@@ -345,7 +340,6 @@ describe('CompareView against the API: figures written without a tool (D61)', ()
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
       '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), prose_figures: prose },
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
     });
   const proseTile = (w: VueWrapper) => w.findAll('[data-test="behaviour-tile"]').find((t) => t.text().startsWith('Figures written without a tool'));
@@ -389,7 +383,6 @@ describe('CompareView: how the arms behaved (D64)', () => {
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
       '/api/experiments/exp_heldout/compare': { ...base, ...over },
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': labels,
     });
   const rows = (w: VueWrapper, table: string) =>
@@ -525,7 +518,6 @@ describe('CompareView against the API: no statistics yet', () => {
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
       '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null, stats_note: 'Grading is still running for 3 of 120 finished trials; the verdict waits for every grade.' },
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
     });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
@@ -549,7 +541,6 @@ describe('CompareView against the API: no statistics yet', () => {
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
       '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null, stats_note: note, grader_versions: { alike: false, blocking, optional: [], note: null } },
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
     });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
@@ -568,7 +559,6 @@ describe('CompareView against the API: no statistics yet', () => {
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
       '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), grader_versions: { alike: false, blocking: [], optional, note } },
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
     });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
@@ -584,7 +574,6 @@ describe('CompareView against the API: no statistics yet', () => {
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
       '/api/experiments/exp_heldout/compare': { ...base, rows, stats: null },
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
     });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
@@ -599,7 +588,6 @@ describe('CompareView against the API: no statistics yet', () => {
       '/api/experiments/exp_heldout': { ...detail, example: { name: 'harness-ownloop-vs-hermes-haiku', title: 'Own loop vs Hermes on Claude Haiku 5.5', loaded_at: '2026-11-05T08:00:00.000Z' } },
       '/api/experiments/exp_heldout/compare': compares.exp_heldout,
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
     });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
@@ -607,10 +595,9 @@ describe('CompareView against the API: no statistics yet', () => {
     expect(w.get('h1').text()).toBe('Own loop vs Hermes on Claude Haiku 5.5');
     expect(w.get('[data-test="example-note"]').text()).toContain('read-only');
     expect(w.find('[data-test="judge-panel"]').exists()).toBe(false);
-    // Its trials are never in the label queue, and the judge panel is hidden, so neither the queue
-    // (every held-out output, a large reply) nor the agreement is fetched.
+    // Its trials are never in the label queue, and the judge panel is hidden, so the queue (every
+    // held-out output, a large reply) is not fetched.
     expect(calls.map((c) => c.url)).not.toContain('/api/labels/queue?set=heldout');
-    expect(calls.map((c) => c.url)).not.toContain('/api/judge/agreement?set=heldout');
     // D83: its judges' trust is read for a read-only section (no calibrate: its trials are never queued).
     expect(calls.map((c) => c.url).filter((u) => u.startsWith('/api/judge/trust'))).toEqual(['/api/judge/trust?experiment=exp_heldout']);
     expect(w.find('[data-test="example-judge-trust"]').exists()).toBe(false); // no judges in this reply
@@ -650,7 +637,6 @@ describe('CompareView against the API: each task row says how its arms stand on 
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
       '/api/experiments/exp_heldout/compare': { ...base, rows, stats: null },
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': null,
       '/api/labels/queue?set=heldout': [],
     });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
@@ -708,7 +694,6 @@ describe('CompareView against the API: an experiment on fake models', () => {
       '/api/experiments/exp_heldout': fakeDetail,
       '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null },
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': null,
       '/api/labels/queue?set=heldout': [],
       '/api/models': [{ name: 'claude-haiku-5-5', input_per_mtok: 1, output_per_mtok: 5 }],
       'POST /api/experiments/exp_heldout/judge': { experiment_id: 'exp_heldout', model: 'claude-haiku-5-5', budget_usd: 2, approved_at: '2026-11-05T08:00:00.000Z' },
@@ -756,7 +741,6 @@ describe('CompareView against the API: an experiment on fake models', () => {
       '/api/experiments/exp_heldout': detail,
       '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null },
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': null,
       '/api/labels/queue?set=heldout': [],
       '/api/models': [],
     });
@@ -787,24 +771,24 @@ describe('CompareView against the API: a failure your label disputes', () => {
         ),
       })),
   };
-  const disputedAgreement = { ...judge, disagreements: failedFd.map((id) => ({ ...judge.disagreements[2], trial_id: id })) };
-  const routes = (labelQueue: unknown, over: { trust?: unknown; agreement?: unknown } = {}) => ({
+  const routes = (labelQueue: unknown, over: { trust?: unknown } = {}) => ({
     '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
     '/api/experiments/exp_heldout/compare': compares.exp_heldout,
     '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-    // The never-built agreement reply (SP5) is null; the disputes come from the judges' trust.
-    '/api/judge/agreement?set=heldout': over.agreement ?? null,
+    // The disputes come from the judges' trust (D83), the one place that lists them.
     '/api/judge/trust?experiment=exp_heldout': over.trust ?? disputedTrust,
     '/api/labels/queue?set=heldout': labelQueue,
   });
 
   it("says your label disagrees with the judge, from the judges' trust, on the button and the task row, while outputs remain to label", async () => {
     expect(failedFd.length).toBeGreaterThan(1);
-    routeFetch(routes(queue.heldout));
+    const { calls } = routeFetch(routes(queue.heldout));
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     expect(w.get('[data-test="look-link"]').text()).toBe('Open a failed trial (your label disagrees with the judge)');
     expect(w.html()).toContain('Open a failed trial of fd-vs-sip-07, arm B (your label disagrees with the judge)');
+    // SP5's GET /judge/agreement is gone (7 Nov): only the trust reply is asked.
+    expect(calls.some((c) => c.url.startsWith('/api/judge/agreement'))).toBe(false);
   });
 
   it('says so the same way once the held-out set is labelled', async () => {
@@ -814,16 +798,12 @@ describe('CompareView against the API: a failure your label disputes', () => {
     expect(w.get('[data-test="look-link"]').text()).toBe('Open a failed trial (your label disagrees with the judge)');
   });
 
-  it('opens an undisputed failure when the trust lists none of them, and still reads an agreement reply that does', async () => {
+  it('opens an undisputed failure when the trust lists none of them', async () => {
     const none = { ...disputedTrust, judges: disputedTrust.judges.map((j) => ({ ...j, criteria: j.criteria.map((c) => ({ ...c, disagreements: [] })) })) };
     routeFetch(routes(queue.heldout, { trust: none }));
-    let w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     expect(w.get('[data-test="look-link"]').text()).toBe('Open a failed trial');
-    routeFetch(routes(queue.heldout, { trust: none, agreement: disputedAgreement }));
-    w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
-    await settle();
-    expect(w.get('[data-test="look-link"]').text()).toBe('Open a failed trial (your label disagrees with the judge)');
   });
 });
 
@@ -834,7 +814,6 @@ describe('CompareView against the API: the check on the method', () => {
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
       '/api/experiments/exp_heldout/compare': { ...base, stats: { ...base.stats, ...over } },
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
     });
   }
@@ -864,7 +843,6 @@ describe('CompareView against the API: the check on the method', () => {
       '/api/experiments/exp_heldout': { ...(details as Record<string, object>).exp_heldout, sim_model: null },
       '/api/experiments/exp_heldout/compare': base,
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
     });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
@@ -1199,7 +1177,6 @@ describe('CompareView: what arms A and B differ in, by name and value (QA round 
       '/api/experiments/exp_heldout': { ...detail, configs, ...over },
       '/api/experiments/exp_heldout/compare': compare,
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': null,
       '/api/labels/queue?set=heldout': [],
       '/api/models': [],
     });
@@ -1262,7 +1239,6 @@ describe('CompareView: what arms A and B differ in, by name and value (QA round 
       '/api/experiments/exp_aa': aa,
       '/api/experiments/exp_aa/compare': (compares as Record<string, unknown>).exp_aa,
       '/api/experiments/exp_aa/trials': (experimentTrials as Record<string, unknown>).exp_aa ?? [],
-      '/api/judge/agreement?set=heldout': null,
       '/api/labels/queue?set=heldout': [],
     });
     const w = mount(CompareView, { props: { experimentId: 'exp_aa' } });
@@ -1277,7 +1253,6 @@ describe('CompareView: the judge on a model whose key is not set (QA round 3, mi
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
       '/api/experiments/exp_heldout/compare': { ...(compares.exp_heldout as object), stats: null },
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': null,
       '/api/labels/queue?set=heldout': [],
       '/api/models': [
         { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 1, output_per_mtok: 5, key_set: false },
@@ -1345,7 +1320,6 @@ describe('CompareView: a stopped run and a run on fake models (QA round 3, minor
       '/api/experiments/exp_heldout': { ...detail, ...over },
       '/api/experiments/exp_heldout/compare': compare,
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': null,
       '/api/labels/queue?set=heldout': [],
       '/api/models': [],
     });
@@ -1392,7 +1366,6 @@ describe('CompareView against the API: the judge panel with a reused arm A', () 
       '/api/experiments/exp_heldout': detail,
       '/api/experiments/exp_heldout/compare': compares.exp_heldout,
       '/api/experiments/exp_heldout/trials': own,
-      '/api/judge/agreement?set=heldout': judge,
       '/api/labels/queue?set=heldout': queue.heldout,
       '/api/models': [{ name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 1, output_per_mtok: 5, key_set: true }],
     });
@@ -1457,7 +1430,6 @@ describe("CompareView's judge panel against the API: no judge yet", () => {
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
       '/api/experiments/exp_heldout/compare': compares.exp_heldout,
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': null,
       '/api/labels/queue?set=heldout': [],
       '/api/judge/trust?experiment=exp_heldout': { bar: { kappa: 0.6, kappa_low: 0.4, retest: 0.9, min_human_no: 5, max_undefined_share: 0.05, resamples: 2000, human_unsure: 'exclude' }, judges: [] },
     });
@@ -1473,7 +1445,6 @@ describe("CompareView's judge panel against the API: no judge yet", () => {
       '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
       '/api/experiments/exp_heldout/compare': compares.exp_heldout,
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
-      '/api/judge/agreement?set=heldout': null,
       '/api/labels/queue?set=heldout': [],
     });
     const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });

@@ -10,7 +10,7 @@
  *   marked PROVISIONAL. SP6's statistics are the contract's own (CompareStats). Grades and
  *   checks.json are read in lib/grading.ts.
  */
-import type { ArmView, CompareResponse, HarnessView, LabelCriterion, Sha256, StatsInterval } from './contract';
+import type { ArmView, CompareResponse, HarnessView, LabelCriterion, StatsInterval } from './contract';
 import './pending';
 
 export * from './contract';
@@ -83,24 +83,6 @@ export type Interval = StatsInterval;
 
 /** The compare response as the screens read it. */
 export type Compare = CompareResponse;
-
-// ---------------------------------------------------------------------------------------------
-// GET /judge/agreement: SP5, which returns null until then
-
-/** PROVISIONAL: SP5 owns this shape. */
-export interface JudgeAgreement {
-  set: 'tuning' | 'heldout' | 'final';
-  labels: number;
-  agree: number;
-  kappa: Interval;
-  bar: number;
-  /** Rows are the judge's verdict, columns yours. */
-  matrix: { judge_pass_you_pass: number; judge_pass_you_fail: number; judge_fail_you_pass: number; judge_fail_you_fail: number };
-  per_config: { config: Sha256; labels: number; kappa: number }[];
-  retest: { identical: number; total: number; runs: number; note: string | null } | null;
-  self: { same: number; total: number } | null;
-  disagreements: { trial_id: string | null; task: string; criterion: string; you: 'yes' | 'no' | 'unsure'; judge: 'pass' | 'fail'; evidence: string }[];
-}
 
 // ---------------------------------------------------------------------------------------------
 // The blind labelling item as the screen shows it

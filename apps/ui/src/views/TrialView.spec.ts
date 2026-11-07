@@ -215,8 +215,7 @@ describe("TrialView against the API: the judge's reasons and your label, with ou
     return routeFetch({
       [`/api/trials/${id}`]: { ...trial, id, task: over.task ? { ...trial.task, ...over.task } : trial.task },
       [`/api/trials/${id}/spans`]: trialSpans,
-      // The never-built agreement reply (SP5): the API returns null. The disputes come from trust.
-      '/api/judge/agreement?set=heldout': null,
+      // The disputes come from the judges' trust (D83), the one place that lists them.
       '/api/judge/trust?experiment=exp_heldout': over.trust ?? trustFor(),
       '/api/labels/queue?set=heldout': over.queue ?? queue.heldout,
       '/api/experiments/exp_heldout': heldout,
@@ -258,10 +257,11 @@ describe("TrialView against the API: the judge's reasons and your label, with ou
     expect(w.find('[data-test="grade-quote"]').exists()).toBe(true);
   });
 
-  it("says where your label disputes the judge, from the judge's trust, while /judge/agreement returns null and outputs remain to label", async () => {
+  it("says where your label disputes the judge, from the judge's trust, while outputs remain to label", async () => {
     const { calls } = routes({});
     const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
     await settle();
+    // SP5's GET /judge/agreement is gone (7 Nov): only the trust reply is asked.
     expect(calls.some((c) => c.url.startsWith('/api/judge/agreement'))).toBe(false);
     expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge; your label passes it)');
     const grades = w.findAll('[data-test="grade"]');
