@@ -17,6 +17,7 @@ import { causeView, sentence } from '../lib/causes';
 import { capitalise, count, harnessVersion, money, plainText, seconds, shortVersion } from '../lib/format';
 import { inlineParts, inlineStyles, type InlinePart } from '../lib/markdown';
 import { endStateName, experimentName, graderName, harnessName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
+import { isModelCallFile, modelCalls } from '../lib/trialDisplay';
 import { judgeFor, rubricOf } from '../lib/trust';
 import { href } from '../router';
 import { text, timelineRows, type SpanView } from '../trials';
@@ -557,9 +558,10 @@ const applied = computed(() =>
 
 const files = computed(() => {
   const all = vm.value?.files ?? [];
-  // Model requests and responses: requests/ in older runs, artifacts/proxy/ since the API stores them.
-  const isCall = (f: string) => /^(requests|responses)\//.test(f) || /^artifacts\/proxy\//.test(f);
-  return { requests: all.filter(isCall), other: all.filter((f) => !isCall(f)) };
+  // Model requests and responses: requests/ in older runs, artifacts/proxy/ since the API stores
+  // them. One row per call, counted by its requests, never its request and response files.
+  const calls = modelCalls(all);
+  return { calls, requests: calls.filter((c) => c.request).length, other: all.filter((f) => !isModelCallFile(f)) };
 });
 const fileUrl = (path: string) => api.trialFileUrl(props.trialId, path);
 
@@ -1455,26 +1457,32 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               class="mono secondary"
             >{{ f }}</span>
             <details
-              v-if="files.requests.length"
+              v-if="files.calls.length"
               class="requests"
+              data-test="model-requests"
             >
-              <summary><span class="summary-text">Model requests ({{ files.requests.length }})</span></summary>
+              <summary><span class="summary-text">Model requests ({{ files.requests }})</span></summary>
               <ul>
                 <li
-                  v-for="f in files.requests"
-                  :key="f"
+                  v-for="c in files.calls"
+                  :key="c.key"
+                  data-test="model-call"
                 >
-                  <a
-                    v-if="!fixtures"
-                    :href="fileUrl(f)"
-                    class="mono"
-                    target="_blank"
-                    rel="noopener"
-                  >{{ f }}</a>
-                  <span
-                    v-else
-                    class="mono secondary"
-                  >{{ f }}</span>
+                  <template
+                    v-for="(f, fi) in [c.request, c.response].filter((x): x is string => !!x)"
+                    :key="f"
+                  >
+                    {{ fi ? ', ' : '' }}<a
+                      v-if="!fixtures"
+                      :href="fileUrl(f)"
+                      class="mono"
+                      target="_blank"
+                      rel="noopener"
+                    >{{ fi ? 'response' : f }}</a><span
+                      v-else
+                      class="mono secondary"
+                    >{{ fi ? 'response' : f }}</span>
+                  </template>
                 </li>
               </ul>
             </details>
