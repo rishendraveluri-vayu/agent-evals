@@ -24,7 +24,7 @@ docker compose up -d --build --wait
 
 Open http://127.0.0.1:8080 and click **See a finished example**. No key needed, nothing spent.
 
-You get a real 400-trial experiment: the verdict, each task's results, and every trial's trace
+You get a real 200-trial experiment: the verdict, each task's results, and every trial's trace
 (messages, tool calls, and what the grader decided and why). First build takes about 5 minutes and
 uses about 10 GB of disk (have 15 GB free).
 
@@ -43,8 +43,8 @@ predictions were committed before the run. Anything I changed after is listed as
 | Swapped the model: Claude Haiku 5.5 to Gemini 3.8 Flash, same harness and prompt | −4 points (−20 to +16), p = 0.81 | No overall difference, but the tasks split: Gemini makes twice the tool calls, wins the many-sums task 10 to 3, runs out of steps in conversations, and costs 4x per trial |
 | My actual prompt fix, v1 to v2 | +9 points (+3 to +16), p = 0.0625 | Not enough tasks to call it |
 
-The last row is the one that matters. v2 probably passes more often, mostly by following the
-sourcing rule (What I'd trust least, below). But 4 of the 10 tasks always passed
+The last row is the one that matters. v2 leans towards passing more often, not confirmed, mostly by
+following the sourcing rule (What I'd trust least, below). But 4 of the 10 tasks always passed
 and 1 always failed, in both versions, so only 5 tasks could show a difference. With 5, the test
 can't get under p = 0.05 however big the gap. The fix is more tasks in the middle, not more trials.
 
@@ -93,9 +93,10 @@ flowchart LR
   model server. If a worker dies mid-trial, the trial is re-run and its spend still counts.
 - Grading is its own step. A grader fix means a regrade, not a re-run.
 - An LLM judge grades what code can't, like whether the advice fits this client. It's calibrated on
-  my hand labels: tuned on about 30 discovery trials I labelled, then checked once against 40
-  held-out trials I labelled blind. A judge criterion counts in a verdict once it agrees with me
-  well enough (kappa at least 0.6, and no lean towards either version). The current judge didn't:
+  my hand labels: tuned on 33 discovery trials I labelled, then checked once against 40
+  held-out trials I labelled blind. A judge criterion may count in a verdict only once it agrees
+  with me well enough (kappa at least 0.6, and no lean towards either version), and then only when
+  its task file marks it required; nothing does that by itself. The current judge didn't agree:
   on the 40 held-out trials it passed all 9 answers I failed. So it doesn't count.
 - Every judge grade shows how far to trust it, worked out live from the human labels: *Uncalibrated*
   (nobody has labelled anything it graded), *Tuning only*, *Too few labels*, or *Trusted* / *Not
@@ -152,7 +153,9 @@ Stop it with `docker compose down`. Add `-v` to wipe the database too.
 
 One folder under `workers/` and one service block in `docker-compose.yml`. You write two methods,
 `setup(ctx)` and `run_turn(ctx, history, max_steps)`; the shared library does the rest. Nothing in
-the platform core changes.
+the platform core has to change. A few core extras are keyed to a named harness (Hermes's
+mandatory conflict check, some failure-cause rules, the UI's harness order); a new harness runs
+without them.
 
 <details>
 <summary>Steps</summary>
@@ -165,7 +168,7 @@ make test-harness NAME=crewai     # the contract's gate tests
 
 `setup(ctx)` maps our settings to the harness's own; `run_turn` is one agent turn. The shared
 library handles the spec, timeout, tools, simulated client, result and trace. The five adapters here
-are 300 to 420 lines each. Contract: [`docs/adapter-contract.md`](docs/adapter-contract.md). How
+are 300 to 430 lines each. Contract: [`docs/adapter-contract.md`](docs/adapter-contract.md). How
 each harness was wrapped: [`docs/harness-guide.md`](docs/harness-guide.md).
 
 </details>
@@ -180,8 +183,11 @@ open-weight model (Qwen 2.5 7B through Ollama) is already registered.
 
 1. Add one entry to `services/litellm/config.yaml`: provider route, the key's variable name, prices.
 2. A new provider also needs its key passed to LiteLLM: add the variable to the `litellm` service
-   in `docker-compose.yml` and its name to `.env.example`. For the UI to warn when it's missing,
-   add it to `PROVIDER_KEYS` in `apps/api/src/common/app-config.ts`.
+   in `docker-compose.yml` and its name to `.env.example`. That is enough to run it. For the UI to
+   warn when the key is missing, the API has to know the provider too, in four places: its
+   `<NAME>_KEY_SET` flag on the `api` service in `docker-compose.yml`; `PROVIDER_KEYS` and the
+   `providerKeys` line in `apps/api/src/common/app-config.ts`; and `PROVIDER_OF` in
+   `apps/api/src/catalogue/catalogue.service.ts`.
 3. If the model refuses a setting (a 400 on a real run), add it to `MODEL_REJECTS` in
    `apps/api/src/configs/settings.ts`, like Haiku 5.5's `temperature`.
 4. Check it:

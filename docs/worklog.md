@@ -60,6 +60,13 @@ Not required by the brief. It records what was built and by whom, day by day.
 - Rishi designed D83 (a judge's trust shown with its grades, uncalibrated judges marked less sure, and a prompt to label a few outputs to calibrate); Claude wrote the contract, two agents built the API and UI halves in parallel against it, Claude merged them, moved the held-out tasks' judge to rubric v4, regraded the headline run in the platform ($2.09) and checked the flow in a browser and on a fresh clone.
 - Surprises: the in-platform re-judging gave kappa 0.00 where the panel gave -0.14 on the same outputs (the judge's own run-to-run variation), and the false-pass gap became measurable for the first time (+0.17); a full read of the docs against the code found five stale or wrong lines, all fixed.
 
+## 7 Nov
+
+- Rishi decided D84: where the judge and people disagree is shown at once, with a caution to label first, on the Judge page and then on trial pages, the comparison, the behaviour panel and the run page. The lock it replaces waited for the held-out queue to empty, which on a machine with its own runs never happens (1,421 outputs). Claude and an agent built it; trial pages now read their disputes from `/judge/trust` (the SP5 `/judge/agreement` was a stub that always returned null).
+- The re-cut video (9 min 17 s) shows the judge's trust page, a disagreement's trial, the badges and Calibrate. Recording it found that the Judge page's Calibrate link vanished once a task got a newer version; fixed.
+- Five more outside reviews, given only the brief, the repo and the video (bar raiser fail, requirements auditor borderline, three narrow passes; every number they recomputed matched). Claude fixed the factual errors they found (a 400-trial claim, the judge "counting", stale "never judged" lines, a fail count, the retrieval split, the provider steps, sampling in the cost doc, stale SPEC statuses) and six narration lines; Rishi softened "probably" and chose to fix config identity in code (D85).
+- Surprises: the "same hash" that the video and design promised did not pin the adapter's code: every adapter's version was the unbumped 0.1.0. The lock meant to keep labelling blind had never opened anywhere a run had happened.
+
 ## Entry template
 
 ```markdown
