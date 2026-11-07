@@ -48,7 +48,7 @@ following the sourcing rule (What I'd trust least, below). But 4 of the 10 tasks
 and 1 always failed, in both versions, so only 5 tasks could show a difference. With 5, the test
 can't get under p = 0.05 however big the gap. The fix is more tasks in the middle, not more trials.
 
-Every run together cost about $43 in model calls ([`docs/cost.md`](docs/cost.md)).
+Every run together cost about $44 in model calls ([`docs/cost.md`](docs/cost.md)).
 
 ## How the verdict works
 
@@ -261,7 +261,9 @@ A stack on other ports needs the same settings for the checks:
 API on its default port). With `-p <name>` or `COMPOSE_PROJECT_NAME`, use the same for both.
 
 Isolation between trials, on the built images (about 3 minutes):
-`cd workers/adapterlib && EVALS_IMAGE_TESTS=1 uv run pytest -q tests/test_images.py`.
+`cd workers/adapterlib && EVALS_IMAGE_TESTS=1 uv run pytest -q tests/test_images.py`. Five of its 25
+tests need the fake model server and the finance tools synced first (`uv sync` in
+`services/fake-llm` and in `services/finance-mcp`); without them they are skipped, not failed.
 
 </details>
 
