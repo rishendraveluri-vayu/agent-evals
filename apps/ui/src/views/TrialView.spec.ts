@@ -18,7 +18,7 @@ describe('TrialView in fixture mode', () => {
     const w = mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
     await settle();
     expect(w.get('[data-test="trial-title"]').text()).toBe('Arm B, trial 3 of 5');
-    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 checks');
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 required checks');
     const facts = w.get('[data-test="trial-facts"]').text();
     expect(facts).toContain('Agent answered');
     // Beside the call counts: the simulated client's model, which shapes the conversation too.
@@ -92,7 +92,7 @@ describe('TrialView in fixture mode', () => {
     const grades = w.findAll('[data-test="grade"]');
     expect(grades[1].attributes('id')).toBe('grade-1');
     // The status pill still reports the grades as they are.
-    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 checks');
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 required checks');
   });
 
   it('says where your held-out label disputes the judge, though the sample still has held-out outputs to label', async () => {
@@ -246,7 +246,7 @@ describe("TrialView against the API: the judge's reasons and your label, with ou
     expect(w.find('mark').exists()).toBe(true);
     expect(w.find('[data-test="quote-link"]').exists()).toBe(true);
     expect(w.find('[data-test="mark-key"]').exists()).toBe(true);
-    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 checks');
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 required checks');
   });
 
   it('never asks what is left to label: nothing on the page waits on it', async () => {
@@ -421,7 +421,7 @@ describe('TrialView against the API: "Failed on" and what your label says of a f
     // Live: every judge check on the headline is optional, and the trial failed on provenance.
     const w = mountWith([provenance('fail'), judgeGrade(false, failedTwice)], trust({ 'keep-cash': ['yes', 'no'] }));
     await settle();
-    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed its one check');
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed its one required check');
     expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: every-amount-from-a-tool');
     const grades = w.findAll('[data-test="grade"]');
     expect(grades).toHaveLength(2);
@@ -446,17 +446,17 @@ describe('TrialView against the API: the outcome in words, and the simulated cli
     return mount(TrialView, { props: { trialId: 'tr_fd-vs-sip-07_b_3' } });
   }
 
-  it('says "Passed all 3 checks", and "its one check" when there is one', async () => {
+  it('says "Passed all 3 required checks", and "its one required check" when there is one', async () => {
     const pass = { ...grade, verdict: 'pass' };
     let w = mountWith({ grades: [pass, { ...pass, grader_id: 'g2' }, { ...pass, grader_id: 'g3' }] });
     await settle();
-    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Passed all 3 checks');
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Passed all 3 required checks');
     w = mountWith({ grades: [pass] });
     await settle();
-    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Passed its one check');
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Passed its one required check');
     w = mountWith({ grades: [{ ...grade, verdict: 'fail' }] });
     await settle();
-    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed its one check');
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed its one required check');
   });
 
   it('leaves the client model out of the call counts when the experiment has none', async () => {

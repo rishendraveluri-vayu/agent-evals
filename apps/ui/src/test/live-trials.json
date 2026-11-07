@@ -1,5 +1,5 @@
 {
- "_about": "GET responses from the live API on 7 Nov 2026 for three headline trials, trimmed to what the trial page reads: each trial less spec and runner_report, its files as path and ok, the judge call's raw reply and usage left out, and any judge-against-label cause left out of its cause; one trial's turn and tool spans and its checks.json (less arithmetic and tools_called); the experiment less its events and estimate, with these trials' tasks only; the judge's trust on the criteria these trials were asked, with every disagreement left out, so no human label is copied.",
+ "_about": "GET responses from the live API on 7 Nov 2026 for three headline trials (and the grades of a fourth, trial 1 of t_0mw38a1yo6a7e2cbbf94d52f9's task and arm), trimmed to what the trial page reads: each trial less spec and runner_report, its files as path and ok, the judge call's raw reply and usage left out, and any judge-against-label cause left out of its cause; one trial's turn and tool spans and its checks.json (less arithmetic and tools_called); the experiment less its events and estimate, with these trials' tasks only; the judge's trust on the criteria these trials were asked, with every disagreement left out, so no human label is copied.",
  "experiment": {
   "id": "e_0mw38a1ym89666c6ccc6bfd13",
   "name": "Headline: prompt v1 vs v2 on the 10 held-out tasks",
@@ -2639,6 +2639,139 @@
     "rules_version": "causes-1"
    }
   }
+ },
+ "grades": {
+  "t_0mw38a1ynef3e074be7a32d88": [
+   {
+    "id": 10526,
+    "grader_id": "read-debts",
+    "grader_version": "sha256:d3756b8fcb8cb99af62614ebdd5e4c16f4756a9675992ffae8c6015fe093a3a0",
+    "kind": "state",
+    "type": "tool_called",
+    "required": true,
+    "verdict": "pass",
+    "score": 1,
+    "reason": "list_debts was called 1 time(s)",
+    "evidence": [
+     {
+      "tool": "list_debts",
+      "quote": "{}",
+      "source": "span",
+      "span_id": "f8f0c89d9b1cb344"
+     }
+    ],
+    "judge_model": null,
+    "run_index": 0,
+    "created_at": "2026-11-06T16:03:58.762Z"
+   },
+   {
+    "id": 10527,
+    "grader_id": "compared-with-a-tool",
+    "grader_version": "sha256:633d66c2943aea91875a4891275eff252f606e4c64659605cb0336d643d8f92f",
+    "kind": "state",
+    "type": "tool_called",
+    "required": true,
+    "verdict": "pass",
+    "score": 1,
+    "reason": "calculate_emi was called 2 time(s)",
+    "evidence": [
+     {
+      "tool": "calculate_emi",
+      "quote": "{\"annual_rate_pct\": 24, \"principal\": 100000, \"tenure_months\": 24}",
+      "source": "span",
+      "span_id": "e9287df968a01e79"
+     },
+     {
+      "tool": "calculate_emi",
+      "quote": "{\"annual_rate_pct\": 24, \"principal\": 84250, \"tenure_months\": 24}",
+      "source": "span",
+      "span_id": "848ba957525117ff"
+     }
+    ],
+    "judge_model": null,
+    "run_index": 0,
+    "created_at": "2026-11-06T16:03:58.762Z"
+   },
+   {
+    "id": 10528,
+    "grader_id": "every-amount-from-a-tool",
+    "grader_version": "sha256:e812aa305a830f0c496ee599c0dd3fab3588a9e91e744731f74340d8697c077f",
+    "kind": "state",
+    "type": "provenance",
+    "required": true,
+    "verdict": "pass",
+    "score": 1,
+    "reason": "0 of 53 amount(s) in the agent's replies have no tool result, client-file number or user message behind them (allowed 0); 1 written without a tool and verified by recomputing them (derived in prose)",
+    "evidence": [
+     {
+      "index": 3,
+      "quote": "₹18,000",
+      "source": "agent_message",
+      "derivation": "1,500 × 12 = 18,000",
+      "verified_by": "derived_in_prose"
+     }
+    ],
+    "judge_model": null,
+    "run_index": 0,
+    "created_at": "2026-11-06T16:03:58.762Z"
+   },
+   {
+    "id": 10529,
+    "grader_id": "overall",
+    "grader_version": "sha256:6e966440160302ceb49164eed7a95ffc8a1c199872b82d8bee13a6c073aa3f19",
+    "kind": "judge",
+    "type": "judge",
+    "required": false,
+    "verdict": "fail",
+    "score": 0.3333333333333333,
+    "reason": "judge: overall no, explains-plainly no, asks-deciding-fact yes",
+    "evidence": [
+     {
+      "quote": "",
+      "reason": "The advisor gave conflicting calculations and shifted comparisons across replies, leaving the client confused and unsure which figures to trust.",
+      "source": "judge",
+      "verdict": "no",
+      "required": true,
+      "criterion": "overall",
+      "quote_found": false
+     },
+     {
+      "quote": "",
+      "reason": "The advisor mixed figures from two different loan amounts and created confusing payoff comparisons rather than explaining each key figure plainly.",
+      "source": "judge",
+      "verdict": "no",
+      "required": true,
+      "criterion": "explains-plainly",
+      "quote_found": false
+     },
+     {
+      "index": 1,
+      "quote": "To tell you whether this offer is better, I need:\n\n1. **The interest rate** on the offer (as a yearly %).\n2. **The tenure** in months.",
+      "reason": "The advisor directly asked the client for the interest rate and tenure before evaluating the offer.",
+      "source": "agent_message",
+      "verdict": "yes",
+      "required": true,
+      "criterion": "asks-deciding-fact",
+      "quote_found": true
+     },
+     {
+      "model": "gemini-3.8-flash",
+      "rubric": "configs/rubrics/advice.v4.md",
+      "source": "judge_call",
+      "status": 200,
+      "cost_usd": 0.012261000000000001,
+      "latency_ms": 16720,
+      "finish_reason": "stop",
+      "rubric_sha256": "sha256:2e640243897ab099facd37dd189ed20ae0944e159f1d9a7cbd9a4fbef399467c",
+      "request_sha256": "sha256:5ba4ba63e43685622cef3e85f7905c47d015102ae39344243a7e9c2edba25c3a",
+      "response_model": "gemini-3.8-flash"
+     }
+    ],
+    "judge_model": "gemini-3.8-flash",
+    "run_index": 0,
+    "created_at": "2026-11-06T16:03:58.762Z"
+   }
+  ]
  },
  "spans": {
   "t_0mw38a1yn845728704a225ae4": [

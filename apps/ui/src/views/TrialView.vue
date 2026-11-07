@@ -259,13 +259,14 @@ const outcome = computed(() => {
   if (v.probe) return { kind: 'pending', text: 'Probe: never graded or counted' };
   // The pill says what happened in the trial's own terms: how many required checks it failed, or
   // how many could not decide (an error, not applicable, the unbuilt judge), so nothing counts as a
-  // pass or a fail by default.
+  // pass or a fail by default. It names them required checks: the grades list the optional ones
+  // too, each tagged as not counted.
   const o = outcomeOf(v.grades);
   if (o) {
     const n = o.required;
-    if (o.kind === 'pass') return { kind: 'pass', text: n === 1 ? 'Passed its one check' : `Passed all ${n} checks` };
-    if (o.kind === 'fail') return { kind: 'fail', text: n === 1 ? 'Failed its one check' : `Failed ${o.failed} of ${n} checks` };
-    return { kind: 'pending', text: o.required ? `Incomplete: ${o.undetermined} of ${n} checks undecided` : 'Incomplete: no required check' };
+    if (o.kind === 'pass') return { kind: 'pass', text: n === 1 ? 'Passed its one required check' : `Passed all ${n} required checks` };
+    if (o.kind === 'fail') return { kind: 'fail', text: n === 1 ? 'Failed its one required check' : `Failed ${o.failed} of ${n} required checks` };
+    return { kind: 'pending', text: o.required ? `Incomplete: ${o.undetermined} of ${n} required checks undecided` : 'Incomplete: no required check' };
   }
   if (v.status === 'running' || v.status === 'claimed') return { kind: 'pending', text: 'Running' };
   if (v.status === 'queued') return { kind: 'pending', text: 'Queued' };
@@ -559,8 +560,12 @@ const fileUrl = (path: string) => api.trialFileUrl(props.trialId, path);
 const gradeKind = (g: GradeView) => {
   if (g.kind === 'judge') return `Judge, rubric ${shortVersion(g.graderVersion)}`;
   const type = g.type && g.type !== g.kind ? `, ${g.type.replace(/_/g, ' ')}` : '';
-  return `${graderName(g.kind)}${type}${g.required ? '' : ', not required'}`;
+  return `${graderName(g.kind)}${type}`;
 };
+/** A check's verdict pill: green and red only for a required check, the ones the trial's outcome
+ *  rests on. An optional check's verdict is outlined, beside its "optional, not counted" tag, so a
+ *  failed one never reads as the trial failing. */
+const verdictPill = (g: GradeView) => (!g.required || g.verdict === 'other' ? 'pill--outline' : g.verdict === 'pass' ? 'pill--pass' : 'pill--fail');
 const isJudge = (g: GradeView) => g.kind === 'judge' || !!g.judgeModel;
 /** A judge check that was never judged: judging was not approved when the trial was graded. */
 const notJudged = (g: GradeView) => isJudge(g) && g.rawVerdict === 'not_implemented';
@@ -1176,15 +1181,22 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
           >
             <div class="grade-head">
               <span class="strong">{{ g.name }}</span>
-              <span
-                class="pill pill--small"
-                :class="g.verdict === 'pass' ? 'pill--pass' : g.verdict === 'fail' ? 'pill--fail' : 'pill--outline'"
-                data-test="grade-verdict"
-              ><AppIcon
-                v-if="g.verdict !== 'other'"
-                :name="g.verdict === 'pass' ? 'check' : 'cross'"
-                :size="12"
-              />{{ verdictWord(g) }}</span>
+              <span class="grade-verdicts">
+                <span
+                  v-if="!g.required"
+                  class="optional-tag"
+                  data-test="grade-optional"
+                >optional, not counted</span>
+                <span
+                  class="pill pill--small"
+                  :class="verdictPill(g)"
+                  data-test="grade-verdict"
+                ><AppIcon
+                  v-if="g.verdict !== 'other'"
+                  :name="g.verdict === 'pass' ? 'check' : 'cross'"
+                  :size="12"
+                />{{ verdictWord(g) }}</span>
+              </span>
             </div>
             <span
               class="secondary smaller"
@@ -1790,6 +1802,21 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+}
+
+/* An optional check's tag sits before its verdict, and goes under it when the name is long. */
+.grade-verdicts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.optional-tag {
+  font-size: 12px;
+  color: var(--ink-2);
+  white-space: nowrap;
 }
 
 .quote {

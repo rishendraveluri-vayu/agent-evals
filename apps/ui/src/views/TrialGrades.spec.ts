@@ -46,7 +46,7 @@ describe('TrialView grades', () => {
   it('shows each grade with its verdict, its reason and its quoted evidence, and the outcome by required checks', async () => {
     const w = mountWith();
     await settle();
-    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 checks');
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 required checks');
     const grades = w.findAll('[data-test="grade"]');
     expect(grades).toHaveLength(3);
     expect(grades.map((g) => g.get('[data-test="grade-verdict"]').text())).toEqual(['Pass', 'Fail', 'Pass']);
@@ -70,7 +70,7 @@ describe('TrialView grades', () => {
       ],
     });
     await settle();
-    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Incomplete: 2 of 3 checks undecided');
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Incomplete: 2 of 3 required checks undecided');
     const verdicts = w.findAll('[data-test="grade-verdict"]').map((v) => v.text());
     expect(verdicts).toEqual(['Pass', 'Not judged', 'Grader error']);
     expect(w.findAll('[data-test="grade"]')[2].get('[data-test="grade-reason"]').text()).toBe('unit_test timed out after 10 s');
@@ -105,8 +105,16 @@ describe('TrialView grades', () => {
     const [first, second] = trial.grades;
     const w = mountWith({ grades: [{ ...first, verdict: 'pass' }, { ...second, required: false, kind: 'state', type: 'regex_absent', judge_model: null, verdict: 'fail' }] });
     await settle();
-    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Passed its one check');
-    expect(w.findAll('[data-test="grade-kind"]')[1].text()).toBe('State check, regex absent, not required');
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Passed its one required check');
+    const [required, optional] = w.findAll('[data-test="grade"]');
+    expect(optional.get('[data-test="grade-kind"]').text()).toBe('State check, regex absent');
+    expect(optional.get('[data-test="grade-optional"]').text()).toBe('optional, not counted');
+    // Its fail is outlined, not red: it decided nothing.
+    expect(optional.get('[data-test="grade-verdict"]').text()).toBe('Fail');
+    expect(optional.get('[data-test="grade-verdict"]').classes()).toEqual(expect.arrayContaining(['pill--outline']));
+    expect(optional.get('[data-test="grade-verdict"]').classes()).not.toContain('pill--fail');
+    expect(required.find('[data-test="grade-optional"]').exists()).toBe(false);
+    expect(required.get('[data-test="grade-verdict"]').classes()).toContain('pill--pass');
   });
 
   it('says "not graded yet", and that grading is queued when it is', async () => {

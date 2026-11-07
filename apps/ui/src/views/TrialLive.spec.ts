@@ -52,13 +52,40 @@ describe('TrialView on live trials: files', () => {
   });
 });
 
-describe('TrialView on live trials: why it failed', () => {
-  const gradeNamed = (w: ReturnType<typeof mountLive>['w'], name: string) => {
-    const g = w.findAll('[data-test="grade"]').find((x) => x.find('.grade-head .strong').text() === name);
-    if (!g) throw new Error(`no grade ${name}`);
-    return g;
-  };
+const gradeNamed = (w: ReturnType<typeof mountLive>['w'], name: string) => {
+  const g = w.findAll('[data-test="grade"]').find((x) => x.find('.grade-head .strong').text() === name);
+  if (!g) throw new Error(`no grade ${name}`);
+  return g;
+};
 
+describe('TrialView on live trials: the outcome and the optional judge', () => {
+  it('counts required checks in the header and tags the optional judge as not counted', async () => {
+    // Trial 1 of the same task and arm: every required check passed; the optional judge failed.
+    const { w } = mountLive(OFFER, { trial: { grades: live.grades.t_0mw38a1ynef3e074be7a32d88 } });
+    await settle();
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Passed all 3 required checks');
+    const grades = w.findAll('[data-test="grade"]');
+    expect(grades).toHaveLength(4);
+    expect(grades.map((g) => g.find('[data-test="grade-optional"]').exists())).toEqual([false, false, false, true]);
+    const judge = gradeNamed(w, 'overall');
+    expect(judge.get('[data-test="grade-optional"]').text()).toBe('optional, not counted');
+    // Its Fail is outlined: it did not fail the trial.
+    expect(judge.get('[data-test="grade-verdict"]').text()).toBe('Fail');
+    expect(judge.get('[data-test="grade-verdict"]').classes()).toContain('pill--outline');
+    expect(judge.get('[data-test="grade-verdict"]').classes()).not.toContain('pill--fail');
+    expect(w.find('[data-test="failed-on"]').exists()).toBe(false);
+  });
+
+  it('says how many required checks failed, and names only those', async () => {
+    const { w } = mountLive(OFFER);
+    await settle();
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed 1 of 3 required checks');
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: every-amount-from-a-tool');
+    expect(gradeNamed(w, 'every-amount-from-a-tool').get('[data-test="grade-verdict"]').classes()).toContain('pill--fail');
+  });
+});
+
+describe('TrialView on live trials: why it failed', () => {
   it('keeps the header short, never cut inside a pattern, and the full reason with its patterns in the card', async () => {
     const { w } = mountLive(PHONE);
     await settle();
