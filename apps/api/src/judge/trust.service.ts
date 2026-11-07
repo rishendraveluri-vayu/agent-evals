@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { CompareStats, Json, JudgeTrust, JudgeTrustResponse } from '../contract';
 import { badRequest, notFound } from '../common/api-error';
 import { Db } from '../database/db.service';
@@ -78,6 +78,7 @@ function rubricOf(spec: Json | null): string {
  */
 @Injectable()
 export class JudgeTrustService {
+  private readonly logger = new Logger(JudgeTrustService.name);
   private cache: { key: string; judges: Computed[] } | null = null;
 
   constructor(
@@ -97,9 +98,20 @@ export class JudgeTrustService {
   /**
    * The comparison's `stats.judge` (D83): the held-out figures of `overall` for the experiment's
    * judge, the one with the most current grades on its trials; null without held-out pairs, or
-   * when kappa or its interval is undefined.
+   * when kappa or its interval is undefined. It sits beside the verdict and never changes it, so
+   * an error working it out leaves it null (logged) rather than failing the comparison (review
+   * 7 Nov, F2).
    */
   async forComparison(experimentId: string): Promise<CompareStats['judge']> {
+    try {
+      return await this.comparisonJudge(experimentId);
+    } catch (err) {
+      this.logger.warn(`the judge trust for the comparison of ${experimentId} failed, so stats.judge is null: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  }
+
+  private async comparisonJudge(experimentId: string): Promise<CompareStats['judge']> {
     let best: Computed | null = null;
     for (const j of await this.compute()) {
       const n = j.perExperiment.get(experimentId) ?? 0;

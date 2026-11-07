@@ -1224,7 +1224,9 @@ export class ExperimentsService {
     }
     if (!result.stats || !withAa) return result;
     // D83: the judge's held-out agreement, read live (labels change without a regrade), so it sits
-    // outside the cache. It is shown beside the verdict and never changes it.
+    // outside the cache. It is shown beside the verdict and never changes it, so forComparison
+    // never throws: an error there (a label file the database refuses, say) leaves it null and
+    // the comparison stands (review 7 Nov, F2).
     const judge = await this.trust.forComparison(r.id);
     if (r.calibration) return { ...result, stats: { ...result.stats, judge } };
     return { ...result, stats: { ...result.stats, aa: await this.latestCalibration(r), judge } };

@@ -92,10 +92,16 @@ export class LabelsService {
     return path.join(this.config.labelsDir, `${set}.jsonl`);
   }
 
+  /** Bad label lines already warned about, by file and line hash: each is named once per process. */
+  private readonly warned = new Set<string>();
+
   /**
-   * Imports lines of labels/<set>.jsonl not yet in the table. Lines that do not parse are skipped.
-   * A line without a rater was written before D73 and is Rishi's; a line whose rater is not a rater
-   * id is skipped, as any other malformed line is.
+   * Imports lines of labels/<set>.jsonl not yet in the table. A line that does not parse, lacks a
+   * trial, criterion, value or date, has a date that is not one, a NUL in any text, or a rater that
+   * is not a rater id is skipped with a warning naming the file and line; so is a line the database
+   * refuses. One bad line never fails the request that imports it (review 7 Nov, F2: since D83 this
+   * runs on every GET /judge/trust and every comparison). A line without a rater was written before
+   * D73 and is Rishi's.
    */
   async importFile(set: LabelSet): Promise<void> {
     let text: string;
@@ -104,30 +110,55 @@ export class LabelsService {
     } catch {
       return;
     }
-    for (const line of text.split('\n')) {
+    const lines = text.split('\n');
+    for (const [i, line] of lines.entries()) {
       if (!line.trim()) continue;
+      const sha = sha256Hex(line);
+      const skip = (why: string) => {
+        const key = `${set}:${sha}`;
+        if (this.warned.has(key)) return;
+        this.warned.add(key);
+        this.logger.warn(`labels/${set}.jsonl line ${i + 1}: ${why}; skipped`);
+      };
       let l: Partial<LabelLine>;
       try {
         l = JSON.parse(line) as Partial<LabelLine>;
       } catch {
-        this.logger.warn(`labels/${set}.jsonl has a line that is not JSON; skipped`);
+        skip('not JSON');
+        continue;
+      }
+      if (!isObj(l)) {
+        skip('not a JSON object');
         continue;
       }
       const trial = typeof l.trial_id === 'string' ? l.trial_id : l.item_id;
       if (typeof trial !== 'string' || typeof l.criterion !== 'string' || !['yes', 'no', 'unsure'].includes(String(l.value)) || typeof l.labelled_at !== 'string') {
-        this.logger.warn(`labels/${set}.jsonl has a line without trial, criterion, value or date; skipped`);
+        skip('no trial, criterion, value or date');
+        continue;
+      }
+      if (!Number.isFinite(Date.parse(l.labelled_at))) {
+        skip(`labelled_at ${JSON.stringify(l.labelled_at.slice(0, 40))} is not a date`);
         continue;
       }
       const rater = l.rater === undefined ? FIRST_RATER : l.rater;
       if (typeof rater !== 'string' || !RATER_ID.test(rater)) {
-        this.logger.warn(`labels/${set}.jsonl has a line whose rater is not a rater id; skipped`);
+        skip('the rater is not a rater id');
         continue;
       }
-      await this.db.query(
-        `INSERT INTO labels (trial_id, criterion, value, label_set, note, labelled_at, source, line_sha256, second_look, rater)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (line_sha256) DO NOTHING`,
-        [trial, l.criterion, l.value, set, typeof l.note === 'string' ? l.note : null, l.labelled_at, `labels/${set}.jsonl`, sha256Hex(line), l.second_look === true, rater],
-      );
+      const note = typeof l.note === 'string' ? l.note : null;
+      if ([trial, l.criterion, l.labelled_at, note].some((v) => typeof v === 'string' && v.includes('\u0000'))) {
+        skip('a NUL character in its text, which the database cannot store');
+        continue;
+      }
+      try {
+        await this.db.query(
+          `INSERT INTO labels (trial_id, criterion, value, label_set, note, labelled_at, source, line_sha256, second_look, rater)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (line_sha256) DO NOTHING`,
+          [trial, l.criterion, l.value, set, note, l.labelled_at, `labels/${set}.jsonl`, sha, l.second_look === true, rater],
+        );
+      } catch (err) {
+        skip(`the database refused it (${err instanceof Error ? err.message : String(err)})`);
+      }
     }
   }
 

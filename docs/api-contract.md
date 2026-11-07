@@ -1050,7 +1050,11 @@ What the API refuses or rewrites since the review's fixes (`docs/destructive-rev
   reads its status from it (lock order in `apps/api/src/worker/run-state.ts`).
 - **Labels:** `POST /labels` refuses a trial the queue would not offer (a fake model's, a probe, a
   shipped example's, one without an agent result) with 400 `not_labellable`, and a trial labelled in
-  another set with 400 `wrong_set`.
+  another set with 400 `wrong_set`. A line of `labels/<set>.jsonl` that is not a JSON object, lacks
+  a trial, criterion, value or date, has a `labelled_at` that is not a date, a NUL in its text, a
+  bad rater, or that the database refuses is skipped with a warning naming the file and line
+  (since 7 Nov: such a line used to make `GET /judge/trust` and every comparison a 400). An error
+  working out the comparison's `stats.judge` leaves it null; the comparison still answers.
 - **Export:** a `reuse_baseline` experiment's export lists the reused arm-A trials first, each with
   its own (the parent's) `experiment_id` and a `reused_from` field (JSON) and last column (CSV)
   naming the parent; text cells starting with `=`, `+`, `-`, `@`, a tab or a carriage return get a

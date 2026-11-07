@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { promises as fs, readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import request from 'supertest';
@@ -374,6 +375,54 @@ describeWithDb('judge trust (D83, e2e, real Postgres)', () => {
     // The ordinary queue of the experiment offers them too; the parent's still offers its own only.
     expect(await ids('')).toEqual(all);
     expect(((await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${parent.id}`).expect(200)).body as LabelQueueItem[]).map((i) => i.item_id).sort()).toEqual(parent.trials.map((t) => t.id).sort());
+  });
+
+  it('skips a label line the database cannot store, so the trust, the comparison and the queue still answer (review 7 Nov, F2)', async () => {
+    const exp = await run([A], ['trust-tune'], 2);
+    await judge('fake/judge-badline', () => ({ overall: 'yes', plain: 'yes' }));
+    await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200);
+    const file = path.join(env.labelsDir, 'tuning.jsonl');
+    await fs.mkdir(env.labelsDir, { recursive: true });
+    const before = await fs.readFile(file, 'utf8').catch(() => '');
+    const [first, second] = exp.trials.map((t) => t.id);
+    const line = (over: Record<string, unknown>) => JSON.stringify({ trial_id: first, criterion: 'overall', value: 'yes', labelled_at: '2026-11-07T09:00:00.000Z', ...over });
+    const bad = [
+      line({ labelled_at: 'Thursday morning' }), // a string that is not a date (it was a 400 on every comparison)
+      line({ labelled_at: '-005000-01-01T00:00:00Z' }), // a date to JavaScript that the database refuses
+      line({ criterion: 'over\u0000all' }), // a NUL the database cannot store
+      line({ note: 'nul \u0000 in the note' }),
+      'null',
+      '{"trial_id": "not closed"',
+    ];
+    // A good line after the bad ones is still imported.
+    await fs.appendFile(file, `${[...bad, line({ trial_id: second, value: 'no' })].join('\n')}\n`);
+    const warn = jest.spyOn(Logger.prototype, 'warn');
+    try {
+      await request(env.http).get('/api/judge/trust').expect(200);
+      // Each bad line is named once, by file and line number, with why.
+      const firstBad = before.split('\n').length;
+      const warned = warn.mock.calls.map((c) => String(c[0])).filter((m) => m.startsWith('labels/tuning.jsonl line'));
+      expect(warned).toEqual([
+        `labels/tuning.jsonl line ${firstBad}: labelled_at "Thursday morning" is not a date; skipped`,
+        expect.stringMatching(new RegExp(`^labels/tuning\\.jsonl line ${firstBad + 1}: the database refused it \\(.+\\); skipped$`)),
+        `labels/tuning.jsonl line ${firstBad + 2}: a NUL character in its text, which the database cannot store; skipped`,
+        `labels/tuning.jsonl line ${firstBad + 3}: a NUL character in its text, which the database cannot store; skipped`,
+        `labels/tuning.jsonl line ${firstBad + 4}: not a JSON object; skipped`,
+        `labels/tuning.jsonl line ${firstBad + 5}: not JSON; skipped`,
+      ]);
+      const cmp = await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200);
+      expect((cmp.body as CompareResponse).status).toBe('complete');
+      await request(env.http).get('/api/labels/queue?set=tuning').expect(200);
+      const { rows } = await env.pool.query<{ trial_id: string; value: string }>('SELECT trial_id, value FROM labels WHERE trial_id = ANY($1)', [[first, second]]);
+      expect(rows).toEqual([{ trial_id: second, value: 'no' }]);
+      // The good label counts in the judge's trust: one tuning label, a false pass.
+      expect(overall(await judgeOf('fake/judge-badline')).tuning).toMatchObject({ n: 1, fp: 1 });
+    } finally {
+      warn.mockRestore();
+      // Only the bad lines go; the table keeps what was imported, and later tests are unaffected.
+      const text = await fs.readFile(file, 'utf8');
+      await fs.writeFile(file, before + text.slice(before.length).split('\n').filter((l) => l && !bad.includes(l)).map((l) => `${l}\n`).join(''));
+    }
   });
 
   it('leaves the comparison’s stats.judge null without held-out labels on its judge', async () => {
