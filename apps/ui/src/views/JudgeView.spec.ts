@@ -132,7 +132,8 @@ describe('JudgeView in fixture mode', () => {
     const list = haiku.get('[data-test="disagreements"]');
     expect(list.element.tagName).toBe('DETAILS');
     expect(list.attributes('open')).toBeUndefined();
-    expect(list.get('summary').text()).toContain('16 outputs');
+    // 16 disagreements, some on the same output: the sample's lists them on 13 trials.
+    expect(list.get('[data-test="disagreements-count"]').text()).toBe('16 disagreements on 13 outputs');
     // The sample's held-out set has 3 outputs to go: they are listed all the same (7 Nov).
     expect(list.get('[data-test="disagreements-caution"]').text()).toBe(
       "If you will label this judge's outputs, label them first: its reasons here can steer the labels you give.",
@@ -170,6 +171,23 @@ describe('JudgeView against the API', () => {
     expect(first.get('[data-test="disagreement-note"]').text()).toBe("The label's note: Lectures her about the EMI in the second paragraph.");
     // No note, no line for it.
     expect(shown[1].find('[data-test="disagreement-note"]').exists()).toBe(false);
+  });
+
+  it('counts the outputs it disagrees on, an output wrong on two questions once (review 7 Nov, F4)', async () => {
+    // Live, Gemini 3.8 Flash on advice.v4: 20 disagreements on 17 trials were called "20 outputs".
+    const [haiku] = trust.judges;
+    const on = (trial_id: string) => ({ trial_id, task_id: 'draft-convo-consolidation', set: 'heldout' as const, human: 'yes' as const, judge: 'no' as const, judge_reason: null, human_note: null });
+    const twice = { ...haiku, criteria: haiku.criteria.map((c, i) => ({ ...c, disagreements: i < 2 ? [on('t_0mw38a1yo6a7e2cbbf94d52f9')] : [] })) };
+    const { w } = mountWith({ ...trust, judges: [twice] });
+    await settle();
+    const list = w.get('[data-test="disagreements"]');
+    expect(list.get('[data-test="disagreements-count"]').text()).toBe('2 disagreements on 1 output');
+    expect(list.findAll('[data-test="disagreement"]')).toHaveLength(2);
+    // One disagreement per output: the count is of outputs alone.
+    const once = { ...haiku, criteria: haiku.criteria.map((c, i) => ({ ...c, disagreements: i < 2 ? [on(`t_${i}`)] : [] })) };
+    const again = mountWith({ ...trust, judges: [once] }).w;
+    await settle();
+    expect(again.get('[data-test="disagreements-count"]').text()).toBe('2 outputs');
   });
 
   it('never asks what is left to label: the list does not wait on it', async () => {

@@ -84,15 +84,18 @@ function stripOf(j: JudgeTrust) {
   return { rows, ticks, min, summary: `Held-out kappa by question, with its interval: ${parts.join('; ')}. The bar is ${b.kappa}.` };
 }
 
-/** Where the judge and people disagree, held-out first. */
+/** Where the judge and people disagree, held-out first, and how many: each is one question on one
+ *  output, so an output wrong on two questions is listed twice and counted as one output. */
 function disagreementsOf(j: JudgeTrust) {
   const all: Disagreement[] = j.criteria.flatMap((c) => c.disagreements.map((d) => ({ ...d, criterion: c.criterion })));
   all.sort((p, q) => (p.set === q.set ? 0 : p.set === 'heldout' ? -1 : 1));
+  const outputs = new Set(all.map((d) => d.trial_id)).size;
+  const count = outputs === all.length ? plural(outputs, 'output') : `${plural(all.length, 'disagreement')} on ${plural(outputs, 'output')}`;
   // From the figures, not the list (which the API caps): labelled outputs, and how many it got wrong.
   const figures = j.criteria.flatMap((c) => [c.heldout, c.tuning]).filter((f): f is AgreementFigures => f !== null);
   const pairs = figures.reduce((sum, f) => sum + f.n, 0);
   const counted = figures.reduce((sum, f) => sum + f.fp + f.fn, 0);
-  return { all, agrees: pairs > 0 && counted === 0, capped: j.criteria.some((c) => c.disagreements.length >= 50) };
+  return { all, count, agrees: pairs > 0 && counted === 0, capped: j.criteria.some((c) => c.disagreements.length >= 50) };
 }
 
 const judges = computed(() =>
@@ -350,7 +353,10 @@ const statuses = computed<{ status: JudgeTrustStatus; text: string }[]>(() => {
         <summary>
           <span class="summary-text">
             <span class="strong">Where it and people disagree</span>
-            <span class="secondary small">{{ plural(j.disagreements.all.length, 'output') }}</span>
+            <span
+              class="secondary small"
+              data-test="disagreements-count"
+            >{{ j.disagreements.count }}</span>
           </span>
         </summary>
         <p
