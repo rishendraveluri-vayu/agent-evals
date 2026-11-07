@@ -842,10 +842,16 @@ function lookTrial(task: string): { trial: TrialRowSummary; disputed: boolean } 
   return any ? { trial: any, disputed: false } : null;
 }
 
+/** The drop with the strongest evidence: one that holds up after correction, then one whose interval
+ *  stays below zero, then the lower p-value, and only then the larger drop. Two drops of −40 were
+ *  told apart by order alone, and the one whose interval crossed zero (p 0.17) was picked over the
+ *  one below zero (p 0.087) (QA, 7 Nov). */
 const worthALook = computed(() => {
   const s = stats.value;
+  const p = (r: TaskRow) => s?.tasks.find((t) => t.task === r.key)?.p_value ?? 1;
+  const below = (r: TaskRow) => (r.diff && r.diff.high < 0 ? 1 : 0);
   const candidates = taskRows.value.filter((r) => r.diff && r.diff.estimate < 0);
-  const worst = candidates.sort((x, y) => (x.diff?.estimate ?? 0) - (y.diff?.estimate ?? 0))[0];
+  const worst = [...candidates].sort((x, y) => Number(y.significant) - Number(x.significant) || below(y) - below(x) || p(x) - p(y) || (x.diff?.estimate ?? 0) - (y.diff?.estimate ?? 0))[0];
   if (!worst || !worst.diff || !s) return null;
   // The heading claims no more than the statistics: "got worse" only when it holds up.
   const title = worst.significant ? `Worth a look: ${worst.name} got worse` : `Worth a look: ${worst.name} fell from ${passedText(worst.a)} to ${passedText(worst.b)}`;

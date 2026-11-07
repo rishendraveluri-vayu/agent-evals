@@ -1497,6 +1497,43 @@ describe('CompareView: a stopped run and a run on fake models (QA round 3, minor
   });
 });
 
+describe('CompareView: which drop is worth a look (QA, 7 Nov: the model axis)', () => {
+  const base = compares.exp_heldout as unknown as Compare;
+  const sha = (id: string) => (details as unknown as { exp_heldout: { tasks: { id: string; sha256: string }[] } }).exp_heldout.tasks.find((t) => t.id === id)!.sha256;
+  function mountWith(over: Record<string, { estimate: number; low: number; high: number; p: number; beyond?: boolean }>) {
+    const tasks = base.stats!.tasks.map((t) => {
+      const o = Object.entries(over).find(([id]) => sha(id) === t.task)?.[1];
+      return o ? { ...t, diff: { estimate: o.estimate, low: o.low, high: o.high }, p_value: o.p, beyond_noise: !!o.beyond } : { ...t, diff: { estimate: 0, low: -10, high: 10 }, p_value: 1, beyond_noise: false };
+    });
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': { ...base, stats: { ...base.stats, tasks } },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/labels/queue?set=heldout': [],
+    });
+    return mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+  }
+
+  it('picks the drop whose interval stays below zero over an equal one whose interval crosses it', async () => {
+    // job-loss −40 (−67 to +2), p 0.17, listed first; phone-loan −40 (−69 to −4), p 0.087.
+    const w = mountWith({ 'debt-regret-04': { estimate: -40, low: -67, high: 2, p: 0.17 }, 'afford-car-06': { estimate: -40, low: -69, high: -4, p: 0.087 } });
+    await settle();
+    expect(w.get('[data-test="worth-a-look"] h3').text()).toMatch(/^Worth a look: afford-car-06 /);
+  });
+
+  it('picks the lower p-value before the larger drop when neither interval stays below zero', async () => {
+    const w = mountWith({ 'debt-regret-04': { estimate: -60, low: -90, high: 5, p: 0.3 }, 'afford-car-06': { estimate: -40, low: -70, high: 1, p: 0.09 } });
+    await settle();
+    expect(w.get('[data-test="worth-a-look"] h3').text()).toMatch(/^Worth a look: afford-car-06 /);
+  });
+
+  it('picks a drop that holds up after correction first', async () => {
+    const w = mountWith({ 'debt-regret-04': { estimate: -80, low: -95, high: -40, p: 0.001 }, 'afford-car-06': { estimate: -60, low: -85, high: -20, p: 0.004, beyond: true } });
+    await settle();
+    expect(w.get('[data-test="worth-a-look"] h3').text()).toBe('Worth a look: afford-car-06 got worse');
+  });
+});
+
 describe('CompareView: a check that failed before the start (QA, 7 Nov: the retrieval run)', () => {
   const detail = (details as unknown as Record<string, Record<string, unknown> & { tasks: { split: string }[] }>).exp_heldout;
 
