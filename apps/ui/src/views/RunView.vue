@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue';
 import { api } from '../api/client';
 import { isFixtureMode } from '../api/mode';
-import type { ConfigView, ConfigDiffEntry, Estimate, ExperimentDetail, TrialRowSummary, Harness, ModelView, PromptView, RenderedPromptStatus, TaskView } from '../api/types';
+import type { ConfigView, ConfigDiffEntry, Estimate, ExperimentDetail, ExperimentSummary, TrialRowSummary, Harness, ModelView, PromptView, RenderedPromptStatus, TaskView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import ConflictCheck from '../components/ConflictCheck.vue';
 import LoadState from '../components/LoadState.vue';
@@ -17,7 +17,7 @@ import { experimentName, infraReason, modelName, splitName } from '../lib/names'
 import { href, navigate, replaceRoute } from '../router';
 import { eventView, pauseCause } from '../lib/runs';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
-import { armPauseHelp, defaultArms, defaultBudget, defaultN, DEFAULT_N, isEngineTest, isLocalModel, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, validateSeed, type ArmDefaults } from '../lib/runSetup';
+import { armPauseHelp, defaultArms, defaultBudget, defaultN, DEFAULT_N, isEngineTest, isLocalModel, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, uniqueRunName, validateN, validateSeed, type ArmDefaults } from '../lib/runSetup';
 import { FAKE_SIM_MODEL, isFake, runnableHosted, simModels } from '../lib/models';
 import { ensureConflictChecks, needsConflictCheck } from '../lib/conflictGate';
 import { text } from '../trials';
@@ -34,6 +34,8 @@ interface Loaded {
   prompts: PromptView[];
   experiment: ExperimentDetail | null;
   trials: TrialRowSummary[];
+  /** The names of the runs already saved, so a new run's default name is not one of them. */
+  runNames: string[];
 }
 
 /** The address names a run that does not exist (a mistyped or stale link). */
@@ -57,10 +59,10 @@ const { data, error, loading, reload } = useLoad<Loaded>(async () => {
       // Only to name each arm's provider when a config error pauses it.
       optional(api.models(), [] as ModelView[]),
     ]);
-    return { configs: experiment.configs, allTasks: allTasks.length ? allTasks : experiment.tasks, models, harnesses, prompts, experiment, trials };
+    return { configs: experiment.configs, allTasks: allTasks.length ? allTasks : experiment.tasks, models, harnesses, prompts, experiment, trials, runNames: [] };
   }
-  const [configs, allTasks, models] = await Promise.all([api.configs(), api.tasks(), optional(api.models(), [] as ModelView[])]);
-  return { configs, allTasks, models, harnesses, prompts, experiment: null, trials: [] };
+  const [configs, allTasks, models, runs] = await Promise.all([api.configs(), api.tasks(), optional(api.models(), [] as ModelView[]), optional(api.experiments(), [] as ExperimentSummary[])]);
+  return { configs, allTasks, models, harnesses, prompts, experiment: null, trials: [], runNames: runs.map((r) => r.name) };
 });
 
 // ---------------------------------------------------------------- what is being run
@@ -378,12 +380,13 @@ const budget = computed(() => {
 });
 
 /** The run's default name says what the arms differ in ("Max steps 10 vs 12 on Own loop with
- *  Fake model finance-emi, 15 tasks"), never "X vs X" (lib/checks.ts runAutoName). */
+ *  Fake model finance-emi, 15 tasks"), never "X vs X" (lib/checks.ts runAutoName), and is never a
+ *  saved run's name: a second run of the same setup ends "(2)" (lib/runSetup.ts uniqueRunName). */
 const suggestedName = computed(() => {
   const [a, b] = hashes.value.map(configOf);
   if (!a || (hashes.value.length === 2 && !b)) return '';
-  if (isCalibration.value && sameConfig.value) return `A/A calibration: ${a.name}`;
-  return runAutoName(a, b, taskSetWords(tasks.value, data.value?.allTasks ?? [], setup.split));
+  const base = isCalibration.value && sameConfig.value ? `A/A calibration: ${a.name}` : runAutoName(a, b, taskSetWords(tasks.value, data.value?.allTasks ?? [], setup.split));
+  return uniqueRunName(base, data.value?.runNames ?? [], RUN_NAME_MAX);
 });
 watch(suggestedName, (v) => {
   if (!touched.name) setup.name = v;

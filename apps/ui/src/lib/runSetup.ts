@@ -184,6 +184,25 @@ export function taskSetWords(picked: TaskView[], all: TaskView[], split: string)
   return `${n} ${splitName(split)} ${n === 1 ? 'task' : 'tasks'}`;
 }
 
+// ---------------------------------------------------------------------------------------- name
+
+/**
+ * A run's default name, kept apart from the runs already saved (7 Nov QA: two runs of the same
+ * arms and tasks got the same name, so the Experiments list could not tell them apart): as made
+ * when no run has it, else with the next free number, "..., held-out (2)", "(3)". Within `max`
+ * characters, the name shortened to make room. A name typed by hand is never changed.
+ */
+export function uniqueRunName(name: string, taken: Iterable<string>, max: number): string {
+  const used = new Set([...taken].map((n) => n.trim()));
+  if (!name || !used.has(name.trim())) return name;
+  for (let i = 2; ; i += 1) {
+    const suffix = ` (${i})`;
+    const room = max - suffix.length;
+    const candidate = `${name.length <= room ? name : `${name.slice(0, room - 1).trimEnd()}…`}${suffix}`;
+    if (!used.has(candidate)) return candidate;
+  }
+}
+
 // ---------------------------------------------------------------------------------------- budget
 
 /** The spending limit offered: the estimate's high end rounded up to $10, at least $10, so the

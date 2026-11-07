@@ -3,7 +3,7 @@ import { ApiError } from '../api/errors';
 import type { ArmView, ConfigView, TaskView } from '../api/types';
 import configsJson from '../fixtures/configs.json';
 import { armsCheck, diffWords, keysCheck, planCheck } from './checks';
-import { armPauseHelp, baselineFor, defaultArms, defaultBudget, defaultN, isLocalModel, localDiff, missingKey, needsKeyWords, oneThingApart, plainRunError, providerOf, taskSetWords, validateN } from './runSetup';
+import { armPauseHelp, baselineFor, defaultArms, defaultBudget, defaultN, isLocalModel, localDiff, missingKey, needsKeyWords, oneThingApart, plainRunError, providerOf, taskSetWords, uniqueRunName, validateN } from './runSetup';
 
 const configs = configsJson as unknown as ConfigView[];
 // The fixtures, oldest first: v1 on Hermes (2 Nov), v2 on Hermes (3 Nov, forked from v1: the
@@ -220,6 +220,24 @@ describe('defaultBudget', () => {
     expect(defaultBudget(21.56)).toBe(30);
     expect(defaultBudget(20)).toBe(20);
     expect(defaultBudget(0.15)).toBe(10);
+  });
+});
+
+describe('uniqueRunName (7 Nov QA: two runs got the same name)', () => {
+  const name = 'System prompt v1 vs v2 on Own loop with Fake model finance-emi, held-out';
+
+  it('keeps a name no run has, and numbers one that is taken, skipping numbers in use', () => {
+    expect(uniqueRunName(name, ['Another run'], 200)).toBe(name);
+    expect(uniqueRunName(name, [name], 200)).toBe(`${name} (2)`);
+    expect(uniqueRunName(name, [` ${name} `, `${name} (2)`, `${name} (3)`], 200)).toBe(`${name} (4)`);
+    expect(uniqueRunName('', [''], 200)).toBe('');
+  });
+
+  it('shortens a long name to make room for its number, within the limit', () => {
+    const long = 'x'.repeat(200);
+    const out = uniqueRunName(long, [long], 200);
+    expect(out).toHaveLength(200);
+    expect(out.endsWith('… (2)')).toBe(true);
   });
 });
 

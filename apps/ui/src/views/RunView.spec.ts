@@ -9,6 +9,7 @@ import configsJson from '../fixtures/configs.json';
 import conflictChecksJson from '../fixtures/conflict-checks.json';
 import details from '../fixtures/experiment-details.json';
 import experimentTrials from '../fixtures/experiment-trials.json';
+import { resetSession } from '../fixtures';
 import harnessesJson from '../fixtures/harnesses.json';
 import { ApiError } from '../api/errors';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
@@ -21,6 +22,8 @@ import RunView from './RunView.vue';
 const STORED_CHECK = { ...(Object.values(conflictChecksJson)[0] as unknown as ConflictCheckView), cached: true };
 beforeEach(() => {
   vi.spyOn(api, 'conflictCheck').mockResolvedValue(STORED_CHECK);
+  // A run another test started in fixture mode would take its name, so each test starts afresh.
+  resetSession();
 });
 
 /** A no-break space: a number keeps its unit. */
@@ -1602,6 +1605,34 @@ describe('RunView keeps a long unbroken config name inside the page', () => {
     expect(style).toMatch(/\.arm-card,\s*\.arm-card-head > \.arm,\s*\.arm > span:last-child \{\s*min-width: 0;\s*overflow-wrap: anywhere;\s*\}/);
     expect(style).toMatch(/\.arm-card-head > \.arm-status \{\s*flex: none;\s*\}/);
     expect(style).toMatch(/\.setup-grid select \{[^}]*max-width: 100%;[^}]*min-width: 0;/);
+  });
+});
+
+describe('RunView names a run apart from the runs already saved (7 Nov QA)', () => {
+  useFixtures();
+  const fakeRun = () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, fakeA, fakeB]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'prompt.sha256', a: fakeA.prompt.sha256, b: fakeB.prompt.sha256 }]);
+  };
+  const nameOf = (w: VueWrapper) => (w.get('[data-test="run-name"]').element as HTMLInputElement).value;
+
+  it('numbers the default name when a saved run already has it', async () => {
+    fakeRun();
+    const first = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    const name = nameOf(first);
+    expect(name).not.toMatch(/\(\d+\)$/);
+    // The same setup again, once a run with that name is saved.
+    const saved = (await api.experiments())[0];
+    vi.spyOn(api, 'experiments').mockResolvedValue([{ ...saved, name }]);
+    const second = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    expect(nameOf(second)).toBe(`${name} (2)`);
+    // A name typed by hand is kept as typed.
+    await second.get('[data-test="run-name"]').setValue(name);
+    await second.get('[data-test="run-name"]').trigger('input');
+    await settle();
+    expect(nameOf(second)).toBe(name);
   });
 });
 
