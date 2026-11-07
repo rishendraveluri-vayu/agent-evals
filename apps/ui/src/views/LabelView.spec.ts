@@ -67,6 +67,21 @@ describe('LabelView in fixture mode', () => {
     expect(w.find('[data-test="judge-later"]').exists()).toBe(false);
     expect(w.get('[data-test="judge-link"]').attributes('href')).toBe('#/labels/judge');
   });
+
+  it('keeps numbers pressed after the last answer out of the note (7 Nov QA: a "11" was saved as the note)', async () => {
+    const w = mount(LabelView, { attachTo: document.body });
+    await settle();
+    const press = (k: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+    // Four questions: 1, 2, 3, 1 answers them in turn; two more 1s come after the last.
+    for (const k of ['1', '2', '3', '1', '1', '1']) press(k);
+    await settle();
+    const note = w.get('[data-test="label-note"]').element as HTMLTextAreaElement;
+    expect(document.activeElement).not.toBe(note);
+    expect(note.value).toBe('');
+    expect(w.findAll('[data-test="criterion"]').map((c) => c.find('[aria-pressed="true"]').text())).toEqual(['1Yes', '2No', '3Not sure', '1Yes']);
+    expect(w.get('.hint').text()).toBe('Press 1, 2 or 3 to answer each question in turn, then Enter to save and open the next. A note is optional: click its box to add one.');
+    w.unmount();
+  });
 });
 
 describe('LabelView against the API', () => {
@@ -281,14 +296,20 @@ describe('LabelView, the tuning batch against the API', () => {
     expect(item.text()).not.toMatch(/\barm\b/i);
   });
 
-  it('labels with the keyboard: 1 answers and moves to the note, Enter saves and opens the next', async () => {
+  it('labels with the keyboard: 2 answers, Enter saves and opens the next', async () => {
     const { w, calls } = mountTuning();
     await settle();
     key('2');
     await settle();
     expect(w.get('[data-test="criterion"] [aria-pressed="true"]').text()).toBe('2No');
     const note = w.get('[data-test="label-note"]');
-    expect(document.activeElement).toBe(note.element);
+    // 7 Nov QA: the focus stays out of the note after the last answer, so more numbers are answers, not text.
+    expect(document.activeElement).not.toBe(note.element);
+    key('2');
+    await settle();
+    // A number pressed again keeps its answer: a key never takes one back.
+    expect(w.get('[data-test="criterion"] [aria-pressed="true"]').text()).toBe('2No');
+    expect((note.element as HTMLTextAreaElement).value).toBe('');
     // Keys typed in the note are text, not answers.
     key('1', note.element);
     await settle();

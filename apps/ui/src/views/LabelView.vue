@@ -150,10 +150,12 @@ async function loadMore() {
   reset();
 }
 
-function choose(criterionIndex: number, value: LabelValue) {
+/** A click on the chosen answer takes it back; a key (`byKey`) only ever sets one, so pressing a
+ *  number twice never clears an answer without a sign. */
+function choose(criterionIndex: number, value: LabelValue, byKey = false) {
   const c = criteria.value[criterionIndex];
   if (!c) return;
-  answers[c.id] = answers[c.id] === value ? undefined : value;
+  answers[c.id] = !byKey && answers[c.id] === value ? undefined : value;
   active.value = criterionIndex;
 }
 
@@ -225,9 +227,11 @@ function skip() {
 }
 
 /**
- * 1, 2 and 3 answer the selected question and move to the next one; after the last, the focus
- * goes to the note. Enter saves and opens the next item, from anywhere but a button that does
- * something else; in the note, Shift+Enter starts a new line.
+ * 1, 2 and 3 answer the selected question and move to the next one; after the last, they answer
+ * the last again. The focus never jumps into the note, so a number pressed once more is an answer,
+ * not text in the note (7 Nov QA: a "11" ended up in a saved note). Enter saves and opens the next
+ * item, from anywhere but a button that does something else; in the note, Shift+Enter starts a new
+ * line.
  */
 function onKey(e: KeyboardEvent) {
   // Only the screen on the page answers: not one left over in memory, nor one not shown yet.
@@ -245,9 +249,8 @@ function onKey(e: KeyboardEvent) {
   const v = VALUES.find((x) => x.key === e.key);
   if (!v) return;
   e.preventDefault();
-  choose(active.value, v.value);
+  choose(active.value, v.value, true);
   if (active.value < criteria.value.length - 1) active.value += 1;
-  else void nextTick(() => noteBox.value?.focus());
 }
 onMounted(() => {
   window.addEventListener('keydown', onKey);
@@ -604,7 +607,7 @@ const blocks = (text: string) => mdBlocks(text);
             {{ position }} of {{ total }}
           </p>
           <p class="secondary small hint">
-            Press 1, 2 or 3 to answer, type a note, then Enter to save and open the next.
+            Press 1, 2 or 3 to answer each question in turn, then Enter to save and open the next. A note is optional: click its box to add one.
           </p>
         </div>
         <div class="criteria">
