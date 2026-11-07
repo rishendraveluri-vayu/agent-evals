@@ -508,6 +508,11 @@ A real-model soak of 988 trials over five harnesses at `ac089f8`, with injected 
 - **A judge quote can be marked "not found word for word" when the judge dropped Markdown.** The grader matches a quote against the conversation ignoring whitespace but not `**bold**` markers, so a quote the judge copied without them (keeps-buffer on some headline trials) reads as not found. Verdicts are unaffected; the trial page says so beside the quote.
 - **A headline judge check with no call evidence names rubric v1.** The headline ran on task versions whose judge spec names `advice.v1`; its D83 regrade used the graders-only versions that read `advice.v4`. A check the judge never answered falls back to the spec's rubric, shows `advice.v1` and gets no trust badge.
 
+## Final browser pass (7 Nov), left as they are
+
+- **"Latest result" and the Tasks page follow the newest finished real A/B.** On a fresh clone that is the model-axis shipped example, so every held-out task shows a result. On a machine with its own newer small runs (a 3-task check, say), both pages anchor on that run, and most tasks read "Not in this run".
+- **Small things:** the failed `months-with-extra` grade card still prints its regex and a quote with table pipes (the header line is plain); the A/A comparison repeats "as it should be: As it should"; a trial's stat card breaks `text_response(finish_reason=stop)` mid-word; a cancelled one-arm run's task table still has B columns; the Tasks summary's "32 code, 0 judge" sits beside "31 also have a judge"; a wide agent table on a phone scrolls inside its bubble with no sign that it scrolls.
+
 ## Open checks
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted
