@@ -186,6 +186,52 @@ describe('TrialView on live trials: why it failed', () => {
   });
 });
 
+describe('TrialView on live trials: replies as the agent wrote them', () => {
+  const agentReplies = (w: ReturnType<typeof mountLive>['w']) => w.findAll('[data-test="message"]').filter((m) => m.get('.bubble-who').text() === 'Agent');
+
+  it("shows a reply's Markdown table as a table, never as pipes and dashes", async () => {
+    const { w } = mountLive(PHONE);
+    await settle();
+    const replies = agentReplies(w);
+    const withTable = replies.filter((m) => m.find('[data-test="reply-table"]').exists());
+    expect(withTable).toHaveLength(1);
+    const table = withTable[0].get('[data-test="reply-table"]');
+    expect(table.findAll('thead th').map((th) => th.text())).toEqual(['Extra per month', 'Total monthly payment', 'Months to close', 'Interest paid', 'Interest saved']);
+    expect(table.findAll('tbody tr').map((tr) => tr.findAll('td').map((td) => td.text().replace(/^.*: /, '')))).toEqual([
+      ['None', '₹7,488.62', '17', '₹15,668.78', '—'],
+      ['₹2,000', '₹9,488.62', '14', '₹12,110.51', '₹3,558.27'],
+      ['₹3,000', '₹10,488.62', '12', '₹10,917.46', '₹4,751.32'],
+      ['₹5,000', '₹12,488.62', '10', '₹9,146.38', '₹6,522.40'],
+    ]);
+    for (const m of replies) {
+      expect(m.text()).not.toContain('|---');
+      expect(m.text()).not.toContain('**');
+    }
+  });
+
+  it('highlights a quoted table row in each of its cells, with one link a keyboard reaches', async () => {
+    const { w } = mountLive(PHONE);
+    await settle();
+    const row = w.findAll('[data-test="reply-table"] tbody tr')[2];
+    const links = row.findAll('[data-test="quote-link"]');
+    expect(links).toHaveLength(5);
+    expect(links.map((a) => a.attributes('tabindex') ?? null)).toEqual([null, '-1', '-1', '-1', '-1']);
+    expect(links.map((a) => a.attributes('aria-hidden') ?? null)).toEqual([null, 'true', 'true', 'true', 'true']);
+    expect(links.map((a) => a.findAll('.visually-hidden').length)).toEqual([1, 0, 0, 0, 0]);
+  });
+
+  it("drops a quote's Markdown markers in the grade card", async () => {
+    const { w } = mountLive(PHONE);
+    await settle();
+    const plainly = gradeNamed(w, 'overall')
+      .findAll('[data-test="judge-criterion"]')
+      .find((r) => r.get('.mono').text() === 'explains-plainly');
+    expect(plainly?.get('[data-test="grade-quote"]').text()).toBe('“Remaining interest: ₹15,668.79. This is the part you can still avoid by paying the loan off early.”');
+    const months = gradeNamed(w, 'months-with-extra').findAll('[data-test="grade-quote"]');
+    expect(months[0].text()).toBe('“₹3,000 | ₹10,488.62 | 12 | ₹10,917.46 | ₹4,751.32”');
+  });
+});
+
 describe('TrialView on live trials: tool calls', () => {
   it("shows a tool's result as laid-out JSON, never as an escaped string", async () => {
     const { w } = mountLive(PHONE);

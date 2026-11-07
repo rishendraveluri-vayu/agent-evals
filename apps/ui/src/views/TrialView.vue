@@ -7,15 +7,15 @@ import type { ExperimentDetail, TrialRowSummary, JudgeCriterionTrust, JudgeTrust
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import NotFound from '../components/NotFound.vue';
-import ReplyText from '../components/ReplyText.vue';
+import ReplyPieces from '../components/ReplyPieces.vue';
 import SpanTimeline from '../components/SpanTimeline.vue';
 import TrustBadge from '../components/TrustBadge.vue';
 import { armIndexOf, armLetter, armsOf, namedByHash } from '../lib/arms';
-import { gradeView, markAmounts, outcomeOf, provenanceOf, type AmountCheck, type GradeView, type ProvenanceView } from '../lib/grading';
+import { amountHits, gradeView, outcomeOf, provenanceOf, type AmountCheck, type GradeView, type ProvenanceView } from '../lib/grading';
 import { optional, useLoad } from '../lib/async';
 import { causeView, sentence } from '../lib/causes';
 import { capitalise, count, harnessVersion, money, plainText, seconds, shortVersion } from '../lib/format';
-import { inlineParts, inlineStyles, type InlinePart } from '../lib/markdown';
+import { findQuote, messageBlocks, piecesOf, quoteText, stylesOf, type Align, type Mark, type Piece, type QuoteMark, type Span } from '../lib/trialMarkdown';
 import { endStateName, experimentName, graderName, harnessName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
 import { isModelCallFile, jsonForDisplay, modelCalls, reasonParts, shortReason } from '../lib/trialDisplay';
 import { judgeFor, rubricName, rubricOf, trustLabel } from '../lib/trust';
@@ -334,15 +334,9 @@ interface ToolItem {
   result: string;
   error: boolean;
 }
-interface Segment {
-  text: string;
-  /** The text as shown: an agent's Markdown (bold, italics, bullets) as styled text runs. */
-  parts: InlinePart[];
-  /** The failed check that quoted this passage: its index in the grades and its name. */
-  quote: { index: number; name: string } | null;
-  /** An amount the number check found no source for. */
-  amount: AmountCheck | null;
-}
+/** A block of a message as shown (lib/trialMarkdown.ts): a paragraph, a rule, or a table, each
+ *  paragraph and cell as its pieces. */
+type ShownBlock = { kind: 'para'; pieces: Piece[] } | { kind: 'rule' } | { kind: 'table'; head: Piece[][]; rows: Piece[][][]; align: Align[] };
 
 interface Quote {
   text: string;
@@ -354,7 +348,7 @@ interface MessageItem {
   id: string;
   who: string;
   client: boolean;
-  paragraphs: Segment[][];
+  blocks: ShownBlock[];
   /** Whether any passage in it is highlighted, so the key goes under it. */
   marked: boolean;
   /** Whether it shows an amount the number check found no source for. */
@@ -379,36 +373,31 @@ function summarise(args: unknown): string {
     .join(', ');
 }
 
-/** Splits a reply into paragraphs and marks the passages a failed check quoted, each tied to the
- *  check that quoted it, then the amounts the number check could not trace to a source. With
- *  `markdown` (an agent's reply), each passage also carries its Markdown styles, worked out on
- *  the whole paragraph so a highlight inside bold text stays bold. */
-function segments(body: string, quotes: Quote[], amounts: AmountCheck[], markdown: boolean): Segment[][] {
-  const plain = (text: string): Segment[] => markAmounts(text, amounts).map((p) => ({ text: p.text, parts: [], quote: null, amount: p.amount }));
-  return body.split(/\n{2,}/).map((para) => {
-    const hits = quotes
-      .map((q) => ({ q, at: para.indexOf(q.text) }))
-      .filter((h) => h.q.text && h.at >= 0)
-      .sort((x, y) => x.at - y.at);
-    const out: Segment[] = [];
-    let pos = 0;
-    for (const h of hits) {
-      if (h.at < pos) continue;
-      if (h.at > pos) out.push(...plain(para.slice(pos, h.at)));
-      out.push({ text: h.q.text, parts: [], quote: { index: h.q.index, name: h.q.name }, amount: null });
-      pos = h.at + h.q.text.length;
-    }
-    if (pos < para.length) out.push(...plain(para.slice(pos)));
-    // The segments run through the paragraph in order, so each one's offset is the sum before it.
-    const styles = markdown ? inlineStyles(para) : null;
-    let at = 0;
-    for (const seg of out) {
-      seg.parts = styles ? inlineParts(para, styles, at, at + seg.text.length) : [{ text: seg.text, bold: false, italic: false }];
-      at += seg.text.length;
-    }
-    return out;
+/** A message in blocks, with the passages a failed check quoted marked, each tied to the check
+ *  that quoted it, and the amounts the number check could not trace to a source. Each quote is
+ *  placed once, where it first occurs, and one that overlaps a quote already placed is left out;
+ *  an amount inside a quote is marked as both. With `markdown` (an agent's reply), its tables,
+ *  rules and inline styles show; each paragraph's and cell's styles are worked out on the whole
+ *  of it, so a highlight inside bold text stays bold. */
+function shownBlocks(body: string, quotes: Quote[], amounts: AmountCheck[], markdown: boolean): ShownBlock[] {
+  const placed: Mark<QuoteMark>[] = [];
+  for (const q of quotes) {
+    const hit = findQuote(body, q.text);
+    if (!hit || placed.some((p) => hit.start < p.end && p.start < hit.end)) continue;
+    placed.push({ ...hit, value: { index: q.index, label: `Quoted by the judge for ${q.name}` } });
+  }
+  const amountMarks = amountHits(body, amounts);
+  const started = new Set<object>();
+  const pieces = (span: Span) => piecesOf(body, span, markdown ? stylesOf(body, span) : null, placed, amountMarks, started);
+  return messageBlocks(body, markdown).map((b): ShownBlock => {
+    if (b.kind === 'para') return { kind: 'para', pieces: pieces(b) };
+    if (b.kind === 'rule') return b;
+    return { kind: 'table', head: b.head.map(pieces), rows: b.rows.map((r) => r.map(pieces)), align: b.align };
   });
 }
+
+/** Every piece of a message's blocks, to ask what it shows. */
+const piecesIn = (blocks: ShownBlock[]): Piece[] => blocks.flatMap((b) => (b.kind === 'para' ? b.pieces : b.kind === 'table' ? [...b.head, ...b.rows.flat()].flat() : []));
 
 /** What to highlight in the replies: a failed check's quotes, and each quote the judge gave for a
  *  question it answered no, under that question. A quote for a "yes" is evidence for a pass, so it
@@ -453,15 +442,16 @@ const conversation = computed<(ToolItem | MessageItem)[]>(() => {
       out.push(...toolsOf(turnId));
       agentIndex += 1;
     }
-    const paragraphs = segments(m.content, isAgent ? failedQuotes.value : [], isAgent ? unsupportedAmounts.value : [], isAgent);
+    const blocks = shownBlocks(m.content, isAgent ? failedQuotes.value : [], isAgent ? unsupportedAmounts.value : [], isAgent);
+    const shown = piecesIn(blocks);
     out.push({
       kind: 'message',
       id: `m${i}`,
       who: isAgent ? 'Agent' : m.source === 'client_sim' ? 'Client, simulated' : 'Client',
       client: !isAgent,
-      paragraphs,
-      marked: paragraphs.some((p) => p.some((x) => x.quote)),
-      amounts: paragraphs.some((p) => p.some((x) => x.amount)),
+      blocks,
+      marked: shown.some((x) => x.quote),
+      amounts: shown.some((x) => x.amount),
     });
   });
   if (!transcript.length) out.push(...toolsOf(null));
@@ -1025,34 +1015,66 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                 data-test="message"
               >
                 <span class="bubble-who">{{ item.who }}</span>
-                <p
-                  v-for="(para, pi) in item.paragraphs"
-                  :key="pi"
-                  class="bubble-text"
+                <template
+                  v-for="(block, bi) in item.blocks"
+                  :key="bi"
                 >
-                  <template
-                    v-for="(seg, si) in para"
-                    :key="si"
+                  <p
+                    v-if="block.kind === 'para'"
+                    class="bubble-text"
                   >
-                    <a
-                      v-if="seg.quote"
-                      :href="`#grade-${seg.quote.index}`"
-                      class="quote-link"
-                      data-test="quote-link"
-                      @click.prevent="jumpToGrade(seg.quote.index)"
-                    ><span class="visually-hidden">Quoted by the judge for {{ seg.quote.name }}: </span><mark><ReplyText :parts="seg.parts" /></mark></a>
-                    <mark
-                      v-else-if="seg.amount"
-                      class="amount-mark"
-                      data-test="unsupported-amount"
-                      :title="'No tool result or client message gives this amount'"
-                    ><span class="visually-hidden">Amount with no source found: </span><ReplyText :parts="seg.parts" /></mark>
-                    <ReplyText
-                      v-else
-                      :parts="seg.parts"
+                    <ReplyPieces
+                      :pieces="block.pieces"
+                      @jump="jumpToGrade"
                     />
-                  </template>
-                </p>
+                  </p>
+                  <hr
+                    v-else-if="block.kind === 'rule'"
+                    class="reply-rule"
+                  >
+                  <div
+                    v-else
+                    class="table-scroll reply-table-wrap"
+                  >
+                    <table
+                      class="reply-table"
+                      data-test="reply-table"
+                    >
+                      <thead>
+                        <tr>
+                          <th
+                            v-for="(cell, ci) in block.head"
+                            :key="ci"
+                            scope="col"
+                            :class="block.align[ci] ? `align-${block.align[ci]}` : undefined"
+                          >
+                            <ReplyPieces
+                              :pieces="cell"
+                              @jump="jumpToGrade"
+                            />
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr
+                          v-for="(row, ri) in block.rows"
+                          :key="ri"
+                        >
+                          <td
+                            v-for="(cell, ci) in row"
+                            :key="ci"
+                            :class="block.align[ci] ? `align-${block.align[ci]}` : undefined"
+                          >
+                            <ReplyPieces
+                              :pieces="cell"
+                              @jump="jumpToGrade"
+                            />
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </template>
               </article>
               <p
                 v-if="item.kind === 'message' && item.marked"
@@ -1342,7 +1364,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                     class="quote small"
                     data-test="grade-quote"
                   >
-                    “{{ c.quote }}”
+                    “{{ quoteText(c.quote) }}”
                   </blockquote>
                   <p
                     v-if="c.quote && c.quoteFound === false"
@@ -1366,7 +1388,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                 class="quote small"
                 data-test="grade-quote"
               >
-                “{{ q }}”
+                “{{ quoteText(q) }}”
               </blockquote>
               <div
                 v-for="(ev, ei) in g.evidence"
@@ -1843,14 +1865,43 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
   margin-left: auto;
 }
 
-/* A quoted passage is a link to the check that quoted it, styled as the highlight alone. */
-.quote-link {
-  color: inherit;
-  text-decoration: none;
+/* A reply's table and rule (lib/trialMarkdown.ts): a light grid that scrolls inside the bubble
+   rather than widening it, its numbers in tabular figures. */
+.reply-table-wrap {
+  margin: 8px 0;
 }
 
-.quote-link:hover mark {
-  box-shadow: inset 0 -2px 0 var(--rule-strong);
+.reply-table {
+  border-collapse: collapse;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.reply-table th,
+.reply-table td {
+  padding: 4px 12px 4px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  text-align: left;
+  vertical-align: top;
+}
+
+.reply-table thead th {
+  font-weight: 600;
+  border-bottom-color: var(--rule);
+}
+
+.reply-table .align-right {
+  text-align: right;
+}
+
+.reply-table .align-center {
+  text-align: center;
+}
+
+.reply-rule {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 12px 0;
 }
 
 .mark-key {
@@ -1921,11 +1972,13 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
   white-space: nowrap;
 }
 
+/* A quote keeps its line breaks (a numbered list reads as one), its Markdown markers dropped. */
 .quote {
   margin: 4px 0 0;
   padding: 8px 12px;
   background: var(--ground);
   border-radius: 6px;
+  white-space: pre-line;
 }
 
 /* How far to trust the judge behind a judge check (D83): one line per question it answered. */

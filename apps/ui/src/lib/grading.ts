@@ -294,15 +294,10 @@ export function provenanceOf(raw: unknown): ProvenanceView | null {
   return { amounts: listed, unsupported, total, unsupportedCount: count };
 }
 
-export interface AnswerPart {
-  text: string;
-  /** The unsupported amount this part is, or null for plain text. */
-  amount: AmountCheck | null;
-}
-
-/** Splits a passage so each unsupported amount is its own part, by offsets when the check gives
- *  them and by its text otherwise (every occurrence, longest amounts first). */
-export function markAmounts(body: string, unsupported: AmountCheck[]): AnswerPart[] {
+/** Where each unsupported amount is in a passage, [start, end), in order: by offsets when the
+ *  check gives them and by its text otherwise (every occurrence, longest amounts first). The page
+ *  cuts the passage at these and at its blocks' edges (lib/trialMarkdown.ts piecesOf). */
+export function amountHits(body: string, unsupported: AmountCheck[]): { start: number; end: number; value: AmountCheck }[] {
   const hits: { at: number; len: number; amount: AmountCheck }[] = [];
   const taken = (at: number, len: number) => hits.some((h) => at < h.at + h.len && h.at < at + len);
   for (const a of [...unsupported].sort((x, y) => y.text.length - x.text.length)) {
@@ -321,14 +316,5 @@ export function markAmounts(body: string, unsupported: AmountCheck[]): AnswerPar
       from = at + a.text.length;
     }
   }
-  hits.sort((x, y) => x.at - y.at);
-  const out: AnswerPart[] = [];
-  let pos = 0;
-  for (const h of hits) {
-    if (h.at > pos) out.push({ text: body.slice(pos, h.at), amount: null });
-    out.push({ text: body.slice(h.at, h.at + h.len), amount: h.amount });
-    pos = h.at + h.len;
-  }
-  if (pos < body.length) out.push({ text: body.slice(pos), amount: null });
-  return out;
+  return hits.sort((x, y) => x.at - y.at).map((h) => ({ start: h.at, end: h.at + h.len, value: h.amount }));
 }
