@@ -487,7 +487,7 @@ A real-model soak of 988 trials over five harnesses at `ac089f8`, with injected 
 
 - **Two grader quirks, kept because changing a grader now would change shipped results.** `months-with-extra` fails a correct answer that puts the month count in a table column headed "Months to close" (it wants a month word after the number); it failed 8 headline trials, never as their only failing check. On `draft-spending-review` the sourcing rule calls a correct sum "made-up tool arguments" when the agent passes its own total (₹2,605) to a tool, though the number check accepts that total; all 20 of its headline trials fail. Both are the strict rules `docs/experiment.md` already discusses, not bugs in the comparison.
 - **Labelling is blind to metadata, not to the toolset.** In the tuning queue, 100 of 416 items show `search_documents` calls, which only the retrieval run's arm B had.
-- **Small things:** the first example load takes about 12 s with no progress indicator; the tool table rounds A and B to one decimal but B − A to two; a fresh config form starts as a copy of the newest config; the settings table says "cap doubled up to 8192" when the cap is already 8192; the trial strip and "Model requests" wording were fixed, the rest were not.
+- **Small things:** the first example load takes about 12 s with no progress indicator; the tool table rounds A and B to one decimal but B − A to two; a fresh config form starts as a copy of the newest config; the settings table says "cap doubled up to 8192" when the cap is already 8192.
 
 ## Open checks
 
