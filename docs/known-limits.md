@@ -503,6 +503,11 @@ A real-model soak of 988 trials over five harnesses at `ac089f8`, with injected 
   changes the hash of every ADK and LangGraph config. Parked for Rishi's call (SPEC, Parking lot).
   The setting is applied either way; only the recorded words were wrong.
 
+## Trial page judge evidence (7 Nov)
+
+- **A judge quote can be marked "not found word for word" when the judge dropped Markdown.** The grader matches a quote against the conversation ignoring whitespace but not `**bold**` markers, so a quote the judge copied without them (keeps-buffer on some headline trials) reads as not found. Verdicts are unaffected; the trial page says so beside the quote.
+- **A headline judge check with no call evidence names rubric v1.** The headline ran on task versions whose judge spec names `advice.v1`; its D83 regrade used the graders-only versions that read `advice.v4`. A check the judge never answered falls back to the spec's rubric, shows `advice.v1` and gets no trust badge.
+
 ## Open checks
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted
