@@ -8,7 +8,22 @@ Each entry is one of three kinds:
 - **Constraint:** a verified fact the design has to respect, with the evidence. Not a choice.
 - **Open:** not decided yet. Options and tradeoffs live in `docs/decisions.md`.
 
+Codes such as D10 (a decision) and R14 (a ruling) point to `docs/decisions.md`, and codes such as A47 (an assumption) to `docs/assumptions.md`. The text reads without them.
+
 ## At a glance
+
+**What the platform does.** It answers one question about an AI agent: did a change make it better, worse or no different, and how sure is that? It runs two versions of the agent (arm A and arm B) on the same tasks, many times each, grades every attempt with code checks (plus an LLM judge where code cannot decide), and compares the two arms task by task. Every trial's full record (its messages, tool calls, and what each grader decided and why) is kept and can be opened.
+
+**How this document maps to the brief.** The brief asks the design document for six topics. Each is one numbered section, and each section opens with a short **In plain words** summary that reads on its own; the detail below it is the design record as it was made.
+
+| The brief asks for | Section |
+| --- | --- |
+| The architecture | [1. Architecture](#1-architecture) |
+| The harness and model adapter interfaces | [2. Harness and model adapter interfaces](#2-harness-and-model-adapter-interfaces) |
+| The data model: tasks, configs, experiments, trials, traces | [3. Data model](#3-data-model) |
+| How runs are isolated and reproduced | [4. How runs are isolated and reproduced](#4-how-runs-are-isolated-and-reproduced) |
+| Grader design, and how the graders were validated | [5. Grader design and validation](#5-grader-design-and-validation) |
+| The statistical method, and how N was chosen | [6. Statistical method and choice of N](#6-statistical-method-and-choice-of-n) |
 
 ```mermaid
 flowchart LR
@@ -48,6 +63,8 @@ A model from a provider LiteLLM already reaches is one entry in LiteLLM's config
 
 ## 1. Architecture
 
+> **In plain words.** The platform is a handful of services that start with one command. A web screen (Vue) talks to one server, the API (NestJS, in TypeScript), which owns the platform's database (Postgres), the queue of trials and the statistics. Each of the five harnesses (the program that drives the model: it sends the prompt, runs the tools the model asks for and decides when to stop) runs in its own worker container, which asks the API for one trial at a time and sends back what happened; workers never touch the database. Every model call from every worker goes through one proxy, LiteLLM, which gives each trial its own key and spending cap and records the real tokens and cost; its response cache, which would replay stored answers, is off, so a repeated trial is a fresh attempt. Grading is a separate service that picks up finished trials, so fixing a grader never means re-running the agent.
+
 Decided:
 
 - The control plane is a NestJS API and a Vue 3 UI, in TypeScript (brief).
@@ -61,6 +78,8 @@ Decided:
 - Each harness runs as its own long-lived compose service, with a fresh process per trial (D3, section 4).
 
 ## 2. Harness and model adapter interfaces
+
+> **In plain words.** The five harnesses are Hermes (the one the brief requires), a plain loop of my own as the baseline, LangGraph, Google ADK and the OpenAI Agents SDK. They need clashing versions of the same libraries, so each runs in its own environment, and the platform talks to it through files: one file in (the trial's spec) and two out (the result and a step-by-step trace). Adding a harness means writing two methods against a shared library, one that maps our settings onto the harness's own and one that runs a single agent turn; the library handles the timeout, the tools, the simulated client and the trace, and nothing in the platform's core has to change. Adding a model is one entry in the proxy's config when the proxy already reaches its provider, because every model call goes through that proxy. Every harness gets the same tools, with the same names, descriptions and schemas, from one shared tool server (MCP, an open protocol for offering tools to an agent), and a setting counts as supported only once a test sees it in the request that actually reached the model.
 
 Decided:
 
@@ -105,6 +124,8 @@ Decided, the field-by-field contract (R12, 3 Nov; to be iterated on 4 Nov):
 Decided (D15, 5 Nov): compression, memory and skills off in both arms of the headline experiment; prompt-cache markers off (D31); Tool Search off (R10.7).
 
 ## 3. Data model
+
+> **In plain words.** Five core records. A **task** is one question for the agent, with the checks that grade the answer; a **config** is one complete agent setup (harness, model, settings, prompt and tools); an **experiment** runs configs side by side as arms A and B on a fixed list of tasks, N times each; a **trial** is one attempt at one task by one config; and a **trace** is a trial's step-by-step record (its model calls, tool calls and turns). Tasks, configs, prompts and toolsets are named by a fingerprint of their content (a hash), so an edit makes a new version and an old result still points at exactly what ran. Grades are only ever added, never overwritten, so a fixed grader's new grades sit beside the old ones. The rows live in Postgres, each trial's raw files (result, trace, checks) are kept under `runs/`, and human labels are files in `labels/`, which the database copies from. The first paragraph below is the model as approved; the entries after it record each later change to the schema, with its migration file, and the table under At a glance is the short version.
 
 Tasks, configs, experiments, trials and traces.
 
@@ -173,6 +194,8 @@ Storage: experiment trials, their spans, grading jobs, grades, labels and events
 
 ## 4. How runs are isolated and reproduced
 
+> **In plain words.** Isolation means one trial cannot see or change another. Each harness runs in one long-lived container that does one trial at a time, in a fresh process; everything a trial can write sits in one folder, which the runner wipes and checks between trials after killing any leftover process, and the rest of the container's disk is read-only. Workers have no internet and no provider keys (they reach only the API, the model proxy and the fake model server), each trial gets its own proxy key and budget, and a trial's files are stored by the API, out of any later trial's reach. Reproduction means a past result can be traced to exactly what produced it: its config's hash, a hash of the adapter code that ran it, and the platform's git commit, while each experiment freezes its tasks' hashes and N (runs from before 7 Nov, the shipped examples among them, lack some of these; see below). The statistics' random draws are seeded from the experiment id, so the same trials always give the same verdict; what cannot be pinned is the provider's model, which can change behind the same name, and because the proxy's response cache is off, a re-run is a fresh sample, not a replay. The trade-off, written up below: trials share a container in turn rather than each getting a fresh one, and a leak test checks that nothing carries over.
+
 Constraints:
 
 - **Hermes is pinned at `6112c2adb9e11f69734a29be9d2696f345ffa06a`** and installed from its own `uv.lock`. Hermes source is never modified.
@@ -206,6 +229,8 @@ Reproduction: what pins a past result
 Given up: consecutive trials in one container are separated by the sweep, the wipe and the read-only root, not by a fresh container. The SP3 leak test checks this. See the D3 entry in `docs/decisions.md` for the full tradeoff.
 
 ## 5. Grader design and validation
+
+> **In plain words.** The tasks are a personal-finance assistant for clients in India, and each task carries its own graders. Most are plain code checks: was the right tool called, does the answer hold the exact figure, is a phrase present or absent, and can every rupee figure in the answer be matched to a source such as a tool's result or the client's file. Every grade quotes its evidence and carries a version, and grading is its own step after the trial, so a fixed grader adds new grades beside the old ones without re-running the agent. An LLM judge scores what code cannot, such as whether the advice fits this client, but a judge check may count only once it clears a bar set in advance against my blind hand labels: among other conditions, kappa (how far the judge agrees with a person beyond luck: 1 is perfect, 0 is no better than chance, below 0 is worse) of at least 0.6, no sign that it wrongly passes one arm's answers more often than the other's, and the same verdict at least 90% of the time when it grades an answer again. The candidate judge (rubric v4 on Gemini 3.8 Flash) was tested once on 40 held-out trials and failed, with kappa −0.14 (it passed all 9 answers I failed), so every judge check stays optional: shown, but never deciding a trial's pass or a verdict. The code checks were validated by tests on good and bad example trials and by reading real trials, which found some false fails (fixed, or listed as known limits); against the same 40 labels they agree with my overall verdict on only 21 (kappa −0.23), because they test facts and sourcing, not whether the advice is good.
 
 Decided:
 
@@ -247,6 +272,17 @@ Validated so far (5 Nov; the judge's state updated 6 Nov):
 The plan and the label sets are in `docs/judge-validation.md`; results so far are in `docs/experiment.md`.
 
 ## 6. Statistical method and choice of N
+
+> **In plain words.** The question is always "is B better than A, and how sure are we?"
+>
+> - **The task is the unit, not the trial.** Ten tries at one task are not ten independent pieces of evidence: an easy task passes whatever the prompt says. So each task gets B's pass rate minus A's, and the headline is the average of those differences, each task counting equally, in percentage points (a pass rate going from 64% to 73% is +9 points).
+> - **The interval.** The 95% interval is the range the true difference most likely lies in. It comes from re-drawing the set of tasks at random 10,000 times (some picked twice, some left out) and keeping the middle 95% of the averages.
+> - **The paired test.** It asks: if nothing had changed, how often would we see a pattern this one-sided? With no real change, each task's difference is as likely to point up as down, so the test flips the signs in every possible pattern (20,000 random ones beyond 30 tasks) and counts how often the average lands at least as far from zero as the real one. That share is the p-value.
+> - **The 1-in-20 bar.** "Better" (or "worse") needs both: the interval clear of zero, and p below 0.05, a pattern luck would give less than 1 time in 20. Both rules were set before the run. A tied task tells the test nothing, so with only 5 tasks able to move, even B winning all 5 is luck 1 time in 16 (p = 0.0625) and cannot clear the bar; any verdict except "no detectable difference" needs at least 6 tasks whose pass rates differ. The headline is exactly this case: v2 was higher on all 5 tasks that differed (+9 points, interval +3 to +16), and the verdict is "no detectable difference".
+> - **"Practically the same."** When the whole interval sits within 10 points either side of zero, the verdict is "practically equivalent": any real difference is most likely smaller than the ±10-point margin set before the run.
+> - **Per-task checks.** Each task also gets its own interval and test. Tested one by one at the 1-in-20 bar, about 1 in 20 tasks that did not really change would still look different by luck, so a task is flagged "beyond noise" only after a correction for testing many at once (of the flagged tasks, at most about 5% are expected to be luck). A flag means "look here", not a verdict. Every task where B dropped is listed with what got worse, and B is never called better while failures on checks marked critical rose beyond noise (the verdict is held back).
+> - **The A/A run.** One config on both arms measures the setup's own noise, so it should come out "no detectable difference"; the headline's A/A did (−4 points, interval −12 to +3). Every A/B comparison shows the latest A/A of either arm's config, or says there is none.
+> - **How N was chosen.** N = 10 trials per task and arm on the 10 held-out tasks: 200 trials per comparison, about $2. The number of tasks was fixed by the split (10 of the 21 tasks held out for scoring); N was chosen from a simulation and the cost, and the simulation said that at this size a real 15-point gain is called "better" only about half the time (85% with 20 tasks). The test's best possible p depends on how many tasks differ, not on how many trials each gets, so more tasks in the middle (neither always passed nor always failed) help more than more trials.
 
 The question is always "is B better than A, and how sure are we". The comparison answers it in
 `GET /experiments/:id/compare` (`stats`), computed in `apps/api/src/stats/`: pure, seeded
