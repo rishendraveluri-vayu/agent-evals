@@ -342,7 +342,7 @@ needs someone who writes most of their own code, you should know this repo wasn'
 What I did:
 
 - Every decision, with the options I weighed, is in [`docs/decisions.md`](docs/decisions.md).
-  Where the docs quote "Rishi", that's my call at the time.
+  Where it names "Rishi", that's me.
 - I set the rules the agent worked under, in [`CLAUDE.md`](CLAUDE.md): no real model calls in tests,
   no paid run without my OK and its cost stated first, never tune the judge on held-out labels,
   never drop a failed trial, design calls stay with me.
@@ -357,6 +357,10 @@ How I checked it:
 - the A/A run (the same agent on both sides) and the two planted breaks above
 - clean-clone runs on a fresh machine
 - a soak test: about 1,000 real trials across all five harnesses, killing workers and stopping the
-  API, database and proxy mid-run. It found two real bugs, both fixed.
+  API, database and proxy mid-run. It found six problems: four fixed, two written up as known limits.
+- a last real-model run on a fresh clone (all five harnesses, a worker killed mid-trial): every trial
+  done exactly once, and its spend matched LiteLLM's log to the cent
 - CI on every push
 - other AI agents reviewing the repo against the brief, with every finding checked against the code
+- QA agents driving the UI in a real browser, page by page on desktop and phone, checking what's on
+  screen against the API
