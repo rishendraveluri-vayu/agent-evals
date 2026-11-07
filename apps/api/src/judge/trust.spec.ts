@@ -112,7 +112,63 @@ describe('a judge criterion’s trust status (D83)', () => {
     const list = [...items('heldout', { tp: 20, fp: 0, tn: 20 }, { arm: 'A' }), ...items('heldout', { tp: 20, fp: 12, tn: 8 }, { arm: 'B' })];
     const c = trustOf(list, { identical: 10, total: 10, share: 1 });
     expect(c.heldout!.false_pass_gap).toMatchObject({ experiment_id: 'e1', estimate: 0.6, includes_zero: false });
-    expect(c.d8!.reasons).toContain("the false-pass rate differs between arms (a gap's interval leaves out 0)");
+    // D86: the reason names the experiment.
+    expect(c.d8!.reasons).toContain("the false-pass rate differs between arms in experiment e1 (a gap's interval leaves out 0)");
+  });
+
+  // D86 (review 7 Nov, F6; Rishi: "Match the Python reference"): the gap must hold 0 in every
+  // experiment, as `no_false_pass_gap` in stats/agreement.py, not only in the one with most pairs.
+  describe('the false-pass gap on every experiment (D86)', () => {
+    /** `counts` held-out items of each kind on one arm of one experiment. */
+    const inArm = (experimentId: string, arm: 'A' | 'B', counts: Partial<Record<Kind, number>>): JudgedItem[] =>
+      items('heldout', counts, { arm, prefix: `${experimentId}-${arm}` }).map((p) => ({ ...p, arms: [{ experimentId, arm }] }));
+    // e_small: the judge passes every arm-B output the humans failed, and no arm-A one.
+    const small = [...inArm('e_small', 'A', { tp: 10, tn: 10 }), ...inArm('e_small', 'B', { tp: 10, fp: 10 })];
+    // e_big: the judge agrees with the humans everywhere, on five times the pairs.
+    const big = [...inArm('e_big', 'A', { tp: 50, tn: 50 }), ...inArm('e_big', 'B', { tp: 50, tn: 50 })];
+    const retest = { identical: 20, total: 20, share: 1 };
+
+    it('does not trust a judge 100 points kinder to one arm of a small experiment because a larger one is clean (F6)', () => {
+      const c = trustOf([...small, ...big], retest);
+      // Kappa clears the bar on the pooled pairs: only the gap can catch it.
+      expect(c.heldout!.kappa!).toBeGreaterThanOrEqual(0.6);
+      expect(c.heldout!.kappa_interval.low!).toBeGreaterThanOrEqual(0.4);
+      expect(c.status).toBe('not_trusted');
+      expect(c.heldout!.false_pass_gap).toMatchObject({ experiment_id: 'e_small', estimate: 1, includes_zero: false });
+      expect(c.d8).toEqual({ trusted: false, reasons: ["the false-pass rate differs between arms in experiment e_small (a gap's interval leaves out 0)"] });
+      expect(c.summary).toBe('Not trusted: on 240 held-out labels it passes bad answers more often in one arm than the other in experiment e_small (false-pass gap 1.00, B minus A).');
+    });
+
+    it('names every experiment whose gap leaves 0 out', () => {
+      const other = [...inArm('e_other', 'A', { tp: 10, tn: 10 }), ...inArm('e_other', 'B', { tp: 10, fp: 10 })];
+      const c = trustOf([...small, ...big, ...other], retest);
+      expect(c.d8!.reasons).toEqual(["the false-pass rate differs between arms in experiments e_other and e_small (a gap's interval leaves out 0)"]);
+      expect(c.heldout!.false_pass_gap!.experiment_id).toBe('e_other');
+    });
+
+    it('trusts the judge when every experiment’s gap holds 0, reading the gap of the one with most pairs', () => {
+      const fair = [...inArm('e_small', 'A', { tp: 10, tn: 10 }), ...inArm('e_small', 'B', { tp: 10, tn: 10 })];
+      const c = trustOf([...fair, ...big], retest);
+      expect(c.status).toBe('trusted');
+      expect(c.heldout!.false_pass_gap).toMatchObject({ experiment_id: 'e_big', estimate: 0, includes_zero: true });
+    });
+
+    it('fails D8 when one experiment’s gap cannot be measured, and says which', () => {
+      // e_thin: one human "no" per arm among 20 pairs, so most resamples miss one: the interval is undefined.
+      const thin = [...inArm('e_thin', 'A', { tp: 19, tn: 1 }), ...inArm('e_thin', 'B', { tp: 19, tn: 1 })];
+      const c = trustOf([...big, ...thin], retest);
+      expect(c.heldout!.false_pass_gap).toMatchObject({ experiment_id: 'e_thin', includes_zero: null });
+      expect(c.status).toBe('not_trusted');
+      expect(c.d8!.reasons).toEqual(['the false-pass gap between arms could not be measured in experiment e_thin']);
+      expect(c.summary).toMatch(/^Not trusted yet: kappa \d\.\d\d on 240 held-out labels clears the bar, but the false-pass gap between arms could not be measured in experiment e_thin; label more outputs it should fail in both its arms\.$/);
+    });
+
+    it('leaves out an experiment without a human "no" on both arms, as before', () => {
+      const oneSided = [...inArm('e_one', 'A', { tp: 10, tn: 10 }), ...inArm('e_one', 'B', { tp: 10, fn: 2 })];
+      const c = trustOf([...big, ...oneSided], retest);
+      expect(c.heldout!.false_pass_gap!.experiment_id).toBe('e_big');
+      expect(c.status).toBe('trusted');
+    });
   });
 
   it('is computed the same way twice: the intervals are seeded by judge, criterion and set', () => {

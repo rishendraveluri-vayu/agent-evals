@@ -155,17 +155,27 @@ const pct = (v: number): string => `${Math.round(v * 100)}%`;
  * >= 0.4, at least 5 human "no" labels (D77), the false-pass gap's interval holding 0, and
  * test-retest >= 90%. Anything that cannot be measured fails it, with the reason. The interval is
  * given as {low, undefined_share} (an Interval through `undefinedShare`, or AgreementInterval).
- * `gapHoldsZero`: true when the gap's interval holds 0, false when it leaves 0 out, null when it
- * could not be measured (one arm, no human "no" in an arm, or the interval undefined).
+ * `gapHoldsZero`: true when every gap's interval holds 0, false when one leaves 0 out, null when
+ * one could not be measured (one arm, no human "no" in an arm, or the interval undefined), as
+ * `no_false_pass_gap`. `gapExperiments` (D86): the experiments whose gap left 0 out, or could not
+ * be measured, named in that reason; without them the reason is the Python's word for word.
  */
 /** Two decimals; a value that rounds to zero is "0.00", never "-0.00". */
 const two = (v: number): string => (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
+
+/** " in experiment e_1", " in experiments e_1 and e_2", or "" for none. */
+function inExperiments(ids: readonly string[]): string {
+  if (!ids.length) return '';
+  const list = ids.length === 1 ? ids[0] : `${ids.slice(0, -1).join(', ')} and ${ids[ids.length - 1]}`;
+  return ` in experiment${ids.length === 1 ? '' : 's'} ${list}`;
+}
 
 export function d8Check(
   t: Table,
   kappaInterval: { low: number | null; undefined_share: number | null } | null,
   gapHoldsZero: boolean | null,
   retestShare: number | null,
+  gapExperiments: readonly string[] = [],
 ): { trusted: boolean; reasons: string[] } {
   const reasons: string[] = [];
   const humanNo = t.fp + t.tn;
@@ -177,8 +187,8 @@ export function d8Check(
     const share = kappaInterval?.undefined_share ?? null;
     reasons.push(`kappa's interval is undefined${share ? ` (${pct(share)} of resamples undefined)` : ''}`);
   } else if (kappaInterval.low < D8_KAPPA_LOW) reasons.push(`kappa's interval reaches ${two(kappaInterval.low)}, below ${D8_KAPPA_LOW}`);
-  if (gapHoldsZero === null) reasons.push('the false-pass gap between arms could not be measured');
-  else if (!gapHoldsZero) reasons.push("the false-pass rate differs between arms (a gap's interval leaves out 0)");
+  if (gapHoldsZero === null) reasons.push(`the false-pass gap between arms could not be measured${inExperiments(gapExperiments)}`);
+  else if (!gapHoldsZero) reasons.push(`the false-pass rate differs between arms${inExperiments(gapExperiments)} (a gap's interval leaves out 0)`);
   if (retestShare === null) reasons.push('test-retest agreement is not measured');
   else if (retestShare < D8_RETEST) reasons.push(`test-retest agreement ${pct(retestShare)} is below ${pct(D8_RETEST)}`);
   return { trusted: !reasons.length, reasons };

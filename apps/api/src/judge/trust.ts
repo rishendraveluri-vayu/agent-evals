@@ -75,11 +75,17 @@ const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /** The figures on one criterion in one set; null when no item of the set is labelled. `seed` names its streams. */
 export function figuresOf(items: readonly JudgedItem[], seed: string): AgreementFigures | null {
+  return withGaps(items, seed)?.figures ?? null;
+}
+
+/** figuresOf, with every experiment's false-pass gap beside the one the figures carry (D86). */
+function withGaps(items: readonly JudgedItem[], seed: string): { figures: AgreementFigures; gaps: { gap: Gap; pairs: number }[] } | null {
   if (!items.length) return null;
   const used = items.filter((p) => usable(p, POLICY));
   const t = table(used, POLICY);
   const kappa = bootstrap(used, (s) => kappaOf(table(s, POLICY)), { seed: `${seed}:kappa` });
-  return {
+  const gaps = falsePassGaps(used, seed);
+  const figures: AgreementFigures = {
     n: tableN(t),
     ...t,
     agreement: agreementOf(t),
@@ -90,8 +96,9 @@ export function figuresOf(items: readonly JudgedItem[], seed: string): Agreement
     human_no: t.fp + t.tn,
     human_left_out: items.filter((p) => humanValue(p.human, POLICY) === null).length,
     judge_undecided: items.filter((p) => p.judge !== 'yes' && p.judge !== 'no').length,
-    false_pass_gap: falsePassGap(used, seed),
+    false_pass_gap: decidingGap(gaps),
   };
+  return { figures, gaps };
 }
 
 /** The tasks of the items with a firm human answer and a judge yes or no (the comparison's `stats.judge.tasks`). */
@@ -99,12 +106,14 @@ export function tasksWithPairs(items: readonly JudgedItem[]): number {
   return new Set(items.filter((p) => usable(p, POLICY)).map((p) => p.taskId)).size;
 }
 
+type Gap = NonNullable<AgreementFigures['false_pass_gap']>;
+
 /**
- * D8's false-pass gap, arm B minus arm A, in the experiment with the most usable pairs on its arms
- * A and B among those with a human "no" on both (ties: the later id); null when there is none.
- * The bootstrap resamples that experiment's pairs.
+ * D8's false-pass gap, arm B minus arm A, in every experiment with a human "no" on both its arms A
+ * and B (by id), each with its own bootstrap over that experiment's pairs (D86: every one must hold
+ * 0, as `no_false_pass_gap` in stats/agreement.py, where each pair of arms gets a gap).
  */
-function falsePassGap(used: readonly JudgedItem[], seed: string): AgreementFigures['false_pass_gap'] {
+export function falsePassGaps(used: readonly JudgedItem[], seed: string): { gap: Gap; pairs: number }[] {
   const byExperiment = new Map<string, Pair[]>();
   for (const p of used) {
     for (const m of p.arms) {
@@ -114,28 +123,51 @@ function falsePassGap(used: readonly JudgedItem[], seed: string): AgreementFigur
       byExperiment.set(m.experimentId, list);
     }
   }
-  let best: { id: string; pairs: Pair[] } | null = null;
+  const arms = ['A', 'B'] as const;
+  const out: { gap: Gap; pairs: number }[] = [];
   for (const [id, pairs] of [...byExperiment.entries()].sort(([a], [b]) => byText(a, b))) {
     const no = (arm: string): number => pairs.filter((p) => p.arm === arm && humanValue(p.human, POLICY) === 'no').length;
     if (!no('A') || !no('B')) continue;
-    if (!best || pairs.length >= best.pairs.length) best = { id, pairs };
+    // One stream name for every experiment, as the Python seeds every pair of arms alike.
+    const interval = bootstrap(pairs, (s) => signedGap(s, arms, POLICY), { seed: `${seed}:false_pass_gap` });
+    out.push({ gap: { experiment_id: id, estimate: signedGap(pairs, arms, POLICY), interval: asInterval(interval), includes_zero: includesZero(interval) }, pairs: pairs.length });
   }
-  if (!best) return null;
-  const arms = ['A', 'B'] as const;
-  const interval = bootstrap(best.pairs, (s) => signedGap(s, arms, POLICY), { seed: `${seed}:false_pass_gap` });
-  return { experiment_id: best.id, estimate: signedGap(best.pairs, arms, POLICY), interval: asInterval(interval), includes_zero: includesZero(interval) };
+  return out;
+}
+
+/**
+ * The gap D8 reads, from every experiment's (D86, `no_false_pass_gap`): the first whose interval
+ * leaves 0 out, else the first whose interval is undefined, else (every one holds 0) the one with
+ * the most pairs (ties: the later id); null when no experiment has a human "no" on both arms. Its
+ * `includes_zero` is then the check's answer: false when any experiment's gap leaves 0 out, null
+ * when none does but one cannot be measured, true when every one holds 0.
+ */
+export function decidingGap(gaps: readonly { gap: Gap; pairs: number }[]): Gap | null {
+  if (!gaps.length) return null;
+  const off = gaps.find((g) => g.gap.includes_zero === false) ?? gaps.find((g) => g.gap.includes_zero === null);
+  if (off) return off.gap;
+  return gaps.reduce((best, g) => (g.pairs >= best.pairs ? g : best)).gap;
+}
+
+/** The experiments of `gaps` whose `includes_zero` is `holds`, by id. */
+function experimentsWhere(gaps: readonly { gap: Gap }[], holds: boolean | null): string[] {
+  return gaps.filter((g) => g.gap.includes_zero === holds).map((g) => g.gap.experiment_id);
 }
 
 /** One criterion's trust: figures per set, D8 on the held-out ones, the status and its sentence. `judgeSeed` names the judge. */
 export function criterionTrust(judgeSeed: string, c: CriterionInput): JudgeCriterionTrust {
   const figures = (set: TrustSet) =>
-    figuresOf(
+    withGaps(
       c.items.filter((p) => p.set === set),
       `judge-trust:${judgeSeed}:${c.criterion}:${set}`,
     );
-  const heldout = figures('heldout');
-  const tuning = figures('tuning');
-  const d8 = heldout ? d8Check(heldout, heldout.kappa_interval, heldout.false_pass_gap?.includes_zero ?? null, c.retest?.share ?? null) : null;
+  const held = figures('heldout');
+  const heldout = held?.figures ?? null;
+  const tuning = figures('tuning')?.figures ?? null;
+  // D86: the gap must hold 0 in every experiment; D8's reason names the ones where it does not.
+  const holds = heldout?.false_pass_gap?.includes_zero ?? null;
+  const named = held && holds !== true ? experimentsWhere(held.gaps, holds) : [];
+  const d8 = heldout ? d8Check(heldout, heldout.kappa_interval, holds, c.retest?.share ?? null, named) : null;
   const humanNo = heldout?.human_no ?? 0;
   let status: JudgeTrustStatus;
   if (!heldout && !tuning) status = 'uncalibrated';
@@ -206,9 +238,15 @@ export function criterionSummary(status: JudgeTrustStatus, heldout: AgreementFig
       if (k < D8_KAPPA) return `Not trusted: kappa ${f2(k)} on ${on} is below ${D8_KAPPA}.`;
       const low = h.kappa_interval.low!;
       if (low < D8_KAPPA_LOW) return `Not trusted: kappa ${f2(k)} on ${on}, but its interval reaches ${f2(low)}, below ${D8_KAPPA_LOW}.`;
+      // D86: the gap read here is the first experiment's whose gap leaves 0 out, else one that could not be measured.
       const gap = h.false_pass_gap;
-      if (gap?.includes_zero === false) return `Not trusted: on ${on} it passes bad answers more often in one arm than the other (false-pass gap ${f2(gap.estimate ?? 0)}, B minus A).`;
-      if (!gap || gap.includes_zero === null) return `Not trusted yet: kappa ${f2(k)} on ${on} clears the bar, but the false-pass gap between arms could not be measured; label outputs it should fail in both arms of one experiment.`;
+      if (gap?.includes_zero === false) {
+        return `Not trusted: on ${on} it passes bad answers more often in one arm than the other in experiment ${gap.experiment_id} (false-pass gap ${f2(gap.estimate ?? 0)}, B minus A).`;
+      }
+      if (!gap) return `Not trusted yet: kappa ${f2(k)} on ${on} clears the bar, but the false-pass gap between arms could not be measured; label outputs it should fail in both arms of one experiment.`;
+      if (gap.includes_zero === null) {
+        return `Not trusted yet: kappa ${f2(k)} on ${on} clears the bar, but the false-pass gap between arms could not be measured in experiment ${gap.experiment_id}; label more outputs it should fail in both its arms.`;
+      }
       if (!retest || retest.share === null) return `Not trusted yet: kappa ${f2(k)} on ${on} clears the bar, but its test-retest agreement is not measured; regrade a few judged trials to measure it.`;
       return `Not trusted: it gives the same verdict on a regrade only ${pct(retest.share)} of the time, below ${pct(D8_RETEST)}.`;
     }

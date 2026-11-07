@@ -1143,15 +1143,22 @@ no model and never changes a grade or a verdict.
   `agreement.spec.ts`: gemini-3.8-flash on the D74 held-out panel, `overall` n 37, 25 / 9 / 3 / 0,
   kappa -0.138; interval -0.259 to 0.000 here, -0.254 to 0.000 in Python). Numbers are not
   rounded.
-- **The false-pass gap** (`false_pass_gap`): arm B's false-pass rate minus arm A's, in the
-  experiment whose arms A and B hold the most pairs among those with a human "no" on both arms
-  (ties: the later id), with its bootstrap over that experiment's pairs; null when no experiment
-  has a human "no" on both arms. A trial belongs to its own experiment's arm (`TRIAL_IN_ARM`, so a
-  calibration run's arm B is its repeats n to 2n − 1) and to arm A of any experiment that reuses it.
+- **The false-pass gap** (`false_pass_gap`): arm B's false-pass rate minus arm A's, worked out
+  in every experiment with a human "no" on both its arms A and B, each with its own bootstrap over
+  that experiment's pairs (D86, as `no_false_pass_gap` in `agreement.py`). D8 needs every one of
+  them to hold 0. The field is the gap D8 reads: the first experiment (by id) whose interval
+  leaves 0 out, else the first whose interval is undefined, else (every one holds 0) the one with
+  the most pairs (ties: the later id); so its `includes_zero` is the check's answer. Null when no
+  experiment has a human "no" on both arms. A trial belongs to its own experiment's arm
+  (`TRIAL_IN_ARM`, so a calibration run's arm B is its repeats n to 2n − 1) and to arm A of any
+  experiment that reuses it. (Until 7 Nov only the experiment with the most pairs was read, so a
+  judge kinder to one arm of a smaller experiment could be trusted.)
 - **D8 on the held-out pairs** (`d8`, present whenever there are held-out labelled items, `too_few`
   included), as `d8_check` in `agreement.py`, with its reasons word for word: kappa ≥ 0.6, its
-  interval's lower end ≥ 0.4, at least 5 human "no" labels (D77), the gap's interval holding 0, and
-  test-retest ≥ 90%. **Test-retest** (`retest`) compares, for each trial graded more than once by
+  interval's lower end ≥ 0.4, at least 5 human "no" labels (D77), every experiment's gap interval
+  holding 0 (D86), and test-retest ≥ 90%. The gap's two reasons name the experiments where the gap
+  leaves 0 out or cannot be measured ("the false-pass rate differs between arms in experiment
+  e_… (a gap's interval leaves out 0)"); the other reasons are the Python's word for word. **Test-retest** (`retest`) compares, for each trial graded more than once by
   the same judge, the criterion's verdicts in its two latest finished grading jobs (a regrade is a
   second grading; a regrade that answered the same reuses the grade row, and still counts as a
   grading); a criterion one of the two left out reads as `missing`, so it differs. Unmeasured, it

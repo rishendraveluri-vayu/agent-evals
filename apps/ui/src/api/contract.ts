@@ -1735,7 +1735,12 @@ export interface AgreementFigures {
   human_left_out: number;
   /** Labelled items where the judge gave no yes or no (error, not judged). */
   judge_undecided: number;
-  /** D8: arm B's false-pass rate minus arm A's, for the experiment with the most labelled pairs on both arms; null when no experiment has human "no" labels on both arms. */
+  /**
+   * D8: arm B's false-pass rate minus arm A's. D86: it is worked out in every experiment with human
+   * "no" labels on both arms, and D8 needs every one to hold 0; this is the one D8 reads: the first
+   * (by id) whose interval leaves 0 out, else the first whose interval is undefined, else the one
+   * with the most labelled pairs. Null when no experiment has human "no" labels on both arms.
+   */
   false_pass_gap: { experiment_id: string; estimate: number | null; interval: AgreementInterval; includes_zero: boolean | null } | null;
 }
 
