@@ -625,21 +625,37 @@ describe('LabelView, who is labelling', () => {
 });
 
 describe('LabelView, calibrating a judge (D83)', () => {
-  it("asks for the experiment's queue in calibrating order, says so, and still shows no verdict", async () => {
-    const { calls } = routeFetch({
-      '/api/labels/queue?set=heldout&experiment=exp_heldout&rater=rater-one&calibrate=1': [tuningItem('c_one', 'Pay the credit card first.'), tuningItem('c_two', 'Start with the loan.')],
-      '/api/labels/queue?set=tuning&experiment=exp_heldout&rater=rater-one&calibrate=1': [],
-      '/api/labels/queue?set=final&experiment=exp_heldout&rater=rater-one&calibrate=1': [],
-    });
+  /** The calibrating queues (the balanced block) and the usual ones of exp_heldout, the held-out set's as given. */
+  const queues = (block: unknown[], usual: unknown[]) => ({
+    '/api/labels/queue?set=heldout&experiment=exp_heldout&rater=rater-one&calibrate=1': block,
+    '/api/labels/queue?set=tuning&experiment=exp_heldout&rater=rater-one&calibrate=1': [],
+    '/api/labels/queue?set=final&experiment=exp_heldout&rater=rater-one&calibrate=1': [],
+    '/api/labels/queue?set=heldout&experiment=exp_heldout&rater=rater-one': usual,
+    '/api/labels/queue?set=tuning&experiment=exp_heldout&rater=rater-one': [],
+    '/api/labels/queue?set=final&experiment=exp_heldout&rater=rater-one': [],
+    'POST /api/labels': { ok: true },
+  });
+  const block = () => [tuningItem('c_one', 'Pay the credit card first.'), tuningItem('c_two', 'Start with the loan.')];
+  const usual = () => [...block(), tuningItem('c_three', 'Pay the loan.'), tuningItem('c_four', 'Save first.')];
+
+  it("asks for the experiment's balanced block, says how many it holds and what comes after, and still shows no verdict", async () => {
+    const { calls } = routeFetch(queues(block(), usual()));
     const w = mount(LabelView, { props: { initialSet: 'heldout', experiment: 'exp_heldout', calibrate: true } });
     await settle();
+    // The usual queue too, so an empty block can say why it is empty.
     expect(calls.map((c) => c.url).sort()).toEqual([
+      '/api/labels/queue?set=final&experiment=exp_heldout&rater=rater-one',
       '/api/labels/queue?set=final&experiment=exp_heldout&rater=rater-one&calibrate=1',
+      '/api/labels/queue?set=heldout&experiment=exp_heldout&rater=rater-one',
       '/api/labels/queue?set=heldout&experiment=exp_heldout&rater=rater-one&calibrate=1',
+      '/api/labels/queue?set=tuning&experiment=exp_heldout&rater=rater-one',
       '/api/labels/queue?set=tuning&experiment=exp_heldout&rater=rater-one&calibrate=1',
     ]);
     const banner = w.get('[data-test="calibrate-banner"]');
-    expect(banner.text()).toBe("You're calibrating a judge. These outputs were picked so its passes and fails are balanced. You won't see its verdicts.");
+    // 7 Nov review: the banner said "balanced" while everything after the block was one kind; the
+    // queue is now the block alone, and the banner says how many and where the rest are.
+    expect(banner.text()).toBe("You're calibrating a judge. These 2 outputs are 1 of its passes and 1 of its fails, in a random order, and you won't see which. Label these 2, then go on to the usual queue.");
+    expect(banner.get('[data-test="usual-queue"]').attributes('href')).toBe('#/labels?set=heldout&experiment=exp_heldout');
     expect(banner.get('strong.caveat-lead').text()).toBe("You're calibrating a judge.");
     expect(banner.find('svg.icon').exists()).toBe(true);
     // In the page head, under the lede, where the page's other caveats sit.
@@ -648,6 +664,47 @@ describe('LabelView, calibrating a judge (D83)', () => {
     // always does (the question's own words say "Pass or fail", so the full blind check is not used).
     expect(w.get('[data-test="blind-item"]').text()).not.toMatch(/hermes|haiku|claude|3b81e04|\$|\barm\b|verdict/i);
     expect(w.get('[data-test="progress"]').text()).toBe('1 of 2');
+  });
+
+  it('sends you on to the usual queue once the block is labelled, second looks included', async () => {
+    routeFetch(queues(block(), usual()));
+    const w = mount(LabelView, { props: { initialSet: 'heldout', experiment: 'exp_heldout', calibrate: true }, attachTo: document.body });
+    await settle();
+    const press = (k: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+    press('1');
+    press('Enter');
+    await settle();
+    press('3');
+    press('Enter');
+    await settle();
+    const done = w.get('[data-test="queue-empty"]');
+    expect(done.text()).toContain('All 2 in this balanced set done: 2 saved.');
+    expect(done.text()).toContain('You marked one question "Not sure": it comes back once for a second look, in the usual queue.');
+    expect(done.text()).toContain("The rest of this batch's outputs are in the usual queue.");
+    expect(done.get('[data-test="go-usual"]').attributes('href')).toBe('#/labels?set=heldout&experiment=exp_heldout');
+    // Reloading the block would not bring the second look back, so that button is not offered.
+    expect(done.find('[data-test="load-more"]').exists()).toBe(false);
+    w.unmount();
+  });
+
+  it('says plainly when there is nothing to balance: the judge gave one kind only on what is left', async () => {
+    routeFetch(queues([], usual()));
+    const w = mount(LabelView, { props: { initialSet: 'heldout', experiment: 'exp_heldout', calibrate: true } });
+    await settle();
+    const banner = w.get('[data-test="calibrate-banner"]');
+    expect(banner.text()).toBe("You're calibrating a judge. There is nothing to balance: its verdicts on the 4 outputs left to label are all one kind, or not in yet. Label them in the usual queue.");
+    expect(banner.get('[data-test="usual-queue"]').attributes('href')).toBe('#/labels?set=heldout&experiment=exp_heldout');
+    expect(w.get('[data-test="queue-empty"]').text()).toContain('Nothing to balance here.');
+    expect(w.find('[data-test="go-usual"]').exists()).toBe(true);
+  });
+
+  it('says nothing is left, not that there is nothing to balance, when the batch is all labelled', async () => {
+    routeFetch(queues([], []));
+    const w = mount(LabelView, { props: { initialSet: 'heldout', experiment: 'exp_heldout', calibrate: true } });
+    await settle();
+    expect(w.get('[data-test="calibrate-banner"]').text()).toBe("You're calibrating a judge. You won't see its verdicts.");
+    expect(w.get('[data-test="queue-empty"]').text()).toContain('Nothing to label in this set yet.');
+    expect(w.find('[data-test="go-usual"]').exists()).toBe(false);
   });
 
   it('calibrates only an experiment: without one the queue is the usual one and no banner shows', async () => {

@@ -22,7 +22,8 @@ import { href } from '../router';
 /** `set`, `experiment` and `items` come from the address (#/labels?set=heldout&items=t_a,t_b): the
  *  set to open on, one batch to label, or a chosen list of trials (GET /labels/queue takes both),
  *  such as the trials a judge panel disagreed on (D71). `calibrate` (with an experiment, D83) asks
- *  for that batch in an order that balances its judge's passes and fails; the items still carry no
+ *  for a balanced block of that batch alone: k of its judge's passes and k of its fails, shuffled,
+ *  so no position gives a verdict away; the rest are in the usual queue. The items still carry no
  *  verdict. */
 const props = defineProps<{ initialSet?: LabelSet | null; experiment?: string | null; items?: string | null; calibrate?: boolean }>();
 /** Calibrating needs an experiment: the API refuses it on the whole queue. */
@@ -54,12 +55,18 @@ const raterError = ref<string | null>(null);
 const raterInput = ref<HTMLInputElement | null>(null);
 
 const set = ref<LabelSet>(props.initialSet ?? 'tuning');
+/** Calibrating: how many outputs each set's usual queue holds, as loaded, so an empty balanced
+ *  block can say whether the judge gave one kind only or nothing is left to label. */
+const usualLeft = ref<Record<LabelSet, number | null> | null>(null);
 const { data, error, loading, reload } = useLoad(async () => {
   const who = rater.value;
   if (!who) return null;
-  const entries = await Promise.all(
-    SETS.map(async (s) => [s.set, await optional(api.labelQueue(s.set, props.experiment ?? undefined, props.items ?? undefined, who, calibrating), null)] as const),
-  );
+  const queueOf = (s: LabelSet, balanced: boolean) => optional(api.labelQueue(s, props.experiment ?? undefined, props.items ?? undefined, who, balanced), null);
+  const [entries, usual] = await Promise.all([
+    Promise.all(SETS.map(async (s) => [s.set, await queueOf(s.set, calibrating)] as const)),
+    calibrating ? Promise.all(SETS.map(async (s) => [s.set, (await queueOf(s.set, false))?.length ?? null] as const)) : null,
+  ]);
+  usualLeft.value = usual ? (Object.fromEntries(usual) as Record<LabelSet, number | null>) : null;
   return Object.fromEntries(entries) as Record<LabelSet, BlindItem[] | null>;
 });
 /** Opens on the first set with something to label, unless the address names one. */
@@ -98,7 +105,7 @@ const skippedCount = ref(0);
 const unsureSaved = ref(0);
 const secondLookNote = computed(() =>
   unsureSaved.value
-    ? `You marked ${unsureSaved.value === 1 ? 'one question' : `${unsureSaved.value} questions`} "Not sure": ${unsureSaved.value === 1 ? 'it comes' : 'they come'} back once for a second look. `
+    ? `You marked ${unsureSaved.value === 1 ? 'one question' : `${unsureSaved.value} questions`} "Not sure": ${unsureSaved.value === 1 ? 'it comes' : 'they come'} back once for a second look${calibrating ? ', in the usual queue' : ''}. `
     : '',
 );
 /** The longest note a label keeps here. */
@@ -126,6 +133,23 @@ watch(set, () => {
 
 /** "7 of 30": this item's place in the queue as it loaded. */
 const total = computed(() => data.value?.[set.value]?.length ?? 0);
+
+/** The usual queue of the batch being calibrated: the outputs the balanced block leaves out. */
+const usualHref = computed(() => href.labels({ set: set.value, experiment: props.experiment ?? undefined }));
+/**
+ * The calibrating banner after its lead (D83, 7 Nov review): how many outputs the balanced block
+ * holds and what comes after it, or, when it is empty but outputs are left, that there is nothing
+ * to balance. `link` ends the words with a link to the usual queue.
+ */
+const calibrateWords = computed<{ text: string; link: boolean }>(() => {
+  const n = total.value;
+  if (!queue.value) return { text: "You won't see its verdicts.", link: false };
+  const half = n % 2 === 0 ? `${n / 2} of its passes and ${n / 2} of its fails` : 'balanced between its passes and its fails';
+  if (n > 0) return { text: `These ${n} outputs are ${half}, in a random order, and you won't see which. Label these ${n}, then go on to`, link: true };
+  const usual = usualLeft.value?.[set.value] ?? 0;
+  if (usual > 0) return { text: `There is nothing to balance: its verdicts on the ${usual === 1 ? 'output' : `${usual} outputs`} left to label are all one kind, or not in yet. Label ${usual === 1 ? 'it' : 'them'} in`, link: true };
+  return { text: "You won't see its verdicts.", link: false };
+});
 const position = computed(() => Math.min(total.value - left.value + index.value + 1, total.value));
 
 /** The next item starts at its top, with focus on its heading for screen readers. After a save the
@@ -313,7 +337,12 @@ const blocks = (text: string) => mdBlocks(text);
           name="info"
           :size="14"
         />
-        <span><strong class="caveat-lead">You're calibrating a judge.</strong> These outputs were picked so its passes and fails are balanced. You won't see its verdicts.</span>
+        <span><strong class="caveat-lead">You're calibrating a judge.</strong> {{ calibrateWords.text }}<template v-if="calibrateWords.link">
+          {{ ' ' }}<a
+            :href="usualHref"
+            data-test="usual-queue"
+          >the usual queue</a>.
+        </template></span>
       </p>
       <p
         v-if="rater && !editingRater"
@@ -443,18 +472,33 @@ const blocks = (text: string) => mdBlocks(text);
       role="status"
       data-test="queue-empty"
     >
-      <p>
-        {{ total ? `All ${total} in this queue done${savedCount ? `: ${savedCount} saved` : ''}${skippedCount ? `, ${skippedCount} skipped` : ''}.` : 'Nothing to label in this set yet.' }}
-        {{ secondLookNote }}Trials that finish later join the queue, except trials on a fake model (their replies are a script, not an agent's) and the shipped example's, which are never labelled here.
-      </p>
-      <button
-        type="button"
-        class="btn btn--quiet"
-        data-test="load-more"
-        @click="loadMore"
-      >
-        {{ unsureSaved ? 'Take the second look' : 'Check for more' }}
-      </button>
+      <!-- Calibrating: the balanced block is done, or there was nothing to balance; the rest of the
+           batch, second looks included, is in the usual queue. -->
+      <template v-if="calibrating && (total || usualLeft?.[set])">
+        <p>
+          {{ total ? `All ${total} in this balanced set done${savedCount ? `: ${savedCount} saved` : ''}${skippedCount ? `, ${skippedCount} skipped` : ''}.` : 'Nothing to balance here.' }}
+          {{ secondLookNote }}The rest of this batch's outputs are in the usual queue.
+        </p>
+        <a
+          :href="usualHref"
+          class="btn"
+          data-test="go-usual"
+        >Go on to the usual queue</a>
+      </template>
+      <template v-else>
+        <p>
+          {{ total ? `All ${total} in this queue done${savedCount ? `: ${savedCount} saved` : ''}${skippedCount ? `, ${skippedCount} skipped` : ''}.` : 'Nothing to label in this set yet.' }}
+          {{ secondLookNote }}Trials that finish later join the queue, except trials on a fake model (their replies are a script, not an agent's) and the shipped example's, which are never labelled here.
+        </p>
+        <button
+          type="button"
+          class="btn btn--quiet"
+          data-test="load-more"
+          @click="loadMore"
+        >
+          {{ unsureSaved ? 'Take the second look' : 'Check for more' }}
+        </button>
+      </template>
     </div>
     <div
       v-else
