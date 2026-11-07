@@ -64,7 +64,7 @@ These are the documents we need so nothing gets lost. **Required** means the bri
 | `docs/assumptions.md` | Every assumption made | **Required** | As soon as one is made | Done |
 | `docs/known-limits.md` | Where conclusions should not be trusted | **Required** | As soon as one is found | Done |
 | `docs/cost.md` | Cost formula, actual spend, how to reduce cost | **Required** | Prices, pilot, final run | Done |
-| `docs/experiment.md` | Hypothesis, setup, results with CIs, 2 or 3 trajectories, conclusion | **Required** | Plan before the run, results after | Done but the conclusion |
+| `docs/experiment.md` | Hypothesis, setup, results with CIs, 2 or 3 trajectories, conclusion | **Required** | Plan before the run, results after | Done |
 | Video link in `README.md` | 10 minutes or less: define a config, run it, compare, drill into a failed trial | **Required** | SP9 | Done: [9 min 17 s, 7 Nov](https://drive.google.com/file/d/1UcRM7DA-0ExFRGUGCGu2SgDuXawDS8QE/view?usp=sharing) |
 | `docs/judge-validation.md` | Label set, agreement, kappa, per-config checks | Required content, own file by choice | SP5 | Done: tuning set, D74 dev rounds (rubric v4 frozen), and the one held-out test on Rishi's 40 blind labels (6 Nov: not trusted, kappa −0.14); the in-platform regrade (D83) and the code checks against the same labels |
 | `tasks/` | The 20+ task set with graders | **Required** | SP4 | Done: 31 tasks (10 held-out, 11 discovery, 10 retrieval), plus a skills demo |
@@ -266,7 +266,7 @@ The order matters because the rubric freezes with the platform:
 **Done when:** someone new can follow the README from a clean clone, and everything is submitted.
 **Needs:** SP8.
 
-- [ ] Finish the README
+- [x] Finish the README
 - [x] Finish `design.md` and check all six required topics (7 Nov: five outside reviews found all six)
 - [x] Finish `known-limits.md` and `assumptions.md`
 - [x] Finish `cost.md`: formula, actual spend, how to reduce cost (caching, early stopping and sampling, as the brief names them)

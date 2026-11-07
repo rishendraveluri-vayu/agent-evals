@@ -264,7 +264,15 @@ Read on 5 Nov from the API (`GET /api/trials/:id`, its `result.json`, `checks.js
 
 ## Conclusion
 
-Rishi to write.
+Rishi, 7 Nov (chosen from a plain-language draft):
+
+In plain words: the platform can tell whether a change to an agent really helps or hurts, and it says so honestly when it can't tell yet.
+
+**What this experiment found.** My prompt fix (v2) passed 73 of 100 trials against v1's 64. It looks about 9 points better. But only 5 of the 10 test tasks could change at all (4 always passed, 1 always failed), and with 5 tasks even a clean sweep could be luck one time in 16. So the platform says "no detectable difference yet", and I agree: v2 leans better, not proven. It added no serious failures. Most of the gain is v2 taking every rupee figure from a tool, which is what the strict check measures. My own labels show those checks measure sourcing, not advice quality, so this is not proof that v2 gives better advice. The judge meant to measure advice quality did not match my judgment, so it is not counted, and the "care in hard conversations" half of my hypothesis is untested.
+
+**What it shows the platform can do.** It caught one bad line planted in the prompt and named the three tasks it broke, all three as predicted. It clearly caught a missing calculator tool and a missing document search. Run on the same agent twice, it found no false difference. Swapping the model showed that how the agent works can change even when its pass rate doesn't. Every failure links to the trace that explains it, with cost and time beside the result.
+
+**Next:** more test tasks of middle difficulty, so more than 5 can move, and a new judge built from my notes, checked on fresh labels.
 
 ## Deviations
 
