@@ -97,6 +97,31 @@ export function clock(iso: string): string {
   return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: displayTimeZone() }).format(new Date(iso));
 }
 
+/** The day a time falls on, against the app's clock: null for today, "5 Nov" for another day this
+ *  year, "5 Nov 2025" for an earlier year. A time alone reads as today's, so any other day says so
+ *  (7 Nov QA: a run from two days before listed its events as 13:02 and 13:35). */
+export function dayOf(iso: string): string | null {
+  const zone = displayTimeZone();
+  const at = new Date(iso);
+  const today = new Date(now());
+  const ymd = (d: Date) => new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: zone }).format(d);
+  if (ymd(at) === ymd(today)) return null;
+  const year = (d: Date) => new Intl.DateTimeFormat('en-GB', { year: 'numeric', timeZone: zone }).format(d);
+  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', ...(year(at) === year(today) ? {} : { year: 'numeric' }), timeZone: zone }).format(at);
+}
+
+/** 14:06 today; "5 Nov, 14:06" on any other day. */
+export function stamp(iso: string): string {
+  const day = dayOf(iso);
+  return day ? `${day}, ${clock(iso)}` : clock(iso);
+}
+
+/** A time inside a sentence, its day always said: "today at 14:06", "on 5 Nov at 14:06". */
+export function when(iso: string): string {
+  const day = dayOf(iso);
+  return day ? `on ${day} at ${clock(iso)}` : `today at ${clock(iso)}`;
+}
+
 /** 14:06:09, for "the update from" a moment ago. */
 export function clockSeconds(at: Date | number): string {
   return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZone: displayTimeZone() }).format(new Date(at));

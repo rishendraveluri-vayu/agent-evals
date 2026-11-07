@@ -1532,3 +1532,57 @@ describe('RunView keeps a long unbroken config name inside the page', () => {
     expect(style).toMatch(/\.setup-grid select \{[^}]*max-width: 100%;[^}]*min-width: 0;/);
   });
 });
+
+describe('RunView says when the prompt check ran, from its time (7 Nov QA)', () => {
+  useFixtures();
+  // exp_discovery: Hermes on a real model, started 4 Nov 13:13 UTC; the fixture clock is 5 Nov 14:08.
+  const [v1, v2] = (details as unknown as Record<string, ExperimentDetail>).exp_discovery.config_hashes;
+  const checkedAt = (times: Record<string, string>) => {
+    vi.spyOn(api, 'renderedPrompt').mockResolvedValue({ config_hash: v1, status: 'ready', probe: null, cached: true, error: null, rendered: null });
+    vi.spyOn(api, 'conflictCheck').mockImplementation((hash: string) => Promise.resolve({ ...STORED_CHECK, config_hash: hash, checked_at: times[hash] }));
+  };
+  const lede = async () => {
+    const w = mount(RunView, { props: { experimentId: 'exp_discovery' } });
+    await settle();
+    return w.get('[data-test="prompt-checks-lede"]').text();
+  };
+
+  it('says it ran before the run only when every check is older than the start', async () => {
+    checkedAt({ [v1]: '2026-11-04T12:50:00Z', [v2]: '2026-11-04T12:51:00Z' });
+    expect(await lede()).toBe(
+      "Hermes wraps your prompt in its own instructions; this check lists where they pull against each other. Both ran before the run started, as every Hermes run on a real model must. It is one model's reading, never validated: read the findings as things to look at. They did not stop the run.",
+    );
+  });
+
+  it('says a check stored after the start ran after it, with the date, and never "before"', async () => {
+    // As on the live headline run: both checks stored hours after the run had finished.
+    checkedAt({ [v1]: '2026-11-04T23:14:20Z', [v2]: '2026-11-04T23:14:40Z' });
+    const text = await lede();
+    expect(text).toContain('Both ran on 4 Nov at 23:14, after the run started (4 Nov, 13:13).');
+    expect(text).not.toContain('before the run');
+    expect(text).not.toContain('did not stop the run');
+  });
+
+  it('words each arm on its own when one check is older than the start and one newer', async () => {
+    checkedAt({ [v1]: '2026-11-04T12:50:00Z', [v2]: '2026-11-04T20:00:00Z' });
+    expect(await lede()).toContain('Arm A’s check ran before the run started; Arm B’s check ran on 4 Nov at 20:00, after the run started (4 Nov, 13:13).');
+    // A check from today says so, not a bare time.
+    checkedAt({ [v1]: '2026-11-05T09:00:00Z', [v2]: '2026-11-05T09:00:00Z' });
+    expect(await lede()).toContain('Both ran today at 09:00, after the run started (4 Nov, 13:13).');
+  });
+
+  it('claims no time when no check is stored', async () => {
+    vi.spyOn(api, 'renderedPrompt').mockResolvedValue({ config_hash: v1, status: 'ready', probe: null, cached: true, error: null, rendered: null });
+    vi.spyOn(api, 'conflictCheck').mockResolvedValue(null);
+    expect(await lede()).not.toMatch(/ran (before|after|on|today)/);
+  });
+
+  it('dates the events of a run from another day, and keeps a time alone for today', async () => {
+    const old = mount(RunView, { props: { experimentId: 'exp_discovery' } });
+    await settle();
+    expect(old.findAll('[data-test="event-at"]').map((e) => e.text())).toEqual(['4 Nov13:08', '4 Nov13:13', '4 Nov13:48']);
+    const today = mount(RunView, { props: { experimentId: 'exp_model' } });
+    await settle();
+    expect(today.findAll('[data-test="event-at"]')[0].text()).toBe('13:56');
+  });
+});

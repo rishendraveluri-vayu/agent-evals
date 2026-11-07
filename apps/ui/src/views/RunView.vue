@@ -12,7 +12,7 @@ import { optional, useLoad } from '../lib/async';
 import { causeView } from '../lib/causes';
 import { armDifferences, armValue, armsCheck, axisChange, axisFromDiff, budgetCheck, capabilityCheck, changeWords, changesWords, contentDiff, keysCheck, planCheck, runAutoName, RUN_NAME_MAX, splitCheck, type Check } from '../lib/checks';
 import { changedLineCount, lineChanges, sentenceChanges, type LineChange } from '../lib/diff';
-import { capitalise, clock, minutes, money, plainText, plural, shortHash, wholeMoney } from '../lib/format';
+import { capitalise, clock, dayOf, minutes, money, plainText, plural, shortHash, stamp, when, wholeMoney } from '../lib/format';
 import { experimentName, infraReason, modelName, splitName } from '../lib/names';
 import { href, navigate, replaceRoute } from '../router';
 import { eventView, pauseCause } from '../lib/runs';
@@ -187,18 +187,71 @@ async function runGateChecks(): Promise<boolean> {
 }
 /** The rendered prompt's state per checked agent, for the findings on the run page. */
 const renderedStatus = ref<Record<string, RenderedPromptStatus | 'unknown'>>({});
+/** When each checked agent's stored prompt check ran (reading it is free, no model call): null
+ *  when none is stored or it could not be read. The run page words its timing from these. */
+const checkedAt = ref<Record<string, string | null>>({});
 watch(
   () => (props.experimentId ? gatedConfigs.value.map((c) => c.hash).join(',') : ''),
   async (joined) => {
     for (const h of joined ? joined.split(',') : []) {
+      let status: RenderedPromptStatus | 'unknown';
       try {
-        renderedStatus.value = { ...renderedStatus.value, [h]: (await api.renderedPrompt(h)).status };
+        status = (await api.renderedPrompt(h)).status;
       } catch {
-        renderedStatus.value = { ...renderedStatus.value, [h]: 'unknown' };
+        status = 'unknown';
       }
+      renderedStatus.value = { ...renderedStatus.value, [h]: status };
+      // As ConflictCheck reads it: only once the rendered prompt is ready (before that, no check exists).
+      let at: string | null = null;
+      if (status === 'ready' || status === 'unknown') {
+        try {
+          at = (await api.conflictCheck(h))?.checked_at ?? null;
+        } catch {
+          at = null;
+        }
+      }
+      checkedAt.value = { ...checkedAt.value, [h]: at };
     }
   },
   { immediate: true },
+);
+/**
+ * When the prompt checks ran against the run's start, from their times: "before" only when a check
+ * ran before the run started (7 Nov QA: a check stored 15 h after the run finished was said to have
+ * run before it). Empty until every time is in, and for a check that is not stored (its panel says
+ * so). `before`: every stored check ran before the start.
+ */
+const checkTiming = computed<{ text: string; before: boolean }>(() => {
+  const none = { text: '', before: false };
+  const start = data.value?.experiment?.started_at;
+  const configs = gatedConfigs.value;
+  if (!start || !configs.length || configs.some((c) => !(c.hash in checkedAt.value))) return none;
+  const letters = (h: string) =>
+    hashes.value
+      .flatMap((x, i) => (x === h ? [String.fromCharCode(65 + i)] : []))
+      .join(' and ');
+  const runs = configs.flatMap((c) => {
+    const at = checkedAt.value[c.hash];
+    return at ? [{ arms: letters(c.hash), at, before: Date.parse(at) < Date.parse(start) }] : [];
+  });
+  if (!runs.length) return none;
+  const who = runs.length === 1 ? 'It' : 'Both';
+  const started = `after the run started (${stamp(start)})`;
+  if (runs.every((r) => r.before)) return { text: `${who} ran before the run started, as every Hermes run on a real model must.`, before: true };
+  if (runs.every((r) => !r.before)) return { text: `${who} ran ${[...new Set(runs.map((r) => when(r.at)))].join(' and ')}, ${started}.`, before: false };
+  // One before, one after: each arm's own.
+  return { text: `${runs.map((r) => `Arm ${r.arms}’s check ran ${r.before ? 'before the run started' : `${when(r.at)}, ${started}`}`).join('; ')}.`, before: false };
+});
+/** The run page's words above the findings: "They did not stop the run" only for a check that was there before it. */
+const promptCheckLede = computed(() =>
+  [
+    'Hermes wraps your prompt in its own instructions; this check lists where they pull against each other.',
+    checkTiming.value.text,
+    "It is one model's reading, never validated: read the findings as things to look at.",
+    checkTiming.value.before ? 'They did not stop the run.' : '',
+  ]
+    .filter(Boolean)
+    .join(' '),
 );
 const sameConfig = computed(() => hashes.value.length === 2 && hashes.value[0] === hashes.value[1]);
 /** The run is an A/A calibration (D44): the draft's box, or the saved experiment's own flag. */
@@ -1880,8 +1933,11 @@ onBeforeUnmount(() => taskObserver?.disconnect());
         <h2 id="prompt-checks-title">
           Prompt checked against Hermes's own instructions
         </h2>
-        <p class="secondary small">
-          Hermes wraps your prompt in its own instructions; this check lists where they pull against each other. It ran before the run started, as every Hermes run on a real model must. It is one model's reading, never validated: read the findings as things to look at. They did not stop the run.
+        <p
+          class="secondary small"
+          data-test="prompt-checks-lede"
+        >
+          {{ promptCheckLede }}
         </p>
         <details class="prompt-check-details">
           <summary>Show the findings{{ gatedConfigs.length > 1 ? ` for the ${gatedConfigs.length} Hermes agents` : '' }}</summary>
@@ -1914,7 +1970,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
           </p>
           <p class="secondary smaller">
             <template v-if="pause.at">
-              Since {{ clock(pause.at) }}.
+              Since {{ stamp(pause.at) }}.
             </template> Trials already running finish; nothing new starts until you resume. Resume, or stop it, above.
           </p>
         </div>
@@ -2279,7 +2335,14 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                   :class="`event event--${e.tone}`"
                   :data-tone="e.tone"
                 >
-                  <span class="secondary num">{{ clock(e.at) }}</span>
+                  <!-- A time from another day says its day above it: 13:02 alone reads as today's. -->
+                  <span
+                    class="secondary num event-at"
+                    data-test="event-at"
+                  ><span
+                    v-if="dayOf(e.at)"
+                    class="block"
+                  >{{ dayOf(e.at) }}</span>{{ clock(e.at) }}</span>
                   <span>
                     <span class="event-title"><AppIcon
                       v-if="e.tone === 'pause'"
@@ -3250,7 +3313,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
 
 .events li {
   display: grid;
-  grid-template-columns: 48px 1fr;
+  grid-template-columns: 52px 1fr;
   gap: 10px;
   padding: 10px 0;
   border-bottom: 1px solid var(--track);
