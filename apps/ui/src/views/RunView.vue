@@ -754,7 +754,9 @@ const grid = computed(() => {
         // D64: a failed or stopped-short trial's cause, the judge against your label included (7 Nov).
         const cause = latestDone(attempts)?.cause ? causeView(latestDone(attempts)?.cause) : null;
         const why = cause ? `; ${cause.name.toLowerCase()}` : '';
-        return { state, retried, attempts, label: `${t.id}, arm ${String.fromCharCode(65 + arm)}, trial ${r + 1}: ${words}${retried ? ', after an infra failure' : ''}${why}` };
+        // The slot's latest attempt is the trial its cell opens (7 Nov QA: the cells opened nothing).
+        const trialId = last?.id ?? null;
+        return { state, retried, attempts, trialId, label: `${t.id}, arm ${String.fromCharCode(65 + arm)}, trial ${r + 1}: ${words}${retried ? ', after an infra failure' : ''}${why}` };
       }),
     ),
   }));
@@ -2222,9 +2224,16 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                       :class="{ gap: ai > 0 }"
                     >
                       <span class="cells">
-                        <span
+                        <!-- Each cell with a trial is a link to it, named by its words (the glyphs are
+                             hidden from screen readers); a slot with no trial row yet is not. -->
+                        <component
+                          :is="c.trialId ? 'a' : 'span'"
                           v-for="(c, ci) in cells"
                           :key="ci"
+                          :href="c.trialId ? href.trial(c.trialId) : undefined"
+                          class="cell-link"
+                          :data-test="c.trialId ? 'cell-link' : undefined"
+                        ><span
                           :class="['cell', `cell--${c.state}`, { 'cell--retried': c.retried }]"
                           :title="c.label"
                           :data-state="c.state"
@@ -2237,7 +2246,19 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                           v-else-if="c.state === 'fail'"
                           name="cross"
                           :size="12"
-                        /><template v-else-if="c.state === 'infra'">!</template><template v-else-if="c.state === 'abandoned' || c.state === 'final'">–</template><template v-else-if="c.state === 'incomplete'">?</template><template v-else-if="c.state === 'nograders'">·</template><span class="visually-hidden">{{ c.label }}</span></span>
+                        /><span
+                          v-else-if="c.state === 'infra'"
+                          aria-hidden="true"
+                        >!</span><span
+                          v-else-if="c.state === 'abandoned' || c.state === 'final'"
+                          aria-hidden="true"
+                        >–</span><span
+                          v-else-if="c.state === 'incomplete'"
+                          aria-hidden="true"
+                        >?</span><span
+                          v-else-if="c.state === 'nograders'"
+                          aria-hidden="true"
+                        >·</span><span class="visually-hidden">{{ c.label }}</span></span></component>
                       </span>
                     </td>
                   </tr>
@@ -3103,6 +3124,19 @@ onBeforeUnmount(() => taskObserver?.disconnect());
   font-size: 12px;
   font-weight: 600;
   vertical-align: middle;
+}
+
+/* A cell's link wraps the cell, so the cell keeps its own colours on hover; its ring shows on
+   hover and keyboard focus. */
+.cell-link {
+  display: inline-flex;
+  border-radius: 4px;
+  text-decoration: none;
+}
+
+a.cell-link:hover {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
 }
 
 .cell--pass {

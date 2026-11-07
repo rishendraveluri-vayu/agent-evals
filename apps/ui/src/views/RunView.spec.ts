@@ -1641,6 +1641,36 @@ describe('RunView names a run apart from the runs already saved (7 Nov QA)', () 
   });
 });
 
+describe('RunView opens a trial from its cell in the grid (7 Nov QA)', () => {
+  useFixtures();
+
+  it('makes each cell with a trial a link to it, reached with Tab and named by its words', async () => {
+    const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    const links = w.findAll('[data-test="run-grid"] a[data-test="cell-link"]');
+    expect(links).toHaveLength(120);
+    const row = w.findAll('[data-test="run-grid"] tbody tr').find((tr) => tr.get('th').text() === 'debt-hardship-03')!;
+    const first = row.findAll('a[data-test="cell-link"]')[0];
+    expect(first.attributes('href')).toBe('#/trials/th_debt-hardship-03_a_1');
+    expect((first.element as HTMLAnchorElement).tabIndex).toBe(0);
+    // A slot re-queued after an infra failure opens its latest attempt.
+    const requeued = row.findAll('a[data-test="cell-link"]').find((a) => a.find('[data-state="infra"]').exists())!;
+    expect(requeued.attributes('href')).toBe('#/trials/th_debt-hardship-03_b_3_attempt2');
+    // Its name is its words: the "!" is hidden from screen readers, the words are not.
+    expect(requeued.get('[aria-hidden="true"]').text()).toBe('!');
+    expect(requeued.get('.visually-hidden').text()).toBe('debt-hardship-03, arm B, trial 3: infra failure, re-queued');
+    expect(requeued.get('[data-state]').attributes('title')).toBe('debt-hardship-03, arm B, trial 3: infra failure, re-queued');
+  });
+
+  it('leaves a slot with no trial row yet as a plain cell', async () => {
+    vi.spyOn(api, 'experimentTrials').mockResolvedValue([]);
+    const w = mount(RunView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    expect(w.findAll('[data-test="run-grid"] [data-state]')).toHaveLength(120);
+    expect(w.find('[data-test="run-grid"] a').exists()).toBe(false);
+  });
+});
+
 describe('RunView draws no spending limit on a fake run’s page (7 Nov QA)', () => {
   useFixtures();
 
