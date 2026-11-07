@@ -1539,6 +1539,96 @@ describe('CompareView: a check that failed before the start (QA, 7 Nov: the retr
   });
 });
 
+describe('CompareView: a stopped, cancelled or unfinished run (QA, 7 Nov)', () => {
+  const detail = (details as unknown as Record<string, Record<string, unknown> & { arms: Record<string, unknown>[] }>).exp_heldout;
+  // The live open-weight check: arm A paused on a config error, then the run was stopped. The
+  // worker keeps the first 300 characters of the provider's message.
+  const message = `Error code: 400 - litellm.UnsupportedParamsError: ollama_chat does not support parameters: ['parallel_tool_calls'], for model=qwen2.5:7b. To drop these, set \`litellm.drop_params=True\` or for proxy: \`litellm_settings: drop_params: true\` . If you want to use these params dynamically send allowed_openai_params=['parallel_tool_calls'] in your request.`.slice(0, 300);
+  const pausedReason = `draft-emi-home-loan on Open-weight check, attempt 1: infra:config_error (LiteLLM status 400): ${message}`;
+  const counts = (over: Record<string, number>) => ({ queued: 0, running: 0, done: 0, infra_failed: 0, abandoned: 0, cancelled: 0, ...over });
+  const armA = { arm: 'A', config_hash: 'sha256:a', config_name: 'Open-weight check', status: 'paused', paused_at: '2026-11-05T09:08:21.952Z', paused_reason: pausedReason, fix: 'Fork the config.', counts: counts({ infra_failed: 1, cancelled: 1 }), reused_from: null, reused_trials: 0 };
+  const cancelled = {
+    experiment_id: 'exp_heldout',
+    status: 'incomplete',
+    reason: `the experiment was stopped before every trial ran (1 of arm A's trials cancelled); arm A had paused before the stop: ${pausedReason}; a verdict needs the full planned N (D32)`,
+    arms: [armA],
+    rows: [],
+    stats: null,
+    stats_note: null,
+    grader_versions: null,
+    prose_figures: [],
+    behaviour: null,
+  };
+  function mountWith(over: Record<string, unknown>, compare: unknown, trials: unknown = (experimentTrials as Record<string, unknown>).exp_heldout) {
+    routeFetch({
+      '/api/experiments/exp_heldout': { ...detail, ...over },
+      '/api/experiments/exp_heldout/compare': compare,
+      '/api/experiments/exp_heldout/trials': trials,
+      '/api/labels/queue?set=heldout': [],
+      '/api/models': [],
+    });
+    return mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+  }
+
+  it('says a cancelled run was stopped, and gives the paused arm\'s message whole, marked where the record cut it', async () => {
+    const w = mountWith({ status: 'cancelled', judge: null }, cancelled, []);
+    await settle();
+    expect(w.get('[data-test="verdict-title"]').text()).toBe('No comparison: this run was cancelled');
+    expect(w.get('[data-test="incomplete-reason"]').text()).toBe(
+      "It was stopped before every trial ran (1 of arm A's trials cancelled). A verdict needs the full planned N, so no pass counts are shown off a partial run.",
+    );
+    expect(w.text()).not.toContain('is paused');
+    const note = w.get('[data-test="paused-before-stop"]');
+    expect(note.text()).toContain("Arm A had paused before the stop, on a config error (LiteLLM status 400). The provider's message, as recorded:");
+    expect(note.get('[data-test="provider-message"]').text()).toBe(`${message}…`);
+    expect(note.text()).toContain('The record keeps the first 300 characters of it.');
+    expect(w.findAll('[data-test="arm-progress"] li').map((li) => li.text())).toEqual(['A: Open-weight check, stopped, 0 of 2 done']);
+    // No finished trial, so nothing to judge: no approval is offered.
+    expect(w.find('#judge-panel').exists()).toBe(false);
+    expect(w.text()).not.toContain('Approve the judge');
+  });
+
+  it('says nothing is cut when the message is shorter than the record keeps', async () => {
+    const short = { ...armA, paused_reason: 'emi on arm A, attempt 1: infra:config_error (LiteLLM status 401): invalid key' };
+    const w = mountWith({ status: 'cancelled' }, { ...cancelled, arms: [short] }, []);
+    await settle();
+    expect(w.get('[data-test="provider-message"]').text()).toBe('invalid key');
+    expect(w.get('[data-test="paused-before-stop"]').text()).not.toContain('The record keeps');
+  });
+
+  it('says a task waits for the run, never "no finished trial", when the comparison has no rows yet', async () => {
+    const stopped = { ...cancelled, reason: "the experiment was stopped before every trial ran (3 of arm A's trials cancelled); a verdict needs the full planned N (D32)", arms: [] };
+    let w = mountWith({ status: 'cancelled' }, stopped);
+    await settle();
+    let verdicts = w.findAll('[data-test="task-verdict"]').map((v) => v.text());
+    expect(verdicts.length).toBeGreaterThan(0);
+    expect(verdicts.every((v) => v === 'No comparisonthe run was stopped before every trial ran')).toBe(true);
+    expect(w.text()).not.toContain('no finished trial');
+    const running = { ...stopped, reason: 'arm A has 29 trials queued or running' };
+    w = mountWith({ status: 'running' }, running);
+    await settle();
+    verdicts = w.findAll('[data-test="task-verdict"]').map((v) => v.text());
+    expect(verdicts.every((v) => v === 'Run not finishedthe comparison waits for every arm to finish')).toBe(true);
+    expect(w.get('[data-test="verdict-title"]').text()).toBe('No comparison until every arm is complete');
+  });
+
+  it('names the time tile as the full comparison does, a mean either way', async () => {
+    const w = mountWith({ status: 'running' }, { ...cancelled, reason: 'arm A has 2 trials queued or running', arms: [] });
+    await settle();
+    const names = w.findAll('.metrics .stat-label').map((l) => l.text());
+    expect(names).toContain('Time per trial');
+    expect(names.some((n) => n.includes('median'))).toBe(false);
+  });
+
+  it('marks a paused arm\'s cut message in the reason of a run that is not over', async () => {
+    const paused = { ...cancelled, reason: `arm A is paused: ${pausedReason}`, arms: [{ ...armA, counts: counts({ infra_failed: 1, queued: 1 }) }] };
+    const w = mountWith({ status: 'running' }, paused);
+    await settle();
+    expect(w.get('[data-test="incomplete-reason"]').text()).toBe(`Arm A is paused: ${pausedReason}… A verdict needs the full planned N, so no pass counts are shown off a partial run.`);
+    expect(w.find('[data-test="paused-before-stop"]').exists()).toBe(false);
+  });
+});
+
 describe('CompareView against the API: the judge panel with a reused arm A', () => {
   it("counts the trials arm A reuses from its parent in the paid step, since a regrade judges them too (D72)", async () => {
     const base = (details as Record<string, { arms: { config_hash: string; reused_from: string | null; reused_trials: number }[] }>).exp_heldout;

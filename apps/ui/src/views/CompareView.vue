@@ -20,6 +20,7 @@ import { identParts, money, percent, plainText, plural, seconds, shortHash, shor
 import { isFake } from '../lib/models';
 import { alsoGradedBy, experimentName, gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
 import { domainFor, ticksFor, verdictTone, type StripRow } from '../lib/scale';
+import { pauseCause } from '../lib/runs';
 import { labelSetFor, rubricName } from '../lib/trust';
 import { href } from '../router';
 
@@ -148,11 +149,51 @@ function cell(task: string, arm: 0 | 1): CompareRow | undefined {
  *  page adds that a verdict needs the full planned N, so a reason that already says so (a stopped
  *  run's does) loses its own copy. */
 const incomplete = computed(() => {
-  if (data.value?.compare.status !== 'incomplete') return null;
-  const reason = plainText(data.value.compare.reason ?? 'not every arm is complete yet')
+  const d = data.value;
+  if (d?.compare.status !== 'incomplete') return null;
+  const tail = 'A verdict needs the full planned N, so no pass counts are shown off a partial run.';
+  // A stopped run is over: it says so from the arms' counts, and an arm that had paused before the
+  // stop is told apart below, its message whole (QA, 7 Nov: a cancelled run read "Arm A is
+  // paused: ... allowed_opena", cut off mid-word).
+  if (stoppedRun.value) {
+    const counts = d.compare.arms.filter((a) => a.counts.cancelled > 0).map((a) => `${a.counts.cancelled} of arm ${a.arm}'s trials cancelled`);
+    return `It was stopped before every trial ran${counts.length ? ` (${counts.join(', ')})` : ''}. ${tail}`;
+  }
+  const reason = withCutMark(plainText(d.compare.reason ?? 'not every arm is complete yet')
     .replace(/[;,.]?\s*a verdict needs the full planned N\.?\s*$/i, '')
-    .trim();
-  return `${reason.charAt(0).toUpperCase()}${reason.slice(1)}. A verdict needs the full planned N, so no pass counts are shown off a partial run.`;
+    .trim());
+  return `${reason.charAt(0).toUpperCase()}${reason.slice(1)}${/[.…]$/.test(reason) ? '' : '.'} ${tail}`;
+});
+
+/** The experiment was stopped (its status is `cancelled`): no comparison will ever come. */
+const stoppedRun = computed(() => data.value?.detail.status === 'cancelled' && data.value.compare.status === 'incomplete');
+
+/** worker/report.ts keeps the first 300 characters of a provider's message in a config error: one
+ *  that long was cut there, so it ends with an ellipsis rather than mid-word as if it ended. */
+const PROVIDER_MESSAGE_KEPT = 300;
+const CONFIG_ERROR = /infra:config_error \(LiteLLM status \w+\): ([\s\S]*)$/;
+function withCutMark(reason: string): string {
+  const m = CONFIG_ERROR.exec(reason);
+  return m && m[1].length >= PROVIDER_MESSAGE_KEPT ? `${reason}…` : reason;
+}
+
+/** On a stopped run, each arm that had paused before the stop: why, and the provider's message in
+ *  full as recorded, wrapped, never cut by the page. */
+const pausedBeforeStop = computed(() => {
+  if (!stoppedRun.value) return [];
+  return (data.value?.compare.arms ?? [])
+    .filter((a) => a.status === 'paused' && a.paused_reason)
+    .map((a) => {
+      const reason = plainText(a.paused_reason ?? '');
+      const m = CONFIG_ERROR.exec(reason);
+      const cut = !!m && m[1].length >= PROVIDER_MESSAGE_KEPT;
+      return {
+        letter: a.arm,
+        lead: m ? `Arm ${a.arm} had paused before the stop, on ${pauseCause(reason)}. The provider's message, as recorded:` : `Arm ${a.arm} had paused before the stop: ${reason}`,
+        message: m ? `${m[1]}${cut ? '…' : ''}` : null,
+        cut,
+      };
+    });
 });
 const armProgress = computed(() => {
   const list = data.value?.compare.arms ?? [];
@@ -161,7 +202,7 @@ const armProgress = computed(() => {
   return list.map((a, i) => {
     const c = a.counts;
     const total = c.queued + c.running + c.done + c.infra_failed + c.abandoned + c.cancelled;
-    const words: Record<string, string> = { not_started: 'not started', active: 'running', paused: 'paused', stopped: 'stopped', complete: 'complete' };
+    const words: Record<string, string> = { not_started: 'not started', active: 'running', paused: stoppedRun.value ? 'stopped' : 'paused', stopped: 'stopped', complete: 'complete' };
     const name = namesClash && arms.value[i] ? arms.value[i].label : a.config_name;
     return { key: a.arm.toLowerCase(), letter: a.arm, name, status: words[a.status] ?? a.status, done: c.done, total, reason: a.status === 'paused' && a.paused_reason ? plainText(a.paused_reason) : null };
   });
@@ -571,7 +612,8 @@ const metrics = computed<Metric[]>(() => {
   const n = `N = ${ta.length} and ${tb.length} trials; no interval yet`;
   const pairs: [string, (x: TrialRowSummary) => number | null | undefined, 'mean' | 'median', (v: number) => string, (v: number) => string][] = [
     ['Cost per trial', (x) => x.cost_usd, 'mean', money, signedMoney],
-    ['Time per trial, median', (x) => x.wall_s, 'median', (v) => seconds(v), (v) => `${signed(v, 1)} s`],
+    // The mean, as the statistics' tile gives it once the run is complete, under the same name.
+    ['Time per trial', (x) => x.wall_s, 'mean', (v) => seconds(v), (v) => `${signed(v, 1)} s`],
     ['Tokens per trial', (x) => (x.input_tokens ?? 0) + (x.output_tokens ?? 0) || null, 'mean', thousands, signedThousands],
   ];
   for (const [name, pick, how, fmt, fmtDelta] of pairs) {
@@ -690,7 +732,14 @@ function noDiffWords(r: TaskRow): { tag: string; detail: string } {
   return noDiffFor([armState(r.a), armState(r.b)].slice(0, Math.max(1, Math.min(2, arms.value.length))));
 }
 
+/** While the comparison waits for the run, the API gives no counts per task (D37): a task row says
+ *  that, never "no finished trial" of a task that has some (QA, 7 Nov). */
+const runWait = computed(() =>
+  data.value?.compare.status !== 'incomplete' ? null : stoppedRun.value ? { tag: 'No comparison', detail: 'the run was stopped before every trial ran' } : { tag: 'Run not finished', detail: 'the comparison waits for every arm to finish' },
+);
+
 function verdictOf(r: TaskRow): { kind: Verdict; label?: string } {
+  if (runWait.value) return { kind: 'pending', label: runWait.value.tag };
   if (!r.diff) return { kind: 'pending', label: noDiffWords(r).tag };
   if (!stats.value) return { kind: 'pending' };
   if (r.significant) return { kind: r.diff.estimate >= 0 ? 'better' : 'worse' };
@@ -698,7 +747,7 @@ function verdictOf(r: TaskRow): { kind: Verdict; label?: string } {
   if (excludesZero(r.diff)) return { kind: 'none', label: 'Within noise after correction' };
   return { kind: 'none', label: 'Within noise' };
 }
-const labelOf = (r: TaskRow) => (!r.diff ? noDiffWords(r).detail : stats.value ? `${signed(r.diff.estimate)} (${intervalText(r.diff)})` : `${signed(r.diff.estimate)}, no interval`);
+const labelOf = (r: TaskRow) => (runWait.value ? runWait.value.detail : !r.diff ? noDiffWords(r).detail : stats.value ? `${signed(r.diff.estimate)} (${intervalText(r.diff)})` : `${signed(r.diff.estimate)}, no interval`);
 
 const differing = computed(() => taskRows.value.filter((r) => r.significant).length);
 
@@ -1106,7 +1155,7 @@ const exampleJudgeWords = computed(() => {
               class="verdict-title"
               data-test="verdict-title"
             >
-              No comparison until every arm is complete
+              {{ stoppedRun ? 'No comparison: this run was cancelled' : 'No comparison until every arm is complete' }}
             </h2>
             <p
               class="verdict-text"
@@ -1114,6 +1163,27 @@ const exampleJudgeWords = computed(() => {
             >
               {{ incomplete }}
             </p>
+            <div
+              v-for="p in pausedBeforeStop"
+              :key="p.letter"
+              class="paused-note small"
+              data-test="paused-before-stop"
+            >
+              <p>{{ p.lead }}</p>
+              <p
+                v-if="p.message"
+                class="provider-message"
+                data-test="provider-message"
+              >
+                {{ p.message }}
+              </p>
+              <p
+                v-if="p.cut"
+                class="secondary smaller"
+              >
+                The record keeps the first {{ PROVIDER_MESSAGE_KEPT }} characters of it.
+              </p>
+            </div>
             <ul
               class="arm-progress small"
               data-test="arm-progress"
@@ -1286,8 +1356,9 @@ const exampleJudgeWords = computed(() => {
       </section>
 
       <!-- How the judge checks get graded, by the verdict they feed; the task table stays last. -->
+      <!-- Nothing to judge on a run with no finished trial of a judged task: no approval is offered. -->
       <JudgePanel
-        v-if="!data.detail.example && (judged.tasks || data.detail.judge)"
+        v-if="!data.detail.example && (data.detail.judge || (judged.tasks && judged.trials))"
         :experiment-id="data.detail.id"
         :judge="data.detail.judge ?? null"
         :judged-trials="judged.trials"
@@ -1718,6 +1789,24 @@ const exampleJudgeWords = computed(() => {
 
 .incomplete-link {
   align-self: flex-start;
+}
+
+.paused-note {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+  max-width: 72ch;
+}
+
+/* A provider's message is one long line of text: it wraps anywhere rather than run off the box. */
+.provider-message {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--ground);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .arms-line {

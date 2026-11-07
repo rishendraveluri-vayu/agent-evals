@@ -1013,14 +1013,17 @@ export class ExperimentsService {
   private incompleteReason(r: ExperimentRow, arms: ArmView[]): string | null {
     if (r.status === 'created') return 'the experiment has not been started';
     const paused = arms.filter((a) => a.status === 'paused');
-    if (paused.length) return paused.map((a) => `arm ${a.arm} is paused: ${a.paused_reason ?? 'paused'}`).join('; ');
     const stopped = arms.filter((a) => a.status === 'stopped');
-    if (stopped.length) {
-      return (
-        `the experiment was stopped before every trial ran (${stopped.map((a) => `${a.counts.cancelled} of arm ${a.arm}'s trials cancelled`).join(', ')}); ` +
-        'a verdict needs the full planned N (D32)'
-      );
+    // A stopped run is over, so it says so first: an arm that had paused before the stop is why,
+    // not its state now (QA, 7 Nov: a cancelled run read "Arm A is paused"). A run stopped after
+    // its last trial was claimed has every trial, and is compared as usual.
+    if (stopped.length || (r.status === 'cancelled' && paused.length)) {
+      const cancelled = arms.filter((a) => a.counts.cancelled > 0);
+      const counts = cancelled.length ? ` (${cancelled.map((a) => `${a.counts.cancelled} of arm ${a.arm}'s trials cancelled`).join(', ')})` : '';
+      const before = paused.map((a) => `; arm ${a.arm} had paused before the stop: ${a.paused_reason ?? 'paused'}`).join('');
+      return `the experiment was stopped before every trial ran${counts}${before}; a verdict needs the full planned N (D32)`;
     }
+    if (paused.length) return paused.map((a) => `arm ${a.arm} is paused: ${a.paused_reason ?? 'paused'}`).join('; ');
     if (r.status === 'paused') return `the experiment is paused: ${r.paused_reason ?? 'paused'}`;
     const active = arms.filter((a) => a.status === 'active');
     if (active.length) return active.map((a) => `arm ${a.arm} has ${a.counts.queued + a.counts.running} trials queued or running`).join('; ');

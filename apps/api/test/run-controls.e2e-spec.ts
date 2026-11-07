@@ -161,6 +161,20 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
     ]);
   });
 
+  it('says a run stopped while an arm was paused is stopped, and why the arm had paused (QA, 7 Nov)', async () => {
+    const exp = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 2 });
+    const first = (await e.claim('w-cs'))!;
+    await e.report(first, 'w-cs', 'infra:config_error', { last_status: '400' });
+    expect((await e.detail(exp.id)).arms[0].status).toBe('paused');
+    await request(env.http).post(`/api/experiments/${exp.id}/stop`).expect(200);
+    const compare = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as { status: string; reason: string };
+    expect(compare.status).toBe('incomplete');
+    expect(compare.reason).toMatch(
+      /^the experiment was stopped before every trial ran \(1 of arm A's trials cancelled\); arm A had paused before the stop: emi-basic on arm A, attempt 1: infra:config_error \(LiteLLM status 400\).*; a verdict needs the full planned N \(D32\)$/,
+    );
+    expect(compare.reason).not.toMatch(/arm A is paused/);
+  });
+
   it('pauses and resumes one arm by hand, by its hash or its letter', async () => {
     const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 2 });
     const d = (await request(env.http).post(`/api/experiments/${exp.id}/arms/${B}/pause`).expect(200)).body as ExperimentDetail;

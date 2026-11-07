@@ -576,7 +576,9 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   `reason` says why ("arm B is paused: ...", "the experiment was stopped before every trial ran
   (...); a verdict needs the full planned N (D32)", "the experiment is paused: ...", "arm A has 3
   trials queued or running", "the experiment has not been started") and `rows` is empty, so no
-  pass counts are shown off a partial run. Once `complete`, `rows` holds per task and arm `{task,
+  pass counts are shown off a partial run. A stopped (`cancelled`) run says it was stopped first,
+  and an arm that had paused before the stop follows as "; arm A had paused before the stop: ..."
+  (since 7 Nov; it used to read "arm A is paused: ..." on a run that is over). Once `complete`, `rows` holds per task and arm `{task,
   task_id, arm, config, config_name, passed, graded, incomplete, trials, infra_failed, abandoned}`
   and `stats` the verdict and its intervals (SP6, below). Each done trial
   counts by its latest finished grading job's outcome, as on the run grid: `passed` is the trials
