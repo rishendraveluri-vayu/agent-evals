@@ -365,6 +365,75 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
     expect(bad.body).toMatchObject({ error: 'invalid_experiment', fix: expect.stringContaining('"after"') as string });
   });
 
+  // 7 Nov: a real run paused 1 s after its last trial was claimed, which saved nothing and withheld
+  // the comparison until someone pressed Resume.
+  it('does not pause when the futile arm has no queued trial left: the last trial claimed, the run ends done and compares (D32)', async () => {
+    const exp = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 4, futility: { enabled: true } });
+    const claimed = [(await e.claim('w-fut-last'))!, (await e.claim('w-fut-last'))!, (await e.claim('w-fut-last'))!, (await e.claim('w-fut-last'))!];
+    expect(await e.claim('w-fut-last')).toBeNull();
+    for (const c of claimed.slice(0, 3)) await e.report(c, 'w-fut-last', 'agent');
+    // Three graded fails: the rule's case, but nothing is left to claim, so the check does not pause.
+    await e.grade('g-fut-last', () => 'fail');
+    let d = await e.detail(exp.id);
+    expect(d.status).toBe('running');
+    expect(d.events.filter((x) => x.kind === 'futility_pause')).toHaveLength(0);
+    // The arm counts as checked (once per arm), so it does not fire later either.
+    const { rows } = await env.pool.query<{ checked: boolean }>('SELECT futility_checked_at IS NOT NULL AS checked FROM experiment_arms WHERE experiment_id = $1', [exp.id]);
+    expect(rows).toEqual([{ checked: true }]);
+    await e.report(claimed[3], 'w-fut-last', 'agent');
+    await e.grade('g-fut-last', () => 'fail');
+    d = await e.detail(exp.id);
+    expect(d.status).toBe('done');
+    expect(d.events.filter((x) => x.kind === 'futility_pause')).toHaveLength(0);
+    const compare = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as { status: string };
+    expect(compare.status).toBe('complete');
+  });
+
+  it('does not pause for an arm whose trials are all claimed, though the other arm still has some queued (D32)', async () => {
+    const exp = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['emi-basic']], n: 3, futility: { after: 2, min_passed: 1 } });
+    // Claim until arm B has nothing queued; report its trials, which fail.
+    const held: Awaited<ReturnType<typeof e.claim>>[] = [];
+    let bLeft = 3;
+    while (bLeft) {
+      const c = (await e.claim('w-fut-arm'))!;
+      if (e.configOf(c) === B) {
+        bLeft -= 1;
+        await e.report(c, 'w-fut-arm', 'agent');
+      } else held.push(c);
+    }
+    expect((await trials(exp.id)).filter((t) => t.status === 'queued').every((t) => t.config_name === 'arm A')).toBe(true);
+    await e.grade('g-fut-arm', () => 'fail');
+    const d = await e.detail(exp.id);
+    expect(d.status).toBe('running');
+    expect(d.events.filter((x) => x.kind === 'futility_pause')).toHaveLength(0);
+    await request(env.http).post(`/api/experiments/${exp.id}/stop`).expect(200);
+  });
+
+  it('ends a run done when the futility check paused it with nothing left to claim, once its last trial finishes; a pause by hand stays (D32)', async () => {
+    // A futility pause made while the last trial ran, as the check did before 7 Nov.
+    const exp = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 2, futility: { enabled: true } });
+    const [first, last] = [(await e.claim('w-fut-old'))!, (await e.claim('w-fut-old'))!];
+    await e.report(first, 'w-fut-old', 'agent');
+    const reason = 'futility check (D32): arm A passed 0 of its first 1 graded trials, fewer than the 1 the rule asks for';
+    await env.pool.query(`UPDATE experiments SET status = 'paused', paused_at = now(), paused_reason = $2 WHERE id = $1`, [exp.id, reason]);
+    await env.pool.query(`INSERT INTO experiment_events (experiment_id, kind, detail) VALUES ($1, 'futility_pause', $2)`, [exp.id, reason]);
+    expect((await e.detail(exp.id)).status).toBe('paused');
+    await e.report(last, 'w-fut-old', 'agent');
+    await e.grade('g-fut-old');
+    const d = await e.detail(exp.id);
+    expect(d.status).toBe('done');
+    expect(d.finished_at).not.toBeNull();
+    expect(((await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as { status: string }).status).toBe('complete');
+
+    // By hand: the person asked for it, so it stays paused until they resume or stop.
+    const byHand = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 1, futility: { enabled: true } });
+    const only = (await e.claim('w-fut-old'))!;
+    await request(env.http).post(`/api/experiments/${byHand.id}/pause`).expect(200);
+    await e.report(only, 'w-fut-old', 'agent');
+    expect((await e.detail(byHand.id)).status).toBe('paused');
+    expect((await request(env.http).post(`/api/experiments/${byHand.id}/resume`).expect(200)).body).toMatchObject({ status: 'done' });
+  });
+
   it('pauses when infra failures pass 30% after at least 5 finished trials, and counts again from the resume (D32)', async () => {
     const exp = await e.experiment({ config_hashes: [A], task_sha256s: [cat.tasks['emi-basic']], n: 8, futility: { enabled: false } });
     // budget_net is never re-queued, so each failure is one finished slot.

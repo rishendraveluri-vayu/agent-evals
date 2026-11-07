@@ -135,11 +135,20 @@ export function experimentTitle(r: Pick<ExperimentRow, 'name' | 'example_name' |
  * Marks a running experiment done once none of its trials is queued or held. The caller holds the
  * experiment row (lockExperiment, the lock order in run-state.ts), so a trial another transaction
  * is finishing at the same moment is either committed and seen here or waits for this one (E3).
+ * So does an experiment the futility check paused (D32) with nothing left to claim: that pause
+ * holds back no spend, and left in place it withheld the comparison until someone resumed it
+ * (7 Nov). Since then the check does not pause an arm with no queued trials, so this covers a
+ * pause from before. A pause by hand or by a guard stays until it is resumed.
  */
 export async function finishIfDone(q: Queryable, experimentId: string): Promise<void> {
   await q.query(
-    `UPDATE experiments SET status = 'done', finished_at = now()
-     WHERE id = $1 AND status = 'running'
+    `UPDATE experiments e SET status = 'done', finished_at = now()
+     WHERE e.id = $1
+       AND (e.status = 'running'
+            OR (e.status = 'paused'
+                AND (SELECT ev.kind FROM experiment_events ev
+                     WHERE ev.experiment_id = e.id AND ev.kind IN ('paused', 'futility_pause', 'infra_guard_pause', 'spend_guard_pause')
+                     ORDER BY ev.id DESC LIMIT 1) = 'futility_pause'))
        AND NOT EXISTS (SELECT 1 FROM trials WHERE experiment_id = $1 AND status IN ('queued', 'claimed', 'running'))`,
     [experimentId],
   );

@@ -463,7 +463,12 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
     protects spend and such a run spends nothing (A41, since 5 Nov; the same reading of the run as
     the fake-only budget rule); `{"enabled": false}` turns it off and any other object turns it
     on, whatever the models; shown resolved as `futility` in the detail). Once per arm: when the arm has `after` graded trials, it pauses
-    the run if fewer than `min_passed` of them passed. **Passed is the grading outcome** (SP4,
+    the run if fewer than `min_passed` of them passed and the arm still has queued trials. With
+    none queued (since 7 Nov) the arm is marked checked and the run goes on: the pause would save
+    no spend and only withhold the comparison until a resume (a real run paused 1 s after its last
+    trial was claimed). An experiment the futility check paused ends `done` once nothing in it is
+    queued or running, as a running one does; a pause by hand or by a guard stays until a resume
+    or a stop. **Passed is the grading outcome** (SP4,
     since 4 Nov): a trial whose current grading outcome is `pass` counts as a pass and `fail` as a
     fail; one whose grading is `incomplete`, has not finished, or has no graders is not counted at
     all. Grading runs after the trial, so the check runs on the grades report too

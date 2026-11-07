@@ -84,19 +84,24 @@ export function estimatePerTrial(e: Estimate | null, config: string): number {
 /**
  * D32's futility check for one experiment, inside the caller's transaction: once per arm, when the
  * arm has `after` graded trials (outcome pass or fail), it pauses the run if fewer than
- * `min_passed` of them passed. Locks the experiment row (a no-op for a caller that took it first,
- * the lock order in run-state.ts); does nothing unless it is running.
- * Returns true if it paused the run. Called after every trial report and every grades report.
+ * `min_passed` of them passed and the arm still has queued trials. A pause saves the spend of
+ * trials not yet claimed; with none left in the arm it saves nothing and would only hold back the
+ * comparison until someone resumed (7 Nov: a real run paused 1 s after its last trial was
+ * claimed), so the arm is marked checked and the run goes on. Locks the experiment row (a no-op
+ * for a caller that took it first, the lock order in run-state.ts); does nothing unless it is
+ * running. Returns true if it paused the run. Called after every trial report and every grades
+ * report.
  */
 export async function applyFutility(q: Queryable, experimentId: string): Promise<boolean> {
   const { rows: exps } = await q.query<{ status: string; futility: FutilityRule | null }>('SELECT status, futility FROM experiments WHERE id = $1 FOR UPDATE', [experimentId]);
   const exp = exps[0];
   const rule = exp?.futility;
   if (!exp || exp.status !== 'running' || !rule?.enabled) return false;
-  const { rows: arms } = await q.query<{ arm: string; config_hash: string; reused: boolean; futility_checked: boolean; graded: number; passed: number }>(
+  const { rows: arms } = await q.query<{ arm: string; config_hash: string; reused: boolean; futility_checked: boolean; graded: number; passed: number; queued: number }>(
     `SELECT a.arm, a.config_hash, cardinality(a.reused_trial_ids) > 0 AS reused, a.futility_checked_at IS NOT NULL AS futility_checked,
             count(t.id) FILTER (WHERE t.status = 'done' AND g.outcome IN ('pass', 'fail'))::int AS graded,
-            count(t.id) FILTER (WHERE t.status = 'done' AND g.outcome = 'pass')::int AS passed
+            count(t.id) FILTER (WHERE t.status = 'done' AND g.outcome = 'pass')::int AS passed,
+            count(t.id) FILTER (WHERE t.status = 'queued')::int AS queued
      FROM experiment_arms a
      JOIN experiments e ON e.id = a.experiment_id
      LEFT JOIN trials t ON t.experiment_id = a.experiment_id AND ${TRIAL_IN_ARM}
@@ -112,7 +117,8 @@ export async function applyFutility(q: Queryable, experimentId: string): Promise
   for (const a of due) {
     await q.query('UPDATE experiment_arms SET futility_checked_at = now() WHERE experiment_id = $1 AND arm = $2', [experimentId, a.arm]);
   }
-  const futileArms = due.filter((a) => futile(rule, a.graded, a.passed));
+  // Only an arm with trials still to claim: pausing for one with none left saves nothing.
+  const futileArms = due.filter((a) => futile(rule, a.graded, a.passed) && a.queued > 0);
   if (!futileArms.length) return false;
   const what = futileArms.map((a) => `arm ${a.arm} passed ${a.passed} of its first ${a.graded} graded trials`).join('; ');
   const reason =
