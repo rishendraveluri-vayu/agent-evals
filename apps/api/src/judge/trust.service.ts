@@ -117,9 +117,21 @@ export class JudgeTrustService {
       const n = j.perExperiment.get(experimentId) ?? 0;
       if (n > 0 && (!best || n > (best.perExperiment.get(experimentId) ?? 0))) best = j;
     }
-    const held = best?.trust.criteria.find((c) => c.criterion === 'overall')?.heldout;
-    if (!best || !held || held.kappa === null || held.kappa_interval.low === null || held.kappa_interval.high === null || !best.overallTasks) return null;
-    return { kappa: held.kappa, low: held.kappa_interval.low, high: held.kappa_interval.high, bar: D8_KAPPA, tasks: best.overallTasks };
+    const overall = best?.trust.criteria.find((c) => c.criterion === 'overall');
+    const held = overall?.heldout;
+    if (!best || !overall || !held || held.kappa === null || held.kappa_interval.low === null || held.kappa_interval.high === null || !best.overallTasks) return null;
+    // The status, as the Judge page shows it, so the comparison never says the judge clears the
+    // bar when D8 says it does not (review 7 Nov: a too_few judge read as "clearing the 0.6 bar").
+    return {
+      kappa: held.kappa,
+      low: held.kappa_interval.low,
+      high: held.kappa_interval.high,
+      bar: D8_KAPPA,
+      tasks: best.overallTasks,
+      status: overall.status,
+      summary: overall.summary,
+      reasons: overall.d8?.reasons ?? [],
+    };
   }
 
   private async requireExperiment(id: string): Promise<void> {

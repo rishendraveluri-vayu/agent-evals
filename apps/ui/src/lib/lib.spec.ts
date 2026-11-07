@@ -380,15 +380,15 @@ describe('arms', () => {
 describe('judgeCaveat', () => {
   const judged = { id: 'a', judged: true };
   const code = { id: 'b', judged: false };
-  const judge = { kappa: 0.7, low: 0.47, high: 0.88, bar: 0.6, tasks: 4 };
+  const judge = { kappa: 0.7, low: 0.47, high: 0.88, bar: 0.6, tasks: 4, status: 'not_trusted' as const, summary: 'Not trusted yet: test-retest is not measured.', reasons: ['test-retest agreement is not measured'] };
   const isJudged = (t: { judged: boolean }) => t.judged;
   const both = [judged, { ...judged, id: 'c' }];
   const k = (v: string) => `κ\u00a0${v}`;
 
-  it('gives the estimate first, then says the interval reaches below the bar, when only the estimate clears it', () => {
+  it('gives the estimate and its interval, then where the judge stands against the trust bar, from its trust status', () => {
     const c = judgeCaveat({ differing: both, isJudged, judge, toGo: 3 });
     expect(c?.text).toBe(
-      `Rests on the judge: both tasks that differ need the judge's pass. Its agreement with you is ${k('0.70')}, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional.`,
+      `Rests on the judge: both tasks that differ need the judge's pass. Its agreement with you is ${k('0.70')} (interval 0.47 to 0.88), short of the trust bar, and it is provisional.`,
     );
     expect(c?.link).toBe('agreement with you');
     // The lead is its own part, set in bold by the page; `before` starts after it.
@@ -396,26 +396,31 @@ describe('judgeCaveat', () => {
     expect(c?.before).toBe("both tasks that differ need the judge's pass. Its ");
     expect(`${c?.lead}: ${c?.before}${c?.link}${c?.after}`).toBe(c?.text);
     expect(judgeCaveat({ differing: [judged], isJudged, judge, toGo: 0 })?.text).toBe(
-      `Rests on the judge: the one task that differs needs the judge's pass. Its agreement with you is ${k('0.70')}, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it.`,
+      `Rests on the judge: the one task that differs needs the judge's pass. Its agreement with you is ${k('0.70')} (interval 0.47 to 0.88), short of the trust bar.`,
     );
     expect(judgeCaveat({ differing: [judged, judged, judged], isJudged, judge, toGo: 1 })?.text).toContain("all 3 tasks that differ need the judge's pass");
     expect(c?.text).not.toContain('judge-graded');
   });
 
-  it('gives the estimate with its interval and says it is below the bar when the estimate is', () => {
-    const low = { ...judge, kappa: 0.55, low: 0.4, high: 0.7 };
-    expect(judgeCaveat({ differing: both, isJudged, judge: low, toGo: 3 })?.text).toBe(
-      `Rests on the judge: both tasks that differ need the judge's pass. Its agreement with you is ${k('0.55')} (interval 0.40 to 0.70), below the 0.6 bar, and it is provisional.`,
+  it('says the judge clears the trust bar only when its status is trusted, whatever the figures', () => {
+    // Review 7 Nov: D8 is kappa >= 0.6 with the interval's low end >= 0.4, and more, so a trusted
+    // judge's interval can reach below 0.6, and a judge on too few labels can show kappa 1.
+    const trusted = { ...judge, status: 'trusted' as const, reasons: [] };
+    expect(judgeCaveat({ differing: both, isJudged, judge: trusted, toGo: 0 })?.text).toBe(
+      `Rests on the judge: both tasks that differ need the judge's pass. Its agreement with you is ${k('0.70')} (interval 0.47 to 0.88), clearing the trust bar.`,
     );
-    expect(judgeCaveat({ differing: both, isJudged, judge: low, toGo: 0 })?.after).toBe(` is ${k('0.55')} (interval 0.40 to 0.70), below the 0.6 bar.`);
+    expect(judgeCaveat({ differing: both, isJudged, judge: trusted, toGo: 2 })?.after).toBe(` is ${k('0.70')} (interval 0.47 to 0.88), clearing the trust bar, and it is provisional.`);
+    const fewNo = { ...judge, kappa: 1, low: 1, high: 1, status: 'too_few' as const, reasons: ['4 human "no" labels, fewer than 5'] };
+    expect(agreementWords(fewNo, 0)).toBe(` is ${k('1.00')} (interval 1.00 to 1.00), on too few labels to test against the trust bar yet.`);
+    const high = { ...judge, kappa: 0.82, low: 0.71, high: 0.9 };
+    expect(agreementWords(high, 0)).toBe(` is ${k('0.82')} (interval 0.71 to 0.90), short of the trust bar.`);
   });
 
-  it('says the judge clears the bar when its whole interval does', () => {
-    const high = { ...judge, kappa: 0.82, low: 0.71, high: 0.9 };
-    expect(judgeCaveat({ differing: both, isJudged, judge: high, toGo: 0 })?.text).toBe(
-      `Rests on the judge: both tasks that differ need the judge's pass. Its agreement with you is ${k('0.82')} (interval 0.71 to 0.90), clearing the 0.6 bar.`,
-    );
-    expect(judgeCaveat({ differing: both, isJudged, judge: high, toGo: 2 })?.after).toBe(` is ${k('0.82')} (interval 0.71 to 0.90), clearing the 0.6 bar, and it is provisional.`);
+  it('never prints −0.00 for a kappa that rounds to zero, and gives a negative with a minus sign', () => {
+    // The live headline judge's kappa (review 7 Nov, F3).
+    const live = { ...judge, kappa: -3.700743415417189e-16, low: -0.20754716981132107, high: 0.2857142857142852 };
+    expect(agreementWords(live, 0)).toBe(` is ${k('0.00')} (interval −0.21 to 0.29), short of the trust bar.`);
+    expect(agreementWords(live, 0)).not.toContain('-0.00');
   });
 
   it('names, in brackets, the code graders a differing task also has, since it passes only when every check does', () => {
@@ -439,7 +444,7 @@ describe('judgeCaveat', () => {
   });
 
   it('shares its agreement wording with the rest of the page, κ kept with its value', () => {
-    expect(agreementWords(judge, 3)).toBe(` is ${k('0.70')}, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional.`);
+    expect(agreementWords(judge, 3)).toBe(` is ${k('0.70')} (interval 0.47 to 0.88), short of the trust bar, and it is provisional.`);
   });
 });
 

@@ -192,7 +192,7 @@ describe('CompareView in fixture mode', () => {
     await settle();
     const caveat = w.get('[data-test="judge-caveat"]');
     expect(caveat.text()).toBe(
-      `Rests on the judge: both tasks that differ need the judge's pass (debt-hardship-03 also has a state check). Its agreement with you is κ${nb}0.70, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional.`,
+      `Rests on the judge: both tasks that differ need the judge's pass (debt-hardship-03 also has a state check). Its agreement with you is κ${nb}0.55 (interval 0.29 to 0.79), short of the trust bar, and it is provisional.`,
     );
     expect(caveat.get('a').text()).toBe('agreement with you');
     // The task id is a literal identifier: mono, and kept whole.
@@ -893,7 +893,7 @@ describe('CompareView against the API: the check on the method', () => {
     await settle();
     expect(w.find('[data-test="judge-caveat"]').exists()).toBe(false);
     expect(w.get('[data-test="judge-line"]').text()).toBe(
-      `The judge scored 4 of the 12 tasks. Its agreement with you is κ${nb}0.70, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional. See judge agreement`,
+      `The judge scored 4 of the 12 tasks. Its agreement with you is κ${nb}0.55 (interval 0.29 to 0.79), short of the trust bar, and it is provisional. See judge agreement`,
     );
   });
 
@@ -1137,6 +1137,75 @@ describe('CompareView against the API: the check on the method', () => {
     expect(note.classes()).toContain('caveat--alarm');
     // A calibration run is the check itself: no link to set up another.
     expect(w.find('[data-test="no-aa"]').exists()).toBe(false);
+  });
+});
+
+// Review 7 Nov (UI F3, F9; engine F1): the comparison's judge agreement says what the judge trust
+// says. Its standing comes from stats.judge.status, never from kappa against the 0.6 bar.
+describe('CompareView: the judge agreement says what the trust says (review 7 Nov)', () => {
+  const BAR: JudgeTrustResponse['bar'] = { kappa: 0.6, kappa_low: 0.4, retest: 0.9, min_human_no: 5, max_undefined_share: 0.05, resamples: 2000, human_unsure: 'exclude' };
+  const base = compares.exp_heldout as unknown as Compare;
+  const trustOf = (status: 'trusted' | 'not_trusted' | 'too_few') => {
+    const judge = (trustJson as unknown as JudgeTrustResponse).judges[0];
+    return [{ ...judge, experiments: ['exp_heldout'], status, criteria: judge.criteria.map((c) => (c.criterion === 'overall' ? { ...c, status } : c)) }];
+  };
+  function mountWith(judge: NonNullable<CompareStats['judge']>, trust: JudgeTrustResponse['judges']) {
+    routeFetch({
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': { ...base, stats: { ...base.stats!, judge } },
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/labels/queue?set=heldout': queue.heldout,
+      '/api/judge/trust?experiment=exp_heldout': { bar: BAR, judges: trust },
+      '/api/models': [],
+    });
+    return mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+  }
+
+  it('never prints −0.00 for the live headline judge (kappa −3.7e-16)', async () => {
+    const live = { kappa: -3.700743415417189e-16, low: -0.20754716981132107, high: 0.2857142857142852, bar: 0.6, tasks: 10, status: 'not_trusted' as const, summary: 'Not trusted: kappa 0.00 on 40 held-out labels is below 0.6.', reasons: ['kappa 0.00 is below 0.6'] };
+    const w = mountWith(live, trustOf('not_trusted'));
+    await settle();
+    const caveat = w.get('[data-test="judge-caveat"]').text();
+    expect(caveat).toContain(`Its agreement with you is κ${nb}0.00 (interval −0.21 to 0.29), short of the trust bar`);
+    expect(caveat).not.toMatch(/[-−]0\.00/);
+  });
+
+  it('says a judge the trust badges Trusted clears the trust bar, though its interval reaches below 0.6', async () => {
+    const trusted = { kappa: 0.7, low: 0.47, high: 0.88, bar: 0.6, tasks: 6, status: 'trusted' as const, summary: 'Trusted.', reasons: [] };
+    const w = mountWith(trusted, trustOf('trusted'));
+    await settle();
+    expect(w.get('[data-test="judge-trust-row"] [data-test="trust-label"]').text()).toBe('Trusted');
+    expect(w.get('[data-test="judge-caveat"]').text()).toContain(`κ${nb}0.70 (interval 0.47 to 0.88), clearing the trust bar`);
+    expect(w.text()).not.toContain('reaches below it');
+  });
+
+  it('does not say a judge on too few labels clears the bar, whatever its kappa', async () => {
+    // Engine F1: kappa 1 with an interval of [1, 1] on four human "no" labels used to read "clearing the 0.6 bar".
+    const fewNo = { kappa: 1, low: 1, high: 1, bar: 0.6, tasks: 2, status: 'too_few' as const, summary: '40 held-out labels so far; needs 1 more human "no" label before the trust bar can be applied.', reasons: ['4 human "no" labels, fewer than 5'] };
+    const w = mountWith(fewNo, trustOf('too_few'));
+    await settle();
+    expect(w.get('[data-test="judge-trust-row"] [data-test="trust-label"]').text()).toBe('Too few labels');
+    const caveat = w.get('[data-test="judge-caveat"]').text();
+    expect(caveat).toContain(`κ${nb}1.00 (interval 1.00 to 1.00), on too few labels to test against the trust bar yet`);
+    expect(caveat).not.toContain('clearing');
+  });
+
+  describe('in fixture mode', () => {
+    useFixtures();
+
+    it('gives the exp_heldout judge the kappa and status the Judge page gives it (F9)', async () => {
+      const c = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+      await settle();
+      const onCompare = /κ\s?(\d\.\d\d)/.exec(c.get('[data-test="judge-caveat"]').text())?.[1];
+      expect(c.get('[data-test="judge-caveat"]').text()).toContain('short of the trust bar');
+      const { default: JudgeView } = await import('./JudgeView.vue');
+      const j = mount(JudgeView);
+      await settle();
+      const haiku = j.findAll('[data-test="judge"]').find((x) => x.get('[data-test="judge-name"]').text() === 'Claude Haiku 5.5, rubric advice.v4')!;
+      const onJudgePage = /Kappa (\d\.\d\d)/.exec(haiku.get('[data-test="criterion-row"][data-criterion="overall"] [data-test="criterion-heldout"]').text())?.[1];
+      expect(onCompare).toBe('0.55');
+      expect(onCompare).toBe(onJudgePage);
+    });
   });
 });
 

@@ -1199,7 +1199,12 @@ no model and never changes a grade or a verdict.
   `experiment` is a 400 `invalid_query`.
 - **The comparison's `stats.judge`** is filled from the held-out figures of the `overall` criterion
   of the experiment's judge (the one with the most current grades on its trials): `{kappa, low,
-  high, bar, tasks}`, `bar` being D8's 0.6 and `tasks` the held-out tasks with pairs; null without
-  held-out pairs, or when kappa or its interval is undefined (the type needs numbers). It is read
-  live beside the cached statistics, also on a calibration run, and changes no verdict, interval
-  or text.
+  high, bar, tasks, status, summary, reasons}`, `bar` being D8's 0.6, `tasks` the held-out tasks
+  with pairs, and `status`, `summary` and `reasons` that criterion's trust status, its sentence
+  and D8's reasons (empty when trusted), exactly as `GET /judge/trust` gives them (since 7 Nov).
+  Whether the judge clears the trust bar is `status`, never the figures: D8 is more than kappa
+  against 0.6 (the interval's low end, at least 5 human "no" labels, the false-pass gap, retest),
+  and before 7 Nov the page read `low >= bar` as "clearing the 0.6 bar" for a `too_few` judge
+  with kappa 1. Null without held-out pairs, when kappa or its interval is undefined (the type
+  needs numbers), or when the trust could not be worked out. It is read live beside the cached
+  statistics, also on a calibration run, and changes no verdict, interval or text.

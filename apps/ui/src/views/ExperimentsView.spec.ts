@@ -31,7 +31,7 @@ describe('ExperimentsView in fixture mode', () => {
     await settle();
     const caveat = w.get('[data-test="latest-result"] [data-test="judge-caveat"]');
     expect(caveat.text()).toBe(
-      `Rests on the judge: both tasks that differ need the judge's pass (debt-hardship-03 also has a state check). Its agreement with you is κ${nb}0.70, above the 0.6 bar, but the interval (0.47 to 0.88) reaches below it, and it is provisional.`,
+      `Rests on the judge: both tasks that differ need the judge's pass (debt-hardship-03 also has a state check). Its agreement with you is κ${nb}0.55 (interval 0.29 to 0.79), short of the trust bar, and it is provisional.`,
     );
     expect(caveat.get('a').attributes('href')).toBe('#/labels/judge');
     const caption = w.get('[data-test="latest-result"] figcaption').element;

@@ -6,6 +6,7 @@ import { harnessVersion, plural, shortHash, signed } from './format';
 import { isFake } from './models';
 import { harnessName, harnessShort, modelName, settingLabel, splitName } from './names';
 import { settingValue } from './settings';
+import { kappaWords } from './trust';
 
 /** `a`, `b`, then `c` and on for an experiment made before D35. */
 export type ArmKey = string;
@@ -419,17 +420,24 @@ export interface JudgeCaveat {
 
 type JudgeStats = NonNullable<CompareStats['judge']>;
 
-/** The judge's agreement with you, estimate first and then its interval, against the bar: what
- *  follows "Its agreement with you". Three cases: the whole interval clears the bar, the estimate
- *  clears it but the interval reaches below, or the estimate is below. Ends with the full stop. */
-export function agreementWords(judge: Pick<JudgeStats, 'kappa' | 'low' | 'high' | 'bar'>, toGo: number): string {
-  const k = `κ${NBSP}${judge.kappa.toFixed(2)}`;
-  const interval = `${judge.low.toFixed(2)} to ${judge.high.toFixed(2)}`;
-  let words: string;
-  if (judge.low >= judge.bar) words = ` is ${k} (interval ${interval}), clearing the ${judge.bar} bar`;
-  else if (judge.kappa >= judge.bar) words = ` is ${k}, above the ${judge.bar} bar, but the interval (${interval}) reaches below it`;
-  else words = ` is ${k} (interval ${interval}), below the ${judge.bar} bar`;
-  return `${words}${toGo > 0 ? ', and it is provisional.' : '.'}`;
+/** Where the judge stands against the trust bar, by its trust status (D83), after its figures. */
+const STANDING: Partial<Record<JudgeStats['status'], string>> = {
+  trusted: 'clearing the trust bar',
+  not_trusted: 'short of the trust bar',
+  too_few: 'on too few labels to test against the trust bar yet',
+};
+
+/** The judge's agreement with you, estimate first and then its interval, then where it stands
+ *  against the trust bar: what follows "Its agreement with you". Where it stands is the trust
+ *  status the API gives, the one the Judge page shows, never worked out here from the figures:
+ *  the trust bar (D8) is more than kappa against 0.6, so a judge with too few "no" labels, or
+ *  one kinder to one arm, can have a high kappa and still not be trusted (review 7 Nov). Values
+ *  that round to zero read 0.00, never −0.00. Ends with the full stop. */
+export function agreementWords(judge: Pick<JudgeStats, 'kappa' | 'low' | 'high' | 'status'>, toGo: number): string {
+  const k = `κ${NBSP}${kappaWords(judge.kappa)}`;
+  const interval = `${kappaWords(judge.low)} to ${kappaWords(judge.high)}`;
+  const standing = STANDING[judge.status] ?? 'not yet tested against the trust bar';
+  return ` is ${k} (interval ${interval}), ${standing}${toGo > 0 ? ', and it is provisional.' : '.'}`;
 }
 
 /** "the one task that differs needs", "both tasks that differ need", "all 3 tasks that differ need" */

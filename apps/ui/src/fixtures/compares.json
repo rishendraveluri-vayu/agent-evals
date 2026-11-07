@@ -703,11 +703,18 @@
       },
       "calibration": null,
       "judge": {
-        "kappa": 0.7,
-        "low": 0.47,
-        "high": 0.88,
+        "kappa": 0.5477,
+        "low": 0.29,
+        "high": 0.79,
         "bar": 0.6,
-        "tasks": 6
+        "tasks": 6,
+        "status": "not_trusted",
+        "summary": "Tested on 40 held-out labels and it missed the trust bar (D8): read its verdicts as a hint, and look at where it disagrees with people.",
+        "reasons": [
+          "kappa 0.55 is under the bar of 0.6 (D8)",
+          "the lower end of its interval, 0.29, is under 0.4",
+          "arm B's false-pass rate is 0.21 higher than arm A's (interval 0.02 to 0.40), so the judge lets more of one arm's failures through"
+        ]
       },
       "verdict_text": "B passes more than A: +15.0 points (95% interval +7.0 to +23.0), p = 0.0039 by the paired sign-flip test over 12 tasks.",
       "a": {

@@ -320,7 +320,24 @@ describeWithDb('judge trust (D83, e2e, real Postgres)', () => {
 
     const cmp = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as CompareResponse;
     expect(cmp.status).toBe('complete');
-    expect(cmp.stats!.judge).toEqual({ kappa: c.heldout!.kappa, low: k.low, high: k.high, bar: 0.6, tasks: 2 });
+    expect(cmp.stats!.judge).toEqual({ kappa: c.heldout!.kappa, low: k.low, high: k.high, bar: 0.6, tasks: 2, status: 'trusted', summary: c.summary, reasons: [] });
+  });
+
+  it('gives the comparison’s stats.judge the trust status, so a judge too few labels can test is not read as clearing the bar (review 7 Nov, F1)', async () => {
+    const exp = await run([A, B], ['trust-held-1', 'trust-held-2'], 10);
+    // Humans say "no" on repeats 0 and 1 of trust-held-1 in each arm (4 in all) and "yes" elsewhere; the judge agrees with every one.
+    const human = (x: Ran) => (x.task === 'trust-held-1' && x.repeat < 2 ? 'no' : 'yes');
+    const byId = new Map(exp.trials.map((x) => [x.id, x]));
+    await judge('fake/judge-fewno', (id) => ({ overall: human(byId.get(id)!), plain: 'yes' }));
+    for (const x of exp.trials) await label('heldout', x.id, human(x));
+    const c = overall(await judgeOf('fake/judge-fewno'));
+    expect(c.status).toBe('too_few');
+    expect(c.heldout).toMatchObject({ n: 40, tp: 36, tn: 4, fp: 0, fn: 0, human_no: 4, kappa: 1 });
+    const cmp = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as CompareResponse;
+    // Kappa 1 with an interval of [1, 1], which the page used to word as "clearing the 0.6 bar":
+    // now it carries the status the Judge page shows, with its sentence and D8's reasons.
+    expect(cmp.stats!.judge).toEqual({ kappa: 1, low: 1, high: 1, bar: 0.6, tasks: 2, status: 'too_few', summary: c.summary, reasons: c.d8!.reasons });
+    expect(cmp.stats!.judge!.reasons[0]).toBe('4 human "no" labels, fewer than 5');
   });
 
   it('orders an experiment’s queue by the judge’s verdict to calibrate it, both kinds early and in balance, at random, and keeps the items blind', async () => {
