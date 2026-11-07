@@ -11,7 +11,7 @@ import ReplyPieces from '../components/ReplyPieces.vue';
 import SpanTimeline from '../components/SpanTimeline.vue';
 import TrustBadge from '../components/TrustBadge.vue';
 import { armIndexOf, armLetter, armsOf, namedByHash } from '../lib/arms';
-import { amountHits, gradeView, outcomeOf, provenanceOf, type AmountCheck, type GradeView, type ProvenanceView } from '../lib/grading';
+import { amountHits, failureQuotes, gradeView, outcomeOf, provenanceOf, unsourcedFigures, type AmountCheck, type FailureQuote, type FigureView, type GradeView, type ProvenanceView } from '../lib/grading';
 import { optional, useLoad } from '../lib/async';
 import { causeView, sentence } from '../lib/causes';
 import { capitalise, count, harnessVersion, money, plainText, seconds, shortVersion } from '../lib/format';
@@ -338,20 +338,15 @@ interface ToolItem {
  *  paragraph and cell as its pieces. */
 type ShownBlock = { kind: 'para'; pieces: Piece[] } | { kind: 'rule' } | { kind: 'table'; head: Piece[][]; rows: Piece[][][]; align: Align[] };
 
-interface Quote {
-  text: string;
-  index: number;
-  name: string;
-}
 interface MessageItem {
   kind: 'message';
   id: string;
   who: string;
   client: boolean;
   blocks: ShownBlock[];
-  /** Whether any passage in it is highlighted, so the key goes under it. */
-  marked: boolean;
-  /** Whether it shows an amount the number check found no source for. */
+  /** Who quoted the passages highlighted in it, for the key under it; empty when none is. */
+  quotedBy: string[];
+  /** Whether it shows an amount the sourcing check found no source for. */
   amounts: boolean;
 }
 
@@ -373,18 +368,18 @@ function summarise(args: unknown): string {
     .join(', ');
 }
 
-/** A message in blocks, with the passages a failed check quoted marked, each tied to the check
- *  that quoted it, and the amounts the number check could not trace to a source. Each quote is
- *  placed once, where it first occurs, and one that overlaps a quote already placed is left out;
- *  an amount inside a quote is marked as both. With `markdown` (an agent's reply), its tables,
- *  rules and inline styles show; each paragraph's and cell's styles are worked out on the whole
- *  of it, so a highlight inside bold text stays bold. */
-function shownBlocks(body: string, quotes: Quote[], amounts: AmountCheck[], markdown: boolean): ShownBlock[] {
+/** A message in blocks, with the passages quoted as evidence of a failure marked, each tied to the
+ *  check that quoted it and named by who quoted it, and the amounts the sourcing check could not
+ *  trace to a source. Each quote is placed once, where it first occurs, and one that overlaps a
+ *  quote already placed is left out; an amount inside a quote is marked as both. With `markdown`
+ *  (an agent's reply), its tables, rules and inline styles show; each paragraph's and cell's
+ *  styles are worked out on the whole of it, so a highlight inside bold text stays bold. */
+function shownBlocks(body: string, quotes: FailureQuote[], amounts: AmountCheck[], markdown: boolean): ShownBlock[] {
   const placed: Mark<QuoteMark>[] = [];
   for (const q of quotes) {
     const hit = findQuote(body, q.text);
     if (!hit || placed.some((p) => hit.start < p.end && p.start < hit.end)) continue;
-    placed.push({ ...hit, value: { index: q.index, label: `Quoted by the judge for ${q.name}` } });
+    placed.push({ ...hit, value: { index: q.index, by: q.by } });
   }
   const amountMarks = amountHits(body, amounts);
   const started = new Set<object>();
@@ -399,16 +394,11 @@ function shownBlocks(body: string, quotes: Quote[], amounts: AmountCheck[], mark
 /** Every piece of a message's blocks, to ask what it shows. */
 const piecesIn = (blocks: ShownBlock[]): Piece[] => blocks.flatMap((b) => (b.kind === 'para' ? b.pieces : b.kind === 'table' ? [...b.head, ...b.rows.flat()].flat() : []));
 
-/** What to highlight in the replies: a failed check's quotes, and each quote the judge gave for a
- *  question it answered no, under that question. A quote for a "yes" is evidence for a pass, so it
- *  stays in the grade card, never highlighted as a failure. */
-const failedQuotes = computed<Quote[]>(() =>
-  (vm.value?.grades ?? []).flatMap((g) => [
-    ...g.criteria.flatMap((c) => (c.verdict === 'no' && c.quote ? [{ text: c.quote, index: g.index, name: c.criterion }] : [])),
-    ...(g.verdict === 'fail' ? g.quotes.map((text) => ({ text, index: g.index, name: g.name })) : []),
-  ]),
-);
-const unsupportedAmounts = computed(() => data.value?.checks?.unsupported ?? []);
+/** What to highlight in the replies as evidence of a failure (lib/grading.ts failureQuotes). */
+const failedQuotes = computed(() => failureQuotes(vm.value?.grades ?? []));
+/** The amounts with no source: the runner's checks.json lists them; without it, the ones a failed
+ *  sourcing check names. An amount the check verified by recomputing it is never among them. */
+const unsupportedAmounts = computed(() => data.value?.checks?.unsupported ?? unsourcedFigures(vm.value?.grades ?? []));
 
 const conversation = computed<(ToolItem | MessageItem)[]>(() => {
   const v = vm.value;
@@ -434,6 +424,10 @@ const conversation = computed<(ToolItem | MessageItem)[]>(() => {
   const out: (ToolItem | MessageItem)[] = [];
   let agentIndex = 0;
   const transcript = v.result.conversation?.transcript ?? [];
+  const lastReply = transcript.map((m) => m.role).lastIndexOf('assistant');
+  // A quote goes in the message its evidence names, the last reply for the final answer, and
+  // any reply when the evidence does not say.
+  const quotesFor = (i: number) => failedQuotes.value.filter((q) => (q.at !== null ? q.at === i : q.final ? i === lastReply : true));
   transcript.forEach((m, i) => {
     const isAgent = m.role === 'assistant';
     if (isAgent) {
@@ -442,7 +436,7 @@ const conversation = computed<(ToolItem | MessageItem)[]>(() => {
       out.push(...toolsOf(turnId));
       agentIndex += 1;
     }
-    const blocks = shownBlocks(m.content, isAgent ? failedQuotes.value : [], isAgent ? unsupportedAmounts.value : [], isAgent);
+    const blocks = shownBlocks(m.content, isAgent ? quotesFor(i) : [], isAgent ? unsupportedAmounts.value : [], isAgent);
     const shown = piecesIn(blocks);
     out.push({
       kind: 'message',
@@ -450,7 +444,7 @@ const conversation = computed<(ToolItem | MessageItem)[]>(() => {
       who: isAgent ? 'Agent' : m.source === 'client_sim' ? 'Client, simulated' : 'Client',
       client: !isAgent,
       blocks,
-      marked: shown.some((x) => x.quote),
+      quotedBy: [...new Set(shown.flatMap((x) => (x.quote ? [x.quote.by] : [])))],
       amounts: shown.some((x) => x.amount),
     });
   });
@@ -662,7 +656,19 @@ const cardTrust = computed(() =>
 );
 const answerWord = (v: string | null) => (v === 'yes' ? 'answered yes' : v === 'no' ? 'answered no' : 'no answer');
 const sourceWords = (source: string | null, tool: string | null) =>
-  ({ tool_result: `${tool ?? 'a tool'}'s result`, span: `${tool ?? 'a tool'} call`, result: 'result.json', checks: 'the number check' })[source ?? ''] ?? source ?? 'the trial';
+  ({ tool_result: `${tool ?? 'a tool'}'s result`, span: `${tool ?? 'a tool'} call`, result: 'result.json', checks: 'the sourcing check' })[source ?? ''] ?? source ?? 'the trial';
+
+/** The sourcing check's amounts as its card lists them: the ones with no source first, then the
+ *  ones it verified by recomputing them, each once, with how many times the replies give it. */
+function figureRows(figures: FigureView[]) {
+  const rows: { text: string; verified: boolean; derivation: string | null; count: number }[] = [];
+  for (const f of [...figures.filter((x) => !x.verified), ...figures.filter((x) => x.verified)]) {
+    const same = rows.find((r) => r.text === f.text && r.verified === f.verified && r.derivation === f.derivation);
+    if (same) same.count += 1;
+    else rows.push({ text: f.text, verified: f.verified, derivation: f.derivation, count: 1 });
+  }
+  return rows;
+}
 
 /** The number check in words: how many amounts trace to a source, and which do not. */
 const numberCheck = computed(() => {
@@ -1077,18 +1083,18 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                 </template>
               </article>
               <p
-                v-if="item.kind === 'message' && item.marked"
+                v-if="item.kind === 'message' && item.quotedBy.length"
                 class="mark-key"
                 data-test="mark-key"
               >
-                Highlighted: text the judge quoted for a failed check.
+                Highlighted: evidence quoted by {{ item.quotedBy.join('; ') }}.
               </p>
               <p
                 v-if="item.kind === 'message' && item.amounts"
                 class="mark-key"
                 data-test="amount-key"
               >
-                <mark class="amount-mark">Underlined</mark>: amounts the number check found no source for, in any tool result or the client's own words.
+                <mark class="amount-mark">Underlined</mark>: amounts the sourcing check found no source for, in any tool result or the client's own words.
               </p>
               <details
                 v-else-if="item.kind === 'tool'"
@@ -1388,8 +1394,27 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                 class="quote small"
                 data-test="grade-quote"
               >
-                “{{ quoteText(q) }}”
+                “{{ quoteText(q.text) }}”
               </blockquote>
+              <ul
+                v-if="g.figures.length"
+                class="figures small"
+                data-test="grade-figures"
+              >
+                <li
+                  v-for="f in figureRows(g.figures)"
+                  :key="`${f.verified}:${f.text}:${f.derivation}`"
+                  :data-test="f.verified ? 'figure-verified' : 'figure-unsourced'"
+                >
+                  <mark
+                    v-if="!f.verified"
+                    class="amount-mark mono"
+                  >{{ f.text }}</mark><span
+                    v-else
+                    class="mono"
+                  >{{ f.text }}</span>{{ f.count > 1 ? ` (${f.count} times)` : '' }} <span class="secondary">{{ f.verified ? `verified by recomputing it${f.derivation ? `: ${f.derivation}` : ''}` : 'no source found' }}</span>
+                </li>
+              </ul>
               <div
                 v-for="(ev, ei) in g.evidence"
                 :key="`e${ei}`"
@@ -1508,8 +1533,8 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
           >
             {{
               vm.files.includes('checks.json')
-                ? 'No number check shown: this trial’s checks.json could not be read.'
-                : 'No number check: this trial has no checks.json. The runner writes one after each trial; trials from before it did, and any whose check failed, have none.'
+                ? 'No sourcing check shown: this trial’s checks.json could not be read.'
+                : 'No sourcing check: this trial has no checks.json. The runner writes one after each trial; trials from before it did, and any whose check failed, have none.'
             }}
           </p>
           <p
@@ -1677,12 +1702,18 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
   padding-top: 12px;
 }
 
-.amounts {
+.amounts,
+.figures {
   list-style: none;
   margin: 6px 0;
   padding: 0;
   display: grid;
   gap: 4px;
+}
+
+.figures {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .problems {

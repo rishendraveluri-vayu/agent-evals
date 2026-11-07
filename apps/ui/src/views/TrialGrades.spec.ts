@@ -136,7 +136,7 @@ describe('TrialView number check', () => {
     await settle();
     const marks = w.findAll('[data-test="unsupported-amount"]');
     expect(marks.map((m) => m.text())).toEqual(['Amount with no source found: ₹4 lakh', 'Amount with no source found: ₹1 lakh']);
-    expect(w.get('[data-test="amount-key"]').text()).toContain('amounts the number check found no source for');
+    expect(w.get('[data-test="amount-key"]').text()).toContain('amounts the sourcing check found no source for');
     const check = w.get('[data-test="number-check"]');
     expect(check.text()).toContain('2 of 8 amounts in the answer come from no tool result and not from the client’s own words.'.replace('’', "'"));
     expect(check.findAll('[data-test="unsupported-list"] li').map((li) => li.text())).toEqual(['₹4 lakh no source found', '₹1 lakh no source found']);
@@ -154,7 +154,7 @@ describe('TrialView number check', () => {
     await settle();
     expect(w.find('[data-test="number-check"]').exists()).toBe(false);
     expect(w.get('[data-test="no-number-check"]').text()).toBe(
-      'No number check: this trial has no checks.json. The runner writes one after each trial; trials from before it did, and any whose check failed, have none.',
+      'No sourcing check: this trial has no checks.json. The runner writes one after each trial; trials from before it did, and any whose check failed, have none.',
     );
   });
 
@@ -221,7 +221,7 @@ describe('TrialView number check', () => {
   it('says when checks.json is there but cannot be read', async () => {
     const w = mountWith({ checks: { contract_version: '3', something: 'else' } });
     await settle();
-    expect(w.get('[data-test="no-number-check"]').text()).toBe('No number check shown: this trial’s checks.json could not be read.');
+    expect(w.get('[data-test="no-number-check"]').text()).toBe('No sourcing check shown: this trial’s checks.json could not be read.');
   });
 
   it('reads each checks.json shape the provenance grader reads (A14)', () => {

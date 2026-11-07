@@ -13,6 +13,8 @@ import TrialView from './TrialView.vue';
 const PHONE = 't_0mw38a1yn845728704a225ae4';
 /** The judge's optional overall failed; its only quote is for asks-deciding-fact, answered yes. */
 const OFFER = 't_0mw38a1yo6a7e2cbbf94d52f9';
+/** Provenance failed on 7 figures, two others verified by recomputing; the judge said no twice. */
+const SPENDING = 't_0mw38a1yobecd568e2979a542';
 
 type Trial = (typeof live.trials)[keyof typeof live.trials];
 const EXP = live.experiment.id;
@@ -164,6 +166,63 @@ describe("TrialView on live trials: the judge's answers", () => {
       .find((r) => r.get('.mono').text() === 'keeps-buffer');
     expect(buffer?.get('[data-test="grade-quote"]').text()).toMatch(/^“Keep the ₹2,000 savings transfer for now\./);
     expect(buffer?.get('[data-test="quote-not-found"]').text()).toBe('The grader did not find this quote word for word in the conversation.');
+  });
+});
+
+describe('TrialView on live trials: what the replies highlight, and who quoted it', () => {
+  /** Who each highlight says quoted it, as a screen reader hears it. */
+  const quotedBy = (w: ReturnType<typeof mountLive>['w']) =>
+    w.findAll('[data-test="quote-link"] .visually-hidden').map((s) => s.text().replace(/^Quoted by /, '').replace(/:$/, ''));
+  const markedAmounts = (w: ReturnType<typeof mountLive>['w']) => [...new Set(w.findAll('[data-test="unsupported-amount"]').map((m) => m.text().replace(/^Amount with no source found: /, '')))];
+
+  it('names a code check as the check, never the judge, and marks only the figure the sourcing check found no source for', async () => {
+    const { w } = mountLive(PHONE);
+    await settle();
+    // months-with-extra failed: its two quotes, in the messages its evidence names.
+    expect(quotedBy(w)).toEqual(['number check months-with-extra (failed)', 'number check months-with-extra (failed)']);
+    expect(w.findAll('[data-test="mark-key"]').map((k) => k.text())).toEqual([
+      'Highlighted: evidence quoted by number check months-with-extra (failed).',
+      'Highlighted: evidence quoted by number check months-with-extra (failed).',
+    ]);
+    // ₹5,500 alone has no source; ₹12,488.62, ₹9,488.62 and ₹10,488.62 were verified by recomputing them.
+    expect(markedAmounts(w)).toEqual(['₹5,500']);
+    expect(w.get('[data-test="amount-key"]').text()).toBe("Underlined: amounts the sourcing check found no source for, in any tool result or the client's own words.");
+    const prose = w.findAll('[data-test="message"] p.bubble-text mark').map((m) => m.text());
+    for (const verified of ['₹12,488.62', '₹9,488.62']) expect(prose.some((t) => t.includes(verified))).toBe(false);
+  });
+
+  it("lists the sourcing check's figures apart: the one with no source, and the ones it verified by recomputing", async () => {
+    const { w } = mountLive(PHONE);
+    await settle();
+    const card = gradeNamed(w, 'every-amount-from-a-tool');
+    expect(card.findAll('[data-test="figure-unsourced"]').map((f) => f.text())).toEqual(['₹5,500 no source found']);
+    expect(card.findAll('[data-test="figure-verified"]').map((f) => f.text())).toEqual([
+      '₹12,488.62 (2 times) verified by recomputing it: 5,000 + 7,488.62 = 12,488.62',
+      '₹9,488.62 (2 times) verified by recomputing it: 2,000 + 7,488.62 = 9,488.62',
+      '₹10,488.62 (2 times) verified by recomputing it: 3,000 + 7,488.62 = 10,488.62',
+    ]);
+    expect(card.find('[data-test="grade-quote"]').exists()).toBe(false);
+  });
+
+  it("marks a failed sourcing check's own figures when checks.json cannot be read, and never a verified one or a judge's yes", async () => {
+    // This trial's checks.json is not served: the page falls back on the grade's evidence.
+    const { w } = mountLive(SPENDING);
+    await settle();
+    expect(markedAmounts(w).sort()).toEqual(['₹2,395', '₹2,605', '₹7,255', '₹8,086.25']);
+    const marks = w.findAll('[data-test="message"] mark').map((m) => m.text());
+    for (const verified of ['₹14,120', '₹6,880']) expect(marks.some((t) => t.includes(verified))).toBe(false);
+    // The judge said no on overall and diwali-one-off with no quote; its quotes are for yes answers.
+    expect(w.find('[data-test="quote-link"]').exists()).toBe(false);
+    expect(w.find('[data-test="mark-key"]').exists()).toBe(false);
+    const figures = gradeNamed(w, 'every-amount-from-a-tool');
+    expect(figures.findAll('[data-test="figure-unsourced"]').map((f) => f.text())).toEqual([
+      '₹8,086.25 no source found',
+      '₹2,605 (3 times) no source found',
+      '₹2,395 (2 times) no source found',
+      '₹7,255 no source found',
+    ]);
+    // The arithmetic call the check rejected is listed with its source.
+    expect(figures.get('[data-test="grade-evidence"]').text()).toBe('From subtract call{"a": 5000, "b": 2605}');
   });
 });
 

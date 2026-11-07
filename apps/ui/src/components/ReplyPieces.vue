@@ -29,7 +29,7 @@ const emit = defineEmits<{ jump: [index: number] }>();
     ><span
       v-if="p.quoteFirst"
       class="visually-hidden"
-    >{{ p.quote.label }}: </span><mark><mark
+    >Quoted by {{ p.quote.by }}: </span><mark><mark
       v-if="p.amount"
       class="amount-mark"
       data-test="unsupported-amount"

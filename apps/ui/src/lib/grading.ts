@@ -24,6 +24,27 @@ export interface EvidenceView {
   quote: string;
   /** The tool a tool_result or span quote came from. */
   tool: string | null;
+  /** The transcript message an answer quote is from, when the evidence says (`index`). */
+  at: number | null;
+  /** How the sourcing check verified an amount written without a tool (`derived_in_prose`, D61). */
+  verifiedBy: string | null;
+  /** The sum it recomputed, in words: "5,000 + 7,488.62 = 12,488.62". */
+  derivation: string | null;
+}
+
+/** A passage of the agent's replies a check quoted: which message (`at`, or the last reply when
+ *  `final`; anywhere when neither is known). */
+export interface QuoteView {
+  text: string;
+  at: number | null;
+  final: boolean;
+}
+
+/** An amount the sourcing check (a `provenance` grade) lists: one it found no source for, or one
+ *  the agent wrote without a tool that the check verified by recomputing it. */
+export interface FigureView extends QuoteView {
+  verified: boolean;
+  derivation: string | null;
 }
 
 /** One criterion a judge grade answered: the judge grader's evidence item `{criterion, verdict,
@@ -66,9 +87,12 @@ export interface GradeView {
   rawVerdict: string | null;
   score: number | null;
   reason: string | null;
-  /** Passages of the answer the grader quoted, to highlight in the conversation. A judge's quotes
-   *  are under its answers (`criteria`), each with the criterion it was quoted for. */
-  quotes: string[];
+  /** Passages of the answer the grader quoted, highlighted in the conversation when the check
+   *  failed. A judge's quotes are under its answers (`criteria`), each with the criterion it was
+   *  quoted for; the sourcing check's amounts are its `figures`. */
+  quotes: QuoteView[];
+  /** The sourcing check's amounts: the ones with no source, and the ones verified by recomputing. */
+  figures: FigureView[];
   /** Everything else it quoted, with where from. */
   evidence: EvidenceView[];
   judgeModel: string | null;
@@ -115,12 +139,24 @@ function evidenceItems(e: Json): EvidenceView[] {
   if (typeof e === 'string') return [];
   const list = Array.isArray(e) ? e : isObj(e) ? [...(Array.isArray(e.quotes) ? e.quotes : str(e.quotes) ? [e.quotes] : []), ...(str(e.quote) ? [e.quote] : [])] : [];
   return list.flatMap((item): EvidenceView[] => {
-    if (typeof item === 'string') return item.trim() ? [{ source: null, quote: item, tool: null }] : [];
+    if (typeof item === 'string') return item.trim() ? [{ source: null, quote: item, tool: null, at: null, verifiedBy: null, derivation: null }] : [];
     if (!isObj(item)) return [];
     const quote = firstString(item, ['quote', 'text']);
-    return quote ? [{ source: str(item.source), quote, tool: firstString(item, ['tool', 'tool_name']) }] : [];
+    if (!quote) return [];
+    return [
+      {
+        source: str(item.source),
+        quote,
+        tool: firstString(item, ['tool', 'tool_name']),
+        at: typeof item.index === 'number' ? item.index : null,
+        verifiedBy: str(item.verified_by),
+        derivation: str(item.derivation),
+      },
+    ];
   });
 }
+
+const quoteOf = (x: EvidenceView): QuoteView => ({ text: x.quote, at: x.at, final: x.source === 'final_answer' });
 
 /** The judge grader's evidence: an item per criterion, and one for the call with its rubric. */
 function judgeParts(e: Json): { criteria: JudgeAnswer[]; rubric: string | null } {
@@ -159,6 +195,8 @@ export function gradeView(g: Grade, index: number): GradeView {
   const raw = g.verdict ?? null;
   const verdict = verdictOf(raw, g.score);
   const judge = isJudge ? judgeParts(e) : { criteria: [], rubric: null };
+  const fromAnswer = items.filter((x) => x.source === null || ANSWER_SOURCES.has(x.source));
+  const provenance = g.type === 'provenance';
   return {
     index,
     id: typeof g.id === 'number' ? g.id : null,
@@ -173,7 +211,8 @@ export function gradeView(g: Grade, index: number): GradeView {
     rawVerdict: raw,
     score: g.score,
     reason,
-    quotes: items.filter((x) => x.source === null || ANSWER_SOURCES.has(x.source)).map((x) => x.quote),
+    quotes: provenance ? [] : fromAnswer.map(quoteOf),
+    figures: provenance ? fromAnswer.map((x) => ({ ...quoteOf(x), verified: x.verifiedBy !== null, derivation: x.derivation })) : [],
     evidence: items.filter((x) => x.source !== null && !ANSWER_SOURCES.has(x.source)),
     judgeModel: g.judge_model,
     criteria: judge.criteria,
@@ -193,6 +232,51 @@ export function outcomeOf(grades: GradeView[]): Outcome | null {
   const undetermined = required.filter((g) => g.verdict === 'other').length;
   const kind = failed ? 'fail' : required.length && !undetermined ? 'pass' : 'incomplete';
   return { kind, required: required.length, failed, undetermined };
+}
+
+// ------------------------------------------------------------------------------ highlights
+
+/** Who quoted a passage, in words: "the judge", "the sourcing check" (number provenance), "number
+ *  check months-with-extra", or "check <name>" for any other code check. */
+export function checkName(g: GradeView): string {
+  if (g.kind === 'judge' || g.judgeModel) return 'the judge';
+  if (g.type === 'provenance') return 'the sourcing check';
+  if (g.type === 'number') return `number check ${g.name}`;
+  return `check ${g.name}`;
+}
+
+/** A passage to highlight as evidence of a failure: the grade it links to, and who quoted it. */
+export interface FailureQuote extends QuoteView {
+  index: number;
+  /** "the judge for overall (answered no)", "number check months-with-extra (failed)". */
+  by: string;
+}
+
+/**
+ * What the replies highlight as evidence of a failure, each named by its real source: a quote the
+ * judge gave for a question it answered no (and the grader found), and a failed code check's
+ * quotes. A quote for a "yes", or from a check that passed or could not decide, is evidence for no
+ * failure and stays in its grade card. The sourcing check's amounts are not quotes: the ones with
+ * no source are marked as amounts (`unsourcedFigures`, or the runner's checks.json), and the ones
+ * it verified by recomputing are never marked.
+ */
+export function failureQuotes(grades: GradeView[]): FailureQuote[] {
+  return grades.flatMap((g): FailureQuote[] => {
+    const judged = g.criteria.flatMap((c): FailureQuote[] =>
+      c.verdict === 'no' && c.quote && c.quoteFound !== false
+        ? [{ text: c.quote, at: c.at, final: c.source === 'final_answer', index: g.index, by: `the judge for ${c.criterion} (answered no)` }]
+        : [],
+    );
+    const failed = g.verdict === 'fail' && !g.criteria.length ? g.quotes.map((q) => ({ ...q, index: g.index, by: `${checkName(g)} (failed)` })) : [];
+    return [...judged, ...failed];
+  });
+}
+
+/** The amounts a failed sourcing check found no source for, as amounts to mark: for a trial whose
+ *  checks.json the page could not read (it normally marks the runner's own list). */
+export function unsourcedFigures(grades: GradeView[]): AmountCheck[] {
+  const texts = grades.filter((g) => g.type === 'provenance' && g.verdict === 'fail').flatMap((g) => g.figures.filter((f) => !f.verified).map((f) => f.text));
+  return [...new Set(texts)].map((text) => ({ text, supported: false, source: null, start: null, end: null, note: null }));
 }
 
 // ---------------------------------------------------------------------------------- checks.json
@@ -230,6 +314,8 @@ function sourceOf(by: string, match: Json): string {
   if (by === 'user') return where?.startsWith('client_sim:') ? "the simulated client's message" : "the client's message";
   // Since checks 0.5.0 (review G3) the simulated client's words are their own kind.
   if (by === 'client_sim') return "the simulated client's message";
+  // D61: a sum the agent wrote without a tool, which the check recomputed and found right.
+  if (by === 'derived') return 'a sum in the reply, verified by recomputing it';
   return by;
 }
 

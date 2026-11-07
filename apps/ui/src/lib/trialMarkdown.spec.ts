@@ -58,7 +58,7 @@ describe('piecesOf', () => {
   it('cuts a quote that spans a table row at each cell, and only its first piece speaks', () => {
     const at = findQuote(REPLY, '| ₹3,000 | ₹10,488.62 | 12 | ₹10,917.46 | ₹4,751.32 |') as Span;
     expect(at).not.toBeNull();
-    const quotes: Mark<QuoteMark>[] = [{ ...at, value: { index: 3, label: 'Quoted by number check months-with-extra' } }];
+    const quotes: Mark<QuoteMark>[] = [{ ...at, value: { index: 3, by: 'number check months-with-extra (failed)' } }];
     const table = messageBlocks(REPLY)[1];
     if (table.kind !== 'table') throw new Error('no table');
     const started = new Set<object>();
@@ -77,7 +77,7 @@ describe('piecesOf', () => {
     const amount: AmountCheck = { text: '₹5,500', supported: false, source: null, start: null, end: null, note: null };
     const quote = findQuote(text, 'Pay ₹5,500 now') as Span;
     const span = { start: 0, end: text.length };
-    const pieces = piecesOf(text, span, stylesOf(text, span), [{ ...quote, value: { index: 0, label: 'q' } }], [{ start: 6, end: 12, value: amount }], new Set());
+    const pieces = piecesOf(text, span, stylesOf(text, span), [{ ...quote, value: { index: 0, by: 'q' } }], [{ start: 6, end: 12, value: amount }], new Set());
     expect(pieces.map((p) => [p.parts.map((x) => `${x.bold ? 'b:' : ''}${x.text}`).join(''), !!p.quote, !!p.amount])).toEqual([
       ['b:Pay ', true, false],
       ['b:₹5,500', true, true],
@@ -95,7 +95,7 @@ describe('piecesOf', () => {
 
 describe('quoteText', () => {
   it("drops a quote's Markdown markers and keeps its words", () => {
-    // Live quotes from the judge and the number check on t_0mw38a1yn845728704a225ae4 (7 Nov).
+    // Live quotes from the judge and number check months-with-extra on t_0mw38a1yn845728704a225ae4 (7 Nov).
     expect(quoteText('- **Remaining interest:** ₹15,668.79. This is the part you can still avoid by paying the loan off early.')).toBe(
       'Remaining interest: ₹15,668.79. This is the part you can still avoid by paying the loan off early.',
     );

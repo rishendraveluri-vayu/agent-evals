@@ -114,10 +114,11 @@ export function messageBlocks(text: string, markdown = true): MessageBlock[] {
 
 // ------------------------------------------------------------------------------- highlights
 
-/** A highlighted passage: the grade it links to, and the words a screen reader hears first. */
+/** A highlighted passage: the grade it links to, and who quoted it ("the judge for overall
+ *  (answered no)"), which a screen reader hears first. */
 export interface QuoteMark {
   index: number;
-  label: string;
+  by: string;
 }
 
 export interface Mark<T> extends Span {
