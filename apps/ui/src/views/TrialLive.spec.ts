@@ -118,6 +118,44 @@ describe("TrialView on live trials: the judge's answers", () => {
     expect(marked.some((t) => t.includes('for overall'))).toBe(false);
   });
 
+  it("shows how far to trust the judge as visible text, once on the card, the badges carrying their word alone", async () => {
+    const { w } = mountLive(OFFER);
+    await settle();
+    const judge = gradeNamed(w, 'overall');
+    expect(judge.findAll('[data-test="trust-label"]').map((b) => b.text())).toEqual(['Not trusted', 'Too few labels', 'Too few labels']);
+    for (const badge of judge.findAll('[data-test="trust-badge"]')) {
+      expect(badge.attributes('title')).toBeUndefined();
+      expect(badge.find('.visually-hidden').exists()).toBe(false);
+    }
+    const summaries = judge.findAll('[data-test="grade-trust-summary"]');
+    expect(summaries.map((s) => s.text())).toEqual(['On overall, not trusted: kappa 0.00 on 40 held-out labels is below 0.6.']);
+  });
+
+  it("names the least trusted question when the check did not ask overall", async () => {
+    const [judgeGrade] = live.trials[OFFER].grades.filter((g) => g.kind === 'judge');
+    const withoutOverall = { ...judgeGrade, evidence: (judgeGrade.evidence as { criterion?: string }[]).filter((e) => e.criterion !== 'overall') };
+    const grades = [...live.trials[OFFER].grades.filter((g) => g.kind !== 'judge'), withoutOverall];
+    const { w } = mountLive(OFFER, { trial: { grades } });
+    await settle();
+    expect(gradeNamed(w, 'overall').get('[data-test="grade-trust-summary"]').text()).toBe(
+      'On explains-plainly, its least trusted question, 40 held-out labels so far; needs 5 more human "no" labels before the trust bar can be applied.',
+    );
+  });
+
+  it('reads the status once to a screen reader where the sentence beside the badge already says it', async () => {
+    // A judge check with no answers (its reply did not parse, so the grader kept only the call): the judge's own status.
+    const [judgeGrade] = live.trials[OFFER].grades.filter((g) => g.kind === 'judge');
+    const call = (judgeGrade.evidence as { source: string }[]).filter((e) => e.source === 'judge_call');
+    const unanswered = { ...judgeGrade, verdict: 'error', score: null, evidence: call, reason: "the judge's reply is not JSON" };
+    const grades = [...live.trials[OFFER].grades.filter((g) => g.kind !== 'judge'), unanswered];
+    const { w } = mountLive(OFFER, { trial: { grades } });
+    await settle();
+    const line = gradeNamed(w, 'overall').get('[data-test="grade-trust-line"]');
+    expect(line.get('[data-test="grade-trust-summary"]').text()).toBe('Not trusted: kappa 0.00 on 40 held-out labels is below 0.6.');
+    expect(line.get('[data-test="trust-badge"]').attributes('aria-hidden')).toBe('true');
+    expect(line.get('[data-test="trust-label"]').text()).toBe('Not trusted');
+  });
+
   it('says when the grader did not find a quote word for word', async () => {
     const { w } = mountLive(PHONE);
     await settle();

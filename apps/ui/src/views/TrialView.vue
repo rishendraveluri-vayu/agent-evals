@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { api, bareToolName, type AnyTrial } from '../api/client';
 import { ApiError } from '../api/errors';
 import { isFixtureMode } from '../api/mode';
-import type { ExperimentDetail, TrialRowSummary, JudgeCriterionTrust, JudgeTrust, PromptView, TrialResult, VersionRef } from '../api/types';
+import type { ExperimentDetail, TrialRowSummary, JudgeCriterionTrust, JudgeTrust, JudgeTrustStatus, PromptView, TrialResult, VersionRef } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import LoadState from '../components/LoadState.vue';
 import NotFound from '../components/NotFound.vue';
@@ -18,7 +18,7 @@ import { capitalise, count, harnessVersion, money, plainText, seconds, shortVers
 import { inlineParts, inlineStyles, type InlinePart } from '../lib/markdown';
 import { endStateName, experimentName, graderName, harnessName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
 import { isModelCallFile, jsonForDisplay, modelCalls, reasonParts, shortReason } from '../lib/trialDisplay';
-import { judgeFor, rubricName, rubricOf } from '../lib/trust';
+import { judgeFor, rubricName, rubricOf, trustLabel } from '../lib/trust';
 import { href } from '../router';
 import { text, timelineRows, type SpanView } from '../trials';
 
@@ -633,6 +633,41 @@ const judgeRows = computed(() =>
       const row = t?.criteria.find((x) => x.criterion === c.criterion);
       return { ...c, counted: !anyRequired || c.required, trust: row?.trust ?? null, dispute: row?.dispute ?? null };
     });
+  }),
+);
+/** Least trusted first, as the API orders statuses when it words a judge's own status
+ *  (apps/api/src/judge/trust.ts judgeStatus). */
+const TRUST_ORDER: readonly JudgeTrustStatus[] = ['uncalibrated', 'tuning_only', 'too_few', 'not_trusted', 'trusted'];
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+
+/**
+ * The one trust sentence a judge card shows, as visible text (the badges carry only their word):
+ * a check never answered gets its judge's own; a check of one question that question's; a check
+ * of several the overall question's when it asked it, else its least trusted question's, named.
+ * `badgeRepeats`: the sentence opens with the badge's own word ("Not trusted: …"), so a badge
+ * beside it is hidden from screen readers rather than read twice.
+ */
+const cardTrust = computed(() =>
+  (vm.value?.grades ?? []).map((g, gi) => {
+    const t = gradeTrust.value[gi];
+    if (!t) return null;
+    let status: JudgeTrustStatus;
+    let summary: string;
+    const measured = judgeRows.value[gi].filter((r) => r.trust).map((r) => ({ criterion: r.criterion, trust: r.trust as JudgeCriterionTrust }));
+    if (!g.criteria.length) {
+      ({ status, summary } = t.judge);
+    } else if (!measured.length) {
+      return null;
+    } else if (measured.length === 1) {
+      ({ status, summary } = measured[0].trust);
+    } else {
+      const overall = measured.find((r) => r.criterion === 'overall');
+      const pick = overall ?? [...measured].sort((a, b) => TRUST_ORDER.indexOf(a.trust.status) - TRUST_ORDER.indexOf(b.trust.status))[0];
+      status = pick.trust.status;
+      summary = `On ${pick.criterion}${overall ? '' : ', its least trusted question'}, ${lowerFirst(plainText(pick.trust.summary))}`;
+    }
+    const text = plainText(summary);
+    return { status, text, badgeRepeats: text.toLowerCase().startsWith(trustLabel(status).toLowerCase()) };
   }),
 );
 const answerWord = (v: string | null) => (v === 'yes' ? 'answered yes' : v === 'no' ? 'answered no' : 'no answer');
@@ -1296,7 +1331,6 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                     <TrustBadge
                       v-if="c.trust"
                       :status="c.trust.status"
-                      :summary="c.trust.summary"
                     />
                     <span
                       v-else-if="gradeTrust[gi]"
@@ -1354,8 +1388,18 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                 class="small trust-line"
                 data-test="grade-trust-line"
               >
-                <TrustBadge :status="gradeTrust[gi]?.judge.status ?? 'uncalibrated'" />
-                <span>{{ plainText(gradeTrust[gi]?.judge.summary ?? '') }}</span>
+                <TrustBadge
+                  :status="gradeTrust[gi]?.judge.status ?? 'uncalibrated'"
+                  :aria-hidden="cardTrust[gi]?.badgeRepeats ? 'true' : undefined"
+                />
+                <span data-test="grade-trust-summary">{{ cardTrust[gi]?.text }}</span>
+              </p>
+              <p
+                v-else-if="cardTrust[gi]"
+                class="small secondary trust-summary"
+                data-test="grade-trust-summary"
+              >
+                {{ cardTrust[gi]?.text }}
               </p>
               <a
                 :href="href.judge()"

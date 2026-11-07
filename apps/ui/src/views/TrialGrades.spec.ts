@@ -331,7 +331,10 @@ describe('TrialView judge trust', () => {
       const tax = judgeOf(w, 'fd-tax');
       const rows = tax.findAll('[data-test="judge-criterion"]');
       expect(rows.map((r) => [r.get('.mono').text(), r.get('[data-test="criterion-answer"]').text(), r.get('[data-test="trust-label"]').text()])).toEqual([['fd-tax', ', answered no', 'Trusted']]);
-      expect(tax.get('[data-test="trust-badge"]').attributes('title')).toBe('Meets the trust bar on 30 held-out labels: its verdicts on this question can be relied on.');
+      // The trust sentence is visible text, once on the card, never only a tooltip on the badge.
+      expect(tax.get('[data-test="grade-trust-summary"]').text()).toBe('Meets the trust bar on 30 held-out labels: its verdicts on this question can be relied on.');
+      expect(tax.get('[data-test="trust-badge"]').attributes('title')).toBeUndefined();
+      expect(tax.get('[data-test="trust-badge"]').find('.visually-hidden').exists()).toBe(false);
       expect(tax.get('[data-test="grade-trust-link"]').attributes('href')).toBe('#/labels/judge');
       // The sample's trust lists a held-out label on this trial that passes fd-tax: marked there.
       expect(tax.get('[data-test="grade-trust-dispute"]').text()).toBe(', your label: yes');
