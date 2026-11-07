@@ -5,7 +5,7 @@ made it better, worse or no different, and how sure that is. Deterministic check
 judge for what code can't decide, calibrated against my own hand labels. Every trial's full trace
 is one click away.
 
-Video walkthrough (9 min): _link to add_
+[Video walkthrough](https://drive.google.com/file/d/1UcRM7DA-0ExFRGUGCGu2SgDuXawDS8QE/view?usp=sharing) (9 min)
 
 ```mermaid
 flowchart LR

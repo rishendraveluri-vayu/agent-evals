@@ -59,13 +59,13 @@ These are the documents we need so nothing gets lost. **Required** means the bri
 
 | Doc | Holds | Why it matters | Update when | Status |
 | --- | --- | --- | --- | --- |
-| `README.md` | Setup, add a task, add a harness, add a model | **Required** | SP0 onward, finished in SP9 | Done; video link to add |
+| `README.md` | Setup, add a task, add a harness, add a model | **Required** | SP0 onward, finished in SP9 | Done |
 | `docs/design.md` | Architecture, adapter interfaces, data model, isolation and reproducibility, grader design and validation, stats and choice of N | **Required** | Any design change | Done |
 | `docs/assumptions.md` | Every assumption made | **Required** | As soon as one is made | Done |
 | `docs/known-limits.md` | Where conclusions should not be trusted | **Required** | As soon as one is found | Done |
 | `docs/cost.md` | Cost formula, actual spend, how to reduce cost | **Required** | Prices, pilot, final run | Done |
 | `docs/experiment.md` | Hypothesis, setup, results with CIs, 2 or 3 trajectories, conclusion | **Required** | Plan before the run, results after | Done but the conclusion |
-| Video link in `README.md` | 10 minutes or less: define a config, run it, compare, drill into a failed trial | **Required** | SP9 | Video recorded (9 min 17 s, 7 Nov); link to add |
+| Video link in `README.md` | 10 minutes or less: define a config, run it, compare, drill into a failed trial | **Required** | SP9 | Done: [9 min 17 s, 7 Nov](https://drive.google.com/file/d/1UcRM7DA-0ExFRGUGCGu2SgDuXawDS8QE/view?usp=sharing) |
 | `docs/judge-validation.md` | Label set, agreement, kappa, per-config checks | Required content, own file by choice | SP5 | Done: tuning set, D74 dev rounds (rubric v4 frozen), and the one held-out test on Rishi's 40 blind labels (6 Nov: not trusted, kappa −0.14); the in-platform regrade (D83) and the code checks against the same labels |
 | `tasks/` | The 20+ task set with graders | **Required** | SP4 | Done: 31 tasks (10 held-out, 11 discovery, 10 retrieval), plus a skills demo |
 | `experiments/<id>/` | Exported raw JSON or CSV, config hashes, spend | Evidence behind `experiment.md` | SP8 | Instead: `examples/` ships nine full bundles: the headline, its A/A, the two positive controls (calculators down; the planted prompt defect, D78), the retrieval run (D79), the model axis (Haiku vs Gemini), the two replications (own loop, LangGraph) and the skills demo |
