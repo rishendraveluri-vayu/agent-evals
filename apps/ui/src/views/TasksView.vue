@@ -31,7 +31,9 @@ const kinds = computed(() => [...new Set(tasks.value.flatMap((t) => graderKinds(
 /** A judge grader that decides the outcome: one not marked optional. Judge criteria stay optional
  *  until they are trusted (D8), so a task with only an optional judge is decided by code. */
 const isRequiredJudge = (g: unknown) => typeof g === 'object' && g !== null && !Array.isArray(g) && graderKinds([g as never])[0] === 'judge' && (g as { required?: unknown }).required !== false;
-const isCode = (t: TaskView) => !t.graders.some(isRequiredJudge);
+/** A task with graders whose outcome no required judge decides. Engine tests have no graders at all:
+ *  they are graded by neither code nor a judge. */
+const isCode = (t: TaskView) => t.graders.length > 0 && !t.graders.some(isRequiredJudge);
 const hasOptionalJudge = (t: TaskView) => isCode(t) && graderKinds(t.graders).includes('judge');
 /** A demo task (`demo-*`) shows one platform feature and is not part of the task set. */
 const isDemo = (t: TaskView) => t.id.startsWith('demo-');
@@ -53,7 +55,17 @@ const taskCount = computed(() => {
 const glance = computed(() => {
   const all = tasks.value;
   const bySplit = splits.value.map((s) => `${all.filter((t) => t.split === s).length} ${splitName(s)}`).join(', ');
-  const code = all.filter(isCode).length;
+  const graded = all.filter((t) => t.graders.length > 0);
+  const code = graded.filter(isCode).length;
+  const ungraded = all.length - graded.length;
+  // "The 2 engine tests have no graders": they check the platform, so nothing grades an agent there.
+  const engineOnly = ungraded > 0 && all.filter((t) => !t.graders.length).every(isEngineTest);
+  const noGraders = !ungraded
+    ? ''
+    : engineOnly
+      ? `${ungraded === 1 ? 'The engine test has' : `The ${ungraded} engine tests have`} no graders`
+      : `${plural(ungraded, 'task has', 'tasks have')} no graders`;
+  const optionalJudge = all.filter(hasOptionalJudge).length;
   const single = all.filter((t) => clientKind(t.kind) === 'Single prompt').length;
   const run = data.value?.run;
   const stats = run?.compare.stats;
@@ -61,10 +73,10 @@ const glance = computed(() => {
   const runSplit = run ? new Set(run.detail.tasks.map((t) => splitName(t.split))) : null;
   return {
     bySplit,
-    graded: `${code} code, ${all.length - code} judge`,
-    gradedNote: all.some(hasOptionalJudge)
-      ? `${all.filter(hasOptionalJudge).length} of the code-graded also have a judge that does not count until it is trusted`
-      : 'Code means exact match, unit tests and state checks',
+    graded: `${code} code, ${graded.length - code} judge`,
+    gradedNote: [noGraders, optionalJudge ? `${optionalJudge} of the code-graded also have a judge that does not count until it is trusted` : !noGraders ? 'Code means exact match, unit tests and state checks' : '']
+      .filter(Boolean)
+      .join('. '),
     client: `${plural(single, 'single prompt', 'single prompts')}, ${plural(all.length - single, 'conversation', 'conversations')}`,
     separatedLabel: arms.value.length === 2 ? `Separated ${arms.value[0].short} and ${arms.value[1].short}` : 'Separated the arms',
     separated: separated !== null && stats ? `${separated} of ${stats.tasks.length}${runSplit?.size === 1 ? ` ${[...runSplit][0]}` : ''}` : 'No verdict yet',
@@ -85,16 +97,21 @@ const runCaption = computed(() => {
 
 /** A task's result in the last run, as its comparison writes it: each arm's passes ("2 of 3",
  *  "1 undecided"), and the verdict, or with no difference to show, how the arms stand
- *  ("Undecided", "B undecided"). */
-const lastRun = (t: TaskView): { a: string; b: string; verdict: Verdict; label?: string } | null => {
+ *  ("Undecided", "B undecided"). The run is matched to the task file by hash, else by the task's id:
+ *  a task file edited since the run (a newer version) still shows what the run measured, and says
+ *  the run used an earlier version (fresh-clone review, 7 Nov: every row read "Not in this run"). */
+const lastRun = (t: TaskView): { a: string; b: string; verdict: Verdict; label?: string; earlier: string | null } | null => {
   const run = data.value?.run;
   if (!run) return null;
-  const rows = run.compare.rows.filter((r) => r.task === t.sha256 || r.task === t.id);
+  const same = run.compare.rows.some((r) => r.task === t.sha256);
+  const rows = run.compare.rows.filter((r) => (same ? r.task === t.sha256 : r.task_id === t.id));
   const a = rows.find((r) => r.arm === 'A');
   const b = rows.find((r) => r.arm === 'B');
   if (!a || !b) return null;
-  const stat = run.compare.stats?.tasks.find((x) => x.task === t.sha256 || x.task === t.id);
-  const words = { a: passedText(a), b: passedText(b) };
+  const ran = run.detail.tasks.find((x) => x.sha256 === a.task);
+  const earlier = same ? null : `Ran an earlier version${ran && ran.version !== t.version ? ` (v${ran.version}; this file is v${t.version})` : ''}`;
+  const stat = run.compare.stats?.tasks.find((x) => x.task === a.task);
+  const words = { a: passedText(a), b: passedText(b), earlier };
   // D41's words per task: beyond noise (better or worse), else within noise.
   if (stat) return { ...words, verdict: stat.beyond_noise ? (stat.diff.estimate >= 0 ? 'better' : 'worse') : 'none', label: stat.beyond_noise ? undefined : 'Within noise' };
   // No statistics: a difference only when both arms have outcomes; otherwise say how they stand.
@@ -222,10 +239,7 @@ const groups = computed(() => {
             >
               Split
             </th>
-            <th
-              scope="col"
-              class="one-line"
-            >
+            <th scope="col">
               Graded by
             </th>
             <th
@@ -278,16 +292,17 @@ const groups = computed(() => {
             <td class="what">
               {{ t.summary }}
             </td>
-            <td class="one-line">
-              {{ sentence(splitName(t.split)) }}
+            <td class="one-line c-split">
+              <span class="cell-label">Split</span>{{ sentence(splitName(t.split)) }}
             </td>
-            <td class="secondary one-line">
-              {{ gradedBy(t) }}
+            <td class="secondary c-graded">
+              <span class="cell-label">Graded by</span>{{ gradedBy(t) }}
             </td>
-            <td class="secondary one-line">
-              {{ clientKind(t.kind) }}
+            <td class="secondary one-line c-client">
+              <span class="cell-label">Client</span>{{ clientKind(t.kind) }}
             </td>
-            <td class="right num">
+            <td class="right num c-last">
+              <span class="cell-label">Last run</span>
               <template v-if="lastRun(t)">
                 <VerdictTag
                   :verdict="lastRun(t)?.verdict ?? 'pending'"
@@ -303,6 +318,11 @@ const groups = computed(() => {
                   class="dot dot--b"
                   aria-hidden="true"
                 />B {{ lastRun(t)?.b }}</span></span>
+                <span
+                  v-if="lastRun(t)?.earlier"
+                  class="result-detail earlier"
+                  data-test="earlier-version"
+                >{{ lastRun(t)?.earlier }}</span>
               </template>
               <span
                 v-else
@@ -348,8 +368,19 @@ const groups = computed(() => {
   align-items: center;
 }
 
-.tasks {
-  min-width: 1000px;
+/* Fits a 1216 px column without scrolling: the grader list wraps, and "What it checks" takes the
+   room the one-line columns leave. */
+.tasks .what {
+  min-width: 14em;
+}
+
+.tasks .c-graded {
+  min-width: 11em;
+  max-width: 16em;
+}
+
+.cell-label {
+  display: none;
 }
 
 /* Close under the filters and close over the table it describes (the page puts 32 px between
@@ -386,6 +417,10 @@ const groups = computed(() => {
   gap: 6px;
 }
 
+.earlier {
+  white-space: normal;
+}
+
 /* A full-width heading row for each split when "All" is shown. */
 .group-row th {
   padding-top: 10px;
@@ -399,5 +434,58 @@ const groups = computed(() => {
 
 tbody:first-of-type .group-row th {
   border-top: 0;
+}
+
+/* A phone reads each task as a card, every field under its name, so nothing sits off to the side
+   (fresh-clone review, 7 Nov: at 390 px only the Task column showed, with no sign of the rest). */
+@media (max-width: 760px) {
+  .tasks thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .tasks,
+  .tasks tbody,
+  .tasks tr,
+  .tasks th,
+  .tasks td {
+    display: block;
+    width: 100%;
+  }
+
+  .tasks tr {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  .tasks tr.group-row {
+    padding: 0;
+  }
+
+  .table.tasks th,
+  .table.tasks td {
+    border-bottom: 0;
+    padding: 3px 16px;
+    max-width: none;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .table.tasks .group-row th {
+    padding: 10px 16px;
+  }
+
+  .tasks .what {
+    padding-bottom: 6px;
+  }
+
+  .cell-label {
+    display: block;
+    color: var(--ink-2);
+    font-size: 12px;
+  }
 }
 </style>

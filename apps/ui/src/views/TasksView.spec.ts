@@ -120,4 +120,61 @@ describe('TasksView against the API: a shipped example, no statistics', () => {
     expect(glance).toContain('25 code, 0 judge');
     expect(glance).toContain('24 of the code-graded also have a judge that does not count until it is trusted');
   });
+
+  it('matches a task the run used in an earlier version by its id, and says so (fresh-clone review, 7 Nov)', async () => {
+    // Every task file has moved on since the run: new hashes and versions, the same ids.
+    const newer = (tasks as Record<string, unknown>[]).map((t) => ({ ...t, sha256: `${String(t.sha256)}-v2`, version: '2' }));
+    const summary = (experiments as { id: string }[]).find((e) => e.id === 'exp_heldout');
+    routeFetch({
+      '/api/tasks': newer,
+      '/api/experiments': [summary],
+      '/api/experiments/exp_heldout': (details as Record<string, object>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': compares.exp_heldout,
+    });
+    const w = mount(TasksView);
+    await settle();
+    const rows = w.findAll('[data-test="task-row"]');
+    const held = rows.filter((r) => r.find('[data-test="last-run"]').exists());
+    expect(held).toHaveLength(12);
+    const distress = rows.find((r) => r.text().includes('distress-12'));
+    expect(distress?.get('[data-test="last-run"]').text()).toBe('A 1 of 5 · B 5 of 5');
+    expect(distress?.get('[data-verdict]').attributes('data-verdict')).toBe('better');
+    expect(distress?.get('[data-test="earlier-version"]').text()).toBe('Ran an earlier version (v1; this file is v2)');
+    // The discovery tasks were not in it, whatever their version.
+    expect(rows.filter((r) => r.text().includes('Not in this run'))).toHaveLength(12);
+  });
+
+  it('says nothing of versions when the run used the task file as it is', async () => {
+    const summary = (experiments as { id: string }[]).find((e) => e.id === 'exp_heldout');
+    routeFetch({
+      '/api/tasks': tasks,
+      '/api/experiments': [summary],
+      '/api/experiments/exp_heldout': (details as Record<string, object>).exp_heldout,
+      '/api/experiments/exp_heldout/compare': compares.exp_heldout,
+    });
+    const w = mount(TasksView);
+    await settle();
+    expect(w.find('[data-test="earlier-version"]').exists()).toBe(false);
+  });
+
+  it('counts tasks with no graders as graded by neither code nor a judge (fresh-clone review, 7 Nov)', async () => {
+    const base = (tasks as Record<string, unknown>[])[0];
+    const engine = [1, 2].map((i) => ({ ...base, id: `engine-smoke-${i}`, sha256: `sha256:engine-${i}`, summary: 'ENGINE TEST ONLY', graders: [] }));
+    routeFetch({ '/api/tasks': [...tasks, ...engine], '/api/experiments': [] });
+    const w = mount(TasksView);
+    await settle();
+    const glance = w.get('[data-test="task-glance"]').text();
+    expect(glance).toContain('16 code, 8 judge');
+    expect(glance).toContain('The 2 engine tests have no graders');
+    const row = w.findAll('[data-test="task-row"]').find((r) => r.text().includes('engine-smoke-1'));
+    expect(row?.text()).toContain('Not set');
+  });
+
+  it('labels each field for the stacked phone layout, hidden on a wide screen by CSS', async () => {
+    routeFetch({ '/api/tasks': tasks, '/api/experiments': [] });
+    const w = mount(TasksView);
+    await settle();
+    const row = w.findAll('[data-test="task-row"]')[0];
+    expect(row.findAll('.cell-label').map((l) => l.text())).toEqual(['Split', 'Graded by', 'Client', 'Last run']);
+  });
 });
