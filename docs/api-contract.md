@@ -688,7 +688,7 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   - `costs[].missing` (6 Nov): per arm, trials left out for having no value (tokens no longer read
     a missing count as 0); per-task rows count a grading that failed or found no graders as
     `incomplete`;
-  - `judge`: SP5's agreement, null until SP5 reports it.
+  - `judge`: the held-out agreement on `overall` of the experiment's judge (the one with the most current grades on its trials), from the judge trust (D83): `kappa`, its interval `low` to `high`, the `bar` and the `tasks` it rests on; null without held-out label pairs, or when kappa or its interval is undefined.
   `seed` is the experiment id, so the same data always gives the same numbers; results are cached
   by the trials and their current grading jobs, so a regrade recomputes them.
 - `GET /experiments/:id/export?format=json|csv` streams every trial row (infra failures,

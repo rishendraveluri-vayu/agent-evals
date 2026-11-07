@@ -32,7 +32,7 @@ class MyHarness(Adapter):
     def run_turn(self, ctx, history, max_steps): ...     # one agent turn -> TurnResult
 ```
 
-A model from a provider LiteLLM already reaches is one entry in LiteLLM's config (README, Add a model). A new provider also needs its key flag in compose, one line in the API's provider table (`PROVIDER_KEYS`) so the UI can say when its key is missing, and, if the model refuses a setting, a line in `MODEL_REJECTS`; both tables are data in core code, not adapters (`docs/known-limits.md`).
+A model from a provider LiteLLM already reaches is one entry in LiteLLM's config (README, Add a model). A new provider also needs its key passed to LiteLLM in compose; for the UI to say when its key is missing, the API must know it in four places (its `<NAME>_KEY_SET` flag on the `api` service, `PROVIDER_KEYS` and the `providerKeys` line in `app-config.ts`, `PROVIDER_OF` in `catalogue.service.ts`); and if the model refuses a setting, a line in `MODEL_REJECTS`. These tables are data in core code, not adapters (`docs/known-limits.md`).
 
 **The main entities** (section 3):
 

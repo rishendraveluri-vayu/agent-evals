@@ -1081,7 +1081,7 @@ export interface CompareStats {
   aa: AaCalibration | null;
   /** D44, on a calibration run itself: whether it came out as it should (no difference found, and an interval that holds 0; a zero-width interval at 0 is as expected but its text says it cannot show the noise). */
   calibration: { as_expected: boolean; text: string } | null;
-  /** SP5's judge agreement on held-out labels, for the caveat when the verdict rests on the judge; null until SP5 reports it to the API (always null today: no held-out labels exist). Which tasks rest on the judge is `rests_on_judge`. */
+  /** The held-out agreement of the experiment's judge on `overall` (D83, from the judge trust: the judge with the most current grades on its trials), for the caveat when the verdict rests on the judge; null without held-out label pairs, or when kappa or its interval is undefined. Which tasks rest on the judge is `rests_on_judge`. */
   judge: { kappa: number; low: number; high: number; bar: number; tasks: number } | null;
   /**
    * S6: the tasks in the aggregate where one arm has more than `ratio` (2) times as many decided
