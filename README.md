@@ -16,6 +16,22 @@ flowchart LR
     G --> C["Compare<br/>verdict, interval,<br/>per task, cost"]
 ```
 
+## What's where
+
+| The brief asks for | Where |
+| --- | --- |
+| 1. Code, and a README on setup and extending it | This repo. In this README: [setup](#try-it), [running it with a key](#running-it-for-real), [add a task](#a-task), [add a harness](#a-harness), [add a model](#a-model), [tests](#tests) |
+| 2. Design document | [`docs/design.md`](docs/design.md): [1 architecture](docs/design.md#1-architecture), [2 adapter interfaces](docs/design.md#2-harness-and-model-adapter-interfaces), [3 data model](docs/design.md#3-data-model), [4 isolation and reproduction](docs/design.md#4-how-runs-are-isolated-and-reproduced), [5 graders and how they were validated](docs/design.md#5-grader-design-and-validation), [6 statistics and choice of N](docs/design.md#6-statistical-method-and-choice-of-n) |
+| 3. Known limits | [`docs/known-limits.md`](docs/known-limits.md); the ones that matter most are under [What I'd trust least](#what-id-trust-least) |
+| 4. Cost estimate | [`docs/cost.md`](docs/cost.md): the [formula](docs/cost.md#formula), the [planning estimate](docs/cost.md#planning-estimate) and [every dollar spent](docs/cost.md#actual-spend) |
+| 5. The experiment | [`docs/experiment.md`](docs/experiment.md): [hypothesis](docs/experiment.md#hypothesis), [setup](docs/experiment.md#setup), [results](docs/experiment.md#results), [trajectories](docs/experiment.md#trajectories), [conclusion](docs/experiment.md#conclusion). Summary under [Results](#results) |
+| 6. Video | [Video walkthrough](https://drive.google.com/file/d/1UcRM7DA-0ExFRGUGCGu2SgDuXawDS8QE/view?usp=sharing) (9 min) |
+| Also: judge validation | [`docs/judge-validation.md`](docs/judge-validation.md) |
+| Also: every decision, with the options and why | [`docs/decisions.md`](docs/decisions.md) |
+| Also: every assumption | [`docs/assumptions.md`](docs/assumptions.md) |
+| Also: how each harness behaves and is wrapped | [`docs/harness-guide.md`](docs/harness-guide.md), [`docs/hermes-notes.md`](docs/hermes-notes.md) |
+| Also: CI | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
+
 ## Try it
 
 ```bash
@@ -306,20 +322,6 @@ Full list: [`docs/known-limits.md`](docs/known-limits.md). The ones that matter:
   saved anything, so memory on vs off is untested here.
 - Conversations use a simulated client (Claude Haiku playing the customer). Those results describe
   that simulator, not real people.
-
-## Where things are
-
-| What | Where |
-| --- | --- |
-| Design: architecture, adapters, data model, isolation, graders, stats, choice of N | [`docs/design.md`](docs/design.md) |
-| The experiment: hypothesis, setup, results, trajectories, conclusion | [`docs/experiment.md`](docs/experiment.md) |
-| Cost formula and every dollar spent | [`docs/cost.md`](docs/cost.md) |
-| Known limits | [`docs/known-limits.md`](docs/known-limits.md) |
-| Judge validation | [`docs/judge-validation.md`](docs/judge-validation.md) |
-| Every decision, with the options and why | [`docs/decisions.md`](docs/decisions.md) |
-| Every assumption | [`docs/assumptions.md`](docs/assumptions.md) |
-| How each harness behaves and is wrapped | [`docs/harness-guide.md`](docs/harness-guide.md), [`docs/hermes-notes.md`](docs/hermes-notes.md) |
-| CI | `.github/workflows/ci.yml` |
 
 ## How this was built
 
