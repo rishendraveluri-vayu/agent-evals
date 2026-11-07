@@ -974,7 +974,9 @@ const spend = computed(() => {
   const e = data.value?.experiment;
   if (!e) return null;
   const expected = e.estimate?.cost_usd.expected ?? null;
-  const cap = e.budget_usd ?? null;
+  // A fake-only run needs no spending limit, as its setup said: its LiteLLM cap, in made-up money,
+  // is not drawn as one ("stop at $10" contradicted "No spending limit needed", 7 Nov QA).
+  const cap = fakeOnly.value ? null : (e.budget_usd ?? null);
   const max = Math.max(e.spend_usd, expected ?? 0, cap ?? 0) || 1;
   const x = (v: number) => Math.round((v / max) * 296) + 2;
   return { spent: e.spend_usd, expected, cap, w: x(e.spend_usd) - 2, ex: expected !== null ? x(expected) : null, cx: cap !== null ? x(cap) : null };

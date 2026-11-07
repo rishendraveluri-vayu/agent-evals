@@ -1636,6 +1636,27 @@ describe('RunView names a run apart from the runs already saved (7 Nov QA)', () 
   });
 });
 
+describe('RunView draws no spending limit on a fake run’s page (7 Nov QA)', () => {
+  useFixtures();
+
+  it('draws no "stop at" limit on a fake run’s page, as its setup said none is needed', async () => {
+    const base = (details as unknown as Record<string, ExperimentDetail>).exp_harness;
+    const fake: ExperimentDetail = { ...base, id: 'e_fake_run', sim_model: 'fake/sim-client', configs: [fakeA, fakeB], config_hashes: [fakeA.hash, fakeB.hash], budget_usd: 10 };
+    const spy = vi.spyOn(api, 'experiment').mockResolvedValue(fake);
+    const w = mount(RunView, { props: { experimentId: 'e_fake_run' } });
+    await settle();
+    expect(w.get('[data-test="fake-spend"]').text()).toBe('Made-up test prices: fake models spend nothing real.');
+    expect(w.get('.spend-bar').text()).not.toContain('stop at');
+    expect(w.get('.spend-bar').attributes('aria-label')).not.toContain('stops at');
+    expect(checkTexts(w).some((c) => c.startsWith('No spending limit needed: every model here is fake'))).toBe(true);
+    // A paid run still draws its limit.
+    spy.mockRestore();
+    const paid = mount(RunView, { props: { experimentId: 'exp_harness' } });
+    await settle();
+    expect(paid.get('.spend-bar').text()).toContain('stop at');
+  });
+});
+
 describe('RunView says when the prompt check ran, from its time (7 Nov QA)', () => {
   useFixtures();
   // exp_discovery: Hermes on a real model, started 4 Nov 13:13 UTC; the fixture clock is 5 Nov 14:08.
