@@ -489,6 +489,20 @@ A real-model soak of 988 trials over five harnesses at `ac089f8`, with injected 
 - **Labelling is blind to metadata, not to the toolset.** In the tuning queue, 100 of 416 items show `search_documents` calls, which only the retrieval run's arm B had.
 - **Small things:** the first example load takes about 12 s with no progress indicator; the tool table rounds A and B to one decimal but B − A to two; a fresh config form starts as a copy of the newest config; the settings table says "cap doubled up to 8192" when the cap is already 8192.
 
+## Harness capabilities (7 Nov)
+
+- **The probe cannot tell `max_tokens` from `max_completion_tokens`.** `probe.py`'s `_sent` reads a
+  request's `max_completion_tokens` as its `max_tokens` and writes "sent as max_tokens" either way,
+  so ADK's and LangGraph's `capabilities.json` say "set to 777: sent as max_tokens" while their own
+  `native`, their known differences, their READMEs and the code say otherwise (google-adk's `LiteLlm`
+  maps `max_output_tokens` to `max_completion_tokens`; LangChain's `ChatOpenAI` sends `max_tokens=`
+  as `max_completion_tokens`). The Harnesses page (and every screen reading
+  GET /harnesses through the UI client) takes the key from `native` where it names one, so it
+  says `max_completion_tokens` for those two. The files are not edited, and the probe is not fixed
+  and re-run, because every config hash covers the capabilities file (R14): a corrected file
+  changes the hash of every ADK and LangGraph config. Parked for Rishi's call (SPEC, Parking lot).
+  The setting is applied either way; only the recorded words were wrong.
+
 ## Open checks
 
 - [ ] Upstream OpenRouter provider changes, if D5 goes hosted

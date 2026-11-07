@@ -12,13 +12,33 @@ function plainDeep<T>(value: T): T {
 }
 
 /**
+ * The key a probed setting really reached the model under. The probe (probe.py `_sent` in
+ * workers/adapterlib) reads a request's `max_completion_tokens` as its `max_tokens` and writes
+ * "sent as max_tokens" either way, so ADK's and LangGraph's capability files say "sent as
+ * max_tokens" while their own `native`, their known differences and their adapters send
+ * `max_completion_tokens` (QA, 7 Nov: the Harnesses page said both). Where `native` names the key
+ * a setting is sent as, the observed words take it. The files stay as they are: every config hash
+ * covers them (R14), so a re-probe is Rishi's call (docs/known-limits.md, "Harness capabilities").
+ */
+function sentAsNative(s: CapabilitySetting): CapabilitySetting {
+  const key = /\bsent as (max_completion_tokens)\b/.exec(s.native ?? '')?.[1];
+  if (!key || !s.observed) return s;
+  return { ...s, observed: s.observed.replace(/\bsent as max_tokens\b/g, `sent as ${key}`) };
+}
+
+/**
  * GET /harnesses as a screen shows it: each harness's capabilities (its settings' native calls,
  * what was observed, its known differences, its options' descriptions) without the authors'
- * decision-log references. The adapters' capabilities.json files keep them, since every config
- * hash covers those files; only what is shown drops them, in one place for every screen.
+ * decision-log references, and with each probed setting under the key it is really sent as
+ * (sentAsNative). The adapters' capabilities.json files keep both as they are, since every config
+ * hash covers those files; only what is shown changes, in one place for every screen.
  */
 export function plainHarnesses(harnesses: Harness[]): Harness[] {
-  return harnesses.map((h) => ({ ...h, capabilities: plainDeep(h.capabilities) }));
+  return harnesses.map((h) => {
+    const caps = plainDeep(h.capabilities);
+    const settings = Object.fromEntries(Object.entries(caps.settings ?? {}).map(([name, s]) => [name, sentAsNative(s)])) as typeof caps.settings;
+    return { ...h, capabilities: { ...caps, settings } };
+  });
 }
 
 export type CellKind = 'probed' | 'declared' | 'none' | 'pending';

@@ -327,7 +327,9 @@
         },
         "max_output_tokens": {
           "supported": true,
-          "evidence": "none",
+          "evidence": "probe:2026-11-04",
+          "default": null,
+          "observed": "unset: not sent; set to 777: sent as max_tokens",
           "native": "generate_content_config.max_output_tokens, sent as max_completion_tokens"
         },
         "max_steps": {
@@ -368,7 +370,8 @@
         "properties": {}
       },
       "known_differences": [
-        "Wraps every tool description in untrusted-content markers and adds an identity line."
+        "Wraps every tool description in untrusted-content markers and adds an identity line.",
+        "max_output_tokens is sent as max_completion_tokens"
       ]
     },
     "adapter_version": "0.1.0",

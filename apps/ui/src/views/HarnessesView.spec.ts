@@ -35,7 +35,7 @@ describe('HarnessesView in fixture mode', () => {
     expect(table.findAll('thead th')).toHaveLength(6);
     expect(table.findAll('tbody tr')).toHaveLength(8);
     const lines = table.findAll('[data-test="coverage"]');
-    expect(lines.map((p) => p.text())).toEqual(['4 probed, 4 declared', '4 probed, 4 declared', '1 declared, 7 not probed yet', '1 probed, 1 declared, 6 not probed yet', '1 declared, 7 not probed yet']);
+    expect(lines.map((p) => p.text())).toEqual(['4 probed, 4 declared', '4 probed, 4 declared', '1 declared, 7 not probed yet', '2 probed, 1 declared, 5 not probed yet', '1 declared, 7 not probed yet']);
     // Plain grey words, not a pill: no outline, no rounded box.
     for (const p of lines) {
       expect(p.classes()).toEqual(['result-detail', 'coverage']);
@@ -52,6 +52,19 @@ describe('HarnessesView in fixture mode', () => {
     // The same words as the table's cell.
     expect(w.get('[data-test="card-hermes-max_steps"] dd').text()).toBe(w.get('[data-test="cell-hermes-max_steps"]').text());
     expect(w.get('[data-test="card-hermes-max_steps"] dt').text()).toBe('Max steps');
+  });
+
+  it('names the key max output tokens is really sent as, so the table and the known differences agree (QA, 7 Nov)', async () => {
+    const w = mount(HarnessesView);
+    await settle();
+    // ADK's file says "sent as max_tokens" (the probe's word for either key) and, in its native
+    // call and known differences, max_completion_tokens: the page says max_completion_tokens.
+    expect(w.get('[data-test="cell-adk-max_output_tokens"]').text()).toBe('Probedunset: not sent; set to 777: sent as max_completion_tokens');
+    expect(w.get('[data-test="card-adk-max_output_tokens"] dd').text()).toBe(w.get('[data-test="cell-adk-max_output_tokens"]').text());
+    expect(w.findAll('[data-test="difference-text"]').map((d) => d.text())).toContain('max_output_tokens is sent as max_completion_tokens');
+    // Hermes sends max_tokens: its words stay.
+    expect(w.get('[data-test="cell-hermes-max_output_tokens"]').text()).toContain('max_tokens');
+    expect(w.get('[data-test="cell-hermes-max_output_tokens"]').text()).not.toContain('max_completion_tokens');
   });
 
   it('marks a probed setting with a check and ink, not green', async () => {
