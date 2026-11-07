@@ -1606,6 +1606,11 @@ describe('RunView keeps a long unbroken config name inside the page', () => {
     expect(style).toMatch(/\.arm-card-head > \.arm-status \{\s*flex: none;\s*\}/);
     expect(style).toMatch(/\.setup-grid select \{[^}]*max-width: 100%;[^}]*min-width: 0;/);
   });
+
+  it('lets a check’s words break anywhere, so a 40-character plan commit wraps on a phone (7 Nov QA)', () => {
+    const theme = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../theme.css'), 'utf8');
+    expect(theme).toMatch(/\.check-row > span \{\s*min-width: 0;\s*overflow-wrap: anywhere;\s*\}/);
+  });
 });
 
 describe('RunView names a run apart from the runs already saved (7 Nov QA)', () => {

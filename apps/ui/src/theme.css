@@ -848,6 +848,13 @@ mark {
   font-weight: 500;
 }
 
+/* A check's words break anywhere when they must: a 40-character plan commit in its title made a
+   phone's run page scroll sideways (7 Nov QA). */
+.check-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Old card style, used by the recorded-runs list. */
 .card {
   background: var(--surface);
