@@ -48,7 +48,9 @@ uses about 10 GB of disk (have 15 GB free).
 
 All on Hermes Agent, with Claude Haiku 5.5 unless the row says otherwise. Each plan and its
 predictions were committed before the run. Anything I changed after is listed as a deviation in
-[`docs/experiment.md`](docs/experiment.md).
+[`docs/experiment.md`](docs/experiment.md). Points are percentage points of pass rate. The range in
+brackets is the 95% interval: the true difference most likely lies in it. p is how often luck alone
+would give a result this one-sided if the change did nothing.
 
 | Change | Result | What it means |
 | --- | --- | --- |
@@ -59,8 +61,9 @@ predictions were committed before the run. Anything I changed after is listed as
 | Swapped the model: Claude Haiku 5.5 to Gemini 3.8 Flash, same harness and prompt | −4 points (−20 to +16), p = 0.81 | No overall difference, but the tasks split: Gemini makes twice the tool calls, wins the many-sums task 10 to 3, runs out of steps in conversations, and costs 4x per trial |
 | My actual prompt fix, v1 to v2 | +9 points (+3 to +16), p = 0.0625 | Not enough tasks to call it |
 
-The last row is the one that matters. v2 leans towards passing more often, not confirmed, mostly by
-following the sourcing rule (What I'd trust least, below). But 4 of the 10 tasks always passed
+The last row is the one that matters. v2 leans towards passing more often (not confirmed), mostly
+by following the sourcing rule ([What I'd trust least](#what-id-trust-least), below). But 4 of the
+10 tasks always passed
 and 1 always failed, in both versions, so only 5 tasks could show a difference. With 5, the test
 can't get under p = 0.05 however big the gap. The fix is more tasks in the middle, not more trials.
 
@@ -92,8 +95,12 @@ flowchart TD
     K -- no --> V["B is better<br/>(or worse)"]
 ```
 
-The interval comes from resampling tasks, the paired test is a sign-flip test, and per-task flags get a
-multiple-comparison correction. Details in [`docs/design.md`](docs/design.md), section 6.
+The interval comes from resampling tasks: drawing the set of tasks again at random, many times, and
+seeing how far the average moves. The paired test is a sign-flip test: if the change did nothing,
+each task's difference is as likely to point up as down, so it counts how often random ups and downs
+give a result this one-sided. Per-task flags get a correction for testing many tasks at once, so a
+flagged task is rarely just luck. Details in [`docs/design.md`](docs/design.md#6-statistical-method-and-choice-of-n),
+section 6.
 
 ## How it works
 
@@ -109,17 +116,20 @@ flowchart LR
 ```
 
 - Five harnesses behind one adapter contract: Hermes Agent (pinned commit), LangGraph, Google ADK,
-  the OpenAI Agents SDK, and a plain tool-calling loop as the baseline.
-- Every model call goes through LiteLLM. Each trial gets its own key and budget, and spend, tokens
-  and latency come from LiteLLM's records, not estimates. Response cache is off, so repeated trials
-  are real samples.
+  the OpenAI Agents SDK, and a plain tool-calling loop as the baseline. A harness is the program
+  that drives the model: it sends the prompt, runs the tools the model asks for and decides when to
+  stop.
+- Every model call goes through LiteLLM, one proxy in front of every model provider. Each trial gets
+  its own key and budget, and spend, tokens and latency come from LiteLLM's records, not estimates.
+  Response cache is off, so repeated trials are real samples.
 - Each trial runs in a fresh folder on a network that only reaches the API, LiteLLM and the fake
   model server. If a worker dies mid-trial, the trial is re-run and its spend still counts.
 - Grading is its own step. A grader fix means a regrade, not a re-run.
 - An LLM judge grades what code can't, like whether the advice fits this client. It's calibrated on
   my hand labels: tuned on 33 discovery trials I labelled, then checked once against 40
-  held-out trials I labelled blind. A judge criterion may count in a verdict only once it agrees
-  with me well enough (kappa at least 0.6, and no lean towards either version), and then only when
+  held-out trials (kept out of the tuning) I labelled blind. A judge criterion may count in a
+  verdict only once it agrees with me well enough (kappa at least 0.6, where kappa is agreement
+  beyond chance: 1 is perfect, 0 is chance; and no lean towards either version), and then only when
   its task file marks it required; nothing does that by itself. The current judge didn't agree:
   on the 40 held-out trials it passed all 9 answers I failed. So it doesn't count.
 - Every judge grade shows how far to trust it, worked out live from the human labels: *Uncalibrated*
@@ -128,8 +138,8 @@ flowchart LR
   labeller with a balanced, shuffled set of the judge's passes and fails, and the agreement updates
   as you label (shipped examples are never labelled, so a fresh clone shows no such button). The
   headline example was judged this way, so its trial pages and the Judge page show the judge as
-  *Not trusted* with kappa 0.00: a second judging of the same outputs, in the platform, after the
-  −0.14 below. A judge varies from run to run; both miss the bar. Details:
+  *Not trusted* with kappa 0.00. That is a second judging of the same outputs, done in the platform
+  after the −0.14 measurement below. A judge varies from run to run; both miss the bar. Details:
   [`docs/judge-validation.md`](docs/judge-validation.md).
 - The tasks are a personal-finance assistant for clients in India: calculator tools, client files,
   and a simulated client for the multi-turn ones. 31 tasks: 10 held out for scoring, 11 for
@@ -197,7 +207,7 @@ without them.
 ```bash
 make new-harness NAME=crewai      # scaffold workers/crewai/ and print its compose service
 make probe-harness NAME=crewai    # see what actually reaches the model, against the fake server
-make test-harness NAME=crewai     # the contract's gate tests
+make test-harness NAME=crewai     # the contract's gate tests, which a harness must pass to count
 ```
 
 `setup(ctx)` maps our settings to the harness's own; `run_turn` is one agent turn. The shared
@@ -344,7 +354,7 @@ What I did:
 
 How I checked it:
 
-- the A/A run and the two planted breaks above
+- the A/A run (the same agent on both sides) and the two planted breaks above
 - clean-clone runs on a fresh machine
 - a soak test: about 1,000 real trials across all five harnesses, killing workers and stopping the
   API, database and proxy mid-run. It found two real bugs, both fixed.
