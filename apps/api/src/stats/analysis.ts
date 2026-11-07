@@ -37,7 +37,7 @@ export const MARGIN_POINTS = 10;
  * test cannot reach p < 0.05 (its smallest p is 2/2^K), so better and worse are impossible; the
  * same floor keeps "practically equivalent" from resting on a task bootstrap of 1 to 5 tasks,
  * which under-covers (84% at K = 4 in the simulation) and has no width at all with one task.
- * Proposed 5 Nov, for Rishi to confirm (docs/known-limits.md, "Statistics").
+ * Decided by Rishi on 5 Nov (D50, docs/decisions.md).
  */
 export const MIN_TASKS_FOR_VERDICT = 6;
 /**
