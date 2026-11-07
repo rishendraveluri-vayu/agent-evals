@@ -328,15 +328,15 @@ describe('TrialView judge trust', () => {
     it("shows each question's trust badge beside the judge's answer, and links to the judge page", async () => {
       const w = mount(TrialView, { props: { trialId: ID } });
       await settle();
-      const tax = judgeOf(w, 'fd-tax').get('[data-test="grade-trust"]');
-      const rows = tax.findAll('[data-test="grade-trust-criterion"]');
-      expect(rows.map((r) => [r.get('.mono').text(), r.get('[data-test="grade-trust-answer"]').text(), r.get('[data-test="trust-label"]').text()])).toEqual([['fd-tax', ', answered no', 'Trusted']]);
+      const tax = judgeOf(w, 'fd-tax');
+      const rows = tax.findAll('[data-test="judge-criterion"]');
+      expect(rows.map((r) => [r.get('.mono').text(), r.get('[data-test="criterion-answer"]').text(), r.get('[data-test="trust-label"]').text()])).toEqual([['fd-tax', ', answered no', 'Trusted']]);
       expect(tax.get('[data-test="trust-badge"]').attributes('title')).toBe('Meets the trust bar on 30 held-out labels: its verdicts on this question can be relied on.');
       expect(tax.get('[data-test="grade-trust-link"]').attributes('href')).toBe('#/labels/judge');
       // The sample's trust lists a held-out label on this trial that passes fd-tax: marked there.
       expect(tax.get('[data-test="grade-trust-dispute"]').text()).toBe(', your label: yes');
-      const horizon = judgeOf(w, 'horizon').get('[data-test="grade-trust"]');
-      expect(horizon.get('[data-test="grade-trust-answer"]').text()).toBe(', answered yes');
+      const horizon = judgeOf(w, 'horizon');
+      expect(horizon.get('[data-test="criterion-answer"]').text()).toBe(', answered yes');
       expect(horizon.get('[data-test="trust-label"]').text()).toBe('Too few labels');
       expect(horizon.find('[data-test="grade-trust-dispute"]').exists()).toBe(false);
       // A code-graded check has no judge, so no trust line.
@@ -381,7 +381,7 @@ describe('TrialView judge trust', () => {
       expect(line.get('[data-test="trust-label"]').text()).toBe('Not trusted');
       expect(line.text()).toContain('Tested on 40 held-out labels and it missed the trust bar: read its verdicts as a hint');
       expect(line.text()).not.toContain('D8');
-      expect(tax.find('[data-test="grade-trust-criterion"]').exists()).toBe(false);
+      expect(tax.find('[data-test="judge-criterion"]').exists()).toBe(false);
     });
 
     it("shows the badges and the judge's answers while the task's held-out outputs are still to label", async () => {
@@ -391,7 +391,7 @@ describe('TrialView judge trust', () => {
       expect(tax.find('[data-test="hidden-reasons"]').exists()).toBe(false);
       expect(tax.get('[data-test="grade-reason"]').text()).toContain('The profile shows a 30% slab');
       expect(tax.get('[data-test="trust-label"]').text()).toBe('Trusted');
-      expect(tax.get('[data-test="grade-trust-answer"]').text()).toBe(', answered no');
+      expect(tax.get('[data-test="criterion-answer"]').text()).toBe(', answered no');
     });
 
     it("marks a question your label disputes from the judge's trust", async () => {

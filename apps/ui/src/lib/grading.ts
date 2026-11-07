@@ -26,7 +26,8 @@ export interface EvidenceView {
   tool: string | null;
 }
 
-/** One criterion a judge grade answered (the judge grader's evidence item `{criterion, verdict}`). */
+/** One criterion a judge grade answered: the judge grader's evidence item `{criterion, verdict,
+ *  quote, reason}`, with where the grader found the quote. */
 export interface JudgeAnswer {
   criterion: string;
   /** yes, no, or what the judge gave instead (missing, an unclear word). */
@@ -34,6 +35,16 @@ export interface JudgeAnswer {
   /** Whether the check's verdict rests on it: the grader fails the check on a required criterion
    *  answered no (on any, when none is required). Required unless the evidence says otherwise. */
   required: boolean;
+  /** The passage the judge quoted for this answer; null when it quoted nothing. */
+  quote: string | null;
+  /** False when the grader did not find the quote in the material (`source: "judge"`). */
+  quoteFound: boolean | null;
+  /** The judge's own line on why it answered so. */
+  reason: string | null;
+  /** Where the grader found the quote (`agent_message`, `final_answer`, ...), and the transcript
+   *  message it is in when the evidence says. */
+  source: string | null;
+  at: number | null;
 }
 
 export interface GradeView {
@@ -55,7 +66,8 @@ export interface GradeView {
   rawVerdict: string | null;
   score: number | null;
   reason: string | null;
-  /** Passages of the answer the grader quoted, to highlight in the conversation. */
+  /** Passages of the answer the grader quoted, to highlight in the conversation. A judge's quotes
+   *  are under its answers (`criteria`), each with the criterion it was quoted for. */
   quotes: string[];
   /** Everything else it quoted, with where from. */
   evidence: EvidenceView[];
@@ -115,20 +127,38 @@ function judgeParts(e: Json): { criteria: JudgeAnswer[]; rubric: string | null }
   const list = Array.isArray(e) ? e.filter(isObj) : [];
   const criteria = list.flatMap((item): JudgeAnswer[] => {
     const criterion = str(item.criterion);
-    return criterion ? [{ criterion, verdict: str(item.verdict), required: item.required !== false }] : [];
+    if (!criterion) return [];
+    return [
+      {
+        criterion,
+        verdict: str(item.verdict),
+        required: item.required !== false,
+        quote: str(item.quote),
+        quoteFound: typeof item.quote_found === 'boolean' ? item.quote_found : null,
+        reason: str(item.reason),
+        source: str(item.source),
+        at: typeof item.index === 'number' ? item.index : null,
+      },
+    ];
   });
   const call = list.find((item) => item.source === 'judge_call');
   return { criteria, rubric: call ? str(call.rubric) : null };
 }
 
+/** A judge grade's items that belong to no criterion and are not its call: what it quoted besides
+ *  its answers, if anything. Each answer's quote stays with its answer (`criteria`), so it is never
+ *  shown under another criterion or the check's own verdict. */
+const judgeExtras = (e: Json): Json => (Array.isArray(e) ? e.filter((item) => !isObj(item) || (!str(item.criterion) && item.source !== 'judge_call')) : e);
+
 export function gradeView(g: Grade, index: number): GradeView {
+  const isJudge = g.kind === 'judge' || !!g.judge_model;
   const e = g.evidence;
-  const items = evidenceItems(e);
+  const items = evidenceItems(isJudge ? judgeExtras(e) : e);
   const legacy = isObj(e) ? e : null;
   const reason = str(g.reason) ?? (typeof e === 'string' ? str(e) : legacy ? firstString(legacy, ['reason', 'rationale', 'explanation', 'why']) : null);
   const raw = g.verdict ?? null;
   const verdict = verdictOf(raw, g.score);
-  const judge = g.kind === 'judge' || g.judge_model ? judgeParts(e) : { criteria: [], rubric: null };
+  const judge = isJudge ? judgeParts(e) : { criteria: [], rubric: null };
   return {
     index,
     id: typeof g.id === 'number' ? g.id : null,

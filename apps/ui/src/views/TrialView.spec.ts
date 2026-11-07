@@ -58,8 +58,10 @@ describe('TrialView in fixture mode', () => {
     expect(grades).toHaveLength(3);
     expect(grades[1].text()).toContain('fd-tax');
     expect(grades[1].text()).toContain('Fail');
-    expect(grades[1].get('[data-test="grade-kind"]').text()).toBe('Judge claude-haiku-5-5, rubric 5123602');
+    // The rubric by its name, from the judge's call; the grade's hash is the grader's version.
+    expect(grades[1].get('[data-test="grade-kind"]').text()).toBe('Judge claude-haiku-5-5, rubric advice.v4, grader version 5123602');
     expect(grades[1].get('[data-test="grade-kind"] .mono').text()).toBe('claude-haiku-5-5');
+    expect(grades[1].get('[data-test="grade-rubric"]').text()).toBe('advice.v4');
     expect(grades[0].get('[data-test="grade-kind"]').text()).toBe('Exact match, number');
     const at = w.findAll('[data-test="tool-call"] .at');
     expect(at[0].text()).toMatch(/^at \d+\.\d s$/);
@@ -232,9 +234,9 @@ describe("TrialView against the API: the judge's reasons and your label, with ou
     await settle();
     const grades = w.findAll('[data-test="grade"]');
     expect(grades).toHaveLength(3);
-    for (const [g, rubric] of [[grades[1], '5123602'], [grades[2], '728a3f4']] as const) {
-      // The rubric's version is a sha256, shown short.
-      expect(g.get('[data-test="grade-kind"]').text()).toBe(`Judge claude-haiku-5-5, rubric ${rubric}`);
+    for (const [g, version] of [[grades[1], '5123602'], [grades[2], '728a3f4']] as const) {
+      // The rubric by its name; the grader's version is a sha256, shown short and called a version.
+      expect(g.get('[data-test="grade-kind"]').text()).toBe(`Judge claude-haiku-5-5, rubric advice.v4, grader version ${version}`);
       expect(g.find('.pill').exists()).toBe(true);
       expect(g.find('[data-test="grade-reason"]').exists()).toBe(true);
     }

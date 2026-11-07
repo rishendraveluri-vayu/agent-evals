@@ -18,7 +18,7 @@ import { capitalise, count, harnessVersion, money, plainText, seconds, shortVers
 import { inlineParts, inlineStyles, type InlinePart } from '../lib/markdown';
 import { endStateName, experimentName, graderName, harnessName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
 import { isModelCallFile, jsonForDisplay, modelCalls, reasonParts, shortReason } from '../lib/trialDisplay';
-import { judgeFor, rubricOf } from '../lib/trust';
+import { judgeFor, rubricName, rubricOf } from '../lib/trust';
 import { href } from '../router';
 import { text, timelineRows, type SpanView } from '../trials';
 
@@ -410,8 +410,14 @@ function segments(body: string, quotes: Quote[], amounts: AmountCheck[], markdow
   });
 }
 
+/** What to highlight in the replies: a failed check's quotes, and each quote the judge gave for a
+ *  question it answered no, under that question. A quote for a "yes" is evidence for a pass, so it
+ *  stays in the grade card, never highlighted as a failure. */
 const failedQuotes = computed<Quote[]>(() =>
-  (vm.value?.grades ?? []).flatMap((g) => (g.verdict === 'fail' ? g.quotes.map((text) => ({ text, index: g.index, name: g.name })) : [])),
+  (vm.value?.grades ?? []).flatMap((g) => [
+    ...g.criteria.flatMap((c) => (c.verdict === 'no' && c.quote ? [{ text: c.quote, index: g.index, name: c.criterion }] : [])),
+    ...(g.verdict === 'fail' ? g.quotes.map((text) => ({ text, index: g.index, name: g.name })) : []),
+  ]),
 );
 const unsupportedAmounts = computed(() => data.value?.checks?.unsupported ?? []);
 
@@ -558,7 +564,10 @@ const files = computed(() => {
 const fileUrl = (path: string) => api.trialFileUrl(props.trialId, path);
 
 const gradeKind = (g: GradeView) => {
-  if (g.kind === 'judge') return `Judge, rubric ${shortVersion(g.graderVersion)}`;
+  if (g.kind === 'judge') {
+    const rubric = rubricLabel(g);
+    return `Judge${rubric ? `, rubric ${rubric}` : ''}, grader version ${shortVersion(g.graderVersion)}`;
+  }
   const type = g.type && g.type !== g.kind ? `, ${g.type.replace(/_/g, ' ')}` : '';
   return `${graderName(g.kind)}${type}`;
 };
@@ -579,6 +588,12 @@ function rubricOfGrade(g: GradeView): string | null {
   const task = data.value?.experiment?.tasks.find((t) => t.sha256 === vm.value?.task);
   const spec = task?.graders.find((x) => typeof x === 'object' && x !== null && !Array.isArray(x) && x.id === g.graderId);
   return spec ? rubricOf(spec) : null;
+}
+/** The rubric by its name, `advice.v4`; the grade's version is the grader's, a hash, never the
+ *  rubric's. */
+function rubricLabel(g: GradeView): string | null {
+  const path = rubricOfGrade(g);
+  return path ? rubricName(path) : null;
 }
 
 type Dispute = JudgeCriterionTrust['disagreements'][number] & { criterion: string };
@@ -604,6 +619,20 @@ const gradeTrust = computed(() =>
       return { ...c, trust, dispute: disputes.find((x) => x.criterion === c.criterion) ?? null };
     });
     return { judge, criteria, disputes };
+  }),
+);
+/** Each judge check's answers as its card lists them: per question the judge's answer, its quote
+ *  and its reason, with the question's trust badge and your label where they are known. A
+ *  question the check's verdict does not rest on (an optional one beside required ones) is marked
+ *  not counted. */
+const judgeRows = computed(() =>
+  (vm.value?.grades ?? []).map((g, gi) => {
+    const t = gradeTrust.value[gi];
+    const anyRequired = g.criteria.some((c) => c.required);
+    return g.criteria.map((c) => {
+      const row = t?.criteria.find((x) => x.criterion === c.criterion);
+      return { ...c, counted: !anyRequired || c.required, trust: row?.trust ?? null, dispute: row?.dispute ?? null };
+    });
   }),
 );
 const answerWord = (v: string | null) => (v === 'yes' ? 'answered yes' : v === 'no' ? 'answered no' : 'no answer');
@@ -1201,8 +1230,11 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             <span
               class="secondary smaller"
               data-test="grade-kind"
-              :title="g.kind === 'judge' ? `Rubric version ${g.graderVersion}` : undefined"
-            ><template v-if="g.judgeModel">Judge <span class="mono">{{ g.judgeModel }}</span>, rubric <span class="mono">{{ shortVersion(g.graderVersion) }}</span></template><template v-else>{{ gradeKind(g) }}</template><template v-if="g.score !== null && g.verdict === 'other'">, score {{ g.score }}</template></span>
+              :title="isJudge(g) ? `${rubricOfGrade(g) ? `Rubric ${rubricOfGrade(g)}, grader` : 'Grader'} version ${g.graderVersion}` : undefined"
+            ><template v-if="g.judgeModel">Judge <span class="mono">{{ g.judgeModel }}</span><template v-if="rubricLabel(g)">, rubric <span
+              class="mono"
+              data-test="grade-rubric"
+            >{{ rubricLabel(g) }}</span></template>, grader version <span class="mono">{{ shortVersion(g.graderVersion) }}</span></template><template v-else>{{ gradeKind(g) }}</template><template v-if="g.score !== null && g.verdict === 'other'">, score {{ g.score }}</template></span>
             <p
               v-if="notJudged(g) && isExample"
               class="small"
@@ -1239,6 +1271,61 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                   >{{ r.text }}</code><span v-else>{{ plainText(r.text) }}</span>
                 </template>
               </p>
+              <ul
+                v-if="judgeRows[gi]?.length"
+                class="judge-criteria"
+                data-test="judge-criteria"
+              >
+                <li
+                  v-for="c in judgeRows[gi]"
+                  :key="c.criterion"
+                  data-test="judge-criterion"
+                >
+                  <p class="small criterion-head">
+                    <span><span class="mono">{{ c.criterion }}</span><span
+                      class="secondary"
+                      data-test="criterion-answer"
+                    >, {{ answerWord(c.verdict) }}</span><span
+                      v-if="!c.counted"
+                      class="secondary"
+                    >, not counted</span><span
+                      v-if="c.dispute"
+                      class="strong"
+                      data-test="grade-trust-dispute"
+                    >, your label: {{ c.dispute.human }}</span></span>
+                    <TrustBadge
+                      v-if="c.trust"
+                      :status="c.trust.status"
+                      :summary="c.trust.summary"
+                    />
+                    <span
+                      v-else-if="gradeTrust[gi]"
+                      class="secondary smaller"
+                    >Not measured</span>
+                  </p>
+                  <blockquote
+                    v-if="c.quote"
+                    class="quote small"
+                    data-test="grade-quote"
+                  >
+                    “{{ c.quote }}”
+                  </blockquote>
+                  <p
+                    v-if="c.quote && c.quoteFound === false"
+                    class="secondary smaller"
+                    data-test="quote-not-found"
+                  >
+                    The grader did not find this quote word for word in the conversation.
+                  </p>
+                  <p
+                    v-if="c.reason"
+                    class="small"
+                    data-test="criterion-reason"
+                  >
+                    {{ c.reason }}
+                  </p>
+                </li>
+              </ul>
               <blockquote
                 v-for="(q, qi) in g.quotes"
                 :key="qi"
@@ -1262,37 +1349,8 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               class="grade-trust"
               data-test="grade-trust"
             >
-              <ul
-                v-if="gradeTrust[gi]?.criteria.length"
-                class="trust-criteria"
-              >
-                <li
-                  v-for="c in gradeTrust[gi]?.criteria"
-                  :key="c.criterion"
-                  class="small"
-                  data-test="grade-trust-criterion"
-                >
-                  <span><span class="mono">{{ c.criterion }}</span><span
-                    class="secondary"
-                    data-test="grade-trust-answer"
-                  >, {{ answerWord(c.verdict) }}</span><span
-                    v-if="c.dispute"
-                    class="strong"
-                    data-test="grade-trust-dispute"
-                  >, your label: {{ c.dispute.human }}</span></span>
-                  <TrustBadge
-                    v-if="c.trust"
-                    :status="c.trust.status"
-                    :summary="c.trust.summary"
-                  />
-                  <span
-                    v-else
-                    class="secondary smaller"
-                  >Not measured</span>
-                </li>
-              </ul>
               <p
-                v-else
+                v-if="!g.criteria.length"
                 class="small trust-line"
                 data-test="grade-trust-line"
               >
@@ -1836,16 +1894,29 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
   border-top: 1px solid var(--rule-soft);
 }
 
-.trust-criteria {
+/* A judge check's answers, one block per question: the answer and its trust, then the judge's
+   quote and its reason for that answer. */
+.judge-criteria {
   list-style: none;
-  margin: 0;
-  padding: 0;
+  margin: 2px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--rule-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.judge-criteria li {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.trust-criteria li,
+.judge-criteria .quote {
+  margin: 0;
+}
+
+.criterion-head,
 .trust-line {
   display: flex;
   flex-wrap: wrap;

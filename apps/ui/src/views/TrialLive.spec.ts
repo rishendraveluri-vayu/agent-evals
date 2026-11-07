@@ -85,6 +85,50 @@ describe('TrialView on live trials: the outcome and the optional judge', () => {
   });
 });
 
+describe("TrialView on live trials: the judge's answers", () => {
+  it('shows each quote under its own question and answer, with the reason the judge gave for it', async () => {
+    const { w } = mountLive(OFFER);
+    await settle();
+    const judge = gradeNamed(w, 'overall');
+    expect(judge.get('[data-test="grade-kind"]').text()).toBe('Judge gemini-3.8-flash, rubric advice.v4, grader version 6e96644');
+    const rows = judge.findAll('[data-test="judge-criterion"]');
+    expect(rows.map((r) => [r.get('.mono').text(), r.get('[data-test="criterion-answer"]').text()])).toEqual([
+      ['overall', ', answered no'],
+      ['explains-plainly', ', answered no'],
+      ['asks-deciding-fact', ', answered yes'],
+    ]);
+    // overall quoted nothing; the one quote is asks-deciding-fact's, under its yes.
+    expect(rows[0].find('[data-test="grade-quote"]').exists()).toBe(false);
+    expect(rows[1].find('[data-test="grade-quote"]').exists()).toBe(false);
+    expect(rows[2].get('[data-test="grade-quote"]').text()).toMatch(/^“Before you decide, please send me the offer's:/);
+    expect(judge.findAll('[data-test="grade-quote"]')).toHaveLength(1);
+    // Each question's reason, in the judge's words.
+    expect(rows.map((r) => r.get('[data-test="criterion-reason"]').text())).toEqual([
+      "The advisor assumed a lower loan amount of ₹84,250 instead of clarifying the client's ₹1 lakh figure, leading to confusing comparisons and shifting fee calculations.",
+      'The advisor created confusion by repeatedly switching between the ₹84,250 and ₹1 lakh loan balances and introducing assumed fee adjustments without explaining them plainly.',
+      'The advisor explicitly asked for the loan amount, interest rate, tenure, and upfront charges before proceeding.',
+    ]);
+  });
+
+  it('never highlights a quote the judge gave for a "yes" as evidence of a failure', async () => {
+    const { w } = mountLive(OFFER);
+    await settle();
+    const marked = w.findAll('[data-test="quote-link"]').map((q) => q.text());
+    expect(marked.some((t) => t.includes('Before you decide'))).toBe(false);
+    expect(marked.some((t) => t.includes('for overall'))).toBe(false);
+  });
+
+  it('says when the grader did not find a quote word for word', async () => {
+    const { w } = mountLive(PHONE);
+    await settle();
+    const buffer = gradeNamed(w, 'overall')
+      .findAll('[data-test="judge-criterion"]')
+      .find((r) => r.get('.mono').text() === 'keeps-buffer');
+    expect(buffer?.get('[data-test="grade-quote"]').text()).toMatch(/^“Keep the ₹2,000 savings transfer for now\./);
+    expect(buffer?.get('[data-test="quote-not-found"]').text()).toBe('The grader did not find this quote word for word in the conversation.');
+  });
+});
+
 describe('TrialView on live trials: why it failed', () => {
   it('keeps the header short, never cut inside a pattern, and the full reason with its patterns in the card', async () => {
     const { w } = mountLive(PHONE);
