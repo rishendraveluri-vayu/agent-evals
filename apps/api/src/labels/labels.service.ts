@@ -134,7 +134,8 @@ export class LabelsService {
   /**
    * Agent-labelled trials of a real model whose task has judge criteria, not yet fully labelled
    * in this set, in a fixed shuffled order (a hash of set and trial id) so arms are mixed.
-   * Optionally limited to one experiment. Nothing that tells the arm apart is included.
+   * Optionally limited to one experiment: its own trials and the ones its arm A reuses (D34).
+   * Nothing that tells the arm apart is included.
    * D73: with a rater, "labelled" means labelled by that rater, so each rater has their own queue
    * and second looks, and nothing in it depends on another rater's labels except D52's rule that a
    * trial labelled in one set (by anyone) is offered in no other. Without a rater, any rater's
@@ -180,8 +181,11 @@ export class LabelsService {
       AND ${NOT_EXAMPLE_TRIAL('t')}
       AND NOT EXISTS (SELECT 1 FROM configs fc WHERE fc.hash = t.config_hash AND fc.model LIKE 'fake/%')`;
     if (experimentId) {
+      // The experiment's own trials and those its arm A reuses from a parent (D34), as everywhere
+      // else an experiment's trials are read (review 7 Nov: calibrating such an experiment's judge
+      // never offered arm A).
       params.push(experimentId);
-      where += ` AND t.experiment_id = $${params.length}`;
+      where += ` AND (t.experiment_id = $${params.length} OR t.id IN (SELECT unnest(a.reused_trial_ids) FROM experiment_arms a WHERE a.experiment_id = $${params.length}))`;
     }
     if (items) {
       params.push(items);

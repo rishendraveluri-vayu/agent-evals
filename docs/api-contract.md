@@ -1066,7 +1066,9 @@ What the API refuses or rewrites since the review's fixes (`docs/destructive-rev
   fails on the 503; `scripts/smoke.py` checks `files` too.
 - `GET /labels/queue?set=tuning|heldout|final` returns blind items `{item_id, task_summary,
   transcript, tool_calls, criteria, second_look}` with no harness, model, arm, timing, cost or
-  grade. `experiment=<id>` limits it to one experiment's trials, and `items=<trial id>,...` (up to
+  grade. `experiment=<id>` limits it to one experiment's trials: its own and those its arm A
+  reuses from a parent (D34; until 7 Nov its own only, so calibrating a reusing experiment never
+  offered arm A), and `items=<trial id>,...` (up to
   500, since 5 Nov, D71) to a chosen list, such as the trials a judge panel disagreed on; a listed
   trial the set would not offer is left out, and a malformed list is a 400 `invalid_items`. The
   UI takes the same as `#/labels?set=heldout&items=...`. Only trials whose agent ran on a real model are items: a `fake/*` model plays a script,

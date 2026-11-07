@@ -357,6 +357,25 @@ describeWithDb('judge trust (D83, e2e, real Postgres)', () => {
     expect(((await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}&calibrate=0`).expect(200)).body as LabelQueueItem[]).map((i) => i.item_id)).toEqual(plain.map((i) => i.item_id));
   });
 
+  it('offers the trials an experiment’s arm A reuses from its parent (D34) when calibrating it, as well as its own (review 7 Nov, F4)', async () => {
+    const parent = await run([A], ['trust-tune'], 2);
+    const child = await e.experiment({ config_hashes: [A, B], task_sha256s: [cat.tasks['trust-tune']], n: 2, futility: { enabled: false }, parent_experiment_id: parent.id, reuse_baseline: true });
+    expect(child.baseline).toMatchObject({ applied: true, reused_trials: 2 });
+    const own: string[] = [];
+    for (let c = await e.claim('w-trust'); c; c = await e.claim('w-trust')) {
+      own.push(c.trial_id);
+      await e.report(c, 'w-trust', 'agent', { result: { ...EXAMPLE_RESULT, trial_id: c.trial_id } });
+    }
+    expect(own).toHaveLength(2);
+    await judge('fake/judge-reuse', (id) => ({ overall: own.includes(id) ? 'yes' : 'no', plain: 'yes' }));
+    const ids = async (query: string) => ((await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${child.id}${query}`).expect(200)).body as LabelQueueItem[]).map((i) => i.item_id).sort();
+    const all = [...parent.trials.map((t) => t.id), ...own].sort();
+    expect(await ids('&calibrate=1')).toEqual(all);
+    // The ordinary queue of the experiment offers them too; the parent's still offers its own only.
+    expect(await ids('')).toEqual(all);
+    expect(((await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${parent.id}`).expect(200)).body as LabelQueueItem[]).map((i) => i.item_id).sort()).toEqual(parent.trials.map((t) => t.id).sort());
+  });
+
   it('leaves the comparison’s stats.judge null without held-out labels on its judge', async () => {
     const exp = await run([A, B], ['trust-held-2'], 2);
     await judge('fake/judge-nolabels', () => ({ overall: 'yes', plain: 'yes' }));
