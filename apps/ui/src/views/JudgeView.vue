@@ -19,7 +19,7 @@ import { optional, useLoad } from '../lib/async';
 import { capitalise, minus, percent, plainText, plural } from '../lib/format';
 import { experimentName, modelName } from '../lib/names';
 import type { StripRow, Tick } from '../lib/scale';
-import { intervalWords, kappaWords, labelSetFor, rubricName } from '../lib/trust';
+import { intervalWords, kappaWords, labelSetFor, minusSigns, rubricName } from '../lib/trust';
 import { href } from '../router';
 
 type TrustSet = 'heldout' | 'tuning';
@@ -90,12 +90,21 @@ function disagreementsOf(j: JudgeTrust) {
   const all: Disagreement[] = j.criteria.flatMap((c) => c.disagreements.map((d) => ({ ...d, criterion: c.criterion })));
   all.sort((p, q) => (p.set === q.set ? 0 : p.set === 'heldout' ? -1 : 1));
   const outputs = new Set(all.map((d) => d.trial_id)).size;
-  const count = outputs === all.length ? plural(outputs, 'output') : `${plural(all.length, 'disagreement')} on ${plural(outputs, 'output')}`;
+  // Always both counts, so two judges' lines read alike ("20 disagreements on 17 outputs" beside
+  // "4 disagreements on 4 outputs", not "4 outputs"; QA, 7 Nov).
+  const count = `${plural(all.length, 'disagreement')} on ${plural(outputs, 'output')}`;
   // From the figures, not the list (which the API caps): labelled outputs, and how many it got wrong.
   const figures = j.criteria.flatMap((c) => [c.heldout, c.tuning]).filter((f): f is AgreementFigures => f !== null);
   const pairs = figures.reduce((sum, f) => sum + f.n, 0);
   const counted = figures.reduce((sum, f) => sum + f.fp + f.fn, 0);
   return { all, count, agrees: pairs > 0 && counted === 0, capped: j.criteria.some((c) => c.disagreements.length >= 50) };
+}
+
+/** Whether the judge graded any output of a discovery task, the tuning set's outputs: false only
+ *  when every question says so (an API without `asked_on` gives no answer, null). */
+function gradedTuning(j: JudgeTrust): boolean | null {
+  if (!j.criteria.length || j.criteria.some((c) => !c.asked_on)) return null;
+  return j.criteria.some((c) => (c.asked_on?.discovery_tasks ?? 0) > 0);
 }
 
 const judges = computed(() =>
@@ -106,6 +115,7 @@ const judges = computed(() =>
     calibrate: calibrateOf(j),
     strip: stripOf(j),
     disagreements: disagreementsOf(j),
+    gradedTuning: gradedTuning(j),
   })),
 );
 
@@ -125,8 +135,23 @@ function figureLines(f: AgreementFigures | null): string[] {
 }
 
 const tuningLine = (f: AgreementFigures | null) => (f ? `${plural(f.n, 'label')}, kappa ${kappaWords(f.kappa)}` : '');
+/** No tuning labels, and why when it is not for want of labelling: the judge graded no tuning
+ *  output at all, or none that asks this question (QA, 7 Nov: every question of a judge that
+ *  graded only held-out tasks read "None yet"). */
+function noTuningWords(c: JudgeCriterionTrust, gradedAny: boolean | null): string {
+  if (gradedAny === false) return 'None: this judge graded no tuning outputs';
+  if (gradedAny && c.asked_on && !c.asked_on.discovery_tasks) return 'None: no tuning output it graded asks this';
+  return 'None yet';
+}
+/** Above a question asked on several tasks in different words: its labels pool answers to each
+ *  task's own wording, and the text shown is one of them (QA, 7 Nov). */
+function askedWords(c: JudgeCriterionTrust): string {
+  const a = c.asked_on;
+  if (!a || a.tasks < 2 || a.wordings < 2) return '';
+  return a.wordings >= a.tasks ? `Asked on ${a.tasks} tasks, worded for each; for example:` : `Asked on ${a.tasks} tasks in ${a.wordings} wordings; for example:`;
+}
 const retestLine = (r: JudgeCriterionTrust['retest']) => (r ? `${r.identical} of ${r.total} the same${r.share !== null ? ` (${percent(r.share)})` : ''}` : '');
-const reasonsOf = (c: JudgeCriterionTrust) => (c.status === 'not_trusted' ? (c.d8?.reasons ?? []).map((r) => capitalise(plainText(r))) : []);
+const reasonsOf = (c: JudgeCriterionTrust) => (c.status === 'not_trusted' ? (c.d8?.reasons ?? []).map((r) => capitalise(minusSigns(plainText(r)))) : []);
 const needsLine = (c: JudgeCriterionTrust) => (c.status === 'too_few' && c.needs_human_no ? `Needs ${c.needs_human_no} more "no" ${c.needs_human_no === 1 ? 'label' : 'labels'} on held-out outputs.` : '');
 
 /** What each badge means, with the bar as the API applies it. */
@@ -217,7 +242,7 @@ const statuses = computed<{ status: JudgeTrustStatus; text: string }[]>(() => {
         class="judge-summary"
         data-test="judge-summary"
       >
-        {{ plainText(j.judge.summary) }}
+        {{ minusSigns(plainText(j.judge.summary)) }}
       </p>
       <p
         v-if="j.calibrate"
@@ -279,8 +304,14 @@ const statuses = computed<{ status: JudgeTrustStatus; text: string }[]>(() => {
               <th scope="row">
                 <span class="mono strong">{{ c.criterion }}</span>
                 <span
+                  v-if="c.text && askedWords(c)"
+                  class="secondary smaller block asked"
+                  data-test="criterion-asked"
+                >{{ askedWords(c) }}</span>
+                <span
                   v-if="c.text"
                   class="secondary small block question"
+                  data-test="criterion-question"
                 >{{ c.text }}</span>
               </th>
               <td data-test="criterion-trust">
@@ -330,7 +361,7 @@ const statuses = computed<{ status: JudgeTrustStatus; text: string }[]>(() => {
                 <span
                   v-else
                   class="secondary"
-                >None yet</span>
+                >{{ noTuningWords(c, j.gradedTuning) }}</span>
               </td>
               <td data-test="criterion-retest">
                 <span class="cell-label">Same verdict twice</span>
@@ -501,6 +532,11 @@ const statuses = computed<{ status: JudgeTrustStatus; text: string }[]>(() => {
 }
 
 .question {
+  margin-top: 2px;
+  max-width: 40ch;
+}
+
+.asked {
   margin-top: 2px;
   max-width: 40ch;
 }

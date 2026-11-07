@@ -1185,6 +1185,12 @@ no model and never changes a grade or a verdict.
   where the judge's answer differs from the humans', held-out first, then by task and trial, at
   most 50, with `judge_reason` the evidence item's `reason`, else its `quote`. Trust never changes
   a grade or a verdict: a judge criterion counts only when its task makes it required (D8, D63).
+  `asked_on` (since 7 Nov) counts the tasks whose current grade by the judge asks the criterion,
+  the discovery ones among them (their outputs go to the tuning set: a task with any held-out
+  version counts as held-out, as the label queue reads it), and the distinct wordings of its
+  question: `text` is the first seen, and a criterion such as `explains-plainly` is worded for
+  each task, so its labels pool answers to differently worded questions. The Judge page says so,
+  and says "this judge graded no tuning outputs" where that is why there are no tuning labels.
   The result is cached until a label, a finished grading job or an experiment's arms change.
 - **Calibrating.** `GET /labels/queue?set=&experiment=<id>&calibrate=1` answers only a balanced
   block of that experiment's fresh items, by the judge's current `overall` verdict: with k the

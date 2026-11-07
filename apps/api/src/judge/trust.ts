@@ -66,6 +66,8 @@ export interface CriterionInput {
   text: string | null;
   items: JudgedItem[];
   retest: JudgeCriterionTrust['retest'];
+  /** The tasks asking it, as the service counts them; none when left out. */
+  askedOn?: JudgeCriterionTrust['asked_on'];
 }
 
 const MAX_DISAGREEMENTS = 50;
@@ -184,6 +186,7 @@ export function criterionTrust(judgeSeed: string, c: CriterionInput): JudgeCrite
     d8,
     retest: c.retest,
     needs_human_no: humanNo < MIN_HUMAN_NO ? MIN_HUMAN_NO - humanNo : null,
+    asked_on: c.askedOn ?? { tasks: 0, discovery_tasks: 0, wordings: 0 },
     disagreements: disagreementsOf(c.items),
   };
 }

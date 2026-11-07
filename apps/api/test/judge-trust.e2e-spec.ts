@@ -21,7 +21,7 @@ const EXAMPLE_RESULT = JSON.parse(readFileSync(path.join(REPO, 'contract/v2/exam
 const RUBRIC = 'configs/rubrics/advice.v4.md';
 const GRADER_FRAMEWORK = 'test-grader-0';
 
-/** Synthetic tasks for this file only: a required end-state check and an optional judge with two criteria. */
+/** Synthetic tasks for this file only: a required end-state check and an optional judge with two criteria; `plain` is worded for each task, `overall` the same everywhere. */
 const TRUST_TASKS: Record<string, 'held_out' | 'discovery'> = { 'trust-held-1': 'held_out', 'trust-held-2': 'held_out', 'trust-tune': 'discovery' };
 
 type Verdicts = Record<string, string> | null;
@@ -61,7 +61,7 @@ describeWithDb('judge trust (D83, e2e, real Postgres)', () => {
             rubric: RUBRIC,
             criteria: [
               { id: 'overall', text: 'Would a real client in this situation be well served by this?' },
-              { id: 'plain', text: 'Does it explain each figure in plain words?' },
+              { id: 'plain', text: id === 'trust-held-2' ? 'Does it explain the EMI in plain words?' : 'Does it explain each figure in plain words?' },
             ],
           },
         ],
@@ -179,6 +179,11 @@ describeWithDb('judge trust (D83, e2e, real Postgres)', () => {
       ['overall', 'Would a real client in this situation be well served by this?', 'uncalibrated', 5, null, null, null, null],
       ['plain', 'Does it explain each figure in plain words?', 'uncalibrated', 5, null, null, null, null],
     ]);
+    // One held-out task asks each question, in one wording.
+    expect(j.criteria.map((c) => c.asked_on)).toEqual([
+      { tasks: 1, discovery_tasks: 0, wordings: 1 },
+      { tasks: 1, discovery_tasks: 0, wordings: 1 },
+    ]);
 
     // Another experiment with another judge: the filter keeps each experiment's own judges only.
     const other = await run([A], ['trust-held-2'], 1);
@@ -220,6 +225,8 @@ describeWithDb('judge trust (D83, e2e, real Postgres)', () => {
     const j = await judgeOf('fake/judge-tune');
     expect(j.criteria.find((x) => x.criterion === 'plain')!.status).toBe('uncalibrated');
     expect(j.status).toBe('tuning_only');
+    // Its one task is a discovery task: its outputs go to the tuning set.
+    expect(c.asked_on).toEqual({ tasks: 1, discovery_tasks: 1, wordings: 1 });
   });
 
   it('settles each rater’s label (a second look, a relabel, a raters’ tie) and shows too_few held-out "no" labels', async () => {
@@ -315,6 +322,11 @@ describeWithDb('judge trust (D83, e2e, real Postgres)', () => {
     expect(c.summary).toBe(`Trusted: kappa 0.90 (interval ${k.low!.toFixed(2)} to ${k.high!.toFixed(2)}) on 40 held-out labels, no false-pass gap between arms, and 100% test-retest agreement.`);
     expect(j.trials_judged).toBe(40);
     expect(j.experiments).toEqual([exp.id]);
+    // Two held-out tasks ask both questions: `overall` in one wording, `plain` worded for each (QA, 7 Nov).
+    expect(j.criteria.map((x) => [x.criterion, x.asked_on])).toEqual([
+      ['overall', { tasks: 2, discovery_tasks: 0, wordings: 1 }],
+      ['plain', { tasks: 2, discovery_tasks: 0, wordings: 2 }],
+    ]);
     // The same data gives the same intervals.
     expect(overall(await judgeOf('fake/judge-good')).heldout).toEqual(c.heldout);
 

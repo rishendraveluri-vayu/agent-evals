@@ -9,13 +9,13 @@
 import { computed } from 'vue';
 import type { JudgeTrustStatus } from '../api/types';
 import { plainText } from '../lib/format';
-import { trustLabel } from '../lib/trust';
+import { minusSigns, trustLabel } from '../lib/trust';
 import AppIcon from './AppIcon.vue';
 
 const props = defineProps<{ status: JudgeTrustStatus; summary?: string | null }>();
 
 const label = computed(() => trustLabel(props.status));
-const summaryText = computed(() => (props.summary ? plainText(props.summary) : ''));
+const summaryText = computed(() => (props.summary ? minusSigns(plainText(props.summary)) : ''));
 const icon = computed<'check' | 'alert' | null>(() => (props.status === 'trusted' ? 'check' : props.status === 'not_trusted' ? 'alert' : null));
 </script>
 

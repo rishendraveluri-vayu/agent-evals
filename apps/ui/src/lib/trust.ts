@@ -54,6 +54,12 @@ export function judgeFor(judges: readonly JudgeTrust[], model: string | null, ru
   return fit.length === 1 ? fit[0] : null;
 }
 
+/** The API's sentences write a negative number with a hyphen ("its interval reaches -0.21"); the
+ *  screens use a minus sign, as kappaWords does. A hyphen inside a word ("held-out") stays. */
+export function minusSigns(text: string): string {
+  return text.replace(/(^|[\s(])-(?=\d)/g, '$1\u2212');
+}
+
 /** "0.52", "−0.12", or "not defined". */
 export function kappaWords(k: number | null): string {
   // A value that rounds to zero reads "0.00", never "−0.00".

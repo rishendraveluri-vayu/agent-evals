@@ -87,6 +87,11 @@
             "share": 0.92
           },
           "needs_human_no": null,
+          "asked_on": {
+            "tasks": 6,
+            "discovery_tasks": 2,
+            "wordings": 1
+          },
           "disagreements": [
             {
               "trial_id": "tr_debt-regret-04_b_1",
@@ -234,6 +239,11 @@
             "share": 0.9667
           },
           "needs_human_no": null,
+          "asked_on": {
+            "tasks": 1,
+            "discovery_tasks": 0,
+            "wordings": 1
+          },
           "disagreements": [
             {
               "trial_id": "tr_fd-vs-sip-07_b_3",
@@ -290,6 +300,11 @@
           },
           "retest": null,
           "needs_human_no": 2,
+          "asked_on": {
+            "tasks": 1,
+            "discovery_tasks": 0,
+            "wordings": 1
+          },
           "disagreements": [
             {
               "trial_id": "tr_fd-vs-sip-07_a_1",
@@ -331,6 +346,11 @@
           "d8": null,
           "retest": null,
           "needs_human_no": 5,
+          "asked_on": {
+            "tasks": 4,
+            "discovery_tasks": 2,
+            "wordings": 4
+          },
           "disagreements": [
             {
               "trial_id": "tm_gold-loan-16_a_2",
@@ -362,6 +382,11 @@
           "d8": null,
           "retest": null,
           "needs_human_no": null,
+          "asked_on": {
+            "tasks": 2,
+            "discovery_tasks": 1,
+            "wordings": 1
+          },
           "disagreements": []
         }
       ],
@@ -421,6 +446,11 @@
             "share": 1
           },
           "needs_human_no": null,
+          "asked_on": {
+            "tasks": 4,
+            "discovery_tasks": 0,
+            "wordings": 1
+          },
           "disagreements": [
             {
               "trial_id": "th_distress-12_b_1",
@@ -476,6 +506,11 @@
           },
           "retest": null,
           "needs_human_no": 3,
+          "asked_on": {
+            "tasks": 4,
+            "discovery_tasks": 0,
+            "wordings": 4
+          },
           "disagreements": [
             {
               "trial_id": "th_distress-12_a_1",
@@ -530,6 +565,11 @@
           "d8": null,
           "retest": null,
           "needs_human_no": 5,
+          "asked_on": {
+            "tasks": 3,
+            "discovery_tasks": 3,
+            "wordings": 1
+          },
           "disagreements": [
             {
               "trial_id": "td_loan-for-loan-14_a_1",
@@ -591,6 +631,11 @@
           "d8": null,
           "retest": null,
           "needs_human_no": null,
+          "asked_on": {
+            "tasks": 2,
+            "discovery_tasks": 0,
+            "wordings": 1
+          },
           "disagreements": []
         }
       ],

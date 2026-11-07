@@ -1768,6 +1768,15 @@ export interface JudgeCriterionTrust {
   retest: { identical: number; total: number; share: number | null } | null;
   /** Held-out human "no" labels still needed before D8 can be applied (D77), else null. */
   needs_human_no: number | null;
+  /**
+   * The tasks whose current grade by this judge asks this criterion: how many; how many of them are
+   * discovery tasks, whose outputs are labelled in the tuning set (a held-out task's go to the
+   * held-out set); and how many wordings of the question they hold. `text` is one of those wordings:
+   * a criterion such as `explains-plainly` is worded for each task, so its labels pool answers to
+   * questions worded differently. All 0 when no current grade by this judge asks it. Always sent
+   * since 7 Nov; optional so a screen can read an older answer without it.
+   */
+  asked_on?: { tasks: number; discovery_tasks: number; wordings: number };
   /** Where judge and humans disagree, held-out first; never more than 50. */
   disagreements: {
     trial_id: string;

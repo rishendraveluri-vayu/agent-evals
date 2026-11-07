@@ -105,6 +105,35 @@ describe('JudgeView in fixture mode', () => {
     expect(row(haiku, 'fd-tax').get('[data-test="trust-badge"]').attributes('title')).toBe('Meets the trust bar on 30 held-out labels: its verdicts on this question can be relied on.');
   });
 
+  it('says when a question pools labels from tasks that word it differently (QA, 7 Nov)', async () => {
+    const w = mount(JudgeView);
+    await settle();
+    const haiku = judgeNamed(w, 'Claude Haiku 5.5, rubric advice.v4');
+    // explains-plainly is asked on 4 tasks, in 4 wordings: the text shown is one of them.
+    const plain = row(haiku, 'explains-plainly');
+    expect(plain.get('[data-test="criterion-asked"]').text()).toBe('Asked on 4 tasks, worded for each; for example:');
+    expect(plain.get('[data-test="criterion-question"]').text()).toBe('Does the advisor explain each key figure in plain words, so this client would understand what it means for them? Yes or no.');
+    // overall is asked on 6 tasks in one wording: no note. fd-tax is asked on one task.
+    expect(row(haiku, 'overall').find('[data-test="criterion-asked"]').exists()).toBe(false);
+    expect(row(haiku, 'fd-tax').find('[data-test="criterion-asked"]').exists()).toBe(false);
+  });
+
+  it('says why a question has no tuning labels when it is not for want of labelling (QA, 7 Nov)', async () => {
+    const w = mount(JudgeView);
+    await settle();
+    // Gemini graded held-out tasks only: no tuning output exists to label.
+    const gemini = judgeNamed(w, 'Gemini 3.8 Flash, rubric advice.v4');
+    expect(gemini.findAll('[data-test="criterion-tuning"]').map((c) => c.text())).toEqual([
+      'Tuning labelsNone: this judge graded no tuning outputs',
+      'Tuning labelsNone: this judge graded no tuning outputs',
+    ]);
+    // Haiku graded tuning outputs, but none of the tasks asking fd-tax is a discovery task.
+    const haiku = judgeNamed(w, 'Claude Haiku 5.5, rubric advice.v4');
+    expect(row(haiku, 'fd-tax').get('[data-test="criterion-tuning"]').text()).toContain('None: no tuning output it graded asks this');
+    // Tuning outputs that nobody has labelled yet.
+    expect(row(haiku, 'kind-and-direct').get('[data-test="criterion-tuning"]').text()).toContain('None yet');
+  });
+
   it("draws each question's held-out kappa with its interval against the bar, and says it in words", async () => {
     const w = mount(JudgeView);
     await settle();
@@ -187,7 +216,8 @@ describe('JudgeView against the API', () => {
     const once = { ...haiku, criteria: haiku.criteria.map((c, i) => ({ ...c, disagreements: i < 2 ? [on(`t_${i}`)] : [] })) };
     const again = mountWith({ ...trust, judges: [once] }).w;
     await settle();
-    expect(again.get('[data-test="disagreements-count"]').text()).toBe('2 outputs');
+    // Both counts every time, so two judges' lines read alike (QA, 7 Nov).
+    expect(again.get('[data-test="disagreements-count"]').text()).toBe('2 disagreements on 2 outputs');
   });
 
   it('never asks what is left to label: the list does not wait on it', async () => {
@@ -248,5 +278,34 @@ describe('JudgeView against the API', () => {
   it('no longer says the agreement is not shown in this version', () => {
     expect(judgeSource).not.toContain('Not shown in this version');
     expect(judgeSource).not.toContain('judgeAgreement');
+  });
+});
+
+describe('JudgeView against the API: wording (QA, 7 Nov)', () => {
+  it('says how many wordings a question pooled from more tasks than wordings has', async () => {
+    const fewer = { ...trust.judges[0], criteria: trust.judges[0].criteria.map((c) => (c.criterion === 'explains-plainly' ? { ...c, asked_on: { tasks: 10, discovery_tasks: 0, wordings: 3 } } : c)) };
+    const { w } = mountWith({ ...trust, judges: [fewer] });
+    await settle();
+    expect(w.get('[data-criterion="explains-plainly"] [data-test="criterion-asked"]').text()).toBe('Asked on 10 tasks in 3 wordings; for example:');
+  });
+
+  it('says "None yet" for tuning labels when the API does not say where a question is asked', async () => {
+    const older = { ...trust.judges[1], criteria: trust.judges[1].criteria.map((c) => ({ ...c, asked_on: undefined })) };
+    const { w } = mountWith({ ...trust, judges: [older] });
+    await settle();
+    expect(w.findAll('[data-test="criterion-tuning"]').map((c) => c.text())).toEqual(['Tuning labelsNone yet', 'Tuning labelsNone yet']);
+    expect(w.find('[data-test="criterion-asked"]').exists()).toBe(false);
+  });
+
+  it('writes a negative number in a reason or a summary with a minus sign, and keeps the hyphen in a word (QA, 7 Nov)', async () => {
+    const live = {
+      ...trust.judges[0],
+      summary: 'Not trusted: kappa -0.05 on 40 held-out labels is below 0.6.',
+      criteria: trust.judges[0].criteria.map((c) => (c.criterion === 'overall' ? { ...c, d8: { trusted: false, reasons: ["kappa's interval reaches -0.21, below 0.4"] } } : c)),
+    };
+    const { w } = mountWith({ ...trust, judges: [live] });
+    await settle();
+    expect(w.get('[data-test="judge-summary"]').text()).toBe('Not trusted: kappa \u22120.05 on 40 held-out labels is below 0.6.');
+    expect(w.get('[data-criterion="overall"] [data-test="criterion-reasons"] li').text()).toBe("Kappa's interval reaches \u22120.21, below 0.4");
   });
 });

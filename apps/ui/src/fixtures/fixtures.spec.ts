@@ -44,7 +44,7 @@ const FIELDS = {
   blind: ['item_id', 'task_id', 'task_summary', 'transcript', 'tool_calls', 'criteria'],
   trustBar: ['kappa', 'kappa_low', 'retest', 'min_human_no', 'max_undefined_share', 'resamples', 'human_unsure'],
   judgeTrust: ['judge_model', 'rubric', 'experiments', 'trials_judged', 'criteria', 'status', 'summary'],
-  criterionTrust: ['criterion', 'text', 'status', 'summary', 'heldout', 'tuning', 'd8', 'retest', 'needs_human_no', 'disagreements'],
+  criterionTrust: ['criterion', 'text', 'status', 'summary', 'heldout', 'tuning', 'd8', 'retest', 'needs_human_no', 'asked_on', 'disagreements'],
   agreement: ['n', 'tp', 'fp', 'fn', 'tn', 'agreement', 'kappa', 'kappa_interval', 'sensitivity', 'specificity', 'human_no', 'human_left_out', 'judge_undecided', 'false_pass_gap'],
   disagreement: ['trial_id', 'task_id', 'set', 'human', 'judge', 'judge_reason', 'human_note'],
 };

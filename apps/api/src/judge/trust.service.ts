@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { CompareStats, Json, JudgeTrust, JudgeTrustResponse } from '../contract';
+import type { CompareStats, Json, JudgeCriterionTrust, JudgeTrust, JudgeTrustResponse } from '../contract';
 import { badRequest, notFound } from '../common/api-error';
 import { Db } from '../database/db.service';
 import { TRIAL_IN_ARM } from '../experiments/run-state';
@@ -14,6 +14,8 @@ interface GradingRow {
   trial_id: string;
   experiment_id: string | null;
   task_id: string;
+  /** The label set the trial's outputs go to: `held_out` when any version of its task is held-out, as the label queue reads it. */
+  split: string;
   /** The job is the trial's current grading (the latest done one). */
   current: boolean;
   judge_model: string | null;
@@ -41,6 +43,8 @@ interface JudgeAcc {
   gradings: Map<string, { job: string; verdicts: Record<string, string> }[]>;
   /** criterion -> its text (first seen), in first-seen order */
   criteria: Map<string, string | null>;
+  /** criterion -> the tasks whose current grade asks it, the discovery ones, and its wordings */
+  asked: Map<string, { tasks: Set<string>; discovery: Set<string>; texts: Set<string> }>;
 }
 
 /** A judge's trust, with what the comparison also needs. */
@@ -157,6 +161,7 @@ export class JudgeTrustService {
   private async computeFresh(): Promise<Computed[]> {
     const rows = await this.db.query<GradingRow>(
       `SELECT j.id AS job_id, j.trial_id, t.experiment_id, k.id AS task_id, (j.id = cj.id) AS current,
+              CASE WHEN EXISTS (SELECT 1 FROM tasks kv WHERE kv.id = k.id AND kv.split = 'held_out') THEN 'held_out' ELSE k.split END AS split,
               ${JUDGE_MODEL_SQL('g')} AS judge_model,
               (SELECT s -> 'spec' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(j.graders) = 'array' THEN j.graders ELSE '[]'::jsonb END) s
                 WHERE s -> 'spec' ->> 'id' = g.grader_id LIMIT 1) AS spec,
@@ -182,7 +187,7 @@ export class JudgeTrustService {
       const rubric = rubricOf(r.spec);
       const id = `${r.judge_model}\u0000${rubric}`;
       let acc = accs.get(id);
-      if (!acc) accs.set(id, (acc = { model: r.judge_model, rubric, current: new Map(), gradings: new Map(), criteria: new Map() }));
+      if (!acc) accs.set(id, (acc = { model: r.judge_model, rubric, current: new Map(), gradings: new Map(), criteria: new Map(), asked: new Map() }));
       const listed = specCriteria(r.spec);
       for (const c of listed) if (!acc.criteria.has(c.id)) acc.criteria.set(c.id, c.text);
       for (const it of r.items) if (!acc.criteria.has(it.criterion)) acc.criteria.set(it.criterion, null);
@@ -193,6 +198,15 @@ export class JudgeTrustService {
       for (const it of r.items) if (!(it.criterion in run.verdicts)) run.verdicts[it.criterion] = it.verdict ?? 'missing';
       acc.gradings.set(r.trial_id, runs);
       if (!r.current) continue;
+      // Which tasks ask each criterion, and in how many wordings (QA, 7 Nov: `explains-plainly`
+      // pooled labels from 10 tasks under one task's wording).
+      for (const c of [...listed, ...r.items.map((it) => ({ id: it.criterion, text: null }))]) {
+        let a = acc.asked.get(c.id);
+        if (!a) acc.asked.set(c.id, (a = { tasks: new Set(), discovery: new Set(), texts: new Set() }));
+        a.tasks.add(r.task_id);
+        if (r.split === 'discovery') a.discovery.add(r.task_id);
+        if (c.text) a.texts.add(c.text);
+      }
       let cur = acc.current.get(r.trial_id);
       if (!cur) acc.current.set(r.trial_id, (cur = { taskId: r.task_id, experimentId: r.experiment_id, verdicts: new Map(), criteria: new Set() }));
       for (const c of listed) cur.criteria.add(c.id);
@@ -241,8 +255,12 @@ export class JudgeTrustService {
         }
       }
       const gradings = [...acc.gradings.values()].map((runs) => runs.map((r) => r.verdicts));
+      const askedOn = (criterion: string): JudgeCriterionTrust['asked_on'] => {
+        const a = acc.asked.get(criterion);
+        return { tasks: a?.tasks.size ?? 0, discovery_tasks: a?.discovery.size ?? 0, wordings: a?.texts.size ?? 0 };
+      };
       const criteria = [...acc.criteria.entries()].map(([criterion, text]) =>
-        criterionTrust(`${acc.model}:${acc.rubric}`, { criterion, text, items: byCriterion.get(criterion) ?? [], retest: retestOf(gradings, criterion) }),
+        criterionTrust(`${acc.model}:${acc.rubric}`, { criterion, text, items: byCriterion.get(criterion) ?? [], retest: retestOf(gradings, criterion), askedOn: askedOn(criterion) }),
       );
       const { status, summary } = judgeStatus(criteria);
       const experiments = [...perExperiment.keys()].sort((a, b) => (experimentsAt.get(b) ?? 0) - (experimentsAt.get(a) ?? 0) || (a < b ? 1 : a > b ? -1 : 0));
