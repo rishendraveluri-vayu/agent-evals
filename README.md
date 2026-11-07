@@ -129,6 +129,12 @@ Every run shows its trials, models and worst-case cost before it starts, and ask
 A Hermes run first checks your prompt against Hermes's own instructions (one call, about 3 cents)
 and shows what clashes.
 
+A fresh clone has no agents of its own: save one or two on **Build an agent** first (the example
+prompts are there to pick). A real run on held-out tasks asks for the commit of your analysis plan,
+because the plan should be written before the results; for a quick try, the repo's current commit
+will do (it is recorded, not checked). The spending limit starts at $10; set it lower for a small
+run. A run stops at its limit.
+
 Stop it with `docker compose down`. Add `-v` to wipe the database too.
 
 <details>
