@@ -153,6 +153,40 @@ describe('App in fixture mode', () => {
     expect(wrapper.get('[data-test="build-agent"]').attributes('href')).toBe('#/build');
   });
 
+  it('opens a new page at the top, and returns to where you were on a page you come back to (7 Nov QA)', async () => {
+    const scrolled = vi.fn();
+    vi.stubGlobal('scrollTo', scrolled);
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 6000 });
+    const scrollY = (y: number) => {
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: y });
+      window.dispatchEvent(new Event('scroll'));
+    };
+    try {
+      open('#/experiments');
+      const wrapper = mount(App);
+      await settle();
+      const list = window.history.state as unknown;
+      scrollY(1500);
+      // A link to another page: a new history entry, opened at the top.
+      open('#/tasks');
+      await settle();
+      expect(wrapper.get('main h1').text()).toBe('Tasks');
+      expect(scrolled).toHaveBeenLastCalledWith(0, 0);
+      scrollY(200);
+      // Back: the browser puts the experiments entry, with its own state, in view.
+      window.history.pushState(list, '', '#/experiments');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      await settle();
+      expect(wrapper.get('main h1').text()).toBe('Experiments');
+      expect(scrolled).toHaveBeenLastCalledWith(0, 1500);
+      wrapper.unmount();
+    } finally {
+      vi.unstubAllGlobals();
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 });
+      Reflect.deleteProperty(document.documentElement, 'scrollHeight');
+    }
+  });
+
   it('switches to the dark theme when chosen, and back', async () => {
     const wrapper = mount(App);
     await settle();

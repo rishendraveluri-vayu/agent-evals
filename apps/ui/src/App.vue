@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue';
 import AppHeader from './components/AppHeader.vue';
+import { enterEntry, restoreScroll, startScrollMemory, stopRestore } from './lib/scrollMemory';
 import { currentHash, href, parseHash, sectionOf } from './router';
 import BuildView from './views/BuildView.vue';
 import CompareView from './views/CompareView.vue';
@@ -21,6 +22,8 @@ const route = computed(() => parseHash(currentHash.value));
 const section = computed(() => sectionOf(route.value));
 
 const onHash = () => {
+  // The history entry now in view keeps its own scroll position (lib/scrollMemory.ts).
+  enterEntry();
   currentHash.value = window.location.hash;
 };
 
@@ -29,15 +32,28 @@ function skipToContent() {
   document.getElementById('main')?.focus();
 }
 
-onMounted(() => window.addEventListener('hashchange', onHash));
-onBeforeUnmount(() => window.removeEventListener('hashchange', onHash));
+let stopScrollMemory: (() => void) | null = null;
+onMounted(() => {
+  stopScrollMemory = startScrollMemory();
+  window.addEventListener('hashchange', onHash);
+});
+onBeforeUnmount(() => {
+  stopScrollMemory?.();
+  window.removeEventListener('hashchange', onHash);
+});
 
-// A new screen starts at the top, and focus moves to its main heading for screen readers.
+// A new screen starts at the top; one come back to with Back or Forward returns to where it was
+// (7 Nov QA: Back from a trial opened the comparison at its top). Focus moves to the main heading
+// for screen readers either way, without scrolling.
 watch(
   () => currentHash.value.split('?')[0],
   async () => {
-    window.scrollTo?.(0, 0);
+    stopRestore();
+    const { saved } = enterEntry();
+    if (!saved) window.scrollTo?.(0, 0);
     await nextTick();
+    // Only once the page come back to is on screen: before that, the last page's height would do.
+    if (saved) restoreScroll(saved);
     document.querySelector<HTMLElement>('main h1')?.focus({ preventScroll: true });
   },
 );
