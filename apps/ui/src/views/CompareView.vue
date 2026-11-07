@@ -734,11 +734,12 @@ const axisCaption = computed(() => {
   return `B minus A, in points. ${level}% intervals, not corrected; ${verdicts}`;
 });
 
-/** Trials where a human label disagrees with the judge: from the judges' trust (D83), which lists
- *  every disagreement with its trial. */
+/** Trials whose failure a human label disputes: where it says yes and the judge no, from the judges'
+ *  trust (D83), which lists every disagreement with its trial. A label that says no where the judge
+ *  said yes is stricter than the judge: it agrees the output is bad, so it disputes no failure. */
 const disputedTrials = computed(() => {
   const d = data.value;
-  const fromTrust = (d?.trust ?? []).flatMap((j) => j.criteria.flatMap((c) => c.disagreements.map((x) => x.trial_id)));
+  const fromTrust = (d?.trust ?? []).flatMap((j) => j.criteria.flatMap((c) => c.disagreements.filter((x) => x.human === 'yes' && x.judge === 'no').map((x) => x.trial_id)));
   return new Set(fromTrust.filter((id): id is string => !!id));
 });
 

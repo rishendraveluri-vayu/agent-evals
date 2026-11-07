@@ -805,6 +805,26 @@ describe('CompareView against the API: a failure your label disputes', () => {
     await settle();
     expect(w.get('[data-test="look-link"]').text()).toBe('Open a failed trial');
   });
+
+  it('counts no failure as disputed where the label is stricter than the judge: its "no" against the judge\'s "yes" agrees the output is bad', async () => {
+    // Live on the headline (review 7 Nov, F7): failed trials where the label says no and the judge yes.
+    const stricter: JudgeTrustResponse = {
+      ...disputedTrust,
+      judges: disputedTrust.judges.map((j) => ({
+        ...j,
+        criteria: j.criteria.map((c) => ({
+          ...c,
+          disagreements: c.criterion === 'fd-tax' ? c.disagreements.map((x) => ({ ...x, human: 'no' as const, judge: 'yes' as const, human_note: 'worse than the judge thinks' })) : [],
+        })),
+      })),
+    };
+    routeFetch(routes(queue.heldout, { trust: stricter }));
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.get('[data-test="look-link"]').text()).toBe('Open a failed trial');
+    expect(w.html()).toContain('Open a failed trial of fd-vs-sip-07, arm B"');
+    expect(w.html()).not.toContain('(your label disagrees with the judge)');
+  });
 });
 
 describe('CompareView against the API: the check on the method', () => {
