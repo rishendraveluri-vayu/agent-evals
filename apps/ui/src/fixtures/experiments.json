@@ -76,6 +76,7 @@
     },
     "budget_usd": 20,
     "created_at": "2026-11-05T13:56:00.000Z",
+    "finished_at": null,
     "calibration": false,
     "example": null
   },
@@ -155,6 +156,7 @@
     },
     "budget_usd": 20,
     "created_at": "2026-11-05T13:43:00.000Z",
+    "finished_at": null,
     "calibration": false,
     "example": null
   },
@@ -248,6 +250,7 @@
     },
     "budget_usd": 40,
     "created_at": "2026-11-05T13:38:00.000Z",
+    "finished_at": null,
     "calibration": false,
     "example": null
   },
@@ -337,6 +340,7 @@
     },
     "budget_usd": 40,
     "created_at": "2026-11-05T11:18:00.000Z",
+    "finished_at": "2026-11-05T12:08:00.000Z",
     "calibration": false,
     "example": null
   },
@@ -420,6 +424,7 @@
     },
     "budget_usd": 40,
     "created_at": "2026-11-04T13:08:00.000Z",
+    "finished_at": "2026-11-04T13:48:00.000Z",
     "calibration": false,
     "example": null
   },
@@ -505,6 +510,7 @@
     },
     "budget_usd": 40,
     "created_at": "2026-11-04T11:08:00.000Z",
+    "finished_at": "2026-11-04T11:58:00.000Z",
     "calibration": true,
     "example": null
   },
@@ -587,6 +593,7 @@
     },
     "budget_usd": 40,
     "created_at": "2026-11-03T12:58:00.000Z",
+    "finished_at": "2026-11-03T13:48:00.000Z",
     "calibration": false,
     "example": null
   }

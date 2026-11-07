@@ -6,7 +6,7 @@ import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { armsOf, axisWords, checksToGo, doneCount, headline, HEADLINE_EXAMPLE, intervalText, judgeCaveat, NBSP, pickLatest, pointsWithInterval, setupOf, timeLeft, totalTrials, verdictWords, type Verdict } from '../lib/arms';
+import { armsOf, axisWords, checksToGo, doneCount, headline, intervalText, judgeCaveat, NBSP, pickLatest, pointsWithInterval, setupOf, timeLeft, totalTrials, verdictWords, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { capitalise, identParts, minutes, money, percent, plainText, plural, relative, signed } from '../lib/format';
 import { isFake } from '../lib/models';
@@ -33,8 +33,8 @@ interface Loaded {
   live: Map<string, ExperimentDetail>;
 }
 
-/** The list carries only when an experiment was made; its detail has when it finished. */
-const updatedAt = (e: ExperimentSummary, detail?: ExperimentDetail | null) => detail?.finished_at ?? detail?.started_at ?? e.created_at;
+/** When it finished, else when it started (from its detail, for a live run), else when it was made. */
+const updatedAt = (e: ExperimentSummary, detail?: ExperimentDetail | null) => e.finished_at ?? detail?.finished_at ?? detail?.started_at ?? e.created_at;
 const twoArms = (e: ExperimentSummary) => e.config_hashes.length === 2;
 
 const { data, error, loading, reload } = useLoad<Loaded>(async () => {
@@ -48,18 +48,10 @@ const { data, error, loading, reload } = useLoad<Loaded>(async () => {
   ]);
   const finished = experiments.filter((e) => e.status === 'done' && twoArms(e));
   const compares = new Map(await Promise.all(finished.map(async (e) => [e.id, await optional(api.compare(e.id), null)] as const)));
-  // The list is newest first (by when each was made). The latest result is a finished A/B with
-  // statistics, else one whose comparison is complete, read as counts: your own newest on a real
-  // model, unless the shipped headline example is here and nothing of yours is newer (lib/arms.ts
-  // pickLatest). A run on fake models only never leads.
-  const shippedName = (e: ExperimentSummary) => shippedOf(e, examples);
-  // The front door's example (OpenExampleView opens the first by name): the headline's.
-  const pinned = examples[0]?.name ?? HEADLINE_EXAMPLE;
+  // The latest result is the finished A/B on a real model that finished last, shipped or your own
+  // (lib/arms.ts pickLatest), with statistics, else one whose comparison is complete, read as counts.
   const ab = finished.filter((e) => !e.calibration && e.config_hashes[0] !== e.config_hashes[1]);
-  const latestId = (
-    pickLatest(ab, configs, shippedName, (e) => !!compares.get(e.id)?.stats, pinned) ??
-    pickLatest(ab, configs, shippedName, (e) => compares.get(e.id)?.status === 'complete', pinned)
-  )?.id;
+  const latestId = (pickLatest(ab, configs, (e) => !!compares.get(e.id)?.stats) ?? pickLatest(ab, configs, (e) => compares.get(e.id)?.status === 'complete'))?.id;
   const latest = latestId ? await optional(api.experiment(latestId), null) : null;
   const trials = latestId ? await optional(api.experimentTrials(latestId, { status: 'done' }), [] as TrialRowSummary[]) : [];
   // Step 4 opens a failure of arm B on the task where B did worst: the most telling one to read.
@@ -79,7 +71,7 @@ function shippedOf(e: Pick<ExperimentSummary, 'id' | 'example'>, examples: Examp
   return e.example?.name ?? examples.find((x) => x.experiment_id === e.id)?.name ?? null;
 }
 
-const show = ref<'all' | 'running' | 'done'>('all');
+const show = ref<'all' | 'running' | 'done' | 'stopped'>('all');
 
 const latestResult = computed(() => {
   const d = data.value;
@@ -89,7 +81,8 @@ const latestResult = computed(() => {
   const arms = armsOf(latest, d.configs);
   const split = new Set(latest.tasks.map((t) => t.split)).size === 1 ? splitName(latest.tasks[0]?.split ?? '') : null;
   const values = [stats.diff.low, stats.diff.high, ...(stats.aa ? [stats.aa.diff.low, stats.aa.diff.high] : [])];
-  const [min, max] = domainFor(values, -20, 30);
+  // A pass-rate difference lies between -100 and +100 points: no tick past either (QA, 7 Nov: "+110").
+  const [min, max] = domainFor(values, -20, 30, 100);
   const level = Math.round(stats.level * 100);
   // The A/A calibration is drawn as its own row under the result, so the caption does not repeat it.
   const noise = stats.aa ? '' : ' No A/A calibration run for these configs yet, so the setup’s own noise is not measured.';
@@ -275,7 +268,9 @@ const rows = computed<Row[]>(() => {
   const d = data.value;
   if (!d) return [];
   return d.experiments
-    .filter((e) => show.value === 'all' || (show.value === 'running' ? e.status === 'running' || e.status === 'created' || e.status === 'paused' : e.status === 'done'))
+    // A stopped run is `cancelled` (stop and cancel are one call): its own filter, so it shows under
+    // one of them (QA, 7 Nov: it was under neither Running nor Finished).
+    .filter((e) => show.value === 'all' || (show.value === 'running' ? e.status === 'running' || e.status === 'created' || e.status === 'paused' : show.value === 'stopped' ? e.status === 'cancelled' : e.status === 'done'))
     .map((e) => {
       const arms = armsOf(e, d.configs);
       const total = totalTrials(e);
@@ -583,6 +578,7 @@ const rows = computed<Row[]>(() => {
             <option value="all">All</option>
             <option value="running">Running</option>
             <option value="done">Finished</option>
+            <option value="stopped">Stopped or cancelled</option>
           </select>
         </label>
       </div>

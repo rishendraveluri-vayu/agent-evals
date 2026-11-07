@@ -193,10 +193,10 @@ describe('ExperimentsView with the shipped examples loaded (destructive review U
   const REPLICATION = ref('replication-langgraph-prompt-v1-vs-v2', 'Replication on LangGraph');
   const example = (e: { name: string }) => ({ name: e.name, title: e.name, description: '', experiment_id: `e_${e.name}`, loaded: true, created_at: '2026-11-05T07:00:00.000Z', counts: {} });
 
-  /** The replication was made after the headline, so it is the newest finished A/B in the list. */
+  /** The replication was made and finished after the headline. */
   function mountShipped(own: Record<string, unknown>[] = [], moreConfigs: Record<string, unknown>[] = []) {
-    const rep = { ...done, id: 'e_rep', created_at: '2026-11-05T09:43:08.000Z', example: REPLICATION };
-    const head = { ...done, id: 'e_head', created_at: '2026-11-05T07:32:29.000Z', example: HEADLINE };
+    const rep = { ...done, id: 'e_rep', created_at: '2026-11-05T09:43:08.000Z', finished_at: '2026-11-05T10:19:51.000Z', example: REPLICATION };
+    const head = { ...done, id: 'e_head', created_at: '2026-11-05T07:32:29.000Z', finished_at: '2026-11-05T08:05:59.000Z', example: HEADLINE };
     routeFetch({
       '/api/experiments': [...own, rep, head],
       '/api/configs': [...configs, ...moreConfigs],
@@ -214,27 +214,75 @@ describe('ExperimentsView with the shipped examples loaded (destructive review U
     return mount(ExperimentsView);
   }
 
-  it('leads with the shipped headline, naming its harness and model, not the newer replication', async () => {
+  it('leads with the shipped run that finished last, naming its harness and model, not the headline (QA, 7 Nov)', async () => {
     const w = mountShipped();
     await settle();
     const title = w.get('[data-test="latest-result"] h2').text();
-    expect(title).toBe('No detectable difference between Prompt v1 and v2 on the held-out tasks, with Hermes Agent and Claude Haiku 5.5 (shipped example)');
-    expect(w.get('[data-test="latest-result"] a').attributes('href')).toBe('#/experiments/e_head');
+    expect(title).toBe('Prompt v2 beats v1 on the held-out tasks, with Hermes Agent and Claude Haiku 5.5 (shipped example: a replication)');
+    expect(w.get('[data-test="latest-result"] a').attributes('href')).toBe('#/experiments/e_rep');
   });
 
-  it('leads with a newer run of your own on a real model, and never with one on fake models only', async () => {
-    const mine = { ...done, id: 'e_mine', created_at: '2026-11-06T10:00:00.000Z', example: null };
+  it('leads with a run of your own that finished later, and never with one on fake models only', async () => {
+    const mine = { ...done, id: 'e_mine', created_at: '2026-11-06T10:00:00.000Z', finished_at: '2026-11-06T10:40:00.000Z', example: null };
     let w = mountShipped([mine]);
     await settle();
     expect(w.get('[data-test="latest-result"] h2').text()).toBe('Prompt v2 does worse than v1 on the held-out tasks, with Hermes Agent and Claude Haiku 5.5');
     w.unmount();
-    // The same run of yours on fake models: its pass rates test the platform, so the headline leads.
+    // The same run of yours on fake models: its pass rates test the platform, so the shipped one leads.
     const fakeHashes = ['sha256:fa1', 'sha256:fa2'];
     const fakeConfigs = fakeHashes.map((hash, i) => ({ ...(configs[i] as object), hash, model: 'fake/finance-emi' }));
     w = mountShipped([{ ...mine, config_hashes: fakeHashes }], fakeConfigs);
     await settle();
-    expect(w.get('[data-test="latest-result"] a').attributes('href')).toBe('#/experiments/e_head');
+    expect(w.get('[data-test="latest-result"] a').attributes('href')).toBe('#/experiments/e_rep');
     w.unmount();
+  });
+});
+
+describe('ExperimentsView: filters and the figure (QA, 7 Nov)', () => {
+  const done = (experiments as { id: string }[]).find((e) => e.id === 'exp_heldout') as Record<string, unknown>;
+  const detail = (details as Record<string, Record<string, unknown>>).exp_heldout;
+  const compare = compares.exp_heldout as unknown as { stats: Record<string, unknown> };
+
+  it('gives a stopped run a filter of its own, so it shows under one of them', async () => {
+    const stopped = { ...done, id: 'e_stop', status: 'cancelled', finished_at: null, name: 'Stopped run' };
+    routeFetch({
+      '/api/experiments': [stopped, done],
+      '/api/configs': configs,
+      '/api/harnesses': [],
+      '/api/labels/queue?set=heldout': [],
+      '/api/labels/queue?set=tuning': [],
+      '/api/experiments/exp_heldout/compare': compare,
+      '/api/experiments/exp_heldout': detail,
+    });
+    const w = mount(ExperimentsView);
+    await settle();
+    const names = () => w.findAll('[data-test="experiment-row"] .row-link').map((a) => a.text());
+    const filter = w.get('[data-test="show-filter"]');
+    expect(filter.findAll('option').map((o) => o.text())).toEqual(['All', 'Running', 'Finished', 'Stopped or cancelled']);
+    await filter.setValue('stopped');
+    expect(names()).toEqual(['Stopped run']);
+    expect(w.get('[data-test="experiment-row"] [data-test="status"]').text()).toBe('Cancelled');
+    await filter.setValue('done');
+    expect(names()).not.toContain('Stopped run');
+    await filter.setValue('running');
+    expect(names()).not.toContain('Stopped run');
+  });
+
+  it('keeps the figure inside -100 to +100 points: no "+110" tick for an interval up to +100', async () => {
+    routeFetch({
+      '/api/experiments': [done],
+      '/api/configs': configs,
+      '/api/harnesses': [],
+      '/api/labels/queue?set=heldout': [],
+      '/api/labels/queue?set=tuning': [],
+      '/api/experiments/exp_heldout/compare': { ...compare, stats: { ...compare.stats, diff: { estimate: 50, low: 0, high: 100 }, aa: null } },
+      '/api/experiments/exp_heldout': detail,
+    });
+    const w = mount(ExperimentsView);
+    await settle();
+    const ticks = w.get('[data-test="latest-result"] svg[role="img"]').findAll('text.tick:not(.row-label)').map((t) => t.text());
+    expect(ticks).toContain('+100');
+    expect(ticks).not.toContain('+110');
   });
 });
 

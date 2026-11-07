@@ -497,7 +497,8 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   queued or running), `paused`, `stopped` (some of its trials were cancelled) or `complete`
   (every slot has a final attempt: done, or an infra failure that is not re-queued).
 - `GET /experiments` returns `[{id, name, axis, status, config_hashes, n, counts, spend_usd,
-  estimate, created_at, example}]`, where `counts` is `{queued, running, done, infra_failed,
+  estimate, created_at, finished_at, example}]` (newest made first; `finished_at`, on the list
+  since 7 Nov, is null until the run is done), where `counts` is `{queued, running, done, infra_failed,
   abandoned, cancelled}` and done is split by label. `example` is `{name, title, loaded_at}` for
   a shipped example loaded with `POST /examples/:name/load` (sample content, read-only; see
   Shipped examples below) and null for your own experiments; the detail has it too.

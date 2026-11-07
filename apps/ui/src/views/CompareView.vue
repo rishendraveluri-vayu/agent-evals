@@ -353,7 +353,8 @@ const hero = computed(() => {
   const s = stats.value;
   if (!s) return null;
   const values = [s.diff.low, s.diff.high, ...(s.aa ? [s.aa.diff.low, s.aa.diff.high] : [])];
-  const [min, max] = domainFor(values, -20, 30);
+  // A pass-rate difference lies between -100 and +100 points: no tick past either.
+  const [min, max] = domainFor(values, -20, 30, 100);
   const level = Math.round(s.level * 100);
   const [a, b] = arms.value;
   const name = a && b && a.short !== b.short ? `${b.short} minus ${a.short}` : 'B minus A';

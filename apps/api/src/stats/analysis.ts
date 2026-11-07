@@ -523,7 +523,8 @@ export function analyse(input: AnalysisInput, options: AnalysisOptions = {}): An
   }
   if (!eligible.length) {
     const n = input.tasks.length;
-    return { stats: null, note: `No task has a decided trial (a pass or a fail) in both arms, so there is nothing to compare${n ? `: all ${n} ${n === 1 ? 'task is' : 'tasks are'} left out` : ''}.` };
+    const left = n === 1 ? 'its one task is left out' : `all ${n} tasks are left out`;
+    return { stats: null, note: `No task has a decided trial (a pass or a fail) in both arms, so there is nothing to compare${n ? `: ${left}` : ''}.` };
   }
 
   // The aggregate: mean over tasks of B - A, task bootstrap interval, sign-flip test.

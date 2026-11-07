@@ -210,7 +210,10 @@ describe('analyse: incomplete trials and one-arm-empty tasks', () => {
   it('gives no statistics, with a note, when no task has a decided trial in both arms', () => {
     const r = analyse({ seed: 'e_0', tasks: [{ task: 'sha256:x', task_id: 'x', trials: [trial('x-a', 'A', 'pass'), trial('x-b', 'B', 'incomplete')] }] });
     expect(r.stats).toBeNull();
-    expect(r.note).toBe('No task has a decided trial (a pass or a fail) in both arms, so there is nothing to compare: all 1 task is left out.');
+    // One task: "its one task", never "all 1 task" (QA, 7 Nov).
+    expect(r.note).toBe('No task has a decided trial (a pass or a fail) in both arms, so there is nothing to compare: its one task is left out.');
+    const two = analyse({ seed: 'e_0', tasks: ['x', 'y'].map((id) => ({ task: `sha256:${id}`, task_id: id, trials: [trial(`${id}-a`, 'A', 'pass'), trial(`${id}-b`, 'B', 'incomplete')] })) });
+    expect(two.note).toBe('No task has a decided trial (a pass or a fail) in both arms, so there is nothing to compare: all 2 tasks are left out.');
   });
 });
 

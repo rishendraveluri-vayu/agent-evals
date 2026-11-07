@@ -437,6 +437,8 @@ export interface ExperimentSummary {
   estimate: Estimate;
   budget_usd: number;
   created_at: string;
+  /** When its last trial finished (status `done`); null while it runs and for a stopped run. On the list since 7 Nov, so the latest result can be the latest finished. */
+  finished_at: string | null;
   /** D44: an A/A calibration run (one config on both arms), to measure the setup's own noise. */
   calibration: boolean;
   /**
@@ -570,7 +572,6 @@ export interface ExperimentDetail extends ExperimentSummary {
   actual: ActualSoFar | null;
   budgets: { trial_usd: number; sim_usd: number };
   started_at: string | null;
-  finished_at: string | null;
   /**
    * When and why the whole experiment last paused (by hand, the futility check or a guard, D32);
    * null if never. A config error pauses only its arm (D37): see `arms`.

@@ -154,6 +154,11 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
     for (let c = await e.claim('w-ce'); c; c = await e.claim('w-ce')) await e.report(c, 'w-ce');
     const done = (await request(env.http).get(`/api/experiments/${exp.id}/compare`).expect(200)).body as { status: string; rows: { arm: string; trials: number; infra_failed: number }[] };
     expect(done.status).toBe('complete');
+    // The list carries when it finished, as the detail does (QA, 7 Nov: the latest result is the latest finished).
+    const finished = (await e.detail(exp.id)).finished_at;
+    expect(finished).toEqual(expect.any(String));
+    const listed = ((await request(env.http).get('/api/experiments').expect(200)).body as { id: string; finished_at: string | null }[]).find((x) => x.id === exp.id);
+    expect(listed?.finished_at).toBe(finished);
     // The config error is kept and shown, never dropped (CLAUDE.md).
     expect(done.rows.map((r) => [r.arm, r.trials, r.infra_failed]).sort()).toEqual([
       ['A', bad === A ? 2 : 3, bad === A ? 1 : 0],
@@ -173,6 +178,9 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
       /^the experiment was stopped before every trial ran \(1 of arm A's trials cancelled\); arm A had paused before the stop: emi-basic on arm A, attempt 1: infra:config_error \(LiteLLM status 400\).*; a verdict needs the full planned N \(D32\)$/,
     );
     expect(compare.reason).not.toMatch(/arm A is paused/);
+    // A stopped run never finished.
+    const listed = ((await request(env.http).get('/api/experiments').expect(200)).body as { id: string; finished_at: string | null }[]).find((x) => x.id === exp.id);
+    expect(listed?.finished_at).toBeNull();
   });
 
   it('pauses and resumes one arm by hand, by its hash or its letter', async () => {

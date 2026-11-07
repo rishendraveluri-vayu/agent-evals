@@ -331,25 +331,15 @@ export function fakeOnly(e: Pick<ExperimentSummary, 'config_hashes'>, configs: C
 }
 
 /**
- * The finished A/B the Experiments page leads with, from `finished` (newest first) that `ready`
- * accepts. The shipped headline example (`pinned`: the one the front door opens, the first in GET
- * /examples) leads while it is here, unless a run of your own is newer; without it, the newest run.
- * A run on fake models only never leads: its pass rates test the platform, not an agent. `shipped`
- * names the shipped example an experiment is (its `example` field, or its id in GET /examples on
- * the machine the example was exported from, where the run is its own); null for your own.
+ * The finished A/B the Experiments page leads with: of `finished` (newest made first) that `ready`
+ * accepts, the one that finished last, by its `finished_at` (else when it was made); on a tie, the
+ * one made last. A shipped example competes like any run: the page says "Latest result", and the
+ * shipped headline led though the model-axis run and runs of your own finished after it (QA,
+ * 7 Nov). A run on fake models only never leads: its pass rates test the platform, not an agent.
  */
-export function pickLatest(
-  finished: ExperimentSummary[],
-  configs: ConfigView[],
-  shipped: (e: ExperimentSummary) => string | null,
-  ready: (e: ExperimentSummary) => boolean,
-  pinned: string = HEADLINE_EXAMPLE,
-): ExperimentSummary | null {
-  const real = finished.filter((e) => ready(e) && !fakeOnly(e, configs));
-  const headline = real.find((e) => shipped(e) === pinned);
-  const own = real.find((e) => !shipped(e));
-  if (headline) return own && Date.parse(own.created_at) > Date.parse(headline.created_at) ? own : headline;
-  return real[0] ?? null;
+export function pickLatest(finished: ExperimentSummary[], configs: ConfigView[], ready: (e: ExperimentSummary) => boolean): ExperimentSummary | null {
+  const at = (e: ExperimentSummary) => Date.parse(e.finished_at ?? e.created_at);
+  return finished.filter((e) => ready(e) && !fakeOnly(e, configs)).reduce<ExperimentSummary | null>((best, e) => (!best || at(e) > at(best) ? e : best), null);
 }
 
 /** "v2 beats v1": the same verbs as headline(), with each arm's short name. */

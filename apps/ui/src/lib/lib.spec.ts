@@ -143,6 +143,10 @@ describe('scale', () => {
     expect(domainFor([7, 23, -7, 9], -20, 30)).toEqual([-20, 30]);
     expect(domainFor([2, 31], -15, 25)).toEqual([-20, 40]);
     expect(domainFor([-43, 12], -20, 30)).toEqual([-50, 30]);
+    // A limit keeps it inside what the values can be: 0 to +100 points never reaches +110 (QA, 7 Nov).
+    expect(domainFor([0, 100, 50], -20, 30)).toEqual([-20, 110]);
+    expect(domainFor([0, 100, 50], -20, 30, 100)).toEqual([-20, 100]);
+    expect(domainFor([-100, -96], -20, 30, 100)).toEqual([-100, 30]);
   });
 
   it('gives evenly spaced ticks every 10 points, zero named and no unit on any tick', () => {
@@ -274,24 +278,26 @@ describe('arms', () => {
     expect(headline({ verdict: 'better' }, byHarness, tasks, { axis: 'harness' })).toBe('Hermes Agent beats Own loop on the held-out tasks, with Claude Haiku 5.5');
   });
 
-  it('leads with the shipped headline unless a run of your own is newer, and never with a run on fake models only (destructive review U2)', () => {
+  it('leads with the run that finished last, shipped or your own, and never with a run on fake models only (QA, 7 Nov; destructive review U2)', () => {
     const real = [config({}), config({ hash: 'sha256:7f3a9c2bbbb', prompt: { id: 'finance-advisor', version: 'v2', sha256: 'sha256:p2' } })];
     const fake = real.map((c, i) => ({ ...c, hash: `sha256:fa${i}`, model: 'fake/finance-emi' }));
     const configs = [...real, ...fake];
-    const exp = (id: string, created: string, hashes = real.map((c) => c.hash)) => ({ id, created_at: created, config_hashes: hashes }) as unknown as Parameters<typeof pickLatest>[0][number];
-    const shipped: Record<string, string> = { rep: 'replication-langgraph-prompt-v1-vs-v2', ctl: 'positive-control-calculators-down', head: 'headline-prompt-v1-vs-v2' };
-    const name = (e: { id: string }) => shipped[e.id] ?? null;
+    const exp = (id: string, created: string, finished: string | null, hashes = real.map((c) => c.hash)) => ({ id, created_at: created, finished_at: finished, config_hashes: hashes }) as unknown as Parameters<typeof pickLatest>[0][number];
     const all = () => true;
-    // The five shipped results, newest first: the replications and the control were made after the headline.
-    const examples = [exp('rep', '2026-11-05T09:43:08Z'), exp('ctl', '2026-11-05T09:25:19Z'), exp('head', '2026-11-05T07:32:29Z')];
-    expect(pickLatest(examples, configs, name, all)?.id).toBe('head');
-    // A run of your own on fake models, newer: still the headline.
-    expect(pickLatest([exp('mine-fake', '2026-11-06T10:00:00Z', fake.map((c) => c.hash)), ...examples], configs, name, all)?.id).toBe('head');
-    // A run of your own on a real model, newer: yours.
-    expect(pickLatest([exp('mine', '2026-11-06T10:00:00Z'), ...examples], configs, name, all)?.id).toBe('mine');
-    // Only results the page can show count; without the headline, the newest real one.
-    expect(pickLatest(examples, configs, name, (e) => e.id !== 'head')?.id).toBe('rep');
-    expect(pickLatest([exp('mine-fake', '2026-11-06T10:00:00Z', fake.map((c) => c.hash))], configs, name, all)).toBeNull();
+    // Shipped results as a fresh clone lists them, newest made first: the model axis finished last.
+    const examples = [exp('axis', '2026-11-06T13:28:51Z', '2026-11-06T14:15:30Z'), exp('rep', '2026-11-05T09:43:08Z', '2026-11-05T10:19:51Z'), exp('head', '2026-11-05T07:32:29Z', '2026-11-05T08:05:59Z')];
+    expect(pickLatest(examples, configs, all)?.id).toBe('axis');
+    // By when each finished, not when it was made: a run made first but finished last leads.
+    expect(pickLatest([exp('quick', '2026-11-06T13:30:00Z', '2026-11-06T13:40:00Z'), exp('slow', '2026-11-06T09:00:00Z', '2026-11-06T15:00:00Z')], configs, all)?.id).toBe('slow');
+    // A run of your own on fake models, finished later: never.
+    expect(pickLatest([exp('mine-fake', '2026-11-07T10:00:00Z', '2026-11-07T10:05:00Z', fake.map((c) => c.hash)), ...examples], configs, all)?.id).toBe('axis');
+    // A run of your own on a real model, finished later: yours.
+    expect(pickLatest([exp('mine', '2026-11-07T10:00:00Z', '2026-11-07T10:30:00Z'), ...examples], configs, all)?.id).toBe('mine');
+    // Only results the page can show count.
+    expect(pickLatest(examples, configs, (e) => e.id !== 'axis')?.id).toBe('rep');
+    // With no finish time, when it was made.
+    expect(pickLatest([exp('old', '2026-11-05T07:00:00Z', null), exp('new', '2026-11-05T08:00:00Z', null)], configs, all)?.id).toBe('new');
+    expect(pickLatest([exp('mine-fake', '2026-11-06T10:00:00Z', null, fake.map((c) => c.hash))], configs, all)).toBeNull();
     expect(fakeOnly({ config_hashes: [fake[0].hash, real[0].hash] }, configs)).toBe(false);
     expect(fakeOnly({ config_hashes: ['sha256:unknown'] }, configs)).toBe(false);
   });

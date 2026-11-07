@@ -20,11 +20,12 @@ export function verdictTone(verdict: string): StripRow['tone'] {
 }
 
 /** A range that holds every value, padded by 5 and snapped outward to multiples of ten, and never
- *  narrower than [floor, ceil]. */
-export function domainFor(values: number[], floor: number, ceil: number): [number, number] {
-  const lo = Math.min(floor, Math.min(...values) - 5);
-  const hi = Math.max(ceil, Math.max(...values) + 5);
-  return [Math.floor(lo / 10) * 10, Math.ceil(hi / 10) * 10];
+ *  narrower than [floor, ceil]. With `limit`, it never reaches past ±limit, the most a value can be
+ *  (100 points for a pass-rate difference). */
+export function domainFor(values: number[], floor: number, ceil: number, limit?: number): [number, number] {
+  const lo = Math.floor(Math.min(floor, Math.min(...values) - 5) / 10) * 10;
+  const hi = Math.ceil(Math.max(ceil, Math.max(...values) + 5) / 10) * 10;
+  return limit === undefined ? [lo, hi] : [Math.max(-limit, lo), Math.min(limit, hi)];
 }
 
 /** A tick on an IntervalStrip axis. `short` stands in for `label` when the axis is too narrow to

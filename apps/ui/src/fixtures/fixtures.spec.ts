@@ -17,9 +17,9 @@ const FIELDS = {
     'hash', 'name', 'harness', 'harness_ref', 'adapter_version', 'capabilities_sha256', 'model', 'prompt', 'toolset', 'settings', 'settings_sources',
     'unsupported', 'warnings', 'harness_options', 'seed', 'parent_hash', 'example_only', 'created_at',
   ],
-  summary: ['id', 'name', 'axis', 'status', 'config_hashes', 'task_sha256s', 'n', 'counts', 'spend_usd', 'estimate', 'budget_usd', 'created_at', 'calibration', 'example'],
+  summary: ['id', 'name', 'axis', 'status', 'config_hashes', 'task_sha256s', 'n', 'counts', 'spend_usd', 'estimate', 'budget_usd', 'created_at', 'finished_at', 'calibration', 'example'],
   detailExtra: [
-    'sim_model', 'sim', 'platform_commit', 'platform_commit_source', 'plan_commit', 'budgets', 'started_at', 'finished_at', 'order_seed', 'futility', 'parent_experiment_id',
+    'sim_model', 'sim', 'platform_commit', 'platform_commit_source', 'plan_commit', 'budgets', 'started_at', 'order_seed', 'futility', 'parent_experiment_id',
     'baseline', 'actual', 'paused_at', 'paused_reason', 'arms', 'tasks', 'configs', 'events', 'judge',
   ],
   counts: ['queued', 'running', 'done', 'infra_failed', 'abandoned', 'cancelled', 'by_label', 'done_by_end_state'],

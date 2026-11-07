@@ -772,6 +772,7 @@ export class ExperimentsService {
       estimate: r.estimate,
       budget_usd: r.budget_usd,
       created_at: r.created_at.toISOString(),
+      finished_at: iso(r.finished_at),
       calibration: r.calibration,
       example:
         r.example_name !== null
@@ -814,7 +815,6 @@ export class ExperimentsService {
       actual: await this.actual(r),
       budgets: { trial_usd: r.trial_budget_usd, sim_usd: r.sim_budget_usd },
       started_at: iso(r.started_at),
-      finished_at: iso(r.finished_at),
       paused_at: iso(r.paused_at),
       paused_reason: r.paused_reason,
       arms,
