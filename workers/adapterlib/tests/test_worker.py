@@ -33,6 +33,7 @@ from worker_support import (
 
 from evals_adapter.fake_api import FAKE_WORKER_TOKEN, FakeWorkerApi, make_claim, spend_row
 from evals_adapter.proxy import ProxyError
+from evals_adapter.source_hash import source_sha256
 from evals_adapter.worker import (
     ApiClient,
     ApiProxyClient,
@@ -99,7 +100,12 @@ def test_claim_run_upload_report(tmp_path, api):
     assert worker.outcomes == [("t_test_0001", 1, "reported")]
 
     (claim_req,) = api.requests("claim")[:1]
-    assert claim_req["body"] == {"worker_id": "w-test", "harness": "scripted"}
+    # The scripted fixture is a script, not a module, so it has no adapter code hash (D85).
+    assert claim_req["body"] == {
+        "worker_id": "w-test",
+        "harness": "scripted",
+        "adapter_sha256": None,
+    }
     (body,) = api.reports()
     assert body["worker_id"] == "w-test" and body["attempt"] == 1
     report = body["runner_report"]
@@ -199,6 +205,28 @@ def test_idle_204_backs_off_with_jitter_and_resets_after_a_claim(tmp_path, api):
         ceiling = min(4.0, 2.0**n)
         assert ceiling / 2 <= value <= ceiling
     assert len(set(samples)) == len(samples)
+
+
+def test_every_claim_carries_the_hash_of_the_adapter_code_the_worker_runs(tmp_path, api):
+    """D85: worked out once at startup from the packages the adapter's interpreter imports (here
+    a harness package on PYTHONPATH, as in the Hermes image), and sent with each claim."""
+    pkg = tmp_path / "src" / "fake_harness"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("")
+    (pkg / "adapter.py").write_text("import runpy\n")
+    (pkg / "capabilities.json").write_text("{}\n")
+    cmd = ["env", f"PYTHONPATH={tmp_path / 'src'}", sys.executable, "-m", "fake_harness.adapter"]
+    library = Path(__file__).resolve().parents[1] / "src" / "evals_adapter"
+    api.claims += [204, 204]
+    worker = Worker(config(tmp_path, api, cmd=cmd))
+    worker.serve(exit_on_idle=True)
+    expected = source_sha256([pkg, library])
+    assert worker.adapter_sha256 == expected
+    (claim_req,) = api.requests("claim")
+    assert claim_req["body"]["adapter_sha256"] == expected
+    # An edit to the harness package is a different hash when a worker next starts.
+    (pkg / "adapter.py").write_text("import runpy  # changed\n")
+    assert Worker(config(tmp_path, api, cmd=cmd)).adapter_code() not in (None, expected)
 
 
 def test_claim_lost_kills_the_trial_and_reports_nothing(tmp_path, api):

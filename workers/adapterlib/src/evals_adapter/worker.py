@@ -5,6 +5,8 @@ serves one harness and runs one trial at a time in the fixed folder /trial, so e
 can carry (home, cwd, HERMES_HOME) is the same in every trial:
 
 1. Claim: POST /worker/claim. 204 means nothing is queued for this harness: back off with jitter.
+   Every claim carries the hash of the adapter code this worker runs (D85, `source_hash.py`),
+   worked out once at startup; the API stores it on the trial it hands out.
 2. Run: `run_trial` with an `ApiProxyClient`. The trial's keys arrive in the claim and LiteLLM's
    records of its calls come through the API, so the worker never holds the master key or a
    provider key (D2, R10.3).
@@ -63,6 +65,7 @@ from evals_adapter.runner import (
     kill_all,
     run_trial,
 )
+from evals_adapter.source_hash import SourceHashError, adapter_source_sha256
 from evals_adapter.spec import DEFAULT_TRIAL_DIR, TRIAL_DIR_ENV, TrialPaths
 
 TRIAL_ROOT = Path(DEFAULT_TRIAL_DIR)
@@ -170,9 +173,14 @@ class ApiClient:
     def _trial(trial_id: str) -> str:
         return "/worker/trials/" + urllib.parse.quote(trial_id, safe="")
 
-    def claim(self, worker_id: str, harness: str) -> dict[str, Any] | None:
+    def claim(
+        self, worker_id: str, harness: str, adapter_sha256: str | None = None
+    ) -> dict[str, Any] | None:
+        """`adapter_sha256` is the adapter code's hash (D85), null when the worker has none."""
         status, body = self.request(
-            "POST", "/worker/claim", {"worker_id": worker_id, "harness": harness}
+            "POST",
+            "/worker/claim",
+            {"worker_id": worker_id, "harness": harness, "adapter_sha256": adapter_sha256},
         )
         if status == 204:
             return None
@@ -669,6 +677,8 @@ class Worker:
         self._sleep = sleep or self._stop.wait  # a shutdown cuts a back-off short
         self._rand = rand or random.random
         self._control: TrialControl | None = None
+        # D85: the hash of the adapter code this worker runs, worked out when it starts serving.
+        self.adapter_sha256: str | None = None
         self.handled = 0
         self.outcomes: list[tuple[str, Any, str]] = []  # (trial_id, attempt, outcome)
 
@@ -697,12 +707,13 @@ class Worker:
             f"trial folder {self.paths.root}, isolation {self.cfg.isolation}"
         )
         self.clean()  # a crashed predecessor may have left processes or files
+        self.adapter_sha256 = self.adapter_code()
         idle = 0
         while not self._stop.is_set():
             if max_trials is not None and self.handled >= max_trials:
                 break
             try:
-                claim = self.api.claim(self.cfg.worker_id, self.cfg.harness)
+                claim = self.api.claim(self.cfg.worker_id, self.cfg.harness, self.adapter_sha256)
             except (NetworkError, ApiError) as exc:
                 log(f"claim failed: {exc}")
                 self._sleep(self.idle_backoff_s(idle))
@@ -719,6 +730,30 @@ class Worker:
             self.handled += 1
         log(f"worker {self.cfg.worker_id} stopping after {self.handled} trial(s)")
         return 0
+
+    def adapter_code(self) -> str | None:
+        """D85: the sha256 of the adapter code this worker runs, or None, said in the log.
+
+        The packages are found by the adapter's own interpreter, started as the runner starts the
+        adapter (the same command up to `-m`, a clean environment, an empty working folder), so
+        the hash covers the files a trial imports (`source_hash.py`). A command that runs no
+        module, such as a test fixture script, gets no hash: its trials say it was not recorded.
+        """
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "LANG": "C.UTF-8",
+            "HOME": str(self.paths.home),
+            "TMPDIR": str(self.paths.tmp),
+            "PYTHONDONTWRITEBYTECODE": "1",
+        }
+        cwd = self.paths.root if self.paths.root.is_dir() else None  # serve() has just wiped it
+        try:
+            digest, packages = adapter_source_sha256(self.cfg.adapter_cmd, env=env, cwd=cwd)
+        except SourceHashError as exc:
+            log(f"adapter code hash: none, so this worker's trials record none ({exc})")
+            return None
+        log(f"adapter code hash {digest}, over {', '.join(str(p) for p in packages)}")
+        return digest
 
     def heartbeat_s(self, claim: Mapping[str, Any]) -> float:
         lease = claim.get("lease_s")

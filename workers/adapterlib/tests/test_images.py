@@ -34,6 +34,7 @@ from evals_adapter.fake_api import (
     make_claim,
     rows_from_fake_requests,
 )
+from evals_adapter.source_hash import source_sha256
 
 HARNESSES = {
     "ownloop": "ownloop",
@@ -187,6 +188,16 @@ def test_a_real_trial_in_the_image(harness, tmp_path, fake):
     assert report["adapter"]["leftover_processes"] >= 0
     assert (folder / "runner-report.json").is_file()
     assert sorted(api.stored(f"t_img_{harness}")) == [row["path"] for row in body["files"]]
+    # D85: every claim named the adapter code in the image, which hashes as this checkout's
+    # source does (an image built before a source edit fails here: rebuild it).
+    code = source_sha256(
+        [
+            REPO / "workers" / harness / "src" / HARNESSES[harness],
+            REPO / "workers" / "adapterlib" / "src" / "evals_adapter",
+        ]
+    )
+    sent = [c["body"].get("adapter_sha256") for c in api.requests("claim")]
+    assert sent and sent == [code] * len(sent), (sent, code, proc.stderr[-2000:])
 
 
 @pytest.fixture(scope="module", params=list(HARNESSES))

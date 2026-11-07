@@ -330,6 +330,11 @@ The trial folder is transport only. Before wiping it, the runner uploads everyth
 - **every span**, indexed by trial, span name, tool name and status, so the UI can draw the timeline and plot spend and latency without re-reading files;
 - **artifacts:** full stdout and stderr, request and response bodies, and harness files, stored by content hash and referenced from spans. Logs are capped at 50 MB, and anything cut is flagged as truncated.
 - **Nothing is ever deleted or overwritten** (CLAUDE.md). A re-run is a new attempt row.
+- **Which adapter code ran it (D85, 7 Nov):** the trial row's `adapter_sha256`. The worker works it out once at startup (`evals_adapter/source_hash.py`) and sends it with every claim (`docs/api-contract.md`, worker protocol step 1):
+  - It asks the adapter's own interpreter where the harness package and `evals_adapter` are: the adapter command up to its `-m`, then a short `-c` script calling `importlib.util.find_spec` for both (which imports neither), in the clean environment and empty working folder the runner gives the adapter. So the packages are the ones a trial imports: on Hermes's `PYTHONPATH` in the Hermes image, in `/opt/harness`'s site-packages in the others, in the source tree under `uv sync` on a dev machine.
+  - It hashes every `.py` file and `capabilities.json` in them (no `__pycache__`, no symlinks): the sha256 of a sorted `sha256sum`-style listing, one `<sha256>  <package>/<path>` line per file. Paths are relative to each package's parent and file times are not read, so a checkout gives the same hash as an image built from it: `python -m evals_adapter.source_hash workers/<harness>/src/<package> workers/adapterlib/src/evals_adapter` (`--list` prints the listing).
+  - **An adapter command must therefore run a module**, `... python -m <package>.<module>`, as every worker image's and the scaffold's do. A command that runs a script file (the test fixtures) gets no hash; the worker logs that and sends null, and runs trials all the same.
+  - The hash is not in the config hash, so editing an adapter changes no config hash; it changes the hash its trials record.
 
 The exact tables are SP2's data model, **[Rishi designs]**.
 

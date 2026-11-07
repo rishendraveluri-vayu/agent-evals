@@ -2,6 +2,7 @@
 fake model server (as the gate tests do), upload, report. No real model is called."""
 
 import sys
+from pathlib import Path
 
 import pytest
 from evals_adapter.fake_api import (
@@ -11,9 +12,12 @@ from evals_adapter.fake_api import (
     rows_from_fake_requests,
 )
 from evals_adapter.gate import CLIENT_EXAMPLE, FakeServer
+from evals_adapter.source_hash import source_sha256
 from evals_adapter.trace import attr_dict
 from evals_adapter.worker import Worker, WorkerConfig, files_manifest
 from test_gate import GATE
+
+WORKERS = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture(scope="module")
@@ -56,6 +60,11 @@ def test_worker_claims_runs_and_reports_a_real_trial(tmp_path, fake):
     finally:
         api.close()
     assert worker.outcomes == [("t_worker_1", 1, "reported")]
+    # D85: the claim named the adapter code that ran: this checkout's own loop and library.
+    code = source_sha256(
+        [WORKERS / "ownloop" / "src" / "ownloop", WORKERS / "adapterlib" / "src" / "evals_adapter"]
+    )
+    assert [c["body"]["adapter_sha256"] for c in api.requests("claim")] == [code, code]
     (body,) = api.reports()
     report, result = body["runner_report"], body["result"]
     assert report["label"] == "agent", report
