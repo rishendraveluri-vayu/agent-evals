@@ -1055,7 +1055,7 @@ What the API refuses or rewrites since the review's fixes (`docs/destructive-rev
   clamped to 2,147,483,647; a span kind or status outside its range gets the default; an
   `end_state` longer than 64 characters is cut and named in `problems`.
 - **Run state:** every route that changes an experiment's trials locks the experiment row first and
-  reads its status from it (lock order in `apps/api/src/worker/run-state.ts`).
+  reads its status from it (lock order in `apps/api/src/experiments/run-state.ts`).
 - **Labels:** `POST /labels` refuses a trial the queue would not offer (a fake model's, a probe, a
   shipped example's, one without an agent result) with 400 `not_labellable`, and a trial labelled in
   another set with 400 `wrong_set`. A line of `labels/<set>.jsonl` that is not a JSON object, lacks

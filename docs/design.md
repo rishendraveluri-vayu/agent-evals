@@ -337,8 +337,9 @@ Decided (D10 as revised 5 Nov, D41, D42, D43, D44, D50; the proposal is `docs/pr
 - **The critical-failure guardrail (D10).** Each grader may carry a severity (critical, major or
   minor) in its task file, set by Rishi; it never changes a verdict. Per task with a required
   critical check, the critical-failure rate is the share of decided trials where such a check
-  failed; B minus A gets the same task bootstrap. B is never called better while that interval
-  lies above 0: the verdict is then *held back* ("not called better: critical failures rose"),
+  failed; B minus A gets the same task bootstrap. B is never called better while critical failures
+  rose beyond noise (that interval above 0, p < 0.05, and at least 6 tasks whose critical-failure
+  rates differ): the verdict is then *held back* ("not called better: critical failures rose"),
   shown beside the verdict either way, in words that give each arm's own count first ("A failed a
   critical check in 16 of 16 decided trials, B in 16 of 16"), then B minus A, so a difference of 0
   never reads as no critical failures. With no check marked critical, the comparison says so
