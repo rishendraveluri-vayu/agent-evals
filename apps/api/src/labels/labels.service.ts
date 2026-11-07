@@ -179,8 +179,8 @@ export class LabelsService {
       if (v !== undefined && typeof v !== 'string') throw badRequest('invalid_query', `give ${name} once`, `Send one ${name} parameter${name === 'items' ? ', with the trial ids comma-separated' : ''}.`);
     }
     const experimentId = experimentInput as string | undefined;
-    // D83: `calibrate=1` orders one experiment's items by the judge's current verdict, its passes and
-    // fails early and in balance, in a random order (byJudgeVerdict).
+    // D83: `calibrate=1` gives only a balanced block of one experiment's items, k of the judge's
+    // current passes and k of its fails, in a random order (byJudgeVerdict).
     if (calibrateInput !== undefined && !['', '0', '1', 'false', 'true'].includes(calibrateInput as string)) {
       throw badRequest('invalid_query', 'calibrate must be 1 or 0', 'Send calibrate=1 to put the judge’s passes and fails early and in balance, or leave it out.');
     }
@@ -254,16 +254,18 @@ export class LabelsService {
       if (!criteria.length) continue;
       list.push({ item_id: r.id, task_summary: r.summary, transcript: transcriptOf(r.result), tool_calls: await this.toolCalls(r.id), criteria, second_look: secondLook });
     }
-    return [...(calibrate ? await this.byJudgeVerdict(fresh) : fresh), ...again];
+    // Calibrating, the queue is the balanced block alone: second looks, the rest of the larger kind
+    // and items with no verdict come in the usual queue, so no position gives a verdict away.
+    return calibrate ? await this.byJudgeVerdict(fresh) : [...fresh, ...again];
   }
 
   /**
-   * D83: the fresh items reordered by the judge's current `overall` verdict (calibrationOrder): as
-   * many of its passes as its fails first, in a random order drawn on every call, then the rest of
-   * the larger kind, shuffled, then the items it gave no yes or no on. A rater who labels from the
-   * top sees both kinds early, so the judge's false passes and false fails both get labels, and no
-   * position tells a pass from a fail (strict alternation did, review 7 Nov). The verdict is only
-   * used to order: the items stay blind.
+   * D83: a balanced block of the fresh items by the judge's current `overall` verdict
+   * (calibrationOrder): k of its passes and k of its fails, k the smaller count, in a random order
+   * drawn on every call, and nothing else. The judge's false passes and false fails both get
+   * labels, and no position tells a pass from a fail (strict alternation did, and so did the
+   * leftover of the larger kind after the block, review 7 Nov). The verdict only picks and orders:
+   * the items stay blind.
    */
   private async byJudgeVerdict(items: LabelQueueItem[]): Promise<LabelQueueItem[]> {
     if (!items.length) return items;

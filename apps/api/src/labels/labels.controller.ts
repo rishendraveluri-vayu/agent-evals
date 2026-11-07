@@ -9,7 +9,7 @@ export class LabelsController {
 
   /**
    * Blind items for a rater to label (D73): no harness, model, arm, timing, cost or grade.
-   * D83: `calibrate=1` (with `experiment`) puts the judge's passes and fails early and in balance, in a random order, still blind.
+   * D83: `calibrate=1` (with `experiment`) gives only a balanced block, k of the judge's passes and k of its fails, in a random order, still blind.
    */
   @Get('labels/queue')
   queue(

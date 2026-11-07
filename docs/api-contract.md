@@ -1186,17 +1186,19 @@ no model and never changes a grade or a verdict.
   most 50, with `judge_reason` the evidence item's `reason`, else its `quote`. Trust never changes
   a grade or a verdict: a judge criterion counts only when its task makes it required (D8, D63).
   The result is cached until a label, a finished grading job or an experiment's arms change.
-- **Calibrating.** `GET /labels/queue?set=&experiment=<id>&calibrate=1` orders that experiment's
-  fresh items by the judge's current `overall` verdict, so both kinds come early and in balance
-  without the position giving the verdict away: with k the smaller of its pass and fail counts,
-  k passes and k fails drawn at random and shuffled together, then the rest of the larger kind,
-  shuffled, then the items it has no yes or no on, in the queue's own order; second looks (D46)
-  still come last. The order is drawn afresh (crypto random) on every call. (Until the 7 Nov
-  review it alternated pass, fail, pass, so positions 1, 3 and 5 were the judge's passes.) The
-  verdict is the first `overall` yes or no among the trial's current judge grades. It is used
-  only to order: the blind item never carries it. `calibrate` takes `1` or `true` (on), `0`,
-  `false` or empty (off); anything else, a repeated `calibrate`, or `calibrate` without
-  `experiment` is a 400 `invalid_query`.
+- **Calibrating.** `GET /labels/queue?set=&experiment=<id>&calibrate=1` answers only a balanced
+  block of that experiment's fresh items, by the judge's current `overall` verdict: with k the
+  smaller of its pass and fail counts, k passes and k fails drawn at random and shuffled together,
+  2k items and nothing else. The rest of the larger kind, the items it has no yes or no on, and
+  second looks (D46) are left out; the usual queue (the same call without `calibrate`) offers them.
+  So no position gives the verdict away. k is 0, and the answer `[]`, when the judge gave only one
+  kind (or no verdict yet). The block is drawn afresh (crypto random) on every call. (Until the 7
+  Nov review it alternated pass, fail, pass, so positions 1, 3 and 5 were the judge's passes; then,
+  until the second 7 Nov review, the rest of the larger kind followed the block, so every item
+  after it was, say, a pass.) The verdict is the first `overall` yes or no among the trial's
+  current judge grades. It only picks and orders: the blind item never carries it. `calibrate`
+  takes `1` or `true` (on), `0`, `false` or empty (off); anything else, a repeated `calibrate`, or
+  `calibrate` without `experiment` is a 400 `invalid_query`.
 - **The comparison's `stats.judge`** is filled from the held-out figures of the `overall` criterion
   of the experiment's judge (the one with the most current grades on its trials): `{kappa, low,
   high, bar, tasks, status, summary, reasons}`, `bar` being D8's 0.6, `tasks` the held-out tasks

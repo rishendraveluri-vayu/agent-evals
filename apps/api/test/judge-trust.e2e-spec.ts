@@ -340,7 +340,7 @@ describeWithDb('judge trust (D83, e2e, real Postgres)', () => {
     expect(cmp.stats!.judge!.reasons[0]).toBe('4 human "no" labels, fewer than 5');
   });
 
-  it('orders an experiment’s queue by the judge’s verdict to calibrate it, both kinds early and in balance, at random, and keeps the items blind', async () => {
+  it('gives only a balanced block of an experiment’s outputs to calibrate its judge, at random, and keeps the items blind', async () => {
     const exp = await run([A], ['trust-tune'], 6);
     const verdictOf = new Map(exp.trials.map((x) => [x.id, x.repeat < 3 ? 'yes' : x.repeat < 5 ? 'no' : null]));
     // The judge passes three, fails two, and its call fails on the sixth (no verdict).
@@ -349,17 +349,19 @@ describeWithDb('judge trust (D83, e2e, real Postgres)', () => {
       return v ? { overall: v, plain: 'yes' } : null;
     });
     const plain = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as LabelQueueItem[];
+    expect(plain).toHaveLength(6);
     const calibrating = async () => (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}&calibrate=1`).expect(200)).body as LabelQueueItem[];
     const queue = await calibrating();
-    expect(queue.map((i) => i.item_id).sort()).toEqual(plain.map((i) => i.item_id).sort());
-    // k = 2 (two fails): the first four hold two passes and two fails, then the last pass, then the item with no verdict.
+    // k = 2 (two fails): two passes and two fails, and nothing else. Review 7 Nov: the third pass
+    // and the item with no verdict came after the block, so position there gave the verdict away.
     const firsts = new Set<string>();
     for (let call = 0; call < 25; call += 1) {
       const kinds = (call ? await calibrating() : queue).map((i) => verdictOf.get(i.item_id) ?? 'none');
-      expect(kinds.slice(0, 4).sort()).toEqual(['no', 'no', 'yes', 'yes']);
-      expect(kinds.slice(4)).toEqual(['yes', 'none']);
+      expect(kinds).toHaveLength(4);
+      expect([...kinds].sort()).toEqual(['no', 'no', 'yes', 'yes']);
       firsts.add(kinds[0]);
     }
+    expect(queue.every((i) => plain.some((p) => p.item_id === i.item_id))).toBe(true);
     // Review 7 Nov: strict alternation put the judge's passes at 1, 3 and 5, so the position gave
     // the verdict away. Now position 1 is a pass on some calls and a fail on others.
     expect(firsts).toEqual(new Set(['yes', 'no']));
@@ -373,6 +375,13 @@ describeWithDb('judge trust (D83, e2e, real Postgres)', () => {
     expect((await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}&calibrate=1&calibrate=1`).expect(400)).body).toMatchObject({ error: 'invalid_query' });
     // calibrate=0 is the ordinary queue.
     expect(((await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}&calibrate=0`).expect(200)).body as LabelQueueItem[]).map((i) => i.item_id)).toEqual(plain.map((i) => i.item_id));
+
+    // A judge that gave one kind only: nothing to balance, so the calibrating queue is empty; the
+    // usual queue still offers every output.
+    const oneKind = await run([A], ['trust-tune'], 2);
+    await judge('fake/judge-onekind', () => ({ overall: 'yes', plain: 'yes' }));
+    expect((await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${oneKind.id}&calibrate=1`).expect(200)).body).toEqual([]);
+    expect((await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${oneKind.id}`).expect(200)).body).toHaveLength(2);
   });
 
   it('offers the trials an experiment’s arm A reuses from its parent (D34) when calibrating it, as well as its own (review 7 Nov, F4)', async () => {
