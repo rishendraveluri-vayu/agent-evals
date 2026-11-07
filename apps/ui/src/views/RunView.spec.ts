@@ -1730,6 +1730,13 @@ describe('RunView says when the prompt check ran, from its time (7 Nov QA)', () 
     expect(await lede()).toContain('Both ran today at 09:00, after the run started (4 Nov, 13:13).');
   });
 
+  it('names the arm when only one of two agents has a stored check', async () => {
+    vi.spyOn(api, 'renderedPrompt').mockResolvedValue({ config_hash: v1, status: 'ready', probe: null, cached: true, error: null, rendered: null });
+    vi.spyOn(api, 'conflictCheck').mockImplementation((hash: string) => Promise.resolve(hash === v1 ? { ...STORED_CHECK, config_hash: hash, checked_at: '2026-11-04T13:13:58Z' } : null));
+    // In the start's own minute, the seconds say which came first.
+    expect(await lede()).toContain('Arm A’s check ran on 4 Nov at 13:13:58, after the run started (4 Nov, 13:13:00).');
+  });
+
   it('claims no time when no check is stored', async () => {
     vi.spyOn(api, 'renderedPrompt').mockResolvedValue({ config_hash: v1, status: 'ready', probe: null, cached: true, error: null, rendered: null });
     vi.spyOn(api, 'conflictCheck').mockResolvedValue(null);

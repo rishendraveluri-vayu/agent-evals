@@ -110,16 +110,18 @@ export function dayOf(iso: string): string | null {
   return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', ...(year(at) === year(today) ? {} : { year: 'numeric' }), timeZone: zone }).format(at);
 }
 
-/** 14:06 today; "5 Nov, 14:06" on any other day. */
-export function stamp(iso: string): string {
+/** 14:06 today; "5 Nov, 14:06" on any other day; with `seconds`, 14:06:09. */
+export function stamp(iso: string, seconds = false): string {
   const day = dayOf(iso);
-  return day ? `${day}, ${clock(iso)}` : clock(iso);
+  const time = seconds ? clockSeconds(Date.parse(iso)) : clock(iso);
+  return day ? `${day}, ${time}` : time;
 }
 
 /** A time inside a sentence, its day always said: "today at 14:06", "on 5 Nov at 14:06". */
-export function when(iso: string): string {
+export function when(iso: string, seconds = false): string {
   const day = dayOf(iso);
-  return day ? `on ${day} at ${clock(iso)}` : `today at ${clock(iso)}`;
+  const time = seconds ? clockSeconds(Date.parse(iso)) : clock(iso);
+  return day ? `on ${day} at ${time}` : `today at ${time}`;
 }
 
 /** 14:06:09, for "the update from" a moment ago. */

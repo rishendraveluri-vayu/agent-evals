@@ -247,12 +247,19 @@ const checkTiming = computed<{ text: string; before: boolean }>(() => {
     return at ? [{ arms: letters(c.hash), at, before: Date.parse(at) < Date.parse(start) }] : [];
   });
   if (!runs.length) return none;
-  const who = runs.length === 1 ? 'It' : 'Both';
-  const started = `after the run started (${stamp(start)})`;
-  if (runs.every((r) => r.before)) return { text: `${who} ran before the run started, as every Hermes run on a real model must.`, before: true };
-  if (runs.every((r) => !r.before)) return { text: `${who} ran ${[...new Set(runs.map((r) => when(r.at)))].join(' and ')}, ${started}.`, before: false };
-  // One before, one after: each arm's own.
-  return { text: `${runs.map((r) => `Arm ${r.arms}’s check ran ${r.before ? 'before the run started' : `${when(r.at)}, ${started}`}`).join('; ')}.`, before: false };
+  // Times in the start's own minute say their seconds, so "13:13, after 13:13" never reads as a contradiction.
+  const seconds = runs.some((r) => stamp(r.at) === stamp(start));
+  const at = (iso: string) => when(iso, seconds);
+  const started = `after the run started (${stamp(start, seconds)})`;
+  const before = runs.every((r) => r.before);
+  // Every agent's check is stored and all ran on the same side of the start: one sentence.
+  if (runs.length === configs.length && (before || runs.every((r) => !r.before))) {
+    const who = runs.length === 1 ? 'It' : 'Both';
+    if (before) return { text: `${who} ran before the run started, as every Hermes run on a real model must.`, before };
+    return { text: `${who} ran ${[...new Set(runs.map((r) => at(r.at)))].join(' and ')}, ${started}.`, before };
+  }
+  // One before and one after, or one not stored: each stored check by its arm.
+  return { text: `${runs.map((r) => `Arm ${r.arms}’s check ran ${r.before ? 'before the run started' : `${at(r.at)}, ${started}`}`).join('; ')}.`, before };
 });
 /** The run page's words above the findings: "They did not stop the run" only for a check that was there before it. */
 const promptCheckLede = computed(() =>

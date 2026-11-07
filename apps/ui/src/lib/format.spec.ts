@@ -15,5 +15,8 @@ describe('times from another day say their day (7 Nov QA)', () => {
     expect(when('2026-11-06T09:00:00Z')).toBe('on 6 Nov at 09:00');
     // Another year says its year.
     expect(stamp('2025-12-31T08:00:00Z')).toBe('31 Dec 2025, 08:00');
+    // With seconds, for two times in the same minute.
+    expect(stamp('2026-11-04T13:13:58Z', true)).toBe('4 Nov, 13:13:58');
+    expect(when('2026-11-05T13:13:00Z', true)).toBe('today at 13:13:00');
   });
 });
