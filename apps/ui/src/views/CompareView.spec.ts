@@ -623,6 +623,45 @@ describe('CompareView against the API: no statistics yet', () => {
     expect(w.get('[data-test="example-judge-link"]').attributes('href')).toBe('#/labels/judge');
     expect(w.find('[data-test="judge-calibrate"]').exists()).toBe(false);
   });
+
+  describe("says when a shipped example's judge counts, as D63 and D83 have it (review 7 Nov, F5)", () => {
+    type Detail = Record<string, unknown> & { tasks: { graders: Record<string, unknown>[] }[] };
+    const detail = (details as unknown as Record<string, Detail>).exp_heldout;
+    const POLICY =
+      "A judge criterion may count in a verdict only once it agrees with people's labels well enough, and then only where its task file marks it required; nothing does that by itself, and the badges below change no grade.";
+    function mountExample(tasks: Detail['tasks']) {
+      routeFetch({
+        '/api/experiments/exp_heldout': { ...detail, tasks, example: { name: 'headline', title: 'Headline', loaded_at: '2026-11-05T08:00:00.000Z' } },
+        '/api/experiments/exp_heldout/compare': compares.exp_heldout,
+        '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+        '/api/judge/trust?experiment=exp_heldout': {
+          bar: { kappa: 0.6, kappa_low: 0.4, retest: 0.9, min_human_no: 5, max_undefined_share: 0.05, resamples: 2000, human_unsure: 'exclude' },
+          judges: [{ judge_model: 'gemini-3.8-flash', rubric: 'configs/rubrics/advice.v4.md', experiments: ['exp_heldout'], trials_judged: 200, criteria: [], status: 'not_trusted', summary: 'Not trusted.' }],
+        },
+      });
+      return mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    }
+
+    it('says it counts in nothing when no task marks its judge check required, as on every shipped example', async () => {
+      const optionalJudge = detail.tasks.map((t) => ({ ...t, graders: t.graders.map((g) => (g.kind === 'judge' ? { ...g, required: false } : g)) }));
+      const w = mountExample(optionalJudge);
+      await settle();
+      expect(w.get('[data-test="example-judge-words"]').text()).toBe(
+        `This run's trials were also graded by an LLM judge. Its verdicts are on each trial page, but no task here marks its judge check required, so they count in nothing. ${POLICY}`,
+      );
+    });
+
+    it('never says agreeing with people makes a judge count, and names the tasks whose task file makes it count', async () => {
+      // The sample's judge checks say nothing of required, so they are required, as the grader reads them.
+      const w = mountExample(detail.tasks);
+      await settle();
+      const words = w.get('[data-test="example-judge-words"]').text();
+      expect(words).not.toMatch(/counts only once it agrees/);
+      expect(words).toBe(
+        `This run's trials were also graded by an LLM judge. Its verdicts are on each trial page, and they count in the verdicts on 4 of the 12 tasks, where the task file marks the judge check required. ${POLICY}`,
+      );
+    });
+  });
 });
 
 describe('CompareView against the API: each task row says how its arms stand on grading', () => {

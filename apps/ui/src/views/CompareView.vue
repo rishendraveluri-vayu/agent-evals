@@ -781,6 +781,19 @@ const worthALook = computed(() => {
     button: look?.disputed ? 'Open a failed trial (your label disagrees with the judge)' : 'Open a failed trial',
   };
 });
+
+/** A shipped example's judge, read-only: whether its verdicts count, and when a judge may (D63, D83).
+ *  A judge check counts only where its task file marks it required (a grader spec is required unless
+ *  it says false, as the grader reads it); trust never changes a grade or a verdict. */
+const exampleJudgeWords = computed(() => {
+  const tasks = data.value?.detail.tasks ?? [];
+  const counted = tasks.filter((t) => t.graders.some((g) => typeof g === 'object' && g !== null && !Array.isArray(g) && (g.kind === 'judge' || g.type === 'judge') && g.required !== false)).length;
+  const on = counted === tasks.length ? (counted === 1 ? 'its one task' : `all ${counted} tasks`) : `${counted} of the ${tasks.length} tasks`;
+  const where = counted
+    ? `and they count in the verdicts on ${on}, where the task file marks the judge check required.`
+    : 'but no task here marks its judge check required, so they count in nothing.';
+  return `This run's trials were also graded by an LLM judge. Its verdicts are on each trial page, ${where} A judge criterion may count in a verdict only once it agrees with people's labels well enough, and then only where its task file marks it required; nothing does that by itself, and the badges below change no grade.`;
+});
 </script>
 
 <template>
@@ -1241,8 +1254,11 @@ const worthALook = computed(() => {
         >
           LLM judge
         </h2>
-        <p class="small">
-          This run's trials were also graded by an LLM judge. Its verdicts are on each trial page, but they count in nothing: a judge counts only once it agrees with people's labels well enough.
+        <p
+          class="small"
+          data-test="example-judge-words"
+        >
+          {{ exampleJudgeWords }}
         </p>
         <ul class="example-trust-list">
           <li
