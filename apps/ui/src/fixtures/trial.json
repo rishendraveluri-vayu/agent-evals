@@ -27,6 +27,7 @@
       "sha256": "sha256:e4c1f08aa4af49ba31d3ca84e24eb2441f3799f8a09e6d18d6fd52084e45df5a"
     }
   },
+  "adapter_sha256": null,
   "repeat_index": 2,
   "attempt": 1,
   "status": "done",

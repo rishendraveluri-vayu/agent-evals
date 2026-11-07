@@ -324,12 +324,12 @@ describe('TrialView against the API: the outcome in words, and the simulated cli
   type Detail = Record<string, unknown> & { sim_model: string | null };
   const heldout = (details as unknown as Record<string, Detail>).exp_heldout;
   const grade = trial.grades[0];
-  function mountWith(over: { grades?: unknown[]; simModel?: string | null }) {
+  function mountWith(over: { grades?: unknown[]; simModel?: string | null; trial?: Record<string, unknown>; experiment?: Record<string, unknown> }) {
     routeFetch({
-      '/api/trials/tr_fd-vs-sip-07_b_3': { ...trial, grades: over.grades ?? trial.grades },
+      '/api/trials/tr_fd-vs-sip-07_b_3': { ...trial, grades: over.grades ?? trial.grades, ...over.trial },
       '/api/trials/tr_fd-vs-sip-07_b_3/spans': trialSpans,
       '/api/labels/queue?set=heldout': queue.heldout,
-      '/api/experiments/exp_heldout': { ...heldout, sim_model: over.simModel === undefined ? heldout.sim_model : over.simModel },
+      '/api/experiments/exp_heldout': { ...heldout, sim_model: over.simModel === undefined ? heldout.sim_model : over.simModel, ...over.experiment },
       '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
       '/api/prompts': prompts,
     });
@@ -355,6 +355,34 @@ describe('TrialView against the API: the outcome in words, and the simulated cli
     const facts = w.get('[data-test="trial-facts"]').text();
     expect(facts).toContain('Hermes counted 3');
     expect(facts).not.toContain('client Claude');
+  });
+
+  it('names the adapter code and the platform commit the trial ran on, short, with the full values in titles (D85)', async () => {
+    const code = `sha256:b81f0e5${'c2'.repeat(28)}9`;
+    const commit = 'c4d2e19a7b3f0e8d6c5b4a39281706f5e4d3c2b1';
+    const w = mountWith({ trial: { adapter_sha256: code }, experiment: { platform_commit: commit } });
+    await settle();
+    const line = w.get('[data-test="trial-code"]');
+    expect(line.text()).toBe('Adapter code b81f0e5, platform commit c4d2e19');
+    expect(line.get('[data-test="adapter-code"]').attributes('title')).toBe(code);
+    expect(line.get('[data-test="platform-commit"]').attributes('title')).toBe(commit);
+    // Beside the arm and config line, which is unchanged.
+    expect(w.get('[data-test="trial-meta"]').text()).toBe('Prompt v2, config 7f3a9c2, Hermes 6112c2a');
+  });
+
+  it('says a trial from before 7 Nov recorded no adapter code, and so for a missing platform commit', async () => {
+    let w = mountWith({ trial: { adapter_sha256: null } });
+    await settle();
+    expect(w.get('[data-test="trial-code"]').text()).toBe('Adapter code not recorded (trials before 7 Nov), platform commit c4d2e19');
+    expect(w.find('[data-test="adapter-code"]').exists()).toBe(false);
+    expect(w.get('[data-test="adapter-code-missing"]').text()).toBe('not recorded (trials before 7 Nov)');
+    w = mountWith({ trial: { adapter_sha256: null }, experiment: { platform_commit: null } });
+    await settle();
+    expect(w.get('[data-test="trial-code"]').text()).toBe('Adapter code not recorded (trials before 7 Nov), platform commit not recorded');
+    // An attempt not claimed yet ran no code: only the platform commit is named.
+    w = mountWith({ trial: { adapter_sha256: null, status: 'queued', timing: { ...trial.timing, claimed_at: null } } });
+    await settle();
+    expect(w.get('[data-test="trial-code"]').text()).toBe('Platform commit c4d2e19');
   });
 });
 

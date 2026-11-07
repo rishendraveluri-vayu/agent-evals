@@ -33,8 +33,8 @@ const FIELDS = {
   compare: ['experiment_id', 'status', 'reason', 'arms', 'rows', 'stats', 'stats_note', 'grader_versions', 'prose_figures', 'behaviour'],
   compareRow: ['task', 'task_id', 'arm', 'config', 'config_name', 'passed', 'graded', 'incomplete', 'trials', 'infra_failed', 'abandoned'],
   trial: [
-    'id', 'experiment_id', 'probe', 'task', 'config', 'repeat_index', 'attempt', 'status', 'label', 'end_state', 'spec', 'result', 'runner_report', 'usage',
-    'timing', 'worker_id', 'files', 'grades', 'grading', 'problems', 'cause',
+    'id', 'experiment_id', 'probe', 'task', 'config', 'adapter_sha256', 'repeat_index', 'attempt', 'status', 'label', 'end_state', 'spec', 'result', 'runner_report',
+    'usage', 'timing', 'worker_id', 'files', 'grades', 'grading', 'problems', 'cause',
   ],
   grade: ['id', 'grader_id', 'grader_version', 'kind', 'type', 'required', 'verdict', 'score', 'reason', 'evidence', 'judge_model', 'run_index', 'created_at'],
   rendered: ['config_hash', 'status', 'probe', 'cached', 'error', 'rendered'],

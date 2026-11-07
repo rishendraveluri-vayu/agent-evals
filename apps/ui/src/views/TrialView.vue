@@ -190,6 +190,33 @@ const harnessRef = computed(() => {
   return { name: name ? harnessShort(name) : 'Harness', ref: harnessVersion(ref), full: ref };
 });
 
+/** What pins the code an experiment trial ran, beside its config: the adapter code's hash, which its
+ *  worker sent with the claim (D85), and the platform commit its experiment recorded (G2). Each is
+ *  short, with the full value in a title. An attempt not claimed yet has no adapter code to show,
+ *  and a probe no experiment, so no platform commit. */
+interface CodePart {
+  key: 'adapter-code' | 'platform-commit';
+  label: string;
+  short: string | null;
+  full: string | null;
+  missing: string;
+}
+const codeParts = computed<CodePart[]>(() => {
+  const d = data.value;
+  if (!d || d.any.kind !== 'experiment') return [];
+  const t = d.any.trial;
+  const parts: CodePart[] = [];
+  if (t.timing.claimed_at) {
+    const sha = t.adapter_sha256;
+    parts.push({ key: 'adapter-code', label: 'adapter code', short: sha ? sha.replace('sha256:', '').slice(0, 7) : null, full: sha, missing: 'not recorded (trials before 7 Nov)' });
+  }
+  if (d.experiment) {
+    const commit = d.experiment.platform_commit;
+    parts.push({ key: 'platform-commit', label: 'platform commit', short: commit ? commit.slice(0, 7) : null, full: commit, missing: 'not recorded' });
+  }
+  return parts;
+});
+
 const arm = computed(() => {
   const v = vm.value;
   const e = data.value?.experiment;
@@ -749,6 +776,26 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
               class="mono"
               :title="harnessRef.full"
             >{{ harnessRef.ref }}</span></template></span>
+          </p>
+          <p
+            v-if="codeParts.length"
+            class="secondary small code-line"
+            data-test="trial-code"
+          >
+            <template
+              v-for="(p, pi) in codeParts"
+              :key="p.key"
+            >
+              <span>{{ pi ? p.label : capitalise(p.label) }}</span> <span
+                v-if="p.short"
+                class="mono"
+                :title="p.full ?? undefined"
+                :data-test="p.key"
+              >{{ p.short }}</span><span
+                v-else
+                :data-test="`${p.key}-missing`"
+              >{{ p.missing }}</span>{{ pi < codeParts.length - 1 ? ', ' : '' }}
+            </template>
           </p>
           <nav
             v-if="sameCell"
@@ -1512,6 +1559,11 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 
 .failed-on {
   margin-top: 6px;
+}
+
+/* D85: the adapter code and platform commit, under the arm and config they sit beside. */
+.code-line {
+  margin-top: 2px;
 }
 
 /* The rule-based cause under the checks it failed: a pointer, the trial below is the evidence. */
