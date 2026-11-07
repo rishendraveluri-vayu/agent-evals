@@ -18,7 +18,7 @@ import { href, navigate, replaceRoute } from '../router';
 import { eventView, pauseCause } from '../lib/runs';
 import { setRunFlash, takeRunFlash } from '../lib/runFlash';
 import { armPauseHelp, defaultArms, defaultBudget, defaultN, DEFAULT_N, isEngineTest, isLocalModel, missingKey, needsKeyWords, ownConfigs, plainRunError, taskSetWords, validateN, validateSeed, type ArmDefaults } from '../lib/runSetup';
-import { FAKE_SIM_MODEL, isFake, simModels } from '../lib/models';
+import { FAKE_SIM_MODEL, isFake, runnableHosted, simModels } from '../lib/models';
 import { ensureConflictChecks, needsConflictCheck } from '../lib/conflictGate';
 import { text } from '../trials';
 
@@ -107,11 +107,21 @@ watch(data, (d) => {
 const hashes = computed<string[]>(() => (draft ? [setup.a, setup.b].filter(Boolean) : (data.value?.experiment?.config_hashes ?? [])));
 /** Every arm on a fake model: the run tries the platform out, and the simulated client defaults to the fake one. */
 const allFake = computed(() => hashes.value.length > 0 && hashes.value.every((h) => isFake(data.value?.configs.find((c) => c.hash === h)?.model)));
-/** A real run's simulated client: the first real model whose key is set, else the first one. */
+/**
+ * The simulated client a draft starts on, matched to the arms (7 Nov QA: with no arm picked it was
+ * the local model, which was not running, and the panel called the run paid). The fake client
+ * while no arm is picked or every arm is fake; for a real run, the first hosted model that can run
+ * (its key set first). Never the local model on its own account, since this page cannot tell
+ * whether Ollama is up: only when an arm runs on it already, so the run needs it up anyway. Else
+ * the fake client.
+ */
 const defaultSim = computed(() => {
-  if (allFake.value) return FAKE_SIM_MODEL;
+  if (!hashes.value.length || allFake.value) return FAKE_SIM_MODEL;
   const models = data.value?.models ?? [];
-  return (models.find((m) => !missingKey(m.name, models)) ?? models[0])?.name ?? FAKE_SIM_MODEL;
+  const hosted = runnableHosted(models)[0]?.name;
+  if (hosted) return hosted;
+  const armModels = hashes.value.map((h) => data.value?.configs.find((c) => c.hash === h)?.model);
+  return armModels.find((m) => isLocalModel(m, models)) ?? FAKE_SIM_MODEL;
 });
 watch(defaultSim, (v) => {
   if (draft && !touched.sim && setup.simModel) setup.simModel = v;
@@ -1542,7 +1552,7 @@ onBeforeUnmount(() => taskObserver?.disconnect());
                   type="checkbox"
                   data-test="futility-box"
                 >
-                <span><strong>Futility check</strong>: pauses the run for review if an arm passes none of its first 3 graded trials, so a broken agent stops spending; it never stops on an apparent win. {{ fakeOnly ? 'Off to start with here: every model is fake, so the run spends nothing.' : 'On to start with: this run calls a real model.' }}</span>
+                <span><strong>Futility check</strong>: pauses the run for review if an arm passes none of its first 3 graded trials, so a broken agent stops spending; it never stops on an apparent win. {{ !hashes.length ? 'On for a run that calls a real model, off when every model is fake.' : fakeOnly ? 'Off to start with here: every model is fake, so the run spends nothing.' : 'On to start with: this run calls a real model.' }}</span>
               </label>
               <div class="task-pick-wrap">
                 <div class="task-pick-frame">
@@ -1751,17 +1761,24 @@ onBeforeUnmount(() => taskObserver?.disconnect());
             >
             <span class="secondary smaller">The git commit where the hypothesis and how to read the result were written down before the run, so the result is judged against a plan made in advance.</span>
           </label>
+          <!-- What the run costs, once an arm is picked: paid, local (free per token) or fake, never two at once. -->
           <p
-            v-if="!started"
+            v-if="!started && hashes.length"
             class="small spend-kind"
-            :class="{ 'spend-kind--real': realModels.length }"
+            :class="{ 'spend-kind--real': paidModels.length }"
             data-test="spend-kind"
           >
-            <template v-if="realModels.length">
+            <template v-if="paidModels.length">
               <AppIcon
                 name="alert"
                 :size="14"
-              /> Real models: {{ realModels.map(modelName).join(' and ') }}. This run costs real money; you confirm the cost before it starts.
+              /> Real models: {{ paidModels.map(modelName).join(' and ') }}. This run costs real money; you confirm the cost before it starts.
+            </template>
+            <template v-else-if="localModels.length">
+              <AppIcon
+                name="alert"
+                :size="14"
+              /> Local model: {{ localNames }}, free per token. This run spends no money; you confirm before it starts.
             </template>
             <template v-else>
               Every model here is fake, so the run is free: its prices are made up for testing, and nothing it finds is about a real model.

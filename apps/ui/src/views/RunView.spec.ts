@@ -733,6 +733,78 @@ describe('RunView warns that the local model runs only while Ollama is up', () =
     await settle();
     expect(w.find('[data-test="local-model-warning"]').exists()).toBe(false);
   });
+
+  it('calls a run on the local model free per token, never paid, next to its Ollama note', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, qwen]);
+    vi.spyOn(api, 'models').mockResolvedValue(models);
+    const w = mount(RunView, { props: { a: qwen.hash, b: '' } });
+    await settle();
+    await w.get('[data-test="sim-model"]').setValue('qwen2.5-7b-local');
+    await settle();
+    expect(w.get('[data-test="spend-kind"]').text()).toBe('Local model: Qwen2.5 7b Local, free per token. This run spends no money; you confirm before it starts.');
+    expect(w.text()).not.toContain('costs real money');
+  });
+});
+
+describe('RunView starts the simulated client on what the arms run on (7 Nov QA)', () => {
+  useFixtures();
+  // A fresh machine: no provider key set, and the local model listed (it needs no key, so key_set is null).
+  const freshModels = [
+    { name: 'claude-haiku-5-5', provider: 'anthropic', input_per_mtok: 0.1, output_per_mtok: 0.5, key_set: false },
+    { name: 'qwen2.5-7b-local', provider: 'ollama_chat', input_per_mtok: 0, output_per_mtok: 0, key_set: null },
+  ];
+  const qwen: ConfigView = { ...fixtureConfigs[2], hash: `sha256:9e${'0'.repeat(61)}3`, name: 'Own loop, Qwen local', model: 'qwen2.5-7b-local' };
+
+  it('starts on the fake client with no agent picked, and says nothing about cost until one is', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([]);
+    vi.spyOn(api, 'models').mockResolvedValue(freshModels);
+    const w = mount(RunView, { props: {} });
+    await settle();
+    expect(selectValue(w, '[data-test="sim-model"]')).toBe('fake/sim-client');
+    expect(w.find('[data-test="spend-kind"]').exists()).toBe(false);
+    expect(w.find('[data-test="local-model-warning"]').exists()).toBe(false);
+    expect(w.text()).not.toContain('costs real money');
+    expect(w.text()).not.toContain('this run calls a real model');
+    expect(w.get('[data-test="futility"]').text()).toContain('On for a run that calls a real model, off when every model is fake.');
+  });
+
+  it('starts on the fake client when every arm is fake', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([fakeA, fakeB]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'prompt.sha256', a: fakeA.prompt.sha256, b: fakeB.prompt.sha256 }]);
+    vi.spyOn(api, 'models').mockResolvedValue(freshModels);
+    const w = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    expect(selectValue(w, '[data-test="sim-model"]')).toBe('fake/sim-client');
+    expect(w.get('[data-test="spend-kind"]').text()).toContain('Every model here is fake, so the run is free');
+  });
+
+  it('never starts a hosted-model run on the local model, which may not be up', async () => {
+    vi.spyOn(api, 'models').mockResolvedValue(freshModels);
+    const w = mount(RunView, { props: { a: cfgV1.hash, b: cfgV2.hash } });
+    await settle();
+    expect(selectValue(w, '[data-test="sim-model"]')).toBe('fake/sim-client');
+    expect(w.find('[data-test="local-model-warning"]').exists()).toBe(false);
+  });
+
+  it('starts on the local model only when an arm runs on it, so the run needs it up anyway', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, qwen]);
+    vi.spyOn(api, 'models').mockResolvedValue(freshModels);
+    const w = mount(RunView, { props: { a: qwen.hash, b: '' } });
+    await settle();
+    expect(selectValue(w, '[data-test="sim-model"]')).toBe('qwen2.5-7b-local');
+  });
+
+  it('follows the arms when they change, until the client is picked by hand', async () => {
+    vi.spyOn(api, 'configs').mockResolvedValue([...fixtureConfigs, fakeA, fakeB]);
+    vi.spyOn(api, 'configDiff').mockResolvedValue([{ path: 'prompt.sha256', a: fakeA.prompt.sha256, b: fakeB.prompt.sha256 }]);
+    const w = mount(RunView, { props: { a: fakeA.hash, b: fakeB.hash } });
+    await settle();
+    expect(selectValue(w, '[data-test="sim-model"]')).toBe('fake/sim-client');
+    await w.get('[data-test="arm-a"]').setValue(cfgV1.hash);
+    await w.get('[data-test="arm-b"]').setValue(cfgV2.hash);
+    await settle();
+    expect(selectValue(w, '[data-test="sim-model"]')).toBe('claude-haiku-5-5');
+  });
 });
 
 describe('RunView futility check: off by default when every model is fake, on for a paid run (A41)', () => {
