@@ -9,6 +9,7 @@ import { sha256Hex } from '../common/hashing';
 import { CatalogueService } from '../catalogue/catalogue.service';
 import { Db } from '../database/db.service';
 import { NOT_EXAMPLE_TRIAL } from '../examples/example-guard';
+import { calibrationOrder } from './calibration-order';
 import { FIRST_RATER, raterId } from './raters';
 
 type Obj = Record<string, unknown>;
@@ -146,9 +147,10 @@ export class LabelsService {
       if (v !== undefined && typeof v !== 'string') throw badRequest('invalid_query', `give ${name} once`, `Send one ${name} parameter${name === 'items' ? ', with the trial ids comma-separated' : ''}.`);
     }
     const experimentId = experimentInput as string | undefined;
-    // D83: `calibrate=1` orders one experiment's items by the judge's current verdict, pass and fail in turn.
+    // D83: `calibrate=1` orders one experiment's items by the judge's current verdict, its passes and
+    // fails early and in balance, in a random order (byJudgeVerdict).
     if (calibrateInput !== undefined && !['', '0', '1', 'false', 'true'].includes(calibrateInput as string)) {
-      throw badRequest('invalid_query', 'calibrate must be 1 or 0', 'Send calibrate=1 to alternate the judge’s passes and fails, or leave it out.');
+      throw badRequest('invalid_query', 'calibrate must be 1 or 0', 'Send calibrate=1 to put the judge’s passes and fails early and in balance, or leave it out.');
     }
     const calibrate = calibrateInput === '1' || calibrateInput === 'true';
     if (calibrate && !experimentId) {
@@ -221,10 +223,12 @@ export class LabelsService {
   }
 
   /**
-   * D83: the fresh items reordered so the judge's current `overall` verdicts alternate, pass then
-   * fail, each kept in the queue's own order, then the items it gave no yes or no on. A rater who
-   * labels from the top sees both kinds early, so the judge's false passes and false fails both
-   * get labels. The verdict is only used to order: the items stay blind.
+   * D83: the fresh items reordered by the judge's current `overall` verdict (calibrationOrder): as
+   * many of its passes as its fails first, in a random order drawn on every call, then the rest of
+   * the larger kind, shuffled, then the items it gave no yes or no on. A rater who labels from the
+   * top sees both kinds early, so the judge's false passes and false fails both get labels, and no
+   * position tells a pass from a fail (strict alternation did, review 7 Nov). The verdict is only
+   * used to order: the items stay blind.
    */
   private async byJudgeVerdict(items: LabelQueueItem[]): Promise<LabelQueueItem[]> {
     if (!items.length) return items;
@@ -237,14 +241,7 @@ export class LabelsService {
     );
     const verdict = new Map<string, string>();
     for (const r of rows) if (r.verdict && !verdict.has(r.trial_id)) verdict.set(r.trial_id, r.verdict);
-    const pass = items.filter((i) => verdict.get(i.item_id) === 'yes');
-    const fail = items.filter((i) => verdict.get(i.item_id) === 'no');
-    const out: LabelQueueItem[] = [];
-    for (let i = 0; i < Math.max(pass.length, fail.length); i += 1) {
-      if (i < pass.length) out.push(pass[i]);
-      if (i < fail.length) out.push(fail[i]);
-    }
-    return [...out, ...items.filter((i) => !verdict.has(i.item_id))];
+    return calibrationOrder(items, (i) => verdict.get(i.item_id));
   }
 
   private async toolCalls(trialId: string): Promise<LabelQueueItem['tool_calls']> {

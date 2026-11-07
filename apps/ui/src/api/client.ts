@@ -321,7 +321,7 @@ export const api = {
 
   /** `experiment` limits the queue to one batch; `items` (comma-separated trial ids) to a chosen list.
    *  `rater` makes it that rater's own queue (D73); without it, anyone's label counts. `calibrate`
-   *  (with `experiment` only, D83) orders the batch so the judge's passes and fails alternate; the
+   *  (with `experiment` only, D83) orders the batch so the judge's passes and fails come early and in balance, at random; the
    *  items never carry its verdicts. */
   labelQueue: async (set: LabelSet, experiment?: string, items?: string, rater?: string, calibrate?: boolean): Promise<BlindItem[]> => {
     const body = await call<unknown>('GET', `/labels/queue${query({ set, experiment, items, rater, calibrate: calibrate ? '1' : undefined })}`);

@@ -322,7 +322,7 @@ describeWithDb('judge trust (D83, e2e, real Postgres)', () => {
     expect(cmp.stats!.judge).toEqual({ kappa: c.heldout!.kappa, low: k.low, high: k.high, bar: 0.6, tasks: 2 });
   });
 
-  it('orders an experiment’s queue by the judge’s verdict to calibrate it, pass then fail, and keeps the items blind', async () => {
+  it('orders an experiment’s queue by the judge’s verdict to calibrate it, both kinds early and in balance, at random, and keeps the items blind', async () => {
     const exp = await run([A], ['trust-tune'], 6);
     const verdictOf = new Map(exp.trials.map((x) => [x.id, x.repeat < 3 ? 'yes' : x.repeat < 5 ? 'no' : null]));
     // The judge passes three, fails two, and its call fails on the sixth (no verdict).
@@ -331,9 +331,20 @@ describeWithDb('judge trust (D83, e2e, real Postgres)', () => {
       return v ? { overall: v, plain: 'yes' } : null;
     });
     const plain = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}`).expect(200)).body as LabelQueueItem[];
-    const queue = (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}&calibrate=1`).expect(200)).body as LabelQueueItem[];
+    const calibrating = async () => (await request(env.http).get(`/api/labels/queue?set=tuning&experiment=${exp.id}&calibrate=1`).expect(200)).body as LabelQueueItem[];
+    const queue = await calibrating();
     expect(queue.map((i) => i.item_id).sort()).toEqual(plain.map((i) => i.item_id).sort());
-    expect(queue.map((i) => verdictOf.get(i.item_id) ?? 'none')).toEqual(['yes', 'no', 'yes', 'no', 'yes', 'none']);
+    // k = 2 (two fails): the first four hold two passes and two fails, then the last pass, then the item with no verdict.
+    const firsts = new Set<string>();
+    for (let call = 0; call < 25; call += 1) {
+      const kinds = (call ? await calibrating() : queue).map((i) => verdictOf.get(i.item_id) ?? 'none');
+      expect(kinds.slice(0, 4).sort()).toEqual(['no', 'no', 'yes', 'yes']);
+      expect(kinds.slice(4)).toEqual(['yes', 'none']);
+      firsts.add(kinds[0]);
+    }
+    // Review 7 Nov: strict alternation put the judge's passes at 1, 3 and 5, so the position gave
+    // the verdict away. Now position 1 is a pass on some calls and a fail on others.
+    expect(firsts).toEqual(new Set(['yes', 'no']));
     // Blind: nothing of the judge is in an item.
     for (const item of queue) expect(Object.keys(item).sort()).toEqual(['criteria', 'item_id', 'second_look', 'task_summary', 'tool_calls', 'transcript']);
     expect(JSON.stringify(queue)).not.toMatch(/judge says|fake\/judge|verdict|claude-haiku|trust arm/);

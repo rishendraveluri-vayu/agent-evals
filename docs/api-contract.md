@@ -1169,10 +1169,14 @@ no model and never changes a grade or a verdict.
   a grade or a verdict: a judge criterion counts only when its task makes it required (D8, D63).
   The result is cached until a label, a finished grading job or an experiment's arms change.
 - **Calibrating.** `GET /labels/queue?set=&experiment=<id>&calibrate=1` orders that experiment's
-  fresh items so the judge's current `overall` verdicts alternate, pass then fail, each kind in
-  the queue's own order, then the items it has no yes or no on; second looks (D46) still come
-  last. The verdict is the first `overall` yes or no among the trial's current judge grades. It is
-  used only to order: the blind item never carries it. `calibrate` takes `1` or `true` (on), `0`,
+  fresh items by the judge's current `overall` verdict, so both kinds come early and in balance
+  without the position giving the verdict away: with k the smaller of its pass and fail counts,
+  k passes and k fails drawn at random and shuffled together, then the rest of the larger kind,
+  shuffled, then the items it has no yes or no on, in the queue's own order; second looks (D46)
+  still come last. The order is drawn afresh (crypto random) on every call. (Until the 7 Nov
+  review it alternated pass, fail, pass, so positions 1, 3 and 5 were the judge's passes.) The
+  verdict is the first `overall` yes or no among the trial's current judge grades. It is used
+  only to order: the blind item never carries it. `calibrate` takes `1` or `true` (on), `0`,
   `false` or empty (off); anything else, a repeated `calibrate`, or `calibrate` without
   `experiment` is a 400 `invalid_query`.
 - **The comparison's `stats.judge`** is filled from the held-out figures of the `overall` criterion
