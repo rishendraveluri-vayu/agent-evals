@@ -264,21 +264,13 @@ describe('VerdictTag', () => {
 describe('AppHeader on a phone', () => {
   useFixtures();
 
-  it('fades the nav at an edge that has sections out of sight, so it reads as a row that scrolls', async () => {
+  it('lists every section as a link, the current one marked, and keeps the theme button named', async () => {
+    // The phone's nav wraps rather than scrolling sideways (7 Nov QA); AppHeader.spec.ts guards its rules.
     const w = mount(AppHeader, { props: { section: 'experiments' } });
     await settle();
     const nav = w.get('[data-test="main-nav"]');
-    const el = nav.element as HTMLElement;
-    Object.defineProperty(el, 'scrollWidth', { configurable: true, value: 600 });
-    Object.defineProperty(el, 'clientWidth', { configurable: true, value: 390 });
-    el.scrollLeft = 0;
-    await nav.trigger('scroll');
-    expect(nav.classes()).toContain('nav--more-right');
-    expect(nav.classes()).not.toContain('nav--more-left');
-    el.scrollLeft = 210;
-    await nav.trigger('scroll');
-    expect(nav.classes()).toContain('nav--more-left');
-    expect(nav.classes()).not.toContain('nav--more-right');
+    expect(nav.findAll('a').map((a) => a.text())).toEqual(['Start', 'Build an agent', 'Experiments', 'Configs', 'Tasks', 'Harnesses', 'Labels']);
+    expect(nav.get('[aria-current="page"]').text()).toBe('Experiments');
     // The theme button keeps its name when it shows only its icon.
     expect(w.get('[data-test="theme-toggle"]').attributes('aria-label')).toBe('Dark theme');
     expect(w.get('[data-test="theme-toggle"]').attributes('title')).toBe('Dark theme');

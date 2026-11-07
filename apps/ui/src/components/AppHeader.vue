@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { api } from '../api/client';
 import { isFixtureMode } from '../api/mode';
 import type { SpendView } from '../api/types';
@@ -10,7 +10,7 @@ import { setTheme, theme } from '../lib/theme';
 import { href, type Section } from '../router';
 import AppIcon from './AppIcon.vue';
 
-const props = defineProps<{ section: Section | null }>();
+defineProps<{ section: Section | null }>();
 
 const fixtures = isFixtureMode();
 const health = ref<HealthResult | null>(null);
@@ -62,39 +62,6 @@ async function loadSpend() {
 }
 const onSpendChanged = () => void loadSpend();
 
-/** On a phone the nav is one row that scrolls sideways; the current section is kept in view, with
- *  8 px to spare past its right edge. Only the nav scrolls (never scrollIntoView, which can move
- *  the page). It runs again once the fonts are in and whenever the nav changes size, since both
- *  move the tabs. */
-const nav = ref<HTMLElement | null>(null);
-const EDGE = 8;
-/** Whether the nav has sections out of sight to either side: its edge then fades, so it reads as
- *  a row that scrolls. Only a phone's nav ever scrolls. */
-const more = ref({ left: false, right: false });
-function measureNav() {
-  const el = nav.value;
-  if (!el) return;
-  const max = el.scrollWidth - el.clientWidth;
-  more.value = { left: max > 1 && el.scrollLeft > 1, right: max > 1 && el.scrollLeft < max - 1 };
-}
-async function showCurrent() {
-  await nextTick();
-  const el = nav.value;
-  const current = el?.querySelector<HTMLElement>('[aria-current="page"]');
-  if (!el || !current || el.scrollWidth <= el.clientWidth) return;
-  const box = el.getBoundingClientRect();
-  const tab = current.getBoundingClientRect();
-  const past = tab.right + EDGE - box.right;
-  const before = box.left - (tab.left - EDGE);
-  if (past > 0) el.scrollLeft += past;
-  else if (before > 0) el.scrollLeft -= before;
-  measureNav();
-}
-watch(
-  () => props.section,
-  () => void showCurrent(),
-);
-
 /** The health badge asks again every 10 s while the tab is in view, so it says when the API goes
  *  down and when it is back; a hidden tab asks nothing until it is shown again, then asks at once.
  *  When the API answers again after being unreachable, the spend is read again too. */
@@ -131,26 +98,14 @@ const onVisibility = () => {
   else if (!healthTimer) void checkHealth();
 };
 
-let resizes: ResizeObserver | null = null;
 onBeforeUnmount(() => {
   unmounted = true;
   stopHealth();
-  resizes?.disconnect();
   window.removeEventListener('evals:spend-changed', onSpendChanged);
   document.removeEventListener('visibilitychange', onVisibility);
 });
 
 onMounted(async () => {
-  void showCurrent();
-  measureNav();
-  void document.fonts?.ready.then(() => showCurrent());
-  if (typeof ResizeObserver !== 'undefined' && nav.value) {
-    resizes = new ResizeObserver(() => {
-      void showCurrent();
-      measureNav();
-    });
-    resizes.observe(nav.value);
-  }
   const envBudget = Number(import.meta.env.VITE_TOTAL_BUDGET_USD);
   if (fixtures) {
     const { meta } = await import('../fixtures');
@@ -194,12 +149,9 @@ onMounted(async () => {
       Agent Evals
     </a>
     <nav
-      ref="nav"
       aria-label="Main"
       class="nav"
-      :class="{ 'nav--more-left': more.left, 'nav--more-right': more.right }"
       data-test="main-nav"
-      @scroll.passive="measureNav"
     >
       <a
         v-for="l in links"
@@ -494,8 +446,10 @@ onMounted(async () => {
   }
 }
 
-/* A phone gets two rows: the brand, the spend, the sample flag and the theme button, then the
-   sections in one row that scrolls sideways. */
+/* A phone gets the brand, the spend, the sample flag and the theme button on one row, then the
+   sections, wrapped onto as many rows as they need: every section in sight, none cut off at the
+   edge (7 Nov QA: a row that scrolled sideways read "Ta…" and "xperiments", with no sign it
+   scrolled). */
 @media (max-width: 640px) {
   .top {
     padding: 0 12px 2px;
@@ -540,31 +494,16 @@ onMounted(async () => {
 
   .nav {
     order: 3;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
+    flex-wrap: wrap;
     width: calc(100% + 24px);
     margin: 0 -12px;
-    padding: 0 8px;
+    padding: 0 8px 4px;
   }
 
   .nav a {
     flex: none;
     padding: 0 10px;
     white-space: nowrap;
-  }
-
-  /* Sections out of sight fade at that edge, so the row reads as one that scrolls. */
-  .nav--more-right {
-    mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
-  }
-
-  .nav--more-left {
-    mask-image: linear-gradient(to left, #000 calc(100% - 48px), transparent);
-  }
-
-  .nav--more-left.nav--more-right {
-    mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
   }
 }
 </style>

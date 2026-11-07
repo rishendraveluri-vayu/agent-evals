@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SpendView } from '../api/types';
@@ -67,6 +70,20 @@ describe('AppHeader spend (5 Nov QA, major 6)', () => {
     expect(phone.findAll('span[aria-hidden="true"]').map((s) => s.text())).toEqual(['Trials $0.44', 'Platform $0.02', 'Checks $0.50 of $2']);
     expect(phone.attributes('aria-label')).toContain("trials on real models $0.44, the platform's own calls $0.02");
     expect(phone.text()).not.toContain(' + ');
+  });
+});
+
+describe('AppHeader nav on a phone (7 Nov QA)', () => {
+  // jsdom does no layout, so this guards the rules themselves; checked in a browser at 390 px.
+  // A path, not new URL(..., import.meta.url), which Vite turns into an asset address.
+  const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'AppHeader.vue'), 'utf8');
+  const phone = source.slice(source.indexOf('@media (max-width: 640px)'));
+
+  it('wraps the sections onto more rows rather than scrolling them out of sight', () => {
+    const nav = phone.match(/\n {2}\.nav \{([^}]*)\}/)?.[1] ?? '';
+    expect(nav).toContain('flex-wrap: wrap;');
+    expect(nav).not.toContain('overflow-x');
+    expect(phone).not.toContain('mask-image');
   });
 });
 
