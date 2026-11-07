@@ -17,7 +17,7 @@ import { causeView, sentence } from '../lib/causes';
 import { capitalise, count, harnessVersion, money, plainText, seconds, shortVersion } from '../lib/format';
 import { inlineParts, inlineStyles, type InlinePart } from '../lib/markdown';
 import { endStateName, experimentName, graderName, harnessName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
-import { isModelCallFile, jsonForDisplay, modelCalls } from '../lib/trialDisplay';
+import { isModelCallFile, jsonForDisplay, modelCalls, reasonParts, shortReason } from '../lib/trialDisplay';
 import { judgeFor, rubricOf } from '../lib/trust';
 import { href } from '../router';
 import { text, timelineRows, type SpanView } from '../trials';
@@ -169,13 +169,15 @@ const rerun = computed(() => {
   return `${as}, not graded yet`;
 });
 
-/** D64: why a failed trial failed, or why it stopped short, by the API's rules; null otherwise. */
+/** D64: why a failed trial failed, or why it stopped short, by the API's rules; null otherwise.
+ *  Each reason in its short form: a check's patterns are in its grade card, never cut here. */
 const cause = computed(() => {
   const d = data.value;
   if (!d || d.any.kind !== 'experiment') return null;
   const c = causeView(d.any.trial.cause);
   if (!c) return null;
-  return { ...c, lead: outcome.value?.kind === 'fail' ? 'Why it failed' : 'Why it stopped short', reason: sentence(c.reason) };
+  const contributing = c.contributing.map((x) => ({ ...x, reason: sentence(shortReason(x.reason)) }));
+  return { ...c, contributing, lead: outcome.value?.kind === 'fail' ? 'Why it failed' : 'Why it stopped short', reason: sentence(shortReason(c.reason)) };
 });
 
 /** The harness and its pinned version from result.json: "Hermes 6112c2a". Contract v2 gives the
@@ -869,7 +871,7 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
                 v-for="(c, ci) in cause.contributing"
                 :key="ci"
               >
-                Also {{ c.name.toLowerCase() }}: <span class="cause-reason">{{ sentence(c.reason) }}</span>
+                Also {{ c.name.toLowerCase() }}: <span class="cause-reason">{{ c.reason }}</span>
               </li>
             </ul>
           </div>
@@ -1211,10 +1213,19 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
             <template v-else>
               <p
                 v-if="g.reason"
-                class="small"
+                class="small grade-reason"
                 data-test="grade-reason"
               >
-                {{ plainText(g.reason) }}
+                <template
+                  v-for="(r, ri) in reasonParts(g.reason)"
+                  :key="ri"
+                >
+                  <code
+                    v-if="r.pattern"
+                    class="mono reason-pattern"
+                    data-test="reason-pattern"
+                  >{{ r.text }}</code><span v-else>{{ plainText(r.text) }}</span>
+                </template>
               </p>
               <blockquote
                 v-for="(q, qi) in g.quotes"
@@ -1489,6 +1500,21 @@ const refs = (span: SpanView) => (['evals.request_ref', 'evals.response_ref'] as
 </template>
 
 <style scoped>
+/* A grader's reason in full, with any pattern it printed set in mono: a long regular expression
+   wraps anywhere rather than widening the card. */
+.grade-reason {
+  overflow-wrap: anywhere;
+}
+
+.reason-pattern {
+  font-size: 12px;
+  padding: 0 3px;
+  background: var(--ground);
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
 .evidence-quote {
   display: block;
   padding: 4px 8px;

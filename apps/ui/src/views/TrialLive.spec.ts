@@ -52,6 +52,31 @@ describe('TrialView on live trials: files', () => {
   });
 });
 
+describe('TrialView on live trials: why it failed', () => {
+  const gradeNamed = (w: ReturnType<typeof mountLive>['w'], name: string) => {
+    const g = w.findAll('[data-test="grade"]').find((x) => x.find('.grade-head .strong').text() === name);
+    if (!g) throw new Error(`no grade ${name}`);
+    return g;
+  };
+
+  it('keeps the header short, never cut inside a pattern, and the full reason with its patterns in the card', async () => {
+    const { w } = mountLive(PHONE);
+    await settle();
+    const cause = w.get('[data-test="trial-cause"]');
+    expect(cause.get('p').text()).toBe('Why it failed: Figure with no source. ₹5,500 has no tool result, client-file number or message behind it (1 of 68 figures).');
+    expect(cause.get('[data-test="trial-cause-also"]').text()).toBe(
+      'Also wrong answer: months-with-extra failed, though list_debts and debt_payoff_plan were called: 2 number(s) within ±0 of 12, but none next to a month word.',
+    );
+    expect(cause.text()).not.toContain('/');
+    const reason = gradeNamed(w, 'months-with-extra').get('[data-test="grade-reason"]');
+    expect(reason.text()).toBe(live.trials[PHONE].grades.find((g) => g.grader_id === 'months-with-extra')?.reason);
+    expect(reason.findAll('[data-test="reason-pattern"]').map((p) => p.text())).toEqual([
+      '/months?\\b|mos?\\b|EMIs?\\b|instal?l?ments?\\b/',
+      '/\\bmonths?(?:\\s+(?:down\\s+|drops?\\s+|falls?\\s+)?to)?|\\bmonths?\\b[^\\n|]*\\|(?:[^\\n|]*\\|)*?/',
+    ]);
+  });
+});
+
 describe('TrialView on live trials: tool calls', () => {
   it("shows a tool's result as laid-out JSON, never as an escaped string", async () => {
     const { w } = mountLive(PHONE);

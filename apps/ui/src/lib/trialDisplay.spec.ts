@@ -1,5 +1,44 @@
 import { describe, expect, it } from 'vitest';
-import { jsonForDisplay, modelCalls } from './trialDisplay';
+import { jsonForDisplay, modelCalls, reasonParts, shortReason } from './trialDisplay';
+
+/** months-with-extra's reason on t_0mw38a1yn845728704a225ae4, as the grader wrote it (7 Nov). */
+const MONTHS =
+  "2 number(s) within ±0 of 12, but none followed by /months?\\b|mos?\\b|EMIs?\\b|instal?l?ments?\\b/ or after /\\bmonths?(?:\\s+(?:down\\s+|drops?\\s+|falls?\\s+)?to)?|\\bmonths?\\b[^\\n|]*\\|(?:[^\\n|]*\\|)*?/: '| ₹3,000 | ₹10,488.62 | 12 | ₹10,917.46 | ₹4,751.32 |'; 'The tool assumes interest is charged monthly at 18% ÷ 12 on the outstanding balance, and that extra payments go straight to principal wi'";
+/** The same trial's contributing cause, as the API cut it (causes-1). */
+const CAUSE =
+  'months-with-extra failed, though list_debts and debt_payoff_plan were called: 2 number(s) within ±0 of 12, but none followed by /months?\\b|mos?\\b|EMIs?\\b|instal?l?ments?\\b/ or after /\\bmonths?(?:\\s+(?:down\\s+|drops?\\s…';
+
+describe("a grader's reason", () => {
+  it('sets each pattern the grader printed apart, whole, and leaves the words around it', () => {
+    const parts = reasonParts(MONTHS);
+    expect(parts.filter((p) => p.pattern).map((p) => p.text)).toEqual([
+      '/months?\\b|mos?\\b|EMIs?\\b|instal?l?ments?\\b/',
+      '/\\bmonths?(?:\\s+(?:down\\s+|drops?\\s+|falls?\\s+)?to)?|\\bmonths?\\b[^\\n|]*\\|(?:[^\\n|]*\\|)*?/',
+    ]);
+    expect(parts.map((p) => p.text).join('')).toBe(MONTHS);
+    expect(parts[0]).toEqual({ text: '2 number(s) within ±0 of 12, but none followed by ', pattern: false });
+    expect(parts[2]).toEqual({ text: ' or after ', pattern: false });
+    expect(parts[4].text.startsWith(": '| ₹3,000")).toBe(true);
+    // A regex grader's pattern at the start; a slash between words, a fraction or a path is no pattern.
+    expect(reasonParts('/guarantee(d)?/ matched \'guaranteed\'')[0]).toEqual({ text: '/guarantee(d)?/', pattern: true });
+    for (const plain of ['₹2,605 / month and 1/2 of it, see configs/rubrics/advice.v4.md', 'found ₹15,669, within ±0.5% of 15668.79']) {
+      expect(reasonParts(plain)).toEqual([{ text: plain, pattern: false }]);
+    }
+  });
+
+  it('gives the header a short form that never stops inside a pattern', () => {
+    expect(shortReason(CAUSE)).toBe('months-with-extra failed, though list_debts and debt_payoff_plan were called: 2 number(s) within ±0 of 12, but none next to a month word');
+    expect(shortReason(MONTHS)).toBe('2 number(s) within ±0 of 12, but none next to a month word');
+    // A long pattern reads "its pattern"; a short one stays; one the API cut short is not shown cut.
+    expect(shortReason("no-promise failed: /guarantee(d)?|assured returns?|risk[- ]free|can't lose/ matched 'risk-free'")).toBe("no-promise failed: its pattern matched 'risk-free'");
+    expect(shortReason("no-promise failed: /guarantee/ matched 'guarantee'")).toBe("no-promise failed: /guarantee/ matched 'guarantee'");
+    expect(shortReason('no-promise failed, though list_debts was called: /guarantee(d)?|assured returns?|risk[- ]fr…')).toBe('no-promise failed, though list_debts was called: its pattern');
+    // A reason with no pattern is left as it is.
+    expect(shortReason('₹5,500 has no tool result, client-file number or message behind it (1 of 68 figures)')).toBe(
+      '₹5,500 has no tool result, client-file number or message behind it (1 of 68 figures)',
+    );
+  });
+});
 
 describe('jsonForDisplay', () => {
   it("lays out a Hermes tool result with the tool's own JSON unescaped, every number as written", () => {
