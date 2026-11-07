@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RATER_KEY } from '../lib/rater';
-import { routeFetch, settle, useFixtures } from '../test/helpers';
+import { jsonReply, routeFetch, settle, useFixtures } from '../test/helpers';
 import LabelView from './LabelView.vue';
 
 // Every test labels as `rater-one`, remembered as the page remembers it, unless it says otherwise.
@@ -115,7 +115,8 @@ describe('LabelView against the API', () => {
     expect(item.text()).toContain('Your EMI is Rs 8,997.26.');
     // The note saying what is hidden names those things itself; everything else stays blind.
     expectBlind(w.text().replace(w.get('[data-test="blind-note"] > span').text(), ''));
-    expect(w.get('[data-test="label-file"]').text()).toContain('labels/heldout.jsonl');
+    // Nothing is saved yet, so nothing says it was.
+    expect(w.find('[data-test="label-file"]').exists()).toBe(false);
   });
 
   it("shows Hermes's tool calls the way the server named them, without its result wrapper", async () => {
@@ -401,6 +402,32 @@ describe('LabelView, the tuning batch against the API', () => {
     await settle();
     expect(w.get('[role="alert"]').text()).toContain('no route for POST /api/labels');
     expect(w.get('[data-test="progress"]').text()).toBe('1 of 1');
+    expect(w.find('[data-test="label-file"]').exists()).toBe(false);
+  });
+
+  it('says where a label was saved only after a save went through, never under a failed one (7 Nov QA)', async () => {
+    let up = true;
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (init?.method === 'POST') return up ? Promise.resolve(jsonReply(200, { ok: true })) : Promise.reject(new TypeError('Failed to fetch'));
+      return Promise.resolve(jsonReply(200, url === '/api/labels/queue?set=tuning&rater=rater-one' ? [tuningItem('t_one', 'Answer one.'), tuningItem('t_two', 'Answer two.')] : []));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const w = mount(LabelView, { attachTo: document.body });
+    mounted.push(w);
+    await settle();
+    expect(w.find('[data-test="label-file"]').exists()).toBe(false);
+    key('1');
+    key('Enter');
+    await settle();
+    expect(w.get('[data-test="label-file"]').text()).toBe("Last label saved to labels/tuning.jsonl as rater-one, with today's date. Synthetic examples live in their own file and never appear here.");
+    up = false;
+    key('2');
+    key('Enter');
+    await settle();
+    expect(w.get('[role="alert"]').text()).toContain('could not be reached');
+    expect(w.find('[data-test="label-file"]').exists()).toBe(false);
+    expect(w.text()).not.toContain('saved to');
   });
 });
 
@@ -482,7 +509,7 @@ describe('LabelView, who is labelling', () => {
     expect(window.localStorage.getItem(RATER_KEY)).toBe('asha');
     expect(queueCalls(calls)).toEqual(['/api/labels/queue?set=final&rater=asha', '/api/labels/queue?set=heldout&rater=asha', '/api/labels/queue?set=tuning&rater=asha']);
     expect(w.get('[data-test="blind-item"]').text()).toContain('The credit card.');
-    expect(w.get('[data-test="label-file"]').text()).toBe("Saved to labels/heldout.jsonl as asha, with today's date. Synthetic examples live in their own file and never appear here.");
+    expect(w.find('[data-test="label-file"]').exists()).toBe(false);
     await w.get('[data-test="criterion"]').findAll('button')[0].trigger('click');
     await w.get('[data-test="save-label"]').trigger('click');
     await settle();

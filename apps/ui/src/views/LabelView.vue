@@ -89,6 +89,9 @@ const note = ref('');
 const active = ref(0);
 const saving = ref(false);
 const saveError = ref<string | null>(null);
+/** The last label this visit saved, and where: the line saying so shows only after a save went
+ *  through, never under a failed one (7 Nov QA). */
+const lastSaved = ref<{ set: LabelSet; file: string; rater: string } | null>(null);
 const savedCount = computed(() => savedIds[set.value].length);
 const skippedCount = ref(0);
 /** "Not sure" answers saved this visit on fresh items: each comes back once for a second look. */
@@ -140,6 +143,7 @@ async function toNext(skipped: boolean) {
 async function loadMore() {
   await reload();
   for (const s of SETS) savedIds[s.set].splice(0);
+  lastSaved.value = null;
   index.value = 0;
   skippedCount.value = 0;
   unsureSaved.value = 0;
@@ -206,6 +210,7 @@ async function saveAndNext() {
       if (answers[c.id] === 'unsure' && !current.second_look) unsureSaved.value += 1;
     }
     savedIds[set.value].push(current.item_id);
+    lastSaved.value = { set: set.value, file: setFile.value, rater: who };
     await toNext(false);
   } catch (err) {
     saveError.value = errorText(err);
@@ -678,15 +683,19 @@ const blocks = (text: string) => mdBlocks(text);
           Answer every question to save; "Not sure" counts as an answer.
         </p>
         <p
+          v-if="fixtures"
           class="secondary smaller"
           data-test="label-file"
         >
-          <template v-if="fixtures">
-            Sample data: nothing is saved in this mode.
-          </template>
-          <template v-else>
-            Saved to {{ setFile }} as {{ rater }}, with today's date. Synthetic examples live in their own file and never appear here.
-          </template>
+          Sample data: nothing is saved in this mode.
+        </p>
+        <p
+          v-else-if="lastSaved && lastSaved.set === set && !saveError"
+          class="secondary smaller"
+          role="status"
+          data-test="label-file"
+        >
+          Last label saved to {{ lastSaved.file }} as {{ lastSaved.rater }}, with today's date. Synthetic examples live in their own file and never appear here.
         </p>
       </aside>
     </div>
