@@ -12,7 +12,7 @@ import LoadState from '../components/LoadState.vue';
 import NotFound from '../components/NotFound.vue';
 import TrustBadge from '../components/TrustBadge.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { agreementWords, armDifferences, armIndexOf, armLetter, armsOf, armState, differingShort, namedByHash, noDiffWords as noDiffFor, excludesZero, noWidth, shownWidth, intervalText, judgeCaveat, NBSP, passedText, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
+import { agreementWords, armDifferences, armIndexOf, armLetter, armsOf, armState, armWords, differingShort, namedByHash, noDiffWords as noDiffFor, excludesZero, noWidth, shownWidth, intervalText, judgeCaveat, NBSP, passedText, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { causeView, causeWord } from '../lib/causes';
 import { armsCheck, budgetCheck, capabilityCheck, localDiff, planCheck, splitCheck, type Check } from '../lib/checks';
@@ -378,7 +378,7 @@ const heroText = computed(() => {
   const s = stats.value;
   const h = hero.value;
   if (!s || !h) return null;
-  const [a, b] = arms.value;
+  const [a, b] = armWords(arms.value);
   const unit = (v: number) => (Math.abs(Math.round(v)) === 1 ? 'point' : 'points');
   // A zero-width interval does not "run" anywhere: say it has no width (D55).
   const interval = noWidth(s.diff)
@@ -386,7 +386,7 @@ const heroText = computed(() => {
     : `The ${h.level}% interval runs from ${signed(s.diff.low)} to ${signed(s.diff.high)}${NBSP}points.`;
   return {
     big: `${signed(s.diff.estimate)}${NBSP}${unit(s.diff.estimate)}`,
-    rest: ` of pass rate: ${a?.short ?? 'A'} ${percent(s.a.rate)}, ${b?.short ?? 'B'} ${percent(s.b.rate)}. ${interval}`,
+    rest: ` of pass rate: ${a} ${percent(s.a.rate)}, ${b} ${percent(s.b.rate)}. ${interval}`,
   };
 });
 
@@ -441,7 +441,8 @@ const why = computed(() => {
       ? notCalled(s)
         ? `The interval stays ${side} zero, but the verdict rests on the paired sign-flip test, and it gives p${NBSP}=${NBSP}${s.p_value}, not below ${alpha}.`
         : `The interval stays ${side} zero.`
-      : 'The interval crosses zero, so these trials cannot rule out no difference at all.';
+      : // An interval that only touches zero (0 to +100) reaches it; one with zero inside crosses it.
+        `The interval ${s.diff.low === 0 || s.diff.high === 0 ? 'reaches' : 'crosses'} zero, so these trials cannot rule out no difference at all.`;
   let aa = '';
   if (s.aa) {
     aa = excludesZero(s.aa.diff)

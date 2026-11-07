@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeSpan, toBlindItem } from '../api/client';
 import type { ConfigView, Estimate, TaskView } from '../api/types';
-import { agreementWords, armDifferences, armIndexOf, armsOf, armState, axisWords, checksToGo, differenceText, fakeOnly, headline, judgeCaveat, methodName, noDiffWords, passedText, pickLatest, pointsWithInterval, setupOf, timeLeft, verdictTitle, verdictWords } from './arms';
+import { agreementWords, armDifferences, armIndexOf, armsOf, armState, armWords, axisWords, checksToGo, differenceText, fakeOnly, headline, judgeCaveat, methodName, noDiffWords, passedText, pickLatest, pointsWithInterval, sentenceStart, setupOf, timeLeft, verdictTitle, verdictWords } from './arms';
 import { coverage, coverageText } from './capabilities';
 import { armsCheck, axisFromDiff, budgetCheck, capabilityCheck, splitCheck } from './checks';
 import { sentenceChanges } from './diff';
@@ -250,6 +250,19 @@ describe('arms', () => {
     expect(headline({ verdict: 'equivalent' }, arms, [taskOf('a', 'held_out')])).toBe('Prompt v2 and v1 are practically equivalent on the held-out tasks');
     expect(headline({ verdict: 'no_detectable_difference' }, arms, [taskOf('a', 'held_out')])).toBe('No detectable difference between Prompt v1 and v2 on the held-out tasks');
     expect(verdictWords('held_back')).toBe('Not called better');
+    // A title that opens with a lower-case arm name starts with a capital; an identifier keeps its case (QA, 7 Nov).
+    const tools = [config({ toolset: { id: 'finance', version: 'v1', sha256: 'sha256:t1' } }), config({ hash: 'sha256:5e1d7aa1111', toolset: { id: 'finance-rag', version: 'v1', sha256: 'sha256:t2' } })];
+    const byTools = armsOf({ axis: 'tools', config_hashes: tools.map((c) => c.hash) }, tools);
+    expect(verdictTitle(stats, byTools)).toBe('Tools finance-rag v1 beats tools finance v1');
+    expect(sentenceStart('tools finance-rag v1 beats tools finance v1')).toBe('Tools finance-rag v1 beats tools finance v1');
+    expect(sentenceStart('v2 beats v1')).toBe('v2 beats v1');
+    expect(sentenceStart('finance-advisor v2 beats v1')).toBe('finance-advisor v2 beats v1');
+    expect(sentenceStart('abcdeff beats 3b81e04')).toBe('abcdeff beats 3b81e04');
+    // An A/A run's arms share one name, so running text calls them A and B.
+    const same = armsOf({ axis: 'none', config_hashes: [configs[0].hash, configs[0].hash] }, configs);
+    expect(same.map((a) => a.short)).toEqual(['3b81e04', '3b81e04']);
+    expect(armWords(same)).toEqual(['A', 'B']);
+    expect(armWords(arms)).toEqual(['v1', 'v2']);
     expect(axisWords({ axis: 'none', config_hashes: [configs[0].hash, configs[0].hash], calibration: true })).toBe('nothing: an A/A calibration (same config twice)');
     expect(armsOf({ axis: 'none', config_hashes: [configs[0].hash, configs[0].hash] }, configs).map((a) => a.label)).toEqual(['Config 3b81e04', 'Config 3b81e04']);
   });

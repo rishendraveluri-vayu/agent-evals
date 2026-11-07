@@ -317,10 +317,10 @@ export function headline(stats: Pick<CompareStats, 'verdict'>, arms: Arm[], task
   const setup = context ? sharedSetupWords(context.axis, arms) : '';
   const where = `${split ? ` on the ${split} tasks` : ''}${setup ? `, with ${setup}` : ''}`;
   const ex = exampleWords(context?.example);
-  if (stats.verdict === 'better') return `${b.label} beats ${a.short}${where}${ex}`;
-  if (stats.verdict === 'worse') return `${b.label} does worse than ${a.short}${where}${ex}`;
-  if (stats.verdict === 'equivalent') return `${b.label} and ${a.short} are practically equivalent${where}${ex}`;
-  if (stats.verdict === 'held_back') return `${b.label} is not called better than ${a.short}${where}: critical failures rose${ex}`;
+  if (stats.verdict === 'better') return sentenceStart(`${b.label} beats ${a.short}${where}${ex}`);
+  if (stats.verdict === 'worse') return sentenceStart(`${b.label} does worse than ${a.short}${where}${ex}`);
+  if (stats.verdict === 'equivalent') return sentenceStart(`${b.label} and ${a.short} are practically equivalent${where}${ex}`);
+  if (stats.verdict === 'held_back') return sentenceStart(`${b.label} is not called better than ${a.short}${where}: critical failures rose${ex}`);
   return `No detectable difference between ${a.label} and ${b.short}${where}${ex}`;
 }
 
@@ -342,13 +342,33 @@ export function pickLatest(finished: ExperimentSummary[], configs: ConfigView[],
   return finished.filter((e) => ready(e) && !fakeOnly(e, configs)).reduce<ExperimentSummary | null>((best, e) => (!best || at(e) > at(best) ? e : best), null);
 }
 
+/**
+ * A sentence that opens with an arm's name starts with a capital, unless the name is an identifier
+ * that keeps its case ("v2", "finance-advisor v2", a short hash): "tools finance-rag v1 beats ..."
+ * reads "Tools finance-rag v1 beats ..." (QA, 7 Nov), and "v2 beats v1" stays as it is.
+ */
+export function sentenceStart(text: string): string {
+  const first = text.split(' ')[0];
+  if (!/^[a-z]+$/.test(first) || /^[0-9a-f]{7}$/.test(first)) return text;
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+}
+
+/** Each arm's name in running text, A first: its short name, or "A" and "B" when both arms share
+ *  one (an A/A run names both by one config hash: "9051fae 62%, 9051fae 58%" told them apart by
+ *  nothing; QA, 7 Nov). */
+export function armWords(arms: Arm[]): [string, string] {
+  const [a, b] = arms;
+  if (!a || !b || a.short === b.short) return ['A', 'B'];
+  return [a.short, b.short];
+}
+
 /** "v2 beats v1": the same verbs as headline(), with each arm's short name. */
 export function verdictTitle(stats: Pick<CompareStats, 'verdict'>, arms: Arm[]): string {
   const [a, b] = arms;
-  if (stats.verdict === 'better') return `${b.short} beats ${a.short}`;
-  if (stats.verdict === 'worse') return `${b.short} does worse than ${a.short}`;
+  if (stats.verdict === 'better') return sentenceStart(`${b.short} beats ${a.short}`);
+  if (stats.verdict === 'worse') return sentenceStart(`${b.short} does worse than ${a.short}`);
   if (stats.verdict === 'equivalent') return 'Practically equivalent';
-  if (stats.verdict === 'held_back') return `${b.short} is not called better: critical failures rose`;
+  if (stats.verdict === 'held_back') return sentenceStart(`${b.short} is not called better: critical failures rose`);
   return 'No detectable difference';
 }
 

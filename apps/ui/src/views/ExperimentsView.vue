@@ -6,7 +6,7 @@ import AppIcon from '../components/AppIcon.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
 import LoadState from '../components/LoadState.vue';
 import VerdictTag from '../components/VerdictTag.vue';
-import { armsOf, axisWords, checksToGo, doneCount, headline, intervalText, judgeCaveat, NBSP, pickLatest, pointsWithInterval, setupOf, timeLeft, totalTrials, verdictWords, type Verdict } from '../lib/arms';
+import { armsOf, armWords, axisWords, checksToGo, doneCount, headline, intervalText, judgeCaveat, NBSP, pickLatest, pointsWithInterval, setupOf, timeLeft, totalTrials, verdictWords, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { capitalise, identParts, minutes, money, percent, plainText, plural, relative, signed } from '../lib/format';
 import { isFake } from '../lib/models';
@@ -101,7 +101,7 @@ const latestResult = computed(() => {
     title: headline(stats, arms, latest.tasks, { axis: latest.axis, example: shippedOf(latest, d.examples) }),
     big: `${signed(stats.diff.estimate)}${NBSP}${Math.abs(Math.round(stats.diff.estimate)) === 1 ? 'point' : 'points'}`,
     // Each arm's rate by name: "X to Y" is kept for intervals.
-    rates: arms.length === 2 ? `pass rate: ${arms[0].short} ${percent(stats.a.rate)}, ${arms[1].short} ${percent(stats.b.rate)}` : `pass rate: A ${percent(stats.a.rate)}, B ${percent(stats.b.rate)}`,
+    rates: `pass rate: ${armWords(arms)[0]} ${percent(stats.a.rate)}, ${armWords(arms)[1]} ${percent(stats.b.rate)}`,
     min,
     max,
     ticks: ticksFor(min, max, 10),

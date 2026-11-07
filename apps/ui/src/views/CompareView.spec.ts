@@ -91,6 +91,9 @@ describe('CompareView in fixture mode', () => {
     const w = mount(CompareView, { props: { experimentId: 'exp_aa' } });
     await settle();
     expect(w.get('[data-test="arms-line"]').text()).toBe('A: Config 3b81e04B: Config 3b81e04');
+    // Both arms share the hash, so the rates name them A and B (QA, 7 Nov: "9051fae 62%, 9051fae 58%").
+    expect(w.get('.verdict-text').text()).toMatch(/ of pass rate: A \d+%, B \d+%\. /);
+    expect(w.get('.verdict-text').text()).not.toContain('3b81e04');
   });
 
   it("links each arm's count on a task to that arm's trials of the task, a failed one first", async () => {
@@ -937,6 +940,17 @@ describe('CompareView against the API: the check on the method', () => {
     const flat = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     expect(flat.get('[data-test="verdict-sub"]').text()).toBe('Every task gave the same difference, so the interval has no width and cannot say how large a difference could be hiding.');
+  });
+
+  it('says an interval that only touches zero reaches it, and one with zero inside crosses it (QA, 7 Nov)', async () => {
+    withStats({ verdict: 'no_detectable_difference', pass_rate_verdict: 'no_detectable_difference', diff: { estimate: 50, low: 0, high: 100 }, not_ruled_out_points: 100 });
+    let w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.findAll('[data-test="why-line"]')[0].text()).toBe('The interval reaches zero, so these trials cannot rule out no difference at all.');
+    withStats({ verdict: 'no_detectable_difference', pass_rate_verdict: 'no_detectable_difference', diff: { estimate: 4, low: -6, high: 14 }, not_ruled_out_points: 14 });
+    w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    expect(w.findAll('[data-test="why-line"]')[0].text()).toBe('The interval crosses zero, so these trials cannot rule out no difference at all.');
   });
 
   it('never says a zero-width interval crosses zero: every task gave the same difference, so no spread can be shown (D55)', async () => {
