@@ -17,7 +17,7 @@ import { causeView, sentence } from '../lib/causes';
 import { capitalise, count, harnessVersion, money, plainText, seconds, shortVersion } from '../lib/format';
 import { inlineParts, inlineStyles, type InlinePart } from '../lib/markdown';
 import { endStateName, experimentName, graderName, harnessName, harnessShort, infraReason, modelName, settingLabel } from '../lib/names';
-import { isModelCallFile, modelCalls } from '../lib/trialDisplay';
+import { isModelCallFile, jsonForDisplay, modelCalls } from '../lib/trialDisplay';
 import { judgeFor, rubricOf } from '../lib/trust';
 import { href } from '../router';
 import { text, timelineRows, type SpanView } from '../trials';
@@ -358,17 +358,6 @@ interface MessageItem {
   amounts: boolean;
 }
 
-function pretty(value: unknown): string {
-  if (typeof value === 'string') {
-    try {
-      return JSON.stringify(JSON.parse(value), null, 2);
-    } catch {
-      return value;
-    }
-  }
-  return JSON.stringify(value ?? null, null, 2);
-}
-
 function summarise(args: unknown): string {
   let parsed: unknown = args;
   if (typeof args === 'string') {
@@ -440,8 +429,8 @@ const conversation = computed<(ToolItem | MessageItem)[]>(() => {
         summary: summarise(r.span.attributes['evals.tool.arguments']),
         at: `at ${(r.startMs / 1000).toFixed(1)} s`,
         title: `Started ${(r.startMs / 1000).toFixed(1)} s in, took ${(r.durationMs / 1000).toFixed(1)} s`,
-        args: pretty(r.span.attributes['evals.tool.arguments']),
-        result: pretty(r.span.attributes['evals.tool.result']),
+        args: jsonForDisplay(r.span.attributes['evals.tool.arguments']),
+        result: jsonForDisplay(r.span.attributes['evals.tool.result']),
         error: r.span.attributes['evals.tool.is_error'] === true || r.span.statusCode === 2,
       }));
   const out: (ToolItem | MessageItem)[] = [];

@@ -1,5 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { modelCalls } from './trialDisplay';
+import { jsonForDisplay, modelCalls } from './trialDisplay';
+
+describe('jsonForDisplay', () => {
+  it("lays out a Hermes tool result with the tool's own JSON unescaped, every number as written", () => {
+    // evals.tool.result of a live calculate_emi call (t_0mw38a1yo6a7e2cbbf94d52f9, 7 Nov), cut to three fields.
+    const raw = '{"result": "{\\"emi\\":5287.11,\\"emi_formatted\\":\\"₹5,287.11\\",\\"final_payment\\":5287.10}"}';
+    expect(jsonForDisplay(raw)).toBe(['{', '  "result": {', '    "emi": 5287.11,', '    "emi_formatted": "₹5,287.11",', '    "final_payment": 5287.10', '  }', '}'].join('\n'));
+    expect(jsonForDisplay(raw)).not.toContain('\\"');
+  });
+
+  it('lays out arguments, nested lists and empty containers, and keeps keys and plain strings as they are', () => {
+    expect(jsonForDisplay('{}')).toBe('{}');
+    expect(jsonForDisplay('{"values": [7488.62, 17], "note": "a {brace} and a \\"quote\\"", "list": []}')).toBe(
+      ['{', '  "values": [', '    7488.62,', '    17', '  ],', '  "note": "a {brace} and a \\"quote\\"",', '  "list": []', '}'].join('\n'),
+    );
+    // A string value that only starts like JSON stays a string.
+    expect(jsonForDisplay('{"text": "[not json"}')).toBe('{\n  "text": "[not json"\n}');
+  });
+
+  it('shows text that is not JSON as it is, and older data that arrives as values', () => {
+    expect(jsonForDisplay('Error: connection reset')).toBe('Error: connection reset');
+    expect(jsonForDisplay({ amount: 35385 })).toBe('{\n  "amount": 35385\n}');
+    expect(jsonForDisplay(undefined)).toBe('null');
+  });
+});
 
 describe('modelCalls', () => {
   it('pairs each request with its response, in both stored layouts, and counts requests once', () => {
