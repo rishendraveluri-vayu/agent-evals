@@ -190,10 +190,14 @@ const harnessRef = computed(() => {
   return { name: name ? harnessShort(name) : 'Harness', ref: harnessVersion(ref), full: ref };
 });
 
+/** Workers send their adapter code's hash with each claim since 7 Nov (D85). */
+const ADAPTER_HASH_SINCE = Date.parse('2026-11-07T00:00:00Z');
+
 /** What pins the code an experiment trial ran, beside its config: the adapter code's hash, which its
  *  worker sent with the claim (D85), and the platform commit its experiment recorded (G2). Each is
  *  short, with the full value in a title. An attempt not claimed yet has no adapter code to show,
- *  and a probe no experiment, so no platform commit. */
+ *  and a probe no experiment, so no platform commit. A missing hash is put down to the date only
+ *  when the attempt was claimed before workers sent one; a later one's worker did not send it. */
 interface CodePart {
   key: 'adapter-code' | 'platform-commit';
   label: string;
@@ -208,7 +212,9 @@ const codeParts = computed<CodePart[]>(() => {
   const parts: CodePart[] = [];
   if (t.timing.claimed_at) {
     const sha = t.adapter_sha256;
-    parts.push({ key: 'adapter-code', label: 'adapter code', short: sha ? sha.replace('sha256:', '').slice(0, 7) : null, full: sha, missing: 'not recorded (trials before 7 Nov)' });
+    const early = Date.parse(t.timing.claimed_at) < ADAPTER_HASH_SINCE;
+    const missing = early ? 'not recorded (trials before 7 Nov)' : 'not sent by its worker';
+    parts.push({ key: 'adapter-code', label: 'adapter code', short: sha ? sha.replace('sha256:', '').slice(0, 7) : null, full: sha, missing });
   }
   if (d.experiment) {
     const commit = d.experiment.platform_commit;

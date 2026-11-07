@@ -494,6 +494,19 @@ describe('TrialView against the API: the outcome in words, and the simulated cli
     await settle();
     expect(w.get('[data-test="trial-code"]').text()).toBe('Platform commit c4d2e19');
   });
+
+  it('blames the date for a missing adapter hash only when the attempt was claimed before 7 Nov', async () => {
+    // Claimed on 7 Nov, after workers send the hash with each claim (D85): the worker did not send it.
+    const timing = { ...trial.timing, created_at: '2026-11-07T06:12:41.010Z', claimed_at: '2026-11-07T06:13:02.884Z' };
+    let w = mountWith({ trial: { adapter_sha256: null, timing } });
+    await settle();
+    expect(w.get('[data-test="adapter-code-missing"]').text()).toBe('not sent by its worker');
+    expect(w.get('[data-test="trial-code"]').text()).toBe('Adapter code not sent by its worker, platform commit c4d2e19');
+    // The last moment of 6 Nov (UTC) is still before.
+    w = mountWith({ trial: { adapter_sha256: null, timing: { ...timing, claimed_at: '2026-11-06T23:59:59.999Z' } } });
+    await settle();
+    expect(w.get('[data-test="adapter-code-missing"]').text()).toBe('not recorded (trials before 7 Nov)');
+  });
 });
 
 describe('TrialView against the API: an attempt stopped on infra (U6)', () => {
