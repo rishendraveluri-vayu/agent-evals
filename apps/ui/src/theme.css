@@ -4,9 +4,9 @@
    used); error messages use --error, which takes the fail red but is its own name.
    Blue is kept for arm A and dashes for infra (and zero lines): links, focus rings and running
    indicators are ink.
-   The dark theme is chosen by the viewer (header toggle, or ?theme=dark), never flipped
-   automatically, and has its own steps of the same palette. theme.spec.ts checks the contrast
-   of every text pair below in both themes. */
+   The dark theme follows the system's setting until the viewer picks one with the header toggle
+   (remembered; ?theme=dark for one visit), and has its own steps of the same palette.
+   theme.spec.ts checks the contrast of every text pair below in both themes. */
 :root {
   color-scheme: light;
   --ground: #f6f8fa;
