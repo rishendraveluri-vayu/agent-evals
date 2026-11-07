@@ -272,6 +272,8 @@ describe('the judge trust fixture', () => {
 
   it('refuses to calibrate a label queue without an experiment, as the API does', () => {
     expect(() => fixtureResponse('GET', '/labels/queue?set=heldout&calibrate=1')).toThrow(ApiError);
-    expect(fixtureResponse('GET', '/labels/queue?set=heldout&experiment=exp_heldout&calibrate=1')).toHaveLength(3);
+    // A balanced block, as the API answers: an even number of the sample's items.
+    expect(fixtureResponse('GET', '/labels/queue?set=heldout&experiment=exp_heldout&calibrate=1')).toHaveLength(2);
+    expect(fixtureResponse('GET', '/labels/queue?set=heldout&experiment=exp_heldout')).toHaveLength(3);
   });
 });

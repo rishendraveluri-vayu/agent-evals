@@ -144,7 +144,8 @@ const usualHref = computed(() => href.labels({ set: set.value, experiment: props
 const calibrateWords = computed<{ text: string; link: boolean }>(() => {
   const n = total.value;
   if (!queue.value) return { text: "You won't see its verdicts.", link: false };
-  const half = n % 2 === 0 ? `${n / 2} of its passes and ${n / 2} of its fails` : 'balanced between its passes and its fails';
+  // The API's block is always even (k of each); an odd one, from an older API, is not called balanced.
+  const half = n % 2 === 0 ? `${n / 2} of its passes and ${n / 2} of its fails` : 'a mix of its passes and its fails';
   if (n > 0) return { text: `These ${n} outputs are ${half}, in a random order, and you won't see which. Label these ${n}, then go on to`, link: true };
   const usual = usualLeft.value?.[set.value] ?? 0;
   if (usual > 0) return { text: `There is nothing to balance: its verdicts on the ${usual === 1 ? 'output' : `${usual} outputs`} left to label are all one kind, or not in yet. Label ${usual === 1 ? 'it' : 'them'} in`, link: true };

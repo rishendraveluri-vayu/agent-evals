@@ -471,10 +471,12 @@ function saveLabel(body: CreateLabelRequest) {
 }
 
 /** GET /labels/queue: the sample queue of a set. As the API does, `calibrate` needs an
- *  experiment; the sample order is already mixed, so calibrating reorders nothing here. */
+ *  experiment, and answers a balanced block, so an even number: here the sample's first items, as
+ *  many as make an even count (the sample carries no verdicts to balance on). */
 function labelQueueFor(p: URLSearchParams): unknown[] {
   if (p.get('calibrate') === '1' && !p.get('experiment')) throw new ApiError(400, 'invalid_query', 'calibrate needs an experiment', 'Calibrate from an experiment: its comparison page links here.');
-  return labelQueue[p.get('set') ?? ''] ?? [];
+  const queue = labelQueue[p.get('set') ?? ''] ?? [];
+  return p.get('calibrate') === '1' ? queue.slice(0, queue.length - (queue.length % 2)) : queue;
 }
 
 /** GET /judge/trust: every sample judge, or with `experiment` the ones that graded its trials (as
