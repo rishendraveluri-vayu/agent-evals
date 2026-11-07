@@ -121,7 +121,8 @@ With a key:
 
 1. Copy `.env.example` to `.env`.
 2. Add `ANTHROPIC_API_KEY` and/or `GEMINI_API_KEY`. If a Claude key came with my submission email,
-   it goes in `ANTHROPIC_API_KEY`. It's capped at $10 and revoked after the review.
+   it goes in `ANTHROPIC_API_KEY`. It expires on 17 Nov 2026. Each run you start has its own budget,
+   which LiteLLM enforces, so a run stops at the limit you set.
 3. Run `docker compose up -d` again.
 
 Every run shows its trials, models and worst-case cost before it starts, and asks you to confirm.
