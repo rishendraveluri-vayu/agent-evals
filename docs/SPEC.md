@@ -296,8 +296,6 @@ Only if the frozen plan has slack.
 - [x] `reference_rates` (D58): Rishi approves or edits the proposed values in `services/finance-mcp/src/finance_mcp/reference_rates.json` before any run uses `finance/v3` (approved 5 Nov, `debt_fund` removed; server 0.4.1), and re-reads them just before the experiment (October's CPI is due in mid-November; the NSE factsheet URLs are replaced monthly). A changed value is a new server version and toolset version.
 - [ ] Comparison page (D72): a Regrade button beside the "not graded alike" note, warning first when a judge approval is active (a regrade re-runs the judge and spends). Today the note gives the API call, and the judge panel's "Regrade with the judge" covers experiments with judged tasks only.
 
-- [ ] Comparison page: `stats.judge` on `GET /experiments/:id/compare` is always null (`apps/api/src/stats/analysis.ts` sets it so: "SP5's agreement, null until SP5 reports it"), so the judge line in the aside and the "Rests on the judge" caveat under the figure, with its kappa and "provisional", never show (`judgeLine`, `judgeCaveat` in `apps/ui/src/views/CompareView.vue`); the review S12 sentence from `rests_on_judge` does. Either fill it from D83's judge trust or remove it and those branches; a call for Rishi. Found while removing `GET /judge/agreement` (7 Nov), which the page did not need for either.
-
 ## Freeze (D65, 5 Nov)
 
 After D61, D62 and the D63 task fixes land, the agent, prompt v1, tasks, graders and toolset are frozen. New findings about the agent or tasks go to `docs/known-limits.md` or the write-up, not into fixes. Remaining work is the evaluation loop and the comparison.
