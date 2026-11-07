@@ -315,8 +315,106 @@ describe("TrialView against the API: the judge's reasons and your label, with ou
       'Your held-out labels disagree with the judge on 2 questions: overall (you said No, the judge said Yes); fd-tax (you said Yes, the judge said No). See judge agreement',
     );
     expect(w.findAll('[data-test="grade-trust-dispute"]').map((d) => d.text())).toEqual([', your label: no', ', your label: yes']);
-    // One of them passes it in your label.
-    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge; your label passes it)');
+    // It passes fd-tax, but its "no" on overall fails the check all the same (review 7 Nov, F2).
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: fd-tax (judge; your label: no)');
+  });
+});
+
+describe('TrialView against the API: "Failed on" and what your label says of a failed judge check', () => {
+  // Shaped like the headline's live trials (GET /trials/:id, /judge/trust, 7 Nov); every label here is synthetic.
+  const ID = 'tr_fd-vs-sip-07_b_3';
+  const RUBRIC = 'configs/rubrics/advice.v4.md';
+  const CRITERIA = ['overall', 'keep-cash', 'explains-plainly'];
+  type Answer = 'yes' | 'no';
+  const judgeGrade = (required: boolean, answers: Record<string, Answer>) => ({
+    id: 902,
+    grader_id: 'overall',
+    grader_version: 'sha256:6e96644016030aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    kind: 'judge',
+    type: 'judge',
+    required,
+    verdict: Object.values(answers).includes('no') ? 'fail' : 'pass',
+    score: 0,
+    reason: 'judge: fail',
+    evidence: [
+      ...CRITERIA.map((criterion) => ({ criterion, required: true, verdict: answers[criterion], quote: '', reason: `${criterion}: ${answers[criterion]}.`, source: 'judge', quote_found: false })),
+      { source: 'judge_call', model: 'gemini-3.8-flash', rubric: RUBRIC, status: 200 },
+    ],
+    judge_model: 'gemini-3.8-flash',
+    run_index: 0,
+    created_at: '2026-11-06T16:09:26.767Z',
+  });
+  const provenance = (verdict: 'pass' | 'fail') => ({
+    id: 901,
+    grader_id: 'every-amount-from-a-tool',
+    grader_version: 'sha256:e812aa305a830aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    kind: 'state',
+    type: 'provenance',
+    required: true,
+    verdict,
+    score: verdict === 'pass' ? 1 : 0,
+    reason: verdict === 'pass' ? 'every figure has a tool result behind it' : '₹1,06,000 has no tool result behind it (1 of 61 figures)',
+    evidence: [],
+    judge_model: null,
+    run_index: 0,
+    created_at: '2026-11-06T16:09:26.767Z',
+  });
+  /** The judge's trust, with a disagreement on this trial for each question given: [human, judge]. A
+   *  question the label agrees on lists none, as the API's does. */
+  const trust = (disputes: Record<string, [Answer, Answer]>): JudgeTrustResponse => ({
+    bar: (trustJson as unknown as JudgeTrustResponse).bar,
+    judges: [
+      {
+        judge_model: 'gemini-3.8-flash',
+        rubric: RUBRIC,
+        experiments: ['exp_heldout'],
+        trials_judged: 200,
+        status: 'not_trusted',
+        summary: 'Not trusted: kappa 0.00 on 40 held-out labels is below 0.6.',
+        criteria: CRITERIA.map(
+          (criterion): JudgeCriterionTrust => ({
+            criterion,
+            text: null,
+            status: 'too_few',
+            summary: '4 held-out labels so far.',
+            heldout: null,
+            tuning: null,
+            d8: null,
+            retest: null,
+            needs_human_no: 5,
+            disagreements: disputes[criterion]
+              ? [{ trial_id: ID, task_id: 'fd-vs-sip-07', set: 'heldout', human: disputes[criterion][0], judge: disputes[criterion][1], judge_reason: null, human_note: null }]
+              : [],
+          }),
+        ),
+      },
+    ],
+  });
+  function mountWith(grades: unknown[], judges: JudgeTrustResponse) {
+    routeFetch({
+      [`/api/trials/${ID}`]: { ...trial, grades },
+      [`/api/trials/${ID}/spans`]: trialSpans,
+      [`/api/trials/${ID}/files/checks.json`]: { contract_version: '2', amounts: [] },
+      '/api/judge/trust?experiment=exp_heldout': judges,
+      '/api/experiments/exp_heldout': (details as Record<string, unknown>).exp_heldout,
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/prompts': prompts,
+    });
+    return mount(TrialView, { props: { trialId: ID } });
+  }
+  const failedTwice = { overall: 'no', 'keep-cash': 'no', 'explains-plainly': 'yes' } as const;
+
+  it('says your label passes the questions it disputes, not the check, when the judge failed it on others too', async () => {
+    // Live: the judge said no on overall and keep-cash; the label agrees on overall and passes keep-cash.
+    const w = mountWith([provenance('pass'), judgeGrade(true, failedTwice)], trust({ 'keep-cash': ['yes', 'no'] }));
+    await settle();
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: overall (judge; your label passes keep-cash but not overall)');
+  });
+
+  it('says your label passes the check only when it passes every question the judge failed it on', async () => {
+    const w = mountWith([provenance('pass'), judgeGrade(true, failedTwice)], trust({ overall: ['yes', 'no'], 'keep-cash': ['yes', 'no'] }));
+    await settle();
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: overall (judge; your label passes it)');
   });
 });
 

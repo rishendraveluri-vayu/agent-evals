@@ -31,6 +31,9 @@ export interface JudgeAnswer {
   criterion: string;
   /** yes, no, or what the judge gave instead (missing, an unclear word). */
   verdict: string | null;
+  /** Whether the check's verdict rests on it: the grader fails the check on a required criterion
+   *  answered no (on any, when none is required). Required unless the evidence says otherwise. */
+  required: boolean;
 }
 
 export interface GradeView {
@@ -112,7 +115,7 @@ function judgeParts(e: Json): { criteria: JudgeAnswer[]; rubric: string | null }
   const list = Array.isArray(e) ? e.filter(isObj) : [];
   const criteria = list.flatMap((item): JudgeAnswer[] => {
     const criterion = str(item.criterion);
-    return criterion ? [{ criterion, verdict: str(item.verdict) }] : [];
+    return criterion ? [{ criterion, verdict: str(item.verdict), required: item.required !== false }] : [];
   });
   const call = list.find((item) => item.source === 'judge_call');
   return { criteria, rubric: call ? str(call.rubric) : null };

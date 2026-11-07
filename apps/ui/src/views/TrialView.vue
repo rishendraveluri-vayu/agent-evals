@@ -638,16 +638,34 @@ function disputeWords(list: Dispute[]): { lead: string; items: { criterion: stri
 }
 const gradeDisputes = computed(() => gradeTrust.value.map((t) => (t?.disputes.length ? disputeWords(t.disputes) : null)));
 
-/** "Failed on" names each failed check, says which the judge graded, and which you dispute. */
+const listWords = (xs: string[], last: 'and' | 'or') => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} ${last} ${xs[xs.length - 1]}`);
+
+/** What your label says of a failed judge check, from its disputes on this trial. The check failed
+ *  on the questions the judge answered no that its verdict rests on (the required ones, as the
+ *  grader counts them; the check itself when it lists none). Your label passes it only when it says
+ *  yes on every one of those and no on none; it fails it too when it says no where the judge said
+ *  yes. A label that says yes on some of those questions passes them but not the rest, which it
+ *  either agrees fail or left unanswered: no disagreement is listed for them. */
+function labelNote(g: GradeView, disputes: Dispute[]): string {
+  const counted = g.criteria.some((c) => c.required) ? g.criteria.filter((c) => c.required) : g.criteria;
+  const ids = new Set(counted.length ? counted.map((c) => c.criterion) : [g.graderId]);
+  const mine = disputes.filter((x) => ids.has(x.criterion));
+  if (mine.some((x) => x.human === 'no')) return ' (judge; your label: no)';
+  const failing = counted.length ? counted.filter((c) => c.verdict === 'no').map((c) => c.criterion) : [g.graderId];
+  const passed = new Set(mine.filter((x) => x.human === 'yes').map((x) => x.criterion));
+  const disputed = failing.filter((c) => passed.has(c));
+  const kept = failing.filter((c) => !passed.has(c));
+  if (!disputed.length) return ' (judge)';
+  if (!kept.length) return ' (judge; your label passes it)';
+  return ` (judge; your label passes ${listWords(disputed, 'and')} but not ${listWords(kept, 'or')})`;
+}
+
+/** "Failed on" names each failed check, says which the judge graded, and what your label says of it. */
 const failedOn = computed(() =>
   (vm.value?.grades ?? [])
     .map((g, gi) => ({ g, index: g.index, disputes: gradeTrust.value[gi]?.disputes ?? [] }))
     .filter(({ g }) => g.verdict === 'fail')
-    .map(({ g, index, disputes }) => {
-      let note = '';
-      if (isJudge(g)) note = disputes.some((x) => x.human === 'yes') ? ' (judge; your label passes it)' : disputes.length ? ' (judge; your label: no)' : ' (judge)';
-      return { name: g.name, index, note };
-    }),
+    .map(({ g, index, disputes }) => ({ name: g.name, index, note: isJudge(g) ? labelNote(g, disputes) : '' })),
 );
 
 function jumpToGrade(index: number) {
