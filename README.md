@@ -48,6 +48,14 @@ following the sourcing rule (What I'd trust least, below). But 4 of the 10 tasks
 and 1 always failed, in both versions, so only 5 tasks could show a difference. With 5, the test
 can't get under p = 0.05 however big the gap. The fix is more tasks in the middle, not more trials.
 
+In plain words: "better" needs a result that luck would explain less than 1 time in 20, a bar set
+before the run. A clean sweep of 5 tasks is luck 1 time in 16, so it can't clear it. At a 1-in-10
+bar the +9 would read "better". The bar, the ±10-point "practically the same" margin and the
+6-task minimum are constants in [`apps/api/src/stats/analysis.ts`](apps/api/src/stats/analysis.ts)
+(`ALPHA`, `MARGIN_POINTS`, `MIN_TASKS_FOR_VERDICT`); the verdict function already takes the bar and
+margin as arguments, so a per-run setting is a small change. Shipping v2 anyway is a fair call: it
+leans better and adds no serious failures ([Conclusion](docs/experiment.md#conclusion)).
+
 Every run together cost about $44 in model calls ([`docs/cost.md`](docs/cost.md)).
 
 ## How the verdict works
