@@ -65,6 +65,8 @@ const TASK = {
 const TASK_TWO = { ...TASK, id: 'emi-example-two', summary: 'A second EMI task for the example test (test fixture)' };
 /** Not UTF-8, so the export ships it as base64. */
 const BLOB = Buffer.from([0xff, 0xfe, 0x00, 0x01, 0x80, 0x7f]);
+/** The adapter code hash the test's worker claims with (D85), made up. */
+const ADAPTER_CODE = `sha256:${'5e'.repeat(32)}`;
 
 describeWithDb('shipped examples (e2e, real Postgres)', () => {
   let source: TestEnv;
@@ -82,7 +84,7 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
   async function runTrials(env: TestEnv, failFirst = false): Promise<void> {
     let failed = !failFirst;
     for (;;) {
-      const res = await request(env.http).post('/api/worker/claim').set(auth).send({ worker_id: 'w1', harness: 'ownloop' });
+      const res = await request(env.http).post('/api/worker/claim').set(auth).send({ worker_id: 'w1', harness: 'ownloop', adapter_sha256: ADAPTER_CODE });
       if (res.status === 204) return;
       const c = res.body as ClaimResponse;
       const label = failed ? 'agent' : 'infra:adapter_crash';
@@ -297,6 +299,7 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
       const a = (await request(source.http).get(`/api/trials/${id}`).expect(200)).body as TrialView;
       const b = (await request(target.http).get(`/api/trials/${id}`).expect(200)).body as TrialView;
       expect(noGradeIds(b)).toEqual(noGradeIds(a));
+      expect(b.adapter_sha256).toBe(ADAPTER_CODE); // D85: travels with the bundle
       expect((await request(target.http).get(`/api/trials/${id}/spans`).expect(200)).body).toEqual((await request(source.http).get(`/api/trials/${id}/spans`).expect(200)).body);
       const files: StoredFile[] = a.files;
       for (const f of files) {
@@ -465,6 +468,17 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
     await fs.appendFile(path.join(examplesDir, 'corrupt-example', 'files.jsonl.gz'), 'x');
     const res = await load('corrupt-example').expect(422);
     expect(res.body).toMatchObject({ error: 'example_invalid', message: expect.stringContaining('files.jsonl.gz') as unknown });
+    // D85: a trial's adapter code hash, when a bundle has one, must be a sha256 ref.
+    await fs.cp(path.join(examplesDir, 'test-example'), path.join(examplesDir, 'bad-adapter-example'), { recursive: true });
+    const badManifest = path.join(examplesDir, 'bad-adapter-example', 'manifest.json');
+    await fs.writeFile(badManifest, JSON.stringify({ ...JSON.parse(await fs.readFile(badManifest, 'utf8')), name: 'bad-adapter-example' }));
+    await rewriteRows('bad-adapter-example', (t) => {
+      t.trials[0].adapter_sha256 = 'sha256:not-a-hash';
+    });
+    const before = await counts(target);
+    const badCode = await load('bad-adapter-example').expect(422);
+    expect(badCode.body).toMatchObject({ error: 'example_invalid', message: expect.stringContaining('adapter_sha256') as unknown });
+    expect(await counts(target)).toEqual(before);
     await load('no-such-example').expect(404);
     await load('Not_A_Name').expect(400);
   });
@@ -490,6 +504,9 @@ describeWithDb('shipped examples (e2e, real Postgres)', () => {
       const [first] = (await request(target.http).get(`/api/experiments/${manifest.experiment_id}/trials`).expect(200)).body as TrialRowSummary[];
       const view = (await request(target.http).get(`/api/trials/${first.id}`).expect(200)).body as TrialView;
       expect(view.files.length).toBeGreaterThan(0);
+      // D85: every shipped example ran before trials recorded their adapter code, and loads with none.
+      expect(view.adapter_sha256).toBeNull();
+      expect(await q('SELECT count(*)::int AS n FROM trials WHERE experiment_id = $1 AND adapter_sha256 IS NOT NULL')).toBe(0);
       const result = view.files.find((f) => f.path === 'result.json')!;
       const got = await request(target.http).get(`/api/trials/${first.id}/files/result.json`).expect(200);
       expect(`sha256:${sha(Buffer.from(got.text))}`).toBe(result.sha256);

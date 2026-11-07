@@ -41,6 +41,8 @@ interface ExportRow {
   label: string | null;
   end_state: string | null;
   worker_id: string | null;
+  /** D85: the hash of the adapter code that ran the attempt; null before 7 Nov. */
+  adapter_sha256: string | null;
   claimed_at: Date | null;
   finished_at: Date | null;
   cost_usd: number | null;
@@ -137,9 +139,11 @@ export const CSV_COLUMNS = [
   'grades_json',
   'problems',
   'folder',
+  // New columns go last, so a reader that takes the earlier columns by position still finds them.
   // E6: the experiment a reused arm-A trial ran in (D34), empty for the experiment's own trials.
-  // Last, so a reader that takes the earlier columns by position still finds them.
   'reused_from',
+  // D85: the hash of the adapter code that ran the attempt (its worker's claim); empty before 7 Nov.
+  'adapter_sha256',
 ] as const;
 
 /**
@@ -186,7 +190,7 @@ export class ExportService {
     for (;;) {
       const page = await this.db.query<ExportRow>(
         `SELECT t.id, t.experiment_id, (CASE WHEN t.experiment_id = $1 THEN 1 ELSE 0 END)::int AS src, t.repeat_index, t.attempt, t.seq, t.status, t.label, t.end_state, t.worker_id,
-                t.claimed_at, t.finished_at, t.cost_usd, t.sim_cost_usd, t.spend_unknown, t.input_tokens, t.output_tokens, t.model_calls,
+                t.adapter_sha256, t.claimed_at, t.finished_at, t.cost_usd, t.sim_cost_usd, t.spend_unknown, t.input_tokens, t.output_tokens, t.model_calls,
                 (SELECT string_agg(DISTINCT s.attributes ->> 'gen_ai.response.model', ' ')
                    FROM spans s
                   WHERE s.trial_id = t.id AND s.name LIKE 'chat %'
@@ -252,6 +256,8 @@ export class ExportService {
         end_state: r.end_state,
         task: { sha256: r.task_sha256, id: r.task_id, version: r.task_version, split: r.task_split, kind: r.task_kind },
         config: c ? configView(c) : { hash: r.config_hash },
+        // D85: what pins the adapter code, beside the config hash; null before 7 Nov.
+        adapter_sha256: r.adapter_sha256,
         served_model: r.served_model,
         spend: {
           cost_usd: r.cost_usd,
@@ -396,6 +402,7 @@ export class ExportService {
         grades_json: grades.length ? grades : null,
         problems: r.problems.length ? r.problems.join('; ') : null,
         folder: r.folder,
+        adapter_sha256: r.adapter_sha256,
       };
       yield `${CSV_COLUMNS.map((k) => csvCell(values[k])).join(',')}\n`;
     }

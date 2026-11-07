@@ -459,7 +459,8 @@ describeWithDb('run controls (e2e, real Postgres)', () => {
     expect(json.trials.slice(2).map((t) => t.id).sort()).toEqual(childTrials);
     const [header, ...lines] = parseCsv((await request(env.http).get(`/api/experiments/${child.id}/export?format=csv`).expect(200)).text);
     const col = (name: string): number => header.indexOf(name);
-    expect(header.at(-1)).toBe('reused_from');
+    // New columns go last (D85's adapter hash after reused_from), so earlier positions never move.
+    expect(header.slice(-2)).toEqual(['reused_from', 'adapter_sha256']);
     expect(lines.map((l) => [l[col('arm')], l[col('experiment_id')], l[col('reused_from')]])).toEqual([
       ['A', parent.id, parent.id],
       ['A', parent.id, parent.id],

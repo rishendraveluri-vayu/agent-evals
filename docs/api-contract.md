@@ -700,7 +700,9 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
   empty cost is unknown, not zero. `served_model` (a CSV column after `model`, and in the JSON
   rows; since 5 Nov) is the model id the provider said it served for the agent's calls
   (`gen_ai.response.model` on LiteLLM's chat spans, space-separated if more than one), since a
-  config names its model by alias. Each
+  config names its model by alias. `adapter_sha256` (D85, 7 Nov; the last CSV column, and in
+  the JSON rows beside `config`) is the hash of the adapter code that ran the attempt, empty
+  (null) for one claimed before 7 Nov; new CSV columns go last, so earlier positions never move. Each
   row has `arm` (`A` or `B` by the config's place in the experiment; in a run of one config twice,
   the second arm's repeats come after the first's) and `outcome`, the trial's current grading
   exactly as the run grid (`grading` on `GET /experiments/:id/trials`) and the comparison count
@@ -732,9 +734,12 @@ model gets and a list of contradictions. Types: `RenderedPromptView`, `ConflictC
 
 ## Trials
 
-- `GET /trials/:id` returns `{id, experiment_id, probe, task, config, repeat_index, attempt, status,
+- `GET /trials/:id` returns `{id, experiment_id, probe, task, config, adapter_sha256, repeat_index, attempt, status,
   label, end_state, result, runner_report, usage, timing, files: [{path, bytes, sha256}],
-  grades, grading, problems, cause}`. A probe trial (D33) has `probe: true` and `experiment_id: null`. `grades` are
+  grades, grading, problems, cause}`. `adapter_sha256` (D85) is the hash of the adapter code
+  that ran the attempt, from its worker's claim, kept off the config hash; null for an attempt
+  claimed before 7 Nov (every shipped example's), not claimed yet, or claimed by a worker that
+  had none. A probe trial (D33) has `probe: true` and `experiment_id: null`. `grades` are
   those of the trial's latest finished grading job (see Grading), each `{id, grader_id,
   grader_version, kind, type, required, verdict, score, reason, evidence, judge_model, run_index,
   created_at}`; `cause` is the failure cause its row has (D64), null for a probe; `grading` is `{current, pending}`: the job those grades came from (`job_id,
@@ -762,7 +767,12 @@ A worker serves one harness. Its loop: claim, run, heartbeat while running, uplo
 files, report. Workers talk only to the API over HTTP and mount nothing from the host, so a
 trial cannot read or change another trial's stored files (D3).
 
-1. `POST /worker/claim` with `{worker_id, harness}`. Returns 204 when nothing is queued for
+1. `POST /worker/claim` with `{worker_id, harness, adapter_sha256}`. `adapter_sha256` (D85, 7
+   Nov) is the hash of the adapter code the worker runs, which it works out once at startup
+   (`docs/adapter-contract.md` section 10): `sha256:<hex>` or bare hex in any case, stored as
+   `sha256:<hex>` on the trial the claim hands out (`trials.adapter_sha256`), or null or left
+   out by a worker that has none (an image built before 7 Nov). Anything else is 400
+   `invalid_claim`, before any trial is claimed. Returns 204 when nothing is queued for
    that harness, or 200 with
    `{trial_id, attempt, experiment_id, spec, state_files: {"client.json": "<base64>"},
    keys: {model, sim}, budgets: {trial_usd, sim_usd}, lease_s: 60, folder, sim_cache}`. `spec` is a
@@ -1003,7 +1013,7 @@ field is left (a key inside a binary file cannot be scrubbed, so it fails the ex
   | --- | --- |
   | `invalid_example_name` (400) | the name is not lower-case letters, digits and hyphens |
   | `unknown_example` (404) | no `examples/<name>/manifest.json` |
-  | `example_invalid` (422) | the manifest or a part does not check out: wrong format, a part's sha256 differs, a file's bytes differ from its line or its trial's listing, rows that refer outside the example, an unfinished trial or grading job, counts that differ from the manifest, or columns this database does not have |
+  | `example_invalid` (422) | the manifest or a part does not check out: wrong format, a part's sha256 differs, a file's bytes differ from its line or its trial's listing, rows that refer outside the example, an unfinished trial or grading job, counts that differ from the manifest, a trial `adapter_sha256` that is not a `sha256:<hex>` ref (D85; a bundle from before the column has none, and its trials load with null), or columns this database does not have |
   | `example_conflict` (409) | the experiment id is already here as an experiment of its own (the machine it was exported from) or as another example; a trial or grading job id is already here; a shared row is here with other content; or a different file is already where a trial file goes. Nothing is changed |
 
 - **An example is read-only and apart from your own work.** These answer 409 `example_read_only`

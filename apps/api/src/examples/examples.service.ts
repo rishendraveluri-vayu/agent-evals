@@ -18,6 +18,8 @@ const LOAD_LOCK = 74_201_408;
 /** Trial and grading states an example may be shipped in: finished ones, so nothing is left to claim. */
 const FINAL_TRIAL = ['done', 'infra_failed', 'abandoned', 'cancelled'];
 const FINAL_JOB = ['done', 'failed', 'superseded', 'no_graders'];
+/** A trial's adapter code hash as the table stores it (migration 018, D85). */
+const ADAPTER_SHA = /^sha256:[0-9a-f]{64}$/;
 
 /**
  * Content-addressed rows the example shares with this database's own: the key is a hash of the
@@ -64,6 +66,10 @@ export function checkBundle(m: ExampleManifest, tables: Record<BundleTable, Json
   for (const t of tables.trials) {
     if (t.experiment_id !== id || t.probe === true) throw bad(`trial ${txt(t.id)} is not a trial of ${id}`);
     if (!FINAL_TRIAL.includes(txt(t.status))) throw bad(`trial ${txt(t.id)} is ${txt(t.status)}; every trial must have finished`);
+    // D85: a trial exported before the column has none (every example shipped so far), which loads as null.
+    if (t.adapter_sha256 !== undefined && t.adapter_sha256 !== null && !(typeof t.adapter_sha256 === 'string' && ADAPTER_SHA.test(t.adapter_sha256))) {
+      throw bad(`trial ${txt(t.id)}'s adapter_sha256 is not sha256:<64 hex digits>`);
+    }
   }
   for (const s of tables.spans) {
     if (!trials.has(str(s.trial_id) ?? '') || typeof s.raw !== 'object' || s.raw === null) throw bad('a span names no trial of the example, or has no raw span');

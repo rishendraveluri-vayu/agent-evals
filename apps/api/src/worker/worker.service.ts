@@ -159,6 +159,12 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     }
     const workerId = b.worker_id;
     const harness = b.harness;
+    // D85: the hash of the adapter code the worker runs, stored on the trial it gets. Null (or left
+    // out) from a worker that has none, such as one built before 7 Nov.
+    const adapterSha = b.adapter_sha256 === undefined || b.adapter_sha256 === null ? null : normalizeSha(b.adapter_sha256);
+    if (adapterSha === null && b.adapter_sha256 !== undefined && b.adapter_sha256 !== null) {
+      throw badRequest('invalid_claim', 'adapter_sha256 must be sha256:<64 hex digits>, 64 hex digits, or null');
+    }
     // E10: a claim for a harness with no folder under workers/ can never get a trial; refused, so
     // it adds no worker row either.
     const harnesses = await this.harnessNames();
@@ -166,7 +172,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
       throw badRequest('unknown_harness', `no harness named ${JSON.stringify(harness.slice(0, 80))} under workers/`, `Set EVALS_HARNESS to one of: ${[...harnesses].sort().join(', ')}.`);
     }
     const modelBaseUrl = this.litellm.workerBaseUrl; // fails early when LiteLLM is not configured
-    const claimed = await this.claimNext(workerId, harness, modelBaseUrl);
+    const claimed = await this.claimNext(workerId, harness, modelBaseUrl, adapterSha);
     // Item 8 with E10 (6 Nov review): a worker counts as live once it has held a trial (this claim,
     // then its heartbeats); after that an empty claim (204) keeps it live, so an idle pool still
     // counts in the time estimate (the re-check found every idle worker looked absent). An empty
@@ -185,7 +191,7 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
     return this.harnessCache.names;
   }
 
-  private claimNext(workerId: string, harness: string, modelBaseUrl: string): Promise<ClaimResponse | null> {
+  private claimNext(workerId: string, harness: string, modelBaseUrl: string, adapterSha: string | null): Promise<ClaimResponse | null> {
     return this.db.tx(async (client) => {
       // A probe trial (D33) has no experiment and goes first: it is a short pre-run check.
       const claimable = `t.status = 'queued' AND t.harness = $1 AND (t.probe OR e.status = 'running')
@@ -215,13 +221,13 @@ export class WorkerService implements OnApplicationBootstrap, OnModuleDestroy {
         if (cand.experiment_id) await client.query('SELECT 1 FROM experiments WHERE id = $1 FOR KEY SHARE', [cand.experiment_id]);
         t = await one<TrialRow>(
           client,
-          `UPDATE trials SET status = 'claimed', worker_id = $2, claimed_at = now(), heartbeat_at = now()
+          `UPDATE trials SET status = 'claimed', worker_id = $2, claimed_at = now(), heartbeat_at = now(), adapter_sha256 = $4
            WHERE id = (
              SELECT t.id FROM trials t LEFT JOIN experiments e ON e.id = t.experiment_id
              WHERE t.id = $3 AND ${claimable}
              FOR UPDATE OF t SKIP LOCKED)
            RETURNING id, experiment_id, probe, task_sha256, config_hash, repeat_index, attempt`,
-          [harness, workerId, cand.id],
+          [harness, workerId, cand.id, adapterSha],
         );
       }
       if (!t) return null;

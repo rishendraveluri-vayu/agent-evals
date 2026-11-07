@@ -633,6 +633,47 @@ describeWithDb('experiments and the worker protocol (e2e, real Postgres)', () =>
     expect(view.files.map((f) => [f.path, f.sha256, f.ok])).toEqual(files.map((f) => [f.path, `sha256:${f.sha256}`, true]));
   });
 
+  it('stores the adapter code hash each claim names on its trial, returns it in the trial and both exports, and refuses a malformed one (D85)', async () => {
+    for (const { id } of (await env.pool.query("SELECT id FROM experiments WHERE status = 'running'")).rows as { id: string }[]) await cancel(id);
+    const code = `sha256:${'0a1b2c3d'.repeat(8)}`;
+    const exp = await experiment({ n: 4 });
+    const claimWith = (body: Record<string, unknown>) => request(env.http).post('/api/worker/claim').set(auth).send({ worker_id: 'w-code', harness: 'ownloop', ...body });
+    // A malformed hash is refused before anything is claimed.
+    for (const bad of ['sha256:xyz', 'a'.repeat(63), `md5:${'a'.repeat(32)}`, 42, { sha256: code }]) {
+      const res = await claimWith({ adapter_sha256: bad }).expect(400);
+      expect(res.body).toMatchObject({ error: 'invalid_claim', message: expect.stringContaining('adapter_sha256') as unknown });
+    }
+    expect((await rows(exp.id)).map((r) => r.status)).toEqual(['queued', 'queued', 'queued', 'queued']);
+    const claimed: Record<string, ClaimResponse> = {};
+    // As sent; bare hex in any case, as file hashes are taken; null; and left out, as a worker built before D85 sends it.
+    for (const [name, body] of [
+      ['ref', { adapter_sha256: code }],
+      ['hex', { adapter_sha256: code.slice('sha256:'.length).toUpperCase() }],
+      ['null', { adapter_sha256: null }],
+      ['none', {}],
+    ] as const) {
+      const c = (await claimWith(body).expect(200)).body as ClaimResponse;
+      expect(c.experiment_id).toBe(exp.id);
+      claimed[name] = c;
+      await report(c, 'w-code');
+    }
+    const stored = async (name: string): Promise<string | null> => ((await request(env.http).get(`/api/trials/${claimed[name].trial_id}`).expect(200)).body as TrialView).adapter_sha256;
+    expect([await stored('ref'), await stored('hex'), await stored('null'), await stored('none')]).toEqual([code, code, null, null]);
+    // The table holds only the one form, whatever reaches it.
+    await expect(env.pool.query('UPDATE trials SET adapter_sha256 = $2 WHERE id = $1', [claimed.none.trial_id, 'sha256:XYZ'])).rejects.toThrow(/trials_adapter_sha256_ref/);
+
+    const byTrial = { [claimed.ref.trial_id]: code, [claimed.hex.trial_id]: code, [claimed.null.trial_id]: null, [claimed.none.trial_id]: null };
+    const json = JSON.parse((await request(env.http).get(`/api/experiments/${exp.id}/export?format=json`).expect(200)).text) as { trials: { id: string; adapter_sha256: string | null; config: { hash: string } }[] };
+    expect(Object.fromEntries(json.trials.map((t) => [t.id, t.adapter_sha256]))).toEqual(byTrial);
+    // Kept off the config hash: one config ran under both.
+    expect([...new Set(json.trials.map((t) => t.config.hash))]).toEqual([configA]);
+    const [header, ...lines] = (await request(env.http).get(`/api/experiments/${exp.id}/export?format=csv`).expect(200)).text.trim().split('\n');
+    const cols = header.split(',');
+    expect(cols.at(-1)).toBe('adapter_sha256');
+    const csv = Object.fromEntries(lines.map((l) => l.split(',')).map((cells) => [cells[cols.indexOf('trial_id')], cells.at(-1) || null]));
+    expect(csv).toEqual(byTrial);
+  });
+
   it('hands later trials of a conversation task the simulator replies earlier trials stored (D22)', async () => {
     // Earlier tests' experiments must not hold queued ownloop trials that would be claimed first.
     for (const { id } of (await env.pool.query("SELECT id FROM experiments WHERE status = 'running'")).rows as { id: string }[]) await cancel(id);

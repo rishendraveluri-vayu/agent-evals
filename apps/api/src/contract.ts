@@ -1320,6 +1320,12 @@ export interface TrialView {
     prompt: VersionRef;
     toolset: VersionRef;
   };
+  /**
+   * D85: the hash of the adapter code that ran this attempt, as its worker sent it with the claim.
+   * Kept off the config hash. Null for attempts claimed before 7 Nov (every shipped example's) and
+   * for a worker that could not work it out.
+   */
+  adapter_sha256: Sha256 | null;
   repeat_index: number;
   attempt: number;
   status: TrialStatus;
@@ -1416,6 +1422,12 @@ export interface FolderSpanView {
 export interface ClaimRequest {
   worker_id: string;
   harness: string;
+  /**
+   * D85: the hash of the adapter code the worker runs (its harness package and evals_adapter,
+   * workers/adapterlib/src/evals_adapter/source_hash.py), stored on the trial it is handed.
+   * `sha256:<hex>` or bare hex; null or left out by a worker that has none.
+   */
+  adapter_sha256?: Sha256 | null;
 }
 
 export interface ClaimResponse {

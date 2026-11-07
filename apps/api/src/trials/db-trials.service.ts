@@ -27,6 +27,7 @@ interface Row {
   proxy_complete: boolean | null;
   wall_s: number | null;
   worker_id: string | null;
+  adapter_sha256: string | null;
   created_at: Date;
   claimed_at: Date | null;
   heartbeat_at: Date | null;
@@ -113,6 +114,8 @@ export class DbTrialsService {
         prompt: { id: r.prompt_id, version: r.prompt_version, sha256: r.prompt_sha256 },
         toolset: { id: r.toolset_id, version: r.toolset_version, sha256: r.toolset_sha256 },
       },
+      // D85: null for attempts claimed before 7 Nov, the shipped examples' among them.
+      adapter_sha256: r.adapter_sha256 ?? null,
       repeat_index: r.repeat_index,
       attempt: r.attempt,
       status: r.status,
