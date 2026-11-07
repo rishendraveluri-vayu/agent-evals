@@ -303,13 +303,18 @@ Decided (D10 as revised 5 Nov, D41, D42, D43, D44, D50; the proposal is `docs/pr
   critical check, the critical-failure rate is the share of decided trials where such a check
   failed; B minus A gets the same task bootstrap. B is never called better while that interval
   lies above 0: the verdict is then *held back* ("not called better: critical failures rose"),
-  shown beside the verdict either way. With no check marked critical, the comparison says so
+  shown beside the verdict either way, in words that give each arm's own count first ("A failed a
+  critical check in 16 of 16 decided trials, B in 16 of 16"), then B minus A, so a difference of 0
+  never reads as no critical failures. With no check marked critical, the comparison says so
   rather than claim safety. The severity is read from the grader specs of the grading that
   produced each trial's grades (the task file it was graded with).
 - **The regression list (D10).** Every task where B dropped (d(t) < 0), or where any check's own
   pass rate fell from A to B, whether or not it is beyond noise: counts, interval, flag, and the
-  checks that got worse (pass rate in each arm, severity), critical first, with links to B's failed
+  checks that got worse (pass rate in each arm, severity), required critical first, with links to B's failed
   trials, each failed trial's cause, and the causes that grew from A to B on that task (D64, below).
+  A task is tagged "critical check got worse" only for a required critical check, one the guardrail
+  counts; an optional check rated critical (the untrusted judge's `overall`) decides nothing and
+  is listed as optional.
 - **Cost, tokens and time next to quality** (proposal section 8). The same task bootstrap on each
   task's mean cost per trial (LiteLLM's recorded cost of the agent's calls; the simulated client's
   cost is the environment's and left out), tokens (input plus output) and time, as a difference

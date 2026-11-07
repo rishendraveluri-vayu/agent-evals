@@ -128,7 +128,7 @@ const counts = (rate: number, passed: number, graded: number) => ({ rate, passed
 const same = (ids: string[], at: Record<string, [number, number, number, boolean]>) => ids.map((id) => [id, ...(at[id] ?? [0, 1, 1, false])]);
 const HELD_OUT = ['draft-college-cost-stepup', 'draft-convo-consolidation', 'draft-convo-job-loss', 'draft-convo-phone-loan', 'draft-first-year-interest', 'draft-loan-to-clear-card', 'draft-otp-scam', 'draft-prepay-personal-loan', 'draft-sip-education-goal', 'draft-spending-review'];
 const ONLY_FIVE = 'Only 5 of the 10 tasks passed at different rates in the two arms, and only those count in the paired test: over 5 its smallest possible p is 0.0625, so it could not reach p < 0.05 however large the difference.';
-const NO_CRITICAL_CHANGE = 'Critical failures: 0.0 points (95% interval 0.0 to 0.0) over 8 tasks with 13 critical checks. No rise beyond noise.';
+const NO_CRITICAL_CHANGE = 'A failed a critical check in 0 of 80 decided trials, B in 0 of 80; B minus A 0.0 points (95% interval 0.0 to 0.0) over 8 tasks with 13 critical checks: no rise beyond noise.';
 
 /** As computed at 30ce17c, before the destructive review's statistics fixes, and checked against the reviewer's own recomputation. */
 const PINNED: Record<string, { summary: ReturnType<typeof summary>; text: string; critical: string; calibration: string | null }> = {
@@ -214,7 +214,7 @@ const PINNED: Record<string, { summary: ReturnType<typeof summary>; text: string
       ],
     },
     text: 'B passes more than A: +44.8 points (95% interval +23.8 to +65.7), p = 0.001099 by the paired sign-flip test over 21 tasks.',
-    critical: 'Critical failures: -40.0 points (95% interval -63.1 to -16.9) over 13 tasks with 20 critical checks. No rise beyond noise.',
+    critical: 'A failed a critical check in 29 of 65 decided trials, B in 3 of 65; B minus A -40.0 points (95% interval -63.1 to -16.9) over 13 tasks with 20 critical checks: no rise beyond noise.',
     calibration: null,
   },
   // D78, run 6 Nov after the review's statistics fixes, so pinned as the API computed it then (method sp6-3).
@@ -243,7 +243,7 @@ const PINNED: Record<string, { summary: ReturnType<typeof summary>; text: string
       ],
     },
     text: 'B passes more than A: +28.0 points (95% interval +9.0 to +49.0), p = 0.04688 by the paired sign-flip test over 10 tasks.',
-    critical: 'Critical failures: +1.3 points (95% interval 0.0 to +3.8) over 8 tasks with 13 critical checks. No rise beyond noise.',
+    critical: 'A failed a critical check in 0 of 80 decided trials, B in 1 of 80; B minus A +1.3 points (95% interval 0.0 to +3.8) over 8 tasks with 13 critical checks: no rise beyond noise.',
     calibration: null,
   },
   // D79, run 6 Nov and regraded once after a grader fix (rag tasks v2); pinned as the API computed it then.
@@ -276,7 +276,7 @@ const PINNED: Record<string, { summary: ReturnType<typeof summary>; text: string
       ],
     },
     text: 'B passes more than A: +55.7 points (95% interval +34.3 to +77.1), p = 0.001953 by the paired sign-flip test over 14 tasks.',
-    critical: 'Critical failures: -22.9 points (95% interval -40.7 to -7.9) over 14 tasks with 18 critical checks. No rise beyond noise.',
+    critical: 'A failed a critical check in 42 of 140 decided trials, B in 10 of 140; B minus A -22.9 points (95% interval -40.7 to -7.9) over 14 tasks with 18 critical checks: no rise beyond noise.',
     calibration: null,
   },
   // The model axis (pre-registered 517443e), run 6 Nov; pinned as the API computed it then.
@@ -330,7 +330,7 @@ const PINNED: Record<string, { summary: ReturnType<typeof summary>; text: string
       }),
     },
     text: 'B passes more than A: +17.0 points (95% interval +5.0 to +29.0), p = 0.04688 by the paired sign-flip test over 10 tasks.',
-    critical: NO_CRITICAL_CHANGE,
+    critical: 'A failed a critical check in 1 of 80 decided trials, B in 1 of 80; B minus A 0.0 points (95% interval 0.0 to 0.0) over 8 tasks with 13 critical checks: no rise beyond noise.',
     calibration: null,
   },
   'replication-own-loop-prompt-v1-vs-v2': {
@@ -353,7 +353,7 @@ const PINNED: Record<string, { summary: ReturnType<typeof summary>; text: string
       }),
     },
     text: `No detectable difference: +8.0 points (95% interval -4.0 to +23.0), p = 0.4375 by the paired sign-flip test over 10 tasks. Differences as large as 23 points are not ruled out. ${ONLY_FIVE}`,
-    critical: 'Critical failures: +2.5 points (95% interval 0.0 to +6.3) over 8 tasks with 13 critical checks. No rise beyond noise.',
+    critical: 'A failed a critical check in 1 of 80 decided trials, B in 3 of 80; B minus A +2.5 points (95% interval 0.0 to +6.3) over 8 tasks with 13 critical checks: no rise beyond noise.',
     calibration: null,
   },
   // Shipped 6 Nov, after the fixes: pinned as the fixed statistics compute it (3 tasks x 4 trials).
@@ -375,7 +375,7 @@ const PINNED: Record<string, { summary: ReturnType<typeof summary>; text: string
       ],
     },
     text: 'No detectable difference: +33.3 points (95% interval 0.0 to +100.0), p = 1 by the paired sign-flip test over 3 tasks. Differences as large as 100 points are not ruled out. With fewer than 6 tasks no other verdict is possible: the paired test cannot reach p < 0.05.',
-    critical: 'Critical failures: -33.3 points (95% interval -100.0 to 0.0) over 3 tasks with 5 critical checks. No rise beyond noise.',
+    critical: 'A failed a critical check in 4 of 12 decided trials, B in 0 of 12; B minus A -33.3 points (95% interval -100.0 to 0.0) over 3 tasks with 5 critical checks: no rise beyond noise.',
     calibration: null,
   },
 };

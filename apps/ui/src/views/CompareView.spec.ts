@@ -1031,9 +1031,10 @@ describe('CompareView against the API: the check on the method', () => {
     let w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     const fine = w.get('[data-test="critical"]');
-    expect(fine.text()).toBe('Critical checks: Critical failures: −10.0 points (95% interval −30.0 to +0.0) over 2 tasks with 2 critical checks. No rise beyond noise.');
+    // Each arm's count, then the difference: a 0 alone read as "no critical failures" (QA, 7 Nov).
+    expect(fine.text()).toBe('Guardrail: A failed a critical check in 1 of 10 decided trials, B in 0 of 10; B minus A −10.0 points (95% interval −30.0 to 0.0) over 2 tasks with 2 critical checks: no rise beyond noise.');
     expect(fine.classes()).not.toContain('caveat--alarm');
-    const rose = { ...base.stats!.critical, status: 'rose' as const, diff: { estimate: 20, low: 5, high: 35 }, blocks_better: true, text: 'Critical failures: +20.0 points (95% interval +5.0 to +35.0) over 2 tasks with 2 critical checks. They rose beyond noise, so B is not called better although its pass rate rose.' };
+    const rose = { ...base.stats!.critical, status: 'rose' as const, diff: { estimate: 20, low: 5, high: 35 }, blocks_better: true, text: 'A failed a critical check in 0 of 10 decided trials, B in 4 of 10; B minus A +20.0 points (95% interval +5.0 to +35.0) over 2 tasks with 2 critical checks: a rise beyond noise, so B is not called better although its pass rate rose.' };
     withStats({ verdict: 'held_back', critical: rose });
     w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
@@ -1043,7 +1044,7 @@ describe('CompareView against the API: the check on the method', () => {
     withStats({ critical: { status: 'no_critical_checks', checks: [], tasks: 0, a: null, b: null, diff: null, blocks_better: false, text: 'No check is marked critical in these tasks, so this comparison says nothing about critical failures.' } });
     w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
-    expect(w.get('[data-test="critical"]').text()).toBe('Critical checks: No check is marked critical in these tasks, so this comparison says nothing about critical failures.');
+    expect(w.get('[data-test="critical"]').text()).toBe('Guardrail: No check is marked critical in these tasks, so this comparison says nothing about critical failures.');
   });
 
   it('lists where B dropped, with the checks that got worse and their severity, critical first', async () => {
@@ -1061,6 +1062,17 @@ describe('CompareView against the API: the check on the method', () => {
     const w2 = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
     await settle();
     expect(w2.get('[data-test="regression"]').get('.regression-tag--critical').text()).toBe('critical check got worse');
+  });
+
+  it("tags no task for an optional check rated critical, and says it is optional (QA, 7 Nov: the judge's overall)", async () => {
+    // An API that still flags it (an older one) is not taken at its word: no required critical check fell.
+    const judged = { ...base.stats!.regressions[1], critical: true, graders: [{ grader_id: 'overall', required: false, severity: 'critical' as const, a: { passed: 9, graded: 9 }, b: { passed: 9, graded: 10 } }, { grader_id: 'ends-answered', required: true, severity: 'major' as const, a: { passed: 10, graded: 10 }, b: { passed: 9, graded: 10 } }] };
+    withStats({ regressions: [judged] });
+    const w = mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+    await settle();
+    const item = w.get('[data-test="regression"]');
+    expect(item.find('.regression-tag--critical').exists()).toBe(false);
+    expect(item.findAll('[data-test="regression-grader"]').map((g) => g.text())).toEqual(['overall (optional, rated critical): 9 of 9 in A, 9 of 10 in B', 'ends-answered (major): 10 of 10 in A, 9 of 10 in B']);
   });
 
   it('says under cost, tokens and time that they get an interval but no verdict, and that it covers a little less than it says (S5)', async () => {

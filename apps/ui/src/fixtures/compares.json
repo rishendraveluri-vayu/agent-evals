@@ -398,7 +398,7 @@
           "high": 0
         },
         "blocks_better": false,
-        "text": "Critical failures: -10.0 points (95% interval -30.0 to +0.0) over 2 tasks with 2 critical checks. No rise beyond noise."
+        "text": "A failed a critical check in 1 of 10 decided trials, B in 0 of 10; B minus A -10.0 points (95% interval -30.0 to 0.0) over 2 tasks with 2 critical checks: no rise beyond noise."
       },
       "regressions": [
         {

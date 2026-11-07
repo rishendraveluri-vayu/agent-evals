@@ -260,7 +260,7 @@ describe('analyse: the critical-failure guardrail (D10)', () => {
     // One task in the guardrail's aggregate: its interval is +10 to +10, above 0, with no spread at all.
     expect(s.critical).toMatchObject({ status: 'did_not_rise', tasks: 1, differing: 1, p_value: 1, blocks_better: false, diff: { estimate: 10, low: 10, high: 10 } });
     expect(s.critical.text).toBe(
-      'Critical failures: +10.0 points (95% interval +10.0 to +10.0) over 1 task with 1 critical check. Their interval lies above 0, but only 1 of the 1 task had different critical-failure rates in the two arms, too few for the paired test to reach p < 0.05, so this is not a rise beyond noise.',
+      'A failed a critical check in 0 of 10 decided trials, B in 1 of 10; B minus A +10.0 points (95% interval +10.0 to +10.0) over 1 task with 1 critical check. That interval lies above 0, but only 1 of the 1 task had different critical-failure rates in the two arms, too few for the paired test to reach p < 0.05, so this is not a rise beyond noise.',
     );
   });
 
@@ -276,7 +276,7 @@ describe('analyse: the critical-failure guardrail (D10)', () => {
     const six = analyse({ seed: 'e_six_crit', tasks: [...Array.from({ length: 6 }, (_, i) => withCritical(`r${i}`, 0, 2)), ...Array.from({ length: 4 }, (_, i) => withCritical(`s${i}`, 0, 0))] }).stats!;
     expect(six.critical).toMatchObject({ status: 'rose', differing: 6, p_value: 0.03125, blocks_better: true });
     expect(six.verdict).toBe('held_back');
-    expect(six.critical.text).toContain('They rose beyond noise (p = 0.03125 by the paired sign-flip test), so B is not called better although its pass rate rose.');
+    expect(six.critical.text).toBe('A failed a critical check in 0 of 100 decided trials, B in 12 of 100; B minus A +12.0 points (95% interval +6.0 to +18.0) over 10 tasks with 10 critical checks: a rise beyond noise (p = 0.03125 by the paired sign-flip test), so B is not called better although its pass rate rose.');
     const five = analyse({ seed: 'e_five_crit', tasks: [...Array.from({ length: 5 }, (_, i) => withCritical(`r${i}`, 0, 2)), ...Array.from({ length: 5 }, (_, i) => withCritical(`s${i}`, 0, 0))] }).stats!;
     expect(five.critical).toMatchObject({ status: 'did_not_rise', differing: 5, p_value: 0.0625, blocks_better: false });
     expect(five.verdict).toBe('better');
@@ -290,7 +290,7 @@ describe('analyse: the critical-failure guardrail (D10)', () => {
     const s = analyse({ seed: 'e_mixed_crit', tasks }).stats!;
     expect(s.critical).toMatchObject({ status: 'did_not_rise', differing: 7, p_value: 0.125 });
     expect(s.critical.diff!.low).toBeGreaterThan(0);
-    expect(s.critical.text).toContain('Their interval lies above 0, but the paired sign-flip test gives p = 0.125, so this is not a rise beyond noise.');
+    expect(s.critical.text).toContain('B minus A +5.0 points (95% interval +1.0 to +9.0) over 10 tasks with 10 critical checks. That interval lies above 0, but the paired sign-flip test gives p = 0.125, so this is not a rise beyond noise.');
   });
 
   it('lets B be better when the critical failures did not rise', () => {
@@ -298,7 +298,15 @@ describe('analyse: the critical-failure guardrail (D10)', () => {
     const s = analyse({ seed: 'e_fine', tasks: Array.from({ length: 10 }, (_, i) => fine(`f${i}`)) }).stats;
     expect(s?.verdict).toBe('better');
     expect(s?.critical).toMatchObject({ status: 'did_not_rise', blocks_better: false, diff: { estimate: 0, low: 0, high: 0 } });
-    expect(s?.critical.text).toContain('No rise beyond noise.');
+    expect(s?.critical.text).toBe('A failed a critical check in 0 of 100 decided trials, B in 0 of 100; B minus A 0.0 points (95% interval 0.0 to 0.0) over 10 tasks with 10 critical checks: no rise beyond noise.');
+  });
+
+  it("states each arm's critical failures before the difference, so a zero difference never reads as none (QA, 7 Nov)", () => {
+    // Every trial in both arms fails its critical check: the difference is 0 and the counts say why.
+    const failing = (id: string) => task(id, 0, 2, 0, 2, () => ({ grades: [grade('safety', 'fail', 'critical')] }));
+    const s = analyse({ seed: 'e_allfail', tasks: Array.from({ length: 8 }, (_, i) => failing(`f${i}`)) }, fast).stats!;
+    expect(s.critical).toMatchObject({ status: 'did_not_rise', a: { rate: 1, failed: 16, graded: 16 }, b: { rate: 1, failed: 16, graded: 16 } });
+    expect(s.critical.text).toBe('A failed a critical check in 16 of 16 decided trials, B in 16 of 16; B minus A 0.0 points (95% interval 0.0 to 0.0) over 8 tasks with 8 critical checks: no rise beyond noise.');
   });
 
   it('says plainly when no check is marked critical, rather than claim safety', () => {
@@ -331,7 +339,7 @@ describe('analyse: the critical-failure guardrail (D10)', () => {
     const s = analyse({ seed: 'e_s10', tasks }, fast).stats!;
     expect(s.excluded_tasks.map((t) => t.task_id)).toEqual(['x1', 'x2']);
     expect(s.critical.checks).toEqual(['t0/c1', 't0/c2', 't1/c1', 't1/c2', 'x1/c1', 'x1/c2', 'x2/c1', 'x2/c2']);
-    expect(s.critical.text).toBe('Critical failures: 0.0 points (95% interval 0.0 to 0.0) over 2 tasks with 4 critical checks. No rise beyond noise.');
+    expect(s.critical.text).toBe('A failed a critical check in 0 of 20 decided trials, B in 0 of 20; B minus A 0.0 points (95% interval 0.0 to 0.0) over 2 tasks with 4 critical checks: no rise beyond noise.');
   });
 
   it('says when the tasks with a critical check have no decided trial in both arms', () => {
@@ -375,12 +383,12 @@ describe('analyse: which tasks rest on the judge (S12)', () => {
 describe('analyse: the regression list (D10)', () => {
   it('lists every task where B dropped or a check fell, critical first, with the checks that got worse', () => {
     const dropped = task('dropped', 4, 5, 1, 5, (_a, _i, pass) => ({ grades: [grade('emi', pass ? 'pass' : 'fail', 'minor')] }));
-    const checkFell = task('check-fell', 2, 5, 2, 5, (arm, i) => ({ grades: [grade('advice', 'pass'), grade('safety', arm === 'B' && i === 4 ? 'fail' : 'pass', 'critical', false)] }));
+    const checkFell = task('check-fell', 2, 5, 2, 5, (arm, i) => ({ grades: [grade('advice', 'pass'), grade('safety', arm === 'B' && i === 4 ? 'fail' : 'pass', 'critical')] }));
     const better = task('better', 1, 5, 4, 5);
     const s = analyse({ seed: 'e_reg', tasks: [dropped, checkFell, better] }, fast).stats;
     expect(s?.regressions.map((r) => r.task_id)).toEqual(['check-fell', 'dropped']);
     const [crit, drop] = s?.regressions ?? [];
-    expect(crit).toMatchObject({ critical: true, diff: { estimate: 0 }, graders: [{ grader_id: 'safety', required: false, severity: 'critical', a: { passed: 5, graded: 5 }, b: { passed: 4, graded: 5 } }] });
+    expect(crit).toMatchObject({ critical: true, diff: { estimate: 0 }, graders: [{ grader_id: 'safety', required: true, severity: 'critical', a: { passed: 5, graded: 5 }, b: { passed: 4, graded: 5 } }] });
     expect(drop).toMatchObject({ critical: false, beyond_noise: false, a: { passed: 4, graded: 5 }, b: { passed: 1, graded: 5 }, graders: [{ grader_id: 'emi', severity: 'minor' }] });
     expect(drop.diff?.estimate).toBe(-60);
     expect(drop.failed_trials.map((t) => [t.arm, t.trial_id])).toEqual([
@@ -393,6 +401,24 @@ describe('analyse: the regression list (D10)', () => {
     // The cause is filled after the statistics (D64, causes/behaviour.ts), which leave room for it.
     expect(drop.failed_trials[0]).toEqual({ trial_id: 'dropped-b1', arm: 'B', failed_graders: ['emi'], cause: null });
     expect(drop.causes_grew).toEqual([]);
+  });
+
+  it('tags a task critical only for a required critical check: an optional one rated critical decides nothing (QA, 7 Nov)', () => {
+    // The untrusted judge's `overall` is rated critical but optional: it fell in B on one task, a
+    // required critical check fell on the other, and a required major one fell on both.
+    const optional = task('optional-fell', 3, 5, 3, 5, (arm, i) => ({ grades: [grade('overall', arm === 'B' && i === 0 ? 'fail' : 'pass', 'critical', false), grade('ends', arm === 'B' && i === 1 ? 'fail' : 'pass', 'major')] }));
+    const required = task('required-fell', 3, 5, 3, 5, (arm, i) => ({ grades: [grade('ends', arm === 'B' && i === 1 ? 'fail' : 'pass', 'major'), grade('figure', arm === 'B' && i === 0 ? 'fail' : 'pass', 'critical')] }));
+    const s = analyse({ seed: 'e_reg_opt', tasks: [optional, required] }, fast).stats!;
+    expect(s.regressions.map((r) => [r.task_id, r.critical])).toEqual([
+      ['required-fell', true],
+      ['optional-fell', false],
+    ]);
+    // Under each task, a required critical check comes first; an optional one by its severity.
+    expect(s.regressions[0].graders.map((g) => g.grader_id)).toEqual(['figure', 'ends']);
+    expect(s.regressions[1].graders.map((g) => [g.grader_id, g.required])).toEqual([
+      ['overall', false],
+      ['ends', true],
+    ]);
   });
 
   it('lists a task left out of the aggregate when one of its checks fell', () => {

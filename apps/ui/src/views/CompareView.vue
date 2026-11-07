@@ -444,11 +444,14 @@ const critical = computed(() => {
 /** D44: on a calibration run, whether it came out as it should. */
 const calibrationText = computed(() => (stats.value?.calibration ? minus(stats.value.calibration.text) : ''));
 
-/** D10: where B dropped or a check got worse, critical first, as the statistics list them. */
+/** D10: where B dropped or a check got worse, critical first, as the statistics list them. Only a
+ *  required critical check is one the guardrail counts, so only it tags a task "critical check got
+ *  worse"; an optional one rated critical (the untrusted judge's `overall`) reads "optional". */
 const regressions = computed(() => {
   const s = stats.value;
   if (!s) return [];
   const sev = (x: string | null) => (x ? `${x}` : 'not rated');
+  const words = (g: { severity: string | null; required: boolean }) => (g.required ? sev(g.severity) : g.severity ? `optional, rated ${g.severity}` : 'optional, not rated');
   const rate = (c: { passed: number; graded: number }) => (c.graded ? `${c.passed} of ${c.graded}` : 'none decided');
   return s.regressions.map((r) => {
     const failedB = r.failed_trials.find((t) => t.arm === 'B') ?? r.failed_trials[0];
@@ -459,13 +462,13 @@ const regressions = computed(() => {
     return {
       key: r.task,
       name: r.task_id,
-      critical: r.critical,
+      critical: r.critical && r.graders.some((g) => g.required && g.severity === 'critical'),
       // The list also holds tasks where only a check got worse: B may have passed more there, and
       // such a task holding up beyond noise is a rise, so the tag shows only on a drop.
       beyond: r.beyond_noise && !!r.diff && r.diff.estimate < 0,
       counts: `A ${passedText({ ...r.a, trials: r.a.graded + r.a.incomplete })}, B ${passedText({ ...r.b, trials: r.b.graded + r.b.incomplete })}`,
       diff: r.diff ? `${signed(r.diff.estimate)} (${intervalText(r.diff)})` : 'not in the comparison: an arm has no decided trial',
-      graders: r.graders.map((g) => ({ id: g.grader_id, words: `${rate(g.a)} in A, ${rate(g.b)} in B`, severity: sev(g.severity), critical: g.severity === 'critical', optional: !g.required })),
+      graders: r.graders.map((g) => ({ id: g.grader_id, words: `${rate(g.a)} in A, ${rate(g.b)} in B`, severity: words(g) })),
       link: failedB ? href.trial(failedB.trial_id) : null,
       linkText: failedB ? `Open a failed trial (arm ${failedB.arm})` : '',
       linkCause: linked ? linked.name.toLowerCase() : null,
@@ -1003,7 +1006,7 @@ const exampleJudgeWords = computed(() => {
                 :name="critical.alarm ? 'alert' : 'info'"
                 :size="14"
               />
-              <span><strong class="caveat-lead">Critical checks:</strong> {{ critical.text }}</span>
+              <span><strong class="caveat-lead">Guardrail:</strong> {{ critical.text }}</span>
             </p>
             <p
               v-if="stats.unequal_decided"
@@ -1376,7 +1379,7 @@ const exampleJudgeWords = computed(() => {
         </p>
         <template v-else>
           <p class="secondary small">
-            Every task where B passed less, or where a check passed less often in B, whether or not it holds up after correction; checks marked critical first. A flag means look here, not a verdict.
+            Every task where B passed less, or where a check passed less often in B, whether or not it holds up after correction; required checks marked critical first. An optional check decides no outcome. A flag means look here, not a verdict.
           </p>
           <ul class="regression-list">
             <li
@@ -1406,7 +1409,7 @@ const exampleJudgeWords = computed(() => {
                   :key="g.id"
                   data-test="regression-grader"
                 >
-                  <span class="mono">{{ g.id }}</span> ({{ g.severity }}{{ g.optional ? ', optional' : '' }}): <span class="num">{{ g.words }}</span>
+                  <span class="mono">{{ g.id }}</span> ({{ g.severity }}): <span class="num">{{ g.words }}</span>
                 </li>
               </ul>
               <p

@@ -920,6 +920,7 @@ export interface CriticalGuardrail {
   differing?: number;
   /** True when the pass rate alone says better and this blocks it (verdict `held_back`). */
   blocks_better: boolean;
+  /** In words: each arm's critical failures over its decided trials ("A failed a critical check in 16 of 16 decided trials, B in 16 of 16"), then B minus A with its interval, then whether that is a rise beyond noise. */
   text: string;
 }
 
@@ -950,7 +951,7 @@ export interface Regression {
   /** As StatsTask; null when the task is not in the aggregate (an arm has no decided trial). */
   diff: StatsInterval | null;
   beyond_noise: boolean;
-  /** A check marked critical got worse. Critical ones come first. */
+  /** A required check marked critical got worse: one the guardrail counts. An optional check rated critical (an untrusted judge criterion) never sets it. These tasks come first. */
   critical: boolean;
   /** The checks whose pass rate fell, critical first. */
   graders: RegressionGrader[];

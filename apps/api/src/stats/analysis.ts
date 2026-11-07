@@ -196,8 +196,11 @@ const insideMargin = (diff: StatsInterval, margin = MARGIN_POINTS): boolean => d
 const SEVERITY_RANK: Record<string, number> = { critical: 0, major: 1, minor: 2 };
 const severityRank = (s: GraderSeverity | null): number => (s === null ? 3 : SEVERITY_RANK[s]);
 
+/** A check the guardrail counts: required and marked critical. An optional one decides no outcome. */
+const isCritical = (g: { required: boolean; severity: GraderSeverity | null }): boolean => g.required && g.severity === 'critical';
+
 function criticalFailed(t: TrialInput): boolean {
-  return t.grades.some((g) => g.required && g.severity === 'critical' && g.verdict === 'fail');
+  return t.grades.some((g) => isCritical(g) && g.verdict === 'fail');
 }
 
 /** The guardrail before the verdict reads it, and whether its unrounded interval lies above 0 (for its sentence). */
@@ -269,18 +272,22 @@ function guardrailText(g: Omit<CriticalGuardrail, 'text'>, aboveZero: boolean, u
   const count = (n: number) => `${n} critical ${n === 1 ? 'check' : 'checks'}`;
   const n = g.checks.length;
   if (g.status === 'no_decided_trials' || !g.diff) return `There ${n === 1 ? 'is' : 'are'} ${count(n)}, but no task with one has a decided trial in both arms, so critical failures could not be compared.`;
-  // Only the checks on the tasks it compared: a task left out of the aggregate adds none (S10).
-  const what = `Critical failures: ${pts(g.diff.estimate)} points (95% interval ${pts(g.diff.low)} to ${pts(g.diff.high)}) over ${g.tasks} ${g.tasks === 1 ? 'task' : 'tasks'} with ${count(usedChecks)}.`;
+  // Each arm's own count first: a difference of 0 alone read as "no critical failures" even where
+  // every trial in both arms failed one (QA, 7 Nov). Then B minus A over the tasks it compared, with
+  // only the checks on those tasks: a task left out of the aggregate adds none (S10).
+  const trials = (n: number) => `${n} decided ${n === 1 ? 'trial' : 'trials'}`;
+  const arms = g.a && g.b ? `A failed a critical check in ${g.a.failed} of ${trials(g.a.graded)}, B in ${g.b.failed} of ${g.b.graded}; ` : '';
+  const what = `${arms}B minus A ${pts(g.diff.estimate)} points (95% interval ${pts(g.diff.low)} to ${pts(g.diff.high)}) over ${g.tasks} ${g.tasks === 1 ? 'task' : 'tasks'} with ${count(usedChecks)}`;
   const p = g.p_value === null || g.p_value === undefined ? '' : ` (${pValueText(g.p_value)} by the paired sign-flip test)`;
-  if (g.blocks_better) return `${what} They rose beyond noise${p}, so B is not called better although its pass rate rose.`;
-  if (g.status === 'rose') return `${what} They rose beyond noise${p}.`;
-  if (!aboveZero) return `${what} No rise beyond noise.`;
+  if (g.blocks_better) return `${what}: a rise beyond noise${p}, so B is not called better although its pass rate rose.`;
+  if (g.status === 'rose') return `${what}: a rise beyond noise${p}.`;
+  if (!aboveZero) return `${what}: no rise beyond noise.`;
   const differing = g.differing ?? 0;
   const why =
     differing < MIN_TASKS_FOR_VERDICT
       ? `only ${differing} of the ${g.tasks} ${g.tasks === 1 ? 'task' : 'tasks'} had different critical-failure rates in the two arms, too few for the paired test to reach p < 0.05`
       : `the paired sign-flip test gives ${pValueText(g.p_value ?? 1)}`;
-  return `${what} Their interval lies above 0, but ${why}, so this is not a rise beyond noise.`;
+  return `${what}. That interval lies above 0, but ${why}, so this is not a rise beyond noise.`;
 }
 
 function regressionsOf(input: AnalysisInput, perTask: Map<string, StatsTask>): Regression[] {
@@ -303,9 +310,11 @@ function regressionsOf(input: AnalysisInput, perTask: Map<string, StatsTask>): R
         if (g.verdict === 'pass') side.passed += 1;
       }
     }
+    // A required critical check first: only it is one of the critical checks the guardrail counts.
+    const rank = (g: RegressionGrader) => (isCritical(g) ? -1 : severityRank(g.severity));
     const fell = [...byGrader.values()]
       .filter((g) => g.a.graded > 0 && g.b.graded > 0 && rate(g.b) < rate(g.a))
-      .sort((x, y) => severityRank(x.severity) - severityRank(y.severity) || rate(x.b) - rate(x.a) - (rate(y.b) - rate(y.a)) || x.grader_id.localeCompare(y.grader_id));
+      .sort((x, y) => rank(x) - rank(y) || rate(x.b) - rate(x.a) - (rate(y.b) - rate(y.a)) || x.grader_id.localeCompare(y.grader_id));
     const dropped = stat !== null && stat.diff.estimate < 0;
     if (!dropped && !fell.length) return;
     const failed = (arm: 'A' | 'B'): RegressionTrial[] =>
@@ -323,7 +332,9 @@ function regressionsOf(input: AnalysisInput, perTask: Map<string, StatsTask>): R
         b: stat?.b ?? counts(t.trials, 'B'),
         diff: stat?.diff ?? null,
         beyond_noise: stat?.beyond_noise ?? false,
-        critical: fell.some((g) => g.severity === 'critical'),
+        // Required only, as the guardrail counts them: an optional check rated critical (the untrusted
+        // judge's `overall`) decides nothing, so it never tags a task "critical check got worse" (QA, 7 Nov).
+        critical: fell.some(isCritical),
         graders: fell,
         failed_trials: [...failed('B'), ...failed('A')],
         causes_grew: [],
