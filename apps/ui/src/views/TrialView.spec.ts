@@ -416,6 +416,18 @@ describe('TrialView against the API: "Failed on" and what your label says of a f
     await settle();
     expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: overall (judge; your label passes it)');
   });
+
+  it('names only the required checks that failed: an optional judge check decided nothing, so it stays in the grades alone', async () => {
+    // Live: every judge check on the headline is optional, and the trial failed on provenance.
+    const w = mountWith([provenance('fail'), judgeGrade(false, failedTwice)], trust({ 'keep-cash': ['yes', 'no'] }));
+    await settle();
+    expect(w.get('[data-test="trial-outcome"]').text()).toBe('Failed its one check');
+    expect(w.get('[data-test="failed-on"]').text()).toBe('Failed on: every-amount-from-a-tool');
+    const grades = w.findAll('[data-test="grade"]');
+    expect(grades).toHaveLength(2);
+    expect(grades[1].get('[data-test="grade-verdict"]').text()).toBe('Fail');
+    expect(grades[1].get('[data-test="dispute"]').text()).toBe('Your held-out label disagrees with the judge on keep-cash: you said Yes, the judge said No. See judge agreement');
+  });
 });
 
 describe('TrialView against the API: the outcome in words, and the simulated client', () => {

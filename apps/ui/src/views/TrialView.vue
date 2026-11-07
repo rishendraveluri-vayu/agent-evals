@@ -660,11 +660,13 @@ function labelNote(g: GradeView, disputes: Dispute[]): string {
   return ` (judge; your label passes ${listWords(disputed, 'and')} but not ${listWords(kept, 'or')})`;
 }
 
-/** "Failed on" names each failed check, says which the judge graded, and what your label says of it. */
+/** "Failed on" names each failed required check (the ones the outcome rests on: an optional one that
+ *  failed decided nothing, and stays in the grades alone), says which the judge graded, and what your
+ *  label says of it. */
 const failedOn = computed(() =>
   (vm.value?.grades ?? [])
     .map((g, gi) => ({ g, index: g.index, disputes: gradeTrust.value[gi]?.disputes ?? [] }))
-    .filter(({ g }) => g.verdict === 'fail')
+    .filter(({ g }) => g.required && g.verdict === 'fail')
     .map(({ g, index, disputes }) => ({ name: g.name, index, note: isJudge(g) ? labelNote(g, disputes) : '' })),
 );
 
