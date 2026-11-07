@@ -100,9 +100,12 @@ flowchart LR
   on the 40 held-out trials it passed all 9 answers I failed. So it doesn't count.
 - Every judge grade shows how far to trust it, worked out live from the human labels: *Uncalibrated*
   (nobody has labelled anything it graded), *Tuning only*, *Too few labels*, or *Trusted* / *Not
-  trusted* by the bar above. A **Calibrate this judge** button opens the blind labeller with a mix
-  of the judge's passes and fails, and the agreement updates as you label. The headline example was
-  judged this way, so its trial pages and the Judge page show the judge as *Not trusted*. Details:
+  trusted* by the bar above. On your own runs, a **Calibrate this judge** button opens the blind
+  labeller with a balanced, shuffled set of the judge's passes and fails, and the agreement updates
+  as you label (shipped examples are never labelled, so a fresh clone shows no such button). The
+  headline example was judged this way, so its trial pages and the Judge page show the judge as
+  *Not trusted* with kappa 0.00: a second judging of the same outputs, in the platform, after the
+  −0.14 below. A judge varies from run to run; both miss the bar. Details:
   [`docs/judge-validation.md`](docs/judge-validation.md).
 - The tasks are a personal-finance assistant for clients in India: calculator tools, client files,
   and a simulated client for the multi-turn ones. 31 tasks: 10 held out for scoring, 11 for
