@@ -218,7 +218,8 @@ const attention = computed<Attention[]>(() => {
       infra: false,
       title: `${plural(d.heldoutToGo, 'held-out output')} waiting for a human label`,
       titleNote: `(${plural(d.heldoutChecksToGo, 'check')})`,
-      detail: "The judge's agreement with the human labels is final once all of them are labelled.",
+      // Not "final once all of them are labelled" (QA, 7 Nov): the trust bar needs enough labels, not every output.
+      detail: "Each label adds to the judge's measured agreement with people. The trust bar needs enough of them, not all.",
     });
   }
   for (const h of d.harnesses) {

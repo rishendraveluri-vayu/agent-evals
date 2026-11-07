@@ -432,12 +432,16 @@ const STANDING: Partial<Record<JudgeStats['status'], string>> = {
  *  status the API gives, the one the Judge page shows, never worked out here from the figures:
  *  the trust bar (D8) is more than kappa against 0.6, so a judge with too few "no" labels, or
  *  one kinder to one arm, can have a high kappa and still not be trusted (review 7 Nov). Values
- *  that round to zero read 0.00, never −0.00. Ends with the full stop. */
+ *  that round to zero read 0.00, never −0.00. Ends with the full stop. "Provisional" only where it
+ *  is so: a judge the trust bar has not been applied to yet, with held-out outputs still to label.
+ *  Trusted and not trusted are the bar's answer on the labels there are, so they are not called
+ *  provisional beside a "Not trusted" badge (QA, 7 Nov). */
 export function agreementWords(judge: Pick<JudgeStats, 'kappa' | 'low' | 'high' | 'status'>, toGo: number): string {
   const k = `κ${NBSP}${kappaWords(judge.kappa)}`;
   const interval = `${kappaWords(judge.low)} to ${kappaWords(judge.high)}`;
   const standing = STANDING[judge.status] ?? 'not yet tested against the trust bar';
-  return ` is ${k} (interval ${interval}), ${standing}${toGo > 0 ? ', and it is provisional.' : '.'}`;
+  const provisional = toGo > 0 && judge.status !== 'trusted' && judge.status !== 'not_trusted';
+  return ` is ${k} (interval ${interval}), ${standing}${provisional ? ', so it is provisional until more outputs are labelled.' : '.'}`;
 }
 
 /** "the one task that differs needs", "both tasks that differ need", "all 3 tasks that differ need" */

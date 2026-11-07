@@ -388,7 +388,7 @@ describe('judgeCaveat', () => {
   it('gives the estimate and its interval, then where the judge stands against the trust bar, from its trust status', () => {
     const c = judgeCaveat({ differing: both, isJudged, judge, toGo: 3 });
     expect(c?.text).toBe(
-      `Rests on the judge: both tasks that differ need the judge's pass. Its agreement with you is ${k('0.70')} (interval 0.47 to 0.88), short of the trust bar, and it is provisional.`,
+      `Rests on the judge: both tasks that differ need the judge's pass. Its agreement with you is ${k('0.70')} (interval 0.47 to 0.88), short of the trust bar.`,
     );
     expect(c?.link).toBe('agreement with you');
     // The lead is its own part, set in bold by the page; `before` starts after it.
@@ -409,9 +409,12 @@ describe('judgeCaveat', () => {
     expect(judgeCaveat({ differing: both, isJudged, judge: trusted, toGo: 0 })?.text).toBe(
       `Rests on the judge: both tasks that differ need the judge's pass. Its agreement with you is ${k('0.70')} (interval 0.47 to 0.88), clearing the trust bar.`,
     );
-    expect(judgeCaveat({ differing: both, isJudged, judge: trusted, toGo: 2 })?.after).toBe(` is ${k('0.70')} (interval 0.47 to 0.88), clearing the trust bar, and it is provisional.`);
+    // Trusted or not trusted is the bar's answer on the labels there are: never "provisional" (QA, 7 Nov).
+    expect(judgeCaveat({ differing: both, isJudged, judge: trusted, toGo: 2 })?.after).toBe(` is ${k('0.70')} (interval 0.47 to 0.88), clearing the trust bar.`);
     const fewNo = { ...judge, kappa: 1, low: 1, high: 1, status: 'too_few' as const, reasons: ['4 human "no" labels, fewer than 5'] };
     expect(agreementWords(fewNo, 0)).toBe(` is ${k('1.00')} (interval 1.00 to 1.00), on too few labels to test against the trust bar yet.`);
+    // On too few labels, with outputs left to label, it is provisional.
+    expect(agreementWords(fewNo, 3)).toBe(` is ${k('1.00')} (interval 1.00 to 1.00), on too few labels to test against the trust bar yet, so it is provisional until more outputs are labelled.`);
     const high = { ...judge, kappa: 0.82, low: 0.71, high: 0.9 };
     expect(agreementWords(high, 0)).toBe(` is ${k('0.82')} (interval 0.71 to 0.90), short of the trust bar.`);
   });
@@ -444,7 +447,7 @@ describe('judgeCaveat', () => {
   });
 
   it('shares its agreement wording with the rest of the page, κ kept with its value', () => {
-    expect(agreementWords(judge, 3)).toBe(` is ${k('0.70')} (interval 0.47 to 0.88), short of the trust bar, and it is provisional.`);
+    expect(agreementWords(judge, 3)).toBe(` is ${k('0.70')} (interval 0.47 to 0.88), short of the trust bar.`);
   });
 });
 

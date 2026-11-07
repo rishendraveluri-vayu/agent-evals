@@ -192,7 +192,7 @@ describe('CompareView in fixture mode', () => {
     await settle();
     const caveat = w.get('[data-test="judge-caveat"]');
     expect(caveat.text()).toBe(
-      `Rests on the judge: both tasks that differ need the judge's pass (debt-hardship-03 also has a state check). Its agreement with you is κ${nb}0.55 (interval 0.29 to 0.79), short of the trust bar, and it is provisional.`,
+      `Rests on the judge: both tasks that differ need the judge's pass (debt-hardship-03 also has a state check). Its agreement with you is κ${nb}0.55 (interval 0.29 to 0.79), short of the trust bar.`,
     );
     expect(caveat.get('a').text()).toBe('agreement with you');
     // The task id is a literal identifier: mono, and kept whole.
@@ -893,7 +893,7 @@ describe('CompareView against the API: the check on the method', () => {
     await settle();
     expect(w.find('[data-test="judge-caveat"]').exists()).toBe(false);
     expect(w.get('[data-test="judge-line"]').text()).toBe(
-      `The judge scored 4 of the 12 tasks. Its agreement with you is κ${nb}0.55 (interval 0.29 to 0.79), short of the trust bar, and it is provisional. See judge agreement`,
+      `The judge scored 4 of the 12 tasks. Its agreement with you is κ${nb}0.55 (interval 0.29 to 0.79), short of the trust bar. See judge agreement`,
     );
   });
 
