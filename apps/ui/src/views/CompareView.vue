@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { api } from '../api/client';
 import { ApiError } from '../api/errors';
 import { isFixtureMode } from '../api/mode';
-import type { BlindItem, Compare, CompareRow, ExperimentDetail, TrialRowSummary, Interval, JudgeTrust, TaskView } from '../api/types';
+import type { BlindItem, Compare, CompareRow, ExperimentDetail, Harness, TrialRowSummary, Interval, JudgeTrust, TaskView } from '../api/types';
 import AppIcon from '../components/AppIcon.vue';
 import BehaviourPanel from '../components/BehaviourPanel.vue';
 import IntervalStrip from '../components/IntervalStrip.vue';
@@ -15,6 +15,7 @@ import VerdictTag from '../components/VerdictTag.vue';
 import { agreementWords, armDifferences, armIndexOf, armLetter, armsOf, armState, differingShort, namedByHash, noDiffWords as noDiffFor, excludesZero, noWidth, shownWidth, intervalText, judgeCaveat, NBSP, passedText, pointsWithInterval, setupOf, totalTrials, verdictTitle, type Arm, type ArmKey, type Verdict } from '../lib/arms';
 import { optional, useLoad } from '../lib/async';
 import { causeView, causeWord } from '../lib/causes';
+import { armsCheck, budgetCheck, capabilityCheck, localDiff, planCheck, splitCheck, type Check } from '../lib/checks';
 import { identParts, money, percent, plainText, plural, seconds, shortHash, shortRef, signed, signedMoney, thousands, tick } from '../lib/format';
 import { isFake } from '../lib/models';
 import { alsoGradedBy, experimentName, gradedBy, harnessShort, infraReason, isJudged, modelName } from '../lib/names';
@@ -46,6 +47,8 @@ interface Loaded {
   /** How far to trust this experiment's judges (D83), with where labels dispute them; null when it
    *  could not be read. */
   trust: JudgeTrust[] | null;
+  /** The harnesses' capabilities, for the run page's checks before the start; null when not read. */
+  harnesses: Harness[] | null;
 }
 
 const { data, error, loading } = useLoad<Loaded>(async () => {
@@ -58,13 +61,14 @@ const { data, error, loading } = useLoad<Loaded>(async () => {
     const [queue, trust] = await Promise.all([optional(api.labelQueue('heldout'), [] as BlindItem[]), optional(api.judgeTrust(d.id).then((r) => r.judges), null)]);
     return { queue, trust };
   });
-  const [detail, compare, trials, blind] = await Promise.all([
+  const [detail, compare, trials, blind, harnesses] = await Promise.all([
     detailP,
     api.compare(props.experimentId),
     optional(api.experimentTrials(props.experimentId), [] as TrialRowSummary[]),
     blindP,
+    optional(api.harnesses(), null),
   ]);
-  return { detail, compare, trials, ...blind };
+  return { detail, compare, trials, ...blind, harnesses };
 });
 
 const arms = computed(() => (data.value ? armsOf(data.value.detail, data.value.detail.configs) : []));
@@ -439,6 +443,32 @@ const critical = computed(() => {
   const c = stats.value?.critical;
   if (!c) return null;
   return { text: minus(c.text), alarm: c.status === 'rose', none: c.status === 'no_critical_checks' };
+});
+
+/** The run page's checks before the start, as it makes them for a started run (lib/checks.ts), and
+ *  the ones that failed: a run can start with one failing only from the API, and its result rests
+ *  on that, so "What it rests on" says so (QA, 7 Nov: the retrieval run mixed discovery and
+ *  held-out tasks, and its verdict said nothing of it). The plan commit is recorded, not checked,
+ *  so only a missing or malformed one counts. */
+const preStart = computed<{ failed: Check[]; total: number } | null>(() => {
+  const d = data.value;
+  if (!d) return null;
+  const e = d.detail;
+  const configs = e.config_hashes.map((h) => e.configs.find((c) => c.hash === h)).filter((c): c is NonNullable<typeof c> => !!c);
+  const list: Check[] = [];
+  if (e.config_hashes.length === 2 && configs.length === 2) {
+    const [a, b] = configs;
+    const same = a.hash === b.hash;
+    if (same) list.push(e.calibration ? { ok: true, title: 'A/A calibration: the same agent on both arms', detail: '' } : { ok: false, title: 'Arm A and arm B are the same agent', detail: 'Two arms of one config compare an agent with itself; only a marked A/A calibration should.' });
+    else list.push(armsCheck(localDiff(a, b), false, [a, b]));
+  }
+  if (d.harnesses) list.push(capabilityCheck(configs, d.harnesses));
+  const fake = configs.length > 0 && configs.every((c) => isFake(c.model)) && (!e.sim_model || isFake(e.sim_model));
+  if (!configs.every((c) => isFake(c.model))) list.push(planCheck(e.plan_commit));
+  list.push(splitCheck(e.tasks, e.tasks));
+  if (!fake) list.push(budgetCheck(e.budget_usd, e.estimate));
+  const counted = list.filter((c) => !c.recorded);
+  return { failed: counted.filter((c) => !c.ok), total: counted.length };
 });
 
 /** D44: on a calibration run, whether it came out as it should. */
@@ -1194,6 +1224,30 @@ const exampleJudgeWords = computed(() => {
           >
             {{ judgeLine }} <a :href="href.judge()">See judge agreement</a>
           </p>
+          <div
+            v-if="preStart && preStart.failed.length"
+            class="caveat caveat--alarm prestart"
+            data-test="prestart-failed"
+          >
+            <AppIcon
+              name="alert"
+              :size="14"
+            />
+            <div>
+              <p>
+                <strong class="caveat-lead">Checked before the start:</strong> {{ preStart.failed.length }} of {{ preStart.total }} failed, so read the result with that in mind. <a :href="href.run(data.detail.id)">See the checks</a>
+              </p>
+              <ul class="prestart-list">
+                <li
+                  v-for="c in preStart.failed"
+                  :key="c.title"
+                  data-test="prestart-check"
+                >
+                  <strong>{{ c.title }}.</strong> {{ c.detail }}
+                </li>
+              </ul>
+            </div>
+          </div>
           <div class="infra">
             <p
               class="secondary"
@@ -1645,6 +1699,15 @@ const exampleJudgeWords = computed(() => {
 </template>
 
 <style scoped>
+.prestart-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.prestart-list li + li {
+  margin-top: 4px;
+}
+
 .arm-progress {
   list-style: none;
   margin: 4px 0 14px;

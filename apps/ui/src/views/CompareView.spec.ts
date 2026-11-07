@@ -5,6 +5,7 @@ import type { Compare, CompareStats, JudgeTrustResponse } from '../api/types';
 import compares from '../fixtures/compares.json';
 import details from '../fixtures/experiment-details.json';
 import experimentTrials from '../fixtures/experiment-trials.json';
+import harnessesJson from '../fixtures/harnesses.json';
 import trustJson from '../fixtures/judge-trust.json';
 import queue from '../fixtures/label-queue.json';
 import { routeFetch, settle, useFixtures } from '../test/helpers';
@@ -1493,6 +1494,48 @@ describe('CompareView: a stopped run and a run on fake models (QA round 3, minor
     const w = mountWith({}, { ...(compares.exp_heldout as object), stats: null });
     await settle();
     expect(w.find('[data-test="fake-run-note"]').exists()).toBe(false);
+  });
+});
+
+describe('CompareView: a check that failed before the start (QA, 7 Nov: the retrieval run)', () => {
+  const detail = (details as unknown as Record<string, Record<string, unknown> & { tasks: { split: string }[] }>).exp_heldout;
+
+  function mountWith(over: Record<string, unknown>) {
+    routeFetch({
+      '/api/experiments/exp_heldout': { ...detail, ...over },
+      '/api/experiments/exp_heldout/compare': compares.exp_heldout,
+      '/api/experiments/exp_heldout/trials': (experimentTrials as Record<string, unknown>).exp_heldout,
+      '/api/labels/queue?set=heldout': [],
+      '/api/harnesses': harnessesJson,
+    });
+    return mount(CompareView, { props: { experimentId: 'exp_heldout' } });
+  }
+
+  it('says nothing when every check passed', async () => {
+    const w = mountWith({});
+    await settle();
+    expect(w.find('[data-test="prestart-failed"]').exists()).toBe(false);
+  });
+
+  it('names a failed check under "What it rests on", as the run page lists it', async () => {
+    // Discovery tasks mixed into a held-out run, as the retrieval run's controls were.
+    const w = mountWith({ tasks: detail.tasks.map((t, i) => (i < 3 ? { ...t, split: 'discovery' } : t)) });
+    await settle();
+    const box = w.get('[data-test="prestart-failed"]');
+    expect(box.text()).toContain('Checked before the start: 1 of 4 failed, so read the result with that in mind. See the checks');
+    expect(box.get('a').attributes('href')).toBe('#/experiments/exp_heldout/run');
+    expect(box.findAll('[data-test="prestart-check"]').map((c) => c.text())).toEqual([
+      'Discovery and held-out tasks are mixed. A change found on the discovery tasks has to be measured on held-out tasks alone.',
+    ]);
+    expect(box.classes()).toContain('caveat--alarm');
+    // It sits in the aside, after the judge line.
+    expect(inOrder(w, ['[data-test="judge-line"]', '[data-test="prestart-failed"]'])).toBe(true);
+  });
+
+  it('counts a missing plan commit and a limit below the likely cost as the run page does', async () => {
+    const w = mountWith({ plan_commit: null, budget_usd: 1 });
+    await settle();
+    expect(w.findAll('[data-test="prestart-check"]').map((c) => c.text().split('.')[0])).toEqual(['No analysis plan commit yet', 'The spending limit is below the likely cost']);
   });
 });
 
